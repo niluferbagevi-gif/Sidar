@@ -1,105 +1,11 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 # Sidar installer phase: .env and secret synchronization helpers.
 
 # ── 10. .env dosyası ──────────────────────────────────────────────────────────
-generate_secure_token() {
-    local token_length="${1:-32}"
-    local generated=""
 
-    if command -v python3 &>/dev/null; then
-        generated=$(python3 - <<PY
-import secrets
-print(secrets.token_urlsafe(${token_length}))
-PY
-)
-    elif command -v openssl &>/dev/null; then
-        generated=$(openssl rand -base64 "$((token_length * 3))" | tr -dc 'A-Za-z0-9' | head -c "$token_length")
-    fi
-
-    echo "$generated"
-}
-
-harden_database_credentials() {
-    local env_file="$1"
-    local db_url=""
-    local sidar_env="development"
-    local safe_db_url=""
-    local hardening_enabled="${ENABLE_DB_PASSWORD_HARDENING:-1}"
-
-    [[ -f "$env_file" ]] || return
-
-    db_url=$(read_env_value_from_file "DATABASE_URL" "$env_file")
-    sidar_env=$(read_env_value_from_file "SIDAR_ENV" "$env_file")
-    sidar_env="${sidar_env:-development}"
-
-    [[ -n "$db_url" ]] || return
-
-    # Güvensiz bilinen varsayılan kimlik bilgileri (postgres:postgres vb.)
-    if [[ "$db_url" =~ ^postgresql(\+asyncpg)?://([^:@/]+):([^@/]+)@(.+)$ ]]; then
-        local db_user="${BASH_REMATCH[2]}"
-        local db_password="${BASH_REMATCH[3]}"
-        local db_host_and_name="${BASH_REMATCH[4]}"
-
-        if is_weak_secret_value "$db_password"; then
-            if [[ "$hardening_enabled" == "1" || "${FORCE_STRONG_DB_PASSWORD:-0}" == "1" ]]; then
-                if declare -F sidar_record_pre_harden_db_password >/dev/null 2>&1; then
-                    sidar_record_pre_harden_db_password "$db_password"
-                else
-                    # shellcheck disable=SC2034  # scripts/install_modules/phases/12_alembic.sh reads this sourced recovery password.
-                    PRE_HARDEN_DB_PASSWORD="$db_password"
-                fi
-                local generated_password=""
-                generated_password=$(generate_secure_token 24)
-                if [[ -n "$generated_password" ]]; then
-                    safe_db_url="postgresql+asyncpg://${db_user}:${generated_password}@${db_host_and_name}"
-                    sed_inplace "s|^DATABASE_URL=.*|DATABASE_URL=${safe_db_url}|" "$env_file"
-                    ok ".env: DATABASE_URL için güvenli bir veritabanı şifresi üretildi (SIDAR_ENV=${sidar_env})."
-
-                    # Docker Compose ile çalışırken PostgreSQL container kimlik bilgileri
-                    # DATABASE_URL ile senkron kalmalıdır.
-                    if grep -q '^POSTGRES_PASSWORD=' "$env_file"; then
-                        sed_inplace "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${generated_password}|" "$env_file"
-                    else
-                        echo "POSTGRES_PASSWORD=${generated_password}" >> "$env_file"
-                    fi
-                    if grep -q '^POSTGRES_USER=' "$env_file"; then
-                        sed_inplace "s|^POSTGRES_USER=.*|POSTGRES_USER=${db_user}|" "$env_file"
-                    else
-                        echo "POSTGRES_USER=${db_user}" >> "$env_file"
-                    fi
-                    local db_name_for_container="${db_host_and_name#*/}"
-                    db_name_for_container="${db_name_for_container%%\?*}"
-                    if [[ -z "$db_name_for_container" || "$db_name_for_container" == "$db_host_and_name" ]]; then
-                        db_name_for_container="sidar"
-                    fi
-                    local container_db_url="postgresql+asyncpg://${db_user}:${generated_password}@postgres:5432/${db_name_for_container}"
-                    if grep -q '^SIDAR_CONTAINER_DATABASE_URL=' "$env_file"; then
-                        sed_inplace "s|^SIDAR_CONTAINER_DATABASE_URL=.*|SIDAR_CONTAINER_DATABASE_URL=${container_db_url}|" "$env_file"
-                    else
-                        echo "SIDAR_CONTAINER_DATABASE_URL=${container_db_url}" >> "$env_file"
-                    fi
-                    # shellcheck disable=SC2034  # scripts/install_modules/{phases/06_services.sh,phases/12_alembic.sh,utils/database_url.sh} read this sourced state.
-                    DB_PASSWORD_HARDENED=true
-                    ok ".env: POSTGRES_USER/POSTGRES_PASSWORD değerleri DATABASE_URL ile senkronize edildi."
-                    info "PostgreSQL şifresi güçlendirildi. Mevcut bir volume varsa kurulum migrasyon aşamasında otomatik olarak sıfırlayacak — manuel işlem gerekmez."
-                    if command -v docker &>/dev/null && docker info >/dev/null 2>&1; then
-                        local detected_pg_volume=""
-                        detected_pg_volume=$(docker volume ls --format '{{.Name}}' | grep -Ei '(^|[_-])sidar([_-].*)?[_-](postgres|pg)[_-]?data$|(^|[_-])(postgres|pg)_?data$' | head -n1 || true)
-                        if [[ -n "$detected_pg_volume" ]]; then
-                            info "Tespit edilen PostgreSQL volume: ${detected_pg_volume} (gerekirse kurulum tarafından otomatik sıfırlanacak)."
-                        fi
-                    fi
-                else
-                    warn ".env: Güçlü veritabanı şifresi otomatik üretilemedi. DATABASE_URL parolanızı manuel güncelleyin."
-                fi
-            else
-                warn ".env: ENABLE_DB_PASSWORD_HARDENING=1 olmadığı için otomatik DB parola güçlendirme atlandı."
-                warn ".env: DATABASE_URL varsayılan/zayıf parola içeriyor (${db_user}:****)."
-                warn "Parolayı manuel güncellemek isterseniz DATABASE_URL ve POSTGRES_PASSWORD alanlarını birlikte değiştirin."
-            fi
-        fi
-    fi
-}
+# Secret generation helpers live in scripts/install_modules/utils/env_secrets.sh;
+# database credential hardening has a single implementation in utils/db_credentials.sh.
 
 # DATABASE_URL defaults and PostgreSQL dotenv sync helpers live in scripts/install_modules/utils/database_url.sh.
 
@@ -128,14 +34,14 @@ ensure_rag_vector_backend_pgvector() {
 # anahtarları tek merkezden yönetilir. Bu liste .env, raporlama ve .env.*
 # varyant senkronizasyonunda ortak kullanılarak .env.advanced gibi şablondan
 # üretilen dosyalarda boş placeholder kalması engellenir.
+#
+# SIDAR_USER_SECRET_ENV_KEYS dizisi (tek doğruluk kaynağı) install_sidar.sh
+# içinde, mask_install_log_stream()'in de kullandığı log maskeleme deseninin
+# hemen yanında tanımlıdır. Burada ayrı bir liste tutmayın: iki allowlist'in
+# elle senkron kalması gerektiği bir tasarım, yeni bir key eklendiğinde
+# birinin unutulup secret'ın loglara sızmasına yol açar.
 sidar_user_api_key_names() {
-    printf '%s\n' \
-        OPENAI_API_KEY GEMINI_API_KEY ANTHROPIC_API_KEY LITELLM_API_KEY HF_TOKEN \
-        GITHUB_TOKEN \
-        TAVILY_API_KEY GOOGLE_SEARCH_API_KEY GOOGLE_SEARCH_CX \
-        SLACK_TOKEN SLACK_APP_LEVEL_TOKEN SLACK_WEBHOOK_URL SLACK_DEFAULT_CHANNEL \
-        JIRA_URL JIRA_EMAIL JIRA_TOKEN JIRA_DEFAULT_PROJECT \
-        TEAMS_WEBHOOK_URL
+    printf '%s\n' "${SIDAR_USER_SECRET_ENV_KEYS[@]}"
 }
 
 # ── İnteraktif API Anahtarı Toplama ──────────────────────────────────────────
@@ -183,9 +89,6 @@ collect_api_keys_interactive() {
         esac
     }
 
-
-    local sidar_test_key_sync_skip_warned=false
-
     _sync_real_keys_to_test_env_enabled() {
         local raw="${SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV:-0}"
         raw="${raw,,}"
@@ -196,14 +99,31 @@ collect_api_keys_interactive() {
         esac
     }
 
-    _api_key_env_targets() {
-        local -a targets=("$env_file")
+    _materialize_real_keys_to_env_enabled() {
+        local raw="${SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV:-0}"
+        raw="${raw,,}"
+        raw="${raw//[[:space:]]/}"
+        case "$raw" in
+            1|true|yes|y|evet|e) return 0 ;;
+            *) return 1 ;;
+        esac
+    }
+
+    _api_key_env_targets_without_warning() {
+        local -a targets=()
         local advanced_env_file="$SCRIPT_DIR/.env.advanced"
         local advanced_example_file="$SCRIPT_DIR/.env.advanced.example"
         local optional_env_file
 
+        if ! _materialize_real_keys_to_env_enabled; then
+            targets+=("$sidar_keys_file")
+            printf '%s\n' "${targets[@]}"
+            return 0
+        fi
+
+        targets+=("$env_file")
         if [[ ! -f "$advanced_env_file" && -f "$advanced_example_file" ]]; then
-            cp "$advanced_example_file" "$advanced_env_file"
+            install -m 600 "$advanced_example_file" "$advanced_env_file"
             ok ".env.advanced dosyası .env.advanced.example'dan API anahtarı senkronizasyonu için oluşturuldu."
         fi
 
@@ -216,32 +136,126 @@ collect_api_keys_interactive() {
         if [[ -f "$optional_env_file" && "$optional_env_file" != "$env_file" ]]; then
             if _sync_real_keys_to_test_env_enabled; then
                 targets+=("$optional_env_file")
-            elif [[ "$sidar_test_key_sync_skip_warned" != true ]]; then
-                warn ".env.test içine gerçek servis anahtarları senkronize edilmedi (varsayılan güvenli davranış). Gerekirse SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV=1 ile bilinçli etkinleştirin."
-                sidar_test_key_sync_skip_warned=true
             fi
         fi
 
         printf '%s\n' "${targets[@]}"
     }
 
+    local -a api_key_target_env_files=()
+    local -a api_key_write_failures=()
+    local api_key_write_success_count=0
+    local api_key_write_failure_count=0
+    local api_key_validated_count=0
+    mapfile -t api_key_target_env_files < <(_api_key_env_targets_without_warning)
+    if ! _materialize_real_keys_to_env_enabled; then
+        info "Gerçek servis anahtarları env dosyalarına kopyalanmayacak; kalıcı kaynak: ${sidar_keys_file}. Gerekirse SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV=1 ile bilinçli etkinleştirin."
+    fi
+    if [[ -f "$SCRIPT_DIR/.env.test" && "$SCRIPT_DIR/.env.test" != "$env_file" ]] &&
+        _materialize_real_keys_to_env_enabled && ! _sync_real_keys_to_test_env_enabled; then
+        warn ".env.test içine gerçek servis anahtarları senkronize edilmedi (varsayılan güvenli davranış). Gerekirse SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV=1 ile bilinçli etkinleştirin."
+    fi
+
     # Anahtarı .env ve mevcut runtime env varyantlarına yazar; boşsa sessizce atlar.
     _write_key() {
         local key="$1"
-        local val target target_name
-        local -a target_env_files=()
-        val=$(printf '%s' "${2:-}" | tr -d '\r\n ')
-        [[ -z "$val" ]] && return
+        local val target target_name max_value_bytes
+        val="${2:-}"
+        if [[ "$val" == *$'\n'* || "$val" == *$'\r'* ]]; then
+            warn "${key}: değer tek satır olmalıdır; configured sayılmayacak."
+            api_key_write_failures+=("validation:${key}")
+            ((api_key_write_failure_count += 1))
+            return 1
+        fi
+        [[ -z "$val" ]] && return 0
+        if ! _validate_api_key_value "$key" "$val"; then
+            api_key_write_failures+=("validation:${key}")
+            ((api_key_write_failure_count += 1))
+            return 1
+        fi
+        ((api_key_validated_count += 1))
+        max_value_bytes="$(_api_key_max_value_bytes "$key")"
 
-        mapfile -t target_env_files < <(_api_key_env_targets)
-        for target in "${target_env_files[@]}"; do
-            if grep -q "^${key}=" "$target" 2>/dev/null; then
-                sed_inplace "s|^${key}=.*|${key}=${val}|" "$target"
+        for target in "${api_key_target_env_files[@]}"; do
+            mkdir -p "$(dirname "$target")"
+            [[ -f "$target" ]] || : > "$target"
+            chmod 600 "$target" 2>/dev/null || true
+            target_name="$(_api_key_target_display_name "$target")"
+            if printf '%s' "$val" | uv run python scripts/update_dotenv_value.py --file "$target" --key "$key" --max-value-bytes "$max_value_bytes"; then
+                ok "${target_name}: ${key} güncellendi."
+                ((api_key_write_success_count += 1))
             else
-                echo "${key}=${val}" >> "$target"
+                warn "${target_name}: ${key} güncellenemedi (bkz. yukarıdaki update_dotenv_value hatası)."
+                api_key_write_failures+=("${target_name}:${key}")
+                ((api_key_write_failure_count += 1))
+                return 1
             fi
-            target_name="$(basename "$target")"
-            ok "${target_name}: ${key} güncellendi."
+        done
+    }
+
+    _api_key_max_value_bytes() {
+        case "$1" in
+            SLACK_WEBHOOK_URL|TEAMS_WEBHOOK_URL) echo 8192 ;;
+            GOOGLE_SEARCH_CX|SLACK_DEFAULT_CHANNEL|JIRA_DEFAULT_PROJECT) echo 1024 ;;
+            *) echo 16384 ;;
+        esac
+    }
+
+    _validate_api_key_value() {
+        local key="$1"
+        local val="$2"
+        local max_value_bytes value_bytes
+        max_value_bytes="$(_api_key_max_value_bytes "$key")"
+        if [[ "$val" == *$'\n'* || "$val" == *$'\r'* ]]; then
+            warn "${key}: değer tek satır olmalıdır; configured sayılmayacak."
+            return 1
+        fi
+        value_bytes="$(LC_ALL=C printf '%s' "$val" | wc -c | tr -d '[:space:]')"
+        if (( value_bytes > max_value_bytes )); then
+            warn "${key}: değer ${value_bytes} bayt (sınır: ${max_value_bytes}) — configured sayılmayacak."
+            return 1
+        fi
+        case "$key" in
+            SLACK_WEBHOOK_URL|TEAMS_WEBHOOK_URL|JIRA_URL)
+                if [[ ! "$val" =~ ^https:// ]]; then
+                    warn "${key}: webhook/URL değeri https:// şemasıyla başlamalı; configured sayılmayacak."
+                    return 1
+                fi
+                ;;
+        esac
+        return 0
+    }
+
+    _api_key_target_display_name() {
+        local target="$1"
+        if [[ "$target" == "$sidar_keys_file" ]]; then
+            printf 'SIDAR_KEYS_FILE (%s)' "$target"
+        else
+            basename "$target"
+        fi
+    }
+
+    _report_imported_api_key_targets() {
+        local source_file="$1"
+        local imported_count="$2"
+        local target target_name total_expected
+
+        total_expected=$((imported_count * ${#api_key_target_env_files[@]}))
+        if (( api_key_write_failure_count > 0 )); then
+            warn "${source_file}: ${api_key_validated_count} doğrulama, ${total_expected} API anahtarı yazma denemesinden ${api_key_write_success_count} başarılı, ${api_key_write_failure_count} başarısız."
+            warn "Başarısız API anahtarı hedefleri: ${api_key_write_failures[*]}"
+            return 1
+        fi
+
+        if ! _materialize_real_keys_to_env_enabled; then
+            ok "${imported_count} API anahtarı SIDAR_KEYS_FILE (${sidar_keys_file}) içinde doğrulandı/güncellendi (${api_key_validated_count} başarılı doğrulama)."
+            return 0
+        fi
+
+        ok "${imported_count} API anahtarı ${source_file} kaynağından alındı; ${api_key_validated_count} doğrulama başarılı; materialization açık."
+        for target in "${api_key_target_env_files[@]}"; do
+            target_name="$(_api_key_target_display_name "$target")"
+            ok "${target_name}: ${imported_count} API anahtarı güncellendi."
         done
     }
 
@@ -251,20 +265,32 @@ collect_api_keys_interactive() {
 
         openai_key=$(read_env_value_from_file "OPENAI_API_KEY" "$env_file" | tr -d '[:space:]')
         anthropic_key=$(read_env_value_from_file "ANTHROPIC_API_KEY" "$env_file" | tr -d '[:space:]')
+        if [[ -z "$openai_key" && -f "$sidar_keys_file" ]]; then
+            openai_key=$(read_env_value_from_file "OPENAI_API_KEY" "$sidar_keys_file" | tr -d '[:space:]')
+        fi
+        if [[ -z "$anthropic_key" && -f "$sidar_keys_file" ]]; then
+            anthropic_key=$(read_env_value_from_file "ANTHROPIC_API_KEY" "$sidar_keys_file" | tr -d '[:space:]')
+        fi
 
         if [[ -z "$openai_key" && -z "$anthropic_key" ]]; then
             warn "[UYARI] Kritik sağlayıcı anahtarı eksik: OPENAI_API_KEY veya ANTHROPIC_API_KEY alanlarından en az biri boş."
-            warn "[UYARI] Kurulum durdurulmadı. Lütfen .env dosyasını sonradan manuel güncelleyin."
+            warn "[UYARI] Kurulum durdurulmadı. Lütfen SIDAR_KEYS_FILE veya .env dosyasını sonradan manuel güncelleyin."
         fi
     }
 
     _sync_existing_api_keys_to_env_targets() {
         local key current_val
+        local synced_count=0
         for key in "${KEY_ORDER[@]}"; do
             current_val=$(read_env_value_from_file "$key" "$env_file" | tr -d '\n')
             [[ -z "${current_val//[[:space:]]/}" ]] && continue
-            _write_key "$key" "$current_val"
+            _write_key "$key" "$current_val" || true
+            ((synced_count += 1))
         done
+
+        if (( synced_count > 0 )); then
+            _report_imported_api_key_targets "$env_file" "$synced_count"
+        fi
     }
 
     if [[ "$NO_INTERACTION" == true ]]; then
@@ -278,6 +304,7 @@ collect_api_keys_interactive() {
     _import_api_keys_from_file() {
         local source_file="$1"
         local imported_count=0
+        local read_count=0
         local key raw_val
 
         [[ -f "$source_file" ]] || return 1
@@ -296,15 +323,30 @@ collect_api_keys_interactive() {
             fi
 
             if [[ -n "$raw_val" ]]; then
-                _write_key "$key" "$raw_val"
-                ((imported_count += 1))
+                ((read_count += 1))
+                if [[ -f "$sidar_keys_file" && "$source_file" -ef "$sidar_keys_file" ]]; then
+                    if _validate_api_key_value "$key" "$raw_val"; then
+                        ((api_key_validated_count += 1))
+                        ((api_key_write_success_count += 1))
+                        ((imported_count += 1))
+                    else
+                        api_key_write_failures+=("SIDAR_KEYS_FILE:${key}")
+                        ((api_key_write_failure_count += 1))
+                        [[ "$NO_INTERACTION" == true ]] && return 1
+                    fi
+                elif _write_key "$key" "$raw_val"; then
+                    ((imported_count += 1))
+                else
+                    [[ "$NO_INTERACTION" == true ]] && return 1
+                fi
             fi
         done
 
         if (( imported_count > 0 )); then
-            ok "${imported_count} API anahtarı ${source_file} üzerinden .env dosyasına aktarıldı."
+            _report_imported_api_key_targets "$source_file" "$imported_count"
         else
-            warn "${source_file} bulundu ancak beklenen API anahtarlarından hiçbiri dolu değil."
+            warn "${source_file} bulundu ancak beklenen API anahtarlarından hiçbiri geçerli/dolu değil (okunan: ${read_count})."
+            (( read_count > 0 && api_key_write_failure_count > 0 )) && return 1
         fi
 
         return 0
@@ -393,7 +435,7 @@ collect_api_keys_interactive() {
 
             IFS='|' read -ra _vals <<< "$zenity_out"
             for i in "${!grp_missing[@]}"; do
-                _write_key "${grp_missing[$i]}" "${_vals[$i]:-}"
+                _write_key "${grp_missing[$i]}" "${_vals[$i]:-}" || true
             done
         done
         ok "API anahtarları kaydedildi, kurulum devam ediyor."
@@ -426,7 +468,7 @@ collect_api_keys_interactive() {
                     --inputbox "${lbl}\n(Boş bırakmak için doğrudan Enter'a basın)" \
                     10 72 "" \
                     3>&1 1>&2 2>&3) || true
-                _write_key "$mk" "$input"
+                _write_key "$mk" "$input" || true
             done
         done
         ok "API anahtar girişi tamamlandı, kurulum devam ediyor."
@@ -456,7 +498,7 @@ collect_api_keys_interactive() {
             clear_stdin_buffer
             IFS= read -rs input || true
             echo ""
-            _write_key "$mk" "$input"
+            _write_key "$mk" "$input" || true
         done
         echo ""
     done
@@ -512,9 +554,18 @@ repair_private_file_permissions() {
 verify_sidar_keys_file_permissions() {
     local sidar_keys_file="${SIDAR_KEYS_FILE:-$HOME/.sidar_keys.env}"
     local sidar_session_file="${SIDAR_SESSION_FILE:-$HOME/.sidar_session.json}"
+    local env_secret_file=""
 
     repair_private_file_permissions "$sidar_keys_file" "SIDAR_KEYS_FILE"
     repair_private_file_permissions "$sidar_session_file" "SIDAR_SESSION_FILE"
+    for env_secret_file in \
+        "$SCRIPT_DIR/.env" \
+        "$SCRIPT_DIR/.env.advanced" \
+        "$SCRIPT_DIR/.env.development" \
+        "$SCRIPT_DIR/.env.test" \
+        "$SCRIPT_DIR/.env.production"; do
+        repair_private_file_permissions "$env_secret_file" "$(basename "$env_secret_file")"
+    done
 }
 
 validate_runtime_env_loading() {
@@ -793,6 +844,20 @@ PY
         fi
     fi
 
+    # ── REDIS_PASSWORD ───────────────────────────────────────────────────────
+    # docker-compose Redis'i --requirepass ile başlatır ve portu yalnızca host
+    # loopback arayüzüne publish eder; bu değer boş/zayıfsa `docker compose up` REDIS_PASSWORD'ün
+    # zorunlu ${VAR:?...} kontrolünde başarısız olur.
+    if _is_missing_or_insecure "REDIS_PASSWORD"; then
+        local _v; _v=$(_gen_urlsafe 24)
+        if [[ -n "$_v" ]]; then
+            _write_secret "REDIS_PASSWORD" "$_v"
+            ok ".env: REDIS_PASSWORD otomatik ve güvenli bir değerle oluşturuldu."
+        else
+            warn "REDIS_PASSWORD otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
+        fi
+    fi
+
     # ── API_KEY ──────────────────────────────────────────────────────────────
     if _is_missing_or_insecure "API_KEY"; then
         local _v; _v=$(_gen_urlsafe 32)
@@ -870,24 +935,79 @@ PY
     fi
 }
 
+sidar_production_secret_rotation_keys() {
+    printf '%s\n' \
+        API_KEY \
+        JWT_SECRET_KEY \
+        MEMORY_ENCRYPTION_KEY \
+        AUTONOMY_WEBHOOK_SECRET \
+        SWARM_FEDERATION_SHARED_SECRET \
+        GITHUB_WEBHOOK_SECRET \
+        GRAFANA_ADMIN_PASSWORD \
+        METRICS_TOKEN
+}
+
+emit_production_secret_rotation_notice() {
+    local src="$1"
+    local -a shared_matches=()
+    mapfile -t shared_matches < <(sidar_shared_production_secret_keys "$src")
+
+    if (( ${#shared_matches[@]} == 0 )); then
+        return 0
+    fi
+
+    warn ".env.production ${#shared_matches[@]} ortak secret değerini local/dev/test zinciriyle paylaşıyor: ${shared_matches[*]}. Gerçek production rollout öncesi bu 8 secret'ı rotate edin; komut: uv run python -m scripts.rotate_production_secrets --env-file .env.production --apply --ack-memory-key-impact; runbook: docs/runbooks/production-secret-rotation.md"
+}
+
+sidar_shared_production_secret_keys() {
+    local src="$1"
+    local production_env="$SCRIPT_DIR/.env.production"
+    local key="" src_val="" prod_val=""
+
+    [[ -f "$src" && -f "$production_env" ]] || return 0
+
+    while IFS= read -r key; do
+        [[ -n "$key" ]] || continue
+        src_val=$(read_env_value_from_file "$key" "$src" | tr -d '\n')
+        prod_val=$(read_env_value_from_file "$key" "$production_env" | tr -d '\n')
+        if [[ -n "${src_val//[[:space:]]/}" && "$src_val" == "$prod_val" ]]; then
+            printf '%s\n' "$key"
+        fi
+    done < <(sidar_production_secret_rotation_keys)
+}
+
+production_secret_rotation_gate_passes() {
+    local src="$1"
+    local production_env="$SCRIPT_DIR/.env.production"
+    local key="" src_val="" prod_val=""
+    local -a unsafe_matches=()
+    while IFS= read -r key; do
+        [[ -n "$key" ]] || continue
+        src_val=$(read_env_value_from_file "$key" "$src" | tr -d '\n')
+        prod_val=$(read_env_value_from_file "$key" "$production_env" | tr -d '\n')
+        if [[ -z "${prod_val//[[:space:]]/}" || ( -n "${src_val//[[:space:]]/}" && "$src_val" == "$prod_val" ) ]]; then
+            unsafe_matches+=("$key")
+        fi
+    done < <(sidar_production_secret_rotation_keys)
+    if (( ${#unsafe_matches[@]} == 0 )); then
+        return 0
+    fi
+    warn "SIDAR_ENV=production kalıcılaştırması engellendi: .env.production içinde eksik veya local/dev/test ile ortak secret bulundu: ${unsafe_matches[*]}. Önce production secret rotasyonunu tamamlayın."
+    return 1
+}
+
 propagate_shared_secrets_to_env_variants() {
     local src="$1"
-    local -a shared_keys=(
-        API_KEY
-        JWT_SECRET_KEY
-        MEMORY_ENCRYPTION_KEY
-        AUTONOMY_WEBHOOK_SECRET
-        SWARM_FEDERATION_SHARED_SECRET
-        GITHUB_WEBHOOK_SECRET
-        GRAFANA_ADMIN_PASSWORD
-        METRICS_TOKEN
-    )
+    local -a shared_keys=()
+    mapfile -t shared_keys < <(sidar_production_secret_rotation_keys)
     local -a variants=(
         ".env.development:.env.development.example"
         ".env.test:.env.test.example"
-        ".env.production:.env.production.example"
         ".env.advanced:.env.advanced.example"  # Sürüm kontrollü şablondan üretilen advanced runtime env.
     )
+
+    # .env.production bilinçli olarak oluşturulmaz veya doldurulmaz. Production
+    # secret'ları yalnız rotasyon aracı/secret manager üzerinden sağlanmalıdır.
 
     [[ -f "$src" ]] || return 0
 
@@ -899,7 +1019,7 @@ propagate_shared_secrets_to_env_variants() {
 
         if [[ ! -f "$target" ]]; then
             if [[ -f "$example" ]]; then
-                cp "$example" "$target"
+                install -m 600 "$example" "$target"
                 ok "${name} dosyası ${pair##*:} üzerinden oluşturuldu."
             else
                 warn "${pair##*:} bulunamadı; ${name} secret senkronizasyonu atlandı."
@@ -932,9 +1052,146 @@ propagate_shared_secrets_to_env_variants() {
         fi
     done
 
+    emit_production_secret_rotation_notice "$src"
+
     # PostgreSQL credentials are intentionally delegated to the idempotent Python
     # helper to avoid per-key/per-file bash rewrites and noisy repeated logs.
     sync_database_env_chain_after_setup
+}
+
+# GPU tespiti bir makine gerçeğidir; .env'e yazılan USE_GPU/REQUIRE_GPU/
+# GPU_MIXED_PRECISION/COMPOSE_PROFILES değerleri .env.development ve
+# .env.advanced şablonlarına da yayılmazsa, runtime dotenv zinciri
+# (config.py) SIDAR_ENV=development için .env.development'ı override=True
+# ile en son yüklediğinden .env'deki GPU ayarı sessizce ezilir.
+# .env.production kasıtlı olarak hariç tutulur: production GPU etkinleştirme
+# production-readiness gate'i geçmeden manuel/açık olmalıdır.
+propagate_gpu_settings_to_env_variants() {
+    local src="$1"
+    [[ -f "$src" ]] || return 0
+
+    local -a gpu_keys=(USE_GPU REQUIRE_GPU GPU_MIXED_PRECISION COMPOSE_PROFILES)
+    local -a variants=(
+        ".env.development:.env.development.example"
+        ".env.advanced:.env.advanced.example"
+    )
+
+    local pair target example name key val cur changed_count
+    for pair in "${variants[@]}"; do
+        target="$SCRIPT_DIR/${pair%%:*}"
+        example="$SCRIPT_DIR/${pair##*:}"
+        name="${pair%%:*}"
+
+        if [[ ! -f "$target" ]]; then
+            if [[ -f "$example" ]]; then
+                install -m 600 "$example" "$target"
+                ok "${name} dosyası ${pair##*:} üzerinden oluşturuldu."
+            else
+                warn "${pair##*:} bulunamadı; ${name} GPU senkronizasyonu atlandı."
+                continue
+            fi
+        fi
+
+        changed_count=0
+        for key in "${gpu_keys[@]}"; do
+            val=$(read_env_value_from_file "$key" "$src" | tr -d '\n')
+            [[ -z "${val//[[:space:]]/}" ]] && continue
+
+            cur=$(read_env_value_from_file "$key" "$target" | tr -d '\n')
+            [[ "$cur" == "$val" ]] && continue
+
+            if grep -q "^${key}=" "$target" 2>/dev/null; then
+                sed_inplace "s|^${key}=.*|${key}=${val}|" "$target"
+            else
+                echo "${key}=${val}" >> "$target"
+            fi
+            changed_count=$((changed_count + 1))
+        done
+        if (( changed_count > 0 )); then
+            ok "${name}: ${changed_count} GPU ayarı .env ile senkronize edildi."
+        fi
+    done
+}
+
+# GPU tespitine göre USE_GPU/REQUIRE_GPU/GPU_MIXED_PRECISION/COMPOSE_PROFILES
+# değerlerini $env_file içinde uyumlu hale getirir ve ardından
+# .env.development/.env.advanced şablonlarına yayar. Hem ilk kurulumda hem
+# de mevcut .env üzerinde yeniden çalıştırmada (idempotent) çağrılmalıdır.
+configure_gpu_env_defaults() {
+    local env_file="$1"
+    command -v sed &>/dev/null || return 0
+
+    if [[ "$GPU_AVAILABLE" == true ]]; then
+        info "DEBUG: GPU branch entered for .env configuration (GPU_AVAILABLE=true)."
+        if grep -q '^USE_GPU=' "$env_file"; then
+            sed_inplace 's/^USE_GPU=.*/USE_GPU=true/' "$env_file"
+        else
+            echo 'USE_GPU=true' >> "$env_file"
+        fi
+        if grep -q '^GPU_MIXED_PRECISION=' "$env_file"; then
+            sed_inplace 's/^GPU_MIXED_PRECISION=.*/GPU_MIXED_PRECISION=true/' "$env_file"
+        else
+            echo 'GPU_MIXED_PRECISION=true' >> "$env_file"
+        fi
+        if grep -q '^REQUIRE_GPU=' "$env_file"; then
+            sed_inplace 's/^REQUIRE_GPU=.*/REQUIRE_GPU=true/' "$env_file"
+        else
+            echo 'REQUIRE_GPU=true' >> "$env_file"
+        fi
+
+        # Docker için GPU modunu ön tanımlı yap
+        if grep -q '^COMPOSE_PROFILES=' "$env_file"; then
+            sed_inplace 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=gpu/' "$env_file"
+        else
+            echo "COMPOSE_PROFILES=gpu" >> "$env_file"
+        fi
+
+        ok "${env_file##*/}: USE_GPU=true, REQUIRE_GPU=true, GPU_MIXED_PRECISION=true (GPU tespit edildi)"
+        ok "${env_file##*/}: COMPOSE_PROFILES=gpu ayarlandı (Docker GPU modu artık varsayılan)."
+    else
+        if grep -q '^USE_GPU=' "$env_file"; then
+            sed_inplace 's/^USE_GPU=.*/USE_GPU=false/' "$env_file"
+        else
+            echo 'USE_GPU=false' >> "$env_file"
+        fi
+        if grep -q '^GPU_MIXED_PRECISION=' "$env_file"; then
+            sed_inplace 's/^GPU_MIXED_PRECISION=.*/GPU_MIXED_PRECISION=false/' "$env_file"
+        else
+            echo 'GPU_MIXED_PRECISION=false' >> "$env_file"
+        fi
+        if grep -q '^REQUIRE_GPU=' "$env_file"; then
+            sed_inplace 's/^REQUIRE_GPU=.*/REQUIRE_GPU=false/' "$env_file"
+        else
+            echo 'REQUIRE_GPU=false' >> "$env_file"
+        fi
+        if grep -q '^COMPOSE_PROFILES=' "$env_file"; then
+            sed_inplace 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=cpu/' "$env_file"
+        else
+            echo "COMPOSE_PROFILES=cpu" >> "$env_file"
+        fi
+        ok "${env_file##*/}: USE_GPU=false, REQUIRE_GPU=false, GPU_MIXED_PRECISION=false, COMPOSE_PROFILES=cpu ayarlandı."
+    fi
+
+    # Docker + GPU tespit edildiyse NVIDIA runtime'ı varsayılan yap
+    if [[ "$GPU_AVAILABLE" == true ]] && command -v docker &>/dev/null; then
+        if grep -q '^DOCKER_RUNTIME=' "$env_file"; then
+            sed_inplace 's/^DOCKER_RUNTIME=.*/DOCKER_RUNTIME=nvidia/' "$env_file"
+        else
+            echo 'DOCKER_RUNTIME=nvidia' >> "$env_file"
+        fi
+
+        if grep -q '^DOCKER_ALLOWED_RUNTIMES=' "$env_file"; then
+            if ! grep -q '^DOCKER_ALLOWED_RUNTIMES=.*nvidia' "$env_file"; then
+                sed_inplace 's/^DOCKER_ALLOWED_RUNTIMES=.*/DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime,nvidia/' "$env_file"
+            fi
+        else
+            echo 'DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime,nvidia' >> "$env_file"
+        fi
+
+        ok "${env_file##*/}: Docker GPU varsayılanları ayarlandı (DOCKER_RUNTIME=nvidia)."
+    fi
+
+    propagate_gpu_settings_to_env_variants "$env_file"
 }
 
 ensure_local_service_host_defaults() {
@@ -993,6 +1250,9 @@ prompt_post_install_sidar_env_mode() {
     if [[ "$AUTO_ENV_TYPE" != "ask" ]]; then
         selected_env="$AUTO_ENV_TYPE"
         info "AUTO_INSTALL: ENV_TYPE=$selected_env olarak uygulandı."
+    elif [[ -n "${SIDAR_SELECTED_ENV_TYPE:-}" ]]; then
+        selected_env="$SIDAR_SELECTED_ENV_TYPE"
+        info "Önceden seçilen SIDAR_ENV=$selected_env tekrar uygulanıyor."
     elif [[ "$NO_INTERACTION" == true ]]; then
         info "--ci/--no-interaction etkin: SIDAR_ENV varsayılanı development bırakıldı."
     else
@@ -1017,6 +1277,32 @@ prompt_post_install_sidar_env_mode() {
         fi
     fi
 
+    SIDAR_SELECTED_ENV_TYPE="$selected_env"
+    export SIDAR_SELECTED_ENV_TYPE
+
+    if [[ "$selected_env" == "production" ]]; then
+        local production_ready=""
+        if declare -F sidar_install_summary_field_or_empty >/dev/null; then
+            production_ready="$(sidar_install_summary_field_or_empty production_ready)"
+        fi
+        if [[ "$production_ready" != "true" ]]; then
+            info "Production seçimi kaydedildi; production-readiness gate geçmeden SIDAR_ENV=production kalıcılaştırılmayacak."
+            return 0
+        fi
+
+        if ! production_secret_rotation_gate_passes "$env_file"; then
+            info "Production seçimi kaydedildi; secret rotasyon kapısı geçmeden SIDAR_ENV=production kalıcılaştırılmayacak."
+            return 0
+        fi
+
+        if is_alembic_at_head; then
+            info "Production seçimi için Alembic current=head doğrulandı."
+        else
+            info "Production seçimi için Alembic current/head uyuşmuyor; veritabanı migrasyonu doğrulanıyor..."
+            run_migrations
+        fi
+    fi
+
     if grep -qE '^SIDAR_ENV=' "$env_file"; then
         sed_inplace "s/^SIDAR_ENV=.*/SIDAR_ENV=$selected_env/" "$env_file"
     else
@@ -1024,7 +1310,7 @@ prompt_post_install_sidar_env_mode() {
     fi
 
     if [[ "$selected_env" == "production" ]]; then
-        ok "🚀 Ortam değişkenleri 'Production' (Canlı Kullanım) olarak güncellendi."
+        ok "🚀 Ortam değişkenleri 'Production' (Canlı Kullanım) olarak güncellendi; production-readiness, secret rotasyon ve migration doğrulamaları tamamlandı."
     else
         ok "🛠️ Ortam değişkenleri 'Development' (Geliştirme) olarak güncellendi."
         if is_alembic_at_head; then
@@ -1136,13 +1422,14 @@ is_env_example_secret_value() {
 
 validate_required_security_profile() {
     local env_file="$1"
-    local api_key memory_key access_level db_password database_url pg_password grafana_password
+    local api_key memory_key access_level db_password database_url pg_password grafana_password redis_password
     api_key="$(get_env_value "$env_file" API_KEY)"
     memory_key="$(get_env_value "$env_file" MEMORY_ENCRYPTION_KEY)"
     access_level="$(get_env_value "$env_file" ACCESS_LEVEL)"
     database_url="$(get_env_value "$env_file" DATABASE_URL)"
     pg_password="$(get_env_value "$env_file" POSTGRES_PASSWORD)"
     grafana_password="$(get_env_value "$env_file" GRAFANA_ADMIN_PASSWORD)"
+    redis_password="$(get_env_value "$env_file" REDIS_PASSWORD)"
 
     if is_weak_secret_value "$api_key"; then
         fail ".env güvenlik doğrulaması başarısız: API_KEY boş veya zayıf. Güçlü bir token tanımlayın."
@@ -1181,9 +1468,16 @@ PYDB
     if is_weak_secret_value "$grafana_password"; then
         fail ".env güvenlik doğrulaması başarısız: GRAFANA_ADMIN_PASSWORD boş veya zayıf."
     fi
+    if is_weak_secret_value "$redis_password"; then
+        fail ".env güvenlik doğrulaması başarısız: REDIS_PASSWORD boş veya zayıf."
+    fi
 }
 
 sync_database_env_chain_after_setup() {
+    # Eski installer turlarından kalmış açık URL'leri uv/Python helper'ına
+    # bağımlı olmadan tüm mevcut runtime dotenv varyantlarında da onar.
+    ensure_database_url_defaults_for_variants
+
     if ! command -v uv &>/dev/null; then
         warn "uv bulunamadı; PostgreSQL dotenv zinciri Python senkronizasyonu atlandı."
         return 0
@@ -1221,7 +1515,7 @@ setup_env_file() {
     # ensure_auto_secrets sonrasında propagate_shared_secrets_to_env_variants
     # ile .env dosyasından senkronize edilir.
     if [[ ! -f "$PRODUCTION_ENV_FILE" && -f "$PRODUCTION_EXAMPLE_FILE" ]]; then
-        cp "$PRODUCTION_EXAMPLE_FILE" "$PRODUCTION_ENV_FILE"
+        install -m 600 "$PRODUCTION_EXAMPLE_FILE" "$PRODUCTION_ENV_FILE"
         ok ".env.production dosyası .env.production.example'dan oluşturuldu."
     fi
 
@@ -1243,6 +1537,7 @@ setup_env_file() {
         ensure_auto_secrets "$ENV_FILE"
         propagate_shared_secrets_to_env_variants "$ENV_FILE"
         validate_required_security_profile "$ENV_FILE"
+        configure_gpu_env_defaults "$ENV_FILE"
         collect_api_keys_interactive "$ENV_FILE"
         report_env_api_key_status "$ENV_FILE"
         sync_database_env_chain_after_setup
@@ -1270,78 +1565,9 @@ setup_env_file() {
     propagate_shared_secrets_to_env_variants "$ENV_FILE"
     validate_required_security_profile "$ENV_FILE"
 
-    # GPU tespitine göre USE_GPU/REQUIRE_GPU/GPU_MIXED_PRECISION değerlerini uyumlu hale getir
-    if command -v sed &>/dev/null; then
-        if [[ "$GPU_AVAILABLE" == true ]]; then
-            info "DEBUG: GPU branch entered for .env configuration (GPU_AVAILABLE=true)."
-            if grep -q '^USE_GPU=' "$ENV_FILE"; then
-                sed_inplace 's/^USE_GPU=.*/USE_GPU=true/' "$ENV_FILE"
-            else
-                echo 'USE_GPU=true' >> "$ENV_FILE"
-            fi
-            if grep -q '^GPU_MIXED_PRECISION=' "$ENV_FILE"; then
-                sed_inplace 's/^GPU_MIXED_PRECISION=.*/GPU_MIXED_PRECISION=true/' "$ENV_FILE"
-            else
-                echo 'GPU_MIXED_PRECISION=true' >> "$ENV_FILE"
-            fi
-            if grep -q '^REQUIRE_GPU=' "$ENV_FILE"; then
-                sed_inplace 's/^REQUIRE_GPU=.*/REQUIRE_GPU=true/' "$ENV_FILE"
-            else
-                echo 'REQUIRE_GPU=true' >> "$ENV_FILE"
-            fi
-
-            # Docker için GPU modunu ön tanımlı yap
-            if grep -q '^COMPOSE_PROFILES=' "$ENV_FILE"; then
-                sed_inplace 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=gpu/' "$ENV_FILE"
-            else
-                echo "COMPOSE_PROFILES=gpu" >> "$ENV_FILE"
-            fi
-
-            ok ".env: USE_GPU=true, REQUIRE_GPU=true, GPU_MIXED_PRECISION=true (GPU tespit edildi)"
-            ok ".env: COMPOSE_PROFILES=gpu ayarlandı (Docker GPU modu artık varsayılan)."
-        else
-            if grep -q '^USE_GPU=' "$ENV_FILE"; then
-                sed_inplace 's/^USE_GPU=.*/USE_GPU=false/' "$ENV_FILE"
-            else
-                echo 'USE_GPU=false' >> "$ENV_FILE"
-            fi
-            if grep -q '^GPU_MIXED_PRECISION=' "$ENV_FILE"; then
-                sed_inplace 's/^GPU_MIXED_PRECISION=.*/GPU_MIXED_PRECISION=false/' "$ENV_FILE"
-            else
-                echo 'GPU_MIXED_PRECISION=false' >> "$ENV_FILE"
-            fi
-            if grep -q '^REQUIRE_GPU=' "$ENV_FILE"; then
-                sed_inplace 's/^REQUIRE_GPU=.*/REQUIRE_GPU=false/' "$ENV_FILE"
-            else
-                echo 'REQUIRE_GPU=false' >> "$ENV_FILE"
-            fi
-            if grep -q '^COMPOSE_PROFILES=' "$ENV_FILE"; then
-                sed_inplace 's/^COMPOSE_PROFILES=.*/COMPOSE_PROFILES=cpu/' "$ENV_FILE"
-            else
-                echo "COMPOSE_PROFILES=cpu" >> "$ENV_FILE"
-            fi
-            ok ".env: USE_GPU=false, REQUIRE_GPU=false, GPU_MIXED_PRECISION=false, COMPOSE_PROFILES=cpu ayarlandı."
-        fi
-    fi
-
-    # Docker + GPU tespit edildiyse NVIDIA runtime'ı varsayılan yap
-    if [[ "$GPU_AVAILABLE" == true ]] && command -v docker &>/dev/null && command -v sed &>/dev/null; then
-        if grep -q '^DOCKER_RUNTIME=' "$ENV_FILE"; then
-            sed_inplace 's/^DOCKER_RUNTIME=.*/DOCKER_RUNTIME=nvidia/' "$ENV_FILE"
-        else
-            echo 'DOCKER_RUNTIME=nvidia' >> "$ENV_FILE"
-        fi
-
-        if grep -q '^DOCKER_ALLOWED_RUNTIMES=' "$ENV_FILE"; then
-            if ! grep -q '^DOCKER_ALLOWED_RUNTIMES=.*nvidia' "$ENV_FILE"; then
-                sed_inplace 's/^DOCKER_ALLOWED_RUNTIMES=.*/DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime,nvidia/' "$ENV_FILE"
-            fi
-        else
-            echo 'DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime,nvidia' >> "$ENV_FILE"
-        fi
-
-        ok ".env: Docker GPU varsayılanları ayarlandı (DOCKER_RUNTIME=nvidia)."
-    fi
+    # GPU tespitine göre USE_GPU/REQUIRE_GPU/GPU_MIXED_PRECISION/COMPOSE_PROFILES
+    # değerlerini .env içinde uyumlu hale getir ve .env.development/.env.advanced'e yay.
+    configure_gpu_env_defaults "$ENV_FILE"
 
     collect_api_keys_interactive "$ENV_FILE"
     report_env_api_key_status "$ENV_FILE"

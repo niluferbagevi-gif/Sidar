@@ -39,7 +39,8 @@ async def record_audit_log(
         async with db._pg_pool.acquire() as conn:
             await conn.execute(
                 """
-                INSERT INTO audit_logs (user_id, tenant_id, action, resource, ip_address, allowed, timestamp)
+                INSERT INTO audit_logs (user_id, tenant_id, action, resource, ip_address, allowed,
+                timestamp)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
                 """,
                 user,
@@ -58,7 +59,8 @@ async def record_audit_log(
         assert db._sqlite_conn is not None
         db._sqlite_conn.execute(
             """
-            INSERT INTO audit_logs (user_id, tenant_id, action, resource, ip_address, allowed, timestamp)
+            INSERT INTO audit_logs (user_id, tenant_id, action, resource, ip_address, allowed,
+            timestamp)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (user, tenant, act, res, ip, int(bool(allowed)), event_time),

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 
 sidar_ensure_autonomy_scripts_executable() {
     local loop_script="${SCRIPT_DIR}/autonomous_loop.sh"
@@ -148,7 +149,29 @@ print_install_summary_extended_test_statuses() {
     fi
 }
 
+print_install_raw_fallback_telemetry() {
+    local downloaded_count="${SIDAR_INSTALL_MODULES_DOWNLOADED_COUNT:-0}"
+    local cache_hits="${SIDAR_INSTALL_MODULE_CACHE_HITS:-0}"
+    local attempts="${SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS:-0}"
+    local http_429_retries="${SIDAR_INSTALL_MODULE_HTTP_429_RETRIES:-0}"
+    local module_base="${SIDAR_INSTALL_MODULE_BASE_URL:-}"
+
+    if [[ "$downloaded_count" == "0" && "$cache_hits" == "0" && "$attempts" == "0" ]]; then
+        echo "  Raw fallback modül indirme: kullanılmadı (yerel/clone modül ağacı yeterli)."
+        return
+    fi
+
+    echo "  Raw fallback modül indirme: ${downloaded_count} modül indirildi, cache hit ${cache_hits}, deneme ${attempts}, HTTP 429 retry ${http_429_retries}."
+    if [[ -n "$module_base" ]]; then
+        echo "  Raw fallback kaynak tabanı: ${module_base}"
+    fi
+}
+
 print_react_frontend_qa_status_block() {
+    if declare -F sync_frontend_quality_status_from_test_summary >/dev/null 2>&1; then
+        sync_frontend_quality_status_from_test_summary || true
+    fi
+
     local frontend_status="${FRONTEND_QUALITY_STATUS:-atlandi_bayrak}"
     local frontend_quality_command="cd web_ui_react && npm run lint && npm run typecheck && npm run test:coverage && npm run test:e2e:smoke"
 
@@ -172,9 +195,85 @@ print_react_frontend_qa_status_block() {
     echo ""
 }
 
+print_release_readiness_next_action() {
+    local ci_status="${CI_FULL_VALIDATION_STATUS:-atlandi_bayrak}"
+    local production_ready=""
+    production_ready="$(sidar_install_summary_field_or_empty production_ready)"
+
+    echo -e "  ${BOLD}🚦 Release / merge readiness:${NC}"
+    if [[ "$production_ready" == "true" ]]; then
+        echo -e "       ${GREEN}✅ Yerel/base production-readiness kapısı geçti.${NC}"
+        echo -e "       ${YELLOW}⚠️  Bu sonuç self-hosted GPU TTFT/latency kanıtını içermez.${NC}"
+        echo "       Release/merge için CI GPU Inference Required Evidence Gate ve aggregate sonucu zorunludur."
+        return
+    fi
+
+    if [[ "$ci_status" == "tamamlandi" ]]; then
+        echo -e "       ${GREEN}✅ Development validation geçti.${NC}"
+        echo -e "       ${YELLOW}${BOLD}⚠️  Bu sonuç yalnız yerel geliştirme ortamının sağlıklı olduğunu gösterir.${NC}"
+        echo -e "       ${YELLOW}Profil farkı:${NC}"
+        echo -e "       ${YELLOW}• dev-light: hızlı lokal geliştirme; voice/browser/GPU gibi sistem-header bağımlılıklarını kapsamaz.${NC}"
+        echo -e "       ${YELLOW}• dev-full / uv sync --frozen --all-extras: tam geliştirici/CI paritesi ve tüm extras yüzeyi.${NC}"
+        echo -e "       ${YELLOW}• production-readiness: release/merge kapısı; sistem bağımlılıkları + Playwright browser + benchmark baseline gerektirebilir.${NC}"
+    elif [[ "$ci_status" == "hata" ]]; then
+        echo -e "       ${RED}❌ Development validation hata verdi; önce run_tests.sh çıktısını düzeltin.${NC}"
+    else
+        echo -e "       ${YELLOW}⏭️  Development validation çalıştırılmadı (${ci_status}).${NC}"
+    fi
+
+    echo -e "       ${YELLOW}${BOLD}⏭️  Production readiness: ÇALIŞTIRILMADI.${NC}"
+    echo -e "       ${YELLOW}   ℹ️  Bu yalnızca BU YEREL kurulum çalıştırmasını yansıtır — GitHub Actions CI${NC}"
+    echo -e "       ${YELLOW}   bu gate'i (production-readiness job) her push/PR'da otomatik çalıştırır${NC}"
+    echo -e "       ${YELLOW}   (bkz. .github/workflows/ci.yml). Aşağıdaki komut yereldeki eşdeğer çalıştırmadır.${NC}"
+    echo -e "       ${YELLOW}Development validation ≠ release/merge onayı.${NC}"
+    echo -e "       ${BOLD}Yerel ön doğrulama (merge kararı değildir):${NC}"
+    echo "       make production-readiness"
+    echo "       # Eşdeğer: TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
+    echo -e "       ${BOLD}Asıl release/merge kararı:${NC} PR'ı açın ve required GitHub Actions"
+    echo "       'Production readiness aggregate' check'inin geçmesini bekleyin."
+}
+
+
+sidar_summary_materialize_real_keys_to_env_enabled() {
+    local raw="${SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV:-0}"
+    raw="${raw,,}"
+    raw="${raw//[[:space:]]/}"
+    case "$raw" in
+        1|true|yes|y|evet|e) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+sidar_summary_external_api_key_count() {
+    local sidar_keys_file="${SIDAR_KEYS_FILE:-${HOME}/.sidar_keys.env}"
+    local count=0
+    local key_name=""
+
+    [[ -f "$sidar_keys_file" ]] || { printf '0'; return 0; }
+    declare -F sidar_user_api_key_names >/dev/null 2>&1 || { printf '0'; return 0; }
+    declare -F read_env_value_from_file >/dev/null 2>&1 || { printf '0'; return 0; }
+    while IFS= read -r key_name; do
+        [[ -n "$key_name" ]] || continue
+        if [[ -n "$(read_env_value_from_file "$key_name" "$sidar_keys_file" | tr -d '[:space:]')" ]]; then
+            ((count+=1))
+        fi
+    done < <(sidar_user_api_key_names)
+    printf '%s' "$count"
+}
+
+print_optional_rag_next_step() {
+    echo -e "  7️⃣  RAG/GraphRAG hazır oluşunu doğrula:"
+    echo "       Geliştirici kurulumunda metadata seed varsayılan olarak migrasyondan sonra uygulanır."
+    echo "       Tam vektör seed veya yeniden oluşturma: uv run python -m scripts.seed_rag"
+    echo "       Sonucu doğrula: uv run python -m core.doctor artifacts/install/doctor.json"
+    echo "       Onboarding ve pgvector fallback teşhisi: docs/RAG_ONBOARDING.md"
+}
+
 # ── 15. Özet ─────────────────────────────────────────────────────────────────
 print_summary() {
     local summary_banner=""
+    local sidar_keys_file="${SIDAR_KEYS_FILE:-${HOME}/.sidar_keys.env}"
+    local external_api_keys_filled=0
     summary_banner="$(_center_visible "Sidar AI Kurulumu Tamamlandı!" 60)"
     echo ""
     echo -e "${BOLD}${GREEN}"
@@ -191,6 +290,12 @@ print_summary() {
     echo -e "${BOLD}.env API anahtar durumu:${NC}"
     if [[ "$ENV_API_KEYS_TOTAL" -gt 0 && "$ENV_API_KEYS_FILLED" -eq "$ENV_API_KEYS_TOTAL" ]]; then
         echo -e "  ${GREEN}✅ .env dosyası API anahtarları açısından eksiksiz görünüyor (${ENV_API_KEYS_FILLED}/${ENV_API_KEYS_TOTAL}).${NC}"
+    elif ! sidar_summary_materialize_real_keys_to_env_enabled; then
+        external_api_keys_filled="$(sidar_summary_external_api_key_count)"
+        echo -e "  ${BLUE}ℹ️  .env dosyasında ${ENV_API_KEYS_FILLED}/${ENV_API_KEYS_TOTAL} API anahtarı dolu; bu beklenen güvenli kurulum davranışıdır.${NC}"
+        echo "  Secret overlay durumu: ${external_api_keys_filled}/${ENV_API_KEYS_TOTAL} dolu servis anahtarı (${sidar_keys_file})."
+        echo "  Gerçek servis anahtarları SIDAR_KEYS_FILE kaynağında tutulur; aşağıdaki 'Kritik key kaynak özeti' tablosuna bakın."
+        echo "  .env içinde boş görünen servis anahtarları, SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV=1 verilmedikçe uyarı değildir."
     else
         echo -e "  ${YELLOW}⚠️  Dolu anahtar: ${ENV_API_KEYS_FILLED}/${ENV_API_KEYS_TOTAL}${NC}"
         if [[ "${#ENV_API_KEYS_MISSING[@]}" -gt 0 ]]; then
@@ -252,6 +357,10 @@ print_summary() {
     echo "       ./run_tests.sh"
     echo "       Test rehberi: docs/TESTING.md (PR/merge öncesi ana doğrulama yolu)"
     echo ""
+    print_optional_rag_next_step
+    echo ""
+    print_release_readiness_next_action
+    echo ""
     print_install_validation_coverage
 
     if [[ "$GPU_AVAILABLE" == true ]]; then
@@ -278,9 +387,14 @@ print_summary() {
     fi
 
     echo -e "${BOLD}Faydalı Komutlar:${NC}"
-    echo "  Test rehberi: docs/TESTING.md — smoke ile yetinmeyin; PR/merge öncesi run_tests.sh kullanın."
-    echo "  Tam doğrulama için (backend + frontend + benchmark + BATS + security):"
-    echo "    bash run_tests.sh --stage all"
+    echo "  Terminoloji: smoke = hızlı sağlık kontrolü; dev-full = local tam doğrulama; production-readiness = merge/release kapısı."
+    echo "  Test rehberi: docs/TESTING.md — smoke ile yetinmeyin; PR/merge öncesi production-readiness çalıştırın."
+    echo "  dev-full (local tam doğrulama; backend + frontend + benchmark + BATS + security):"
+    echo "    make dev-full"
+    echo "    # Eşdeğer: bash run_tests.sh --stage all"
+    echo "  production-readiness (yerel ön doğrulama; tek başına merge/release onayı değildir):"
+    echo "    make production-readiness"
+    echo "  merge/release kararı: PR üzerindeki required GitHub Actions 'Production readiness aggregate' check'i."
     echo "  Backend entegrasyon ana yolu:"
     echo "    bash run_tests.sh --stage integration   # tests/integration/{api,cli,db,managers,web,workflow}"
     echo "  E2E odaklı doğrulama için:"
@@ -295,15 +409,16 @@ print_summary() {
     fi
     if [[ "$SMOKE_TEST_STATUS" == "tamamlandi" ]]; then
         echo "  Smoke testler: başarılı (tests/smoke)."
-        echo "  Not: Smoke testler yalnızca hızlı kurulum doğrulamasıdır; tam QA/coverage için ./run_tests.sh çalıştırın."
+        echo "  Not: smoke = hızlı sağlık kontrolü; dev-full/local tam doğrulama veya production-readiness/merge-release kapısı değildir."
     elif [[ "$SMOKE_TEST_STATUS" == "hata" ]]; then
         echo "  Smoke testler: hata var. Tekrar için: uv run pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
-        echo "  Tam kalite kapısı ve coverage doğrulaması için: ./run_tests.sh"
+        echo "  dev-full/local tam doğrulama için: make dev-full"
     else
         echo "  Smoke testler: atlandı (${SMOKE_TEST_STATUS}). Çalıştırmak için: uv run pytest tests/smoke --rootdir=\"$SCRIPT_DIR\" -v --no-cov"
-        echo "  Kurulum sonrası tam QA/coverage için: ./run_tests.sh"
+        echo "  Kurulum sonrası dev-full/local tam doğrulama için: make dev-full"
     fi
     print_install_summary_extended_test_statuses
+    print_install_raw_fallback_telemetry
     if [[ "$AUDIT_STATUS" == "tamamlandi" ]]; then
         echo "  Test artifact audit: başarılı (scripts/check_empty_test_artifacts.sh)."
     elif [[ "$RUN_AUDIT" == true ]]; then
@@ -341,11 +456,14 @@ print_summary() {
 sidar_phase_finish() {
     sidar_ensure_autonomy_scripts_executable
     sidar_configure_autonomous_cron
+    prompt_post_install_sidar_env_mode
     run_install_ci_full_validation
+    if [[ "${SIDAR_SELECTED_ENV_TYPE:-}" == "production" ]]; then
+        prompt_post_install_sidar_env_mode
+    fi
     print_summary
     relocate_log_file_if_needed
     cleanup_bootstrap_script_copy
-    prompt_post_install_sidar_env_mode
     # En son adım: IDE başlatma onayı
     launch_ide
 }

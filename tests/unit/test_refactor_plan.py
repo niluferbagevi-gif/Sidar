@@ -10,6 +10,9 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
 
     for target in (
         "web_server.py",
+        "run_tests.sh",
+        "install_sidar.sh",
+        "config.py",
         "core/db.py",
         "core/rag/__init__.py",
         "managers/code_manager.py",
@@ -28,13 +31,30 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
         "web/routes/ws_chat.py",
         "web/routes/webhooks.py",
         "web/app_factory.py",
+        "web/plugins/sandbox.py",
+        "scripts/test_gates/benchmark.sh",
+        "scripts/test_gates/summary.py",
+        "scripts/install_modules/validation.sh",
+        "scripts/install_modules/install_cli.sh",
+        "scripts/install_modules/install_dispatcher.sh",
+        "scripts/install_modules/utils/ux.sh",
         "web/bootstrap.py",
         "web/middleware/cors.py",
+        "web/middleware/access_policy.py",
+        "core/config_runtime_paths.py",
+        "core/config_secret_hardening.py",
         "core/db/auth.py",
         "core/db/audit.py",
         "core/rag/embeddings.py",
+        "core/rag/entity_extraction.py",
+        "core/rag/entity_graph_store.py",
         "managers/code/patcher.py",
+        "managers/code/runner.py",
+        "managers/code/docker_lifecycle.py",
+        "managers/code/shell_sandbox.py",
         "agent/self_heal/executor.py",
+        "agent/autonomy/service.py",
+        "agent/federation/service.py",
         "agent/roles/coverage/analyzer.py",
         "core/llm/providers/ollama.py",
         "core/llm/openai.py",
@@ -42,9 +62,16 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
         "core/llm/gemini.py",
         "core/llm/ollama.py",
         "core/llm/litellm.py",
+        "core/llm/router.py",
+        "core/llm/streaming.py",
+        "core/llm/cache.py",
+        "core/llm/facade.py",
         "core/doctor/checks/gpu.py",
+        "core/doctor/models.py",
+        "core/doctor/reporting.py",
+        "core/doctor/launcher_preflight.py",
         "agent/roles/reviewer/judge.py",
-        "core/ci_remediation/validation.py",
+        "core/ci_remediation/command_safety.py",
         "managers/browser/visual_drift.py",
         "agent/swarm/handoff.py",
     ):
@@ -57,9 +84,79 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
     assert "GitHub webhook router çıkarımı yapıldı" in plan
     assert "`/ws/chat` router factory" in plan
     assert "WebSocket token parser (`web/security.py`) çıkarımı yapıldı" in plan
+    assert "AST-validated `exec()`" in plan
+    assert "plugin AST/policy helperları `web/plugins/sandbox.py`" in plan
+    assert (
+        "process-içi plugin exec artık yalnız varsayılan olarak değil koşulsuz fail-closed" in plan
+    )
+    assert "`SIDAR_ENABLE_IN_PROCESS_PLUGINS=1` bu sınırı aşamaz" in plan
+    assert "Docker sandbox sözleşmesiyle uyumlu" in plan
     assert "frontend static mount ve SPA fallback bootstrap boundary'si `web/bootstrap.py`" in plan
     assert "middleware/frontend fallback bootstrap boundary" in plan
     assert "loopback CORS middleware bootstrap'ı `web/middleware/cors.py`" in plan
+    assert "access policy middleware orchestration'ı `web/middleware/access_policy.py`" in plan
+    assert "Güncel bakım hotspot snapshot" in plan
+    assert "Quality gate orchestration büyüdü" in plan
+    assert "ana script bootstrap facade" in plan
+    assert "Launcher Doctor preflight" in plan
+    assert "core/doctor/launcher_preflight.py" in plan
+    assert "config_rag_defaults.py" in plan
+    assert "docs/development/frontend-typescript-migration.md" in plan
+    assert "hedef tamamlanma **2027-03-31**" in plan
+    assert "hâlâ ham `os.getenv(...)` inline çözümlenen ~35 alan" in plan
+    assert "marketing/social entegrasyonları önce, en izole grup" in plan
+    assert "en düşük riskli silinecek ikili" in plan
+    assert "`main.py:874-903`'te de aynı desen" in plan
+    assert (
+        "test_sqlite_bootstrap_schema_matches_alembic_head_schema" in plan
+        and "önerilen (b) seçeneği" in plan
+    )
+    assert "core/doctor/__init__.py` (eski `core/doctor.py`; repo'nun en büyük dosyası" in plan
+    assert "yalnızca `redis.py::check_redis` gerçekten kendi kendine yeten" in plan
+    assert "core/ci_remediation/command_safety.py" in plan
+    assert "otonom self-heal döngüsünün hangi shell komutlarını" in plan
+    assert "scripts/install_modules/utils/remote_module_fetch.sh" in plan
+    assert "trust-root chicken-and-egg sorunu" in plan
+
+
+def test_install_sidar_cli_and_dispatch_boundaries_are_sourced() -> None:
+    installer = Path("install_sidar.sh").read_text(encoding="utf-8")
+    cli = Path("scripts/install_modules/install_cli.sh").read_text(encoding="utf-8")
+    dispatcher = Path("scripts/install_modules/install_dispatcher.sh").read_text(encoding="utf-8")
+
+    assert 'source "${INSTALL_MODULE_DIR}/install_cli.sh"' in installer
+    assert 'sidar_parse_install_cli "$@"' in installer
+    assert 'source "${INSTALL_MODULE_DIR}/install_dispatcher.sh"' in installer
+    assert 'sidar_dispatch_install_phases "$@"' in installer
+    assert "sidar_parse_install_cli()" in cli
+    assert 'for arg in "$@"' in cli
+    assert "sidar_dispatch_install_phases()" in dispatcher
+    assert 'sidar_run_install_phase "01_context"' in dispatcher
+    assert 'sidar_run_install_phase "07_finish"' in dispatcher
+    assert 'for arg in "$@"' not in installer
+
+
+def test_refactor_plan_tracks_only_meaningful_todo_debt() -> None:
+    plan = Path("docs/REFACTOR_PLAN.md").read_text(encoding="utf-8")
+
+    assert "Gerçek TODO envanteri" in plan
+    assert "`core/rag/graph.py` içindeki `LLM_ENTITY_EXTRACTION_TODO`" in plan
+    assert "2026-Q3 başlangıcında kapatıldı" in plan
+    assert "ENABLE_RAG_LLM_ENTITY_EXTRACTION" in plan
+    assert "`core/rag/llm_entity_extraction.py` içindeki prompt/coercion/schema validator" in plan
+    assert "todo_manager.py" in plan
+    assert "açık ürün borcu değil" in plan
+
+
+def test_claude_zero_debt_scope_distinguishes_audit_findings_from_refactor_debt() -> None:
+    claude = Path("docs/CLAUDE.md").read_text(encoding="utf-8")
+    plan = Path("docs/REFACTOR_PLAN.md").read_text(encoding="utf-8")
+
+    assert "Açık kritik / yüksek / orta / düşük audit bulgusu yok" in claude
+    assert "Zero-Debt kapsamı" in claude
+    assert "otomatik audit/quality-gate taramalarında açık bulgu olmamasını" in claude
+    assert "plugin sandbox gibi bilinçli mimari refactor/güvenlik borçları" in claude
+    assert "plugin sandbox policy üretimde fail-closed" in plan
 
 
 def test_phase_one_refactor_boundaries_are_importable() -> None:
@@ -68,6 +165,7 @@ def test_phase_one_refactor_boundaries_are_importable() -> None:
     # ``core.db`` to be the real package, not a plain ModuleType stub.
     sys.modules.pop("core.db", None)
 
+    import agent.autonomy.service as autonomy_service
     import agent.self_heal.executor as self_heal_executor
     import core.db.auth as db_auth
     import core.db.coverage as db_coverage
@@ -75,6 +173,10 @@ def test_phase_one_refactor_boundaries_are_importable() -> None:
     import core.db.models as db_models
     import core.db.session as db_session
     import core.rag.facade as rag_facade
+    import managers.code.runner as code_runner
+    import scripts.test_gates.summary as test_gate_summary
+    import web.middleware.access_policy as access_policy_middleware
+    import web.plugins.sandbox as plugin_sandbox
 
     assert db_auth.UserRecord is db_models.UserRecord
     assert db_session.SessionRecord is db_models.SessionRecord
@@ -82,6 +184,11 @@ def test_phase_one_refactor_boundaries_are_importable() -> None:
     assert db_coverage.CoverageTaskRecord is db_models.CoverageTaskRecord
     assert callable(rag_facade.build_embedding_function)
     assert callable(self_heal_executor.execute_self_heal_plan)
+    assert callable(autonomy_service.append_autonomy_history)
+    assert callable(code_runner.run_shell_command)
+    assert callable(test_gate_summary.build_summary)
+    assert callable(access_policy_middleware.access_policy_middleware_impl)
+    assert callable(plugin_sandbox.validate_plugin_source)
 
 
 def test_p2_refactor_plan_tracks_llm_and_browser_adapter_boundaries() -> None:
@@ -108,5 +215,9 @@ def test_p2_llm_provider_boundaries_are_importable() -> None:
         "core.llm.gemini",
         "core.llm.ollama",
         "core.llm.litellm",
+        "core.llm.router",
+        "core.llm.streaming",
+        "core.llm.cache",
+        "core.llm.facade",
     ):
         assert importlib.import_module(module_name) is not None

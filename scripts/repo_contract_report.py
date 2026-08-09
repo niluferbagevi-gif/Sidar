@@ -119,6 +119,11 @@ def build_role_contract_report() -> dict[str, Any]:
     roles: list[RoleContractStatus] = []
     for contract in BUILTIN_ROLE_CONTRACTS:
         role_file = REPO_ROOT / (contract.module_name.replace(".", "/") + ".py")
+        role_test_paths = (
+            REPO_ROOT / f"tests/unit/agent/test_{contract.role_name}_agent.py",
+            REPO_ROOT / f"tests/unit/agent/roles/test_{contract.role_name}_agent.py",
+            REPO_ROOT / "tests/unit/agent/test_builtin_role_contracts.py",
+        )
         checklist = {
             "role_file": role_file.exists(),
             "roles_init_export": contract.class_name in role_exports,
@@ -127,6 +132,7 @@ def build_role_contract_report() -> dict[str, Any]:
             "supervisor_intent": bool(contract.supervisor_intents),
             "swarm_intent": bool(contract.swarm_intents),
             "agents_docs": contract.class_name in agents_text,
+            "tests": any(path.exists() for path in role_test_paths),
         }
         roles.append(
             RoleContractStatus(
@@ -188,7 +194,10 @@ def scan_repo_standards(
                             path=_repo_relative(file_path),
                             line=line_no,
                             text=line.strip(),
-                            message="Use `uv pip install` in Sidar docs/scripts instead of direct pip install.",
+                            message=(
+                                "Use `uv pip install` in Sidar docs/scripts instead of direct "
+                                "pip install."
+                            ),
                         )
                     )
                 if LOW_HARDWARE_MODEL_PATTERN.search(line) and DEFAULT_WORD_PATTERN.search(line):
@@ -198,7 +207,10 @@ def scan_repo_standards(
                             path=_repo_relative(file_path),
                             line=line_no,
                             text=line.strip(),
-                            message="Do not document low-hardware qwen2.5-coder fallbacks as Sidar defaults.",
+                            message=(
+                                "Do not document low-hardware qwen2.5-coder fallbacks as Sidar "
+                                "defaults."
+                            ),
                         )
                     )
                 for legacy_name in legacy_names:
@@ -209,7 +221,10 @@ def scan_repo_standards(
                                 path=_repo_relative(file_path),
                                 line=line_no,
                                 text=line.strip(),
-                                message=f"Legacy product name `{legacy_name}` appears in a scanned file.",
+                                message=(
+                                    f"Legacy product name `{legacy_name}` appears in a "
+                                    "scanned file."
+                                ),
                             )
                         )
     return violations
@@ -220,15 +235,13 @@ def check_dependency_profile_plan_sync(
     plan_path: Path = REPO_ROOT / "docs/DEPENDENCY_PROFILE_PLAN.md",
 ) -> DependencyProfilePlanStatus:
     """Verify dependency profile plan docs stay synchronized with pyproject metadata."""
-
     pyproject_text = _read_text(pyproject_path)
     plan_text = _read_text(plan_path)
     pyproject_data = tomllib.loads(pyproject_text)
     plan_table = pyproject_data.get("tool", {}).get("sidar", {}).get("dependency_profile_plan", {})
-    profiles = {
-        str(item.get("name") or "").strip()
-        for item in list(plan_table.get("profiles") or [])
-        if isinstance(item, dict)
+    optional_dependencies = pyproject_data.get("project", {}).get("optional-dependencies", {})
+    optional_profile_names = {
+        str(name).strip() for name in optional_dependencies if str(name).strip()
     }
     planned_profile_groups = {
         str(item).strip()
@@ -237,7 +250,11 @@ def check_dependency_profile_plan_sync(
     }
     required_profile_groups = {"base", "web", "rag", "multimodal", "dev", "test", "gpu"}
     owner_doc = str(plan_table.get("owner_doc") or "").strip()
-    current_install_standard = str(plan_table.get("current_install_standard") or "").strip()
+    installer_default_profile = str(plan_table.get("installer_default_profile") or "").strip()
+    developer_full_sync = str(plan_table.get("developer_full_sync") or "").strip()
+    ci_full_sync = str(plan_table.get("ci_full_sync") or "").strip()
+    production_profile = str(plan_table.get("production_profile") or "").strip()
+    production_minimal_profile = str(plan_table.get("production_minimal_profile") or "").strip()
     normalized_plan_path = _repo_relative(plan_path)
     pyproject_lower = pyproject_text.lower()
     plan_lower = plan_text.lower()
@@ -245,8 +262,13 @@ def check_dependency_profile_plan_sync(
     pyproject_markers = {
         "phase1_runtime_dependency_note": "faz 1 runtime yüzeyi" in pyproject_lower,
         "owner_doc_points_to_plan": owner_doc == normalized_plan_path,
-        "uv_all_extras_standard": current_install_standard == "uv sync --all-extras",
-        "production_profile_declared": "production" in profiles,
+        "installer_default_profile_declared": installer_default_profile == "dev-full",
+        "developer_full_sync_declared": developer_full_sync == "uv sync --all-extras",
+        "ci_full_sync_declared": ci_full_sync == "uv sync --all-extras",
+        "production_profile_declared": production_profile == "production"
+        and production_profile in optional_profile_names,
+        "production_minimal_profile_declared": production_minimal_profile == "production-minimal"
+        and production_minimal_profile in optional_profile_names,
         "preserves_all_extras_standard": bool(plan_table.get("preserve_all_extras_standard")),
         "planned_profile_groups_declared": required_profile_groups.issubset(planned_profile_groups),
     }

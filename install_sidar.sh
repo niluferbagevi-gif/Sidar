@@ -33,8 +33,10 @@ on_install_error() {
         exit "$exit_code"
     fi
 
+    local remediation_reason="${SIDAR_LAST_FAIL_MESSAGE:-ERR trap}"
+
     if declare -F sidar_handle_install_failure >/dev/null 2>&1; then
-        sidar_handle_install_failure "$exit_code" "$failed_line" "$failed_cmd" "ERR trap" || true
+        sidar_handle_install_failure "$exit_code" "$failed_line" "$failed_cmd" "$remediation_reason" || true
     fi
     echo "❌ $(sidar_t install_failed "$failed_line" "$exit_code")" >&2
     sidar_t failed_command "$failed_cmd" >&2
@@ -115,17 +117,53 @@ if [[ -z "${UV_LINK_MODE:-}" && ( "${CODESPACES:-}" == "true" || "${GITHUB_CODES
     export UV_LINK_MODE=copy
 fi
 
+# Sidar'ın kendi ürettiği/yönettiği dahili secret'lar (kullanıcının interaktif
+# API key toplama akışının parçası değildir, bu yüzden aşağıdaki kullanıcı
+# secret listesinden ayrı tutulur).
+SIDAR_INTERNAL_SECRET_ENV_KEYS=(
+    DATABASE_URL SIDAR_CONTAINER_DATABASE_URL SELF_HEAL_DATABASE_URL
+    TEST_DATABASE_URL LOCAL_DEV_FALLBACK_DATABASE_URL POSTGRES_PASSWORD
+    REDIS_PASSWORD
+    API_KEY JWT_SECRET_KEY MEMORY_ENCRYPTION_KEY AUTONOMY_WEBHOOK_SECRET
+    SIDAR_AUTONOMY_WEBHOOK_SECRET
+    SWARM_FEDERATION_SHARED_SECRET GITHUB_WEBHOOK_SECRET GRAFANA_ADMIN_PASSWORD
+    METRICS_TOKEN SIDAR_REDIS_URL REDIS_URL RABBITMQ_URL SIDAR_RABBITMQ_URL
+)
+
+# Kullanıcının interaktif olarak sağladığı API key/secret adlarının TEK
+# doğruluk kaynağı. scripts/install_modules/phases/08_env.sh içindeki
+# sidar_user_api_key_names() bu diziyi olduğu gibi döndürür; aşağıdaki log
+# maskeleme deseni de aynı diziyi kullanır. Yeni bir kullanıcı API
+# key'i/secret'ı eklerken SADECE bu diziyi güncelleyin — iki ayrı allowlist'i
+# elle senkron tutmaya çalışmayın (bu, önceden GITHUB_TOKEN, SLACK_TOKEN,
+# TAVILY_API_KEY, HF_TOKEN, JIRA_TOKEN gibi değerlerin log maskelemesinden
+# sessizce dışarıda kalmasına yol açan tam da bu sınıf bir bug'dı).
+SIDAR_USER_SECRET_ENV_KEYS=(
+    OPENAI_API_KEY GEMINI_API_KEY GOOGLE_API_KEY ANTHROPIC_API_KEY LITELLM_API_KEY HF_TOKEN
+    GITHUB_TOKEN
+    TAVILY_API_KEY GOOGLE_SEARCH_API_KEY GOOGLE_SEARCH_CX
+    SLACK_TOKEN SLACK_APP_LEVEL_TOKEN SLACK_WEBHOOK_URL SLACK_DEFAULT_CHANNEL
+    JIRA_URL JIRA_EMAIL JIRA_TOKEN JIRA_API_TOKEN JIRA_DEFAULT_PROJECT
+    TEAMS_WEBHOOK_URL
+    META_GRAPH_API_TOKEN
+)
+
 # Kurulum loglarını eşzamanlı olarak terminale ve dosyaya yaz.
 # Filtre önce terminal/log fan-out'una girer; böylece set -x, sed hata çıktısı
 # veya beklenmeyen tool çıktıları DATABASE_URL/parola/token değerlerini hem
 # terminalden hem de kalıcı log dosyasından maskeler.
 mask_install_log_stream() {
+    local masked_keys_pattern
+    masked_keys_pattern="$(
+        IFS='|'
+        printf '%s' "${SIDAR_INTERNAL_SECRET_ENV_KEYS[*]}|${SIDAR_USER_SECRET_ENV_KEYS[*]}"
+    )"
     sed -u -E \
         -e 's#((postgresql|postgres|mysql|mariadb)(\+[^:/@[:space:]]+)?://[^:/@[:space:]]+:)[^@[:space:]]+@#\1****@#g' \
         -e 's#((redis|rediss|amqp|amqps|mongodb|mongodb\+srv)://[^:/@[:space:]]+:)[^@[:space:]]+@#\1****@#g' \
-        -e 's#((DATABASE_URL|SIDAR_CONTAINER_DATABASE_URL|SELF_HEAL_DATABASE_URL|TEST_DATABASE_URL|LOCAL_DEV_FALLBACK_DATABASE_URL|POSTGRES_PASSWORD|API_KEY|JWT_SECRET_KEY|MEMORY_ENCRYPTION_KEY|AUTONOMY_WEBHOOK_SECRET|SWARM_FEDERATION_SHARED_SECRET|GITHUB_WEBHOOK_SECRET|GRAFANA_ADMIN_PASSWORD|METRICS_TOKEN|OPENAI_API_KEY|GEMINI_API_KEY|ANTHROPIC_API_KEY|LITELLM_API_KEY|SIDAR_REDIS_URL|REDIS_URL|RABBITMQ_URL|SIDAR_RABBITMQ_URL)=)[^[:space:]";]+#\1****#g' \
+        -e "s#((${masked_keys_pattern})=)[^[:space:]\";]+#\1****#g" \
         -e 's#((generated_password|safe_db_url|container_db_url|db_password|db_url|api_key|memory_key|grafana_password|pg_password)=)[^[:space:]";]+#\1****#gi' \
-        -e 's#("(DATABASE_URL|SIDAR_CONTAINER_DATABASE_URL|SELF_HEAL_DATABASE_URL|TEST_DATABASE_URL|LOCAL_DEV_FALLBACK_DATABASE_URL|POSTGRES_PASSWORD|API_KEY|JWT_SECRET_KEY|MEMORY_ENCRYPTION_KEY|AUTONOMY_WEBHOOK_SECRET|SWARM_FEDERATION_SHARED_SECRET|GITHUB_WEBHOOK_SECRET|GRAFANA_ADMIN_PASSWORD|METRICS_TOKEN|OPENAI_API_KEY|GEMINI_API_KEY|ANTHROPIC_API_KEY|LITELLM_API_KEY|SIDAR_REDIS_URL|REDIS_URL|RABBITMQ_URL|SIDAR_RABBITMQ_URL)"[[:space:]]*:[[:space:]]*")[^"]*"#\1****"#g' \
+        -e "s#(\"(${masked_keys_pattern})\"[[:space:]]*:[[:space:]]*\")[^\"]*\"#\1****\"#g" \
         -e 's#((Authorization|X-API-Key|X-Auth-Token):[[:space:]]*)(Bearer[[:space:]]+)?[^[:space:]]+#\1\3****#gi'
 }
 
@@ -144,7 +182,42 @@ load_remote_script_checksums() {
 load_remote_script_checksums
 
 SIDAR_INSTALLER_EMBEDDED_SOURCE_REF="main"
-SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="unknown"
+SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="4a4def8d0b4c410bcb86be17a6e3cbb659ae0a20"
+
+sidar_truthy_early_bool() {
+    local raw="${1:-}"
+    raw="${raw,,}"
+    raw="${raw//[[:space:]]/}"
+    case "$raw" in
+        1|true|yes|y|evet|e) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+sidar_detect_early_offline_mode() {
+    local early_arg=""
+    for early_arg in "$@"; do
+        case "$early_arg" in
+            --offline|--air-gapped)
+                OFFLINE_MODE=true
+                export OFFLINE_MODE
+                return 0
+                ;;
+        esac
+    done
+
+    if sidar_truthy_early_bool "${OFFLINE_INSTALL:-}" || sidar_truthy_early_bool "${AIR_GAPPED_INSTALL:-}"; then
+        OFFLINE_MODE=true
+        export OFFLINE_MODE
+        return 0
+    fi
+
+    OFFLINE_MODE="${OFFLINE_MODE:-false}"
+    export OFFLINE_MODE
+    return 1
+}
+
+sidar_detect_early_offline_mode "$@" || true
 
 if ! declare -F compute_sha256 >/dev/null 2>&1; then
     compute_sha256() {
@@ -177,8 +250,8 @@ verify_core_install_manifest() {
     done
 
     cat <<'SIDAR_INSTALL_MANIFEST_EOF' > "$manifest_path"
-656bc57f6b036d10d7d436af6819725a1ba2a2913367184a4517e309c3eec6f5  core/memory.py
-1fb2f74bbca1546c225f6c7c6831b66f131806c668575acb4c852c03b32fccd2  core/multimodal.py
+32bb465e8344f235b5d50b76498466415dda43b03d7e40fa7014aa3d38847e63  core/memory.py
+8da261301210fbeba7d5d55cff37200342d1661cf6aaa52b43c79295ce56ee46  core/multimodal.py
 SIDAR_INSTALL_MANIFEST_EOF
 
     if (cd "$SCRIPT_DIR" && sha256sum -c "$manifest_path" --status); then
@@ -422,6 +495,8 @@ debug() {
 warn() { printf '%s\n' "${YELLOW}⚠️   $*${NC}" >&2; }
 fail() {
     local fail_reason="$*"
+    SIDAR_LAST_FAIL_MESSAGE="$fail_reason"
+    export SIDAR_LAST_FAIL_MESSAGE
     printf '%s\n' "${RED}❌  ${fail_reason}${NC}" >&2
     if declare -F sidar_handle_install_failure >/dev/null 2>&1; then
         sidar_handle_install_failure 1 "${BASH_LINENO[0]:-unknown}" "fail" "$fail_reason" || true
@@ -443,6 +518,8 @@ sed_inplace() {
 
 # BEGIN_BUNDLE_MODULES
 INSTALL_MODULE_DIR="${SCRIPT_DIR}/scripts/install_modules"
+# shellcheck disable=SC2034  # External probes/operators may read the plural alias after sourcing the installer.
+INSTALL_MODULES_DIR="$INSTALL_MODULE_DIR"
 INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
 INSTALL_HELPERS_TEMP_DIR=""
 INSTALL_MODULES_DOWNLOADED=0
@@ -450,24 +527,40 @@ SIDAR_INSTALL_MODULE_DOWNLOAD_RETRIES="${SIDAR_INSTALL_MODULE_DOWNLOAD_RETRIES:-
 SIDAR_INSTALL_MODULE_RETRY_DELAY="${SIDAR_INSTALL_MODULE_RETRY_DELAY:-2}"
 SIDAR_INSTALL_MODULE_CONNECT_TIMEOUT="${SIDAR_INSTALL_MODULE_CONNECT_TIMEOUT:-15}"
 SIDAR_INSTALL_MODULE_MAX_TIME="${SIDAR_INSTALL_MODULE_MAX_TIME:-120}"
-SIDAR_INSTALL_MODULE_CACHE_ROOT="${SIDAR_INSTALL_MODULE_CACHE_ROOT:-${TMPDIR:-/tmp}/sidar_install_modules_cache}"
+SIDAR_INSTALL_MODULE_CACHE_ROOT="${SIDAR_INSTALL_MODULE_CACHE_ROOT:-}"
+SIDAR_INSTALL_MODULE_CACHE_ROOT_AUTO=0
+SIDAR_INSTALL_MODULE_CACHE_CLEANUP_DAYS="${SIDAR_INSTALL_MODULE_CACHE_CLEANUP_DAYS:-7}"
 export SIDAR_INSTALLER_BOOTSTRAP_MODE="${SIDAR_INSTALLER_BOOTSTRAP_MODE:-unknown}"
 export SIDAR_INSTALL_MODULES_DOWNLOADED_COUNT="${SIDAR_INSTALL_MODULES_DOWNLOADED_COUNT:-0}"
 export SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS="${SIDAR_INSTALL_MODULE_DOWNLOAD_ATTEMPTS:-0}"
 export SIDAR_INSTALL_MODULE_HTTP_429_RETRIES="${SIDAR_INSTALL_MODULE_HTTP_429_RETRIES:-0}"
 export SIDAR_INSTALL_MODULE_CACHE_HITS="${SIDAR_INSTALL_MODULE_CACHE_HITS:-0}"
 
+sidar_set_install_module_dir() {
+    INSTALL_MODULE_DIR="$1"
+    # INSTALL_MODULE_DIR is the historical internal variable. Keep the plural
+    # alias in sync because operator notes and external probes often refer to
+    # the tree as INSTALL_MODULES_DIR.
+    # shellcheck disable=SC2034  # External probes/operators may read the plural alias after sourcing the installer.
+    INSTALL_MODULES_DIR="$INSTALL_MODULE_DIR"
+    INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
+}
+
 INSTALL_UTILITY_MODULES=(
     "utils/install_remediation.sh"
+    "utils/ux.sh"
     "utils/wsl_integration_autofix.sh"
     "utils/wsl_gpu_preflight.sh"
+    "utils/wsl_host.sh"
     "utils/gpu_utils.sh"
     "utils/installer_hash_guard.sh"
     "utils/remote_script.sh"
     "utils/python_env.sh"
     "utils/database_url.sh"
+    "utils/env_secrets.sh"
     "utils/db_credentials.sh"
     "utils/env_utils.sh"
+    "utils/services_docker.sh"
     "utils/ollama_models.sh"
     "utils/playwright_ubuntu_override.sh"
 )
@@ -493,6 +586,9 @@ INSTALL_PHASE_MODULES=(
 
 INSTALL_REMOTE_MODULES=(
     "install_helpers.sh"
+    "install_runtime.sh"
+    "install_cli.sh"
+    "install_dispatcher.sh"
     "${INSTALL_UTILITY_MODULES[@]}"
     "utils/wsl_integration_autofix.ps1"
     "${INSTALL_PHASE_MODULES[@]}"
@@ -501,36 +597,43 @@ INSTALL_REMOTE_MODULES=(
 # Bundle üretiminde scripts/tools/bundle_install_sidar.sh bu bloğu doldurur.
 # Repo çalışma ağacında varsayılan olarak boş bırakılır.
 read -r -d '' EMBEDDED_MODULE_HASHES_MANIFEST <<'SIDAR_MODULE_HASHES_EOF' || true
-f7ccb1908ae18ba9edffa4a46fde24ba564ae28a28f63a28a200703d1349aa6a  scripts/install_modules/install_helpers.sh
-7e4ecc4d6bfa1ec5ac772d598df7b21cc047a4a9b24de13a336ceff0eca8138f  scripts/install_modules/phases/01_context.sh
-57e71d61437133d573eec64c81749610f5d5ce60017f9e49aa3a17c671159019  scripts/install_modules/phases/02_repo.sh
-f1a116aefb1ca56c4777fb47829461a2252872ddca51e1404cac134134116c8f  scripts/install_modules/phases/03_runtime.sh
-987208d953324b5186a4f56f5411f81855036b95039837592f50b6a0895a49d0  scripts/install_modules/phases/03_runtime_ollama.sh
-b2a79704bc05ded9fb283cc5eaafb75b5b21b9f63e0b387c417f337d60bd8aa9  scripts/install_modules/phases/03_system.sh
-74239b350bd85a7982be8516555c76c31f59bcd09492ed6c38b2f8fdcea9a99c  scripts/install_modules/phases/04_workspace.sh
-76041c983eefaf3d97b2af8cec7744edc0eaeb0f95a1f3fa3e6bc70123d3e75d  scripts/install_modules/phases/05_frontend.sh
-871f0d6503c7f4b82786e02152a40596fa84d93f2f004d1e1154f7a662d5e605  scripts/install_modules/phases/06_services.sh
-d6055b5c2cd33c66e625cd34051a5cf8f1b7695ac63021777868ea2e812487ff  scripts/install_modules/phases/07_finish.sh
-f39f8d51e9011da0f6d19b29ab7b8c86e8a3738cdec768b20391edd8e1868f7d  scripts/install_modules/phases/08_env.sh
-960491458ffa7b9b21a7e9420e3d6681270b97ee75cbb3fe869f78e759c32610  scripts/install_modules/phases/09_ollama_models.sh
-c5e80895b552a1d8b641beb72c7b8abc131a5fa265a33e5b18532b20b8f0d582  scripts/install_modules/phases/10_validation.sh
-36202d5144780b33345d1554e658af65f99b7f961b6a05eef0a4eeb1efe4f8e1  scripts/install_modules/phases/11_post_install.sh
-339cd801d29f2e929f66d2d76d5cceb5a4d5c858197c44bb20205980f671c4c2  scripts/install_modules/phases/12_alembic.sh
-41e49d3eabf9058bfb4064c0f466ce609578d720f2ac37151dfde5eb1cc3ecc1  scripts/install_modules/phases/13_playwright.sh
-3091e280753087ef2a8e495eaed6330699dfa8cee1975346147bfc2f5da4c826  scripts/install_modules/phases/14_react.sh
-0607926653d6e9be9957c662f48dc8db686fa51ad54ee84503ff0237c3c1290b  scripts/install_modules/utils/database_url.sh
-6c455996534b5b3930bb8ff79e7f3c2b78fd7634b8f55d38ae91facaf6e57630  scripts/install_modules/utils/db_credentials.sh
-61e383f4162e8f8b35a3f90f8a9ec99909940c61e296b96c866673f94b8421f4  scripts/install_modules/utils/env_utils.sh
-9ee4ccc2cc93f3ce212fb4e9521e1aa0f8811a9ba2c00f0fb8da874676cb3c34  scripts/install_modules/utils/gpu_utils.sh
-30010afd406be1f30a74d3dc5fd9b4ea617adade767146396cec33fe13bf9679  scripts/install_modules/utils/install_remediation.sh
-e20d7478bcb80da2d87d2644c70a5b97a3fabbc9f98cadc28f04210ebb85ab00  scripts/install_modules/utils/installer_hash_guard.sh
-eebe784b4f22fc4d19a97c60971aaf65aa0bb6b2228acad38e59ef8f55f9415a  scripts/install_modules/utils/ollama_models.sh
-878b1d80b44b2db29835f4b0ae2ced866fd774b21b931a005e4390c8ec4cff3e  scripts/install_modules/utils/playwright_ubuntu_override.sh
-b265ddcc242226fe9af5eb88b2b0c12f057703017487e387c33cdc15cc8cfa91  scripts/install_modules/utils/python_env.sh
-9823612f2782fad09a2001f040a5777190b0a57a13f9e35e127ac2955618761e  scripts/install_modules/utils/remote_script.sh
-0d2b334ad2668d1d011e7f5573841be00f46fa175711dacf739c6d87d7afc2be  scripts/install_modules/utils/wsl_gpu_preflight.sh
+434bc6ea5f92c4a3b37df4df1b7b22036ee477e5f47d88dc2e5001f46e17a416  scripts/install_modules/install_cli.sh
+4a668ed1f4e9563352bf2f3bf5a58a5c88d27423cacf07c578e578dfe8a9d2ba  scripts/install_modules/install_dispatcher.sh
+a25095932f256989c1a517bd157c808a548d15cc08a96b56e0a7a312d5aac4e2  scripts/install_modules/install_helpers.sh
+054b069b8b5656b60204a40d72f30f6bdcb81cbb94473ed1cc407369814d34c1  scripts/install_modules/install_runtime.sh
+2e70edd087a296d4175c429cc12f1d961e4fece46c6c83bcc80a94e4e6db359b  scripts/install_modules/phases/01_context.sh
+d5fc907be5f085db23189cc349c01072f34d36fd6313db6ca745edea3e10071b  scripts/install_modules/phases/02_repo.sh
+41d198205629671a12d3d9de44e3ca0a597447c00eb2b93feab40c7a0add98df  scripts/install_modules/phases/03_runtime.sh
+36d89771aece3334013906d55be48ee2d7a357490688e4562fd76684a7523702  scripts/install_modules/phases/03_runtime_ollama.sh
+3a1b4ac1325e35dac6f5017e40ff1cf5eae783fe2155f8c8c88f75a9274c8be1  scripts/install_modules/phases/03_system.sh
+4ef61725d2c0cf92088b4002e03f36e15354477a37c88fac5f8771a79a5f3e97  scripts/install_modules/phases/04_workspace.sh
+6beadb2761652016b9d7c4de0d35b53b11837ceb16164c9b31ecd84e5f67f816  scripts/install_modules/phases/05_frontend.sh
+ff40d0e69bd2aff31b92e0c07ce2638a239f08d506914170e66727139a38d66b  scripts/install_modules/phases/06_services.sh
+62f1b5a589a9e8e800d6b9e984b25ea9db4efd1de91bc7cd80115755af632c55  scripts/install_modules/phases/07_finish.sh
+ae7549a7b5d2114741c6d89580096bef32c2b8c1591a448cb74096ee7e0ec80a  scripts/install_modules/phases/08_env.sh
+3c5dbf7687703bcef6e0af4a2acd172b0634fe1ae68718e8894bc9781fd23672  scripts/install_modules/phases/09_ollama_models.sh
+2dab17af61cdbe98b09a42a1fc7d48a69905b3886e4a1be281de022cbf8e2bb8  scripts/install_modules/phases/10_validation.sh
+276ee64ef086bda1a1441db9fcc1c5bcb5c9a7ea7467527ff171522809cf0e14  scripts/install_modules/phases/11_post_install.sh
+a243dbc96b31e697451b507014d234127eb3fcc2ffe183aa9164027a343aee58  scripts/install_modules/phases/12_alembic.sh
+9d612775f0ae694f228a075fd73d0ae547cc619f280ff5d2760ac69aebadb82a  scripts/install_modules/phases/13_playwright.sh
+ee0bf7637e8b5d303ccfe9c58d50e7e059bcdfcf255946c1cf7e984b5a3340ec  scripts/install_modules/phases/14_react.sh
+8c142eb04f13e86e67a5cc673af9fc79ef8be2f61dd35c3451edc4ddc407fcbb  scripts/install_modules/utils/database_url.sh
+642067cac2e051e2e2abcebee3968bb702569d2de4f3261dcc4f62f07227f5c6  scripts/install_modules/utils/db_credentials.sh
+785acd2ba53b282b0232bcc721d793f04bc894035a8c7142c13a276301bc5e52  scripts/install_modules/utils/env_secrets.sh
+2455508c980e8a0a6311fe6e016524aa280d54f1bbe3f06535dde92844467ff5  scripts/install_modules/utils/env_utils.sh
+f0ad30e94055baffa17b519ea30c2ad0c1eba355a6ef03a72f3cd1fd8373cebe  scripts/install_modules/utils/gpu_utils.sh
+9e1534740edec9c8abfca8bff06ca0e7d48ec6cfa16ba4ac2165f8d12ba72872  scripts/install_modules/utils/install_remediation.sh
+95d2664491bc38ff01d7f3951cde14832dc542965aea5e0cdeffef01f0d31b2a  scripts/install_modules/utils/installer_hash_guard.sh
+2b4934ce22b5814a6bfc800e149392def0ebbf7b12a951fcfc443a0431aba585  scripts/install_modules/utils/ollama_models.sh
+04d67e8a412448bb38bd94ab525f8d5d95856d20fa7bb10a098ad3e893676ea2  scripts/install_modules/utils/playwright_ubuntu_override.sh
+a8997d9ab218f5879e140fbfa784754898a353c2c9b77dc3801093f1960d8bc7  scripts/install_modules/utils/python_env.sh
+8e006705540afec95fdf002ad5ab253b1be67c54b582229fb4a667813ec57a9e  scripts/install_modules/utils/remote_script.sh
+efec83c69fa618e4274f4936bb1156128f3dc6e9f605270ebfe3b8fc58afde77  scripts/install_modules/utils/services_docker.sh
+dfaeaa3d8a14c56d3b6cea8142cea0859252efa6321ce962dec9035440c5b868  scripts/install_modules/utils/ux.sh
+7340b3b24a8d0d563f0054a6b507c8dbd262d047dfb82aa7e76f7c020524eb83  scripts/install_modules/utils/wsl_gpu_preflight.sh
+22898858fffb46b0bf522f91ddd9bde6e78ed70c06245f8cb966de2918446e48  scripts/install_modules/utils/wsl_host.sh
 1e6cb5e5c4d571987986b100694c50e5f043bbe1741bb9f824cbe5807d710c09  scripts/install_modules/utils/wsl_integration_autofix.ps1
-59a71da6b15017249756e9acdc3a1fe6d807c529a7ced398923bb0f81e672674  scripts/install_modules/utils/wsl_integration_autofix.sh
+53ebf2c5d772a2cdbe27dbef5286dfcbdb76dea5c7c67b1584589ec9c47c7d7d  scripts/install_modules/utils/wsl_integration_autofix.sh
 SIDAR_MODULE_HASHES_EOF
 
 declare -A INSTALL_REMOTE_MODULE_HASHES=()
@@ -587,6 +690,120 @@ verify_remote_install_module_hash() {
     fail "Fallback modül hash doğrulaması başarısız: ${module_rel} (beklenen=${expected_hash}, mevcut=${actual_hash})."
 }
 
+sidar_ref_is_commit_sha() {
+    local ref="${1:-}"
+    [[ "$ref" =~ ^[0-9a-fA-F]{40}$ ]]
+}
+
+sidar_raw_github_module_ref() {
+    local remote_module_base="${1:-}"
+    printf '%s' "$remote_module_base" | sed -nE 's#^https://raw\.githubusercontent\.com/[^/]+/[^/]+/([^/]+)/scripts/install_modules/?$#\1#p'
+}
+
+sidar_github_repo_slug_from_url() {
+    local repo_url="${1:-}"
+    local owner_repo=""
+
+    repo_url="${repo_url%.git}"
+    owner_repo="$(printf '%s' "$repo_url" | sed -nE 's#^https?://github\.com/([^/]+/[^/]+)$#\1#p')"
+    if [[ -z "$owner_repo" ]]; then
+        owner_repo="$(printf '%s' "$repo_url" | sed -nE 's#^git@github\.com:([^/]+/[^/]+)$#\1#p')"
+    fi
+    printf '%s' "$owner_repo"
+}
+
+resolve_github_ref_commit_sha() {
+    local repo_url="${1:-}"
+    local ref="${2:-main}"
+    local owner_repo=""
+    local api_url=""
+    local github_token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+    local response=""
+    local resolved_sha=""
+
+    sidar_ref_is_commit_sha "$ref" && { printf '%s' "$ref"; return 0; }
+    owner_repo="$(sidar_github_repo_slug_from_url "$repo_url")"
+    [[ -n "$owner_repo" ]] || return 1
+
+    # Public Git transport does not consume the low, shared unauthenticated GitHub
+    # REST API quota used by NAT/hosted CI runners. Prefer it whenever git exists.
+    if command -v git >/dev/null 2>&1; then
+        response="$(
+            GIT_TERMINAL_PROMPT=0 git \
+                -c http.lowSpeedLimit=1 -c http.lowSpeedTime=20 \
+                ls-remote "$repo_url" \
+                "refs/heads/${ref}" "refs/tags/${ref}^{}" "refs/tags/${ref}" \
+                2>/dev/null || true
+        )"
+        resolved_sha="$(
+            printf '%s\n' "$response" \
+                | sed -nE 's/^([0-9a-fA-F]{40})[[:space:]]+refs\/tags\/.*\^\{\}$/\1/p' \
+                | head -n 1
+        )"
+        if ! sidar_ref_is_commit_sha "$resolved_sha"; then
+            resolved_sha="$(printf '%s\n' "$response" | sed -nE 's/^([0-9a-fA-F]{40})[[:space:]]+.*/\1/p' | head -n 1)"
+        fi
+        if sidar_ref_is_commit_sha "$resolved_sha"; then
+            printf '%s' "$resolved_sha"
+            return 0
+        fi
+    fi
+
+    # Never spend the anonymous REST quota as a fallback. An authenticated API
+    # lookup remains useful during minimal bootstrap environments without git.
+    [[ "$github_token" =~ ^[A-Za-z0-9_]+$ ]] || return 1
+    command -v curl >/dev/null 2>&1 || return 1
+    api_url="https://api.github.com/repos/${owner_repo}/commits/${ref}"
+    response="$(
+        printf 'header = "Authorization: Bearer %s"\n' "$github_token" \
+            | curl -fsSL --connect-timeout 10 --max-time 20 --config - "$api_url" 2>/dev/null \
+            || true
+    )"
+    resolved_sha="$(printf '%s\n' "$response" | sed -nE 's/.*"sha"[[:space:]]*:[[:space:]]*"([0-9a-fA-F]{40})".*/\1/p' | head -n 1)"
+    if sidar_ref_is_commit_sha "$resolved_sha"; then
+        printf '%s' "$resolved_sha"
+        return 0
+    fi
+    return 1
+}
+
+resolve_remote_module_ref() {
+    local resolved_ref=""
+    local mutable_ref="${SIDAR_INSTALLER_EMBEDDED_SOURCE_REF:-${SIDAR_REPO_BRANCH:-main}}"
+
+    if [[ -n "${SIDAR_BOOTSTRAP_PINNED_REF:-}" ]]; then
+        printf '%s' "$SIDAR_BOOTSTRAP_PINNED_REF"
+        return 0
+    fi
+    if sidar_ref_is_commit_sha "${SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT:-}"; then
+        printf '%s' "$SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT"
+        return 0
+    fi
+    if resolved_ref="$(resolve_github_ref_commit_sha "${SIDAR_REPO_URL:-https://github.com/niluferbagevi-gif/Sidar.git}" "$mutable_ref")"; then
+        warn "Embedded installer commit pin bulunamadı; ${mutable_ref} GitHub üzerinden ${resolved_ref} commit SHA'sına çözüldü. Kalıcı çözüm için SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT damgalanmalı."
+        printf '%s' "$resolved_ref"
+        return 0
+    fi
+    printf '%s' "${SIDAR_REPO_BRANCH:-main}"
+}
+
+validate_remote_module_trust_root() {
+    local remote_module_base="${1:-}"
+    local raw_ref=""
+
+    raw_ref="$(sidar_raw_github_module_ref "$remote_module_base")"
+    [[ -n "$raw_ref" ]] || return 0
+    if sidar_ref_is_commit_sha "$raw_ref"; then
+        return 0
+    fi
+    if [[ "${SIDAR_INSTALL_ALLOW_MUTABLE_MODULE_REF:-0}" == "1" ]]; then
+        warn "Fallback modül kaynağı mutable GitHub ref kullanıyor (${raw_ref}); SIDAR_INSTALL_ALLOW_MUTABLE_MODULE_REF=1 ile TOFU riski operatör tarafından kabul edildi."
+        return 0
+    fi
+
+    fail "Fallback modül güven kökü zayıf: ${remote_module_base} mutable GitHub ref (${raw_ref}) kullanıyor. SIDAR_BOOTSTRAP_PINNED_REF=<40 karakter commit SHA> veya SIDAR_INSTALL_MODULE_BASE_URL=https://raw.githubusercontent.com/<owner>/<repo>/<commit-sha>/scripts/install_modules ile commit'e pinleyin. Bilinçli geçici bypass için SIDAR_INSTALL_ALLOW_MUTABLE_MODULE_REF=1 ayarlanabilir."
+}
+
 derive_remote_module_base_from_repo() {
     local repo_url="${1:-}"
     local repo_branch="${2:-main}"
@@ -614,6 +831,75 @@ remote_install_module_cache_key() {
     printf '%s' "$remote_module_base" | sed -E 's#[^A-Za-z0-9._-]+#_#g'
 }
 
+default_install_module_cache_root() {
+    local uid_suffix=""
+    local cache_home=""
+
+    uid_suffix="$(id -u 2>/dev/null || printf unknown)"
+    if [[ -n "${HOME:-}" && -d "${HOME:-}" ]]; then
+        cache_home="${XDG_CACHE_HOME:-${HOME}/.cache}"
+        printf '%s/sidar/install_modules' "$cache_home"
+        return 0
+    fi
+
+    printf '%s/sidar_install_modules_cache_%s' "${TMPDIR:-/tmp}" "$uid_suffix"
+}
+
+cleanup_legacy_auto_install_module_caches() {
+    local cleanup_days="${SIDAR_INSTALL_MODULE_CACHE_CLEANUP_DAYS:-7}"
+    local tmp_root="${TMPDIR:-/tmp}"
+    local uid_suffix=""
+    local cache_dir=""
+    local owner_uid=""
+    local current_uid=""
+
+    [[ "$cleanup_days" =~ ^[0-9]+$ ]] || return 0
+    uid_suffix="$(id -u 2>/dev/null || printf unknown)"
+    current_uid="$(id -u 2>/dev/null || true)"
+    for cache_dir in "$tmp_root"/sidar_install_modules_cache_${uid_suffix}.*; do
+        [[ -d "$cache_dir" && ! -L "$cache_dir" ]] || continue
+        if [[ -n "$current_uid" ]]; then
+            owner_uid="$(stat -c '%u' "$cache_dir" 2>/dev/null || stat -f '%u' "$cache_dir" 2>/dev/null || true)"
+            [[ "$owner_uid" == "$current_uid" ]] || continue
+        fi
+        if find "$cache_dir" -maxdepth 0 -mtime +"$cleanup_days" -print -quit 2>/dev/null | read -r _; then
+            rm -rf -- "$cache_dir" || true
+        fi
+    done
+}
+
+prepare_install_module_cache_root() {
+    local cache_root="${SIDAR_INSTALL_MODULE_CACHE_ROOT:-}"
+    local owner_uid=""
+    local current_uid=""
+
+    if [[ -z "${cache_root:-}" ]]; then
+        cache_root="$(default_install_module_cache_root)"
+        SIDAR_INSTALL_MODULE_CACHE_ROOT="$cache_root"
+        # shellcheck disable=SC2034  # Exposed for installer probes/tests to distinguish auto-created cache roots.
+        SIDAR_INSTALL_MODULE_CACHE_ROOT_AUTO=1
+        cleanup_legacy_auto_install_module_caches
+    fi
+    if [[ -L "$cache_root" ]]; then
+        fail "Fallback modül cache dizini sembolik link olamaz: $cache_root"
+    fi
+    if [[ -e "$cache_root" && ! -d "$cache_root" ]]; then
+        fail "Fallback modül cache yolu dizin değil: $cache_root"
+    fi
+
+    mkdir -p "$cache_root" || fail "Fallback modül cache dizini oluşturulamadı: $cache_root"
+    chmod 700 "$cache_root" 2>/dev/null || true
+
+    current_uid="$(id -u 2>/dev/null || true)"
+    if [[ -n "$current_uid" ]]; then
+        if owner_uid="$(stat -c '%u' "$cache_root" 2>/dev/null || stat -f '%u' "$cache_root" 2>/dev/null)"; then
+            if [[ "$owner_uid" != "$current_uid" ]]; then
+                fail "Fallback modül cache dizini mevcut kullanıcıya ait değil: $cache_root (owner_uid=$owner_uid, current_uid=$current_uid)"
+            fi
+        fi
+    fi
+}
+
 remote_install_module_cached_path() {
     local module_rel="$1"
     local remote_module_base="$2"
@@ -633,7 +919,7 @@ remote_install_module_retry_sleep() {
         delay="$retry_after"
     else
         delay=$((SIDAR_INSTALL_MODULE_RETRY_DELAY * (2 ** (attempt - 1))))
-        jitter=$(( (RANDOM % 3) ))
+        jitter=$(( RANDOM % 3 ))
         delay=$((delay + jitter))
     fi
 
@@ -713,6 +999,7 @@ download_remote_install_module() {
     local retry_after=""
 
     mkdir -p "$(dirname "$destination_path")"
+    prepare_install_module_cache_root
     cache_path="$(remote_install_module_cached_path "$module_rel" "$remote_module_base")"
     cache_sentinel="${cache_path}.ok"
     if [[ -f "$cache_path" && -f "$cache_sentinel" ]]; then
@@ -781,11 +1068,13 @@ download_remote_install_module() {
 
 resolve_remote_module_base() {
     local remote_module_base="${SIDAR_INSTALL_MODULE_BASE_URL:-}"
+    local remote_module_ref=""
 
     if [[ -z "$remote_module_base" ]]; then
-        remote_module_base="$(derive_remote_module_base_from_repo "${SIDAR_REPO_URL:-https://github.com/niluferbagevi-gif/Sidar.git}" "${SIDAR_REPO_BRANCH:-main}" || true)"
+        remote_module_ref="$(resolve_remote_module_ref)"
+        remote_module_base="$(derive_remote_module_base_from_repo "${SIDAR_REPO_URL:-https://github.com/niluferbagevi-gif/Sidar.git}" "$remote_module_ref" || true)"
     fi
-    [[ -n "$remote_module_base" ]] || remote_module_base="https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/main/scripts/install_modules"
+    [[ -n "$remote_module_base" ]] || remote_module_base="https://raw.githubusercontent.com/niluferbagevi-gif/Sidar/$(resolve_remote_module_ref)/scripts/install_modules"
     printf '%s' "$remote_module_base"
 }
 
@@ -843,8 +1132,7 @@ use_existing_install_module_tree_if_available() {
         if [[ -z "$candidate_status" ]]; then
             if [[ "$candidate_dir" != "$INSTALL_MODULE_DIR" ]]; then
                 info "Mevcut repo kurulum modülleri doğrudan kullanılacak: $candidate_dir"
-                INSTALL_MODULE_DIR="$candidate_dir"
-                INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
+                sidar_set_install_module_dir "$candidate_dir"
             fi
             if [[ "${SIDAR_INSTALLER_BOOTSTRAP_MODE:-unknown}" == "unknown" ]]; then
                 if [[ "${SIDAR_BUNDLE_MODE:-0}" == "1" ]]; then
@@ -865,8 +1153,7 @@ download_install_modules_to_temp() {
     local remote_module_base="$1"
 
     INSTALL_HELPERS_TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/sidar_install_modules.XXXXXX")"
-    INSTALL_MODULE_DIR="${INSTALL_HELPERS_TEMP_DIR}/install_modules"
-    INSTALL_HELPERS_MODULE="${INSTALL_MODULE_DIR}/install_helpers.sh"
+    sidar_set_install_module_dir "${INSTALL_HELPERS_TEMP_DIR}/install_modules"
     download_remote_install_modules "$remote_module_base" "$INSTALL_MODULE_DIR" || fail "Fallback modül indirme başarısız: $remote_module_base"
     INSTALL_MODULES_DOWNLOADED=1
     SIDAR_INSTALLER_BOOTSTRAP_MODE="raw-module-fallback"
@@ -897,6 +1184,43 @@ fi
 # modules exist locally. Keep a minimal fallback shim here; once modules are
 # present, utils/installer_hash_guard.sh becomes the shared implementation used
 # by the installer and sourced install modules.
+if ! declare -F installer_hash_guard_git_root_for_script >/dev/null 2>&1; then
+    installer_hash_guard_git_root_for_script() {
+        local script_path="$1"
+        local script_dir=""
+
+        [[ -n "$script_path" ]] || return 1
+        script_dir="$(cd "$(dirname "$script_path")" 2>/dev/null && pwd -P)" || return 1
+        git -C "$script_dir" rev-parse --show-toplevel 2>/dev/null
+    }
+fi
+
+if ! declare -F log_installer_hash_drift_git_context >/dev/null 2>&1; then
+    log_installer_hash_drift_git_context() {
+        local label="$1"
+        local script_path="$2"
+        local repo_root=""
+        local repo_head=""
+        local status_output=""
+
+        command -v git >/dev/null 2>&1 || return 0
+        repo_root="$(installer_hash_guard_git_root_for_script "$script_path" || true)"
+        [[ -n "$repo_root" ]] || return 0
+
+        repo_head="$(git -C "$repo_root" rev-parse --short HEAD 2>/dev/null || echo bilinmiyor)"
+        status_output="$(git -C "$repo_root" status --short 2>/dev/null || true)"
+        warn "${label} git bağlamı: repo=${repo_root}, HEAD=${repo_head}"
+        if [[ -n "$status_output" ]]; then
+            warn "${label} git status --short:"
+            while IFS= read -r status_line; do
+                warn "  ${status_line}"
+            done <<< "$status_output"
+        else
+            info "${label} git status --short: temiz"
+        fi
+    }
+fi
+
 if ! declare -F check_installer_hash >/dev/null 2>&1; then
     check_installer_hash() {
         local current_script="$1"
@@ -919,6 +1243,8 @@ if ! declare -F check_installer_hash >/dev/null 2>&1; then
                 warn "${reexec_label} install_sidar.sh SHA256 farklı (mevcut=${current_sha}, hedef=${next_sha}); SIDAR_INSTALL_ALLOW_STALE_REEXEC=1 nedeniyle devam ediliyor."
                 return 0
             fi
+            log_installer_hash_drift_git_context "Mevcut installer" "$current_script"
+            log_installer_hash_drift_git_context "Hedef installer" "$next_script"
             fail "${reexec_label} install_sidar.sh SHA256 farklı (mevcut=${current_sha}, hedef=${next_sha}). Yanlış/eski installer çalıştırma riskini önlemek için re-exec durduruldu. NEXT STEP → hash drift kaynağını temizleyin: \$HOME/Sidar/install_sidar.sh eskiyse 'rm -f \"\$HOME/Sidar/install_sidar.sh\"' komutuyla kaldırıp güncel install_sidar.sh ile yeniden deneyin; hedef repo driftliyse git pull --ff-only veya temiz clone kullanın. Yalnız bilinçli/incelemesi yapılmış durumda SIDAR_INSTALL_ALLOW_STALE_REEXEC=1 ile tekrar deneyin."
         fi
     }
@@ -930,6 +1256,40 @@ if ! declare -F verify_reexec_installer_or_fail >/dev/null 2>&1; then
         local reexec_label="$2"
 
         check_installer_hash "$ORIGINAL_SCRIPT_PATH" "$next_script" "$reexec_label"
+    }
+fi
+
+
+if ! declare -F sidar_resolve_resume_installer_path >/dev/null 2>&1; then
+    sidar_resolve_resume_installer_path() {
+        local repo_script="${SCRIPT_DIR:-}/install_sidar.sh"
+
+        if [[ -n "${SCRIPT_DIR:-}" && -f "$repo_script" ]]; then
+            printf '%s\n' "$repo_script"
+            return 0
+        fi
+
+        if [[ -n "${ORIGINAL_SCRIPT_PATH:-}" && -f "$ORIGINAL_SCRIPT_PATH" ]]; then
+            printf '%s\n' "$ORIGINAL_SCRIPT_PATH"
+            return 0
+        fi
+
+        fail "Auto-heal resume için çalıştırılabilir install_sidar.sh bulunamadı. Denenenler: SCRIPT_DIR=${SCRIPT_DIR:-boş}, ORIGINAL_SCRIPT_PATH=${ORIGINAL_SCRIPT_PATH:-boş}. Repo içindeki install_sidar.sh ile kurulumu yeniden başlatın."
+    }
+fi
+
+if ! declare -F sidar_verify_resume_installer_or_fail >/dev/null 2>&1; then
+    sidar_verify_resume_installer_or_fail() {
+        local resume_script="$1"
+        local current_script="${ORIGINAL_SCRIPT_PATH:-}"
+
+        [[ -n "$resume_script" ]] || fail "Auto-heal resume hedefi boş."
+        [[ -f "$resume_script" ]] || fail "Auto-heal resume hedef install_sidar.sh bulunamadı: $resume_script"
+
+        if [[ -z "$current_script" || ! -f "$current_script" ]]; then
+            current_script="$resume_script"
+        fi
+        check_installer_hash "$current_script" "$resume_script" "Auto-heal resume re-exec"
     }
 fi
 
@@ -1019,10 +1379,15 @@ if [[ -n "${LOCAL_INSTALL_MODULE_TREE_STATUS:-}" ]]; then
     info "Yerel kurulum modül ağacı eksik: $INSTALL_MODULE_DIR (${LOCAL_INSTALL_MODULE_TREE_STATUS})"
     verify_home_reexec_candidate_if_present
 
-    REMOTE_MODULE_BASE="$(resolve_remote_module_base)"
+    if [[ "${OFFLINE_MODE:-false}" == "true" ]]; then
+        fail "--offline/--air-gapped erken algılandı; yerel kurulum modül ağacı eksik olduğu için raw fallback modül indirme veya bootstrap clone yapılmayacak. Hava boşluklu kurulum için release bundle install_sidar.sh kullanın veya scripts/install_modules ağacını aynı dizine yerleştirin."
+    fi
+
     if [[ "${SIDAR_INSTALL_SKIP_DIRECT_MODULE_DOWNLOAD:-0}" == "1" ]]; then
         warn "SIDAR_INSTALL_SKIP_DIRECT_MODULE_DOWNLOAD=1; fallback modül indirme atlandı, bootstrap/re-exec yolu denenecek."
     elif command -v curl &>/dev/null || command -v wget &>/dev/null; then
+        REMOTE_MODULE_BASE="$(resolve_remote_module_base)"
+        validate_remote_module_trust_root "$REMOTE_MODULE_BASE"
         info "Git clone/re-exec öncesi fallback modüller doğrudan indirilecek: $REMOTE_MODULE_BASE"
         download_install_modules_to_temp "$REMOTE_MODULE_BASE"
     fi
@@ -1320,17 +1685,20 @@ if [[ "${SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY:-0}" == "1" ]]; then
     exit 0
 fi
 validate_install_utility_modules
-sidar_source_install_utils "install_remediation.sh"
+sidar_source_install_utils "install_remediation.sh" "ux.sh"
 sidar_source_install_utils \
     "wsl_integration_autofix.sh" \
     "wsl_gpu_preflight.sh" \
+    "wsl_host.sh" \
     "gpu_utils.sh" \
     "installer_hash_guard.sh" \
     "remote_script.sh" \
     "python_env.sh" \
+    "env_secrets.sh" \
     "database_url.sh" \
     "db_credentials.sh" \
     "env_utils.sh" \
+    "services_docker.sh" \
     "ollama_models.sh" \
     "playwright_ubuntu_override.sh"
 SIDAR_INSTALL_REQUESTED_VERSION="${INSTALL_SIDAR_VERSION:-}"
@@ -1349,113 +1717,10 @@ unset SIDAR_INSTALL_REQUESTED_VERSION
 load_install_phase_modules
 # END_BUNDLE_MODULES
 
-run_with_progress_hint() {
-    local label="$1"
-    shift
-    local -a cmd=("$@")
-
-    "${cmd[@]}" &
-    local cmd_pid=$!
-    local pct=5
-
-    while kill -0 "$cmd_pid" 2>/dev/null; do
-        local filled=$((pct / 4))
-        local empty=$((25 - filled))
-        local bar_filled
-        local bar_empty
-        printf -v bar_filled '%*s' "$filled" ''
-        printf -v bar_empty '%*s' "$empty" ''
-        bar_filled="${bar_filled// /█}"
-        bar_empty="${bar_empty// /░}"
-        echo -e "${BLUE}[${bar_filled}${bar_empty}] ${pct}% ${label}${NC}" >&2
-
-        pct=$((pct + 5))
-        if (( pct > 95 )); then
-            pct=95
-        fi
-        sleep 4
-    done
-
-    wait "$cmd_pid"
-    local cmd_rc=$?
-    if [[ "$cmd_rc" -eq 0 ]]; then
-        echo -e "${GREEN}[█████████████████████████] 100% ${label}${NC}" >&2
-    fi
-    return "$cmd_rc"
-}
-
-SIDAR_PROMPT_TIMEOUT="${SIDAR_PROMPT_TIMEOUT:-180}"
-
-prompt_yes_no_with_timeout_default_yes() {
-    local prompt="$1"
-    local timeout_seconds="${2:-$SIDAR_PROMPT_TIMEOUT}"
-    local reply=""
-
-    clear_stdin_buffer
-    if read -r -t "$timeout_seconds" -p "$prompt" reply 2>/dev/tty; then
-        :
-    else
-        warn "$(sidar_t timeout_yes "$timeout_seconds")"
-        reply="E"
-    fi
-
-    echo "$reply"
-}
-
-prompt_yes_no_with_timeout_default_no() {
-    local prompt="$1"
-    local timeout_seconds="${2:-$SIDAR_PROMPT_TIMEOUT}"
-    local reply=""
-
-    clear_stdin_buffer
-    if read -r -t "$timeout_seconds" -p "$prompt" reply 2>/dev/tty; then
-        :
-    else
-        warn "$(sidar_t timeout_no "$timeout_seconds")"
-        reply="H"
-    fi
-
-    echo "$reply"
-}
-
-cleanup_temp_install_modules_if_needed() {
-    local exit_code="${1:-0}"
-    local keep_temp_raw="${SIDAR_KEEP_TEMP_MODULES:-0}"
-    keep_temp_raw="$(echo "$keep_temp_raw" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
-    if [[ "${KEEP_TEMP_MODULES:-false}" == "true" || "$keep_temp_raw" == "1" || "$keep_temp_raw" == "true" || "$keep_temp_raw" == "yes" ]]; then
-        [[ -n "${INSTALL_HELPERS_TEMP_DIR:-}" && -d "$INSTALL_HELPERS_TEMP_DIR" ]] && info "Geçici modül dizini korunuyor (debug): $INSTALL_HELPERS_TEMP_DIR"
-        return 0
-    fi
-
-    if [[ "$exit_code" -ne 0 ]]; then
-        [[ -n "${INSTALL_HELPERS_TEMP_DIR:-}" && -d "$INSTALL_HELPERS_TEMP_DIR" ]] && warn "Kurulum hata ile sonlandı (exit=${exit_code}); debug için geçici modül dizini korunuyor: $INSTALL_HELPERS_TEMP_DIR"
-        warn "İsterseniz sonraki çalıştırmada --keep-temp-modules veya SIDAR_KEEP_TEMP_MODULES=1 kullanabilirsiniz."
-        return 0
-    fi
-
-    if [[ -n "${INSTALL_HELPERS_TEMP_DIR:-}" && -d "$INSTALL_HELPERS_TEMP_DIR" ]]; then
-        rm -rf "$INSTALL_HELPERS_TEMP_DIR"
-        info "Geçici modül dizini temizlendi: $INSTALL_HELPERS_TEMP_DIR"
-    fi
-}
-
-relocate_log_file_if_needed() {
-    [[ -n "${TARGET_DIR:-}" ]] || return 0
-    local target_log_dir="${TARGET_DIR}/logs"
-    local source_log_dir="$LOG_DIR"
-
-    if [[ -f "$LOG_FILE" && "$LOG_DIR" != "$target_log_dir" ]]; then
-        mkdir -p "$target_log_dir"
-        mv "$LOG_FILE" "$target_log_dir/"
-        LOG_DIR="$target_log_dir"
-        LOG_FILE="$target_log_dir/$(basename "$LOG_FILE")"
-        info "Kurulum log dosyası ${LOG_FILE} konumuna taşındı."
-
-        if [[ -d "$source_log_dir" ]]; then
-            rmdir "$source_log_dir" 2>/dev/null || true
-        fi
-    fi
-}
+# Post-bootstrap progress, prompt, cleanup, and log relocation helpers live in
+# scripts/install_modules/install_runtime.sh.
+# shellcheck source=scripts/install_modules/install_runtime.sh
+source "${INSTALL_MODULE_DIR}/install_runtime.sh"
 
 # shellcheck disable=SC2154
 trap 'sidar_exit_code=$?; relocate_log_file_if_needed || true; if declare -F sidar_phase06_cleanup_pre_service_smoke_log >/dev/null 2>&1; then sidar_phase06_cleanup_pre_service_smoke_log || true; fi; cleanup_temp_install_modules_if_needed "$sidar_exit_code" || true' EXIT
@@ -1478,354 +1743,11 @@ compute_sha256() {
 # Servis, volume ve DB auth yardımcıları scripts/install_modules/phases/06_services.sh içinden yüklenir.
 
 # ── Argümanlar ────────────────────────────────────────────────────────────────
-# Geliştirme bağımlılıkları Sidar self-healing için standart kurulumun parçasıdır.
-UPGRADE_LOCK=false
-ALLOW_FULL_ACCESS=false
-FORCE_CPU=false
-SKIP_MODELS=false
-DOWNLOAD_MODELS=true
-FORCE_REACT_BUILD=true
-INSTALL_KUBERNETES=false
-HELM_RELEASE_NAME="sidar"
-HELM_NAMESPACE="sidar"
-HELM_VALUES_FILE=""
-RUN_SMOKE_TESTS_MODE="always"
-RUN_AUDIT=true
-RUN_INSTALL_INTEGRATION_TESTS=false
-RUN_CI_FULL_VALIDATION=false
-ENABLE_AUTONOMOUS_CRON=false
-NO_INTERACTION=false
-DOCKER_ONLY=false
-APP_RUNTIME_MODE="ask"
-ENABLE_AUDIO=true
-FORCE_POSTGRES_VOLUME_CLEANUP=false
-AUTO_INSTALL=false
-STRICT_DOCKER=false
-AUTO_RUNTIME_MODE="ask"
-AUTO_START_DOCKER_SERVICES="ask"
-AUTO_RESET_POSTGRES_VOLUMES="ask"
-AUTO_ENV_TYPE="ask"
-AUTO_OPEN_VSCODE="ask"
-OFFLINE_MODE=false
-# shellcheck disable=SC2034  # phase modules read this runtime override after sync.
-OFFLINE_PACKAGES_DIR=""
-DOCKER_CLI_INSTALL_MODE="${DOCKER_CLI_INSTALL:-auto}"
-PLAYWRIGHT_BROWSERS_MODE="auto"
-CLI_MODE_RAW=""
-CLI_ENV_RAW=""
-CLI_RESET_POSTGRES_VOLUMES="ask"
-CLI_START_DOCKER_SERVICES="ask"
-CLI_OPEN_VSCODE="ask"
-SILENT_MODE=false
-# shellcheck disable=SC2034  # scripts/install_modules/phases/07_finish.sh reads this sourced state.
-REACT_UI_STATUS="atlandı"
-# shellcheck disable=SC2034  # scripts/install_modules/phases/{07_finish.sh,12_alembic.sh} read this sourced state.
-MIGRATION_STATUS="atlandı"
-# shellcheck disable=SC2034  # scripts/install_modules/phases/{07_finish.sh,10_validation.sh} read this sourced state.
-SMOKE_TEST_STATUS="atlandı"
-# shellcheck disable=SC2034  # scripts/install_modules/phases/{07_finish.sh,10_validation.sh} read this sourced state.
-INTEGRATION_TEST_STATUS="atlandı"
-# shellcheck disable=SC2034  # scripts/install_modules/phases/10_validation.sh reads this sourced state.
-CI_FULL_VALIDATION_STATUS="atlandı"
-# shellcheck disable=SC2034  # scripts/install_modules/phases/07_finish.sh reads this sourced state.
-AUDIT_STATUS="atlandı"
-# shellcheck disable=SC2034  # scripts/install_modules/phases/07_finish.sh reads this sourced state.
-AUTONOMOUS_CRON_STATUS="atlandı"
-# shellcheck disable=SC2034  # scripts/install_modules/phases/12_alembic.sh reads this sourced state.
-MIGRATION_DOCKER_POLICY="auto"
-# shellcheck disable=SC2034  # scripts/install_modules/phases/{10_validation.sh,11_post_install.sh} read this sourced state.
-DOCKER_DB_SERVICES_STARTED=false
-# shellcheck disable=SC2034  # scripts/install_modules/{phases/06_services.sh,utils/database_url.sh} read this sourced state.
-DB_PASSWORD_HARDENED=false
-# shellcheck disable=SC2034  # scripts/install_modules/phases/06_services.sh reads this sourced state.
-POSTGRES_VOLUME_RESET_DONE=false
-# shellcheck disable=SC2034  # scripts/install_modules/{phases/12_alembic.sh,utils/db_credentials.sh} read this sourced state.
-PRE_HARDEN_DB_PASSWORD=""
-# shellcheck disable=SC2034  # scripts/install_modules/phases/07_finish.sh reads this sourced state.
-AUDIO_SESSION_RESTART_RECOMMENDED=false
-# shellcheck disable=SC2034  # multiple sourced phase/util scripts read this runtime flag (e.g. 03_system.sh, 06_services.sh, gpu_utils.sh).
-WSL2=false
-# shellcheck disable=SC2034  # scripts/install_modules/{phases/{07_finish.sh,09_ollama_models.sh,10_validation.sh},utils/ollama_models.sh} read this sourced state.
-WSLCONFIG_CHANGED=false
-# shellcheck disable=SC2034  # scripts/install_modules/phases/07_finish.sh reads this sourced state.
-ENV_API_KEYS_TOTAL=0
-# shellcheck disable=SC2034  # scripts/install_modules/phases/07_finish.sh reads this sourced state.
-ENV_API_KEYS_FILLED=0
-# shellcheck disable=SC2034  # scripts/install_modules/phases/07_finish.sh reads this sourced state.
-ENV_API_KEYS_MISSING=()
-
-print_install_help() {
-    if sidar_is_english_locale; then
-        cat <<EOF
-Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test|--with-integration|--ci-full|--production-readiness] [--enable-autonomous-cron] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
-  doctor|prepare-system|sync-deps|provision-models|smoke  Run a single installer phase
-  --upgrade-lock  Intentionally update uv.lock
-  --i-understand-full-access  Explicit risk acknowledgement for ACCESS_LEVEL=full
-  --cpu  Force CPU mode even when a GPU is detected
-  --docker-only  Do not install PostgreSQL/Redis on the host; use Docker services only
-  --runtime-mode=local|docker  Runtime mode: local=app local + infrastructure in Docker, docker=all services in Docker
-  --strict-docker  Fail-fast if Docker daemon cannot be reached after retries
-  --force-postgres-volume-cleanup / --force-docker-cleanup  Enable project-scoped aggressive docker rm -f cleanup after DB password hardening
-  --kubernetes / --helm  Use the Helm chart/Kubernetes flow instead of local installation
-  --helm-release=<name>  Helm release name (default: sidar)
-  --namespace=<name>  Kubernetes namespace (default: sidar)
-  --values=<file>  Helm values file (for example: helm/sidar/values-prod.yaml)
-  --smoke-test  Require tests/smoke at the end of installation
-  --skip-smoke-test  Do not run smoke tests at the end of installation
-  --with-integration / --with-integration-tests  Also run bash run_tests.sh --stage integration after smoke tests
-  --ci-full  After installation, run TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all
-  --production-readiness  Production gate alias for --ci-full; fails installation unless the full CI/e2e/benchmark gate passes
-  --enable-autonomous-cron  Opt in to an hourly autonomous_loop.sh schedule via user systemd timer or crontab
-  --audit  Run scripts/check_empty_test_artifacts.sh at the end of installation
-  --skip-models  Skip Ollama model downloads
-  --download-models  Download Ollama models by default
-  --build-ui  Rebuild the React Web UI even when cache exists
-  --enable-audio  Enable WSL2 audio support (default: disabled; PulseAudio/WSLg configured automatically)
-  --ci / --no-interaction  Run non-interactively without prompting the user
-  --non-interactive / --headless / --yes / -y  Short aliases for --no-interaction
-  --silent  Quiet CI/CD install: DEBIAN_FRONTEND=noninteractive + safe automatic defaults
-            Note: sudo cannot prompt for a password in non-interactive mode; run as root or pre-validate sudo.
-  --auto  Short flag for non-interactive installation (AUTO_INSTALL=true)
-  --mode=local|docker  Select runtime mode directly
-  --env=development|production  Select post-install SIDAR_ENV directly
-  --reset-db / --no-reset-db  Select whether PostgreSQL volumes may be reset
-  --start-services / --no-start-services  Select whether Docker services should start
-  --vscode / --no-vscode  Select whether VS Code opens at the end of installation
-  --with-browsers / --skip-browsers  Force/skip Playwright Chromium browser installation
-  --offline / --air-gapped  Use prepared packages under ./offline_packages instead of downloading from the internet
-  --install-docker-cli  Force Docker CLI + Buildx + Compose v2 installation on Debian/Ubuntu hosts
-  --skip-docker-cli / --no-install-docker-cli  Skip automatic Docker CLI installation
-  --keep-temp-modules  Keep temporary installer module directory for debugging (if created)
-
-  Non-interactive environment variables:
-    SIDAR_LOCALE=en|tr or LANG=en_US.UTF-8  Select installer message language
-    AUTO_INSTALL=true|false        (true behaves like --no-interaction)
-    INSTALL_MODE=1|2|local|docker  (1/local=developer, 2/docker=full Docker)
-    ENV_TYPE=dev|prod              (SIDAR_ENV selection: development/production)
-    RESET_DB=yes|no                (PostgreSQL volume reset approval)
-    START_DOCKER_SERVICES=yes|no   (migration/final Docker startup approval)
-    OPEN_VSCODE=yes|no             (VS Code launch approval)
-    INSTALL_PLAYWRIGHT_BROWSERS=true|false (force/skip Playwright browser installation)
-    OFFLINE_INSTALL=true|false     (equivalent to --offline/--air-gapped)
-    SIDAR_PROMPT_TIMEOUT=180      Interactive prompt timeout (seconds)
-    SIDAR_REPO_URL=https://...    Override repo clone/pull source for forks/organizations
-    SIDAR_REPO_BRANCH=main|...    Repo branch/ref for bootstrap clone + sync (default: main)
-    PYTORCH_CUDA_WHEEL_TAG=cu128  Override PyTorch CUDA wheel tag (cu124/cu126/cu128)
-    PYTORCH_CUDA_INDEX_URL=https://...  Override PyTorch wheel index
-    DOCKER_CLI_INSTALL=auto|always|never  Docker CLI automatic installation policy
-    DOCKER_DESKTOP_READY_TIMEOUT=240  Docker Desktop startup wait timeout in seconds
-    SIDAR_REQUIRE_DOCKER=1|0  Force strict Docker daemon requirement (1 = fail-fast)
-    SIDAR_INSTALL_AUTO_HEAL=1|0  Enable/disable phase auto-heal + resume (default: 1)
-    SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=1|0  Enable/disable the local-mode pre-service installer smoke gate
-    SIDAR_ENABLE_AUTONOMOUS_CRON=true|false  Equivalent to --enable-autonomous-cron
-    SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS=1  Maximum auto-heal resume attempts per run
-    SIDAR_KEEP_TEMP_MODULES=1|0  Keep temporary installer module directory for debugging
-EOF
-    else
-        cat <<EOF
-Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--upgrade-lock] [--i-understand-full-access] [--cpu] [--docker-only] [--runtime-mode=local|docker] [--strict-docker] [--silent] [--auto] [--mode=local|docker] [--env=development|production] [--reset-db|--no-reset-db] [--start-services|--no-start-services] [--vscode|--no-vscode] [--with-browsers|--skip-browsers] [--offline|--air-gapped] [--install-docker-cli|--skip-docker-cli] [--force-postgres-volume-cleanup] [--skip-models] [--download-models] [--build-ui] [--kubernetes] [--smoke-test|--skip-smoke-test|--with-integration|--ci-full|--production-readiness] [--enable-autonomous-cron] [--audit] [--enable-audio] [--ci|--no-interaction|--non-interactive|--headless|--yes|-y]
-  doctor|prepare-system|sync-deps|provision-models|smoke  Tek kurulum fazını çalıştır
-  --upgrade-lock  uv.lock dosyasını bilinçli olarak güncelle
-  --i-understand-full-access  ACCESS_LEVEL=full için açık risk onayı
-  --cpu  GPU algılansa bile CPU modunda kur
-  --docker-only  PostgreSQL/Redis'i hosta kurma, sadece Docker servislerini kullan
-  --runtime-mode=local|docker  Çalıştırma modu: local=uygulama local + altyapı docker, docker=tüm servisler docker
-  --strict-docker  Docker daemon hazır değilse retry sonunda fail-fast dur
-  --force-postgres-volume-cleanup / --force-docker-cleanup  DB parola hardening sonrası kilitli container/volume temizliği için projeye özel agresif docker rm -f adımlarını etkinleştir
-  --kubernetes / --helm  Yerel kurulum yerine Helm chart ile Kubernetes kurulumu yap
-  --helm-release=<ad>  Helm release adı (varsayılan: sidar)
-  --namespace=<ad>  Kubernetes namespace (varsayılan: sidar)
-  --values=<dosya>  Helm values dosyası (örn. helm/sidar/values-prod.yaml)
-  --smoke-test  Kurulum sonunda tests/smoke testlerini zorunlu çalıştır
-  --skip-smoke-test  Kurulum sonunda smoke test çalıştırma
-  --with-integration / --with-integration-tests  Smoke sonrası bash run_tests.sh --stage integration çalıştır
-  --ci-full  Kurulum sonunda TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all çalıştır
-  --production-readiness  --ci-full için üretim geçiş kapısı aliası; tam CI/e2e/benchmark geçmeden kurulumu başarılı saymaz
-  --enable-autonomous-cron  autonomous_loop.sh için saatlik kullanıcı systemd timer veya crontab planını opt-in kur
-  --audit  Kurulum sonunda scripts/check_empty_test_artifacts.sh denetimini çalıştır
-  --skip-models  Ollama model indirmelerini atla
-  --download-models  Ollama modellerini varsayılan olarak indir
-  --build-ui  React Web UI yeniden build et (cache olsa bile)
-  --enable-audio  WSL2 ses desteğini etkinleştir (varsayılan: kapalı, PulseAudio/WSLg otomatik yapılandırılır)
-  --ci / --no-interaction  Kullanıcıdan onay istemeden etkileşimsiz kurulum çalıştır
-  --non-interactive / --headless / --yes / -y  --no-interaction eşdeğeri kısayol bayraklar
-  --silent  CI/CD için sessiz kurulum: DEBIAN_FRONTEND=noninteractive + güvenli otomatik varsayılanlar
-            Not: Etkileşimsiz modda sudo parola sorulamaz; root çalıştırın veya önceden sudo doğrulayın.
-  --auto  Etkileşimsiz kurulum için kısa bayrak (AUTO_INSTALL=true)
-  --mode=local|docker  Çalışma modu seçimini doğrudan belirle
-  --env=development|production  Kurulum sonrası SIDAR_ENV seçimini doğrudan belirle
-  --reset-db / --no-reset-db  PostgreSQL volume sıfırlama kararını belirle
-  --start-services / --no-start-services  Docker servis başlatma kararını belirle
-  --vscode / --no-vscode  Kurulum sonunda VS Code açma kararını belirle
-  --with-browsers / --skip-browsers  Playwright Chromium tarayıcı kurulumunu zorla/atla
-  --offline / --air-gapped  İnternetten script/repo indirmek yerine ./offline_packages altındaki hazır paketleri kullan
-  --install-docker-cli  Debian/Ubuntu hostta Docker CLI + Buildx + Compose v2 kurulumunu zorla
-  --skip-docker-cli / --no-install-docker-cli  Docker CLI otomatik kurulumunu atla
-  --keep-temp-modules  Geçici kurulum modül dizinini debug için koru (oluştuysa)
-
-  Etkileşimsiz çevre değişkenleri:
-    SIDAR_LOCALE=en|tr veya LANG=en_US.UTF-8  Kurulum mesaj dilini seçer
-    AUTO_INSTALL=true|false        (true ise --no-interaction gibi davranır)
-    INSTALL_MODE=1|2|local|docker  (1/local=developer, 2/docker=tam docker)
-    ENV_TYPE=dev|prod              (SIDAR_ENV seçimi: development/production)
-    RESET_DB=yes|no                (PostgreSQL volume sıfırlama onayı)
-    START_DOCKER_SERVICES=yes|no   (migrasyon ve final Docker başlatma onayı)
-    OPEN_VSCODE=yes|no             (kurulum sonunda VS Code açma onayı)
-    INSTALL_PLAYWRIGHT_BROWSERS=true|false (Playwright tarayıcı kurulumu zorla/atla)
-    OFFLINE_INSTALL=true|false     (--offline/--air-gapped eşdeğeri)
-    SIDAR_PROMPT_TIMEOUT=180      Etkileşimli prompt zaman aşımı (saniye)
-    SIDAR_REPO_URL=https://...    Repo clone/pull kaynağını fork/organizasyon için override eder
-    SIDAR_REPO_BRANCH=main|...    Bootstrap clone + sync için repo branch/ref (varsayılan: main)
-    PYTORCH_CUDA_WHEEL_TAG=cu128  PyTorch CUDA wheel tag override (cu124/cu126/cu128)
-    PYTORCH_CUDA_INDEX_URL=https://...  PyTorch wheel index override
-    DOCKER_CLI_INSTALL=auto|always|never  Docker CLI otomatik kurulum politikası
-    DOCKER_DESKTOP_READY_TIMEOUT=240  Docker Desktop hazır olma bekleme süresi (saniye)
-    SIDAR_REQUIRE_DOCKER=1|0  Docker daemon zorunluluğunu fail-fast olarak uygular (1=zorunlu)
-    SIDAR_INSTALL_AUTO_HEAL=1|0  Faz auto-heal + resume mantığını aç/kapat (varsayılan: 1)
-    SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE=1|0  Local modda servis öncesi installer smoke gate'i aç/kapat
-    SIDAR_ENABLE_AUTONOMOUS_CRON=true|false  --enable-autonomous-cron eşdeğeri
-    SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS=1  Çalıştırma başına azami auto-heal resume denemesi
-    SIDAR_KEEP_TEMP_MODULES=1|0  Geçici kurulum modül dizinini debug için korur
-EOF
-    fi
-}
-
-INSTALL_SUBCOMMAND="full"
-# shellcheck disable=SC2034  # UPGRADE_LOCK is consumed by sourced python_env.sh install_python_deps.
-for arg in "$@"; do
-    case "$arg" in
-        --no-dev) warn "--no-dev artık desteklenmiyor; self-healing için dev bağımlılıkları standart kurulumda kalacak." ;;
-        --upgrade-lock) UPGRADE_LOCK=true ;;
-        --i-understand-full-access) ALLOW_FULL_ACCESS=true ;;
-        doctor|prepare-system|sync-deps|provision-models|smoke) INSTALL_SUBCOMMAND="$arg" ;;
-        --cpu)  FORCE_CPU=true ;;
-        --kubernetes|--helm) INSTALL_KUBERNETES=true ;;
-        --silent) SILENT_MODE=true ;;
-        --auto) AUTO_INSTALL=true ;;
-        --skip-models) SKIP_MODELS=true ;;
-        --download-models) DOWNLOAD_MODELS=true ;;
-        --build-ui) FORCE_REACT_BUILD=true ;;
-        --ci|--no-interaction|--non-interactive|--headless|--yes|-y) NO_INTERACTION=true ;;
-        --mode=*) CLI_MODE_RAW="${arg#*=}" ;;
-        --env=*) CLI_ENV_RAW="${arg#*=}" ;;
-        --reset-db) CLI_RESET_POSTGRES_VOLUMES="true" ;;
-        --no-reset-db) CLI_RESET_POSTGRES_VOLUMES="false" ;;
-        --start-services) CLI_START_DOCKER_SERVICES="true" ;;
-        --no-start-services) CLI_START_DOCKER_SERVICES="false" ;;
-        --vscode) CLI_OPEN_VSCODE="true" ;;
-        --no-vscode) CLI_OPEN_VSCODE="false" ;;
-        --with-browsers) PLAYWRIGHT_BROWSERS_MODE="always" ;;
-        --skip-browsers) PLAYWRIGHT_BROWSERS_MODE="never" ;;
-        --offline|--air-gapped) OFFLINE_MODE=true ;;
-        --install-docker-cli) DOCKER_CLI_INSTALL_MODE="always" ;;
-        --skip-docker-cli|--no-install-docker-cli) DOCKER_CLI_INSTALL_MODE="never" ;;
-        --keep-temp-modules) KEEP_TEMP_MODULES=true ;;
-        --helm-release=*) HELM_RELEASE_NAME="${arg#*=}" ;;
-        --namespace=*) HELM_NAMESPACE="${arg#*=}" ;;
-        --values=*) HELM_VALUES_FILE="${arg#*=}" ;;
-        --smoke-test) RUN_SMOKE_TESTS_MODE="always" ;;
-        --skip-smoke-test) RUN_SMOKE_TESTS_MODE="never" ;;
-        --with-integration|--with-integration-tests) RUN_INSTALL_INTEGRATION_TESTS=true ;;
-        --ci-full) RUN_CI_FULL_VALIDATION=true; NO_INTERACTION=true ;;
-        --production-readiness) RUN_CI_FULL_VALIDATION=true; NO_INTERACTION=true ;;
-        --enable-autonomous-cron) ENABLE_AUTONOMOUS_CRON=true ;;
-        --audit) RUN_AUDIT=true ;;
-        --docker-only) DOCKER_ONLY=true ;;
-        --runtime-mode=local) APP_RUNTIME_MODE="local" ;;
-        --runtime-mode=docker) APP_RUNTIME_MODE="docker" ;;
-        --strict-docker) STRICT_DOCKER=true ;;
-        --force-postgres-volume-cleanup|--force-docker-cleanup) FORCE_POSTGRES_VOLUME_CLEANUP=true ;;
-        --enable-audio) ENABLE_AUDIO=true ;;
-        --help|-h)
-            print_install_help
-            exit 0
-            ;;
-        *)      warn "$(sidar_t invalid_arg "$arg")"; exit 1 ;;
-    esac
-done
-
-AUTO_INSTALL="$(normalize_bool "${AUTO_INSTALL:-false}")"
-SIDAR_WSL_AUTO_UPGRADE="$(normalize_bool "${SIDAR_WSL_AUTO_UPGRADE:-false}")"
-STRICT_DOCKER="$(normalize_bool "${STRICT_DOCKER:-${SIDAR_REQUIRE_DOCKER:-false}}")"
-ENABLE_AUTONOMOUS_CRON="$(normalize_bool "${ENABLE_AUTONOMOUS_CRON:-${SIDAR_ENABLE_AUTONOMOUS_CRON:-false}}")"
-SIDAR_PRODUCTION_READINESS_RAW="$(normalize_bool "${SIDAR_PRODUCTION_READINESS:-${PRODUCTION_READINESS:-}}")"
-if [[ "$SIDAR_PRODUCTION_READINESS_RAW" == "true" ]]; then
-    RUN_CI_FULL_VALIDATION=true
-    NO_INTERACTION=true
-fi
-if [[ "$AUTO_INSTALL" == "true" ]]; then
-    NO_INTERACTION=true
-fi
-
-OFFLINE_MODE_RAW="$(normalize_bool "${OFFLINE_INSTALL:-${AIR_GAPPED_INSTALL:-}}")"
-if [[ "$OFFLINE_MODE_RAW" == "true" ]]; then
-    # shellcheck disable=SC2034  # multiple sourced phase/util scripts read this runtime flag (e.g. 02_repo.sh, utils/python_env.sh).
-    OFFLINE_MODE=true
-fi
-
-case "${DOCKER_CLI_INSTALL_MODE}" in
-    auto|always|never|true|false|yes|no|1|0) ;;
-    *) fail "$(sidar_t invalid_docker_cli "${DOCKER_CLI_INSTALL_MODE}")" ;;
-esac
-
-PLAYWRIGHT_BROWSERS_RAW="$(normalize_bool "${INSTALL_PLAYWRIGHT_BROWSERS:-}")"
-if [[ "$PLAYWRIGHT_BROWSERS_RAW" == "true" ]]; then
-    PLAYWRIGHT_BROWSERS_MODE="always"
-elif [[ "$PLAYWRIGHT_BROWSERS_RAW" == "false" ]]; then
-    PLAYWRIGHT_BROWSERS_MODE="never"
-fi
-
-AUTO_RUNTIME_MODE="$(resolve_runtime_mode_choice "${CLI_MODE_RAW:-${INSTALL_MODE:-${RUNTIME_MODE:-${APP_RUNTIME_MODE:-ask}}}}")"
-if [[ -n "$CLI_MODE_RAW" && "$AUTO_RUNTIME_MODE" == "ask" ]]; then
-    fail "$(sidar_t invalid_mode "${CLI_MODE_RAW}")"
-fi
-if [[ "$AUTO_RUNTIME_MODE" != "ask" ]]; then
-    APP_RUNTIME_MODE="$AUTO_RUNTIME_MODE"
-fi
-
-AUTO_START_DOCKER_SERVICES="$(normalize_bool "${CLI_START_DOCKER_SERVICES:-${START_DOCKER_SERVICES:-${START_SERVICES:-}}}")"
-[[ -z "$AUTO_START_DOCKER_SERVICES" ]] && AUTO_START_DOCKER_SERVICES="ask"
-
-AUTO_RESET_POSTGRES_VOLUMES="$(normalize_bool "${CLI_RESET_POSTGRES_VOLUMES:-${RESET_DB:-${RESET_POSTGRES_VOLUMES:-}}}")"
-[[ -z "$AUTO_RESET_POSTGRES_VOLUMES" ]] && AUTO_RESET_POSTGRES_VOLUMES="ask"
-
-AUTO_ENV_TYPE="$(resolve_env_type_choice "${CLI_ENV_RAW:-${ENV_TYPE:-${SIDAR_ENV_TYPE:-}}}")"
-if [[ -n "$CLI_ENV_RAW" && "$AUTO_ENV_TYPE" == "ask" ]]; then
-    fail "$(sidar_t invalid_env "${CLI_ENV_RAW}")"
-fi
-AUTO_OPEN_VSCODE="$(normalize_bool "${CLI_OPEN_VSCODE:-${OPEN_VSCODE:-${LAUNCH_VSCODE:-}}}")"
-[[ -z "$AUTO_OPEN_VSCODE" ]] && AUTO_OPEN_VSCODE="ask"
-
-if [[ "$AUTO_ENV_TYPE" == "production" && "$RUN_CI_FULL_VALIDATION" != true ]]; then
-    RUN_CI_FULL_VALIDATION=true
-    NO_INTERACTION=true
-    warn "Production ortamı seçildi; kurulum başarısı için tam üretim doğrulaması zorunlu: TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
-fi
-
-if [[ "$SILENT_MODE" == true ]]; then
-    export DEBIAN_FRONTEND=noninteractive
-    NO_INTERACTION=true
-    AUTO_INSTALL=true
-    [[ "$AUTO_RUNTIME_MODE" == "ask" ]] && AUTO_RUNTIME_MODE="docker"
-    [[ "$AUTO_START_DOCKER_SERVICES" == "ask" ]] && AUTO_START_DOCKER_SERVICES="true"
-    [[ "$AUTO_RESET_POSTGRES_VOLUMES" == "ask" ]] && AUTO_RESET_POSTGRES_VOLUMES="true"
-    [[ "$AUTO_ENV_TYPE" == "ask" ]] && AUTO_ENV_TYPE="development"
-    [[ "$AUTO_OPEN_VSCODE" == "ask" ]] && AUTO_OPEN_VSCODE="false"
-    [[ "$PLAYWRIGHT_BROWSERS_MODE" == "auto" ]] && PLAYWRIGHT_BROWSERS_MODE="never"
-    info "⚠️  $(sidar_t silent_mode_enabled)"
-fi
-
-if [[ "$SKIP_MODELS" == true && "$DOWNLOAD_MODELS" == true ]]; then
-    fail "$(sidar_t incompatible_model_flags)"
-fi
-
-if [[ "$INSTALL_KUBERNETES" == true && "$FORCE_CPU" == true ]]; then
-    warn "$(sidar_t kubernetes_ignores_cpu)"
-fi
-
-if [[ "$NO_INTERACTION" == true && "$RUN_SMOKE_TESTS_MODE" == "ask" ]]; then
-    RUN_SMOKE_TESTS_MODE="never"
-fi
+# CLI defaults, argument parsing, and environment normalization live in a
+# dedicated facade module so install_sidar.sh can focus on bootstrap + dispatch.
+# shellcheck source=scripts/install_modules/install_cli.sh
+source "${INSTALL_MODULE_DIR}/install_cli.sh"
+sidar_parse_install_cli "$@"
 
 # ── Sabitler ──────────────────────────────────────────────────────────────────
 refresh_install_sidar_version_from_repo() {
@@ -1915,21 +1837,11 @@ OFFLINE_PACKAGES_DIR_DEFAULT_NAME="offline_packages"
 # Post-install yardımcıları scripts/install_modules/phases/11_post_install.sh içinden yüklenir.
 
 # ── Ana Akış ─────────────────────────────────────────────────────────────────
-main() {
-    sidar_run_install_phase "01_context" sidar_phase_initialize_context
-    sidar_fail_if_wsl_integration_autofix_applied_current_session_main
-    if sidar_phase_handle_early_exit; then
-        return
-    fi
+# shellcheck source=scripts/install_modules/install_dispatcher.sh
+source "${INSTALL_MODULE_DIR}/install_dispatcher.sh"
 
-    sidar_run_install_phase "02_repo" sidar_phase_bootstrap_repo_system
-    cleanup_bootstrap_script_copy
-    sidar_run_install_phase "03_runtime" sidar_phase_runtime_prerequisites
-    sidar_run_install_phase "04_workspace" sidar_phase_workspace_config
-    sidar_run_install_phase "05_frontend" sidar_phase_frontend_assets
-    sidar_run_install_phase "06_models" sidar_phase_local_migrations_and_models
-    sidar_run_install_phase "06_services" sidar_phase_services_and_validation
-    sidar_run_install_phase "07_finish" sidar_phase_finish
+main() {
+    sidar_dispatch_install_phases "$@"
 }
 
 if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]; then

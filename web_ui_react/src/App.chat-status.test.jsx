@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
-import App from "./App.jsx";
+import { MemoryRouter } from "./lib/routerShim.tsx";
+import App from "./App.tsx";
 
 const chatStore = {
   sessionId: "session-integration",
@@ -32,8 +32,8 @@ vi.mock("./hooks/useVoiceAssistant.js", () => ({
   }),
 }));
 
-vi.mock("./components/ChatWindow.jsx", () => ({ ChatWindow: () => <div /> }));
-vi.mock("./components/VoiceAssistantPanel.jsx", () => ({ VoiceAssistantPanel: () => <div /> }));
+vi.mock("./components/ChatWindow.tsx", () => ({ ChatWindow: () => <div /> }));
+vi.mock("./components/VoiceAssistantPanel.tsx", () => ({ VoiceAssistantPanel: () => <div /> }));
 vi.mock("./components/ChatInput.jsx", () => ({ ChatInput: () => <div /> }));
 
 describe("App /chat websocket status integration", () => {

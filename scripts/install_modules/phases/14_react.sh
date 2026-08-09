@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 # shellcheck disable=SC2034  # REACT_UI_STATUS is consumed by installer summary phases.
 
 # ── 7. React Web UI bağımlılıkları ve build ──────────────────────────────────
@@ -64,10 +65,8 @@ setup_react_frontend() {
             warn "Kurulum komutları: sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs (NodeSource repo betik tarafından hedef sürüme göre otomatik ayarlanır)"
         elif [[ "$NODE_MAJOR" -gt "$node_target_major" ]]; then
             warn "Node.js sürüm sapması tespit edildi: hedef ${node_target_major}.x, aktif $("$node_bin" -v). React build uyumluluğu için Node.js ${node_target_major}.x önerilir (.nvmrc)."
-            if command -v apt-cache &>/dev/null; then
-                if ! apt-cache policy nodejs 2>/dev/null | grep -qi 'nodesource'; then
-                    warn "Aktif nodejs paketi NodeSource görünmüyor; Ubuntu varsayılan apt deposu Node.js ${NODE_MAJOR}.x sürümünü öne alıyor olabilir."
-                fi
+            if command -v dpkg-query &>/dev/null && ! nodejs_package_is_from_nodesource; then
+                warn "Kurulu nodejs paket sürümü NodeSource imzası taşımıyor; Ubuntu varsayılan apt deposu Node.js ${NODE_MAJOR}.x sürümünü öne alıyor olabilir."
             fi
         else
             ok "Node.js sürümü uygun: $("$node_bin" -v)"
@@ -104,5 +103,6 @@ setup_react_frontend() {
         return
     fi
     ok "React Web UI bağımlılıkları kuruldu ve build tamamlandı."
+    # shellcheck disable=SC2034  # Consumed by finish-phase summary after module sourcing.
     REACT_UI_STATUS="hazır"
 }

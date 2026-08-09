@@ -52,6 +52,7 @@ for _submodule in (
     "audit_log",
     "auth",
     "coverage",
+    "marketing",
     "metrics",
     "models",
     "diagnostics",

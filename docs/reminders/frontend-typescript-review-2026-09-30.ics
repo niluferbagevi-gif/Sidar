@@ -1,0 +1,11 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Sidar//Frontend TypeScript Migration//TR
+BEGIN:VEVENT
+UID:frontend-typescript-review-20260930@sidar.local
+DTSTAMP:20260730T000000Z
+DTSTART;VALUE=DATE:20260930
+SUMMARY:Sidar frontend TypeScript geçişi ilk ilerleme değerlendirmesi
+DESCRIPTION:Frontend bakım ekibi inventory ratchet ilerlemesini ve bir sonraki JSX-to-TSX dilimini değerlendirmeli.
+END:VEVENT
+END:VCALENDAR

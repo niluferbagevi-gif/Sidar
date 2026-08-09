@@ -10,6 +10,7 @@ import sys
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,12 @@ class RemoteScriptPin:
 REMOTE_SCRIPT_PINS = (
     RemoteScriptPin("OLLAMA_INSTALL_SHA256", "https://ollama.com/install.sh", "Ollama installer"),
     RemoteScriptPin("UV_INSTALL_SHA256", "https://astral.sh/uv/install.sh", "uv installer"),
+    RemoteScriptPin("VOLTA_INSTALL_SHA256", "https://get.volta.sh", "Volta installer"),
+    RemoteScriptPin(
+        "NVM_INSTALL_SHA256",
+        "https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh",
+        "NVM installer",
+    ),
 )
 
 
@@ -35,7 +42,7 @@ def fetch_remote_bytes(url: str) -> bytes:
         },
     )
     with urllib.request.urlopen(request, timeout=60) as response:  # nosec B310  # pinned installer refresh utility
-        return response.read()
+        return cast(bytes, response.read())
 
 
 def replace_pin(content: str, env_var: str, sha256: str) -> str:

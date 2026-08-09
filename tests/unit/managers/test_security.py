@@ -1,4 +1,3 @@
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -89,6 +88,33 @@ def test_is_safe_path_valid_and_invalid_cases(tmp_path: Path) -> None:
     outside.touch()
     assert not mgr.is_safe_path(str(outside))
     assert not mgr.is_safe_path(str(tmp_path / ".env"))
+
+
+def test_is_safe_path_resolves_relative_paths_from_base_dir_not_process_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base_dir = tmp_path / "project"
+    base_dir.mkdir()
+    safe_file = base_dir / "notes" / "safe.txt"
+    safe_file.parent.mkdir()
+    safe_file.touch()
+    process_cwd = tmp_path / "unrelated-cwd"
+    process_cwd.mkdir()
+    monkeypatch.chdir(process_cwd)
+    mgr = SecurityManager(access_level="full", base_dir=base_dir)
+
+    assert mgr._resolve_safe("notes/safe.txt") == safe_file.resolve()
+    assert mgr.is_safe_path("notes/safe.txt") is True
+    assert mgr.can_read("notes/safe.txt") is True
+
+
+def test_is_safe_path_rejects_when_shared_resolver_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mgr = SecurityManager(access_level="full", base_dir=tmp_path)
+    monkeypatch.setattr(mgr, "_resolve_safe", lambda _path: None)
+
+    assert mgr.is_safe_path("safe.txt") is False
 
 
 def test_can_read_default_and_rejections(tmp_path: Path) -> None:
@@ -195,8 +221,26 @@ def test_set_level_changes_and_status_report(tmp_path: Path) -> None:
 
     report = mgr.status_report()
     assert "Erişim Seviyesi: FULL" in report
-    assert "Yazma" in report
+    assert "Yazma   : ✓ (tam — proje kökü)" in report
     assert "Shell" in report
+
+
+@pytest.mark.parametrize(
+    "level,expected_write_status",
+    [
+        ("sandbox", "Yazma   : ✓ (yalnızca /temp)"),
+        ("restricted", "Yazma   : ✗"),
+    ],
+)
+def test_status_report_write_status_by_level(
+    tmp_path: Path, level: str, expected_write_status: str
+) -> None:
+    mgr = SecurityManager(access_level=level, base_dir=tmp_path)
+
+    report = mgr.status_report()
+
+    assert f"Erişim Seviyesi: {level.upper()}" in report
+    assert expected_write_status in report
 
 
 def test_repr_contains_level(tmp_path: Path) -> None:
@@ -248,8 +292,11 @@ def test_validate_user_input_detects_combined_turkish_prompt_injection(tmp_path:
 def test_validate_user_input_flags_single_turkish_prompt_injection_signal(
     tmp_path: Path, text: str
 ) -> None:
-    """A single Turkish injection category is detected but, like the English patterns,
-    doesn't alone cross the block threshold (risk_score < 40 requires 2+ categories)."""
+    """A single Turkish injection category must not alone cross the block threshold.
+
+    It is detected but, like the English patterns, doesn't alone cross the
+    block threshold (risk_score < 40 requires 2+ categories).
+    """
     mgr = SecurityManager(access_level="sandbox", base_dir=tmp_path)
     result = mgr.validate_user_input(text)
 
@@ -301,52 +348,73 @@ def test_init_guardrails_stores_available_engine(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake_module = type("NemoguardrailsModule", (), {"LLMRails": object()})
-    monkeypatch.setitem(sys.modules, "nemoguardrails", fake_module)
+    monkeypatch.setattr("managers.security.importlib.import_module", lambda _name: fake_module)
     cfg = SimpleNamespace(ACCESS_LEVEL="sandbox", BASE_DIR=tmp_path, PROMPT_GUARD_ENABLED=True)
 
     mgr = SecurityManager(cfg=cfg)
 
     assert mgr._guardrails_engine is fake_module.LLMRails
+    assert mgr.guardrails_degraded_reason is None
 
 
 def test_init_guardrails_import_error_falls_back_without_crashing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    original_import = __import__
+    SecurityManager._guardrails_import_log_keys.clear()
 
-    def fake_import(name, *args, **kwargs):
-        if name == "nemoguardrails":
-            raise RuntimeError("boom")
-        return original_import(name, *args, **kwargs)
+    def fake_import_module(_name: str):
+        raise RuntimeError("boom")
 
-    monkeypatch.setattr("builtins.__import__", fake_import)
+    monkeypatch.setattr("managers.security.importlib.import_module", fake_import_module)
     cfg = SimpleNamespace(ACCESS_LEVEL="sandbox", BASE_DIR=tmp_path, PROMPT_GUARD_ENABLED=True)
 
     with caplog.at_level("WARNING"):
         mgr = SecurityManager(cfg=cfg)
 
     assert mgr._guardrails_engine is None
-    assert "Guardrails başlatılamadı" in caplog.text
+    assert mgr.guardrails_degraded_reason == "import-error: boom"
+    assert "regex tabanlı prompt koruması degraded mode'da çalışıyor" in caplog.text
 
 
 def test_init_guardrails_missing_dependency_logs_info(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    original_import = __import__
+    SecurityManager._guardrails_import_log_keys.clear()
 
-    def fake_import(name, *args, **kwargs):
-        if name == "nemoguardrails":
-            raise ImportError("No module named 'nemoguardrails'")
-        return original_import(name, *args, **kwargs)
+    def fake_import_module(_name: str):
+        raise ModuleNotFoundError("No module named 'nemoguardrails'", name="nemoguardrails")
 
-    monkeypatch.setattr("builtins.__import__", fake_import)
+    monkeypatch.setattr("managers.security.importlib.import_module", fake_import_module)
     cfg = SimpleNamespace(ACCESS_LEVEL="sandbox", BASE_DIR=tmp_path, PROMPT_GUARD_ENABLED=True)
 
     with caplog.at_level("INFO"):
         mgr = SecurityManager(cfg=cfg)
+        second_mgr = SecurityManager(cfg=cfg)
 
     assert mgr._guardrails_engine is None
-    assert "NeMo Guardrails yüklü değil; içerik filtrelemesi devre dışı." in caplog.text
+    assert second_mgr._guardrails_engine is None
+    assert mgr.guardrails_degraded_reason.startswith("missing-dependency:")
+    assert caplog.text.count("regex tabanlı prompt koruması degraded mode'da çalışıyor") == 1
+
+
+def test_init_guardrails_required_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    SecurityManager._guardrails_import_log_keys.clear()
+
+    def fake_import_module(_name: str):
+        raise RuntimeError("pydantic incompatibility")
+
+    monkeypatch.setattr("managers.security.importlib.import_module", fake_import_module)
+    cfg = SimpleNamespace(
+        ACCESS_LEVEL="sandbox",
+        BASE_DIR=tmp_path,
+        PROMPT_GUARD_ENABLED=True,
+        GUARDRAILS_REQUIRED=True,
+    )
+
+    with pytest.raises(RuntimeError, match="fail-closed"):
+        SecurityManager(cfg=cfg)
 
 
 def test_resolve_safe_accepts_absolute_paths_without_base_prefix(tmp_path: Path) -> None:

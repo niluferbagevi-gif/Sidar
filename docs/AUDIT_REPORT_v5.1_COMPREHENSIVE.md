@@ -1,3 +1,10 @@
+> **ARŞİV NOTU (2026-07-15):** Bu belge tarihsel audit snapshot'ı olarak korunur.
+> Güncel teknik borç, dosya boyutu ve refactor takibi için aktif kaynak
+> [`docs/REFACTOR_PLAN.md`](REFACTOR_PLAN.md) dosyasıdır. Bu rapordaki satır
+> sayıları ve “production ready / zero-debt” özetleri güncel kalite kapısı
+> yerine kullanılmamalıdır; örneğin `config.py` satır sayısı bu snapshot'taki
+> 784 değerinden sonra önemli ölçüde değişmiştir.
+
 # Sidar Proje Kapsamlı Denetim Raporu v5.1.0
 **Tarih:** 2026-03-26 | **Durum:** ✅ Tamamlandı | **Denetçi:** Claude Code Audit Agent
 

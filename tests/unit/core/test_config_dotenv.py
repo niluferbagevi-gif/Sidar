@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 
+import pytest
+
 from core import config_dotenv
 
 
@@ -26,6 +28,34 @@ def test_config_dotenv_parse_and_resolve_paths(tmp_path, monkeypatch):
         config_dotenv.resolve_dotenv_path("~/secret.env", base_dir=tmp_path)
         == tmp_path / "secret.env"
     )
+
+
+def test_secret_overlay_path_must_resolve_outside_repository(tmp_path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    outside = tmp_path / "secrets" / "sidar.env"
+
+    assert (
+        config_dotenv.validate_secret_overlay_outside_repo(str(outside), base_dir=repo)
+        == outside.resolve()
+    )
+    with pytest.raises(ValueError, match="repository dışında"):
+        config_dotenv.validate_secret_overlay_outside_repo(".env", base_dir=repo)
+    with pytest.raises(ValueError, match="repository dışında"):
+        config_dotenv.validate_secret_overlay_outside_repo("config/keys.env", base_dir=repo)
+    assert config_dotenv.validate_secret_overlay_outside_repo("", base_dir=repo) is None
+
+
+def test_secret_overlay_rejects_symlink_that_resolves_into_repository(tmp_path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    repo_secret = repo / ".env"
+    repo_secret.touch()
+    outside_link = tmp_path / "keys.env"
+    outside_link.symlink_to(repo_secret)
+
+    with pytest.raises(ValueError, match="repository dışında"):
+        config_dotenv.validate_secret_overlay_outside_repo(str(outside_link), base_dir=repo)
 
 
 def test_config_dotenv_tracking_and_reset_helpers(tmp_path):
@@ -188,18 +218,21 @@ def test_load_dotenv_if_exists_records_empty_missing_and_loaded_paths(tmp_path, 
 
     dotenv_file = tmp_path / ".env.loaded"
     dotenv_file.write_text("DOTENV_SAMPLE=loaded\n", encoding="utf-8")
-    assert config_dotenv.load_dotenv_if_exists(
-        ".env.loaded",
-        base_dir=tmp_path,
-        environ=os.environ,
-        load_events=events,
-        missing_file_notices=missing,
-        managed_keys=managed,
-        original_env_values=originals,
-        key_sources=sources,
-        override=True,
-        label="loaded",
-    ) == dotenv_file
+    assert (
+        config_dotenv.load_dotenv_if_exists(
+            ".env.loaded",
+            base_dir=tmp_path,
+            environ=os.environ,
+            load_events=events,
+            missing_file_notices=missing,
+            managed_keys=managed,
+            original_env_values=originals,
+            key_sources=sources,
+            override=True,
+            label="loaded",
+        )
+        == dotenv_file
+    )
 
     assert os.environ["DOTENV_SAMPLE"] == "loaded"
     assert "DOTENV_SAMPLE" in managed
@@ -250,18 +283,21 @@ def test_load_dotenv_into_effective_env_and_reload_baseline(tmp_path):
     assert events[-1]["reason"] == "empty_path"
 
     dotenv_file.write_text("KEPT=dotenv\nNEW=value\nIGNORED_KEY\n", encoding="utf-8")
-    assert config_dotenv.load_dotenv_into_effective_env(
-        effective_env,
-        ".env.reload",
-        base_dir=tmp_path,
-        load_events=events,
-        missing_file_notices=missing,
-        managed_keys=managed,
-        original_env_values=originals,
-        key_sources=sources,
-        override=False,
-        label="reload",
-    ) == dotenv_file
+    assert (
+        config_dotenv.load_dotenv_into_effective_env(
+            effective_env,
+            ".env.reload",
+            base_dir=tmp_path,
+            load_events=events,
+            missing_file_notices=missing,
+            managed_keys=managed,
+            original_env_values=originals,
+            key_sources=sources,
+            override=False,
+            label="reload",
+        )
+        == dotenv_file
+    )
 
     assert effective_env["KEPT"] == "original"
     assert effective_env["NEW"] == "value"

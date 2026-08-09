@@ -1,7 +1,6 @@
 """Smoke tests for application boot sanity."""
 
 import hashlib
-import inspect
 import os
 from pathlib import Path
 from types import SimpleNamespace
@@ -23,7 +22,6 @@ def _is_external_infra_checks_disabled() -> bool:
 
 def _masked_secret_hash(value: str) -> str:
     """Return a non-reversible, length-aware secret fingerprint for diagnostics."""
-
     if not value:
         return "<missing>"
     digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
@@ -32,7 +30,6 @@ def _masked_secret_hash(value: str) -> str:
 
 def _postgres_dsn_diagnostic_summary(database_url: str) -> str:
     """Summarize a PostgreSQL DSN without exposing the password."""
-
     parsed = urlsplit(database_url.strip())
     try:
         port = parsed.port
@@ -52,7 +49,6 @@ def _postgres_dsn_diagnostic_summary(database_url: str) -> str:
 
 def _database_url_dotenv_diagnostics(database_url: str) -> str:
     """Build failure diagnostics for smoke DB checks without logging secrets."""
-
     key_sources = app_config.get_dotenv_key_source_report()
     load_events = app_config.get_dotenv_load_report()
     database_url_source = key_sources.get("DATABASE_URL") or {}
@@ -128,25 +124,26 @@ def test_environment_sanity_required_ai_provider_settings() -> None:
     missing_fields = [
         field for field in required_fields if not str(getattr(cfg, field, "") or "").strip()
     ]
-    assert (
-        not missing_fields
-    ), f"Aktif AI sağlayıcısı '{provider}' için eksik yapılandırmalar: {', '.join(missing_fields)}"
+    assert not missing_fields, (
+        f"Aktif AI sağlayıcısı '{provider}' için eksik yapılandırmalar: {', '.join(missing_fields)}"
+    )
 
     if provider == "ollama":
-        assert str(getattr(cfg, "OLLAMA_URL", "")).startswith(
-            "http"
-        ), "OLLAMA_URL http/https ile başlamalı."
+        assert str(getattr(cfg, "OLLAMA_URL", "")).startswith("http"), (
+            "OLLAMA_URL http/https ile başlamalı."
+        )
     if provider == "litellm":
-        assert str(getattr(cfg, "LITELLM_GATEWAY_URL", "")).startswith(
-            "http"
-        ), "LITELLM_GATEWAY_URL http/https ile başlamalı."
+        assert str(getattr(cfg, "LITELLM_GATEWAY_URL", "")).startswith("http"), (
+            "LITELLM_GATEWAY_URL http/https ile başlamalı."
+        )
 
 
 def test_boot_smoke_scope_has_required_deeper_quality_gates() -> None:
     """Smoke boot success must not be treated as integration/e2e production readiness."""
-
     required_deeper_tests = {
-        "agent orchestration": Path("tests/integration/workflow/test_agent_workflow_integration.py"),
+        "agent orchestration": Path(
+            "tests/integration/workflow/test_agent_workflow_integration.py"
+        ),
         "websocket session": Path("tests/e2e/web/test_chat_websocket_real_e2e.py"),
         "plugin sandbox": Path("tests/integration/web/test_plugin_sandbox_integration.py"),
         "workflow manager": Path("tests/e2e/test_github_workflow.py"),
@@ -209,7 +206,10 @@ async def test_boot_health_probes_bypass_ddos_redis_rate_limit(
 
     fake_agent = SimpleNamespace(
         cfg=SimpleNamespace(AI_PROVIDER="ollama"),
-        health=SimpleNamespace(get_health_summary=lambda: {"status": "ok", "ollama_online": True}),
+        health=SimpleNamespace(
+            get_health_summary=lambda: {"status": "ok", "ollama_online": True},
+            get_dependency_health=lambda: {},
+        ),
     )
 
     async def _fake_get_agent():
@@ -228,11 +228,11 @@ async def test_boot_health_probes_bypass_ddos_redis_rate_limit(
                 transport=ASGITransport(app=web_server.app), base_url="http://test"
             ) as client:
                 healthz = await client.get("/healthz")
+                readyz = await client.get("/readyz")
 
         assert healthz.status_code == 200
+        assert readyz.status_code == 200
         assert redis_rate_limiter.await_count == 0
-        ddos_source = inspect.getsource(web_server.ddos_rate_limit_middleware)
-        assert "/readyz" in ddos_source
     finally:
         web_server.app.dependency_overrides.clear()
 
@@ -267,8 +267,7 @@ async def test_boot_postgresql_connection_select_1() -> None:
     diagnostics = _database_url_dotenv_diagnostics(database_url)
     if not database_url.startswith(("postgresql://", "postgres://")):
         pytest.skip(
-            "PostgreSQL smoke testi yalnızca postgres bağlantı URL'leriyle çalışır. "
-            f"{diagnostics}"
+            f"PostgreSQL smoke testi yalnızca postgres bağlantı URL'leriyle çalışır. {diagnostics}"
         )
 
     try:

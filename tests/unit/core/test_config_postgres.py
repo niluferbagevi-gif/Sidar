@@ -145,5 +145,6 @@ def test_postgres_password_drift_messages_reports_passwordless_postgresql_urls()
 
     assert config_postgres.postgres_password_drift_messages(getenv=_getenv(values)) == [
         "DATABASE_URL PostgreSQL URL parolası içermiyor; POSTGRES_PASSWORD ile senkron değil.",
-        "SIDAR_CONTAINER_DATABASE_URL PostgreSQL URL parolası içermiyor; POSTGRES_PASSWORD ile senkron değil.",
+        "SIDAR_CONTAINER_DATABASE_URL PostgreSQL URL parolası içermiyor; POSTGRES_PASSWORD ile "
+        "senkron değil.",
     ]

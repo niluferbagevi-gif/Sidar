@@ -1,204 +1,6 @@
 #!/usr/bin/env bash
-
-
-validate_monitoring_mount_paths() {
-    local prometheus_cfg="$SCRIPT_DIR/docker_setup/prometheus/prometheus.yml"
-    local grafana_provisioning_dir="$SCRIPT_DIR/docker_setup/grafana/provisioning"
-    local grafana_dashboards_dir="$SCRIPT_DIR/docker_setup/grafana/dashboards"
-    local grafana_datasource_cfg="$SCRIPT_DIR/docker_setup/grafana/provisioning/datasources/prometheus.yml"
-    local -a errors=()
-
-    if [[ -d "$prometheus_cfg" ]]; then
-        warn "Docker Desktop bug'ı tespit edildi: $prometheus_cfg bir klasör olarak oluşturulmuş. Silinip dosya olarak yeniden oluşturulacak."
-        rm -rf "$prometheus_cfg"
-    fi
-
-    if [[ ! -e "$prometheus_cfg" ]]; then
-        warn "Prometheus konfigürasyon dosyası bulunamadı, varsayılan dosya oluşturuluyor: $prometheus_cfg"
-        mkdir -p "$(dirname "$prometheus_cfg")"
-        cat > "$prometheus_cfg" <<'EOF'
-global:
-  scrape_interval: 15s
-
-scrape_configs:
-  - job_name: "prometheus"
-    static_configs:
-      - targets: ["localhost:9090"]
-EOF
-    elif [[ ! -f "$prometheus_cfg" ]]; then
-        errors+=("Dosya bekleniyordu ancak farklı tipte: $prometheus_cfg")
-    fi
-
-    if [[ ! -e "$grafana_provisioning_dir" ]]; then
-        warn "Grafana provisioning dizini bulunamadı, oluşturuluyor: $grafana_provisioning_dir"
-        mkdir -p "$grafana_provisioning_dir"
-    elif [[ ! -d "$grafana_provisioning_dir" ]]; then
-        errors+=("Dizin bekleniyordu ancak farklı tipte: $grafana_provisioning_dir")
-    fi
-
-    if [[ ! -e "$grafana_dashboards_dir" ]]; then
-        warn "Grafana dashboards dizini bulunamadı, oluşturuluyor: $grafana_dashboards_dir"
-        mkdir -p "$grafana_dashboards_dir"
-    elif [[ ! -d "$grafana_dashboards_dir" ]]; then
-        errors+=("Dizin bekleniyordu ancak farklı tipte: $grafana_dashboards_dir")
-    fi
-
-    if [[ -d "$grafana_provisioning_dir" ]] && [[ ! -e "$grafana_datasource_cfg" ]]; then
-        warn "Grafana Prometheus datasource tanımı bulunamadı, varsayılan dosya oluşturuluyor: $grafana_datasource_cfg"
-        mkdir -p "$(dirname "$grafana_datasource_cfg")"
-        cat > "$grafana_datasource_cfg" <<'EOF'
-apiVersion: 1
-datasources:
-  - name: Prometheus
-    type: prometheus
-    access: proxy
-    url: http://prometheus:9090
-    isDefault: true
-EOF
-    elif [[ -e "$grafana_datasource_cfg" ]] && [[ ! -f "$grafana_datasource_cfg" ]]; then
-        errors+=("Dosya bekleniyordu ancak farklı tipte: $grafana_datasource_cfg")
-    fi
-
-    if (( ${#errors[@]} > 0 )); then
-        printf ' - %s\n' "${errors[@]}" >&2
-        fail "Docker Compose monitoring bind-mount sanity check başarısız. Lütfen eksik/yanlış tipte yolları düzeltin."
-    fi
-}
-
-ensure_docker_compose_access_or_fail() {
-    local -a compose_cmd=("$@")
-    local docker_info_err=""
-    local docker_info_err_file=""
-
-    [[ ${#compose_cmd[@]} -gt 0 ]] || fail "Docker Compose komutu çözülemedi; servisler başlatılamıyor."
-    command -v docker >/dev/null 2>&1 || fail "Docker CLI bulunamadı; servisleri başlatmak için Docker gerekli."
-
-    docker_info_err_file="$(mktemp)"
-    if docker info >/dev/null 2>"$docker_info_err_file"; then
-        rm -f "$docker_info_err_file"
-        return 0
-    fi
-
-    docker_info_err="$(<"$docker_info_err_file")"
-    rm -f "$docker_info_err_file"
-
-    if [[ "$docker_info_err" == *"permission denied"* || "$docker_info_err" == *"Got permission denied"* ]]; then
-        if command -v sudo >/dev/null 2>&1 && sudo -n docker info >/dev/null 2>&1; then
-            fail "Docker daemon erişimi bu kullanıcı için yetkisiz; sudo ile çalışıyor görünüyor. Kurulumu sudo docker compose ile sürdürmek yerine kullanıcıyı docker grubuna ekleyin (sudo usermod -aG docker ${USER:-$(id -un 2>/dev/null || echo '<user>')}) ve oturumu yenileyin; WSL2'de Docker Desktop WSL Integration açık olmalıdır."
-        fi
-        fail "Docker daemon socket erişim hatası (permission denied). WSL2 kullanıyorsanız Docker Desktop WSL Integration ayarını açın; Linux hostta kullanıcıyı docker grubuna ekleyip oturumu yenileyin."
-    fi
-
-    fail "Docker daemon erişilemedi; '${compose_cmd[*]} up -d' öncesi Docker Desktop/daemon hazır olmalıdır. docker info çıktısı: ${docker_info_err}"
-}
-
-start_docker_services_or_fail() {
-    local -a compose_cmd=()
-    while [[ $# -gt 0 ]]; do
-        if [[ "$1" == "--" ]]; then
-            shift
-            break
-        fi
-        compose_cmd+=("$1")
-        shift
-    done
-    local -a services=("$@")
-    local stderr_file
-    stderr_file=$(mktemp)
-
-    ensure_docker_compose_access_or_fail "${compose_cmd[@]}"
-
-    if ! maybe_reset_postgres_volume_after_password_hardening "${compose_cmd[@]}" -- "${services[@]}"; then
-        fail "DB parola hardening sonrası PostgreSQL volume sıfırlanamadı; eski kimlik bilgileri nedeniyle kurulum güvenli şekilde durduruldu."
-    fi
-
-    if "${compose_cmd[@]}" up -d "${services[@]}" 2>"$stderr_file"; then
-        rm -f "$stderr_file"
-        return 0
-    fi
-
-    local compose_err=""
-    compose_err="$(<"$stderr_file")"
-    rm -f "$stderr_file"
-
-    if [[ "$compose_err" == *"permission denied while trying to connect to the Docker daemon socket"* ]]; then
-        fail "Docker daemon socket erişim hatası (permission denied). Windows'ta $(wsl_integration_remediation_message "${WSL_DISTRO_NAME:-Ubuntu}")"
-    fi
-
-    fail "Docker servisleri başlatılamadı: ${services[*]}. Logları kontrol edip tekrar deneyin."
-}
-
-wait_for_compose_services_health() {
-    local -a compose_cmd=()
-    while [[ $# -gt 0 ]]; do
-        if [[ "$1" == "--" ]]; then
-            shift
-            break
-        fi
-        compose_cmd+=("$1")
-        shift
-    done
-    local -a services=("$@")
-    local service_name=""
-    local container_id=""
-    local state=""
-
-    [[ ${#services[@]} -gt 0 ]] || return 0
-
-    if ! command -v docker &>/dev/null; then
-        warn "Docker CLI bulunamadı; compose health bekleme adımı atlanıyor."
-        return 0
-    fi
-
-    local health_timeout_seconds="${COMPOSE_HEALTH_WAIT_TIMEOUT_SECONDS:-90}"
-    local health_poll_seconds="${COMPOSE_HEALTH_WAIT_POLL_SECONDS:-2}"
-    local health_deadline=0
-    local now=0
-
-    if ! [[ "$health_timeout_seconds" =~ ^[0-9]+$ ]] || (( health_timeout_seconds < 1 )); then
-        health_timeout_seconds=90
-    fi
-    if ! [[ "$health_poll_seconds" =~ ^[0-9]+$ ]] || (( health_poll_seconds < 1 )); then
-        health_poll_seconds=2
-    fi
-
-    info "Docker healthcheck senkronizasyonu başlatıldı (${services[*]}, timeout=${health_timeout_seconds}s, poll=${health_poll_seconds}s)..."
-    for service_name in "${services[@]}"; do
-        container_id="$("${compose_cmd[@]}" ps -q "$service_name" 2>/dev/null | head -n1 || true)"
-        if [[ -z "$container_id" ]]; then
-            warn "Servis için container ID alınamadı: ${service_name} (health bekleme atlandı)."
-            continue
-        fi
-
-        health_deadline=$(( $(date +%s) + health_timeout_seconds ))
-        while true; do
-            state="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id" 2>/dev/null || echo unknown)"
-            case "$state" in
-                healthy|running)
-                    ok "Servis hazır: ${service_name} (${state})"
-                    break
-                    ;;
-                unhealthy|exited|dead)
-                    warn "Servis sağlıksız durumda: ${service_name} (${state})"
-                    return 1
-                    ;;
-            esac
-            now="$(date +%s)"
-            if (( now >= health_deadline )); then
-                break
-            fi
-            sleep "$health_poll_seconds"
-        done
-
-        state="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id" 2>/dev/null || echo unknown)"
-        if [[ "$state" != "healthy" && "$state" != "running" ]]; then
-            warn "Servis health timeout: ${service_name} (son durum: ${state}, timeout=${health_timeout_seconds}s)"
-            return 1
-        fi
-    done
-
-    return 0
-}
+set -Eeuo pipefail
+# Sidar installer phase: Docker service startup and validation orchestration.
 
 phase06_docker_daemon_gate_or_fail() {
     local max_attempts=3
@@ -764,15 +566,50 @@ wait_for_postgres_ready_after_docker_start() {
     return 1
 }
 
+diagnose_healthy_redis_host_mapping() {
+    local expected_host="$1"
+    local expected_port="$2"
+    local mapping_host="$expected_host"
+    local -a compose_cmd=()
+    local container_id=""
+    local health_status=""
+    local published_mapping=""
+
+    if command -v docker &>/dev/null && docker compose version &>/dev/null; then
+        compose_cmd=(docker compose)
+    elif command -v docker-compose &>/dev/null; then
+        compose_cmd=(docker-compose)
+    else
+        return 1
+    fi
+
+    container_id=$("${compose_cmd[@]}" ps -q redis 2>/dev/null | head -n1 || true)
+    [[ -n "$container_id" ]] || return 1
+    health_status=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id" 2>/dev/null || true)
+    [[ "$health_status" == "healthy" ]] || return 1
+
+    published_mapping=$("${compose_cmd[@]}" port redis 6379 2>/dev/null | head -n1 || true)
+    [[ "$mapping_host" == "localhost" || "$mapping_host" == "::1" ]] && mapping_host="127.0.0.1"
+    if [[ "$published_mapping" != "${mapping_host}:${expected_port}" ]]; then
+        warn "Redis container healthy ancak beklenen host port mapping bulunamadı (beklenen=${mapping_host}:${expected_port}, görülen=${published_mapping:-yok}). 60 saniye beklemek yerine kurulum erken durduruldu. Düzeltme: docker compose up -d --force-recreate redis"
+    else
+        warn "Redis container healthy ve ${published_mapping} yayınlanmış görünüyor; buna rağmen host bağlantısı başarısız. Port çakışması/firewall/proxy veya stale container mapping kontrol edilmeli. 60 saniye beklemek yerine kurulum erken durduruldu."
+    fi
+    return 2
+}
+
+
 wait_for_redis_ready_after_docker_start() {
     local env_file="$SCRIPT_DIR/.env"
     local redis_url=""
     local redis_host="localhost"
     local redis_port="6379"
+    local configured_redis_port=""
     local -a python_cmd=()
 
     if [[ -f "$env_file" ]]; then
-        redis_url=$(read_env_value_from_file "REDIS_URL" "$env_file")
+        redis_url=$(read_env_value_from_file "SIDAR_REDIS_URL" "$env_file")
+        [[ -n "$redis_url" ]] || redis_url=$(read_env_value_from_file "REDIS_URL" "$env_file")
     fi
     if [[ -z "$redis_url" ]]; then
         redis_url="redis://localhost:6379/0"
@@ -800,10 +637,17 @@ PY
         fi
     fi
 
+    configured_redis_port=$(read_env_value_from_file "REDIS_PORT" "$env_file")
+    if [[ "$redis_host" =~ ^(localhost|127\.0\.0\.1|::1)$ && "$configured_redis_port" =~ ^[0-9]+$ ]]; then
+        redis_port="$configured_redis_port"
+    fi
+
     info "Redis hazır olana kadar bekleniyor (${redis_host}:${redis_port})..."
     for _ in {1..30}; do
         if command -v redis-cli &>/dev/null; then
-            if redis-cli -h "$redis_host" -p "$redis_port" ping 2>/dev/null | grep -q "PONG"; then
+            local redis_password=""
+            redis_password=$(read_env_value_from_file "REDIS_PASSWORD" "$env_file")
+            if REDISCLI_AUTH="$redis_password" redis-cli -h "$redis_host" -p "$redis_port" ping 2>/dev/null | grep -q "PONG"; then
                 ok "Redis erişilebilir hale geldi."
                 return 0
             fi
@@ -830,6 +674,11 @@ PY
         else
             warn "redis-cli veya python bulunamadı; Redis hazır kontrolü atlanıyor."
             return 0
+        fi
+        if diagnose_healthy_redis_host_mapping "$redis_host" "$redis_port"; then
+            :
+        elif [[ $? -eq 2 ]]; then
+            return 1
         fi
         sleep 2
     done
@@ -1087,13 +936,45 @@ sidar_phase_local_migrations_and_models() {
     if [[ "${APP_RUNTIME_MODE_SELECTED:-local}" == "local" ]]; then
         # DB migrasyonu öncesi servis hazırlığı: kullanıcı onayı bu aşamada alınır.
         prepare_docker_for_migrations
-        local pg_pw="${POSTGRES_PASSWORD:-}"
-        if [[ -z "${pg_pw//[[:space:]]/}" ]]; then
-            pg_pw=$(read_env_value_from_file "POSTGRES_PASSWORD" "$SCRIPT_DIR/.env" | tr -d "\n")
+        local runtime_db_url=""
+        local db_conn_info=""
+        if resolve_runtime_database_url >/dev/null; then
+            runtime_db_url="$RUNTIME_DATABASE_URL"
+            db_conn_info=$("$(command -v python3 || command -v python)" - "$runtime_db_url" <<'PY'
+from urllib.parse import urlparse, unquote
+import sys
+
+url = sys.argv[1].replace("postgresql+asyncpg://", "postgresql://", 1)
+parsed = urlparse(url)
+print("|".join([
+    parsed.hostname or "127.0.0.1",
+    str(parsed.port or 5432),
+    unquote(parsed.username or "sidar"),
+    unquote(parsed.password or ""),
+    parsed.path.lstrip("/") or "sidar",
+]))
+PY
+)
+            ensure_postgres_databases_exist \
+                "$(echo "$db_conn_info" | cut -d'|' -f1)" \
+                "$(echo "$db_conn_info" | cut -d'|' -f2)" \
+                "$(echo "$db_conn_info" | cut -d'|' -f3)" \
+                "$(echo "$db_conn_info" | cut -d'|' -f4)" \
+                "$(echo "$db_conn_info" | cut -d'|' -f5)"
+        else
+            local pg_pw="${POSTGRES_PASSWORD:-}"
+            if [[ -z "${pg_pw//[[:space:]]/}" ]]; then
+                pg_pw=$(read_env_value_from_file "POSTGRES_PASSWORD" "$SCRIPT_DIR/.env" | tr -d "\n")
+            fi
+            warn "PostgreSQL DSN çözümlenemedi; veritabanı varlık hazırlığı POSTGRES_* fallback değerleriyle sürdürülecek."
+            ensure_postgres_databases_exist "127.0.0.1" "${POSTGRES_PORT:-5432}" "${POSTGRES_USER:-sidar}" "$pg_pw" "${POSTGRES_DB:-sidar}"
         fi
-        ensure_postgres_databases_exist "127.0.0.1" "${POSTGRES_PORT:-5432}" "${POSTGRES_USER:-sidar}" "$pg_pw" "${POSTGRES_DB:-sidar}"
         # Önce DB migrasyonu: olası bağlantı/şema hataları sonraki adımlara geçmeden görülsün.
         run_migrations
+        # Geliştirici modu da tam Docker ve smoke akışlarıyla aynı başlangıç
+        # bilgi tabanına sahip olmalı. Yardımcı, migrasyon tamamlanmadıysa veya
+        # AUTO_SEED_RAG_METADATA=false ise güvenli biçimde no-op olur.
+        seed_rag_metadata_after_migrations
         # Model indirme: fonksiyon sonunda cleanup_temp_ollama trap'i geçici 'ollama serve'
         # sürecini otomatik sonlandırır; hemen ardından gelen launch_docker_services'in
         # Docker Ollama servisiyle 11434 port çakışması bu şekilde önlenir.
@@ -1375,10 +1256,30 @@ sidar_phase06_report_production_postgres_password_alignment() {
             ;;
     esac
 
-    local pg_user pg_password pg_db pg_container
-    pg_user=$(read_env_value_from_file "POSTGRES_USER" "$SCRIPT_DIR/.env" | tr -d '\n')
-    pg_password=$(read_env_value_from_file "POSTGRES_PASSWORD" "$SCRIPT_DIR/.env" | tr -d '\n')
-    pg_db=$(read_env_value_from_file "POSTGRES_DB" "$SCRIPT_DIR/.env" | tr -d '\n')
+    local pg_user pg_password pg_db pg_container runtime_db_url db_conn_info
+    if resolve_runtime_database_url >/dev/null; then
+        runtime_db_url="$RUNTIME_DATABASE_URL"
+        db_conn_info=$("$(command -v python3 || command -v python)" - "$runtime_db_url" <<'PY'
+from urllib.parse import urlparse, unquote
+import sys
+
+url = sys.argv[1].replace("postgresql+asyncpg://", "postgresql://", 1)
+parsed = urlparse(url)
+print("|".join([
+    unquote(parsed.username or "sidar"),
+    unquote(parsed.password or ""),
+    parsed.path.lstrip("/") or "postgres",
+]))
+PY
+)
+        pg_user=$(echo "$db_conn_info" | cut -d'|' -f1)
+        pg_password=$(echo "$db_conn_info" | cut -d'|' -f2)
+        pg_db=$(echo "$db_conn_info" | cut -d'|' -f3)
+    else
+        pg_user=$(read_env_value_from_file "POSTGRES_USER" "$SCRIPT_DIR/.env" | tr -d '\n')
+        pg_password=$(read_env_value_from_file "POSTGRES_PASSWORD" "$SCRIPT_DIR/.env" | tr -d '\n')
+        pg_db=$(read_env_value_from_file "POSTGRES_DB" "$SCRIPT_DIR/.env" | tr -d '\n')
+    fi
     pg_container=$(read_env_value_from_file "SIDAR_POSTGRES_CONTAINER" "$SCRIPT_DIR/.env" | tr -d '\n')
 
     pg_user="${pg_user:-sidar}"
@@ -1399,6 +1300,30 @@ sidar_phase06_report_production_postgres_password_alignment() {
         ok "Production profili seçildi: mevcut PostgreSQL volume parolası .env ile uyumlu görünüyor."
     else
         warn "Production profili seçildi: mevcut PostgreSQL volume parolası .env ile doğrulanamadı. Gerekirse .env parolasını volume ile eşleştirin veya temiz kurulum için volume reset uygulayın."
+    fi
+}
+
+sidar_phase06_ensure_full_git_history_for_smoke_gate() {
+    # scripts/install_modules/phases/02_repo.sh, kurulumu hızlandırmak için repoyu
+    # --depth=1 (shallow) klonlar. tests/smoke/test_install_verification.py içindeki
+    # test_install_sidar_embedded_manifests_in_sync testi ise
+    # scripts/tools/update_install_module_hash_manifest.py --check üzerinden
+    # SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT pinini `git show <pin>:<path>` ile
+    # doğrular; pinlenen commit shallow klonun objektif veritabanında yoksa her
+    # modül için "yok" (okunamadı) döner ve gerçek bir drift olmamasına rağmen
+    # 36 modülün tamamı hatalı biçimde drift olarak raporlanır (bkz.
+    # github_upload.py:ensure_full_git_history_for_manifest_checks, aynı sınıf
+    # hatanın push-öncesi kalite kapısındaki eşleniği). Servis öncesi smoke gate
+    # için de aynı garantiyi burada sağlıyoruz.
+    local shallow=""
+    shallow="$(cd "$SCRIPT_DIR" && git rev-parse --is-shallow-repository 2>/dev/null || true)"
+    [[ "$shallow" == "true" ]] || return 0
+
+    info "Repo shallow clone (--depth=1) olarak indirilmiş; installer manifest pin doğrulaması tam git geçmişi gerektiriyor. Git geçmişi tamamlanıyor (git fetch --unshallow origin)..."
+    if (cd "$SCRIPT_DIR" && git fetch --unshallow origin >/dev/null 2>&1); then
+        ok "Git geçmişi tamamlandı; installer manifest pin doğrulaması shallow clone kaynaklı yanlış pozitif vermeyecek."
+    else
+        warn "git fetch --unshallow origin başarısız oldu; installer manifest pin doğrulaması (SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT) shallow clone nedeniyle yanlış pozitif drift raporlayabilir. Elle çalıştırın: git -C \"$SCRIPT_DIR\" fetch --unshallow origin"
     fi
 }
 
@@ -1436,6 +1361,8 @@ run_pre_service_installer_smoke_gate() {
     else
         warn "pyproject.toml içinde [project].version okunamadı; INSTALL_SIDAR_VERSION sözleşmesi CI smoke testi kapsamında doğrulanacak."
     fi
+
+    sidar_phase06_ensure_full_git_history_for_smoke_gate
 
     local smoke_log
     smoke_log="$(mktemp "${TMPDIR:-/tmp}/sidar_pre_service_smoke.XXXXXX")" || fail "Servis öncesi installer smoke gate log dosyası oluşturulamadı."
@@ -1481,9 +1408,18 @@ PY
         set -o pipefail
         (
             cd "$SCRIPT_DIR" && \
+                SIDAR_ENV=test \
+                SIDAR_KEYS_FILE="" \
+                SIDAR_TEST_LOAD_REAL_KEYS=0 \
                 SIDAR_INSTALL_TEST_MODE=1 \
                 SIDAR_INSTALL_SMOKE_BASH_TIMEOUT="${SIDAR_INSTALL_SMOKE_BASH_TIMEOUT:-180}" \
-                uv run pytest -q --no-cov -p no:xdist -x tests/smoke/test_install_verification.py \
+                uv run pytest \
+                    -q \
+                    --no-cov \
+                    -p no:xdist \
+                    -x \
+                    --confcutdir="$SCRIPT_DIR/tests/smoke" \
+                    tests/smoke/test_install_verification.py \
                 </dev/null
         ) 2>&1 | tee "$smoke_log"
     ); then
@@ -1494,6 +1430,12 @@ PY
         # shellcheck disable=SC2034  # scripts/install_modules/phases/10_validation.sh reads this sourced state.
         SIDAR_PRE_SERVICE_INSTALLER_SMOKE_GATE_STATUS="hata"
         local persisted_smoke_log=""
+        SIDAR_LAST_FAILED_TEST="$(
+            grep -m1 -E '^FAILED[[:space:]]+tests/' "$smoke_log" 2>/dev/null |
+                sed -E 's/^FAILED[[:space:]]+([^[:space:]]+).*/\1/' ||
+                true
+        )"
+        export SIDAR_LAST_FAILED_TEST
         persisted_smoke_log="$(sidar_phase06_preserve_pre_service_smoke_log "$smoke_log" || true)"
         warn "Smoke gate çıktısı: $smoke_log"
         if [[ -n "${persisted_smoke_log//[[:space:]]/}" ]]; then
@@ -1507,7 +1449,15 @@ PY
         else
             sed -n '1,200p' "$smoke_log" | sed 's/^/  | /' || true
         fi
-        warn "Smoke gate INSTALL_SIDAR_VERSION sözleşmesi başarısız olmuş olabilir; pyproject.toml içindeki [project].version satırını ve 'source install_sidar.sh' çıktısındaki INSTALL_SIDAR_VERSION değerini kontrol edin."
+        if grep -qE 'INSTALL_SIDAR_VERSION|_run_bash_smoke .* tamamlanamadı|TimeoutExpired' "$smoke_log" 2>/dev/null; then
+            warn "Smoke gate INSTALL_SIDAR_VERSION sözleşmesi başarısız olmuş olabilir; pyproject.toml içindeki [project].version satırını ve 'source install_sidar.sh' çıktısındaki INSTALL_SIDAR_VERSION değerini kontrol edin."
+            warn "Probe-only sürüm kontrolü güncel install_sidar.sh içinde Bash fast-path ile saniyeler içinde bitmelidir; timeout alıyorsanız eski/farklı checkout, branch uyumsuzluğu veya WSL dosya sistemi yavaşlığını kontrol edin."
+            warn "Ayrıntılı teşhis için docs/INSTALL_SMOKE_GATE_TROUBLESHOOTING.md içindeki hızlı 'SIDAR_INSTALL_VERSION_PROBE_ONLY=1' doğrulamasını çalıştırın."
+            warn "Smoke gate probe timeout belirtisi varsa SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=240 gibi daha yüksek bir değerle yeniden deneyin; kurulumun servis öncesi smoke gate'ini bilinçli atlamak için --skip-smoke-test veya RUN_SMOKE_TESTS_MODE=never kullanın."
+        elif grep -q 'Argument list too long' "$smoke_log" 2>/dev/null; then
+            warn "Smoke subprocess environment boyutu işletim sistemi sınırını aştı."
+            warn "SIDAR_KEYS_FILE ve dotenv zincirindeki büyük değerleri kontrol edin."
+        fi
         if grep -q "test_install_sidar_bootstrap_core_hash_drift_reports_core_layer" "$smoke_log" 2>/dev/null; then
             warn "Installer core manifest drift smoke testi başarısız oldu; install_sidar.sh içinde SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY erken çıkışının core_manifest_status=2 durumunu maskelemediğini kontrol edin."
         fi
@@ -1516,9 +1466,6 @@ PY
             warn "Varsayılan güvenlik davranışı gerçek servis anahtarlarını .env.test içine kopyalamaz."
             warn "Test gerekiyorsa SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV=1 opt-in davranışı ayrı test edilmelidir."
         fi
-        warn "Probe-only sürüm kontrolü güncel install_sidar.sh içinde Bash fast-path ile saniyeler içinde bitmelidir; timeout alıyorsanız eski/farklı checkout, branch uyumsuzluğu veya WSL dosya sistemi yavaşlığını kontrol edin."
-        warn "Ayrıntılı teşhis için docs/INSTALL_SMOKE_GATE_TROUBLESHOOTING.md içindeki hızlı 'SIDAR_INSTALL_VERSION_PROBE_ONLY=1' doğrulamasını çalıştırın."
-        warn "Smoke gate probe timeout belirtisi varsa SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=240 gibi daha yüksek bir değerle yeniden deneyin; kurulumun servis öncesi smoke gate'ini bilinçli atlamak için --skip-smoke-test veya RUN_SMOKE_TESTS_MODE=never kullanın."
         sidar_phase06_fail_with_smoke_cleanup "Servis öncesi installer smoke gate başarısız; Docker servisleri başlatılmadan kurulum durduruldu (detay: ${persisted_smoke_log:-$smoke_log})."
     fi
     sidar_phase06_cleanup_pre_service_smoke_log

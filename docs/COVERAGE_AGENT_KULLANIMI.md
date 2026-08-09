@@ -11,8 +11,8 @@ Bu rehber, projedeki `coverage_agent` kullanılarak coverage açığına göre *
 
 > Güncel not: Eski örnek çıktılardaki düşük backend/frontend coverage değerleri artık
 > operasyonel eşik olarak kullanılmaz. Günlük local/CI kalite kapısı `pyproject.toml`
-> içindeki `%99` ratchet baseline'ını kullanır; local/CI ratchet cap `%99` olarak
-> korunur ve `%100` hedef yalnız coverage campaign / strict opt-in profilinde geçerlidir.
+> içindeki `%100` ratchet baseline'ını kullanır; local/CI ratchet cap `%100` olarak
+> korunur; coverage campaign de aynı `%100` kalite tabanını kullanır.
 
 ## 2) Coverage Agent'i nasıl tetiklersin?
 
@@ -95,13 +95,13 @@ Bu mod hızlıdır ama kontrol seviyesi düşüktür. Kontrollü ve kural uyumlu
 ## 4.1) Coverage hedefleri operasyonel olarak ayrıdır
 
 Coverage yüzdeleri tek bir kapı gibi okunmamalıdır. Sidar'da dört ayrı operasyonel
-profil vardır: günlük local/CI gate için güncel ratchet baseline `%99`, local/CI
-ratchet cap `%99`, planlı coverage campaign için opt-in hedef `%100` olarak
+profil vardır: günlük local/CI gate için güncel ratchet baseline `%100`, local/CI
+ratchet cap `%100`, planlı coverage campaign hedefi de `%100` olarak
 ayrıştırılır.
 
 | Operasyon | Varsayılan eşik/hedef | Komut | Anlamı |
 | --- | --- | --- | --- |
-| Günlük local kalite kapısı | `pyproject.toml` / `COVERAGE_FAIL_UNDER_LOCAL` / `COVERAGE_FAIL_UNDER` (güncel repo gate: `%99`, ratchet cap `%99`) | `./run_tests.sh` | Geliştiricinin günlük smoke + unit kalite kapısıdır; ratchet ile ölçülen coverage arttıkça yalnızca yukarı taşınır, başarısızsa değişiklik merge/PR öncesi düzeltilir. |
+| Günlük local kalite kapısı | `pyproject.toml` / `COVERAGE_FAIL_UNDER_LOCAL` / `COVERAGE_FAIL_UNDER` (güncel repo gate: `%100`, ratchet cap `%100`) | `./run_tests.sh` | Geliştiricinin günlük smoke + unit kalite kapısıdır; ratchet ile ölçülen coverage arttıkça yalnızca yukarı taşınır, başarısızsa değişiklik merge/PR öncesi düzeltilir. |
 | CI zorunlu gate | CI ortamında `TEST_PROFILE=ci`; `.github/workflows/ci.yml` artık ayrı bir `COVERAGE_FAIL_UNDER_CI` sabitlemiyor, local ile aynı ratchet edilmiş `pyproject.toml` tabanını miras alır (`COVERAGE_FAIL_UNDER_CI` istenirse ad-hoc override için hâlâ kullanılabilir) | `CI=true TEST_PROFILE=ci ./run_tests.sh` | Lokal ile aynı ratchet edilmiş taban üzerinden merge engelleyici gate uygular; otonom `%99.8` hedefiyle karıştırılmaz. |
 | Otonom coverage iyileştirme hedefi | `AUTONOMOUS_LOOP_COVERAGE_PROFILE=short` ile `%99.8` | `./autonomous_loop.sh` | Testler geçse bile kalan coverage açığını kapatmak için self-heal/CoverageAgent döngüsünü tetikleyen ayrı hedeftir. |
 | Coverage kampanyası | Planlı/manual hedef (`full`, `file` veya override) | `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign ... ./autonomous_loop.sh` | Sprint/borç kapatma çalışmasıdır; günlük local gate değildir. |
@@ -111,11 +111,8 @@ ayrıştırılır.
 yazılır: testler güncel local gate eşiğini geçtiği halde `%99.8` hedefi altında kalmak **local/CI
 başarısızlığı değil**, yalnızca otonom iyileştirme döngüsünün devam edeceği anlamına gelir.
 
-> Operasyon notu: `%100.00` ölçüm görüldüğünde bile günlük local/CI ratchet cap `%99`
-> bilinçli olarak korunur. `Coverage gate ratcheted: %90 -> %99 (measured=%100.00)`
-> çıktısı, refactor dönemi için doğru güvenlik tamponudur; `%100` gate yalnız
-> `COVERAGE_CAMPAIGN=1`, `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign` veya
-> bilinçli `COVERAGE_STRICT_LOCAL_RATCHET=1` opt-in'i ile denenmelidir.
+> Operasyon notu: `%100.00` ölçüm günlük local/CI ratchet cap değerini `%100` yapar.
+> Ratchet bu değeri düşürmez; daha sonraki `%99.x` ölçümü merge kapısında başarısız olur.
 
 Otonom döngünün kendi iyileştirme hedefi maliyet/iterasyon kontrolü için profillenebilir:
 

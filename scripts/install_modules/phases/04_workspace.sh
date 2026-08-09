@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 
 sidar_run_or_warn() {
     local description="$1"
@@ -95,6 +96,7 @@ sidar_phase_workspace_config() {
         install_uv_cli
         create_uv_venv
         install_python_deps
+        install_pre_commit_hooks
         install_pyright_lsp_tool
         verify_torch_cuda
     else

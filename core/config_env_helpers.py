@@ -97,17 +97,17 @@ def get_list_env(key: str, default: list[str] | None = None, separator: str = ",
 
 
 def get_prefixed_env(prefix_key: str, legacy_key: str, default: str = "") -> str:
-    """Read a Sidar-prefixed env var while preserving a legacy fallback."""
+    """Read a non-blank Sidar-prefixed env var with a legacy fallback."""
     prefixed_value = os.getenv(prefix_key)
-    if prefixed_value is not None:
+    if prefixed_value is not None and prefixed_value.strip():
         return prefixed_value
     return os.getenv(legacy_key, default)
 
 
 def get_optional_prefixed_env(prefix_key: str, legacy_key: str) -> str | None:
-    """Read an optional Sidar-prefixed env var with legacy fallback."""
+    """Read an optional non-blank Sidar-prefixed env var with legacy fallback."""
     prefixed_value = os.getenv(prefix_key)
-    if prefixed_value is not None:
+    if prefixed_value is not None and prefixed_value.strip():
         return prefixed_value
     return os.getenv(legacy_key)
 
@@ -139,7 +139,8 @@ def get_float_prefixed_env(prefix_key: str, legacy_key: str, default: float = 0.
         return float(raw_value)
     except (ValueError, TypeError):
         logger.warning(
-            "%s / %s ortam değişkeni geçerli bir ondalık sayı değil (%r); varsayılan %r kullanılacak.",
+            "%s / %s ortam değişkeni geçerli bir ondalık sayı değil (%r); varsayılan %r "
+            "kullanılacak.",
             prefix_key,
             legacy_key,
             raw_value,

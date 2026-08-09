@@ -34,8 +34,14 @@ metriği yerine yazılmamalıdır.
   gibi kullanılmamalıdır. Unit ağırlığı yüksek olduğu için refactor PR'larında yalnız unit coverage'a güvenilmez; `web_server.py`
   ve `core/db/__init__.py` gibi facade taşımalarında en az bir integration sahnesi de eklenir.
 - `run_tests.sh` Aşama 1 unit fazı artık pytest-xdist mevcutsa `PYTEST_WORKERS` ve
-  `PYTEST_DIST_MODE=loadgroup` ile yüksek paralellikte çalışır. Aşama 2 integration/smoke/e2e fazı
-  ise `INTEGRATION_PYTEST_WORKERS` varsayılanı ile sınırlı paralellik kullanır; bu nedenle "Faz 1
+  `PYTEST_DIST_MODE=loadgroup` ile yüksek paralellikte (varsayılan `auto`, CI runner'da
+  çekirdek sayısı kadar) çalışır. Aşama 2 integration/smoke/e2e fazı ise
+  `INTEGRATION_PYTEST_WORKERS` varsayılan **2** ile kasıtlı olarak sınırlı paralellik
+  kullanır: bu fazdaki testler CI'da tek, paylaşılan bir PostgreSQL servisine
+  (`DATABASE_URL=.../sidar_test`, worker başına izole değil) bağlanır — unit fazının
+  mock/izole state'inin aksine, yüksek paralellik aynı tabloları/satırları paylaşan
+  testler arasında sahte-flaky race condition riski taşır (bkz.
+  `scripts/test_gates/coverage_helpers.sh`'daki gerekçe yorumu). Bu nedenle "Faz 1
   paralel değil" tespiti güncel script için geçerli değildir.
 - Backend pytest fazları artık CI/test özeti için faz bazlı JUnit çıktıları üretir:
   - `artifacts/pytest/backend-unit.xml`
@@ -151,18 +157,11 @@ metriği yerine yazılmamalıdır.
   repo'ya commitli kalmalıdır; `run_tests.sh` dosya yoksa veya gate beklenen minimumun altındaysa
   baseline kaybını önlemek için kalite akışını fail-closed durdurur. Ratchet yalnız başarılı
   birleşik coverage koşusundan sonra ve ölçüm bir sonraki basamağa gerçekten ulaştığında yükselir.
-- Örneğin gate `%99` ise bir sonraki koşu doğrudan `%100` olmak zorunda değildir: `%99.x` ölçüm
-  gate'i geçer ancak ratchet `%99` seviyesinde kalır. Gate yalnız ölçüm `%100` seviyesine ulaştığında
-  `%100` olur.
-- Varsayılan local/CI ratchet üst sınırı `%99` olarak kalır; bu, günlük geliştirme akışında tek satırlık
-  coverage dalgalanmalarının tüm kalite kapısını kırmaması için bilinçli tampondur. `%100` gate'i
-  zorlamak istediğiniz olgun/stabil yerel runnerlarda `COVERAGE_STRICT_LOCAL_RATCHET=1` kullanın veya
-  daha açık kontrol için `COVERAGE_RATCHET_MAX_GATE=100` verin. Coverage campaign akışı
-  (`COVERAGE_CAMPAIGN=1` / `AUTONOMOUS_LOOP_OPERATION_PROFILE=coverage-campaign`) zaten ratchet cap'i
-  `%100` olarak açar.
-- Ölçüm `%100.00` olsa bile refactor dönemi günlük gate'inde ratchet cap `%99` korunur; örneğin
-  `Coverage gate ratcheted: %90 -> %99 (measured=%100.00)` çıktısı doğru davranıştır, `%100` gate'e
-  otomatik terfi sinyali değildir. `%100` yalnız coverage-campaign/strict-local opt-in ile denenmelidir.
+- Ölçüm `%100.00` olduğunda ratchet bunu kalıcı merge tabanına taşır; örneğin
+  `Coverage gate ratcheted: %99 -> %100 (measured=%100.00)` çıktısı beklenen davranıştır.
+- Varsayılan local/CI ve campaign ratchet üst sınırı `%100`'dür. Gate bir kez `%100` olduktan sonra
+  ratchet değeri düşürmez; sonraki `%99.x` ölçümü final `coverage report --fail-under=100` adımında
+  fail-closed sonuçlanır. Açık override'lar yalnız teşhis ve kontrollü operasyonlar içindir.
 
 ## Performance benchmark baseline yönetimi
 
@@ -196,11 +195,16 @@ metriği yerine yazılmamalıdır.
   sonlanır. GitHub Actions bootstrap yolu manuel **Benchmark baseline seed** workflow'udur:
   `workflow_dispatch` ile çalıştırılan job `BENCHMARK_COMPARE_REQUIRED=0` ve
   `BENCHMARK_ENFORCE_COMPARE=0` kullanarak `.benchmarks/*_baseline.json` üretir, sonucu
-  `benchmark-baseline-${runner.os}-py311-${branch}-${run_id}` cache key'i ve 30 günlük artifact
-  olarak saklar. Ana `CI` workflow'u branch, `main/master` ve genel restore-key zincirinden bu
+  `benchmark-baseline-${runner.os}-py311-${uv.lock hash}-${branch}-${run_id}` cache key'i ve 30 günlük artifact
+  olarak saklar; ayrıca `baseline-seed-manifest.json` içinde üretilen baseline dosyalarını ve
+  sonraki sıkı kapı komutunu (`BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1`) kaydeder.
+  Ana `CI` workflow'u branch, `main/master` ve genel restore-key zincirinden bu
   cache'i bulamazsa yine fail-closed kalır; seed artifact'i `mean`, `stddev`, örnek sayısı,
   donanım/runner profili ve `commit_info.dirty` açısından review edilmeden güvenilir baseline
-  kabul edilmemelidir. Yerel bootstrap için boş `.benchmarks` durumunda `RUN_BENCHMARKS=required ./run_tests.sh` varsayılan `BENCHMARK_COMPARE_REQUIRED=0` ile otomatik karşılaştırmasız seed eder; bilinçli manuel override komutu:
+  kabul edilmemelidir. Cache restore prefix'lerinin tamamı aynı `uv.lock` hash'ini taşır;
+  bağımlılık kilidi değiştiğinde eski dependency setine ait baseline restore edilemez. Ayrıca
+  `BENCHMARK_ENFORCE_COMPARE=1` altında 14 günlük yaş sınırını aşan baseline fail-closed olur.
+  Yerel bootstrap için boş `.benchmarks` durumunda `RUN_BENCHMARKS=required ./run_tests.sh` varsayılan `BENCHMARK_COMPARE_REQUIRED=0` ile otomatik karşılaştırmasız seed eder; bilinçli manuel override komutu:
   `BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required ./run_tests.sh`. Sonraki sıkı doğrulama
   komutu: `BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1 RUN_BENCHMARKS=required ./run_tests.sh`.
 - Yeni artifact'i otomatik olarak doğru kabul etmeyin. Önce eski ve yeni JSON içindeki `mean`,
@@ -274,6 +278,9 @@ metriği yerine yazılmamalıdır.
   4. Benchmark ölçümünde schema init/bağlantı aç-kapat maliyetini workload dışında tutarak
      gerçek mesajlaşma throughput'unu ayrı izleyin.
 - Doğrulama notu:
+  - I/O concurrency benchmarkı 5 warmup + 50 ölçüm turu kullanır. Daha geniş örneklem
+    kısa süreli jitter etkisini azaltır; sabit self-hosted donanım ve aynı-runner
+    baseline zorunluluğunun yerine geçmez.
   - SQLite tarafında WAL modu ve `messages(session_id)` indeksinin varlığı
     `tests/unit/core/test_db.py` içinde güvence altına alınmıştır.
 
@@ -301,8 +308,12 @@ metriği yerine yazılmamalıdır.
   quantization, mimari, driver, `GPU_BENCH_NUM_BATCH`, `GPU_BENCH_NUM_CTX`,
   `GPU_BENCH_NUM_PREDICT` ve `OLLAMA_KEEP_ALIVE` değerlerini içerir. Bu ayarlardan biri
   değişirse önce yeni profil baseline'ı oluşturulur; eski profil yanlış pozitif alarm üretmez.
-- Trend alarm yönleri metrik semantiğine göre ayrıdır: TTFT/VRAM artışı ve token/sn düşüşü
-  regresyondur. TTFT/VRAM düşüşü veya token/sn artışı iyileşme sayılır ve alarm üretmez.
+- Trend alarm yönleri metrik semantiğine göre ayrıdır: TTFT, VRAM tepe kullanımı ve
+  `test_gpu_vram_peak_under_load` mean süresi artışı ile token/sn düşüşü regresyondur.
+  GPU trend geçmişi VRAM stres testinin mean süresini `vram_load_mean_ms` olarak ayrıca
+  kaydeder ve eşik altındaki küçük sapmaları da loglar; böylece tek koşu alarm üretmeden
+  birkaç eşdeğer production/nightly koşusundaki aynı yön izlenebilir. TTFT/VRAM/mean süre
+  düşüşü veya token/sn artışı iyileşme sayılır ve alarm üretmez.
 - Örnek başlatma komutları:
   - Host/WSL2: `OLLAMA_NUM_PARALLEL=4 ollama serve`
   - Docker Compose: `OLLAMA_NUM_PARALLEL=4 docker compose up ollama`

@@ -1,4 +1,4 @@
-"""Entity/Persona Memory (v5.0)
+"""Entity/Persona Memory (v5.0).
 
 Kullanıcının uzun vadeli kodlama stilini, dil tercihlerini ve etkileşim
 örüntülerini Mem0/Zep benzeri bir yapıda SQLite veritabanında saklar.
@@ -70,8 +70,7 @@ CREATE INDEX IF NOT EXISTS idx_entity_memory_user ON entity_memory(user_id);
 
 
 class EntityMemory:
-    """
-    Kullanıcı başına anahtar/değer persona deposu.
+    """Kullanıcı başına anahtar/değer persona deposu.
 
     Parametreler:
         database_url: SQLAlchemy async URL (sqlite+aiosqlite:/// veya postgresql+asyncpg://)
@@ -157,7 +156,8 @@ class EntityMemory:
 
             await conn.execute(
                 sql_text(
-                    "INSERT INTO entity_memory (user_id, key, value, metadata, created_at, updated_at)"
+                    "INSERT INTO entity_memory (user_id, key, value, metadata, created_at, "
+                    "updated_at)"
                     " VALUES (:uid, :key, :val, :meta, :now, :now)"
                     " ON CONFLICT (user_id, key) DO UPDATE SET"
                     "  value = excluded.value,"
@@ -180,9 +180,7 @@ class EntityMemory:
         async with self._engine.connect() as conn:
             row = await conn.execute(
                 sql_text(
-                    "SELECT value FROM entity_memory"
-                    " WHERE user_id = :uid AND key = :key"
-                    " LIMIT 1"
+                    "SELECT value FROM entity_memory WHERE user_id = :uid AND key = :key LIMIT 1"
                 ),
                 {"uid": user_id, "key": key},
             )

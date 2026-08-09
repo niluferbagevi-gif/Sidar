@@ -82,7 +82,9 @@ def test_read_plugin_marketplace_state_tolerates_os_error(
         def warning(self, message: str, *args: object) -> None:
             self.warnings.append(message % args if args else message)
 
-    monkeypatch.setattr(Path, "read_text", lambda self, **_kwargs: (_ for _ in ()).throw(OSError("disk")))
+    monkeypatch.setattr(
+        Path, "read_text", lambda self, **_kwargs: (_ for _ in ()).throw(OSError("disk"))
+    )
     recorder = _RecordingLogger()
 
     assert plugin_marketplace.read_plugin_marketplace_state(logger_obj=recorder) == {}

@@ -1,5 +1,5 @@
-"""
-Sidar Project - Web Arayüzü Sunucusu
+"""Sidar Project - Web Arayüzü Sunucusu.
+
 FastAPI + WebSocket ile asenkron (async) çift yönlü akış destekli chat arayüzü.
 
 Başlatmak için:
@@ -9,37 +9,31 @@ Başlatmak için:
 
 from __future__ import annotations
 
-import ast
 import asyncio
 import atexit
 import builtins
 import contextlib
-import hashlib
-import hmac
+import hashlib as hashlib  # explicit legacy module export
+import hmac as hmac  # explicit legacy module export
 import importlib
 import importlib.util
 import inspect
 import ipaddress
-import json
 import logging
 import os
 import re
 import secrets
-import shutil
 import signal
-import subprocess  # nosec B404
 import sys
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Annotated, Any, cast
+from typing import Any, cast
 
 import anyio
 from fastapi import (
-    Body,
     Depends,
     FastAPI,
     File,
@@ -53,7 +47,6 @@ from fastapi import (
 )
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
 from redis.asyncio import Redis
 
 from agent.base_agent import BaseAgent
@@ -82,14 +75,18 @@ from core.llm_metrics import (
 from managers.system_health import render_llm_metrics_prometheus
 from sidar_assets.paths import web_dist_path
 from web import app_factory as _app_factory
+from web import autonomy_bridge, collaboration_service, process_lifecycle
 from web import bootstrap as web_bootstrap
 from web import security as web_security
 from web.bootstrap import make_static_files_with_staticfiles as _make_static_files_with_staticfiles
+from web.middleware import access_policy as access_policy_helpers
+from web.middleware.access_policy import access_policy_middleware_impl
 from web.middleware.cors import configure_loopback_cors
 from web.middleware.ratelimit import (
     ddos_rate_limit_middleware_impl,
     rate_limit_middleware_impl,
 )
+from web.plugins import sandbox as plugin_sandbox
 from web.routes import autonomy as autonomy_routes
 from web.routes import collaboration as collaboration_routes
 from web.routes import federation as federation_routes
@@ -99,6 +96,8 @@ from web.routes import memory_feedback as memory_feedback_routes
 from web.routes import operations as operations_routes
 from web.routes import operations_models as operations_route_models
 from web.routes import plugin_marketplace as plugin_marketplace_routes
+from web.routes import request_models as route_request_models
+from web.routes import serialization as route_serialization
 from web.routes import vision as vision_routes
 from web.routes import ws_chat as ws_chat_routes
 from web.routes import ws_voice as ws_voice_routes
@@ -113,6 +112,7 @@ from web.routes.rag import build_rag_router
 from web.routes.static import build_frontend_router
 from web.routes.webhooks import build_webhooks_router
 from web.security import (
+    authenticate_metrics_service,
     build_user_from_jwt_payload,
     get_jwt_secret,
     get_request_user,
@@ -355,10 +355,7 @@ def _build_collaboration_prompt(room: _CollaborationRoom, *, actor_name: str, co
 
 
 def _iter_stream_chunks(text: str, *, size: int = 180) -> list[str]:
-    clean = str(text or "")
-    if not clean:
-        return []
-    return [clean[index : index + size] for index in range(0, len(clean), size)]
+    return collaboration_service.iter_stream_chunks(text, size=size)
 
 
 async def _hitl_broadcast(payload: dict[str, Any]) -> None:
@@ -412,105 +409,35 @@ _SAFE_PS_PATHS: tuple[str, ...] = ("/bin/ps", "/usr/bin/ps", "/sbin/ps", "/usr/s
 
 
 def _resolve_safe_ps_binary() -> str | None:
-    """Yalnızca sistem-yönetimi dizinlerindeki bilinen ps ikilisini döndürür.
-
-    SAST (Bandit B603/B607): subprocess çağrılırken `ps` ikilisinin PATH
-    üzerinden alınması, ortam değişkeni manipülasyonuyla rastgele bir ikilinin
-    çalıştırılmasına yol açabilir. Bu helper, ikiliyi yalnızca whitelist'teki
-    absolute path'lerden çözer.
-    """
-    for candidate in _SAFE_PS_PATHS:
-        try:
-            p = Path(candidate)
-            if p.is_file() and os.access(candidate, os.X_OK):
-                return candidate
-        except Exception:  # nosec B112
-            # Adayın stat/access kontrolü başarısızsa sessizce sıradakine geçilir.
-            continue
-    try:
-        which_path = shutil.which("ps")
-    except Exception:
-        which_path = None
-    if which_path and which_path in _SAFE_PS_PATHS:
-        return which_path
-    return None
+    """Yalnızca sistem-yönetimi dizinlerindeki bilinen ps ikilisini döndürür."""
+    return process_lifecycle.resolve_safe_ps_binary(safe_paths=_SAFE_PS_PATHS)
 
 
 def _list_child_ollama_pids() -> list[int]:
     """Bu prosesin çocukları arasında ollama süreçlerini bulur."""
-    pids: list[int] = []
-    try:
-        psutil_module = _resolve_psutil_module()
-        current = psutil_module.Process(os.getpid())
-        for child in current.children(recursive=False):
-            with contextlib.suppress(Exception):
-                comm = str(child.name() or "").strip().lower()
-                args = " ".join(child.cmdline() or []).strip().lower()
-                if comm == "ollama" or "ollama serve" in args:
-                    pids.append(int(child.pid))
-        return sorted(set(pids))
-    except Exception:
-        if os.name == "nt":
-            return []
-
-    # Güvenlik (SAST B603/B607): ps ikilisi PATH manipülasyonuna karşı yalnızca
-    # sistem-yönetimi dizinlerindeki bilinen absolute path'lerden çözülür.
-    ps_binary = _resolve_safe_ps_binary()
-    if ps_binary is None:
-        return []
-
-    try:
-        raw = subprocess.check_output(  # nosec
-            [ps_binary, "-eo", "pid=,ppid=,comm=,args="],
-            stderr=subprocess.DEVNULL,
-        )
-    except Exception:
-        return []
-
-    parent_pid = int(os.getpid())
-    for line in raw.decode("utf-8", errors="ignore").splitlines():
-        parts = line.strip().split(None, 3)
-        if len(parts) < 4:
-            continue
-        pid_str, ppid_str, comm, args = parts
-        if not pid_str.isdigit() or not ppid_str.isdigit():
-            continue
-        if int(ppid_str) != parent_pid:
-            continue
-        comm = comm.strip().lower()
-        args = args.strip().lower()
-        if comm == "ollama" or "ollama serve" in args:
-            pids.append(int(pid_str))
-    return sorted(set(pids))
+    return process_lifecycle.list_child_ollama_pids(
+        resolve_psutil_module=_resolve_psutil_module,
+        current_pid=os.getpid(),
+        os_name=os.name,
+        safe_ps_binary=_resolve_safe_ps_binary(),
+    )
 
 
 def _reap_child_processes_nonblocking() -> int:
     """Zombi child process'leri waitpid(WNOHANG) ile temizle."""
-    reaped = 0
-    while True:
-        try:
-            pid, _status = os.waitpid(-1, os.WNOHANG)
-        except ChildProcessError:
-            break
-        except Exception:
-            break
-        if pid <= 0:
-            break
-        reaped += 1
-    return reaped
+    return process_lifecycle.reap_child_processes_nonblocking()
 
 
 def _terminate_ollama_child_pids(pids: list[int], *, grace_seconds: float = 0.15) -> None:
     """Ollama child process'lerine önce TERM sonra KILL uygular."""
-    for pid in pids:
-        with contextlib.suppress(Exception):
-            os.kill(pid, signal.SIGTERM)
-
-    if pids and grace_seconds > 0:
-        time.sleep(grace_seconds)
-        for pid in pids:
-            with contextlib.suppress(Exception):
-                os.kill(pid, signal.SIGKILL)
+    process_lifecycle.terminate_process_pids(
+        pids,
+        sigterm=signal.SIGTERM,
+        sigkill=signal.SIGKILL,
+        kill_func=os.kill,
+        sleep_func=time.sleep,
+        grace_seconds=grace_seconds,
+    )
 
 
 def _force_shutdown_local_llm_processes() -> None:
@@ -626,7 +553,9 @@ async def _prewarm_rag_embeddings() -> None:
 
 async def get_agent() -> SidarAgent:
     """Singleton ajan — ilk async çağrıda başlatılır (asyncio.Lock ile korunur).
-    _agent_lock lifespan başlangıcında başlatılmış olmalıdır."""
+
+    _agent_lock lifespan başlangıcında başlatılmış olmalıdır.
+    """
     global _agent, _agent_lock
     runtime_state = _runtime_state()
     if runtime_state is not None and getattr(runtime_state, "agent", None) is not None:
@@ -679,14 +608,7 @@ async def _collect_agent_response(agent: SidarAgent, prompt: str) -> str:
 
 def _autonomy_service_actor(trigger_source: str) -> tuple[str, str]:
     """Return the explicit service actor used by userless autonomy triggers."""
-    configured_user = str(
-        getattr(cfg, "AUTONOMY_SERVICE_USER_ID", "")
-        or getattr(cfg, "SYSTEM_USER_ID", "")
-        or "system:autonomy"
-    ).strip()
-    service_user_id = configured_user or "system:autonomy"
-    source_label = str(trigger_source or "external").strip() or "external"
-    return service_user_id, f"autonomy:{source_label}"
+    return autonomy_bridge.autonomy_service_actor(cfg, trigger_source)
 
 
 async def _prepare_autonomy_memory_context(agent: Any, trigger_source: str) -> None:
@@ -928,176 +850,17 @@ def _resolve_ci_failure_context(event_name: str, payload: dict[str, Any]) -> dic
 
 
 def _trim_autonomy_text(value: Any, limit: int = 1200) -> str:
-    text = str(value or "").strip()
-    if len(text) <= limit:
-        return text
-    return text[:limit].rstrip() + " …[truncated]"
+    return autonomy_bridge.trim_autonomy_text(value, limit=limit)
 
 
 def _build_event_driven_federation_spec(
     source: str, event_name: str, payload: dict[str, Any]
 ) -> dict[str, Any] | None:
-    source_key = str(source or "").strip().lower()
-    event_key = str(event_name or "").strip().lower()
-    data = dict(payload or {})
-
-    if source_key in {"jira", "atlassian", "jira_cloud"}:
-        issue = dict(data.get("issue") or data)
-        action = (
-            str(data.get("action") or data.get("webhookEvent") or event_key or "").strip().lower()
-        )
-        issue_key = str(issue.get("key") or issue.get("id") or data.get("issue_key") or "").strip()
-        summary = str(
-            issue.get("title") or issue.get("summary") or data.get("summary") or ""
-        ).strip()
-        if issue_key and (
-            "created" in action
-            or event_key in {"issue_created", "issue_opened", "jira_issue_created"}
-        ):
-            project_key = str(
-                (issue.get("fields") or {}).get("project", {}).get("key")
-                or data.get("project")
-                or ""
-            ).strip()
-            return {
-                "workflow_type": "jira_issue",
-                "task_id": f"jira-{issue_key.lower()}",
-                "source_system": "jira",
-                "source_agent": "issue_webhook",
-                "goal": (
-                    f"Jira issue {issue_key} için event-driven swarm remediation/uygulama planı çıkar: {summary or 'başlıksız issue'}. "
-                    "Coder uygulanabilir teknik yaklaşımı oluştursun, Reviewer risk/QA/handoff değerlendirsin."
-                ),
-                "context": {
-                    "workflow_type": "jira_issue",
-                    "issue_key": issue_key,
-                    "issue_summary": summary,
-                    "project_key": project_key,
-                    "issue_status": str(
-                        (issue.get("fields") or {}).get("status", {}).get("name")
-                        or data.get("status")
-                        or ""
-                    ).strip(),
-                    "issue_type": str(
-                        (issue.get("fields") or {}).get("issuetype", {}).get("name")
-                        or data.get("issue_type")
-                        or ""
-                    ).strip(),
-                },
-                "inputs": [
-                    f"issue_key={issue_key}",
-                    f"summary={summary}",
-                    f"description={_trim_autonomy_text((issue.get('fields') or {}).get('description') or data.get('description') or '', 1000)}",
-                ],
-                "correlation_id": derive_correlation_id(
-                    data.get("correlation_id", ""), issue_key, summary
-                ),
-            }
-
-    if source_key == "github":
-        pr = dict(data.get("pull_request") or {})
-        action = str(data.get("action") or event_key or "").strip().lower()
-        pr_number = str(pr.get("number") or data.get("number") or "").strip()
-        pr_title = str(pr.get("title") or data.get("title") or "").strip()
-        if pr_number and action in {"opened", "reopened", "ready_for_review", "synchronize"}:
-            repo = str(
-                (data.get("repository") or {}).get("full_name") or data.get("repo") or ""
-            ).strip()
-            return {
-                "workflow_type": "github_pull_request",
-                "task_id": f"github-pr-{pr_number}",
-                "source_system": "github",
-                "source_agent": "pull_request_webhook",
-                "goal": (
-                    f"GitHub PR #{pr_number} ({pr_title or 'başlıksız PR'}) için event-driven swarm incelemesi yap. "
-                    "Coder değişiklik/patch/test stratejisini çıkarsın, Reviewer merge riski ve QA kapısını değerlendirsin."
-                ),
-                "context": {
-                    "workflow_type": "github_pull_request",
-                    "repo": repo,
-                    "pr_number": pr_number,
-                    "pr_title": pr_title,
-                    "base_branch": str(
-                        (pr.get("base") or {}).get("ref") or data.get("base_branch") or ""
-                    ).strip(),
-                    "head_branch": str(
-                        (pr.get("head") or {}).get("ref") or data.get("branch") or ""
-                    ).strip(),
-                    "author": str(
-                        (pr.get("user") or {}).get("login")
-                        or data.get("sender", {}).get("login")
-                        or ""
-                    ).strip(),
-                },
-                "inputs": [
-                    f"pr_number={pr_number}",
-                    f"title={pr_title}",
-                    f"body={_trim_autonomy_text(pr.get('body') or data.get('body') or '', 1000)}",
-                ],
-                "correlation_id": derive_correlation_id(
-                    data.get("correlation_id", ""), pr.get("node_id", ""), pr_number
-                ),
-            }
-
-    if source_key in {"system_monitor", "monitor", "observability", "system"}:
-        severity = (
-            str(data.get("severity") or data.get("level") or data.get("status") or "")
-            .strip()
-            .lower()
-        )
-        alert_name = str(
-            data.get("alert_name") or data.get("service") or data.get("title") or event_key
-        ).strip()
-        if severity in {"error", "critical", "fatal"} or event_key in {
-            "system_error",
-            "monitor_alert",
-            "incident",
-            "error_detected",
-        }:
-            return {
-                "workflow_type": "system_error",
-                "task_id": f"system-{secrets.token_hex(4)}",
-                "source_system": "system_monitor",
-                "source_agent": "alert_webhook",
-                "goal": (
-                    f"Sistem monitör hatasını değerlendir: {alert_name}. "
-                    "Coder muhtemel kök neden ve hotfix adımlarını çıkarsın, Reviewer risk/rollback/QA planını doğrulasın."
-                ),
-                "context": {
-                    "workflow_type": "system_error",
-                    "alert_name": alert_name,
-                    "severity": severity or "error",
-                    "service": str(data.get("service") or "").strip(),
-                    "environment": str(data.get("environment") or data.get("env") or "").strip(),
-                },
-                "inputs": [
-                    f"message={_trim_autonomy_text(data.get('message') or data.get('summary') or data.get('error') or '', 1000)}",
-                    f"stacktrace={_trim_autonomy_text(data.get('stacktrace') or data.get('details') or '', 1000)}",
-                ],
-                "correlation_id": derive_correlation_id(
-                    data.get("correlation_id", ""), data.get("alert_id", ""), alert_name
-                ),
-            }
-
-    return None
+    return autonomy_bridge.build_event_driven_federation_spec(source, event_name, payload)
 
 
 def _build_swarm_goal_for_role(base_goal: str, role: str, spec: dict[str, Any]) -> str:
-    context_blob = json.dumps(spec.get("context") or {}, ensure_ascii=False, sort_keys=True)
-    inputs_blob = json.dumps(spec.get("inputs") or [], ensure_ascii=False)
-    if role == "coder":
-        return (
-            f"{base_goal}\n\n"
-            "[EVENT_DRIVEN_SWARM:CODER]\n"
-            "Bu dış olay için inisiyatif al. Muhtemel kod hedeflerini, uygulanabilir adımları, test/komut planını ve gerekiyorsa açılması gereken follow-up'ları üret.\n"
-            f"context={context_blob}\ninputs={inputs_blob}"
-        )
-    return (
-        f"{base_goal}\n\n"
-        "[EVENT_DRIVEN_SWARM:REVIEWER]\n"
-        "Coder çıktısını kalite kapısı olarak incele. Riskler, QA, rollback, insan onayı ve follow-up aksiyonlarını netleştir.\n"
-        f"context={context_blob}\ninputs={inputs_blob}"
-    )
+    return autonomy_bridge.build_swarm_goal_for_role(base_goal, role, spec)
 
 
 async def _run_event_driven_federation_workflow(
@@ -1106,126 +869,27 @@ async def _run_event_driven_federation_workflow(
     event_name: str,
     payload: dict[str, Any],
 ) -> dict[str, Any] | None:
-    spec = _build_event_driven_federation_spec(source, event_name, payload)
-    if spec is None:
-        return None
-
-    orchestrator = SwarmOrchestrator(cfg)
-    correlation_id = str(
-        spec.get("correlation_id") or derive_correlation_id(spec.get("task_id", ""), event_name)
-    ).strip()
-    task_context = {
-        **{str(k): str(v) for k, v in dict(spec.get("context") or {}).items()},
-        "event_name": str(event_name or ""),
-        "event_source": str(source or ""),
-        "correlation_id": correlation_id,
-        "event_payload_excerpt": _trim_autonomy_text(
-            json.dumps(payload, ensure_ascii=False, sort_keys=True), 1200
-        ),
-    }
-    tasks = [
-        SwarmTask(
-            task_id=str(spec.get("task_id") or f"event-{secrets.token_hex(4)}"),
-            goal=_build_swarm_goal_for_role(str(spec.get("goal") or ""), "coder", spec),
-            intent="code",
-            context=dict(task_context),
-            preferred_agent="coder",
-        ),
-        SwarmTask(
-            task_id=str(spec.get("task_id") or f"event-{secrets.token_hex(4)}"),
-            goal=_build_swarm_goal_for_role(str(spec.get("goal") or ""), "reviewer", spec),
-            intent="review",
-            context=dict(task_context),
-            preferred_agent="reviewer",
-        ),
-    ]
-    pipeline = await orchestrator.run_pipeline(tasks, session_id=correlation_id)
-    envelope = FederationTaskEnvelope(
-        task_id=str(spec.get("task_id") or f"event-{secrets.token_hex(4)}"),
-        source_system=str(spec.get("source_system") or source or "external"),
-        source_agent=str(spec.get("source_agent") or "event_webhook"),
-        target_system="sidar",
-        target_agent="supervisor",
-        goal=str(spec.get("goal") or ""),
-        intent="mixed",
-        context={
-            **task_context,
-            "workflow_type": str(spec.get("workflow_type") or "external_event"),
-        },
-        inputs=[str(item) for item in list(spec.get("inputs") or [])],
-        meta={"initiative": "event_driven_swarm", "event_name": str(event_name or "")},
-        correlation_id=correlation_id,
+    # Every collaborator below is resolved as a bare module global at call time
+    # (not bound at import time) and threaded through explicitly, so patching
+    # any one of them on this module — as the test suite does — is observed
+    # here exactly as it was before this logic moved to web.autonomy_bridge.
+    return await autonomy_bridge.run_event_driven_federation_workflow(
+        source=source,
+        event_name=event_name,
+        payload=payload,
+        cfg=cfg,
+        spec_builder=_build_event_driven_federation_spec,
+        goal_builder=_build_swarm_goal_for_role,
+        trim_text=_trim_autonomy_text,
+        correlation_id_fn=derive_correlation_id,
+        orchestrator_cls=SwarmOrchestrator,
     )
-    coder_result = pipeline[0] if pipeline else None
-    reviewer_result = pipeline[-1] if pipeline else None
-    reviewer_summary = _trim_autonomy_text(
-        getattr(reviewer_result, "summary", "") or getattr(coder_result, "summary", "") or "", 2400
-    )
-    fed_result = FederationTaskResult(
-        task_id=envelope.task_id,
-        source_system="sidar",
-        source_agent="supervisor",
-        target_system=envelope.source_system,
-        target_agent=envelope.source_agent,
-        status=(
-            getattr(reviewer_result, "status", "")
-            or getattr(coder_result, "status", "")
-            or "failed"
-        ),
-        summary=reviewer_summary or "Event-driven swarm sonucu üretilemedi.",
-        protocol=envelope.protocol,
-        evidence=[
-            _trim_autonomy_text(getattr(item, "summary", "") or "", 800)
-            for item in pipeline
-            if getattr(item, "summary", "")
-        ],
-        next_actions=[
-            f"coder_status={getattr(coder_result, 'status', 'n/a')}",
-            f"reviewer_status={getattr(reviewer_result, 'status', 'n/a')}",
-            f"workflow_type={spec.get('workflow_type', 'external_event')}",
-        ],
-        meta={
-            "workflow_type": str(spec.get("workflow_type") or "external_event"),
-            "initiative": "event_driven_swarm",
-            "correlation_id": correlation_id,
-            "event_name": str(event_name or ""),
-        },
-        correlation_id=correlation_id,
-    )
-    federation_prompt = (
-        envelope.to_prompt()
-        + "\n\n[SWARM_PIPELINE_RESULT]\n"
-        + f"workflow_type={spec.get('workflow_type', 'external_event')}\n"
-        + f"coder_summary={_trim_autonomy_text(getattr(coder_result, 'summary', '') or '', 1200)}\n"
-        + f"reviewer_summary={reviewer_summary or '-'}"
-    )
-    return {
-        "workflow_type": str(spec.get("workflow_type") or "external_event"),
-        "correlation_id": correlation_id,
-        "federation_task": asdict(envelope),
-        "federation_result": asdict(fed_result),
-        "pipeline": [asdict(item) for item in pipeline],
-        "federation_prompt": federation_prompt,
-    }
 
 
 def _embed_event_driven_federation_payload(
     base_payload: dict[str, Any], workflow: dict[str, Any]
 ) -> dict[str, Any]:
-    return {
-        "kind": "federation_task",
-        "federation_task": dict(workflow.get("federation_task") or {}),
-        "federation_prompt": str(workflow.get("federation_prompt") or ""),
-        "event_payload": dict(base_payload or {}),
-        "event_driven_federation": dict(workflow or {}),
-        "task_id": str((workflow.get("federation_task") or {}).get("task_id", "") or ""),
-        "source_system": str(
-            (workflow.get("federation_task") or {}).get("source_system", "") or ""
-        ),
-        "source_agent": str((workflow.get("federation_task") or {}).get("source_agent", "") or ""),
-        "target_agent": str((workflow.get("federation_task") or {}).get("target_agent", "") or ""),
-        "correlation_id": str(workflow.get("correlation_id") or ""),
-    }
+    return autonomy_bridge.embed_event_driven_federation_payload(base_payload, workflow)
 
 
 async def _autonomous_cron_loop(stop_event: asyncio.Event) -> None:
@@ -1235,7 +899,8 @@ async def _autonomous_cron_loop(stop_event: asyncio.Event) -> None:
         getattr(
             cfg,
             "AUTONOMOUS_CRON_PROMPT",
-            "Sistemdeki bekleyen otonom iş fırsatlarını değerlendir ve gerekli aksiyon planını çıkar.",
+            "Sistemdeki bekleyen otonom iş fırsatlarını değerlendir ve gerekli aksiyon planını "
+            "çıkar.",
         )
         or ""
     ).strip()
@@ -1300,7 +965,8 @@ async def _app_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     runtime_state.agent_lock = _agent_lock
     runtime_state.redis_lock = _redis_lock
     runtime_state.local_rate_lock = _local_rate_lock
-    # Config doğrulamasını thread'de çalıştır — sync httpx Ollama çağrısı event loop'u bloklamaz (O-4)
+    # Config doğrulamasını thread'de çalıştır — sync httpx Ollama çağrısı event loop'u
+    # bloklamaz (O-4)
     settings_valid = await asyncio.to_thread(Config.validate_critical_settings)
     skip_boot_checks = os.getenv("SIDAR_SKIP_BOOT_CHECKS", "").strip().lower() in {
         "1",
@@ -1310,7 +976,8 @@ async def _app_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     if not settings_valid and not skip_boot_checks:
         raise RuntimeError(
             "Kritik yapılandırma doğrulaması başarısız; web sunucusu başlatılamıyor. "
-            "Detaylar için loglara bakın (SIDAR_SKIP_BOOT_CHECKS=1 ile bilinçli olarak atlanabilir)."
+            "Detaylar için loglara bakın (SIDAR_SKIP_BOOT_CHECKS=1 ile bilinçli olarak "
+            "atlanabilir)."
         )
     await asyncio.to_thread(_reload_persisted_marketplace_plugins)
     _rag_prewarm_task = asyncio.create_task(_prewarm_rag_embeddings())
@@ -1381,7 +1048,6 @@ app = _app_factory.create_app(
 
 def _runtime_state(application: FastAPI | None = None) -> Any:
     """Return app-scoped runtime state while keeping legacy globals as aliases."""
-
     return _app_factory.get_runtime_state(application or app)
 
 
@@ -1393,6 +1059,7 @@ async def basic_auth_middleware(
         "/",
         "/health",
         "/healthz",
+        "/readyz",
         "/docs",
         "/redoc",
         "/openapi.json",
@@ -1424,6 +1091,15 @@ async def basic_auth_middleware(
     access_token = auth_header[7:].strip()
     if not access_token:
         return JSONResponse({"error": "Geçersiz token"}, status_code=401)
+
+    metrics_user = authenticate_metrics_service(request, config=cfg)
+    if metrics_user is not None:
+        request.state.user = metrics_user
+        metrics_context = set_current_metrics_user_id(metrics_user.id)
+        try:
+            return await call_next(request)
+        finally:
+            reset_current_metrics_user_id(metrics_context)
 
     user = await _resolve_user_from_token(None, access_token)
     if not user:
@@ -1489,53 +1165,19 @@ def _require_metrics_access(request: Request, user: Any = Depends(_get_request_u
 
 
 def _get_user_tenant(user: Any) -> str:
-    return str(getattr(user, "tenant_id", "default") or "default").strip() or "default"
+    return access_policy_helpers.get_user_tenant(user)
 
 
 def _serialize_policy(record: Any) -> dict[str, Any]:
-    return {
-        "id": int(getattr(record, "id", 0) or 0),
-        "user_id": str(getattr(record, "user_id", "") or ""),
-        "tenant_id": str(getattr(record, "tenant_id", "default") or "default"),
-        "resource_type": str(getattr(record, "resource_type", "") or ""),
-        "resource_id": str(getattr(record, "resource_id", "*") or "*"),
-        "action": str(getattr(record, "action", "") or ""),
-        "effect": str(getattr(record, "effect", "allow") or "allow"),
-        "created_at": str(getattr(record, "created_at", "") or ""),
-        "updated_at": str(getattr(record, "updated_at", "") or ""),
-    }
+    return access_policy_helpers.serialize_policy(record)
 
 
 def _resolve_policy_from_request(request: Request) -> tuple[str, str, str]:
-    path = request.url.path
-    if path.startswith("/rag/"):
-        action = "read" if request.method == "GET" else "write"
-        resource_id = path.rsplit("/", 1)[-1] if request.method == "DELETE" else "*"
-        return ("rag", action, resource_id)
-    if path.startswith("/github-") or path == "/set-repo":
-        action = "read" if request.method == "GET" else "write"
-        return ("github", action, "*")
-    if path.startswith("/api/agents/register"):
-        return ("agents", "register", "*")
-    if path.startswith("/api/swarm/"):
-        return ("swarm", "execute", "*")
-    if path.startswith("/api/operations/"):
-        return ("operations", "write" if request.method != "GET" else "read", "*")
-    if path.startswith("/api/qa/coverage/"):
-        return ("coverage", "write" if request.method != "GET" else "read", "*")
-    if path.startswith("/admin/"):
-        return ("admin", "manage", "*")
-    if path.startswith("/ws/"):
-        return ("swarm", "execute", "*")
-    return ("", "", "")
+    return access_policy_helpers.resolve_policy_from_request(request)
 
 
 def _build_audit_resource(resource_type: str, resource_id: str) -> str:
-    r_type = (resource_type or "").strip().lower()
-    r_id = (resource_id or "*").strip() or "*"
-    if not r_type:
-        return ""
-    return f"{r_type}:{r_id}"
+    return access_policy_helpers.build_audit_resource(resource_type, resource_id)
 
 
 def _schedule_access_audit_log(
@@ -1575,106 +1217,29 @@ def _schedule_access_audit_log(
         logger.debug("ACL audit log planlanamadı: event loop yok.")
 
 
-class _RegisterRequest(BaseModel):
-    username: str = Field(..., max_length=64)
-    password: str = Field(..., max_length=128)
-    tenant_id: str = Field(default="default", min_length=1, max_length=64)
-
-
-class _LoginRequest(BaseModel):
-    username: str = Field(..., max_length=64)
-    password: str = Field(..., max_length=128)
-
-
-class _PromptUpsertRequest(BaseModel):
-    role_name: str = Field(..., min_length=1, max_length=64)
-    prompt_text: str = Field(..., min_length=1)
-    activate: bool = Field(default=True)
-
-
-class _PromptActivateRequest(BaseModel):
-    prompt_id: int = Field(..., gt=0)
-
-
-class _PolicyUpsertRequest(BaseModel):
-    user_id: str = Field(..., min_length=1, max_length=128)
-    tenant_id: str = Field(default="default", min_length=1, max_length=64)
-    resource_type: str = Field(..., min_length=1, max_length=64)
-    resource_id: str = Field(default="*", min_length=1, max_length=256)
-    action: str = Field(..., min_length=1, max_length=64)
-    effect: str = Field(default="allow", min_length=1, max_length=8)
-
-
-class _AgentPluginRegisterRequest(BaseModel):
-    role_name: str = Field(..., min_length=2, max_length=64)
-    source_code: str = Field(..., min_length=1)
-    class_name: str | None = Field(default=None, min_length=1, max_length=128)
-    capabilities: list[str] = Field(default_factory=list)
-    description: str = Field(default="", max_length=512)
-    version: str = Field(default="1.0.0", max_length=32)
-
-
-class _PluginMarketplaceInstallRequest(BaseModel):
-    plugin_id: str = Field(..., min_length=2, max_length=64)
-
-
-class _SwarmTaskRequest(BaseModel):
-    goal: str = Field(..., min_length=1)
-    intent: str = Field(default="mixed", min_length=1, max_length=64)
-    context: dict[str, str] = Field(default_factory=dict)
-    preferred_agent: str | None = Field(default=None, max_length=64)
-
-
-class _SwarmExecuteRequest(BaseModel):
-    mode: str = Field(default="parallel", pattern="^(parallel|pipeline)$")
-    tasks: list[_SwarmTaskRequest] = Field(..., min_length=1)
-    session_id: str = Field(default="", max_length=128)
-    max_concurrency: int = Field(default=4, ge=1, le=16)
+# Faz 4 compatibility aliases: direct imports retain their historical names while
+# route factories consume the focused request-model module.
+_RegisterRequest = route_request_models.RegisterRequest
+_LoginRequest = route_request_models.LoginRequest
+_PromptUpsertRequest = route_request_models.PromptUpsertRequest
+_PromptActivateRequest = route_request_models.PromptActivateRequest
+_PolicyUpsertRequest = route_request_models.PolicyUpsertRequest
+_AgentPluginRegisterRequest = route_request_models.AgentPluginRegisterRequest
+_PluginMarketplaceInstallRequest = route_request_models.PluginMarketplaceInstallRequest
+_SwarmTaskRequest = route_request_models.SwarmTaskRequest
+_SwarmExecuteRequest = route_request_models.SwarmExecuteRequest
 
 
 def _serialize_audit_log(record: Any) -> dict[str, Any]:
-    return {
-        "id": int(getattr(record, "id", 0) or 0),
-        "user_id": str(getattr(record, "user_id", "") or ""),
-        "tenant_id": str(getattr(record, "tenant_id", "default") or "default"),
-        "action": str(getattr(record, "action", "") or ""),
-        "resource": str(getattr(record, "resource", "") or ""),
-        "ip_address": str(getattr(record, "ip_address", "") or ""),
-        "allowed": bool(getattr(record, "allowed", False)),
-        "timestamp": str(getattr(record, "timestamp", "") or ""),
-    }
+    return access_policy_helpers.serialize_audit_log(record)
 
 
 def _serialize_prompt(record: Any) -> dict[str, Any]:
-    prompt_id = getattr(record, "id", 0)
-    serialized_id: int | str
-    try:
-        serialized_id = int(prompt_id)
-    except (TypeError, ValueError):
-        serialized_id = str(prompt_id or "")
-
-    return {
-        "id": serialized_id,
-        "role_name": str(getattr(record, "role_name", "") or ""),
-        "prompt_text": str(getattr(record, "prompt_text", "") or ""),
-        "version": int(getattr(record, "version", 1) or 1),
-        "is_active": bool(getattr(record, "is_active", False)),
-        "created_at": str(getattr(record, "created_at", "") or ""),
-        "updated_at": str(getattr(record, "updated_at", "") or ""),
-    }
+    return route_serialization.serialize_prompt(record)
 
 
 def _serialize_swarm_result(record: Any) -> dict[str, Any]:
-    return {
-        "task_id": str(getattr(record, "task_id", "") or ""),
-        "agent_role": str(getattr(record, "agent_role", "") or ""),
-        "status": str(getattr(record, "status", "") or ""),
-        "summary": str(getattr(record, "summary", "") or ""),
-        "elapsed_ms": int(getattr(record, "elapsed_ms", 0) or 0),
-        "evidence": list(getattr(record, "evidence", []) or []),
-        "handoffs": list(getattr(record, "handoffs", []) or []),
-        "graph": dict(getattr(record, "graph", {}) or {}),
-    }
+    return route_serialization.serialize_swarm_result(record)
 
 
 _serialize_campaign = operations_routes.serialize_campaign
@@ -1723,214 +1288,52 @@ def _plugin_source_filename(module_label: str) -> str:
 # izolasyonuna geçmek bu çalışma modelini IPC tabanlı mesajlaşmaya taşımayı
 # gerektiren ayrı, büyük bir mimari değişikliktir ve ayrı bir proje olarak takip
 # edilmelidir.
-_PLUGIN_BANNED_BUILTINS: frozenset[str] = frozenset(
-    {
-        "exec",
-        "eval",
-        "compile",
-        "open",
-        "input",
-        "breakpoint",
-        "globals",
-        "vars",
-        "memoryview",
-    }
-)
-_PLUGIN_SAFE_IMPORT_ROOTS: frozenset[str] = frozenset(
-    {"abc", "asyncio", "collections", "dataclasses", "math", "pydantic", "typing"}
-)
-_PLUGIN_SAFE_WEB_SERVER_FROM_IMPORTS: frozenset[str] = frozenset({"BaseAgent"})
-_PLUGIN_SAFE_FASTAPI_FROM_IMPORTS: frozenset[str] = frozenset({"HTTPException"})
-
-
-def _restricted_plugin_import(
-    name: str,
-    globals: dict[str, Any] | None = None,
-    locals: dict[str, Any] | None = None,
-    fromlist: tuple[str, ...] = (),
-    level: int = 0,
-) -> Any:
-    """Plugin kodu için allowlist tabanlı import kapısı."""
-
-    del globals, locals
-    if level != 0:
-        raise ImportError("Plugin güvenlik politikası: relative import engellendi.")
-    module_name = str(name or "").strip()
-    root = module_name.split(".", 1)[0]
-    requested = tuple(str(item) for item in (fromlist or ()))
-
-    if module_name == "web_server":
-        if requested and any(
-            item not in _PLUGIN_SAFE_WEB_SERVER_FROM_IMPORTS for item in requested
-        ):
-            raise ImportError("Plugin güvenlik politikası: web_server import kapsamı engellendi.")
-        return SimpleNamespace(BaseAgent=BaseAgent)
-
-    if module_name == "fastapi":
-        if requested and any(item not in _PLUGIN_SAFE_FASTAPI_FROM_IMPORTS for item in requested):
-            raise ImportError("Plugin güvenlik politikası: fastapi import kapsamı engellendi.")
-        return SimpleNamespace(HTTPException=HTTPException)
-
-    if module_name == "agent.base_agent":
-        if requested and any(item != "BaseAgent" for item in requested):
-            raise ImportError(
-                "Plugin güvenlik politikası: agent.base_agent import kapsamı engellendi."
-            )
-        return builtins.__import__(module_name, {}, {}, requested, 0)
-
-    if root not in _PLUGIN_SAFE_IMPORT_ROOTS:
-        raise ImportError("Plugin güvenlik politikası: import allowlist dışında.")
-    return builtins.__import__(module_name, {}, {}, requested, 0)
+# Allowlists and the runtime import/builtins gate live in web.plugins.sandbox
+# so there is a single enforced copy (previously this module kept its own,
+# independently drifted set of constants — see web/plugins/sandbox.py's module
+# docstring note). These names stay importable from web_server for existing
+# monkeypatch targets and call sites.
+_restricted_plugin_import = plugin_sandbox.restricted_plugin_import
 
 
 def _build_restricted_plugin_builtins() -> dict[str, Any]:
-    """Plugin exec'i için tehlikeli built-in'leri elenmiş bir __builtins__ haritası üretir.
-
-    AST doğrulayıcı statik olarak `exec`, `eval`, `compile`, `__import__`, `open`, `input`
-    çağrılarını engeller; bu fonksiyon ise runtime'da bu sembolleri tamamen erişilmez
-    kılarak defense-in-depth sağlar. `from ... import ...` deyiminin çalışabilmesi için
-    sadece güvenli modülleri döndüren allowlist tabanlı `__import__` kullanılır.
-    """
-    safe: dict[str, Any] = {}
-    for name in dir(builtins):
-        if name in _PLUGIN_BANNED_BUILTINS:
-            continue
-        safe[name] = getattr(builtins, name)
-    safe["__import__"] = _restricted_plugin_import
-    return safe
+    return plugin_sandbox.build_restricted_plugin_builtins()
 
 
 def _validate_plugin_source(source_code: str) -> None:
     """Plugin kaynağını çalıştırmadan önce temel güvenlik politikalarını uygular."""
-    try:
-        tree = ast.parse(source_code, mode="exec")
-    except SyntaxError as exc:
-        raise HTTPException(status_code=400, detail=f"Plugin söz dizimi hatası: {exc}") from exc
-
-    banned_calls = {
-        "exec",
-        "eval",
-        "compile",
-        "__import__",
-        "open",
-        "input",
-        "getattr",
-        "setattr",
-        "delattr",
-    }
-    banned_import_roots = {"os", "subprocess", "socket", "ctypes", "multiprocessing"}
-    banned_attribute_roots = banned_import_roots | {"builtins", "importlib", "pathlib", "shutil"}
-    banned_introspection_attrs = {
-        "__base__",
-        "__bases__",
-        "__class__",
-        "__closure__",
-        "__code__",
-        "__dict__",
-        "__getattribute__",
-        "__globals__",
-        "__mro__",
-        "__subclasses__",
-    }
-
-    def _attribute_root_name(expr: ast.AST) -> str:
-        """Return the left-most name in a chained attribute expression, if any."""
-        current = expr
-        while isinstance(current, ast.Attribute):
-            current = current.value
-        if isinstance(current, ast.Name):
-            return current.id
-        if isinstance(current, ast.Call):
-            return _attribute_root_name(current.func)
-        if isinstance(current, ast.Subscript):
-            return _attribute_root_name(current.value)
-        return ""
-
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import | ast.ImportFrom):
-            modules = []
-            if isinstance(node, ast.Import):
-                modules = [alias.name.split(".")[0] for alias in node.names]
-            else:
-                modules = [(node.module or "").split(".")[0]]
-            if any(mod in banned_import_roots for mod in modules if mod):
-                raise HTTPException(
-                    status_code=400,
-                    detail="Plugin güvenlik politikası: tehlikeli modül import'u engellendi.",
-                )
-        if isinstance(node, ast.Attribute) and node.attr in banned_introspection_attrs:
-            raise HTTPException(
-                status_code=400,
-                detail="Plugin güvenlik politikası: tehlikeli introspection erişimi engellendi.",
-            )
-        if isinstance(node, ast.Call):
-            fn_name = ""
-            if isinstance(node.func, ast.Name):
-                fn_name = node.func.id
-            elif isinstance(node.func, ast.Attribute):
-                root_name = _attribute_root_name(node.func)
-                fn_name = f"{root_name}.{node.func.attr}" if root_name else node.func.attr
-            if fn_name in banned_calls or fn_name.endswith(".exec") or fn_name.endswith(".eval"):
-                raise HTTPException(
-                    status_code=400,
-                    detail="Plugin güvenlik politikası: dinamik kod çalıştırma çağrısı engellendi.",
-                )
-            if (
-                isinstance(node.func, ast.Attribute)
-                and _attribute_root_name(node.func) in banned_attribute_roots
-            ):
-                raise HTTPException(
-                    status_code=400,
-                    detail="Plugin güvenlik politikası: tehlikeli modül çağrısı engellendi.",
-                )
+    plugin_sandbox.validate_plugin_source(source_code)
 
 
 def _execute_validated_plugin_source(
     source_code: str, module_label: str, namespace: dict[str, Any]
 ) -> None:
     """Derlenmiş plugin kaynağını daraltılmış namespace içinde çalıştırır."""
-
-    code = compile(source_code, _plugin_source_filename(module_label), "exec")
-    exec(code, namespace)  # nosec B102
+    plugin_sandbox.execute_validated_plugin_source(source_code, module_label, namespace)
 
 
 def _run_plugin_source_in_sandbox(source_code: str, module_label: str) -> dict[str, Any]:
-    """Validate plugin source and execute it with restricted builtins only.
+    """Delegate to the explicitly legacy in-process plugin backend.
 
-    Not a process/container-level sandbox — see the "PLUGIN AGENT SANDBOX"
-    note above `_PLUGIN_BANNED_BUILTINS` for the residual risk this accepts
-    and why the admin-only gate on the callers of this function is the real
-    security boundary.
+    Production is fail-closed. The wrapper remains for compatibility while the
+    container/process RPC backend tracked in ``docs/REFACTOR_PLAN.md`` is built.
     """
-
-    try:
-        _validate_plugin_source(source_code)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Plugin kaynağı doğrulanamadı: {exc}") from exc
-
-    # Defense-in-depth: AST doğrulamasının yanında runtime namespace'ini de daraltıyoruz.
-    # Tehlikeli built-in'ler (`exec`, `eval`, `compile`, `open`, `input`, `breakpoint`, ...)
-    # plugin koduna sızdırılmadığı için statik kontrol bypass edilse bile çağrı yapılamaz.
-    namespace: dict[str, Any] = {
-        "__name__": module_label,
-        "__builtins__": _build_restricted_plugin_builtins(),
-    }
-    try:
-        _execute_validated_plugin_source(source_code, module_label, namespace)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(
-            status_code=400, detail=f"Plugin kodu derlenemedi/çalıştırılamadı: {exc}"
-        ) from exc
-    return namespace
+    return plugin_sandbox.run_plugin_source_in_process(
+        source_code,
+        module_label,
+        validator=_validate_plugin_source,
+    )
 
 
 def _load_plugin_agent_class(
     source_code: str, class_name: str | None, module_label: str
 ) -> type[BaseAgent]:
+    if plugin_sandbox.plugin_sandbox_backend() == "docker":
+        try:
+            return plugin_sandbox.build_isolated_plugin_proxy(source_code, class_name, module_label)
+        except plugin_sandbox.PluginSandboxError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
     def _baseagent_candidates() -> list[Any]:
         # Resolve the canonical class on every call so stale monkeypatches or reloads of
         # the web_server module cannot override an available agent.base_agent module.
@@ -2002,8 +1405,13 @@ def _load_plugin_agent_class(
 
 def _validate_and_persist_plugin_file(filename: str, source_code: str, module_label: str) -> Path:
     """Validate uploaded plugin source in the shared sandbox before persisting it."""
-
-    _run_plugin_source_in_sandbox(source_code, module_label)
+    if plugin_sandbox.plugin_sandbox_backend() == "docker":
+        try:
+            plugin_sandbox.DockerPluginSandboxBackend().describe(source_code, None, module_label)
+        except plugin_sandbox.PluginSandboxError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+    else:
+        _run_plugin_source_in_sandbox(source_code, module_label)
 
     safe_name = Path(filename or "plugin.py").name
     if not safe_name.endswith(".py"):
@@ -2018,7 +1426,6 @@ def _validate_and_persist_plugin_file(filename: str, source_code: str, module_la
 
 def _persist_and_import_plugin_file(filename: str, data: bytes, module_label: str) -> Path:
     """Backward-compatible secure wrapper for router-level uploaded plugin persistence."""
-
     try:
         source_code = data.decode("utf-8")
     except UnicodeDecodeError as exc:
@@ -2144,58 +1551,17 @@ def _register_plugin_agent(
 async def access_policy_middleware(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
-    if request.method == "OPTIONS":
-        return await call_next(request)
-    user = getattr(request.state, "user", None)
-    if not user:
-        return await call_next(request)
-    resource_type, action, resource_id = _resolve_policy_from_request(request)
-    if not resource_type:
-        return await call_next(request)
-    client_ip = _get_client_ip(request)
-    if _is_admin_user(user):
-        _schedule_access_audit_log(
-            user=user,
-            resource_type=resource_type,
-            action=action,
-            resource_id=resource_id,
-            ip_address=client_ip,
-            allowed=True,
-        )
-        return await call_next(request)
-
-    allowed = False
-    try:
-        agent = await _resolve_agent_instance()
-        checker = getattr(agent.memory.db, "check_access_policy", None)
-        if checker is None:
-            allowed = True
-        else:
-            allowed = await checker(
-                user_id=str(getattr(user, "id", "") or ""),
-                tenant_id=_get_user_tenant(user),
-                resource_type=resource_type,
-                action=action,
-                resource_id=resource_id,
-            )
-    except Exception as exc:
-        logger.warning("ACL kontrolü başarısız (%s), erişim reddedildi.", exc)
-        allowed = False
-
-    _schedule_access_audit_log(
-        user=user,
-        resource_type=resource_type,
-        action=action,
-        resource_id=resource_id,
-        ip_address=client_ip,
-        allowed=allowed,
+    return await access_policy_middleware_impl(
+        request,
+        call_next,
+        resolve_policy_from_request=_resolve_policy_from_request,
+        get_client_ip=_get_client_ip,
+        is_admin_user=_is_admin_user,
+        schedule_access_audit_log=_schedule_access_audit_log,
+        resolve_agent_instance=_resolve_agent_instance,
+        get_user_tenant=_get_user_tenant,
+        logger_obj=logger,
     )
-    if not allowed:
-        return JSONResponse(
-            status_code=403,
-            content={"error": "Yetki yok", "resource": resource_type, "action": action},
-        )
-    return await call_next(request)
 
 
 # ─────────────────────────────────────────────
@@ -2206,6 +1572,7 @@ RATE_LIMIT_WINDOW_SEC = 60
 _RATE_LIMIT = cfg.RATE_LIMIT_CHAT
 _RATE_LIMIT_MUTATIONS = cfg.RATE_LIMIT_MUTATIONS
 _RATE_LIMIT_GET_IO = cfg.RATE_LIMIT_GET_IO
+_RATE_LIMIT_WS_CONNECTIONS = cfg.RATE_LIMIT_WS_CONNECTIONS
 _RATE_WINDOW = cfg.RATE_LIMIT_WINDOW
 # GET requests are rate-limited by default; only cheap/frequently-polled paths
 # below are exempt. This mirrors the mutation-limit branch just above, which
@@ -2223,7 +1590,11 @@ _RATE_GET_IO_EXEMPT_PREFIXES = ("/ui/", "/static/", "/vendor/")
 _redis_client: Redis | None = None
 _redis_lock: asyncio.Lock | None = None
 _local_rate_limits: dict[str, list[float]] = {}
+_local_rate_expiries: dict[str, float] = {}
 _local_rate_lock: asyncio.Lock | None = None
+_local_rate_last_cleanup = 0.0
+_LOCAL_RATE_CLEANUP_INTERVAL_SEC = 30.0
+_LOCAL_RATE_MAX_KEYS = 10_000
 
 # Test temizliği için takma ad; _local_rate_limits ile aynı sözlük nesnesini paylaşır
 _rate_data: dict[str, list[float]] = _local_rate_limits
@@ -2259,19 +1630,43 @@ async def _get_redis() -> Redis | None:
 
 
 async def _local_is_rate_limited(key: str, limit: int, window_sec: int) -> bool:
-    global _local_rate_lock
+    global _local_rate_last_cleanup, _local_rate_lock
     if _local_rate_lock is None:
         _local_rate_lock = asyncio.Lock()
 
     now = time.time()
     async with _local_rate_lock:
+        should_cleanup = now - _local_rate_last_cleanup >= _LOCAL_RATE_CLEANUP_INTERVAL_SEC or (
+            key not in _local_rate_limits and len(_local_rate_limits) >= _LOCAL_RATE_MAX_KEYS
+        )
+        if should_cleanup:
+            expired_keys = [
+                stored_key
+                for stored_key, expires_at in _local_rate_expiries.items()
+                if expires_at <= now
+            ]
+            for expired_key in expired_keys:
+                _local_rate_limits.pop(expired_key, None)
+                _local_rate_expiries.pop(expired_key, None)
+            _local_rate_last_cleanup = now
+
+        if key not in _local_rate_limits and len(_local_rate_limits) >= _LOCAL_RATE_MAX_KEYS:
+            eviction_key = min(
+                _local_rate_limits,
+                key=lambda stored_key: _local_rate_expiries.get(stored_key, float("-inf")),
+            )
+            _local_rate_limits.pop(eviction_key, None)
+            _local_rate_expiries.pop(eviction_key, None)
+
         timestamps = _local_rate_limits.get(key, [])
         valid = [t for t in timestamps if now - t < window_sec]
         if len(valid) >= limit:
             _local_rate_limits[key] = valid
+            _local_rate_expiries[key] = max(valid) + window_sec
             return True
         valid.append(now)
         _local_rate_limits[key] = valid
+        _local_rate_expiries[key] = now + window_sec
         return False
 
 
@@ -2339,7 +1734,8 @@ def _get_client_ip(request: Request) -> str:
     Header değeri IP parser ile doğrulanır; boş, çok satırlı, port ekli veya
     IP olmayan değerler header injection/rate-limit bypass riskine karşı yok sayılır.
     """
-    direct_ip = request.client.host if request.client else "unknown"
+    client = getattr(request, "client", None)
+    direct_ip = getattr(client, "host", "unknown")
     if _trusted_proxy_matches(direct_ip):
         xff = request.headers.get("X-Forwarded-For", "")
         first_forwarded = xff.split(",", 1)[0] if xff else ""
@@ -2360,6 +1756,14 @@ def _get_rate_limit_key(request: Request, fallback_ip: str) -> str:
         tenant_id = _get_user_tenant(user)
         return f"user:{tenant_id}:{user_id}"
     return f"ip:{fallback_ip}"
+
+
+async def _ws_connection_is_rate_limited(websocket: WebSocket) -> bool:
+    """Apply the shared pre-accept connection bucket to chat and voice sockets."""
+    client_ip = _get_client_ip(cast(Request, websocket))
+    return await _redis_is_rate_limited(
+        "ws_connect", client_ip, _RATE_LIMIT_WS_CONNECTIONS, _RATE_WINDOW
+    )
 
 
 async def ddos_rate_limit_middleware(
@@ -2491,6 +1895,7 @@ def _build_ws_chat_dependencies() -> SimpleNamespace:
         socket_key=_socket_key,
         strip_sidar_mention=_strip_sidar_mention,
         ws_close_policy_violation=_ws_close_policy_violation,
+        ws_connection_is_rate_limited=_ws_connection_is_rate_limited,
     )
 
 
@@ -2515,6 +1920,7 @@ def _build_ws_voice_dependencies() -> SimpleNamespace:
         resolve_agent_instance=_resolve_agent_instance,
         resolve_user_from_token=_resolve_user_from_token,
         ws_close_policy_violation=_ws_close_policy_violation,
+        ws_connection_is_rate_limited=_ws_connection_is_rate_limited,
         ws_stream_agent_text_response=_ws_stream_agent_text_response,
         ws_voice_protocol=web_security.SIDAR_WS_VOICE_PROTOCOL,
     )
@@ -2728,84 +2134,6 @@ admin_list_prompts = auth_admin_router.legacy_exports["admin_list_prompts"]
 admin_upsert_prompt = auth_admin_router.legacy_exports["admin_upsert_prompt"]
 admin_activate_prompt = auth_admin_router.legacy_exports["admin_activate_prompt"]
 github_webhook = webhooks_router.legacy_exports["github_webhook"]
-
-
-# Legacy endpoint declarations kept in web_server.py for backwards-compatible
-# static route discovery tests that scan this file for @app.<method>(...) usage.
-@app.post("/auth/register")
-async def _legacy_route_auth_register(payload: dict[str, Any]) -> Any:
-    return await register_user(payload)
-
-
-@app.post("/auth/login")
-async def _legacy_route_auth_login(payload: dict[str, Any]) -> Any:
-    return await login_user(payload)
-
-
-@app.get("/auth/me")
-async def _legacy_route_auth_me(request: Request, user: Any = Depends(_get_request_user)) -> Any:
-    return await auth_me(request, user)
-
-
-@app.get("/admin/stats")
-async def _legacy_route_admin_stats(_user: Any = Depends(_require_admin_user)) -> Any:
-    return await admin_stats(_user)
-
-
-@app.get("/admin/prompts")
-async def _legacy_route_admin_prompts(
-    role_name: str = "", _user: Any = Depends(_require_admin_user)
-) -> Any:
-    return await admin_list_prompts(role_name, _user)
-
-
-@app.post("/admin/prompts")
-async def _legacy_route_admin_upsert_prompt(
-    payload: Annotated[dict[str, Any], Body()],
-    _user: Any = Depends(_require_admin_user),
-) -> Any:
-    return await admin_upsert_prompt(payload, _user)
-
-
-@app.post("/admin/prompts/activate")
-async def _legacy_route_admin_activate_prompt(
-    payload: Annotated[dict[str, Any], Body()],
-    _user: Any = Depends(_require_admin_user),
-) -> Any:
-    return await admin_activate_prompt(payload, _user)
-
-
-@app.post("/api/agents/register")
-@app.post("/api/agents/register-file")
-@app.get("/api/plugin-marketplace/catalog")
-@app.post("/api/plugin-marketplace/install")
-@app.delete("/api/plugin-marketplace/install/{plugin_id}")
-@app.post("/api/swarm/execute")
-@app.get("/api/hitl/pending")
-@app.post("/api/hitl/request")
-@app.post("/api/hitl/respond/{request_id}")
-@app.get("/healthz")
-@app.get("/readyz")
-@app.get("/metrics")
-@app.get("/metrics/llm/prometheus")
-@app.get("/metrics/llm")
-@app.get("/api/budget")
-@app.get("/sessions/{session_id}")
-@app.post("/sessions/new")
-@app.delete("/sessions/{session_id}")
-@app.get("/files")
-@app.get("/file-content")
-@app.get("/git-info")
-@app.get("/git-branches")
-@app.post("/set-branch")
-@app.get("/github-repos")
-@app.post("/set-repo")
-@app.get("/rag/docs")
-@app.post("/rag/add-url")
-@app.delete("/rag/docs/{doc_id}")
-@app.post("/api/rag/upload")
-async def _legacy_route_declaration_marker(*_args: Any, **_kwargs: Any) -> Any:
-    raise HTTPException(status_code=410, detail="Legacy marker route should not be called.")
 
 
 async def register_agent_plugin_file(
@@ -3202,18 +2530,27 @@ _FederationTaskRequest = federation_routes.FederationTaskRequest
 _FederationFeedbackRequest = federation_routes.FederationFeedbackRequest
 _AutonomyWakeRequest = autonomy_routes.AutonomyWakeRequest
 
+_webhook_replay_guard = web_security.WebhookReplayGuard()
+# Faz 4 compatibility alias: direct imports/tests clear the historical mapping.
+_webhook_replay_seen = _webhook_replay_guard.seen
+
 
 def _verify_hmac_signature(
-    payload_body: bytes, secret_value: str, signature_header: str, *, label: str
+    payload_body: bytes,
+    secret_value: str,
+    signature_header: str,
+    *,
+    label: str,
+    replay_key: str = "",
 ) -> None:
-    secret = str(secret_value or "").encode("utf-8")
-    if not secret:
-        return
-    if not signature_header:
-        raise HTTPException(status_code=401, detail=f"{label} imza başlığı eksik.")
-    expected_signature = "sha256=" + hmac.new(secret, payload_body, hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(expected_signature, signature_header):
-        raise HTTPException(status_code=401, detail="Geçersiz imza.")
+    web_security.verify_webhook_hmac_signature(
+        payload_body,
+        secret_value,
+        signature_header,
+        label=label,
+        replay_key=replay_key,
+        replay_guard=_webhook_replay_guard,
+    )
 
 
 def _build_autonomy_dependencies() -> SimpleNamespace:
@@ -3226,6 +2563,7 @@ def _build_autonomy_dependencies() -> SimpleNamespace:
         ),
         resolve_agent_instance=_resolve_agent_instance,
         resolve_ci_failure_context=_resolve_ci_failure_context,
+        require_admin_user=_require_admin_user,
         run_event_driven_federation_workflow=(
             lambda **kwargs: _run_event_driven_federation_workflow(**kwargs)
         ),

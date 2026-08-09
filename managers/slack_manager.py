@@ -1,4 +1,4 @@
-"""Slack Entegrasyon Yöneticisi (v6.0)
+"""Slack Entegrasyon Yöneticisi (v6.0).
 
 Bot token (xoxb-) ve/veya Webhook URL üzerinden Slack mesajlaşması sağlar.
 slack-sdk paketi kurulu değilse Webhook-only moda düşer; her ikisi de
@@ -31,8 +31,7 @@ def _is_valid_webhook_url(url: str) -> bool:
 
 
 class SlackManager:
-    """
-    Slack Bot API + Incoming Webhook entegrasyonu.
+    """Slack Bot API + Incoming Webhook entegrasyonu.
 
     Öncelik: Eğer slack-sdk kuruluysa ve token varsa → SDK kullanılır.
     Fallback: httpx ile doğrudan Webhook POST.
@@ -130,9 +129,9 @@ class SlackManager:
         blocks: list[dict[str, Any]] | None = None,
         thread_ts: str | None = None,
     ) -> tuple[bool, str]:
-        """
-        Kanala mesaj gönderir (SDK veya Webhook fallback).
-        Döner: (success: bool, error_or_ts: str)
+        """Kanala mesaj gönderir (SDK veya Webhook fallback).
+
+        Döner: (success: bool, error_or_ts: str).
         """
         if not self._available:
             return False, "Slack bağlantısı mevcut değil"

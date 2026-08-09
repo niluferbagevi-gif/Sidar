@@ -150,7 +150,8 @@ def test_init_registers_tools(monkeypatch, tmp_path):
 
 def test_helpers_and_parsers(tmp_path, qa):
     (tmp_path / ".coveragerc").write_text(
-        "[run]\nomit = a.py, b.py\n c.py\n[report]\nfail_under=90\nshow_missing=true\nskip_covered=false\n",
+        "[run]\nomit = a.py, b.py\n "
+        "c.py\n[report]\nfail_under=90\nshow_missing=true\nskip_covered=false\n",
         encoding="utf-8",
     )
     summary = qa._coverage_config_summary()

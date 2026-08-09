@@ -140,7 +140,9 @@ async def test_ws_stream_agent_text_response_flushes_legacy_voice_pipeline() -> 
 
 
 @pytest.mark.asyncio
-async def test_ws_stream_agent_text_response_flushes_buffered_voice_pipeline_after_sentinels() -> None:
+async def test_ws_stream_agent_text_response_flushes_buffered_voice_pipeline_after_sentinels() -> (
+    None
+):
     class _BufferedVoicePipeline:
         enabled = True
 
@@ -199,7 +201,9 @@ async def test_ws_stream_agent_text_response_flushes_buffered_voice_pipeline_aft
 
 
 @pytest.mark.asyncio
-async def test_ws_stream_agent_text_response_skips_voice_flush_when_disconnects_after_text() -> None:
+async def test_ws_stream_agent_text_response_skips_voice_flush_when_disconnects_after_text() -> (
+    None
+):
     class _VoicePipeline:
         enabled = True
 
@@ -265,9 +269,11 @@ class _NeverSendsWs(_Ws):
 
 
 class _RepeatedGarbageWs(_Ws):
-    """A websocket that keeps sending unparseable junk fast enough to reset
+    """A websocket that keeps sending unparseable junk to defeat a naive timeout.
 
-    a naive per-message timeout, without ever authenticating."""
+    Sends fast enough to reset a naive per-message timeout, without ever
+    authenticating.
+    """
 
     async def receive_text(self) -> str:
         await asyncio.sleep(0.001)
@@ -276,9 +282,10 @@ class _RepeatedGarbageWs(_Ws):
 
 @pytest.mark.asyncio
 async def test_websocket_chat_closes_idle_unauthenticated_connection_after_timeout() -> None:
-    """Regression test: an unauthenticated client that never sends an auth message
+    """Regression test: an idle unauthenticated client must not stay connected forever.
 
-    must not keep the connection open forever (slow DoS / resource exhaustion).
+    An unauthenticated client that never sends an auth message must not keep
+    the connection open forever (slow DoS / resource exhaustion).
     """
     ws = _NeverSendsWs()
 
@@ -303,9 +310,10 @@ async def test_websocket_chat_closes_idle_unauthenticated_connection_after_timeo
 
 @pytest.mark.asyncio
 async def test_websocket_chat_auth_timeout_is_absolute_not_reset_by_junk_messages() -> None:
-    """Regression test: repeatedly sending unparseable junk must not let an
+    """Regression test: junk messages must not reset the auth timeout.
 
-    unauthenticated client reset the auth timeout and stay connected forever.
+    Repeatedly sending unparseable junk must not let an unauthenticated
+    client reset the auth timeout and stay connected forever.
     """
     ws = _RepeatedGarbageWs()
 
@@ -495,7 +503,9 @@ class _Deps:
     async def leave_collaboration_room(self, _websocket) -> None:
         self.left = True
 
-    async def join_collaboration_room(self, websocket, *, room_id, user_id, username, display_name, user_role):
+    async def join_collaboration_room(
+        self, websocket, *, room_id, user_id, username, display_name, user_role
+    ):
         room = self.collaboration_rooms.setdefault(room_id, _Room(room_id))
         participant = SimpleNamespace(can_write=True, websocket=websocket, user_id=user_id)
         room.participants[self.socket_key(websocket)] = participant
@@ -536,6 +546,26 @@ class _Deps:
 
     def iter_stream_chunks(self, result: str):
         return [result]
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_rejects_connection_flood_before_accept_and_agent_init() -> None:
+    ws = _Ws()
+    deps = _Deps()
+
+    async def _limited(_websocket) -> bool:
+        return True
+
+    async def _unexpected_agent():
+        raise AssertionError("rate-limited socket must not initialize the agent")
+
+    deps.ws_connection_is_rate_limited = _limited
+    deps.resolve_agent_instance = _unexpected_agent
+
+    await ws_chat.websocket_chat(ws, deps)
+
+    assert ws.accepted == []
+    assert ws.closed == [(1013, "WebSocket connection rate limit exceeded")]
 
 
 @pytest.mark.asyncio
@@ -785,8 +815,7 @@ async def test_websocket_chat_room_empty_sidar_command_broadcasts_error() -> Non
     await ws_chat.websocket_chat(ws, deps)
 
     assert any(
-        item.get("type") == "room_error"
-        and "komut bulunamadı" in str(item.get("error"))
+        item.get("type") == "room_error" and "komut bulunamadı" in str(item.get("error"))
         for item in deps.broadcasts
     )
     assert not any(item.get("type") == "assistant_stream_start" for item in deps.broadcasts)
@@ -842,7 +871,10 @@ async def test_websocket_chat_room_cancel_broadcasts_cancelled_done() -> None:
 
     await ws_chat.websocket_chat(ws, deps)
 
-    assert any(item.get("type") == "assistant_done" and item.get("cancelled") is True for item in deps.broadcasts)
+    assert any(
+        item.get("type") == "assistant_done" and item.get("cancelled") is True
+        for item in deps.broadcasts
+    )
 
 
 @pytest.mark.asyncio
@@ -873,8 +905,7 @@ async def test_websocket_chat_room_rbac_denied_records_telemetry_and_error() -> 
     room = deps.collaboration_rooms["team:ops"]
     assert any(item.get("kind") == "rbac_denied" for item in room.telemetry)
     assert any(
-        item.get("type") == "room_error"
-        and "yazma yetkisine sahip değil" in str(item.get("error"))
+        item.get("type") == "room_error" and "yazma yetkisine sahip değil" in str(item.get("error"))
         for item in deps.broadcasts
     )
 
@@ -892,7 +923,9 @@ async def test_websocket_chat_disconnect_cleans_lifecycle_and_room() -> None:
     await ws_chat.websocket_chat(ws, deps)
 
     assert deps.left is True
-    assert any(level == "info" and "bağlantısını kesti" in msg for level, msg in deps.logger.messages)
+    assert any(
+        level == "info" and "bağlantısını kesti" in msg for level, msg in deps.logger.messages
+    )
 
 
 @pytest.mark.asyncio

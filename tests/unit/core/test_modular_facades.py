@@ -35,6 +35,7 @@ def test_rag_graph_and_query_facades_keep_stable_imports(tmp_path: Path) -> None
     assert GraphRAGSearchPlan(query="q", vector_backend="bm25").query == "q"
     assert rag.build_query_candidates("q") == ["q"]
     assert "LLM-assisted extractor" in LLM_ENTITY_EXTRACTION_TODO
+    assert rag.LLM_ENTITY_SCHEMA_VERSION == "graphrag.entity.v1"
 
 
 def test_rag_query_expansion_keeps_original_fallback(caplog) -> None:

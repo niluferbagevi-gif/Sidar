@@ -24,6 +24,7 @@ run_python_env_module() {
     mkdir -p "$tmpdir/bin"
     SCRIPT_DIR="$tmpdir"
     UPGRADE_LOCK=false
+    DEPENDENCY_PROFILE=dev-full
     PYTHON_VERSION="3.11"
     touch "$tmpdir/uv.lock"
     step() { :; }

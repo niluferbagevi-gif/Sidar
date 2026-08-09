@@ -225,11 +225,12 @@ retry limiti ve HITL (human-in-the-loop) güvenlik kapılarıyla çalışır.
    `autonomous_batches`, `needs_human_approval`, `max_auto_attempts` ve adım
    durumlarını taşır.
 3. **Kapsam daraltma:** `scripts/auto_heal.py`, hedef dosyaları batch'lere böler; her
-   batch için sadece ilgili log satırlarını prompt'a ekler. `SidarAgent` tarafında
-   `_resolve_self_heal_scope_batches(...)` ve `SELF_HEAL_AUTONOMOUS_BATCH_SIZE` aynı
-   sınırlamayı runtime'da korur.
-4. **Patch üretimi:** `SidarAgent._build_self_heal_plan(...)`, dosya snapshot'ları ve
-   remediation loop ile LLM'den yalnızca JSON patch planı ister. Plan,
+   batch için sadece ilgili log satırlarını prompt'a ekler. Runtime'da canonical
+   `agent/self_heal/planner.py::resolve_scope_batches(...)` ve
+   `SELF_HEAL_AUTONOMOUS_BATCH_SIZE` aynı sınırlamayı korur; `SidarAgent` private
+   metodu yalnız geriye dönük uyumlu delegate wrapper'dır.
+4. **Patch üretimi:** `agent/self_heal/planner.py::build_plan(...)`, dosya snapshot'ları
+   ve remediation loop ile LLM'den yalnızca JSON patch planı ister. Plan,
    `normalize_self_heal_plan(...)` ile scope dışı dosya, fazla operasyon ve geçersiz
    action açısından normalize edilir.
 5. **Uygulama + doğrulama:** `_execute_self_heal_plan(...)`, patch öncesi dosya
@@ -265,8 +266,8 @@ retry limiti ve HITL (human-in-the-loop) güvenlik kapılarıyla çalışır.
   hızını gereksiz yere kırar:
     - **Local profile (`TEST_PROFILE=local`)** — günlük geliştirici kapısı.
       `pyproject.toml [tool.coverage.report].fail_under` ratchet ile yönetilen
-      güncel `%99` baseline'ını tutar; önceki düşük başlangıç anlatısı artık
-      geçerli değildir. `coverage_ratchet.py` ölçülen coverage arttıkça bu
+      ölçülen ve doğrulanan `%100` baseline'ını tutar; bu değer sonraki
+      `%99.x` regresyonlarını merge kapısında fail-closed yakalar. `coverage_ratchet.py` ölçülen coverage arttıkça bu
       değeri yalnızca yukarı taşır; `COVERAGE_FAIL_UNDER_LOCAL` envi ile profil
       bazında üstüne yazılabilir, `run_tests.sh` profile göre eşiği
       `COVERAGE_FAIL_UNDER` değişkenine yazar.
@@ -281,8 +282,8 @@ retry limiti ve HITL (human-in-the-loop) güvenlik kapılarıyla çalışır.
       `100`'ü override edebilir.
 - `coverage_ratchet.py` `pyproject.toml` üzerindeki `[tool.coverage.report].fail_under` değerini
   yalnızca yukarı taşır; `COVERAGE_RATCHET_STEP` varsayılanı `%1`'dir ve
-  local/CI profilleri için `COVERAGE_RATCHET_MAX_GATE` varsayılan olarak
-  `99`'dur (1 puanlık tampon), coverage campaign profilinde `100`'e açılır.
+  local/CI ve coverage campaign profilleri için `COVERAGE_RATCHET_MAX_GATE`
+  varsayılan olarak `100`'dür; ölçülen tam kapsam için gevşek tampon bırakılmaz.
   Açık `COVERAGE_FAIL_UNDER` her zaman tüm profillerin önüne geçer (geri
   uyumluluk).
 - `autonomous_loop.sh` ise varsayılan `%99.8` değerini **otonom iyileştirme
@@ -329,10 +330,11 @@ retry limiti ve HITL (human-in-the-loop) güvenlik kapılarıyla çalışır.
 
 ### 2.5.6 Kademeli dokümantasyon kampanyası
 
-Ruff pydocstyle `D` kuralları açık kalır; ancak legacy yüzeydeki eksik ve stil olarak
-uyumsuz docstring borcu kontrollü kapatılana kadar `pyproject.toml` içinde `D100-D107`
-ve `D200-D417` ailesinden seçili kurallar geçici ignore edilir. Bu ignore'lar kalıcı
-standart değildir; aşağıdaki tarihli kampanyaya bağlıdır:
+Ruff pydocstyle `D` kuralları açık kalır. Legacy yüzeydeki eksik public docstring
+envanteri kontrollü kapatılana kadar yalnız `D100-D107` geçici ignore edilir.
+Sıfır baseline'a ulaşan seçili `D200-D417`, `E501` ve `ASYNC240` global ignore'ları
+2026-08-02'de kaldırılmıştır ve yeniden eklenmemelidir. Kalan kampanya aşağıdaki
+tarihli plana bağlıdır:
 
 - **2026-07-15 — Envanter freeze:** `scripts/coverage_hotspots.py` ve kritik ajan/DB/RAG
   modülleri için public module/class/function docstring eksikleri hotspot listesine
@@ -340,9 +342,10 @@ standart değildir; aşağıdaki tarihli kampanyaya bağlıdır:
 - **2026-08-15 — Core/agent public API kapısı:** `agent/`, `core/` ve `managers/code/`
   altında değişen public sınıf/fonksiyonlar için D100-D107 kapsamı PR bazında temizlenir;
   rol sözleşmeleri `tests/unit/agent/test_builtin_role_contracts.py` ile korunmaya devam eder.
-- **2026-09-30 — Stil borcu kapanışı:** Google pydocstyle uyumsuzlukları (`D200-D417`)
-  için kalan istisnalar azaltılır ve `pyproject.toml` ignore listesi daraltılır. Bu tarihten
-  sonra yeni D200-D417 istisnası yalnız açık TODO, sahip ve expiry tarihiyle eklenebilir.
+- **2026-09-30 — Kampanya kapanış denetimi:** Kalan `D100-D107` envanteri ve tarihli
+  Ruff metadata'sı kapatılır; önceden kaldırılan E501/D200-D417/ASYNC240 kurallarının
+  doğrudan uygulandığı doğrulanır. Yeni istisna yalnız açık gerekçe, sahip ve expiry
+  tarihiyle değerlendirilebilir.
 
 Operasyonel kural: Yeni veya anlamlı şekilde değiştirilen public API'lerde docstring eklemek
 varsayılandır; ignore listesine yeni kural eklemek yerine ilgili modülde dokümantasyon borcu

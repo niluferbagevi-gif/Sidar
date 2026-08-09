@@ -7,6 +7,7 @@ Bu dosya, Sidar projesinin derleme, çalıştırma, test ve kodlama standartlar�
 - **Üretim Omurgası:** Güncel runtime + paket baseline `sidar_version.py` üzerinden çözülen `v5.2.0` sürümüdür; Docker build arg, Helm chart ve dokümantasyon sürüm sözleşmesi bu tek kaynakla CI smoke kontrolünde senkron tutulur.
 - **Mimari:** Multi-Agent Supervisor + doğrudan P2P handoff destekli Swarm, FastAPI, async DB erişimi, Redis/Prometheus/Grafana observability.
 - **Kalite Durumu:** Açık kritik / yüksek / orta / düşük audit bulgusu yok; Zero-Debt hedefi korunur.
+- **Zero-Debt kapsamı:** Bu ifade, otomatik audit/quality-gate taramalarında açık bulgu olmamasını ve yeni katkıların test + dokümantasyon borcu bırakmamasını anlatır; `docs/REFACTOR_PLAN.md` içinde izlenen plugin sandbox gibi bilinçli mimari refactor/güvenlik borçları ayrıca takip edilir ve audit bulgusu sayılmaz.
 
 ## 🛠 Temel Komutlar
 

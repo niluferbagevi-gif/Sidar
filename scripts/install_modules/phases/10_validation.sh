@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 # Sidar installer phase: CUDA, smoke, integration, audit and CI validation helpers.
 
 # ── 13. CUDA bağlantı testi ──────────────────────────────────────────────────
@@ -7,23 +8,49 @@ sync_pytorch_cuda_wheels() {
     local cuda_tag="${1:-}"
     [[ -n "$cuda_tag" ]] || cuda_tag="$(select_pytorch_cuda_wheel_tag)"
     local index_url="${PYTORCH_CUDA_INDEX_URL:-https://download.pytorch.org/whl/${cuda_tag}}"
-    local -a pip_args=(
-        install
-        --reinstall
+    local dependency_profile="${DEPENDENCY_PROFILE:-${SIDAR_DEPENDENCY_PROFILE:-dev-full}}"
+    dependency_profile="$(normalize_dependency_profile_value "$dependency_profile")"
+    [[ "$dependency_profile" != "ask" ]] || dependency_profile="dev-full"
+
+    local -a sync_args=(--frozen)
+    local sync_profile_label="$dependency_profile"
+    case "$dependency_profile" in
+        dev-full)
+            # Kullanıcı bilinçli tam profili seçtiyse mevcut kapsam korunur.
+            sync_args+=(--all-extras)
+            ;;
+        dev-light|dev-gpu)
+            sync_args+=(--extra dev-gpu)
+            sync_profile_label="${dependency_profile} → dev-gpu"
+            ;;
+        production|production-minimal|gpu-runtime)
+            sync_args+=(--extra gpu-runtime --no-dev)
+            sync_profile_label="${dependency_profile} → gpu-runtime"
+            ;;
+        custom)
+            mapfile -d '' -t sync_args < <(build_custom_dependency_sync_args)
+            sync_args+=(--extra gpu-runtime)
+            sync_profile_label="custom + gpu-runtime"
+            ;;
+        *)
+            fail "Geçersiz dependency profile: ${dependency_profile}. Desteklenen: dev-light|dev-full|dev-gpu|gpu-runtime|production-minimal|production|custom"
+            ;;
+    esac
+
+    sync_args+=(
+        --index "$index_url"
         --reinstall-package torch
-        --index-url "$index_url"
-        torch
-        torchvision
-        torchaudio
+        --reinstall-package torchvision
     )
 
-    info "PyTorch CUDA wheel seçimi uv run python -m pip ile uygulanıyor: ${cuda_tag} (${index_url})"
-    if ! uv run python -m pip "${pip_args[@]}"; then
-        fail "PyTorch CUDA bağımlılıkları uv run python -m pip ile güncellenemedi (${cuda_tag})."
+    info "PyTorch CUDA wheel seçimi uv sync ile uygulanıyor: ${cuda_tag} (${index_url}); profil: ${sync_profile_label}"
+    if ! uv sync "${sync_args[@]}"; then
+        fail "PyTorch CUDA bağımlılıkları uv sync ile senkronlanamadı (${cuda_tag})."
     fi
 }
 
 verify_torch_cuda() {
+    # shellcheck disable=SC2153  # GPU_AVAILABLE is sourced from earlier hardware detection phases.
     if [[ "$GPU_AVAILABLE" == true ]]; then
         step "PyTorch CUDA Doğrulaması"
         if python -c "import torch; exit(0 if torch.cuda.is_available() else 1)" >/dev/null 2>&1; then
@@ -53,10 +80,12 @@ print(f'available={avail} cuda={ver} device={dev}')
 
 # ── 14. Smoke testler ────────────────────────────────────────────────────────
 wait_for_redis_before_smoke_tests() {
-    local env_file="$SCRIPT_DIR/.env"
+    local script_dir="${SCRIPT_DIR:-$(pwd)}"
+    local env_file="$script_dir/.env"
     local redis_url=""
     local redis_host=""
     local redis_port=""
+    local configured_redis_port=""
     local redis_host_lc=""
     local redis_is_local=false
     local docker_start_attempted=false
@@ -64,7 +93,8 @@ wait_for_redis_before_smoke_tests() {
     local -a python_cmd=()
 
     if [[ -f "$env_file" ]]; then
-        redis_url=$(read_env_value_from_file "REDIS_URL" "$env_file")
+        redis_url=$(read_env_value_from_file "SIDAR_REDIS_URL" "$env_file")
+        [[ -n "$redis_url" ]] || redis_url=$(read_env_value_from_file "REDIS_URL" "$env_file")
     fi
     if [[ -z "$redis_url" ]]; then
         redis_url="redis://localhost:6379/0"
@@ -102,6 +132,10 @@ PY
 
     redis_host="${redis_conn[0]:-localhost}"
     redis_port="${redis_conn[1]:-6379}"
+    configured_redis_port=$(read_env_value_from_file "REDIS_PORT" "$env_file")
+    if [[ "$redis_host" =~ ^(localhost|127\.0\.0\.1|::1)$ && "$configured_redis_port" =~ ^[0-9]+$ ]]; then
+        redis_port="$configured_redis_port"
+    fi
     redis_host_lc="${redis_host,,}"
     if [[ "$redis_host_lc" == "localhost" || "$redis_host_lc" == "127.0.0.1" || "$redis_host_lc" == "redis" ]]; then
         redis_is_local=true
@@ -133,6 +167,14 @@ PY
         then
             ok "Redis erişilebilir hale geldi."
             return 0
+        fi
+
+        if [[ "$redis_is_local" == true ]]; then
+            if diagnose_healthy_redis_host_mapping "$redis_host" "$redis_port"; then
+                :
+            elif [[ $? -eq 2 ]]; then
+                return 1
+            fi
         fi
 
         if [[ "$redis_is_local" == true && "$docker_start_attempted" == false && "$DOCKER_DB_SERVICES_STARTED" != true ]]; then
@@ -220,23 +262,28 @@ run_smoke_tests() {
     local smoke_database_url=""
     local smoke_postgres_password=""
     local smoke_redis_url=""
+    local smoke_redis_password=""
     if [[ -f "$env_file" ]]; then
-        smoke_database_url=$(read_env_value_from_file "DATABASE_URL" "$env_file")
-        smoke_postgres_password=$(read_env_value_from_file "POSTGRES_PASSWORD" "$env_file")
-        smoke_redis_url=$(read_env_value_from_file "REDIS_URL" "$env_file")
-        if [[ -z "$smoke_redis_url" ]]; then
-            smoke_redis_url=$(read_env_value_from_file "SIDAR_REDIS_URL" "$env_file")
+        if resolve_runtime_database_url >/dev/null; then
+            smoke_database_url="$RUNTIME_DATABASE_URL"
         fi
+        smoke_postgres_password=$(read_env_value_from_file "POSTGRES_PASSWORD" "$env_file")
+        smoke_redis_url=$(read_env_value_from_file "SIDAR_REDIS_URL" "$env_file")
+        [[ -n "$smoke_redis_url" ]] || smoke_redis_url=$(read_env_value_from_file "REDIS_URL" "$env_file")
+        smoke_redis_password=$(read_env_value_from_file "REDIS_PASSWORD" "$env_file")
 
         if [[ -n "$smoke_database_url" ]]; then
             pytest_smoke_env+=("DATABASE_URL=$smoke_database_url")
-            info "Smoke test DATABASE_URL değeri .env dosyasından yenilendi."
+            info "Smoke test DATABASE_URL değeri ${RUNTIME_DATABASE_URL_SOURCE:-dotenv zinciri} üzerinden yenilendi."
         fi
         if [[ -n "$smoke_postgres_password" ]]; then
             pytest_smoke_env+=("POSTGRES_PASSWORD=$smoke_postgres_password")
         fi
         if [[ -n "$smoke_redis_url" ]]; then
-            pytest_smoke_env+=("REDIS_URL=$smoke_redis_url")
+            pytest_smoke_env+=("SIDAR_REDIS_URL=$smoke_redis_url" "REDIS_URL=$smoke_redis_url")
+        fi
+        if [[ -n "$smoke_redis_password" ]]; then
+            pytest_smoke_env+=("REDIS_PASSWORD=$smoke_redis_password")
         fi
     fi
 
@@ -323,13 +370,15 @@ wait_for_core_docker_health_before_smoke_tests() {
 run_install_integration_api_tests() {
     step "Kurulum Entegrasyon Testleri"
 
-    if [[ "$RUN_INSTALL_INTEGRATION_TESTS" != true ]]; then
+    # shellcheck disable=SC2153  # RUN_INSTALL_INTEGRATION_TESTS is initialized by installer argument parsing.
+    if [[ "${RUN_INSTALL_INTEGRATION_TESTS:-false}" != true ]]; then
         info "--with-integration verilmediği için bash run_tests.sh --stage integration çalıştırılmadı."
         INTEGRATION_TEST_STATUS="atlandi_bayrak"
         return
     fi
 
-    local run_tests_script="$SCRIPT_DIR/run_tests.sh"
+    local script_dir="${SCRIPT_DIR:-$(pwd)}"
+    local run_tests_script="$script_dir/run_tests.sh"
     local -a integration_env=(AUTO_OPEN_ARTIFACTS=0)
     local integration_failure_policy="${INTEGRATION_TEST_FAILURE_POLICY:-fail}"
 
@@ -338,27 +387,32 @@ run_install_integration_api_tests() {
         fail "--with-integration entegrasyon kapısı çalıştırılamadı: $run_tests_script bulunamadı."
     fi
 
-    local env_file="$SCRIPT_DIR/.env"
+    local env_file="$script_dir/.env"
     local integration_database_url=""
     local integration_postgres_password=""
     local integration_redis_url=""
+    local integration_redis_password=""
     if [[ -f "$env_file" ]]; then
-        integration_database_url=$(read_env_value_from_file "DATABASE_URL" "$env_file")
-        integration_postgres_password=$(read_env_value_from_file "POSTGRES_PASSWORD" "$env_file")
-        integration_redis_url=$(read_env_value_from_file "REDIS_URL" "$env_file")
-        if [[ -z "$integration_redis_url" ]]; then
-            integration_redis_url=$(read_env_value_from_file "SIDAR_REDIS_URL" "$env_file")
+        if resolve_runtime_database_url >/dev/null; then
+            integration_database_url="$RUNTIME_DATABASE_URL"
         fi
+        integration_postgres_password=$(read_env_value_from_file "POSTGRES_PASSWORD" "$env_file")
+        integration_redis_url=$(read_env_value_from_file "SIDAR_REDIS_URL" "$env_file")
+        [[ -n "$integration_redis_url" ]] || integration_redis_url=$(read_env_value_from_file "REDIS_URL" "$env_file")
+        integration_redis_password=$(read_env_value_from_file "REDIS_PASSWORD" "$env_file")
 
         if [[ -n "$integration_database_url" ]]; then
             integration_env+=("DATABASE_URL=$integration_database_url")
-            info "Entegrasyon test DATABASE_URL değeri .env dosyasından yenilendi."
+            info "Entegrasyon test DATABASE_URL değeri ${RUNTIME_DATABASE_URL_SOURCE:-dotenv zinciri} üzerinden yenilendi."
         fi
         if [[ -n "$integration_postgres_password" ]]; then
             integration_env+=("POSTGRES_PASSWORD=$integration_postgres_password")
         fi
         if [[ -n "$integration_redis_url" ]]; then
-            integration_env+=("REDIS_URL=$integration_redis_url")
+            integration_env+=("SIDAR_REDIS_URL=$integration_redis_url" "REDIS_URL=$integration_redis_url")
+        fi
+        if [[ -n "$integration_redis_password" ]]; then
+            integration_env+=("REDIS_PASSWORD=$integration_redis_password")
         fi
     fi
 
@@ -387,7 +441,7 @@ run_install_integration_api_tests() {
 run_install_frontend_quality_validation() {
     step "Frontend Kalite Kapısı"
 
-    if [[ "$RUN_INSTALL_INTEGRATION_TESTS" != true ]]; then
+    if [[ "${RUN_INSTALL_INTEGRATION_TESTS:-false}" != true ]]; then
         info "--with-integration verilmediği için frontend stage çalıştırılmadı. Manuel komut: RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend"
         FRONTEND_QUALITY_STATUS="atlandi_bayrak"
         return
@@ -442,7 +496,7 @@ run_test_artifact_audit() {
 }
 
 sidar_install_production_gate_required() {
-    local env_choice="${AUTO_ENV_TYPE:-ask}"
+    local env_choice="${SIDAR_SELECTED_ENV_TYPE:-${AUTO_ENV_TYPE:-ask}}"
     local env_file_value=""
     local production_readiness_raw=""
 
@@ -469,6 +523,68 @@ sidar_install_optional_dev_full_validation_available() {
 }
 
 
+
+print_install_final_readiness_block() {
+    local dev_state="$1"
+    local release_state="$2"
+    local release_reason="$3"
+
+    echo ""
+    echo -e "${BOLD}🎯 Final doğrulama sonucu:${NC}"
+    echo -e "   ${GREEN}Geliştirici ortamı sağlıklı: ${dev_state}${NC}"
+    echo -e "   ${YELLOW}Release hazır: ${release_state}${NC}"
+    if [[ -n "$release_reason" ]]; then
+        echo -e "   ${YELLOW}Neden: ${release_reason}${NC}"
+    fi
+}
+
+print_install_dependency_profile_readiness_legend() {
+    echo -e "   ${YELLOW}   Profil farkı:${NC}"
+    echo -e "   ${YELLOW}   • dev-light: hızlı lokal geliştirme; voice/browser/GPU gibi sistem-header bağımlılıklarını kapsamaz.${NC}"
+    echo -e "   ${YELLOW}   • dev-full / uv sync --frozen --all-extras: tam geliştirici/CI paritesi ve tüm extras yüzeyi.${NC}"
+    echo -e "   ${YELLOW}   • production-readiness: release/merge kapısı; sistem bağımlılıkları + Playwright browser + benchmark baseline gerektirebilir.${NC}"
+}
+
+print_install_production_readiness_notice() {
+    local status="${1:-not_requested}"
+    local development_passed="${2:-false}"
+    local production_readiness_command="TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
+
+    if [[ "${SIDAR_INSTALL_PRODUCTION_READINESS_NOTICE_PRINTED:-false}" == true ]]; then
+        return 0
+    fi
+    SIDAR_INSTALL_PRODUCTION_READINESS_NOTICE_PRINTED=true
+
+    case "$status" in
+        passed)
+            echo -e "   ${GREEN}✅ Yerel/base production readiness: GEÇTİ${NC}"
+            echo -e "   ${YELLOW}   ⚠️  GPU TTFT≤200ms / latency≤250ms kanıtı bu özete dahil değildir.${NC}"
+            echo -e "   ${YELLOW}   Release/merge için CI GPU Required Evidence Gate + aggregate zorunludur.${NC}"
+            ;;
+        failed)
+            echo -e "   ${RED}${BOLD}❌ Production readiness: GEÇMEDİ${NC}"
+            echo -e "   ${YELLOW}   Release/merge için zorunlu gate başarısız oldu; tekrar komutu: ${production_readiness_command}${NC}"
+            ;;
+        not_requested|development_only)
+            echo -e "   ${YELLOW}${BOLD}⏭️  Production readiness: ÇALIŞTIRILMADI / TALEP EDİLMEDİ${NC}"
+            echo -e "   ${YELLOW}   ℹ️  Not: Bu yalnızca BU YEREL çalıştırmayı kapsar — GitHub Actions CI bu gate'i${NC}"
+            echo -e "   ${YELLOW}   (production-readiness job) her push/PR'da otomatik çalıştırır (bkz. .github/workflows/ci.yml).${NC}"
+            if [[ "$development_passed" == true ]]; then
+                echo -e "   ${YELLOW}   ✅ Development full validation geçti = geliştirici ortamı sağlıklı.${NC}"
+                print_install_dependency_profile_readiness_legend
+            fi
+            echo -e "   ${YELLOW}   ⚠️  Development validation ≠ release/merge onayı; required GitHub Actions aggregate hâlâ zorunlu.${NC}"
+            echo -e "   ${YELLOW}   DEVELOPMENT VALIDATION ≠ PRODUCTION READINESS${NC}"
+            echo -e "   ${YELLOW}   Yerel ön doğrulama (merge kararı değildir): ${production_readiness_command}${NC}"
+            echo -e "   ${YELLOW}   Asıl release/merge kararı: PR üzerindeki required GitHub Actions 'Production readiness aggregate' check'i.${NC}"
+            ;;
+        *)
+            echo -e "   ${YELLOW}⚠️  Production readiness: GEÇMEDİ / DURUM BİLİNMİYOR (${status:-yok})${NC}"
+            echo -e "   ${YELLOW}   Zorunlu gate: ${production_readiness_command}${NC}"
+            ;;
+    esac
+}
+
 sync_frontend_quality_status_from_test_summary() {
     local summary_frontend_lint=""
     local summary_frontend_typecheck=""
@@ -493,7 +609,7 @@ sync_frontend_quality_status_from_test_summary() {
 }
 
 run_optional_dev_full_validation_prompt() {
-    local optional_command="RUN_GPU_STRESS=1 RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
+    local optional_command="make dev-full"
     local reply=""
 
     if ! sidar_install_optional_dev_full_validation_available; then
@@ -514,13 +630,22 @@ run_optional_dev_full_validation_prompt() {
     esac
 
     info "Development tam doğrulama başlıyor: ${optional_command}"
-    if env RUN_GPU_STRESS=1 RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 AUTO_OPEN_ARTIFACTS=0 \
-        bash "$SCRIPT_DIR/run_tests.sh" --stage all; then
-        ok "Development tam doğrulaması başarıyla tamamlandı (RUN_GPU_STRESS=1 run_tests.sh --stage all)."
+    # Interactive TOFU pins are installer-session state.  Do not leak them into
+    # the repository test process: installer contract tests intentionally load
+    # their own checksum fixture/default environment.
+    if (cd "$SCRIPT_DIR" && env \
+        -u OLLAMA_INSTALL_SHA256 \
+        -u UV_INSTALL_SHA256 \
+        -u VOLTA_INSTALL_SHA256 \
+        -u NVM_INSTALL_SHA256 \
+        AUTO_OPEN_ARTIFACTS=0 make dev-full); then
+        ok "Development tam doğrulaması başarıyla tamamlandı (make dev-full)."
+        info "Production readiness uyarısı final kurulum doğrulama özetinde tek merkezden raporlanacak."
         CI_FULL_VALIDATION_STATUS="tamamlandi"
         sync_frontend_quality_status_from_test_summary || true
     else
         CI_FULL_VALIDATION_STATUS="hata"
+        sync_frontend_quality_status_from_test_summary || true
         warn "Development tam doğrulaması başarısız oldu. Uygulama smoke kontrolleri geçtiyse geliştirme amaçlı çalışabilir; ancak production-ready/merge kabulü için tam doğrulama başarıyla geçmelidir. Tekrar için: ${optional_command}"
     fi
 }
@@ -540,31 +665,50 @@ run_install_ci_full_validation() {
         return
     fi
 
-    local run_tests_script="$SCRIPT_DIR/run_tests.sh"
+    local script_dir="${SCRIPT_DIR:-$(pwd)}"
+    local makefile_path="$script_dir/Makefile"
     local ci_full_failure_policy="${CI_FULL_VALIDATION_FAILURE_POLICY:-fail}"
-    if [[ ! -f "$run_tests_script" ]]; then
+    if [[ ! -f "$makefile_path" ]]; then
         CI_FULL_VALIDATION_STATUS="betik_yok"
         if [[ "$production_gate_required" == true ]]; then
-            fail "Production readiness gate çalıştırılamadı: tam doğrulama betiği bulunamadı ($run_tests_script)."
+            fail "Production readiness gate çalıştırılamadı: Makefile bulunamadı ($makefile_path)."
         fi
-        warn "Tam doğrulama betiği bulunamadı: $run_tests_script"
+        warn "Tam doğrulama hedefi çalıştırılamadı: Makefile bulunamadı ($makefile_path)"
         return
     fi
 
-    info "Tam doğrulama başlıyor: TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
-    if env TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 AUTO_OPEN_ARTIFACTS=0 \
-        bash "$run_tests_script" --stage all; then
-        ok "Tam CI doğrulaması başarıyla tamamlandı (run_tests.sh --stage all)."
+    info "Production-readiness sistem bağımlılığı ön kontrolü çalıştırılıyor: scripts/install_ci_system_deps.sh --check"
+    if ! (cd "$script_dir" && bash scripts/install_ci_system_deps.sh --check); then
+        CI_FULL_VALIDATION_STATUS="sistem_bagimliligi_eksik"
+        if [[ "$production_gate_required" == true ]]; then
+            fail "Production readiness sistem bağımlılıkları eksik. Önce 'bash scripts/install_ci_system_deps.sh' çalıştırın; ardından './install_sidar.sh --production-readiness' veya 'make production-readiness' ile tekrar deneyin."
+        fi
+        warn "Production readiness sistem bağımlılığı ön kontrolü tamamlanamadı. Development/local tam doğrulamada akış make production-readiness adımına devam edecek; eksikleri kurmak için: bash scripts/install_ci_system_deps.sh"
+    fi
+
+    info "Tam doğrulama başlıyor: make production-readiness"
+    if (cd "$script_dir" && env \
+        -u TEST_PROFILE \
+        -u RUN_BENCHMARKS \
+        -u RUN_FRONTEND_E2E \
+        -u SIDAR_PRODUCTION_READINESS \
+        -u OLLAMA_INSTALL_SHA256 \
+        -u UV_INSTALL_SHA256 \
+        -u VOLTA_INSTALL_SHA256 \
+        -u NVM_INSTALL_SHA256 \
+        AUTO_OPEN_ARTIFACTS=0 make production-readiness); then
+        ok "Tam CI doğrulaması başarıyla tamamlandı (make production-readiness)."
         CI_FULL_VALIDATION_STATUS="tamamlandi"
         sync_frontend_quality_status_from_test_summary || true
     else
         CI_FULL_VALIDATION_STATUS="hata"
+        sync_frontend_quality_status_from_test_summary || true
         if [[ "$production_gate_required" == true ]]; then
-            fail "Production readiness gate başarısız. Tekrar için: TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
+            fail "Production readiness gate başarısız. Tekrar için: make production-readiness"
         elif [[ "$ci_full_failure_policy" == "warn" ]]; then
             warn "Tam CI doğrulamasında hata var. CI_FULL_VALIDATION_FAILURE_POLICY=warn nedeniyle development/local kurulum devam ediyor."
         else
-            fail "Tam CI doğrulamasında hata var. Tekrar için: TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
+            fail "Tam CI doğrulamasında hata var. Tekrar için: make production-readiness"
         fi
     fi
 }
@@ -599,6 +743,18 @@ print_install_coverage_gate_note() {
     echo -e "   ${YELLOW}Kurulum smoke/build adımları geçse bile tam doğrulama çalışmadıysa coverage fail-under ve ratchet devreye girmiş sayılmaz.${NC}"
     echo "   Coverage gate için: RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
     echo "   Test rehberi: docs/TESTING.md (run_tests.sh PR/merge öncesi ana doğrulama yoludur)"
+}
+
+print_install_benchmark_baseline_note() {
+    echo ""
+    echo -e "${BOLD}📌 CI ilk çalıştırma / benchmark baseline notu:${NC}"
+    echo -e "   ${YELLOW}CI production-readiness gate'i fail-closed çalışır; .benchmarks/*_baseline.json restore edilemezse normal CI baseline üretmez ve bilinçli olarak başarısız olur.${NC}"
+    echo "   İlk/boş cache bootstrap sırası:"
+    echo "     1. GitHub Actions → CI → Run workflow"
+    echo "     2. seed_benchmark_baseline=true seçin"
+    echo "     3. benchmark-baseline-seed artifact/cache oluşunca normal CI veya production-readiness gate'ini yeniden çalıştırın"
+    echo "   Lokal artifact restore örneği ve ayrıntılar: docs/TESTING.md#ci-benchmark-baseline-cache-boşsa-ne-yapılır"
+    echo "   Release/merge öncesi gate: TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
 }
 
 print_install_ci_parity_summary() {
@@ -696,6 +852,7 @@ print_install_validation_coverage() {
     local summary_frontend_lint=""
     local summary_frontend_typecheck=""
     local summary_frontend_coverage=""
+    local summary_frontend_build="skipped"
     local summary_frontend_e2e=""
     local summary_benchmark=""
     local summary_production_ready=""
@@ -712,6 +869,7 @@ print_install_validation_coverage() {
         summary_production_ready="$(read_install_test_summary_field production_ready)"; then
         summary_available=true
     fi
+    summary_frontend_build="$(read_install_test_summary_field frontend_bundle_budget 2>/dev/null || printf 'skipped')"
     local production_readiness_command="TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
     local recommended_validation_command="RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
     if [[ "$gpu_available" == true ]]; then
@@ -727,17 +885,17 @@ print_install_validation_coverage() {
         print_install_validation_gate_line "Frontend lint" "$summary_frontend_lint" "npm run lint" "bash run_tests.sh --stage frontend"
         print_install_validation_gate_line "Frontend type" "$summary_frontend_typecheck" "npm run typecheck" "bash run_tests.sh --stage frontend"
         print_install_validation_gate_line "Frontend cov " "$summary_frontend_coverage" "npm run test:coverage" "bash run_tests.sh --stage frontend"
+        print_install_validation_gate_line "Frontend build" "$summary_frontend_build" "npm run build:budget" "FRONTEND_BUNDLE_BUDGET=1 bash run_tests.sh --stage frontend"
         print_install_validation_gate_line "Frontend E2E " "$summary_frontend_e2e" "Playwright smoke" "RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend"
         print_install_validation_gate_line "Benchmark   " "$summary_benchmark" "tests/performance" "RUN_BENCHMARKS=required bash run_tests.sh --stage all"
         if [[ "$summary_production_ready" == true ]]; then
-            echo -e "   ${GREEN}✅ Production readiness: GEÇTİ${NC}"
+            print_install_production_readiness_notice "passed" false
             production_readiness_status_reported=true
         elif [[ "$ci_status" == "tamamlandi" ]] && ! sidar_install_production_gate_required; then
-            echo -e "   ${YELLOW}⏭️  Production readiness: ÇALIŞTIRILMADI / TALEP EDİLMEDİ${NC}"
-            echo -e "   ${YELLOW}   Development full validation geçti = geliştirici ortamı sağlıklı; release/merge için ayrı production gate gerekir: ${production_readiness_command}${NC}"
+            print_install_production_readiness_notice "development_only" true
             production_readiness_status_reported=true
         else
-            echo -e "   ${YELLOW}⚠️  Production readiness: GEÇMEDİ${NC}"
+            print_install_production_readiness_notice "failed" false
             production_readiness_status_reported=true
         fi
     elif [[ "$smoke_status" == "tamamlandi" ]]; then
@@ -789,6 +947,7 @@ print_install_validation_coverage() {
             echo -e "   ${RED}   Production ortamında integration/e2e/benchmark atlanmışsa kurulum production-ready sayılmaz.${NC}"
             echo -e "   ${RED}   Zorunlu gate: ${production_readiness_command}${NC}"
             if [[ "$production_readiness_status_reported" != true ]]; then
+                print_install_production_readiness_notice "not_requested" false
                 echo "   Production readiness:      ./install_sidar.sh --production-readiness"
                 echo "   Legacy CI alias:           ./install_sidar.sh --ci-full"
             fi
@@ -810,12 +969,28 @@ print_install_validation_coverage() {
             echo "   Backend entegrasyon:       bash run_tests.sh --stage integration"
             echo "   Frontend kalite kapısı:    bash run_tests.sh --stage frontend"
             if [[ "$production_readiness_status_reported" != true ]]; then
+                print_install_production_readiness_notice "not_requested" false
                 echo "   Production readiness:      ./install_sidar.sh --production-readiness"
                 echo "   Legacy CI alias:           ./install_sidar.sh --ci-full"
             fi
         fi
     fi
 
+    if [[ "${summary_production_ready:-}" == true ]]; then
+        print_install_final_readiness_block "Evet — yerel/base production-readiness gate geçti" "CI aggregate bekleniyor" "Yerel production_ready=true self-hosted GPU TTFT/latency kanıtını içermez; release/merge için GPU Required Evidence Gate zorunludur."
+    elif [[ "$ci_status" == "tamamlandi" ]]; then
+        if sidar_install_production_gate_required; then
+            print_install_final_readiness_block "Evet — tam doğrulama komutu tamamlandı" "Hayır — production-readiness özeti doğrulanamadı" "artifacts/test-summary.json içinde production_ready=true görülmeden release/merge onayı vermeyin."
+        else
+            print_install_final_readiness_block "Evet — development full validation geçti" "Hayır" "Production-readiness gate çalıştırılmadı; release/merge için ./install_sidar.sh --production-readiness zorunlu."
+        fi
+    elif [[ "$smoke_status" == "tamamlandi" ]]; then
+        print_install_final_readiness_block "Kısmi — smoke doğrulaması geçti" "Hayır" "Development full validation ve production-readiness gate çalıştırılmadı."
+    else
+        print_install_final_readiness_block "Hayır veya bilinmiyor — smoke/dev-full tamamlanmadı" "Hayır" "Tam doğrulama kapsamı eksik; release/merge için production-readiness gate zorunlu."
+    fi
+
     print_install_coverage_gate_note
+    print_install_benchmark_baseline_note
     print_install_ci_parity_summary
 }

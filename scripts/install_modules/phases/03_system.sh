@@ -1,8 +1,31 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 # Sidar installer phase: system dependencies, prerequisites, GPU and NVIDIA Docker helpers.
 
 # shellcheck disable=SC2034  # Set by remote_script.sh and consumed by phase helpers.
 DOWNLOADED_SCRIPT_FILE=""
+
+# GPU/CUDA detection is single-sourced from utils/gpu_utils.sh. Keep this phase
+# focused on system provisioning and NVIDIA container-toolkit setup.
+if [[ -z "${SIDAR_INSTALL_UTIL_WSL_HOST_SH_LOADED:-}" ]]; then
+    _sidar_03_system_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    _sidar_wsl_host_utils="${_sidar_03_system_dir}/../utils/wsl_host.sh"
+    if [[ -f "$_sidar_wsl_host_utils" ]]; then
+        # shellcheck source=../utils/wsl_host.sh
+        source "$_sidar_wsl_host_utils"
+    fi
+    unset _sidar_03_system_dir _sidar_wsl_host_utils
+fi
+
+if [[ -z "${SIDAR_INSTALL_UTIL_GPU_UTILS_SH_LOADED:-}" ]]; then
+    _sidar_03_system_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    _sidar_gpu_utils="${_sidar_03_system_dir}/../utils/gpu_utils.sh"
+    if [[ -f "$_sidar_gpu_utils" ]]; then
+        # shellcheck source=../utils/gpu_utils.sh
+        source "$_sidar_gpu_utils"
+    fi
+    unset _sidar_03_system_dir _sidar_gpu_utils
+fi
 
 validate_downloaded_script_file() {
     local script_file="${1:-}"
@@ -16,6 +39,28 @@ validate_downloaded_script_file() {
     if [[ ! -f "$script_file" ]]; then
         fail "${script_label}: betik dosyası bulunamadı (${script_file})."
     fi
+}
+
+warn_if_node_major_mismatch() {
+    local node_path="${1:-}"
+    local target_major="${2:-}"
+    local install_source="${3:-Node.js kurulumu}"
+    local installed_version=""
+    local installed_major=""
+
+    if [[ -n "$node_path" ]]; then
+        installed_version="$("$node_path" --version 2>/dev/null || true)"
+    fi
+    installed_major="$(printf '%s' "$installed_version" | grep -oE '[0-9]+' | head -n1 || true)"
+    if [[ -z "$installed_major" ]]; then
+        warn "${install_source} sonrasında aktif Node.js major sürümü doğrulanamadı; hedef ${target_major}.x (.nvmrc)."
+        return 1
+    fi
+    if [[ "$installed_major" != "$target_major" ]]; then
+        warn "Node.js sürüm sapması tespit edildi (${install_source}): hedef ${target_major}.x, aktif ${installed_version}. React build uyumluluğu için Node.js ${target_major}.x önerilir (.nvmrc)."
+        return 1
+    fi
+    return 0
 }
 
 docker_cli_healthy() {
@@ -54,116 +99,6 @@ docker_cli_healthy() {
     fi
     return 1
 }
-
-is_windows_interop_binary_path() {
-    local bin_path="${1:-}"
-    [[ -z "$bin_path" ]] && return 1
-
-    # WSL üzerinde Windows binary'leri genellikle /mnt/<drive>/... altında ve .exe uzantılıdır.
-    [[ "$bin_path" == /mnt/[A-Za-z]/* ]] && return 0
-    [[ "$bin_path" == *.exe ]] && return 0
-    return 1
-}
-
-resolve_native_binary_path() {
-    local cmd_name="${1:-}"
-    local resolved_path=""
-    [[ -n "$cmd_name" ]] || return 1
-
-    resolved_path="$(type -P "$cmd_name" 2>/dev/null || true)"
-    [[ -n "$resolved_path" ]] || return 1
-
-    if is_windows_interop_binary_path "$resolved_path"; then
-        return 1
-    fi
-
-    echo "$resolved_path"
-}
-
-has_native_binary() {
-    local cmd_name="${1:-}"
-    resolve_native_binary_path "$cmd_name" >/dev/null
-}
-
-windows_path_to_wsl_path() {
-    local windows_path="${1:-}"
-    if [[ "$windows_path" =~ ^[A-Za-z]:\\ ]]; then
-        local drive_letter path_rest
-        drive_letter=$(echo "$windows_path" | cut -d: -f1 | tr '[:upper:]' '[:lower:]')
-        path_rest=$(echo "$windows_path" | cut -d: -f2- | sed 's#\\#/#g')
-        echo "/mnt/${drive_letter}${path_rest}"
-        return 0
-    fi
-    return 1
-}
-
-resolve_windows_userprofile_path() {
-    local win_userprofile=""
-    local resolved_wsl_path=""
-
-    # Birincil yöntem: cmd.exe interop
-    if command -v cmd.exe &>/dev/null; then
-        win_userprofile=$(cmd.exe /d /c "echo %UserProfile%" 2>/dev/null | tr -d '\r' | tail -n1 || true)
-        resolved_wsl_path="$(windows_path_to_wsl_path "$win_userprofile" || true)"
-        if [[ -n "$resolved_wsl_path" ]]; then
-            echo "$resolved_wsl_path"
-            return 0
-        fi
-    fi
-
-    # Fallback: powershell.exe interop (kurumsal cmd policy kısıtlarında işe yarayabilir)
-    if command -v powershell.exe &>/dev/null; then
-        # shellcheck disable=SC2016  # PowerShell değişkeni; Bash tarafından genişletilmemeli.
-        win_userprofile=$(powershell.exe -NoProfile -Command '$env:UserProfile' 2>/dev/null | tr -d '\r' | tail -n1 || true)
-        resolved_wsl_path="$(windows_path_to_wsl_path "$win_userprofile" || true)"
-        if [[ -n "$resolved_wsl_path" ]]; then
-            echo "$resolved_wsl_path"
-            return 0
-        fi
-    fi
-
-    # Son fallback: yaygın varsayım (C:\Users\<username>)
-    if [[ -n "${USER:-}" && -d "/mnt/c/Users/${USER}" ]]; then
-        echo "/mnt/c/Users/${USER}"
-        return 0
-    fi
-
-    return 1
-}
-
-resolve_windows_localappdata_path() {
-    local win_localappdata=""
-    local resolved_wsl_path=""
-
-    if command -v cmd.exe &>/dev/null; then
-        win_localappdata=$(cmd.exe /d /c "echo %LocalAppData%" 2>/dev/null | tr -d '\r' | tail -n1 || true)
-        resolved_wsl_path="$(windows_path_to_wsl_path "$win_localappdata" || true)"
-        if [[ -n "$resolved_wsl_path" ]]; then
-            echo "$resolved_wsl_path"
-            return 0
-        fi
-    fi
-
-    if command -v powershell.exe &>/dev/null; then
-        # shellcheck disable=SC2016  # PowerShell değişkeni; Bash tarafından genişletilmemeli.
-        win_localappdata=$(powershell.exe -NoProfile -Command '$env:LocalAppData' 2>/dev/null | tr -d '\r' | tail -n1 || true)
-        resolved_wsl_path="$(windows_path_to_wsl_path "$win_localappdata" || true)"
-        if [[ -n "$resolved_wsl_path" ]]; then
-            echo "$resolved_wsl_path"
-            return 0
-        fi
-    fi
-
-    local userprofile_path=""
-    userprofile_path="$(resolve_windows_userprofile_path 2>/dev/null || true)"
-    if [[ -n "$userprofile_path" && -d "${userprofile_path}/AppData/Local" ]]; then
-        echo "${userprofile_path}/AppData/Local"
-        return 0
-    fi
-
-    return 1
-}
-
 
 verify_offline_bundle_manifest() {
     local bundle_dir="${1:-}"
@@ -477,8 +412,14 @@ install_system_dependencies() {
                     if [[ -n "$node_bin" ]] && "$node_bin" -v | grep -q "^v${node_target_major}\\."; then
                         isolated_node_ready=true
                         ok "Node.js Volta ile izole şekilde kuruldu: $("$node_bin" -v)"
+                    else
+                        warn "Volta node@${node_target_major} kurulumunu tamamladı ancak aktif Linux Node.js hedef ${node_target_major}.x olarak doğrulanamadı; NVM fallback denenecek."
                     fi
+                else
+                    warn "Volta node@${node_target_major} komutu başarısız oldu; NVM fallback denenecek."
                 fi
+            else
+                warn "Volta çalıştırılabilir dosyası bulunamadı (${volta_home}/bin/volta); NVM fallback denenecek."
             fi
 
             if [[ "$isolated_node_ready" != true ]]; then
@@ -509,8 +450,14 @@ install_system_dependencies() {
                         if [[ -n "$node_bin" ]] && "$node_bin" -v | grep -q "^v${node_target_major}\\."; then
                             isolated_node_ready=true
                             ok "Node.js NVM ile izole şekilde kuruldu: $("$node_bin" -v)"
+                        else
+                            warn "NVM ${node_target_major}.x kurulumunu tamamladı ancak aktif Linux Node.js hedef major olarak doğrulanamadı; NodeSource fallback denenecek."
                         fi
+                    else
+                        warn "NVM install/alias default ${node_target_major} komutu başarısız oldu; NodeSource fallback denenecek."
                     fi
+                else
+                    warn "NVM başlangıç dosyası bulunamadı (${nvm_dir}/nvm.sh); NodeSource fallback denenecek."
                 fi
             fi
 
@@ -549,26 +496,35 @@ EOF
             fi
             rm -f "$ns_key_tmp"
 
-            if [[ "$ns_ready" == true ]] && \
-                sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -y && \
-                sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs; then
+            local ns_node_installed=false
+            if [[ "$ns_ready" == true ]]; then
+                if sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -y; then
+                    if sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs; then
+                        ns_node_installed=true
+                    else
+                        warn "NodeSource apt deposu hazırlandı ancak nodejs paketi kurulamadı; varsayılan apt fallback değerlendirilecek."
+                    fi
+                else
+                    warn "NodeSource apt deposu hazırlandı ancak apt update başarısız oldu; varsayılan apt fallback değerlendirilecek."
+                fi
+            else
+                warn "NodeSource deposu doğrulanıp hazırlanamadı; varsayılan apt fallback değerlendirilecek."
+            fi
+
+            if [[ "$ns_node_installed" == true ]]; then
                 node_bin="$(resolve_native_binary_path node || true)"
                 local installed_node_version=""
-                local installed_node_major=""
                 if [[ -n "$node_bin" ]]; then
                     installed_node_version="$("$node_bin" --version 2>/dev/null || true)"
                 fi
-                installed_node_major="$(echo "$installed_node_version" | grep -oE '[0-9]+' | head -n1 || true)"
-                if sudo apt-cache policy nodejs 2>/dev/null | grep -qi 'nodesource'; then
+                if nodejs_package_is_from_nodesource; then
                     ok "Node.js NodeSource üzerinden kuruldu: ${installed_node_version:-sürüm alınamadı}"
                 else
-                    warn "Node.js kurulumu tamamlandı ancak aktif paket kaynağı NodeSource görünmüyor: ${installed_node_version:-sürüm alınamadı}."
+                    warn "Node.js kurulumu tamamlandı ancak kurulu nodejs paket sürümü NodeSource imzası taşımıyor: ${installed_node_version:-sürüm alınamadı}."
                 fi
-                if [[ -n "$installed_node_major" && "$installed_node_major" != "$node_target_major" ]]; then
-                    warn "Node.js sürüm sapması tespit edildi: hedef ${node_target_major}.x, aktif ${installed_node_version}. React build uyumluluğu için Node.js ${node_target_major}.x önerilir (.nvmrc)."
-                fi
+                warn_if_node_major_mismatch "$node_bin" "$node_target_major" "NodeSource" || true
             else
-                warn "NodeSource üzerinden Node.js kurulamadı, varsayılan apt deposu deneniyor..."
+                warn "NodeSource üzerinden Node.js kurulamadı; varsayılan apt deposu son fallback olarak deneniyor. Bu yol dağıtımın nodejs/npm paketlerini ve ek Debian node-* bağımlılıklarını kurabilir."
                 node_bin="$(resolve_native_binary_path node || true)"
                 if [[ -n "$node_bin" ]]; then
                     warn "Sistemde node bulundu ($("$node_bin" -v 2>/dev/null || echo 'sürüm alınamadı'))."
@@ -581,8 +537,12 @@ EOF
                         warn "npm bulunamadı. NodeSource nodejs paketi npm içerir; PATH/kurulum durumu kontrol edilmeli."
                     fi
                 else
-                    sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs npm
+                    if ! sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs npm; then
+                        warn "Varsayılan apt deposundan nodejs + npm kurulumu başarısız oldu. Node.js ${node_target_major}.x manuel kurulmalıdır."
+                    fi
+                    node_bin="$(resolve_native_binary_path node || true)"
                 fi
+                warn_if_node_major_mismatch "$node_bin" "$node_target_major" "varsayılan apt fallback" || true
             fi
             fi
         fi
@@ -862,224 +822,8 @@ ensure_prerequisites() {
 }
 
 # ── 2. NVIDIA GPU tespiti ────────────────────────────────────────────────────
-detect_cuda_driver_capability() {
-    local smi_cmd="$1"
-    local query_out=""
-    local parsed_version=""
-
-    if [[ -z "$smi_cmd" ]]; then
-        return 0
-    fi
-
-    # Yeni nvidia-smi sürümlerinde banner başlığı değişebildiği için önce
-    # makine-okunur query alanını kullan. Eski sürücülerde cuda_version alanı
-    # yoksa klasik banner parse fallback'i korunur.
-    query_out=$("$smi_cmd" --query-gpu=cuda_version --format=csv,noheader 2>/dev/null | head -1 || true)
-    parsed_version=$(echo "${query_out:-}" | tr -d '[:space:]' | grep -Eo '^[0-9]+([.][0-9]+)*' | head -1 || true)
-    if [[ -n "$parsed_version" ]]; then
-        printf '%s\n' "$parsed_version"
-        return 0
-    fi
-
-    parsed_version=$("$smi_cmd" 2>/dev/null | grep -Eo 'CUDA Version:[[:space:]]*[0-9]+([.][0-9]+)*' | grep -Eo '[0-9]+([.][0-9]+)*' | head -1 || true)
-    if [[ -n "$parsed_version" ]]; then
-        printf '%s\n' "$parsed_version"
-        return 0
-    fi
-
-    if command -v nvcc &>/dev/null; then
-        parsed_version=$(nvcc --version 2>/dev/null | grep -Eo 'release[[:space:]]+[0-9]+([.][0-9]+)*' | grep -Eo '[0-9]+([.][0-9]+)*' | head -1 || true)
-        [[ -n "$parsed_version" ]] && printf '%s\n' "$parsed_version"
-    fi
-}
-
-configure_wsl2_cuda_library_paths() {
-    [[ "${WSL2:-false}" == true ]] || return 0
-    [[ "${GPU_AVAILABLE:-false}" == true ]] || return 0
-
-    local -a preferred_cuda_paths=(
-        "/usr/lib/wsl/lib"
-        "/usr/local/cuda/lib64"
-        "/usr/local/nvidia/lib64"
-        "/usr/local/nvidia/lib"
-    )
-    local existing_ld_path="${LD_LIBRARY_PATH:-}"
-    local combined_ld_path="$existing_ld_path"
-    local path_entry=""
-
-    for path_entry in "${preferred_cuda_paths[@]}"; do
-        [[ -d "$path_entry" ]] || continue
-        if [[ ":$combined_ld_path:" != *":$path_entry:"* ]]; then
-            if [[ -n "$combined_ld_path" ]]; then
-                combined_ld_path="${path_entry}:${combined_ld_path}"
-            else
-                combined_ld_path="$path_entry"
-            fi
-        fi
-    done
-
-    if [[ -n "$combined_ld_path" ]]; then
-        export LD_LIBRARY_PATH="$combined_ld_path"
-        export OLLAMA_LLM_LIBRARY="cuda"
-        info "WSL2 CUDA/Tensor/Ollama için LD_LIBRARY_PATH ayarlandı: $LD_LIBRARY_PATH"
-    fi
-}
-
-detect_gpu() {
-    step "GPU Tespiti"
-    GPU_AVAILABLE=false
-    CUDA_VERSION=""
-    GPU_COMPUTE_CAPABILITY=""
-
-    if [[ "$FORCE_CPU" == true ]]; then
-        warn "--cpu bayrağı: GPU kullanımı devre dışı bırakıldı."
-        return
-    fi
-
-    local SMI_CMD=""
-    local smi_ping_out=""
-    local query_out=""
-    if command -v nvidia-smi &>/dev/null; then
-        SMI_CMD="nvidia-smi"
-    elif command -v nvidia-smi.exe &>/dev/null; then
-        SMI_CMD="nvidia-smi.exe"
-    fi
-
-    if [[ -n "$SMI_CMD" ]]; then
-        smi_ping_out=$("$SMI_CMD" -L 2>/dev/null | head -1 || true)
-    fi
-
-    if [[ -n "$SMI_CMD" ]] && [[ -n "$smi_ping_out" ]]; then
-        query_out=$("$SMI_CMD" --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 || true)
-        GPU_NAME="${query_out:-Bilinmiyor}"
-
-        query_out=$("$SMI_CMD" --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1 || true)
-        VRAM_MB=$(echo "${query_out:-0}" | tr -d ' ,' )
-        if [[ -z "$VRAM_MB" ]]; then
-            VRAM_MB="0"
-        fi
-
-        query_out=$("$SMI_CMD" --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 || true)
-        GPU_COMPUTE_CAPABILITY=$(echo "${query_out:-}" | tr -d '[:space:]')
-        CUDA_VERSION=$(detect_cuda_driver_capability "$SMI_CMD")
-        DRIVER_VER=$("$SMI_CMD" --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -1 || true)
-
-        GPU_AVAILABLE=true
-        if [[ "${RUN_GPU_STRESS:-0}" != "1" ]]; then
-            export RUN_GPU_STRESS=1
-            persist_run_gpu_stress_dotenv
-            info "GPU tespit edildiği için RUN_GPU_STRESS=1 otomatik etkinleştirildi."
-        fi
-        ok "GPU     : $GPU_NAME"
-        ok "VRAM    : ${VRAM_MB} MiB"
-        ok "Sürücü  : $DRIVER_VER"
-        ok "CUDA Driver Cap : $CUDA_VERSION"
-        [[ -n "$GPU_COMPUTE_CAPABILITY" ]] && ok "Compute : $GPU_COMPUTE_CAPABILITY"
-
-        if [[ "$WSL2" == true ]]; then
-            info "WSL2 üzerinde CUDA, Windows NVIDIA sürücüsü (libcuda.so) üzerinden erişilir."
-            configure_wsl2_cuda_library_paths
-        fi
-    else
-        if command -v rocm-smi &>/dev/null || lspci 2>/dev/null | grep -qi "AMD/ATI"; then
-            warn "AMD GPU tespit edildi. Bu kurulum akışı NVIDIA/CUDA odaklıdır; Docker için CPU profili kullanılacak."
-        fi
-        if [[ "$(uname -s)" == "Darwin" ]] && [[ "$(uname -m)" == "arm64" ]]; then
-            warn "Apple Silicon (arm64) tespit edildi. CUDA/NVIDIA akışı devre dışı; CPU profili kullanılacak."
-        fi
-        warn "NVIDIA GPU bulunamadı veya nvidia-smi erişilemez — CPU modunda kurulum yapılacak."
-    fi
-}
+# detect_gpu, detect_cuda_driver_capability, detect_pytorch_runtime_cuda_version
+# ve configure_wsl2_cuda_library_paths tek kaynak olarak utils/gpu_utils.sh
+# içinden yüklenir. Bu faz yalnız NVIDIA Container Toolkit kurulumunu sürdürür.
 
 # ── NVIDIA Container Toolkit Kurulumu ──────────────────────────────────────────
-print_docker_desktop_restart_notice() {
-    warn "╔════════════════════════════════════════════════════════════════════╗"
-    warn "║ Docker Desktop Restart gerekli olabilir                           ║"
-    warn "║ nvidia-container-toolkit Docker runtime ayarını değiştirdi.       ║"
-    warn "║ Windows tarafında Docker Desktop > Quit/Restart uygulayın;        ║"
-    warn "║ ardından bu WSL terminalinde 'docker info' ile nvidia runtime'ı    ║"
-    warn "║ doğrulayın ve install_sidar.sh komutunu tekrar çalıştırın.        ║"
-    warn "╚════════════════════════════════════════════════════════════════════╝"
-}
-
-docker_nvidia_runtime_registered() {
-    docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q 'nvidia'
-}
-
-wait_for_docker_nvidia_runtime() {
-    local timeout_seconds="${SIDAR_DOCKER_NVIDIA_RUNTIME_WAIT_SECONDS:-90}"
-    local interval_seconds="${SIDAR_DOCKER_NVIDIA_RUNTIME_WAIT_INTERVAL_SECONDS:-3}"
-    local elapsed=0
-
-    [[ "$timeout_seconds" =~ ^[0-9]+$ ]] || timeout_seconds=90
-    [[ "$interval_seconds" =~ ^[0-9]+$ && "$interval_seconds" -gt 0 ]] || interval_seconds=3
-
-    if docker_nvidia_runtime_registered; then
-        return 0
-    fi
-
-    info "Docker NVIDIA runtime kaydı bekleniyor (maks. ${timeout_seconds}sn)..."
-    while (( elapsed < timeout_seconds )); do
-        sleep "$interval_seconds"
-        elapsed=$((elapsed + interval_seconds))
-        if docker_nvidia_runtime_registered; then
-            return 0
-        fi
-    done
-    return 1
-}
-
-setup_nvidia_docker() {
-    if [[ "$GPU_AVAILABLE" == true ]] && command -v docker &>/dev/null; then
-        step "Docker GPU Desteği (nvidia-container-toolkit)"
-        if ! command -v nvidia-ctk &>/dev/null; then
-            warn "nvidia-container-toolkit bulunamadı. Kurulum başlatılıyor (sudo şifreniz istenebilir)..."
-
-            # NVIDIA repolarını ekle ve kur
-            curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg --yes
-            curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-              sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
-              sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list > /dev/null
-
-            sudo apt-get update
-            sudo apt-get install -y nvidia-container-toolkit
-
-            # Docker'ı NVIDIA runtime kullanacak şekilde yapılandır
-            sudo nvidia-ctk runtime configure --runtime=docker
-
-            # Docker daemon'ı çalışma tipine duyarlı şekilde yeniden başlat
-            info "Docker servisi yeniden başlatılıyor..."
-            if command -v systemctl &>/dev/null && systemctl cat docker &>/dev/null; then
-                if systemctl is-active --quiet docker; then
-                    sudo systemctl restart docker
-                    ok "Docker servisi systemd üzerinden yeniden başlatıldı."
-                else
-                    warn "Docker systemd ünitesi mevcut ama aktif değil. Docker Desktop/WSL entegrasyonu kullanılıyor olabilir."
-                    print_docker_desktop_restart_notice
-                fi
-            elif command -v service &>/dev/null && service docker status >/dev/null 2>&1; then
-                sudo service docker restart
-                ok "Docker servisi SysV/service üzerinden yeniden başlatıldı."
-            else
-                warn "Docker systemd veya service üzerinden yönetilmiyor (Docker Desktop kullanılıyor olabilir)."
-                print_docker_desktop_restart_notice
-            fi
-            ok "nvidia-container-toolkit kuruldu ve Docker yapılandırıldı."
-        else
-            ok "nvidia-container-toolkit zaten kurulu."
-        fi
-
-        if wait_for_docker_nvidia_runtime; then
-            ok "Docker NVIDIA runtime doğrulandı."
-            SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME="false"
-            SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME_MSG=""
-        elif [[ "$WSL2" == true ]]; then
-            SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME="true"
-            SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME_MSG="Docker NVIDIA runtime henüz kayıtlı görünmüyor; Docker Desktop restart sonrası 'docker info --format {{json .Runtimes}}' çıktısında nvidia görünene kadar bekleyin."
-            warn "$SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME_MSG"
-        elif [[ "${SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME:-false}" == "true" ]]; then
-            warn "${SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME_MSG:-Docker NVIDIA runtime kayıtlı görünmüyor; nvidia-container-toolkit doğrulamasını manuel kontrol edin.}"
-        fi
-    fi
-}
-

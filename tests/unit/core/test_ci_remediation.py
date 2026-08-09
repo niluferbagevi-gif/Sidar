@@ -39,18 +39,38 @@ def test_build_ruff_autofix_command_limits_unsafe_fixes_to_selectors() -> None:
     assert command == "uv run ruff check --fix --unsafe-fixes --select I,UP034 ."
 
 
+@pytest.mark.parametrize(
+    ("paths", "expected"),
+    [
+        ([], "uv run ruff check --fix ."),
+        (["tests/unit/x.py"], "uv run ruff check --fix tests/unit/x.py"),
+        (
+            ["tests/unit/x.py", "core/y.py", "not_python.txt"],
+            "uv run ruff check --fix tests/unit/x.py core/y.py",
+        ),
+        (["../outside.py", "/abs/path.py"], "uv run ruff check --fix ."),
+        (["tests/unit/x.py", "tests/unit/x.py"], "uv run ruff check --fix tests/unit/x.py"),
+        (["./tests/unit/x.py"], "uv run ruff check --fix tests/unit/x.py"),
+    ],
+)
+def test_build_scoped_ruff_autofix_command(paths: list[str], expected: str) -> None:
+    assert ci.build_scoped_ruff_autofix_command(paths) == expected
+
+
 def test_is_allowed_validation_command_rejects_unbounded_ruff_unsafe_fixes() -> None:
     assert ci._is_allowed_validation_command("uv run ruff check --fix .") is True
     assert ci._is_allowed_validation_command("uv run ruff check --fix --unsafe-fixes .") is False
     assert (
         ci._is_allowed_validation_command(
-            "uv run ruff check --fix --unsafe-fixes --select I,UP tests/unit/core/test_ci_remediation.py"
+            "uv run ruff check --fix --unsafe-fixes --select I,UP "
+            "tests/unit/core/test_ci_remediation.py"
         )
         is True
     )
     assert (
         ci._is_allowed_validation_command(
-            "uv run ruff check --fix --unsafe-fixes --select B tests/unit/core/test_ci_remediation.py"
+            "uv run ruff check --fix --unsafe-fixes --select B "
+            "tests/unit/core/test_ci_remediation.py"
         )
         is False
     )
@@ -63,7 +83,8 @@ def test_is_allowed_validation_command_uses_default_when_ruff_unsafe_allowlist_e
 
     assert (
         ci._is_allowed_validation_command(
-            "uv run ruff check --fix --unsafe-fixes --select I tests/unit/core/test_ci_remediation.py"
+            "uv run ruff check --fix --unsafe-fixes --select I "
+            "tests/unit/core/test_ci_remediation.py"
         )
         is True
     )
@@ -77,7 +98,8 @@ def test_is_allowed_validation_command_supports_explicit_ruff_unsafe_allowlist_d
 
     assert (
         ci._is_allowed_validation_command(
-            "uv run ruff check --fix --unsafe-fixes --select I tests/unit/core/test_ci_remediation.py"
+            "uv run ruff check --fix --unsafe-fixes --select I "
+            "tests/unit/core/test_ci_remediation.py"
         )
         is False
     )
@@ -221,6 +243,8 @@ def test_build_ci_failure_context_prefers_generic() -> None:
     ctx = ci.build_ci_failure_context("ci_pipeline_failed", {"ci_failure": True, "repo": "x/y"})
     assert ctx is not None
     assert ctx["kind"] == "generic_ci_failure"
+    assert ctx["trigger_origin"] == "external_ci_event"
+    assert ctx["human_approval_required"] is True
 
 
 def test_build_ci_failure_context_workflow_run() -> None:
@@ -247,6 +271,7 @@ def test_build_ci_failure_context_workflow_run() -> None:
     assert ctx["kind"] == "workflow_run"
     assert ctx["base_branch"] == "develop"
     assert "tests/unit/core/test_ci_remediation.py" in ctx["suspected_targets"]
+    assert ctx["human_approval_required"] is True
 
 
 def test_build_ci_failure_context_check_run() -> None:
@@ -386,9 +411,9 @@ def test_normalize_self_heal_plan_with_invalid_input_uses_defaults() -> None:
 
 
 def test_normalize_self_heal_plan_drops_patches_when_scope_paths_is_empty() -> None:
-    """Fail-closed regression test: an empty scope must reject every patch operation,
+    """Fail-closed regression test: an empty scope must reject every patch operation.
 
-    not silently accept unrestricted file paths. Mirrors the fail-open bug fixed in
+    Not silently accept unrestricted file paths. Mirrors the fail-open bug fixed in
     ``agent/self_heal/executor.py`` where ``allowed_paths and path not in allowed_paths``
     short-circuited to False (and thus skipped the check) whenever scope_paths was empty.
     """
@@ -624,6 +649,30 @@ def test_build_remediation_loop_high_risk_and_normal_modes() -> None:
     assert safe["steps"][1]["status"] == "blocked"
 
 
+def test_external_ci_payload_cannot_avoid_hitl_by_choosing_benign_text() -> None:
+    context = ci.build_ci_failure_context(
+        "workflow_run",
+        {
+            "repository": {"full_name": "org/repo", "default_branch": "main"},
+            "workflow_run": {
+                "status": "completed",
+                "conclusion": "failure",
+                "name": "routine-check",
+                "display_title": "routine maintenance",
+                "id": 42,
+                "head_sha": "abc123",
+            },
+        },
+    )
+
+    assert context is not None
+    remediation = ci.build_remediation_loop(context, "ordinary failure")
+
+    assert remediation["needs_human_approval"] is True
+    assert "external_ci_event" in remediation["hitl_reasons"]
+    assert remediation["mode"] == "self_heal_with_hitl"
+
+
 def test_build_ci_remediation_payload_assembles_all_parts() -> None:
     context = _sample_context()
     payload = ci.build_ci_remediation_payload(context, "Diagnosis")
@@ -741,7 +790,10 @@ def test_build_self_heal_patch_prompt_skips_empty_snapshot_entries() -> None:
 
 
 def test_normalize_self_heal_plan_strips_wrapping_and_handles_non_dict_operations() -> None:
-    raw = '{"operations":["bad",{"action":"patch","path":"./tests/a.py","target":"x","replacement":"y"}]}'
+    raw = (
+        '{"operations":["bad",{"action":"patch","path":"./tests/a.py","target":"x",'
+        '"replacement":"y"}]}'
+    )
     normalized = ci.normalize_self_heal_plan(
         raw, scope_paths=["tests/a.py"], fallback_validation_commands=[]
     )
@@ -830,7 +882,7 @@ def test_build_remediation_loop_reports_safe_ruff_autofix_policy() -> None:
 
     result = ci.build_remediation_loop(context, "ruff lint failure")
 
-    assert result["autofix_commands"] == ["uv run ruff check --fix ."]
+    assert result["autofix_commands"] == ["uv run ruff check --fix core/ci_remediation.py"]
     assert result["unsafe_autofix_policy"]["unsafe_fixes_default"] is False
     assert result["unsafe_autofix_policy"]["allowed_unsafe_selectors"] == ["I", "UP"]
     assert "--unsafe-fixes" in result["unsafe_autofix_policy"]["guidance"]
@@ -933,7 +985,8 @@ def test_build_local_failure_context_parses_mypy_log() -> None:
     log_text = "\n".join(
         [
             "core/service.py:10: error: Incompatible types in assignment [assignment]",
-            "agent/auto_handle.py:88: error: Function is missing a type annotation [no-untyped-def]",
+            "agent/auto_handle.py:88: error: Function is missing a type annotation "
+            "[no-untyped-def]",
         ]
     )
     ctx = ci.build_local_failure_context(log_text, source="mypy", log_path="artifacts/mypy.log")
@@ -1001,8 +1054,10 @@ def test_summarize_mypy_log_returns_structured_signal() -> None:
     log_text = "\n".join(
         [
             "core/service.py:10: error: Incompatible types in assignment [assignment]",
-            "core/service.py:11: error: Returning Any from function declared to return int [no-any-return]",
-            "agent/auto_handle.py:88: error: Function is missing a type annotation [no-untyped-def]",
+            "core/service.py:11: error: Returning Any from function declared to return int "
+            "[no-any-return]",
+            "agent/auto_handle.py:88: error: Function is missing a type annotation "
+            "[no-untyped-def]",
         ]
     )
     summary = ci._summarize_mypy_log(log_text, max_lines=5)

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 # Sidar installer phase: post-install service launch, runtime mode and subcommand helpers.
 
 # ── Docker Servislerini Başlatma ──────────────────────────────────────────────
@@ -239,12 +240,23 @@ cleanup_bootstrap_script_copy() {
         return
     fi
 
+    local repo_installer="$TARGET_DIR/install_sidar.sh"
+
     if [[ -f "$ORIGINAL_SCRIPT_PATH" ]]; then
         if rm -f "$ORIGINAL_SCRIPT_PATH"; then
             ok "Geçici kurulum betiği kaldırıldı: $ORIGINAL_SCRIPT_PATH"
         else
             warn "Geçici kurulum betiği silinemedi: $ORIGINAL_SCRIPT_PATH"
         fi
+    fi
+
+    if [[ -f "$repo_installer" ]]; then
+        ORIGINAL_SCRIPT_PATH="$repo_installer"
+        ORIGINAL_SCRIPT_DIR="$TARGET_DIR"
+        export ORIGINAL_SCRIPT_PATH ORIGINAL_SCRIPT_DIR
+        info "Resume kaynağı repo installer'ına geçirildi: $ORIGINAL_SCRIPT_PATH"
+    else
+        warn "Repo installer bulunamadı; resume kaynağı güncellenemedi: $repo_installer"
     fi
 
     info "Kurulum bundan sonra $TARGET_DIR dizininden yönetilmelidir."
@@ -290,19 +302,33 @@ run_doctor_phase() {
     step "Sidar Doctor"
     cd "$SCRIPT_DIR" || return 1
     mkdir -p artifacts/install
+    local doctor_report="artifacts/install/doctor.json"
     local -a doctor_cmd=()
     if command -v uv &>/dev/null; then
-        doctor_cmd=(uv run python -m core.doctor artifacts/install/doctor.json)
+        doctor_cmd=(uv run python -m core.doctor "$doctor_report")
     elif command -v python3 &>/dev/null; then
-        doctor_cmd=(python3 -m core.doctor artifacts/install/doctor.json)
+        doctor_cmd=(python3 -m core.doctor "$doctor_report")
     else
         fail "Doctor çalıştırmak için python3 veya uv bulunamadı."
     fi
+    if [[ "${DOCTOR_FIX:-false}" == true ]]; then
+        doctor_cmd+=(--fix)
+    fi
 
-    if SIDAR_CONFIG_QUIET=1 "${doctor_cmd[@]}"; then
-        ok "Doctor raporu üretildi: artifacts/install/doctor.json"
+    # Eski bir rapor, çöken yeni bir doctor çalıştırmasını başarılı göstermemelidir.
+    rm -f "$doctor_report"
+    if SIDAR_CONFIG_QUIET=true "${doctor_cmd[@]}"; then
+        if [[ ! -s "$doctor_report" ]]; then
+            warn "Doctor tamamlandı ancak rapor üretilemedi: $doctor_report"
+            return 1
+        fi
+        ok "Doctor raporu üretildi: $doctor_report"
     else
-        warn "Doctor raporu üretildi ancak bir veya daha fazla kontrol fail durumunda. Rapor: artifacts/install/doctor.json"
+        if [[ -s "$doctor_report" ]]; then
+            warn "Doctor raporu üretildi ancak bir veya daha fazla kontrol fail durumunda. Rapor: $doctor_report"
+        else
+            warn "Doctor çalıştırılamadı ve rapor üretilemedi: $doctor_report"
+        fi
         return 1
     fi
 }

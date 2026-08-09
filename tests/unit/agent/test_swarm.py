@@ -457,28 +457,24 @@ def test_is_contracts_module_healthy_accepts_valid_module_and_rejects_object_del
 
 def test_is_contracts_module_healthy_rejects_non_callable_task_envelope():
     """Branch L67-70: TaskEnvelope çağrılabilir değilse False dönmeli."""
-
     not_callable_envelope = _valid_contract_module(TaskEnvelope="not-callable")
     assert swarm._is_contracts_module_healthy(not_callable_envelope) is False
 
 
 def test_is_contracts_module_healthy_rejects_non_callable_task_result():
     """Branch L67-70: TaskResult çağrılabilir değilse False dönmeli."""
-
     not_callable_result = _valid_contract_module(TaskResult=42)
     assert swarm._is_contracts_module_healthy(not_callable_result) is False
 
 
 def test_is_contracts_module_healthy_rejects_non_callable_delegation_request():
     """Branch L67-70: DelegationRequest çağrılabilir değilse False dönmeli."""
-
     not_callable_delegation = _valid_contract_module(DelegationRequest=SimpleNamespace())
     assert swarm._is_contracts_module_healthy(not_callable_delegation) is False
 
 
 def test_contracts_module_returns_imported_module_without_runtime_repair(monkeypatch):
     """Runtime kodu test-pollution kaynaklı kontrat modülünü onarmaya çalışmamalı."""
-
     imported = SimpleNamespace(marker="imported-stub")
     calls = {"import": 0}
 
@@ -1375,7 +1371,7 @@ def test_task_timeout_ignores_malformed_model_json_and_invalid_provider_timeout(
     cfg = SimpleNamespace(
         AI_PROVIDER="openai",
         CODING_MODEL="gpt-5.5",
-        SWARM_TASK_TIMEOUT_BY_MODEL='{not-json',
+        SWARM_TASK_TIMEOUT_BY_MODEL="{not-json",
         SWARM_TASK_TIMEOUT_SECONDS_OPENAI="not-a-number",
         SWARM_TASK_TIMEOUT_SECONDS=9,
         REACT_TIMEOUT=3,
@@ -1408,7 +1404,9 @@ def test_distributed_idempotency_cache_refreshes_lru_before_eviction(monkeypatch
 
     __import__("asyncio").run(
         orchestrator.dispatch_distributed(
-            SwarmTask(goal="Webhook incele", intent="review", context={"idempotency_key": "delivery-3"}),
+            SwarmTask(
+                goal="Webhook incele", intent="review", context={"idempotency_key": "delivery-3"}
+            ),
             session_id="sess-42",
             sender="supervisor",
         )
@@ -1549,7 +1547,9 @@ def test_attempt_task_rollback_returns_empty_when_no_hook_exists() -> None:
     orch = SwarmOrchestrator(cfg=SimpleNamespace())
 
     result = __import__("asyncio").run(
-        orch._attempt_task_rollback(SimpleNamespace(), SimpleNamespace(task_id="t"), RuntimeError("x"))
+        orch._attempt_task_rollback(
+            SimpleNamespace(), SimpleNamespace(task_id="t"), RuntimeError("x")
+        )
     )
 
     assert result == ""

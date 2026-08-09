@@ -13,6 +13,7 @@ import httpx
 
 import core.llm_client as llm_facade
 from config import OLLAMA_BATCH_POLICY
+from core.llm.streaming_http import enter_httpx_stream
 from core.llm_client import (
     OLLAMA_NUM_BATCH_DEFAULT,
     SIDAR_TOOL_JSON_SCHEMA,
@@ -242,8 +243,7 @@ class OllamaClient(BaseLLMClient):
                     )
                     if wait_warn_ms > 0 and gpu_limiter_wait_ms >= wait_warn_ms:
                         logger.warning(
-                            "Ollama GPU request pool backpressure waited %.1f ms "
-                            "(pool_size=%s).",
+                            "Ollama GPU request pool backpressure waited %.1f ms (pool_size=%s).",
                             gpu_limiter_wait_ms,
                             _ollama_gpu_pool_size(self.config),
                         )
@@ -333,8 +333,7 @@ class OllamaClient(BaseLLMClient):
             async def _open_stream() -> tuple[httpx.AsyncClient, Any, httpx.Response]:
                 stream_client = httpx.AsyncClient(timeout=req_timeout)
                 cm = stream_client.stream("POST", url, json=payload)
-                response = await cm.__aenter__()
-                response.raise_for_status()
+                response = await enter_httpx_stream(stream_client, cm)
                 return stream_client, cm, response
 
             client, stream_cm, resp = await _retry_with_backoff(

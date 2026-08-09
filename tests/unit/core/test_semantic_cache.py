@@ -9,6 +9,7 @@ import pytest
 
 import core.cache.semantic_cache as semantic_cache_module
 from core.cache.semantic_cache import SemanticCacheManager
+from core.llm.cache import SemanticChatCache
 from core.llm_client import LLMClient, OllamaClient
 
 
@@ -25,6 +26,54 @@ def _cfg(**overrides: object) -> SimpleNamespace:
     }
     base.update(overrides)
     return SimpleNamespace(**base)
+
+
+@pytest.mark.asyncio
+async def test_semantic_chat_cache_skips_empty_prompt_and_preserves_miss(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cache_get = AsyncMock(return_value=None)
+    cache_set = AsyncMock()
+
+    monkeypatch.setattr(SemanticCacheManager, "get", cache_get)
+    monkeypatch.setattr(SemanticCacheManager, "set", cache_set)
+
+    chat_cache = SemanticChatCache(_cfg())
+
+    assert await chat_cache.get("") is None
+    assert await chat_cache.get("cache miss") is None
+    await chat_cache.set("", "ignored-response")
+
+    cache_get.assert_awaited_once_with("cache miss")
+    cache_set.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_semantic_chat_cache_stringifies_cached_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cache_get = AsyncMock(return_value=123)
+
+    monkeypatch.setattr(SemanticCacheManager, "get", cache_get)
+
+    chat_cache = SemanticChatCache(_cfg())
+
+    assert await chat_cache.get("cached prompt") == "123"
+    cache_get.assert_awaited_once_with("cached prompt")
+
+
+def test_semantic_chat_cache_records_stream_skip(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = 0
+
+    def fake_record_cache_skip() -> None:
+        nonlocal calls
+        calls += 1
+
+    monkeypatch.setattr("core.llm.cache.record_cache_skip", fake_record_cache_skip)
+
+    SemanticChatCache.record_stream_skip()
+
+    assert calls == 1
 
 
 @pytest.mark.asyncio
@@ -98,10 +147,11 @@ async def test_semantic_cache_get_batches_reads_into_single_pipeline(
     fake_redis,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Regression test: get() must not issue one sequential hgetall await per
+    """Regression test: get() must batch its Redis reads instead of looping.
 
-    cached item (N Redis round-trips for N items); it should batch all reads
-    for the candidate keys into a single pipelined round-trip instead.
+    It must not issue one sequential hgetall await per cached item (N Redis
+    round-trips for N items); it should batch all reads for the candidate
+    keys into a single pipelined round-trip instead.
     """
     manager = SemanticCacheManager(_cfg())
     manager._get_redis = AsyncMock(return_value=fake_redis)
@@ -239,11 +289,12 @@ class _MinimalFakeRedis:
 async def test_semantic_cache_get_and_set_offload_embed_prompt_to_a_thread(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Regression test: _embed_prompt (which may run a real, CPU-bound
+    """Regression test: _embed_prompt must be offloaded off the event loop.
 
-    sentence-transformers model) must be offloaded via asyncio.to_thread in
-    both get() and set(), matching how core/rag/__init__.py already offloads
-    its own embedding/search work, instead of blocking the event loop.
+    _embed_prompt (which may run a real, CPU-bound sentence-transformers
+    model) must be offloaded via asyncio.to_thread in both get() and set(),
+    matching how core/rag/__init__.py already offloads its own
+    embedding/search work, instead of blocking the event loop.
     """
     manager = SemanticCacheManager(_cfg())
     fake_redis = _MinimalFakeRedis()
@@ -265,9 +316,9 @@ async def test_semantic_cache_get_and_set_offload_embed_prompt_to_a_thread(
 
     assert hit == "cached-answer"
     assert len(embed_call_threads) == 2
-    assert all(
-        thread_id != event_loop_thread for thread_id in embed_call_threads
-    ), "get()/set() must run _embed_prompt off the event loop thread via asyncio.to_thread"
+    assert all(thread_id != event_loop_thread for thread_id in embed_call_threads), (
+        "get()/set() must run _embed_prompt off the event loop thread via asyncio.to_thread"
+    )
 
 
 @pytest.mark.asyncio

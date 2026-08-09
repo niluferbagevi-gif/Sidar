@@ -26,7 +26,9 @@ jobs:
   seed-benchmark-baseline:
     name: Seed benchmark baseline cache
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.seed_benchmark_baseline }}
-    runs-on: ubuntu-latest
+    # Performance baselines are hardware-specific; never seed them on a shared
+    # GitHub-hosted runner.
+    runs-on: [self-hosted, linux, benchmark]
 
     steps:
       - name: Checkout
@@ -50,15 +52,15 @@ jobs:
         run: uv sync --frozen --all-extras
 
       - name: Restore existing benchmark baseline cache (if any)
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: .benchmarks
-          key: benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}
+          key: benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
           restore-keys: |
-            benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-
-            benchmark-baseline-${{ runner.os }}-py311-main-
-            benchmark-baseline-${{ runner.os }}-py311-master-
-            benchmark-baseline-${{ runner.os }}-py311-
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-main-
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-master-
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-
 
       - name: Seed benchmark baseline
         env:
@@ -79,12 +81,35 @@ jobs:
             echo "::error title=Benchmark seed failed::pytest-benchmark completed but .benchmarks/*_${benchmark_compare_name}.json was not created."
             exit 1
           fi
+          mapfile -t baseline_files < <(find .benchmarks -type f -name "*_${benchmark_compare_name}.json" | sort)
+          BASELINE_FILES="$(printf '%s\n' "${baseline_files[@]}")" python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          baseline_files = os.environ["BASELINE_FILES"].splitlines()
+          manifest = {
+              "schema_version": 1,
+              "baseline_name": os.environ["BENCHMARK_BASELINE_NAME"],
+              "github_run_id": os.environ["GITHUB_RUN_ID"],
+              "github_ref": os.environ["GITHUB_REF"],
+              "github_sha": os.environ["GITHUB_SHA"],
+              "benchmark_files": baseline_files,
+          }
+          Path("artifacts/benchmark/baseline-seed-manifest.json").write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
           {
             echo "### Benchmark baseline seeded"
             echo "- Baseline name: \`${benchmark_compare_name}\`"
-            echo "- Cache key prefix: \`benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-\`"
+            echo "- Baseline files: \`${#baseline_files[@]}\`"
+            echo "- Seed manifest: \`artifacts/benchmark/baseline-seed-manifest.json\`"
+            echo "- Cache key prefix: \`benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-\`"
             echo "- Download artifact: \`benchmark-baseline-seed\` and restore its \`.benchmarks/\` directory if cache restore is unavailable."
             echo "- Next step: rerun the normal CI / production-readiness gate; gated runs remain fail-closed and do not seed baselines."
+            echo "- Operator path: GitHub Actions → CI → Run workflow → \`seed_benchmark_baseline=true\`, then rerun normal CI / production-readiness."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload benchmark baseline seed artifact
@@ -94,10 +119,18 @@ jobs:
           path: |
             .benchmarks/
             artifacts/benchmark/benchmark.json
+            artifacts/benchmark/baseline-seed-manifest.json
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
+
+      - name: Save benchmark baseline cache for CI
+        uses: actions/cache/save@v4
+        with:
+          path: .benchmarks
+          key: benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
 
   test:
+    name: Base quality gates (lint, smoke, unit, coverage, frontend)
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.seed_benchmark_baseline }}
     runs-on: ubuntu-latest
 
@@ -151,6 +184,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # check-install-manifests runs update_install_module_hash_manifest.py
+          # --check-pin, which does `git show <pinned commit>:<path>` against
+          # SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT. A shallow (depth=1) clone
+          # doesn't have that commit's history, so full history is required.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -180,41 +219,6 @@ jobs:
       - name: Check dated policy/debt expirations
         run: uv run python scripts/ci/check_policy_dates.py
 
-      - name: Restore benchmark baseline cache
-        id: benchmark-baseline-cache
-        uses: actions/cache@v4
-        with:
-          path: .benchmarks
-          key: benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}
-          restore-keys: |
-            benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-
-            benchmark-baseline-${{ runner.os }}-py311-main-
-            benchmark-baseline-${{ runner.os }}-py311-master-
-            benchmark-baseline-${{ runner.os }}-py311-
-
-      - name: Resolve benchmark baseline gate mode
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p .benchmarks
-          benchmark_compare_name="${BENCHMARK_COMPARE_NAME:-baseline}"
-          if find .benchmarks -type f -name "*_${benchmark_compare_name}.json" -print -quit | grep -q .; then
-            echo "BENCHMARK_COMPARE_REQUIRED=1" >> "$GITHUB_ENV"
-            echo "::notice title=Benchmark baseline::Restored benchmark baseline for ${benchmark_compare_name}; compare gate is required."
-            {
-              echo "### Benchmark baseline"
-              echo "- Restored cached baseline for \`${benchmark_compare_name}\`; compare gate is required."
-            } >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "::error title=Benchmark baseline missing::No cached benchmark baseline found for ${benchmark_compare_name}. Restore .benchmarks from GitHub Actions cache/artifact before the CI production-readiness gate."
-            {
-              echo "### Benchmark baseline"
-              echo "- No cached baseline found for \`${benchmark_compare_name}\`; CI production-readiness is fail-closed and will not seed a baseline inside the gated run."
-              echo "- Seed or restore \`.benchmarks/*_${benchmark_compare_name}.json\` from a reviewed benchmark artifact/cache before re-running CI."
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
-
       - name: Diagnose environment (always)
         if: always()
         run: |
@@ -224,19 +228,14 @@ jobs:
           echo "=== shellcheck ===" && shellcheck --version 2>/dev/null || echo "shellcheck not found"
           echo "=== bats ===" && bats --version 2>/dev/null || echo "bats not found"
 
-      - name: Verify core install manifest integrity
-        run: |
-          sha256sum -c .sidar_manifest.txt
-          uv run python scripts/tools/update_core_install_manifest.py --check
+      - name: Verify installer manifests
+        run: make check-install-manifests
 
-      - name: Verify installer module hash manifest integrity
-        run: |
-          uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh --check
+      - name: Run installer ShellCheck
+        run: make lint-shell
 
-      - name: Run installer shell gates
-        run: |
-          make lint
-          make test-shell
+      - name: Run installer BATS tests
+        run: make test-shell
 
       - name: Build standalone installer bundle
         run: |
@@ -265,6 +264,15 @@ jobs:
       - name: Run Python lint gate (ruff)
         run: uv run ruff check .
 
+      - name: Check Ruff docstring and ASYNC240 debt baseline
+        run: uv run python scripts/ci/check_ruff_debt_baseline.py
+
+      - name: Check production source debt markers
+        run: uv run python scripts/ci/check_source_debt_markers.py
+
+      - name: Check production coverage exclusion budget
+        run: uv run python scripts/ci/check_coverage_exclusion_budget.py
+
       - name: Run Python format check gate (ruff format)
         run: uv run ruff format --check .
 
@@ -282,9 +290,18 @@ jobs:
       - name: Run frontend dependency audit gate
         env:
           FRONTEND_NPM_AUDIT_LEVEL: high
+          FRONTEND_NPM_AUDIT_ALLOW_NETWORK_FAILURE: "0"
         run: |
           cd web_ui_react
-          npm audit --audit-level="${FRONTEND_NPM_AUDIT_LEVEL}"
+          npm run audit:high
+
+      - name: Restore Playwright browser cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('web_ui_react/package-lock.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
 
       - name: Install Playwright Chromium for frontend smoke tests
         run: |
@@ -356,41 +373,57 @@ jobs:
 
       - name: Run installer/runtime smoke verification tests
         run: >-
-          uv run pytest -q --no-cov
-          tests/smoke/test_install_verification.py
-          tests/smoke/test_repo_phase_dark_mode_assets.py
+          uv run pytest -q --no-cov -m installer_smoke
 
       - name: Run ShellCheck for installer and install modules
         run: |
           shopt -s globstar nullglob
           uv run shellcheck --severity=warning -x install_sidar.sh scripts/install_modules/**/*.sh
 
-      - name: Run test suite (single pass + coverage gate)
+      - name: Run base quality gates (performance isolated)
         env:
-          RUN_BENCHMARKS: "required"
+          # web_ui_react/e2e/ has 8 spec files; only chat-websocket.spec.js
+          # ("smoke") ever ran here, so the other 7 panel specs (admin-panels,
+          # agent-manager, p2p-dialogue, prompt-admin, swarm-flow, tools-panel,
+          # voice-panel) never executed in any automated path -- not in CI, not
+          # in any nightly/weekly/release workflow, and not even via `make
+          # production-readiness` despite docs/TESTING.md's "yalnız
+          # RUN_FRONTEND_E2E=1 ile tam gate'te tetiklenir" claim (that claim
+          # was aspirational; FRONTEND_E2E_NPM_SCRIPT was never actually set
+          # anywhere but here). Running the full suite surfaced two real,
+          # previously-undetected bugs (see the CHANGELOG entry) before this
+          # was turned on as release-blocking; test:e2e (all 8 specs, ~10
+          # tests) is fast (~12s locally with 2 workers) and self-contained
+          # (each spec starts its own mock backend + Vite server, no shared
+          # infra), so there's no cost reason to keep it scoped to one file.
+          FRONTEND_E2E_NPM_SCRIPT: "test:e2e"
           RUN_FRONTEND_E2E: "1"
-          FRONTEND_E2E_NPM_SCRIPT: "test:e2e:smoke"
           FRONTEND_E2E_ENFORCE_RESULT: "1"
           QUALITY_GATE_EXIT_AFTER_FIRST_FAIL: "1"
           AUTO_BUILD_DOCKER_TEST_IMAGE: "1"
           DOCKER_TEST_IMAGE: "sidar:latest"
           DOCKER_TEST_IMAGE_BUILD_CONTEXT: "."
+          # check-bundle-budget.mjs requires both budget vars whenever
+          # TEST_PROFILE=ci (or SIDAR_PRODUCTION_READINESS=1) so a CI run can
+          # never silently skip the frontend bundle-size gate. Match the
+          # Makefile defaults (SIDAR_TOTAL_JS_BUDGET_KB/GZIP_BUDGET_KB ?= 550/170)
+          # used by every local `make dev-full`/`make production-readiness` run.
+          SIDAR_TOTAL_JS_BUDGET_KB: "550"
+          SIDAR_TOTAL_GZIP_BUDGET_KB: "170"
           # CI no longer hardcodes a separate pre-merge override; it inherits
           # the ratchet-managed pyproject.toml baseline like the local profile
-          # (current local/CI baseline: %99; coverage_ratchet.py only raises it)
+          # (current local/CI baseline: %100; coverage_ratchet.py only raises it)
           # — see AGENTS.md §2.5.4. Set COVERAGE_FAIL_UNDER_CI explicitly if a
           # stricter ad-hoc pre-merge bar is ever needed again.
-          BENCHMARK_JSON_OUTPUT: "artifacts/benchmark/benchmark.json"
-          BENCHMARK_TREND_COMPARE: "1"
-          BENCHMARK_TREND_HISTORY: "artifacts/benchmark/history.json"
-          BENCHMARK_TREND_WINDOW: "15"
-          BENCHMARK_ENFORCE_COMPARE: "1"
-          BENCHMARK_COMPARE_FAIL: "mean:10%"
-          BENCHMARK_TREND_MAX_REGRESSION_PCT: "20"
         run: |
           set -o pipefail
           mkdir -p artifacts
-          make production-readiness 2>&1 | tee artifacts/test_run.log
+          TEST_PROFILE=ci RUN_BENCHMARKS=0 RUN_FRONTEND_E2E=1 \
+            SIDAR_PRODUCTION_READINESS=0 bash run_tests.sh --stage all \
+            2>&1 | tee artifacts/test_run.log
+
+      - name: Validate base test summary
+        run: uv run python scripts/ci/validate_test_summary.py --mode development --summary artifacts/test-summary.json
 
       - name: Verify committed coverage ratchet baseline
         run: |
@@ -461,6 +494,7 @@ jobs:
             coverage.xml
             artifacts/benchmark/benchmark.json
             artifacts/benchmark/history.json
+            artifacts/frontend-bundle-budget.json
             .benchmarks/
           if-no-files-found: warn
           retention-days: 14
@@ -479,7 +513,27 @@ jobs:
           retention-days: 14
 
       - name: Check .env.example ↔ config.py parity
-        run: bash scripts/check_env_parity.sh
+        run: |
+          bash scripts/check_env_parity.sh \
+            --ignore AUTONOMOUS_LOOP_REVIEWER_BLOCK_STATE \
+            --ignore BENCHMARK_BASELINE_NAME \
+            --ignore C_INCLUDE_PATH \
+            --ignore DATABASE_URL \
+            --ignore DOCKER_SETTINGS_JSON \
+            --ignore DOTENV_FILE \
+            --ignore GITHUB_API_URL \
+            --ignore GITHUB_REPOSITORY \
+            --ignore GPU_RUNNER_MONITOR_TOKEN \
+            --ignore HF_HUB_CACHE \
+            --ignore PLAYWRIGHT_BROWSERS_PATH \
+            --ignore PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH \
+            --ignore PYTEST_XDIST_WORKER \
+            --ignore SEED_RAG_PGVECTOR_MAX_RETRIES \
+            --ignore SEED_RAG_PGVECTOR_RETRY_DELAY_SEC \
+            --ignore SELF_HEAL_DATABASE_URL \
+            --ignore SIDAR_CONTAINER_DATABASE_URL \
+            --ignore SIDAR_LIBCUDA_CANDIDATE_PATHS \
+            --ignore SIDAR_REQUIRED_CHECK_BRANCH
 
   installer-smoke:
     # Branch protection should mark this job name as required. It runs on every
@@ -494,6 +548,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # check-install-manifests --check-pin needs the full history to
+          # `git show` the commit pinned in SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT;
+          # a shallow (depth=1) clone doesn't have it.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -520,24 +579,187 @@ jobs:
           uv run pytest -q --no-cov
           tests/smoke/test_install_verification.py::test_install_sidar_embedded_manifests_in_sync
 
-      - name: Verify installer manifests directly
+      - name: Verify installer manifests and pinned module commit directly
         run: |
           sha256sum -c .sidar_manifest.txt
           uv run python scripts/tools/update_core_install_manifest.py --check
           uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh --check
+          uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh --check-pin
 
       - name: Treat raw GitHub installer as release artifact
         run: |
           bash -n install_sidar.sh
           SIDAR_INSTALL_TEST_MODE=1 SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY=1 bash install_sidar.sh
 
+      - name: Verify installer smoke isolation from user secrets
+        run: |
+          set -euo pipefail
+          test_home="$(mktemp -d)"
+          printf 'OPENAI_API_KEY=%0200000d\n' 0 > "$test_home/.sidar_keys.env"
+
+          HOME="$test_home" \
+          SIDAR_KEYS_FILE="$test_home/.sidar_keys.env" \
+          SIDAR_TEST_LOAD_REAL_KEYS=0 \
+          uv run pytest \
+            -q --no-cov -p no:xdist -x \
+            --confcutdir=tests/smoke \
+            tests/smoke/test_install_verification.py
+
       - name: Run installer smoke suite
         run: >-
-          uv run pytest -q --no-cov
-          tests/smoke/test_install_verification.py
+          uv run pytest -q --no-cov -m installer_smoke
+
+  benchmark-compare:
+    name: Benchmark compare gate
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.seed_benchmark_baseline }}
+    # A shared ubuntu-latest VM is too noisy for a release-blocking latency
+    # comparison. The baseline seed jobs use the same named runner/cache scope.
+    runs-on: [self-hosted, linux, benchmark]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: '**/uv.lock'
+
+      - name: Install system dependencies
+        run: bash scripts/install_ci_system_deps.sh
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras
+
+      - name: Restore benchmark baseline cache
+        id: benchmark-baseline-cache
+        uses: actions/cache@v4
+        with:
+          path: .benchmarks
+          key: benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-main-
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-master-
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-
+
+      - name: Resolve benchmark baseline gate mode
+        id: benchmark-baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .benchmarks artifacts/benchmark
+          benchmark_compare_name="${BENCHMARK_COMPARE_NAME:-baseline}"
+          compare_file="$(find .benchmarks -type f -name "*_${benchmark_compare_name}.json" -print 2>/dev/null | sort -V | tail -n 1)"
+          if [[ -z "$compare_file" ]]; then
+            echo "::error title=Benchmark baseline missing::No cached benchmark baseline found for ${benchmark_compare_name}. Base quality gates run separately, but production readiness is fail-closed until a benchmark baseline exists."
+            {
+              echo "### Benchmark baseline"
+              echo "- No cached baseline found for \`${benchmark_compare_name}\`; benchmark compare is fail-closed."
+              echo "- Base quality gates are independent and still run in the \`test\` job."
+              echo "- Seed via GitHub Actions → CI → Run workflow → \`seed_benchmark_baseline=true\`, then rerun normal CI / production-readiness."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "compare_file=$compare_file" >> "$GITHUB_OUTPUT"
+          echo "::notice title=Benchmark baseline::Using ${compare_file} for compare gate."
+
+      - name: Run benchmark compare gate
+        env:
+          DOTENV_FILE: .env.test
+          BENCHMARK_JSON_OUTPUT: artifacts/benchmark/benchmark.json
+          BENCHMARK_IO_JSON_OUTPUT: artifacts/benchmark/io-benchmark.json
+          BENCHMARK_COMPARE_FAIL: mean:10%
+          BENCHMARK_IO_COMPARE_FAIL: mean:25%
+          BENCHMARK_BASELINE_FILE: ${{ steps.benchmark-baseline.outputs.compare_file }}
+        run: |
+          set -o pipefail
+          mkdir -p artifacts/benchmark
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          baseline = Path(os.environ["BENCHMARK_BASELINE_FILE"])
+          metadata = {
+              "baseline_file": str(baseline),
+              "baseline_exists": baseline.exists(),
+              "baseline_size_bytes": baseline.stat().st_size if baseline.exists() else 0,
+          }
+          Path("artifacts/benchmark/baseline-metadata.json").write_text(
+              json.dumps(metadata, indent=2, sort_keys=True),
+              encoding="utf-8",
+          )
+          PY
+          uv run python -m pytest -c pyproject.toml -v tests/performance -n 0 --no-cov \
+            --ignore=tests/performance/test_gpu_benchmark.py \
+            -k "not test_multi_user_session_message_workload_scales_with_concurrency" \
+            --benchmark-json="${BENCHMARK_JSON_OUTPUT}" \
+            --benchmark-compare="${BENCHMARK_BASELINE_FILE}" \
+            --benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}" \
+            --benchmark-warmup=on \
+            --benchmark-warmup-iterations=100000 \
+            --benchmark-disable-gc \
+            --junitxml=artifacts/benchmark/benchmark-junit.xml \
+            2>&1 | tee artifacts/benchmark/benchmark-compare.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -eq 0 ]; then
+            uv run python -m pytest -c pyproject.toml -v tests/performance/test_benchmark.py -n 0 --no-cov \
+              -k "test_multi_user_session_message_workload_scales_with_concurrency" \
+              --benchmark-json="${BENCHMARK_IO_JSON_OUTPUT}" \
+              --benchmark-compare="${BENCHMARK_BASELINE_FILE}" \
+              --benchmark-compare-fail="${BENCHMARK_IO_COMPARE_FAIL}" \
+              --benchmark-warmup=on \
+              --benchmark-warmup-iterations=100000 \
+              --benchmark-disable-gc \
+              --junitxml=artifacts/benchmark/io-benchmark-junit.xml \
+              2>&1 | tee artifacts/benchmark/io-benchmark-compare.log
+            status=${PIPESTATUS[0]}
+          fi
+          test -s "${BENCHMARK_JSON_OUTPUT}" || {
+            printf '{"status":"failed-before-json","exit_code":%s}\n' "$status" \
+              > artifacts/benchmark/failure.json
+          }
+          exit "$status"
+
+      - name: Upload benchmark compare artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-compare-artifacts
+          path: |
+            artifacts/benchmark/benchmark.json
+            artifacts/benchmark/benchmark-compare.log
+            artifacts/benchmark/benchmark-junit.xml
+            artifacts/benchmark/io-benchmark.json
+            artifacts/benchmark/io-benchmark-junit.xml
+            artifacts/benchmark/io-benchmark-compare.log
+            artifacts/benchmark/baseline-metadata.json
+            artifacts/benchmark/failure.json
+            .benchmarks/
+          if-no-files-found: warn
+          retention-days: 14
+
+  production-readiness:
+    name: Production readiness aggregate
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.seed_benchmark_baseline }}
+    runs-on: ubuntu-latest
+    needs: [test, benchmark-compare, gpu-inference-policy-gate]
+
+    steps:
+      - name: Confirm production readiness gates
+        run: |
+          echo "Base quality, benchmark compare, and GPU inference policy gates passed."
+          echo "Production readiness is the combined result of jobs: test + benchmark-compare + gpu-inference-policy-gate."
 
   production-profile-dry-run:
-    name: Production dependency profile dry run
+    name: Production-minimal runtime validation
     runs-on: ubuntu-latest
 
     steps:
@@ -554,15 +776,76 @@ jobs:
         with:
           enable-cache: false
 
-      - name: Dry-run production-minimal dependency profile
+      - name: Validate production-minimal installer sync
         run: |
-          uv sync --frozen --extra production-minimal --no-dev
-          uv run --no-sync python -c "import fastapi, sqlalchemy, alembic; print('production-minimal imports ok')"
+          mkdir -p artifacts/production-minimal
+          SIDAR_DEPENDENCY_PROFILE=production-minimal \
+            ./install_sidar.sh sync-deps --skip-models --skip-smoke-test --ci --no-interaction \
+            2>&1 | tee artifacts/production-minimal/installer-sync.log
+
+      - name: Run production-minimal web boot smoke
+        run: |
+          uv run --no-sync python - <<'PY' 2>&1 | tee artifacts/production-minimal/web-boot-smoke.log
+          from web.app_factory import create_app
+
+          app = create_app(register_handlers=False)
+          routes = [route.path for route in app.routes]
+          assert "/docs" in routes
+          print({"profile": "production-minimal", "web_boot": "ok", "routes": len(routes)})
+          PY
+
+      - name: Run production-minimal DB migration smoke
+        env:
+          DATABASE_URL: sqlite+aiosqlite:///./artifacts/production-minimal/migration-smoke.db
+        run: |
+          uv run --no-sync alembic upgrade head 2>&1 | tee artifacts/production-minimal/db-migration-smoke.log
+
+      - name: Write production-minimal runtime evidence
+        if: ${{ always() }}
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          artifact_dir = Path("artifacts/production-minimal")
+          artifact_dir.mkdir(parents=True, exist_ok=True)
+          logs = {
+              "installer_sync": artifact_dir / "installer-sync.log",
+              "web_boot_smoke": artifact_dir / "web-boot-smoke.log",
+              "db_migration_smoke": artifact_dir / "db-migration-smoke.log",
+          }
+          evidence = {
+              "schema_version": 1,
+              "profile": "production-minimal",
+              "release_blocking": True,
+              "checks": {
+                  name: {"log": str(path), "present": path.exists(), "bytes": path.stat().st_size if path.exists() else 0}
+                  for name, path in logs.items()
+              },
+          }
+          (artifact_dir / "runtime-evidence.json").write_text(
+              json.dumps(evidence, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Upload production-minimal runtime evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-minimal-runtime-evidence
+          path: |
+            artifacts/production-minimal/installer-sync.log
+            artifacts/production-minimal/web-boot-smoke.log
+            artifacts/production-minimal/db-migration-smoke.log
+            artifacts/production-minimal/runtime-evidence.json
+          if-no-files-found: error
+          retention-days: 30
 
   pg-stress:
     name: PostgreSQL Connection Pool Stress Test
     runs-on: ubuntu-latest
-    needs: test
+    needs: production-readiness
 
     services:
       postgres:
@@ -622,6 +905,12 @@ jobs:
     name: GPU Inference Quality Gate (TTFT<=200ms, latency<=250ms)
     if: ${{ vars.ENABLE_GPU_BENCH_GATE == 'true' }}
     runs-on: [self-hosted, linux, gpu]
+    # Primary ve warm-standby aynı etiketleri taşır; GitHub uygun online hostu seçer.
+    # Kapasite/RTO sözleşmesi: docs/runbooks/gpu-runner-continuity.md
+    # Bounds execution after a runner accepts the job. GitHub does not apply
+    # timeout-minutes while a self-hosted job is still queued/offline; the
+    # operator runbook documents that separate availability failure mode.
+    timeout-minutes: 45
     needs: test
 
     env:
@@ -667,10 +956,37 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  gpu-inference-policy-gate:
+    name: GPU Inference Required Evidence Gate
+    if: ${{ always() && (github.event_name != 'workflow_dispatch' || !inputs.seed_benchmark_baseline) }}
+    runs-on: ubuntu-latest
+    needs: [test, gpu-inference-quality-gate]
+
+    steps:
+      - name: Require GPU latency evidence
+        env:
+          GPU_GATE_ENABLED: ${{ vars.ENABLE_GPU_BENCH_GATE }}
+          GPU_GATE_RESULT: ${{ needs.gpu-inference-quality-gate.result }}
+        run: |
+          set -euo pipefail
+          if [[ "${GPU_GATE_ENABLED}" != "true" ]]; then
+            echo "::error title=GPU inference evidence missing::ENABLE_GPU_BENCH_GATE=true is required for merge/release readiness. Keep primary + warm-standby [self-hosted, linux, gpu] runners online (docs/runbooks/gpu-runner-continuity.md); production readiness must not pass without TTFT/latency evidence."
+            exit 1
+          fi
+          if [[ "${GPU_GATE_RESULT}" != "success" ]]; then
+            echo "::error title=GPU inference gate failed::gpu-inference-quality-gate result=${GPU_GATE_RESULT}; expected success."
+            exit 1
+          fi
+          echo "GPU inference TTFT/latency evidence is present and passing."
+
   publish-standalone-installer:
     name: Publish Standalone Installer Bundle
     runs-on: ubuntu-latest
-    needs: [test, pg-stress]
+    # Keep installer prerelease publishing tied to installer-specific gates.
+    # Heavy runtime gates (production-readiness/pg-stress) remain required for
+    # merge confidence, but should not block the standalone installer snapshot
+    # when installer manifest/smoke checks are already green.
+    needs: [installer-smoke]
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
@@ -678,6 +994,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # check-pin needs the full history to `git show` the commit pinned
+          # in SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT; shallow clones don't have it.
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -701,10 +1021,11 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --all-extras
 
-      - name: Verify install manifest integrity before bundling
+      - name: Verify install manifest and pinned module commit integrity before bundling
         run: |
           uv run python scripts/tools/update_core_install_manifest.py --check
           uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh --check
+          uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh --check-pin
 
       - name: Build standalone installer bundle
         run: |

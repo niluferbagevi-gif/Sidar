@@ -1,5 +1,5 @@
-"""
-Sidar Project — DLP (Data Loss Prevention) & PII Maskeleme Modülü
+"""Sidar Project — DLP (Data Loss Prevention) & PII Maskeleme Modülü.
+
 Hassas verileri LLM API çağrılarından önce maskeler/temizler.
 
 Desteklenen örüntüler:
@@ -135,8 +135,7 @@ class DLPDetection:
 
 
 class DLPEngine:
-    """
-    Yapılandırılabilir PII/hassas veri maskeleme motoru.
+    """Yapılandırılabilir PII/hassas veri maskeleme motoru.
 
     Her örüntü bağımsız olarak açılıp kapatılabilir; bu sayede iş kurallarına
     göre ince ayar yapılabilir. Tüm işlemler bellekte gerçekleşir ve herhangi
@@ -183,8 +182,8 @@ class DLPEngine:
     def _sub(
         self, pattern: re.Pattern[str], text: str, group_idx: int = 0, name: str = ""
     ) -> tuple[str, list[DLPDetection]]:
-        """
-        Örüntü eşleşmesini maskeleme değeriyle değiştirir.
+        """Örüntü eşleşmesini maskeleme değeriyle değiştirir.
+
         group_idx=0 → tüm eşleşme, >0 → belirtilen grup.
         """
         detections: list[DLPDetection] = []
@@ -214,8 +213,7 @@ class DLPEngine:
     # ── Ana API ─────────────────────────────────────────────────────────────
 
     def mask(self, text: str) -> tuple[str, list[DLPDetection]]:
-        """
-        Metindeki tüm aktif örüntüleri maskeler.
+        """Metindeki tüm aktif örüntüleri maskeler.
 
         Returns:
             (masked_text, detections) çifti.
@@ -276,8 +274,8 @@ class DLPEngine:
     def mask_messages(
         self, messages: list[Mapping[str, Any]]
     ) -> tuple[list[dict[str, Any]], list[DLPDetection]]:
-        """
-        LLM mesaj listesinin `content` alanlarını maskeler.
+        """LLM mesaj listesinin `content` alanlarını maskeler.
+
         Orijinal listede değişiklik yapmaz; yeni bir liste döndürür.
         """
         result: list[dict[str, Any]] = []

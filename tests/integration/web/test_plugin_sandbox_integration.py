@@ -20,7 +20,6 @@ from agent.registry import AgentCatalog
 @pytest.mark.integration
 def test_plugin_sandbox_registers_agent_and_blocks_forbidden_imports() -> None:
     """Register a sandboxed plugin agent and reject an unsafe import in the same path."""
-
     role_name = "integration_plugin_sandbox_agent"
     AgentCatalog.unregister(role_name)
     source = """

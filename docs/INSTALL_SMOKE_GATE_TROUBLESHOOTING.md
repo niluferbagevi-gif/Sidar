@@ -108,6 +108,64 @@ Add-MpPreference -ExclusionPath "\\wsl$\Ubuntu\home\<kullanıcı>\Sidar"
 > exclusion kurumsal güvenlik politikalarına bağlı olabilir; yalnız güvendiğiniz
 > proje dizinini hariç tutun.
 
+## `OSError: [Errno 7] Argument list too long`
+
+Bu hata Bash kodu çalışmaya başlamadan, işletim sistemi yeni subprocess'i
+oluştururken oluşabilir. Linux'ta `E2BIG` yalnız komut satırı argümanlarından
+değil, `argv + environment` toplam boyutundan veya tek bir çok büyük environment
+değişkeninden de kaynaklanır. Installer smoke testlerinde en yaygın neden,
+gerçek `SIDAR_KEYS_FILE` / `~/.sidar_keys.env` içeriğinin pytest process
+ortamına taşınmasıdır.
+
+### Hızlı izolasyon
+
+Smoke testini gerçek secret overlay'i kapatarak ve global test fixture'larını
+keserek çalıştırın:
+
+```bash
+SIDAR_ENV=test \
+SIDAR_KEYS_FILE="" \
+SIDAR_TEST_LOAD_REAL_KEYS=0 \
+uv run pytest -q --no-cov -p no:xdist -x \
+  --confcutdir=tests/smoke \
+  tests/smoke/test_install_verification.py
+```
+
+`--confcutdir=tests/smoke`, üst dizindeki genel `tests/conftest.py` yükleme
+zincirinin installer doğrulamasına karışmasını önler. Bu smoke testi yalnız
+installer sözleşmesini doğrulamalı; agent, web server veya DB fixture'larını
+collection sırasında yüklememelidir.
+
+### Environment boyutunu değeri göstermeden inceleme
+
+Aşağıdaki komutlar secret değerlerini yazdırmaz; yalnız değişken adını ve byte
+uzunluğunu gösterir:
+
+```bash
+python - <<'PY'
+import os
+for key, value in sorted(os.environ.items(), key=lambda item: len(item[1]), reverse=True)[:20]:
+    print(f"{key}\t{len(value.encode('utf-8'))}")
+print("TOTAL_ENV_BYTES", sum(len(k.encode()) + len(v.encode()) + 2 for k, v in os.environ.items()))
+PY
+```
+
+Secret overlay dosyasının büyüklüğünü de içeriği basmadan kontrol edin:
+
+```bash
+keys_file="${SIDAR_KEYS_FILE:-$HOME/.sidar_keys.env}"
+if [[ -n "$keys_file" && -f "$keys_file" ]]; then
+  wc -c "$keys_file"
+  awk -F= 'NF>=2 { print $1 "\t" length($0) }' "$keys_file" | sort -k2,2nr | head -20
+fi
+```
+
+Çok uzun, çok satırlı veya yanlışlıkla başka bir dosyanın tamamını içeren bir
+API key satırı varsa düzeltin. Genel unit/smoke/integration testlerinde gerçek
+secret dosyası yüklenmemelidir; secret-chain davranışını test eden özel testler
+geçici bir `SIDAR_KEYS_FILE` oluşturup bilinçli olarak
+`SIDAR_TEST_LOAD_REAL_KEYS=1` vermelidir.
+
 ## Repo tarafında korunması gereken sözleşme
 
 - Yeni kurulum kodları `SIDAR_INSTALL_VERSION_PROBE_ONLY=1` modunda Python,

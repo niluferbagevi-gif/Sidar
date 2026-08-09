@@ -71,7 +71,8 @@ async def create_user(
         assert db._pg_pool is not None
         async with db._pg_pool.acquire() as conn:
             await conn.execute(
-                "INSERT INTO users (id, username, password_hash, role, tenant_id, created_at) VALUES ($1, $2, $3, $4, $5, $6)",
+                "INSERT INTO users (id, username, password_hash, role, tenant_id, created_at)"
+                " VALUES ($1, $2, $3, $4, $5, $6)",
                 user_id,
                 username,
                 password_hash,
@@ -88,7 +89,8 @@ async def create_user(
     def _run() -> None:
         assert db._sqlite_conn is not None
         db._sqlite_conn.execute(
-            "INSERT INTO users (id, username, password_hash, role, tenant_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO users (id, username, password_hash, role, tenant_id, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
             (user_id, username, password_hash, role, tenant_id, created_at),
         )
         db._sqlite_conn.commit()
@@ -122,7 +124,8 @@ async def authenticate_user(
         assert db._pg_pool is not None
         async with db._pg_pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT id, username, password_hash, role, created_at, tenant_id FROM users WHERE username=$1",
+                "SELECT id, username, password_hash, role, created_at, tenant_id FROM users WHERE "
+                "username=$1",
                 username,
             )
         if not row or not row["password_hash"]:
@@ -144,7 +147,8 @@ async def authenticate_user(
     def _run() -> sqlite3.Row | None:
         assert db._sqlite_conn is not None
         cur = db._sqlite_conn.execute(
-            "SELECT id, username, password_hash, role, created_at, tenant_id FROM users WHERE username=?",
+            "SELECT id, username, password_hash, role, created_at, tenant_id FROM users WHERE "
+            "username=?",
             (username,),
         )
         return _sqlite_fetchone(cur)
@@ -227,7 +231,8 @@ async def ensure_user_id(
         assert db._pg_pool is not None
         async with db._pg_pool.acquire() as conn:
             await conn.execute(
-                "INSERT INTO users (id, username, password_hash, role, tenant_id, created_at) VALUES ($1, $2, $3, $4, $5, $6)",
+                "INSERT INTO users (id, username, password_hash, role, tenant_id, created_at)"
+                " VALUES ($1, $2, $3, $4, $5, $6)",
                 user_id,
                 normalized_username,
                 None,
@@ -248,7 +253,8 @@ async def ensure_user_id(
     def _run() -> None:
         assert db._sqlite_conn is not None
         db._sqlite_conn.execute(
-            "INSERT INTO users (id, username, password_hash, role, tenant_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO users (id, username, password_hash, role, tenant_id, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
             (
                 user_id,
                 normalized_username,

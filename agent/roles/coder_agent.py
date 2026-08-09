@@ -71,7 +71,7 @@ class CoderAgent(BaseAgent):
         if len(parts) < 2:
             return "⚠ Kullanım: write_file|<path>|<content>"
         path, content = parts[0].strip(), parts[1]
-        _ok, out = await asyncio.to_thread(self.code.write_file, path, content)
+        _ok, out = await self.code.write_file_hitl(path, content)
         return out
 
     async def _tool_patch_file(self, arg: str) -> str:
@@ -79,9 +79,7 @@ class CoderAgent(BaseAgent):
         if len(parts) < 3:
             return "⚠ Kullanım: patch_file|<path>|<target_block>|<replacement_block>"
         path, target_block, replacement_block = parts[0].strip(), parts[1], parts[2]
-        _ok, out = await asyncio.to_thread(
-            self.code.patch_file, path, target_block, replacement_block
-        )
+        _ok, out = await self.code.patch_file_hitl(path, target_block, replacement_block)
         return out
 
     async def _tool_execute_code(self, arg: str) -> str:
@@ -171,7 +169,8 @@ class CoderAgent(BaseAgent):
             "Yanıtını JSON olarak ver. Araç gerekiyorsa "
             '{"tool_calls":[{"name":"read_file","arg":"path"}],"final":""}; '
             'iş bittiyse {"final":"özet ve yapılanlar"}. '
-            "Sadece kayıtlı araç adlarını kullan; dosya değişikliklerinde önce dosyayı oku, sonra patch_file/write_file kullan."
+            "Sadece kayıtlı araç adlarını kullan; dosya değişikliklerinde önce dosyayı oku, sonra "
+            "patch_file/write_file kullan."
         )
 
     @staticmethod
@@ -196,7 +195,7 @@ class CoderAgent(BaseAgent):
         messages: list[dict[str, str]] = [
             {
                 "role": "user",
-                "content": (f"{self._format_tool_contract()}\n\n" f"Görev: {prompt}"),
+                "content": (f"{self._format_tool_contract()}\n\nGörev: {prompt}"),
             }
         ]
         last_final = ""

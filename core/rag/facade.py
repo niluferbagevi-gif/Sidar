@@ -48,8 +48,7 @@ def _build_embedding_function(
     mixed_precision: bool = False,
     cfg: Any | None = None,
 ) -> Any:
-    """
-    ChromaDB için GPU-farkında embedding fonksiyonu oluşturur.
+    """ChromaDB için GPU-farkında embedding fonksiyonu oluşturur.
 
     use_gpu=True  →  sentence-transformers all-MiniLM-L6-v2 CUDA üzerinde çalışır.
     use_gpu=False →  embedding fonksiyonu açıkça CPU device ile kurulur.

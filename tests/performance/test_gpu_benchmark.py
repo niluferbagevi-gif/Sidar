@@ -83,7 +83,9 @@ _OOM_PROMPT_REPEAT: int = _gpu_smoke._env_int(
     min_value=64,
     max_value=4096,
 )
-_MAX_OOM_FAILURES: int = _gpu_smoke._env_int("GPU_BENCH_MAX_OOM_FAILURES", 0, min_value=0, max_value=10)
+_MAX_OOM_FAILURES: int = _gpu_smoke._env_int(
+    "GPU_BENCH_MAX_OOM_FAILURES", 0, min_value=0, max_value=10
+)
 
 
 def _env_float(name: str, default: float, *, min_value: float, max_value: float) -> float:
@@ -365,9 +367,9 @@ def test_gpu_single_inference_latency(benchmark) -> None:
 
     assert isinstance(result, str) and result.strip(), "Benchmark yanıtı boş döndü."
     mean_s: float = benchmark.stats["mean"]
-    assert (
-        mean_s <= _LATENCY_BUDGET_S
-    ), f"Ortalama gecikme bütçeyi aştı: {mean_s:.2f}s > {_LATENCY_BUDGET_S}s"
+    assert mean_s <= _LATENCY_BUDGET_S, (
+        f"Ortalama gecikme bütçeyi aştı: {mean_s:.2f}s > {_LATENCY_BUDGET_S}s"
+    )
     stddev_s: float = benchmark.stats["stddev"]
     iqr_s: float = float(benchmark.stats.get("iqr", 0.0))
     _record_runtime_options(benchmark)
@@ -576,7 +578,9 @@ def test_gpu_oom_regression_under_load(benchmark) -> None:
                     oom_failures.append(str(exc))
                     return 1
                 raise
-            assert all(response.strip() for response in responses), "GPU OOM benchmark yanıtı boş döndü."
+            assert all(response.strip() for response in responses), (
+                "GPU OOM benchmark yanıtı boş döndü."
+            )
             return 0
 
         def _run() -> int:
@@ -661,7 +665,7 @@ def test_gpu_tokens_per_second(benchmark) -> None:
 
     assert result.content.strip(), "Benchmark yanıtı boş döndü."
     assert result.eval_count > 0, (
-        "Ollama eval_count=0: token sayısı alınamadı. " "Model veya Ollama sürümünü kontrol edin."
+        "Ollama eval_count=0: token sayısı alınamadı. Model veya Ollama sürümünü kontrol edin."
     )
     tps = result.tokens_per_second
     benchmark.extra_info["tokens_per_second"] = round(tps, 3)
@@ -672,9 +676,9 @@ def test_gpu_tokens_per_second(benchmark) -> None:
     benchmark.extra_info["tps_iqr_ms"] = round(tps_iqr_s * 1000, 3)
     if tps_mean_s > 0:
         benchmark.extra_info["tps_cv_percent"] = round((tps_stddev_s / tps_mean_s) * 100, 3)
-    assert (
-        tps >= _MIN_TOKENS_PER_SEC
-    ), f"Token/sn bütçesinin altında: {tps:.1f} tok/s < {_MIN_TOKENS_PER_SEC:.1f} tok/s"
+    assert tps >= _MIN_TOKENS_PER_SEC, (
+        f"Token/sn bütçesinin altında: {tps:.1f} tok/s < {_MIN_TOKENS_PER_SEC:.1f} tok/s"
+    )
 
 
 @pytest.mark.benchmark(group="gpu", warmup=True, min_rounds=20)
@@ -728,9 +732,9 @@ def test_gpu_time_to_first_token(benchmark) -> None:
     mean_ttft: float = benchmark.stats["mean"]
     _record_runtime_options(benchmark)
     benchmark.extra_info["ttft_mean_ms"] = round(mean_ttft * 1000, 3)
-    assert (
-        mean_ttft <= _TTFT_BUDGET_S
-    ), f"Ortalama TTFT bütçeyi aştı: {mean_ttft:.3f}s > {_TTFT_BUDGET_S}s"
+    assert mean_ttft <= _TTFT_BUDGET_S, (
+        f"Ortalama TTFT bütçeyi aştı: {mean_ttft:.3f}s > {_TTFT_BUDGET_S}s"
+    )
 
 
 def test_runtime_options_metadata_records_workload_shape() -> None:

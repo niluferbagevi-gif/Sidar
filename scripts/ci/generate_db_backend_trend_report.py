@@ -45,7 +45,8 @@ def _detect_backend(item: dict[str, Any]) -> str | None:
 def main() -> int:
     if len(sys.argv) != 3:
         print(
-            "Usage: python scripts/ci/generate_db_backend_trend_report.py <benchmark.json> <out_dir>"
+            "Usage: python scripts/ci/generate_db_backend_trend_report.py <benchmark.json> "
+            "<out_dir>"
         )
         return 2
 
@@ -110,14 +111,16 @@ def main() -> int:
             "",
             "## Visual trend (bar, mean latency)",
             "",
-            f"- sqlite:      {_bar(sqlite['mean_ms']) if sqlite else 'n/a'} ({sqlite['mean_ms']:.3f} ms)"
+            f"- sqlite:      {_bar(sqlite['mean_ms']) if sqlite else 'n/a'} "
+            f"({sqlite['mean_ms']:.3f} ms)"
             if sqlite
             else "- sqlite: n/a",
             f"- postgresql:  {_bar(pg['mean_ms']) if pg else 'n/a'} ({pg['mean_ms']:.3f} ms)"
             if pg
             else "- postgresql: n/a",
             "",
-            "> Not: Bu rapor release artifact olarak saklanır ve release'ler arası trend karşılaştırması için kullanılır.",
+            "> Not: Bu rapor release artifact olarak saklanır ve release'ler arası trend "
+            "karşılaştırması için kullanılır.",
         ]
     )
 

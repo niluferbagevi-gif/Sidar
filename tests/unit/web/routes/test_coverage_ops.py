@@ -104,6 +104,7 @@ def test_serialize_coverage_task_uses_safe_defaults() -> None:
         "updated_at": "",
     }
 
+
 @pytest.mark.asyncio
 async def test_coverage_get_request_user_proxy_delegates_to_configured_dependencies() -> None:
     request = object()
@@ -129,9 +130,12 @@ async def test_resolve_operations_db_returns_agent_memory_database() -> None:
     async def _resolve_agent_instance():
         return SimpleNamespace(memory=SimpleNamespace(db=db))
 
-    assert await coverage_ops._resolve_operations_db(
-        SimpleNamespace(resolve_agent_instance=_resolve_agent_instance)
-    ) is db
+    assert (
+        await coverage_ops._resolve_operations_db(
+            SimpleNamespace(resolve_agent_instance=_resolve_agent_instance)
+        )
+        is db
+    )
 
 
 @pytest.mark.asyncio

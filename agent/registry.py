@@ -1,5 +1,4 @@
-"""
-Sidar Agent Catalog — Çalışma Zamanı Ajan Keşfi ve Eklenti Pazaryeri.
+"""Sidar Agent Catalog — Çalışma Zamanı Ajan Keşfi ve Eklenti Pazaryeri.
 
 Kayıtlı ajan türlerini, yeteneklerini ve meta verilerini yönetir.
 Yeni uzman ajanlar `@AgentCatalog.register(...)` dekoratörü ile
@@ -120,7 +119,6 @@ def _builtin_contract_by_role(role_name: str) -> BuiltinRoleContract | None:
 
 def _plugin_manifest_side_effect_level(role_name: str) -> str:
     """Return the manifest side-effect level for a plugin role, if declared."""
-
     try:
         from plugins.manifest import PLUGIN_MANIFESTS
     except Exception as exc:  # pragma: no cover - optional plugin package guard
@@ -135,13 +133,11 @@ def _plugin_manifest_side_effect_level(role_name: str) -> str:
 
 def _side_effect_requires_shell_gate(side_effect_level: str) -> bool:
     """Return whether the side effect level must pass shell-access authorization."""
-
     return str(side_effect_level or "none").startswith("external_")
 
 
 def _assert_runtime_side_effect_allowed(spec: AgentSpec, cfg: Any | None = None) -> None:
     """Fail closed when a plugin manifest declares host/external side effects."""
-
     if spec.is_builtin or not _side_effect_requires_shell_gate(spec.side_effect_level):
         return
     try:
@@ -361,11 +357,12 @@ def _sync_builtin_contract_registry(module_cache: dict[str, Any] | None = None) 
     ``agent.roles`` package exports, even after test stubs or reloads.
     """
     role_exports = sys.modules.get("agent.roles")
+    module_cache = module_cache or {}
     for contract in BUILTIN_ROLE_CONTRACTS:
-        if contract.module_name in _BUILTIN_IMPORT_FAILURES:
+        module = module_cache.get(contract.module_name)
+        if module is None and contract.module_name in _BUILTIN_IMPORT_FAILURES:
             continue
         try:
-            module = (module_cache or {}).get(contract.module_name)
             if module is None:
                 module = importlib.import_module(contract.module_name)
             agent_cls = getattr(module, contract.class_name)
@@ -386,6 +383,8 @@ def _sync_builtin_contract_registry(module_cache: dict[str, Any] | None = None) 
                 contract.class_name,
             )
             continue
+
+        _BUILTIN_IMPORT_FAILURES.pop(contract.module_name, None)
 
         if role_exports is not None:
             setattr(role_exports, contract.class_name, agent_cls)

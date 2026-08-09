@@ -48,7 +48,8 @@ def load_orchestrator_settings() -> OrchestratorSettings:
         autonomous_cron_interval_seconds=get_int_env("AUTONOMOUS_CRON_INTERVAL_SECONDS", 900),
         autonomous_cron_prompt=os.getenv(
             "AUTONOMOUS_CRON_PROMPT",
-            "Sistemdeki bekleyen otonom iş fırsatlarını değerlendir ve gerekli aksiyon planını çıkar.",
+            "Sistemdeki bekleyen otonom iş fırsatlarını değerlendir ve gerekli aksiyon planını "
+            "çıkar.",
         ),
         enable_swarm_federation=get_bool_env("ENABLE_SWARM_FEDERATION", True),
         swarm_federation_shared_secret=os.getenv("SWARM_FEDERATION_SHARED_SECRET", ""),

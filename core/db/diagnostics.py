@@ -80,7 +80,6 @@ def postgres_failure_diagnosis(reason: str, exc: BaseException | None = None) ->
 
 def postgres_user_action_message(reason: str, exc: BaseException | None = None) -> str:
     """Convert PostgreSQL failure state to a secret-safe, user-facing action message."""
-
     diagnosis = postgres_failure_diagnosis(reason, exc)
     if diagnosis == "DATABASE_URL yok/kayboldu":
         return (
@@ -110,7 +109,8 @@ def postgres_user_action_message(reason: str, exc: BaseException | None = None) 
     if diagnosis == "asyncpg bağımlılığı kullanılamıyor":
         return (
             "PostgreSQL bağlantısı için asyncpg bağımlılığı kullanılamıyor. "
-            "Kurulumu `uv sync --all-extras` ile tamamlayın veya postgres extras kurulumunu doğrulayın. "
+            "Kurulumu `uv sync --all-extras` ile tamamlayın veya postgres extras kurulumunu "
+            "doğrulayın. "
             f"Teşhis: {diagnosis}. SQLite degraded mode aktif edildi."
         )
     if diagnosis == "bağlantı havuzu oluşturulamadı":

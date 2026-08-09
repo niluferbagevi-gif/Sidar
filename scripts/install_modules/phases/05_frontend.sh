@@ -1,4 +1,16 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
+
+if [[ -z "${SIDAR_INSTALL_UTIL_WSL_HOST_SH_LOADED:-}" ]]; then
+    _sidar_05_frontend_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    _sidar_wsl_host_utils="${_sidar_05_frontend_dir}/../utils/wsl_host.sh"
+    if [[ -f "$_sidar_wsl_host_utils" ]]; then
+        # shellcheck source=../utils/wsl_host.sh
+        source "$_sidar_wsl_host_utils"
+    fi
+    unset _sidar_05_frontend_dir _sidar_wsl_host_utils
+fi
+
 
 # ── 8. WSL2 Ses Desteği Kurulumu ─────────────────────────────────────────────
 # WSLg (Windows 11 Build 22000+) PulseAudio soketi üzerinden gerçek zamanlı

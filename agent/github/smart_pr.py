@@ -21,7 +21,7 @@ class _GitHubManagerLike(Protocol):
 
     def is_available(self) -> bool: ...
 
-    def create_pull_request(
+    async def create_pull_request_hitl(
         self, title: str, body: str, head: str, base: str
     ) -> tuple[bool, str]: ...
 
@@ -69,7 +69,7 @@ async def create_smart_pr(
     _ok_log, commits = code.run_shell(f"git log --oneline {base}..HEAD")
     body = f"{notes}\n\n### Commitler\n{commits}\n\n### Diff Özeti\n```diff\n{diff_text}\n```"
     try:
-        ok_pr, pr_out = github.create_pull_request(title, body, head, base)
+        ok_pr, pr_out = await github.create_pull_request_hitl(title, body, head, base)
     except TimeoutError:
         return f"{GITHUB_SMART_PR_CREATE_FAILED_PREFIX} zaman aşımı"
     except Exception as exc:

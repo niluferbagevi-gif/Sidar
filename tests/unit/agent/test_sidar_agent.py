@@ -1,6 +1,7 @@
 import asyncio
 import builtins
 import importlib
+import logging
 import os
 import types
 from pathlib import Path
@@ -483,13 +484,17 @@ async def test_load_instruction_files_edge_paths(
     assert "hello" in text
 
 
-async def test_tool_docs_search_and_execute_tool_error_branches(sidar_agent_factory) -> None:
+async def test_tool_docs_search_and_execute_tool_error_branches(
+    sidar_agent_factory, caplog
+) -> None:
     agent = sidar_agent_factory()
     agent.docs = types.SimpleNamespace(
         search=lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("fail"))
     )
-    err = await agent._tool_docs_search("x")
+    with caplog.at_level(logging.ERROR, logger="agent.sidar_agent"):
+        err = await agent._tool_docs_search("x")
     assert "başarısız" in err
+    assert "SidarAgent docs search tool failed" in caplog.text
 
     with pytest.raises(ValueError):
         await agent._execute_tool("", "x")
@@ -1145,6 +1150,94 @@ async def test_attempt_autonomous_self_heal_blocked_and_applied(sidar_agent_fact
     assert remediation["remediation_loop"]["status"] == "applied"
 
 
+async def test_attempt_autonomous_self_heal_short_circuits_on_mechanical_autofix(
+    sidar_agent_factory,
+) -> None:
+    agent = sidar_agent_factory()
+    _override_cfg(agent, ENABLE_AUTONOMOUS_SELF_HEAL=True)
+    agent.code = create_autospec(CodeManager, instance=True, spec_set=True)
+    agent.llm = create_autospec(BaseLLMClient, instance=True, spec_set=True)
+    agent._attempt_mechanical_autofix = AsyncMock(
+        return_value={
+            "status": "applied",
+            "summary": "ruff --fix uygulandı",
+            "commands_run": ["uv run ruff check --fix ."],
+        }
+    )
+    agent._build_self_heal_plan = AsyncMock()
+    agent._execute_self_heal_plan = AsyncMock()
+    remediation = {
+        "remediation_loop": {
+            "status": "planned",
+            "steps": [
+                {"name": "patch", "status": "planned", "detail": ""},
+                {"name": "validate", "status": "planned", "detail": ""},
+                {"name": "handoff", "status": "planned", "detail": ""},
+            ],
+        }
+    }
+
+    result = await agent._attempt_autonomous_self_heal(
+        ci_context={}, diagnosis="x", remediation=remediation
+    )
+
+    assert result["status"] == "applied"
+    assert result["summary"] == "ruff --fix uygulandı"
+    loop = remediation["remediation_loop"]
+    assert loop["status"] == "applied"
+    steps_by_name = {step["name"]: step for step in loop["steps"]}
+    assert steps_by_name["patch"]["status"] == "completed"
+    assert steps_by_name["validate"]["status"] == "completed"
+    assert steps_by_name["handoff"]["status"] == "completed"
+    assert remediation["self_heal_execution"] is result
+    assert "self_heal_plan" not in remediation
+    agent._build_self_heal_plan.assert_not_awaited()
+    agent._execute_self_heal_plan.assert_not_awaited()
+
+
+async def test_attempt_autonomous_self_heal_lazy_inits_attempts_registry_when_missing(
+    sidar_agent_factory,
+) -> None:
+    """`_self_heal_attempts` __init__ içinde her zaman set edilir.
+
+    Bu test o özniteliği hiç görmemiş "temiz" bir örnekle circuit-breaker
+    akışının hâlâ lazy-init fallback'ini (agent/sidar_agent.py:797-798)
+    tetiklediğini doğrular.
+    """
+    agent = sidar_agent_factory()
+    _override_cfg(agent, ENABLE_AUTONOMOUS_SELF_HEAL=True)
+    agent.code = create_autospec(CodeManager, instance=True, spec_set=True)
+    agent.llm = create_autospec(BaseLLMClient, instance=True, spec_set=True)
+    del agent._self_heal_attempts
+    assert not hasattr(agent, "_self_heal_attempts")
+    agent._attempt_mechanical_autofix = AsyncMock(
+        return_value={
+            "status": "applied",
+            "summary": "ruff --fix uygulandı",
+            "commands_run": ["uv run ruff check --fix ."],
+        }
+    )
+    agent._build_self_heal_plan = AsyncMock()
+    agent._execute_self_heal_plan = AsyncMock()
+    remediation = {
+        "remediation_loop": {
+            "status": "planned",
+            "steps": [
+                {"name": "patch", "status": "planned", "detail": ""},
+                {"name": "validate", "status": "planned", "detail": ""},
+                {"name": "handoff", "status": "planned", "detail": ""},
+            ],
+        }
+    }
+
+    result = await agent._attempt_autonomous_self_heal(
+        ci_context={}, diagnosis="x", remediation=remediation
+    )
+
+    assert result["status"] == "applied"
+    assert agent._self_heal_attempts == {}
+
+
 async def test_attempt_autonomous_self_heal_marks_human_intervention_after_retry_exhaustion(
     sidar_agent_factory,
 ) -> None:
@@ -1289,6 +1382,86 @@ async def test_attempt_autonomous_self_heal_continues_after_human_approval(
     assert remediation["remediation_loop"]["needs_human_approval"] is False
 
 
+async def test_attempt_autonomous_self_heal_enforces_cross_trigger_attempt_limit(
+    sidar_agent_factory,
+) -> None:
+    agent = sidar_agent_factory()
+    _override_cfg(agent, ENABLE_AUTONOMOUS_SELF_HEAL=True)
+    agent._attempt_mechanical_autofix = AsyncMock(return_value={"status": "skipped"})
+    agent._build_self_heal_plan = AsyncMock(
+        return_value={"operations": [], "summary": "no safe patch"}
+    )
+    context = {
+        "repo": "org/repo",
+        "workflow_name": "ci",
+        "sha": "deadbeef",
+        "run_id": "42",
+    }
+
+    def remediation() -> dict[str, Any]:
+        return {
+            "remediation_loop": {
+                "status": "planned",
+                "max_auto_attempts": 2,
+                "scope_paths": ["core/a.py"],
+                "validation_commands": ["python -m pytest"],
+                "steps": [{"name": "patch"}, {"name": "handoff"}],
+            }
+        }
+
+    first = await agent._attempt_autonomous_self_heal(
+        ci_context=context, diagnosis="still red", remediation=remediation()
+    )
+    second = await agent._attempt_autonomous_self_heal(
+        ci_context=context, diagnosis="still red", remediation=remediation()
+    )
+    third_payload = remediation()
+    third = await agent._attempt_autonomous_self_heal(
+        ci_context=context, diagnosis="still red", remediation=third_payload
+    )
+
+    assert first["status"] == "blocked"
+    assert second["status"] == "blocked"
+    assert third["status"] == "circuit_open"
+    assert third["attempts_used"] == 2
+    assert third["max_auto_attempts"] == 2
+    assert third_payload["remediation_loop"]["status"] == "circuit_open"
+    assert agent._build_self_heal_plan.await_count == 2
+
+
+async def test_external_ci_circuit_breaker_skips_diagnosis_llm_call(
+    sidar_agent_factory,
+) -> None:
+    agent = sidar_agent_factory()
+    _override_cfg(agent, ENABLE_AUTONOMOUS_SELF_HEAL=True)
+    agent.initialize = AsyncMock()
+    agent.mark_activity = lambda *_args: None
+    agent._try_multi_agent = AsyncMock(return_value="must not run")
+    agent._append_autonomy_history = AsyncMock()
+    agent._self_heal_attempts = {"org/repo|ci|deadbeef": 1}
+    trigger = ExternalTrigger(
+        trigger_id="retry-2",
+        source="webhook:github:ci_failure",
+        event_name="ci_failure_remediation",
+        payload={
+            "kind": "workflow_run",
+            "repo": "org/repo",
+            "workflow_name": "ci",
+            "sha": "deadbeef",
+            "run_id": "43",
+            "human_approval_required": True,
+            "failure_summary": "still red",
+        },
+        meta={},
+    )
+
+    result = await agent.handle_external_trigger(trigger)
+
+    assert result["status"] == "circuit_open"
+    assert result["remediation"]["self_heal_execution"]["status"] == "circuit_open"
+    agent._try_multi_agent.assert_not_awaited()
+
+
 async def test_build_trigger_prompt_fallback_to_trigger_prompt(sidar_agent_factory) -> None:
     trigger = ExternalTrigger(
         trigger_id="tid", source="cron", event_name="run", payload={}, meta={}
@@ -1298,7 +1471,7 @@ async def test_build_trigger_prompt_fallback_to_trigger_prompt(sidar_agent_facto
 
 
 async def test_handle_external_trigger_empty_output_and_ci_self_heal_failure(
-    sidar_agent_factory, monkeypatch: pytest.MonkeyPatch
+    sidar_agent_factory, monkeypatch: pytest.MonkeyPatch, caplog
 ) -> None:
     agent = sidar_agent_factory()
     history = []
@@ -1331,14 +1504,16 @@ async def test_handle_external_trigger_empty_output_and_ci_self_heal_failure(
         raise RuntimeError("boom")
 
     agent._attempt_autonomous_self_heal = _self_heal
-    ci = await agent.handle_external_trigger(
-        {"trigger_id": "t2", "source": "s", "event_name": "e", "payload": {}, "meta": {}}
-    )
+    with caplog.at_level(logging.ERROR, logger="agent.sidar_agent"):
+        ci = await agent.handle_external_trigger(
+            {"trigger_id": "t2", "source": "s", "event_name": "e", "payload": {}, "meta": {}}
+        )
     assert ci["status"] == "success"
     assert ci["remediation"]["self_heal_execution"]["status"] == "failed"
-    assert "boom" in ci["remediation"]["self_heal_execution"].get(
-        "detail", str(ci)
-    ), "Asıl hata sebebi (boom) sonuç payload'una veya loglara yansımalıdır."
+    assert "boom" in ci["remediation"]["self_heal_execution"].get("detail", str(ci)), (
+        "Asıl hata sebebi (boom) sonuç payload'una veya loglara yansımalıdır."
+    )
+    assert "Autonomous self-heal execution failed" in caplog.text
 
 
 async def test_try_multi_agent_handles_supervisor_constructor_returning_none(
@@ -1362,11 +1537,6 @@ async def test_try_multi_agent_handles_supervisor_constructor_returning_none(
         CoverageAgent=type("CoverageAgent", (), {"__module__": "agent.roles.coverage_agent"}),
     )
     monkeypatch.setattr(sidar_agent, "import_module", lambda name: fake_supervisor_mod)
-
-    def _unexpected_reload(_module):
-        raise AssertionError("role modules are valid; reload should not be needed")
-
-    monkeypatch.setattr(sidar_agent.importlib, "reload", _unexpected_reload)
 
     result = await agent._try_multi_agent("implement feature")
 
@@ -1594,7 +1764,7 @@ async def test_get_autonomy_activity_handles_limit_edge_cases(
     sidar_agent_factory,
     frozen_time,
 ) -> None:
-    """limit alanında None/negatif/string değerlerin güvenli işlendiğini doğrular."""
+    """Limit alanında None/negatif/string değerlerin güvenli işlendiğini doğrular."""
     agent = sidar_agent_factory()
     agent._ensure_autonomy_runtime_state = lambda: None
     current_time = sidar_agent.time.time()
@@ -1787,7 +1957,7 @@ async def test_tool_github_smart_pr_success_path(sidar_agent_factory) -> None:
     git = Mock()
     git.default_branch = "main"
     git.is_available.return_value = True
-    git.create_pull_request.return_value = (True, "url")
+    git.create_pull_request_hitl = AsyncMock(return_value=(True, "url"))
 
     agent.code = code
     agent.github = git
@@ -1849,8 +2019,8 @@ async def test_collect_self_heal_snapshots_skips_empty_and_failed_reads(
     agent = sidar_agent_factory()
 
     code = Mock()
-    code.read_file.side_effect = (
-        lambda path, _safe: (False, "missing") if path == "bad.py" else (True, f"content:{path}")
+    code.read_file.side_effect = lambda path, _safe: (
+        (False, "missing") if path == "bad.py" else (True, f"content:{path}")
     )
     agent.code = code
     snapshots = await agent._collect_self_heal_snapshots(["", "./ok.py", "bad.py"])
@@ -2033,44 +2203,9 @@ async def test_try_multi_agent_imports_supervisor_when_missing(
     supervisor_instance.run_task.return_value = "ok:hello"
     supervisor_cls.return_value = supervisor_instance
     monkeypatch.setattr(supervisor_mod, "SupervisorAgent", supervisor_cls)
-    monkeypatch.setattr(sidar_agent.importlib, "reload", lambda module: module)
 
     result = await agent._try_multi_agent("hello")
     assert result == "ok:hello"
-
-
-async def test_try_multi_agent_triggers_reload_if_module_corrupted(
-    sidar_agent_factory,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Supervisor rol sembolleri stub ise modül reload dalına girildiğini doğrular."""
-    agent = sidar_agent_factory()
-    agent._supervisor = None
-
-    from agent.core import supervisor as supervisor_mod
-
-    original_researcher = getattr(supervisor_mod, "ResearcherAgent", None)
-
-    with monkeypatch.context() as scoped_monkeypatch:
-        corrupted_role = Mock()
-        corrupted_role.__module__ = "tests.stub.roles"
-        scoped_monkeypatch.setattr(supervisor_mod, "ResearcherAgent", corrupted_role, raising=False)
-
-        reload_mock = Mock(return_value=supervisor_mod)
-        scoped_monkeypatch.setattr(sidar_agent.importlib, "reload", reload_mock)
-
-        supervisor_cls = Mock()
-        supervisor_instance = AsyncMock()
-        supervisor_instance.run_task.return_value = "ok:reloaded"
-        supervisor_cls.return_value = supervisor_instance
-        scoped_monkeypatch.setattr(supervisor_mod, "SupervisorAgent", supervisor_cls)
-
-        result = await agent._try_multi_agent("hello")
-
-        assert result == "ok:reloaded"
-        reload_mock.assert_called_once_with(supervisor_mod)
-
-    assert getattr(supervisor_mod, "ResearcherAgent", None) is original_researcher
 
 
 async def test_get_memory_archive_context_async_and_sync_edges(sidar_agent_factory) -> None:
@@ -2295,7 +2430,7 @@ async def test_tool_github_smart_pr_error_branches(sidar_agent_factory) -> None:
     agent.github = types.SimpleNamespace(
         is_available=lambda: True,
         default_branch="main",
-        create_pull_request=lambda *_a: (False, "err"),
+        create_pull_request_hitl=AsyncMock(return_value=(False, "err")),
     )
 
     code = Mock()
@@ -2304,8 +2439,8 @@ async def test_tool_github_smart_pr_error_branches(sidar_agent_factory) -> None:
     no_branch = await agent._tool_github_smart_pr("x")
     assert no_branch == sidar_agent.GITHUB_SMART_PR_NO_BRANCH_MESSAGE
 
-    code.run_shell.side_effect = (
-        lambda command: (True, "feat/a")
+    code.run_shell.side_effect = lambda command: (
+        (True, "feat/a")
         if "branch" in command
         else ((True, "") if "status" in command else (True, ""))
     )
@@ -2361,7 +2496,7 @@ async def test_tool_github_smart_pr_handles_create_pr_exceptions(
     github = Mock()
     github.is_available.return_value = True
     github.default_branch = "main"
-    github.create_pull_request.side_effect = create_pr_side_effect
+    github.create_pull_request_hitl = AsyncMock(side_effect=create_pr_side_effect)
     agent.code = code
     agent.github = github
 
@@ -2617,8 +2752,11 @@ async def test_nightly_maintenance_records_audit_trail_when_consolidation_fails(
     monkeypatch: pytest.MonkeyPatch,
     frozen_time,
 ) -> None:
-    """A run_nightly_consolidation failure must still degrade gracefully and be
-    recorded via _append_autonomy_history, not silently abort the whole job."""
+    """A run_nightly_consolidation failure must degrade gracefully, not abort the job.
+
+    It must still be recorded via _append_autonomy_history, not silently
+    abort the whole job.
+    """
     agent = sidar_agent_factory()
     agent.initialize = AsyncMock()
     agent._append_autonomy_history = AsyncMock()
@@ -2761,6 +2899,7 @@ async def test_poyraz_rate_limit_returns_graceful_message_in_sidar_suite(fake_so
     poyraz.social = fake_social_api
     poyraz.social.set_rate_limit_error()
     poyraz.social.publish_content = AsyncMock(side_effect=RuntimeError("API Rate Limit"))
+    poyraz._authorize_external_publication = AsyncMock(return_value=None)
 
     output = await PoyrazAgent._tool_publish_social(poyraz, "instagram|||hata testi|||sidar")
     assert output.startswith("[SOCIAL:ERROR]")
@@ -2874,7 +3013,7 @@ async def test_tool_github_smart_pr_creates_pr_successfully(sidar_agent_factory)
 
     github = Mock()
     github.is_available.return_value = True
-    github.create_pull_request.return_value = (True, "ok")
+    github.create_pull_request_hitl = AsyncMock(return_value=(True, "ok"))
     github.default_branch = "main"
 
     code = Mock()
@@ -3521,7 +3660,7 @@ async def test_tool_github_smart_pr_base_defaults_to_main_on_error(sidar_agent_f
     type(github).default_branch = property(
         lambda _self: (_ for _ in ()).throw(RuntimeError("no-default"))
     )
-    github.create_pull_request.return_value = (True, "url")
+    github.create_pull_request_hitl = AsyncMock(return_value=(True, "url"))
 
     agent.code = code
     agent.github = github

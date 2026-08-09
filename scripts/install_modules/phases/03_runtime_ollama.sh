@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 
 _ollama_install_step() {
     # Ollama (varsayılan AI provider) - Akıllı Kontrol ve Kurulum

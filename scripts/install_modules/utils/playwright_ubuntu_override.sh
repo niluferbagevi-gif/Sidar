@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 
 # Playwright upstream yeni Ubuntu sürümlerini tanımadan önce Chromium indirmesi
 # başarısız olabilir. Ubuntu 25-30 aralığındaki hostlarda Playwright
@@ -60,6 +61,24 @@ probe = subprocess.run(
 )
 raise SystemExit(probe.returncode)
 PY_PLAYWRIGHT_HOST_SUPPORT
+}
+
+# Node Playwright paketlerinde hostPlatform uygulaması sürümler arasında bundle
+# içine taşınabildiği için private dosya yolu okumak yerine public CLI dry-run
+# çıktısını kullan. Upstream Ubuntu 26.04'ü tanıdığında unsupported uyarısı
+# kaybolur ve geçici ubuntu24.04 override otomatik olarak devreden çıkar.
+playwright_node_host_platform_is_officially_supported() {
+    local source_os_release="${1:-/etc/os-release}"
+    local probe_output=""
+    shift || true
+    [[ "$#" -gt 0 ]] || return 1
+
+    probe_output=$(env -u PLAYWRIGHT_HOST_PLATFORM_OVERRIDE OS_RELEASE_PATH="$source_os_release" \
+        "$@" playwright install --dry-run chromium 2>&1) || return 1
+    probe_output="${probe_output,,}"
+    [[ "$probe_output" != *"not officially supported"* \
+        && "$probe_output" != *"not supported"* \
+        && "$probe_output" != *"unsupported"* ]]
 }
 
 playwright_latest_supported_ubuntu_version() {

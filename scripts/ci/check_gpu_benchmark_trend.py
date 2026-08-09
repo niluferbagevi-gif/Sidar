@@ -45,6 +45,7 @@ def _current_metrics(benchmarks: list[dict[str, Any]]) -> dict[str, float]:
     ttft_ms = float(ttft.get("stats", {}).get("mean", 0.0)) * 1000.0
     tps_extra = tps.get("extra_info", {}).get("tokens_per_second")
     tps_value = float(tps_extra) if tps_extra is not None else 0.0
+    vram_load_mean_ms = float(vram.get("stats", {}).get("mean", 0.0)) * 1000.0
     vram_peak = float(vram.get("extra_info", {}).get("vram_peak_mib", 0.0))
     oom_failures = float(
         oom.get("extra_info", {}).get(
@@ -54,6 +55,7 @@ def _current_metrics(benchmarks: list[dict[str, Any]]) -> dict[str, float]:
     return {
         "ttft_ms": round(ttft_ms, 3),
         "tps": round(tps_value, 3),
+        "vram_load_mean_ms": round(vram_load_mean_ms, 3),
         "vram_peak_mib": round(vram_peak, 3),
         "oom_failures": round(oom_failures, 3),
     }
@@ -132,10 +134,7 @@ def main() -> int:
                 continue
             med = statistics.median(historical_values)
             if metric_name == "oom_failures" and current > 0:
-                print(
-                    f"[ALARM] {metric_name} GPU OOM regresyonu algıladı: "
-                    f"current={current:.3f}."
-                )
+                print(f"[ALARM] {metric_name} GPU OOM regresyonu algıladı: current={current:.3f}.")
                 failed = True
                 continue
             if med <= 0:

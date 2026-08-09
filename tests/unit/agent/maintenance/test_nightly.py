@@ -16,7 +16,9 @@ class FakeNightlyAgent:
             NIGHTLY_MEMORY_SESSION_MIN_MESSAGES=12,
             NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS=2,
         )
-        self.docs = SimpleNamespace(consolidate_session_documents=lambda *_a, **_k: {"removed_docs": 1})
+        self.docs = SimpleNamespace(
+            consolidate_session_documents=lambda *_a, **_k: {"removed_docs": 1}
+        )
         self.memory = SimpleNamespace(
             run_nightly_consolidation=AsyncMock(
                 return_value={"status": "completed", "session_ids": ["s1"], "sessions_compacted": 1}

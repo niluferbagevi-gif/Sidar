@@ -1,5 +1,6 @@
 import hashlib
 import os
+import re
 import shlex
 import shutil
 import socket
@@ -11,6 +12,52 @@ import tomllib
 from pathlib import Path
 
 import pytest
+
+pytestmark = pytest.mark.installer_smoke
+
+
+_SENSITIVE_ENV_KEYS = {
+    "SIDAR_KEYS_FILE",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "GEMINI_API_KEY",
+    "LITELLM_API_KEY",
+    "GITHUB_TOKEN",
+    "SLACK_TOKEN",
+    "SLACK_APP_LEVEL_TOKEN",
+    "JIRA_TOKEN",
+}
+
+
+def _installer_test_env(tmp_path: Path | None = None) -> dict[str, str]:
+    """Return a minimal, secret-scrubbed environment for installer subprocesses."""
+    allowed = {
+        "PATH",
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "TERM",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "WSL_DISTRO_NAME",
+    }
+    env = {key: value for key, value in os.environ.items() if key in allowed}
+    for key in _SENSITIVE_ENV_KEYS:
+        env.pop(key, None)
+
+    env.update(
+        {
+            "SIDAR_ENV": "test",
+            "SIDAR_KEYS_FILE": "",
+            "SIDAR_TEST_LOAD_REAL_KEYS": "0",
+            "SIDAR_INSTALL_TEST_MODE": "1",
+        }
+    )
+    if tmp_path is not None:
+        env["TMPDIR"] = str(tmp_path)
+
+    return env
 
 
 def _sha256_for_test(path: Path) -> str:
@@ -31,49 +78,27 @@ def _extract_bash_function(script_text: str, function_name: str) -> str:
             break
     return "\n".join(collected) + "\n"
 
+
 def _normalize_bash_function(function_text: str) -> str:
     return "\n".join(line.lstrip() for line in function_text.splitlines()) + "\n"
 
 
-def test_dark_mode_assets_exist(tmp_path: Path) -> None:
+def test_coverage_dark_mode_is_owned_by_test_pipeline_not_installer() -> None:
     repo_root = Path(os.getcwd())
     source_dark_css = repo_root / "assets" / "dark_mode.css"
     assert source_dark_css.exists()
-
-    script_dir = tmp_path / "sidar"
-    (script_dir / "assets").mkdir(parents=True)
-    (script_dir / "assets" / "dark_mode.css").write_text(
-        source_dark_css.read_text(encoding="utf-8"), encoding="utf-8"
+    repo_phase = (repo_root / "scripts/install_modules/phases/02_repo.sh").read_text(
+        encoding="utf-8"
     )
-
-    repo_phase_script = textwrap.dedent(
-        """
-        set -euo pipefail
-        source scripts/install_modules/phases/02_repo.sh
-
-        step(){ :; }
-        info(){ :; }
-        warn(){ :; }
-        ok(){ :; }
-        install_system_dependencies(){ :; }
-        sync_repo(){ :; }
-
-        export SCRIPT_DIR="$1"
-        sidar_phase_bootstrap_repo_system
-        """
+    coverage_helpers = (repo_root / "scripts/test_gates/coverage_helpers.sh").read_text(
+        encoding="utf-8"
     )
+    pyproject = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
 
-    subprocess.run(
-        ["bash", "-lc", repo_phase_script, "sidar-smoke", str(script_dir)],
-        cwd=repo_root,
-        check=True,
-    )
-
-    coverage_css = script_dir / "htmlcov" / "assets" / "dark_mode.css"
-    artifact_coverage_css = script_dir / "artifacts" / "htmlcov" / "assets" / "dark_mode.css"
-    assert coverage_css.exists()
-    assert artifact_coverage_css.exists()
-    assert "background-color" in coverage_css.read_text(encoding="utf-8")
+    assert "sidar_phase_apply_coverage_dark_mode_assets" not in repo_phase
+    assert "htmlcov" not in repo_phase
+    assert "coverage html -d htmlcov" in coverage_helpers
+    assert 'extra_css = "assets/dark_mode.css"' in pyproject
 
 
 def test_python_version() -> None:
@@ -91,15 +116,275 @@ def test_installer_hash_guard_inline_fallback_matches_module() -> None:
     for function_name in (
         "check_installer_hash",
         "verify_reexec_installer_or_fail",
+        "sidar_resolve_resume_installer_path",
+        "sidar_verify_resume_installer_or_fail",
         "verify_home_reexec_candidate_if_present",
     ):
-        module_function = _normalize_bash_function(
-            _extract_bash_function(module, function_name)
-        )
+        module_function = _normalize_bash_function(_extract_bash_function(module, function_name))
         installer_function = _normalize_bash_function(
             _extract_bash_function(installer, function_name)
         )
         assert installer_function == module_function
+
+
+def test_repo_sync_uses_configured_branch_for_update_and_recovery() -> None:
+    phase = Path("scripts/install_modules/phases/02_repo.sh").read_text(encoding="utf-8")
+
+    assert 'local repo_branch="${REPO_BRANCH:-main}"' in phase
+    assert 'git clone "$REPO_URL" --depth=1 --branch "$repo_branch" "$TARGET_DIR"' in phase
+    assert 'git fetch origin "$repo_branch"' in phase
+    assert 'git rebase "origin/${repo_branch}"' in phase
+    assert "git pull --rebase origin main" not in phase
+    assert "git fetch origin main" not in phase
+    assert "git reset --hard origin/main" not in phase
+
+
+@pytest.mark.parametrize(
+    ("doctor_exit", "write_report", "expected_status", "expected_message"),
+    [
+        (0, True, 0, "OK:Doctor raporu üretildi"),
+        (
+            1,
+            True,
+            1,
+            "WARN:Doctor raporu üretildi ancak bir veya daha fazla kontrol fail durumunda",
+        ),
+        (1, False, 1, "WARN:Doctor çalıştırılamadı ve rapor üretilemedi"),
+        (0, False, 1, "WARN:Doctor tamamlandı ancak rapor üretilemedi"),
+    ],
+)
+def test_doctor_phase_uses_strict_boolean_and_classifies_missing_report(
+    tmp_path: Path,
+    doctor_exit: int,
+    write_report: bool,
+    expected_status: int,
+    expected_message: str,
+) -> None:
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            textwrap.dedent(
+                """\
+                set -u
+                step() { :; }
+                ok() { printf 'OK:%s\n' "$*"; }
+                warn() { printf 'WARN:%s\n' "$*"; }
+                fail() { printf 'FAIL:%s\n' "$*" >&2; return 1; }
+                uv() {
+                    [[ "${SIDAR_CONFIG_QUIET:-}" == "true" ]] || return 90
+                    if [[ "$WRITE_REPORT" == "true" ]]; then
+                        printf '{"status":"test"}\n' > "${@: -1}"
+                    fi
+                    return "$DOCTOR_EXIT"
+                }
+                source scripts/install_modules/phases/11_post_install.sh
+                export SCRIPT_DIR="$1"
+                run_doctor_phase
+                """
+            ),
+            "doctor-phase-smoke",
+            str(tmp_path),
+        ],
+        cwd=Path(os.getcwd()),
+        env={
+            **_installer_test_env(tmp_path),
+            "DOCTOR_EXIT": str(doctor_exit),
+            "WRITE_REPORT": str(write_report).lower(),
+        },
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == expected_status, result.stderr + result.stdout
+    assert expected_message in result.stdout
+    assert "SIDAR_CONFIG_QUIET" not in result.stderr
+
+
+def test_default_install_runs_doctor_before_finish_and_preserves_diagnostics() -> None:
+    """Run Doctor before the success summary without making findings fatal."""
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            textwrap.dedent(
+                """\
+                set -Eeuo pipefail
+                events=()
+                sidar_run_install_phase() { events+=("$1"); }
+                sidar_fail_if_wsl_integration_autofix_applied_current_session_main() { :; }
+                sidar_phase_handle_early_exit() { return 1; }
+                cleanup_bootstrap_script_copy() { :; }
+                run_doctor_phase() { events+=("doctor"); return 1; }
+                source scripts/install_modules/install_dispatcher.sh
+                sidar_dispatch_install_phases
+                printf '%s\n' "${events[@]}"
+                """
+            ),
+            "default-install-doctor-smoke",
+        ],
+        cwd=Path(os.getcwd()),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    events = result.stdout.splitlines()
+    assert events[-3:] == ["06_services", "doctor", "07_finish"]
+
+
+def test_auto_heal_resume_uses_repo_installer_after_bootstrap_cleanup(tmp_path: Path) -> None:
+    home_dir = tmp_path / "home"
+    repo_dir = tmp_path / "Sidar"
+    marker = tmp_path / "resume-marker.txt"
+    home_dir.mkdir()
+    repo_dir.mkdir()
+
+    temporary_installer = home_dir / "install_sidar.sh"
+    temporary_installer.write_text("#!/usr/bin/env bash\nexit 77\n", encoding="utf-8")
+    temporary_installer.chmod(0o755)
+
+    repo_installer = repo_dir / "install_sidar.sh"
+    repo_installer.write_text(
+        textwrap.dedent(
+            f"""\
+            #!/usr/bin/env bash
+            set -euo pipefail
+            printf '%s|%s|%s\n' "$0" "${{SIDAR_INSTALL_RESUME_FROM_PHASE:-}}" \
+              "${{SIDAR_INSTALL_REMEDIATION_ATTEMPT:-}}" > {shlex.quote(str(marker))}
+            """
+        ),
+        encoding="utf-8",
+    )
+    repo_installer.chmod(0o755)
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            textwrap.dedent(
+                """
+                set -euo pipefail
+                info() { printf 'INFO:%s\n' "$*"; }
+                ok() { printf 'OK:%s\n' "$*"; }
+                warn() { printf 'WARN:%s\n' "$*"; }
+                fail() { printf 'FAIL:%s\n' "$*" >&2; exit 1; }
+                compute_sha256() { sha256sum "$1" | awk '{print $1}'; }
+
+                source scripts/install_modules/utils/installer_hash_guard.sh
+                source scripts/install_modules/phases/11_post_install.sh
+                source scripts/install_modules/utils/install_remediation.sh
+
+                export TARGET_DIR="$1"
+                export SCRIPT_DIR="$1"
+                export ORIGINAL_SCRIPT_PATH="$2"
+                export ORIGINAL_SCRIPT_DIR="$(dirname "$2")"
+                SIDAR_INSTALL_ORIGINAL_ARGS=()
+
+                cleanup_bootstrap_script_copy
+                [[ ! -e "$2" ]]
+                [[ "$ORIGINAL_SCRIPT_PATH" == "$1/install_sidar.sh" ]]
+                [[ "$ORIGINAL_SCRIPT_DIR" == "$1" ]]
+
+                sidar_resume_after_remediation 06_services 2
+                """
+            ),
+            "sidar-resume-smoke",
+            str(repo_dir),
+            str(temporary_installer),
+        ],
+        cwd=Path(os.getcwd()),
+        env=_installer_test_env(),
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert marker.read_text(encoding="utf-8") == f"{repo_installer}|06_services|2\n"
+    assert "Geçici kurulum betiği kaldırıldı" in result.stdout
+    assert "Resume kaynağı repo installer'ına geçirildi" in result.stdout
+
+
+def test_install_sidar_embedded_module_pin_drift_is_reported(tmp_path: Path) -> None:
+    repo_root = Path(os.getcwd())
+    target = tmp_path / "install_sidar.sh"
+    install_script = (repo_root / "install_sidar.sh").read_text(encoding="utf-8")
+    target.write_text(
+        re.sub(
+            r'SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="[^"]+"',
+            'SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="unknown"',
+            install_script,
+            count=1,
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/tools/update_install_module_hash_manifest.py",
+            "--target",
+            str(target),
+            "--check",
+        ],
+        cwd=repo_root,
+        env=_installer_test_env(),
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "Pin drift tespit edildi" in result.stderr
+    assert "SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT=unknown" in result.stderr
+    assert "Raw tek dosya kurulumunda" in result.stderr
+
+
+def test_install_sidar_embedded_module_pin_drift_cross_checks_pinned_commit(tmp_path: Path) -> None:
+    repo_root = Path(os.getcwd())
+    stale_commit = "b58fa89b0aa6d0d9066ecdb221e455dc05fb7597"
+    if (
+        subprocess.run(
+            ["git", "cat-file", "-e", f"{stale_commit}:scripts/install_modules/utils/gpu_utils.sh"],
+            cwd=repo_root,
+            env=_installer_test_env(),
+            capture_output=True,
+            text=True,
+        ).returncode
+        != 0
+    ):
+        pytest.skip(f"fixture commit {stale_commit} is unavailable in this checkout")
+
+    target = tmp_path / "install_sidar.sh"
+    install_script = (repo_root / "install_sidar.sh").read_text(encoding="utf-8")
+    target.write_text(
+        re.sub(
+            r'SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="[^"]+"',
+            f'SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="{stale_commit}"',
+            install_script,
+            count=1,
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/tools/update_install_module_hash_manifest.py",
+            "--target",
+            str(target),
+            "--check-pin",
+        ],
+        cwd=repo_root,
+        env=_installer_test_env(),
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "Pin drift tespit edildi" in result.stderr
+    assert f"SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT={stale_commit}" in result.stderr
+    assert "scripts/install_modules/utils/gpu_utils.sh" in result.stderr
+    assert "03947f771212d9b75e6cd10e320ddf4dc16a867d8ba1c1b90d6a837727904776" in result.stderr
 
 
 def test_install_sidar_embedded_manifests_in_sync() -> None:
@@ -111,6 +396,7 @@ def test_install_sidar_embedded_manifests_in_sync() -> None:
         result = subprocess.run(
             [sys.executable, f"scripts/tools/{tool}", *extra, "--check"],
             cwd=repo_root,
+            env=_installer_test_env(),
             capture_output=True,
             text=True,
         )
@@ -134,9 +420,9 @@ def _extract_embedded_module_hashes(install_sidar_path: Path) -> str:
         if start is not None and line.strip() == "SIDAR_MODULE_HASHES_EOF":
             end = idx
             break
-    assert (
-        start is not None and end is not None
-    ), f"{install_sidar_path} içinde EMBEDDED_MODULE_HASHES_MANIFEST heredoc bloğu bulunamadı."
+    assert start is not None and end is not None, (
+        f"{install_sidar_path} içinde EMBEDDED_MODULE_HASHES_MANIFEST heredoc bloğu bulunamadı."
+    )
     return "\n".join(lines[start:end])
 
 
@@ -165,12 +451,26 @@ def _build_synthetic_bootstrap_origin(repo_root: Path, origin: Path) -> str:
         shutil.copy2(src, dst)
 
     git = ["git", "-C", str(origin)]
-    subprocess.run([*git, "init", "-q", "-b", "main"], check=True)
-    subprocess.run([*git, "config", "user.email", "smoke@example.com"], check=True)
-    subprocess.run([*git, "config", "user.name", "smoke"], check=True)
-    subprocess.run([*git, "config", "commit.gpgsign", "false"], check=True)
-    subprocess.run([*git, "add", "-A"], check=True, capture_output=True)
-    subprocess.run([*git, "commit", "-q", "-m", "synthetic bootstrap origin"], check=True)
+    subprocess.run([*git, "init", "-q", "-b", "main"], env=_installer_test_env(origin), check=True)
+    subprocess.run(
+        [*git, "config", "user.email", "smoke@example.com"],
+        env=_installer_test_env(origin),
+        check=True,
+    )
+    subprocess.run(
+        [*git, "config", "user.name", "smoke"], env=_installer_test_env(origin), check=True
+    )
+    subprocess.run(
+        [*git, "config", "commit.gpgsign", "false"], env=_installer_test_env(origin), check=True
+    )
+    subprocess.run(
+        [*git, "add", "-A"], env=_installer_test_env(origin), check=True, capture_output=True
+    )
+    subprocess.run(
+        [*git, "commit", "-q", "-m", "synthetic bootstrap origin"],
+        env=_installer_test_env(origin),
+        check=True,
+    )
     return "main"
 
 
@@ -187,6 +487,7 @@ def _wait_for_http_server(url: str, timeout_seconds: float = 5.0) -> None:
             ["wget", "-q", "--spider", url],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            env=_installer_test_env(),
             check=False,
         )
         if result.returncode == 0:
@@ -213,8 +514,7 @@ def test_install_sidar_direct_module_download_smoke(tmp_path: Path) -> None:
     shutil.copy2(repo_root / "install_sidar.sh", standalone)
     standalone.chmod(0o755)
 
-    env = {
-        **os.environ,
+    env = _installer_test_env(tmp_path) | {
         "HOME": str(host),
         "PWD": str(host),
         "TMPDIR": str(tmp_path),
@@ -279,18 +579,20 @@ def test_install_sidar_wget_raw_direct_module_download_smoke(tmp_path: Path) -> 
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         text=True,
+        env=_installer_test_env(tmp_path),
     )
     try:
         _wait_for_http_server(raw_url)
 
         host = tmp_path / "host"
         host.mkdir()
-        subprocess.run(["wget", "-q", raw_url], cwd=host, check=True)
+        subprocess.run(
+            ["wget", "-q", raw_url], cwd=host, env=_installer_test_env(tmp_path), check=True
+        )
         standalone = host / "install_sidar.sh"
         standalone.chmod(0o755)
 
-        env = {
-            **os.environ,
+        env = _installer_test_env(tmp_path) | {
             "HOME": str(host),
             "PWD": str(host),
             "SIDAR_INSTALL_TEST_MODE": "1",
@@ -342,9 +644,11 @@ def test_install_sidar_wget_raw_direct_module_download_smoke(tmp_path: Path) -> 
 
 
 def test_install_sidar_direct_module_hash_drift_blocks_install(tmp_path: Path) -> None:
-    """Drift case: clone origin carries a tampered module but standalone
-    install_sidar.sh's embedded manifest still pins the original hash. The
-    installer must refuse to continue without ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1.
+    """Drift case: a tampered module hash must block the install.
+
+    Clone origin carries a tampered module but standalone install_sidar.sh's
+    embedded manifest still pins the original hash. The installer must refuse
+    to continue without ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1.
     """
     repo_root = Path(os.getcwd())
     origin = tmp_path / "origin"
@@ -358,8 +662,12 @@ def test_install_sidar_direct_module_hash_drift_blocks_install(tmp_path: Path) -
         tampered.read_text(encoding="utf-8") + "# smoke-test drift\n", encoding="utf-8"
     )
     git = ["git", "-C", str(origin)]
-    subprocess.run([*git, "add", "-A"], check=True, capture_output=True)
-    subprocess.run([*git, "commit", "-q", "-m", "tamper drift"], check=True)
+    subprocess.run(
+        [*git, "add", "-A"], env=_installer_test_env(tmp_path), check=True, capture_output=True
+    )
+    subprocess.run(
+        [*git, "commit", "-q", "-m", "tamper drift"], env=_installer_test_env(tmp_path), check=True
+    )
 
     host = tmp_path / "host"
     host.mkdir()
@@ -367,8 +675,7 @@ def test_install_sidar_direct_module_hash_drift_blocks_install(tmp_path: Path) -
     shutil.copy2(repo_root / "install_sidar.sh", standalone)
     standalone.chmod(0o755)
 
-    env = {
-        **os.environ,
+    env = _installer_test_env(tmp_path) | {
         "HOME": str(host),
         "PWD": str(host),
         "TMPDIR": str(tmp_path),
@@ -439,8 +746,7 @@ def test_install_sidar_home_reexec_hash_drift_blocks_stale_installer(tmp_path: P
     shutil.copy2(repo_root / "install_sidar.sh", standalone)
     standalone.chmod(0o755)
 
-    env = {
-        **os.environ,
+    env = _installer_test_env(tmp_path) | {
         "HOME": str(host),
         "PWD": str(run_dir),
         "TMPDIR": str(tmp_path),
@@ -458,6 +764,7 @@ def test_install_sidar_home_reexec_hash_drift_blocks_stale_installer(tmp_path: P
         timeout=60,
     )
     combined = result.stdout + result.stderr
+    allow_home_reexec = env["SIDAR_INSTALL_ALLOW_HOME_REEXEC_IN_TEST_MODE"]
     debug_context = textwrap.dedent(
         f"""
         --- install_sidar home re-exec hash drift debug ---
@@ -466,7 +773,7 @@ def test_install_sidar_home_reexec_hash_drift_blocks_stale_installer(tmp_path: P
         PWD: {env["PWD"]}
         TMPDIR: {env["TMPDIR"]}
         SIDAR_INSTALL_TEST_MODE: {env["SIDAR_INSTALL_TEST_MODE"]}
-        SIDAR_INSTALL_ALLOW_HOME_REEXEC_IN_TEST_MODE: {env["SIDAR_INSTALL_ALLOW_HOME_REEXEC_IN_TEST_MODE"]}
+        SIDAR_INSTALL_ALLOW_HOME_REEXEC_IN_TEST_MODE: {allow_home_reexec}
         standalone: {standalone}
         standalone_sha256: {_sha256_for_test(standalone)}
         stale_installer: {stale_installer}
@@ -492,8 +799,7 @@ def test_install_sidar_home_reexec_hash_drift_blocks_stale_installer(tmp_path: P
         f"{debug_context}"
     )
     assert "Mevcut" in combined and "re-exec install_sidar.sh SHA256 farklı" in combined, (
-        "Installer hash drift hatası kullanıcıya açık şekilde raporlanmalıydı.\n"
-        f"{debug_context}"
+        f"Installer hash drift hatası kullanıcıya açık şekilde raporlanmalıydı.\n{debug_context}"
     )
     assert "NEXT STEP → hash drift kaynağını temizleyin" in combined
     assert 'rm -f "$HOME/Sidar/install_sidar.sh"' in combined
@@ -502,6 +808,89 @@ def test_install_sidar_home_reexec_hash_drift_blocks_stale_installer(tmp_path: P
         "fail-closed olmadığını gösterir.\n"
         f"{debug_context}"
     )
+
+
+def test_raw_single_file_installer_resolves_unknown_embedded_commit_via_github_api(
+    tmp_path: Path,
+) -> None:
+    """Single-file raw installer fallback should self-pin mutable refs via GitHub API."""
+    repo_root = Path(os.getcwd())
+    host = tmp_path / "host"
+    bin_dir = tmp_path / "bin"
+    host.mkdir()
+    bin_dir.mkdir()
+    standalone = host / "install_sidar.sh"
+    script = (repo_root / "install_sidar.sh").read_text(encoding="utf-8")
+    script = re.sub(
+        r'SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="[^"]+"',
+        'SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="unknown"',
+        script,
+    )
+    standalone.write_text(script, encoding="utf-8")
+    standalone.chmod(0o755)
+
+    resolved_sha = "abcdef0123456789abcdef0123456789abcdef01"
+    fake_curl = bin_dir / "curl"
+    fake_curl.write_text(
+        textwrap.dedent(
+            f"""\
+            #!/usr/bin/env bash
+            set -Eeuo pipefail
+            printf '{{"sha":"{resolved_sha}"}}\n'
+            """
+        ),
+        encoding="utf-8",
+    )
+    fake_curl.chmod(0o755)
+
+    # resolve_github_ref_commit_sha() prefers `git ls-remote` over the GitHub
+    # REST API to avoid burning the shared anonymous API quota. This test
+    # targets the API fallback specifically, so `git` must be made to fail
+    # here (a real git binary would otherwise reach the real GitHub repo over
+    # the network and resolve the ref itself, short-circuiting the fake curl
+    # mock below). The fallback also requires a token-shaped GITHUB_TOKEN
+    # before it will shell out to curl at all.
+    fake_git = bin_dir / "git"
+    fake_git.write_text(
+        textwrap.dedent(
+            """\
+            #!/usr/bin/env bash
+            exit 1
+            """
+        ),
+        encoding="utf-8",
+    )
+    fake_git.chmod(0o755)
+
+    env = _installer_test_env(tmp_path) | {
+        "HOME": str(host),
+        "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+        "GITHUB_TOKEN": "testtoken0123456789",
+    }
+    quoted_standalone = shlex.quote(str(standalone))
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            textwrap.dedent(
+                f"""\
+                set -Eeuo pipefail
+                installer={quoted_standalone}
+                source <(sed '/^use_existing_install_module_tree/,$d' "$installer") >/dev/null
+                resolve_remote_module_base
+                """
+            ),
+        ],
+        cwd=host,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip().endswith(f"/{resolved_sha}/scripts/install_modules")
+    assert "Embedded installer commit pin bulunamadı" in result.stderr
 
 
 def test_install_sidar_bootstrap_reexec_hash_drift_blocks_stale_installer(tmp_path: Path) -> None:
@@ -516,8 +905,14 @@ def test_install_sidar_bootstrap_reexec_hash_drift_blocks_stale_installer(tmp_pa
         encoding="utf-8",
     )
     git = ["git", "-C", str(origin)]
-    subprocess.run([*git, "add", "-A"], check=True, capture_output=True)
-    subprocess.run([*git, "commit", "-q", "-m", "tamper installer drift"], check=True)
+    subprocess.run(
+        [*git, "add", "-A"], env=_installer_test_env(tmp_path), check=True, capture_output=True
+    )
+    subprocess.run(
+        [*git, "commit", "-q", "-m", "tamper installer drift"],
+        env=_installer_test_env(tmp_path),
+        check=True,
+    )
 
     host = tmp_path / "host"
     host.mkdir()
@@ -525,8 +920,7 @@ def test_install_sidar_bootstrap_reexec_hash_drift_blocks_stale_installer(tmp_pa
     shutil.copy2(repo_root / "install_sidar.sh", standalone)
     standalone.chmod(0o755)
 
-    env = {
-        **os.environ,
+    env = _installer_test_env(tmp_path) | {
         "HOME": str(host),
         "PWD": str(host),
         "TMPDIR": str(tmp_path),
@@ -551,9 +945,9 @@ def test_install_sidar_bootstrap_reexec_hash_drift_blocks_stale_installer(tmp_pa
     )
     combined = result.stdout + result.stderr
 
-    assert (
-        result.returncode != 0
-    ), "Installer drift bulunan bootstrap re-exec fail-closed olmalıydı."
+    assert result.returncode != 0, (
+        "Installer drift bulunan bootstrap re-exec fail-closed olmalıydı."
+    )
     assert "Bootstrap clone re-exec install_sidar.sh SHA256 farklı" in combined
     assert "NEXT STEP → hash drift kaynağını temizleyin" in combined
     assert "SIDAR_INSTALL_ALLOW_STALE_REEXEC=1" in combined
@@ -581,8 +975,14 @@ def test_install_sidar_bootstrap_core_hash_drift_reports_core_layer(tmp_path: Pa
         encoding="utf-8",
     )
     git = ["git", "-C", str(origin)]
-    subprocess.run([*git, "add", "-A"], check=True, capture_output=True)
-    subprocess.run([*git, "commit", "-q", "-m", "tamper core drift"], check=True)
+    subprocess.run(
+        [*git, "add", "-A"], env=_installer_test_env(tmp_path), check=True, capture_output=True
+    )
+    subprocess.run(
+        [*git, "commit", "-q", "-m", "tamper core drift"],
+        env=_installer_test_env(tmp_path),
+        check=True,
+    )
 
     host = tmp_path / "host"
     host.mkdir()
@@ -590,8 +990,7 @@ def test_install_sidar_bootstrap_core_hash_drift_reports_core_layer(tmp_path: Pa
     shutil.copy2(repo_root / "install_sidar.sh", standalone)
     standalone.chmod(0o755)
 
-    env = {
-        **os.environ,
+    env = _installer_test_env(tmp_path) | {
         "HOME": str(host),
         "PWD": str(host),
         "SIDAR_INSTALL_TEST_MODE": "1",
@@ -652,8 +1051,7 @@ def test_install_sidar_bootstrap_core_hash_drift_reports_core_layer(tmp_path: Pa
             f"--- combined ---\n{combined}"
         )
     assert "Kurulum modül hash doğrulaması başarısız" not in combined, (
-        "Çekirdek drift, modül manifest hatası gibi raporlanmamalı.\n"
-        f"--- combined ---\n{combined}"
+        f"Çekirdek drift, modül manifest hatası gibi raporlanmamalı.\n--- combined ---\n{combined}"
     )
 
 
@@ -668,7 +1066,7 @@ def _decode_timeout_stream(value: bytes | str | None) -> str:
 def _run_bash_smoke(
     script: str, tmp_path: Path, timeout_seconds: int | None = None
 ) -> subprocess.CompletedProcess[str]:
-    smoke_env = {**os.environ, "SIDAR_INSTALL_TEST_MODE": "1", "TMPDIR": str(tmp_path)}
+    smoke_env = _installer_test_env(tmp_path)
     smoke_env.pop("INSTALL_SIDAR_VERSION", None)
     guarded_script = f"""
     unset INSTALL_SIDAR_VERSION
@@ -703,6 +1101,7 @@ def _run_bash_smoke(
         try:
             diag = subprocess.run(
                 ["bash", "-c", "echo BASH_OK=$$; type python3 || true; command -v sed"],
+                env=_installer_test_env(tmp_path),
                 capture_output=True,
                 text=True,
                 timeout=10,
@@ -714,7 +1113,10 @@ def _run_bash_smoke(
                 f"--- timeout diagnostic stderr ---\n{diag.stderr[-4000:]}\n"
             )
         except subprocess.TimeoutExpired as diag_exc:
-            diag_text = f"--- timeout diagnostic ---\nbash/python/sed diagnostic timed out after {diag_exc.timeout}s\n"
+            diag_text = (
+                "--- timeout diagnostic ---\n"
+                f"bash/python/sed diagnostic timed out after {diag_exc.timeout}s\n"
+            )
         raise AssertionError(
             f"_run_bash_smoke {timeout_seconds}s içinde tamamlanamadı.\n"
             f"--- guarded_script ---\n{guarded_script}\n"
@@ -729,7 +1131,8 @@ def _diagnose_silent_bash_smoke_failure(guarded_script: str, tmp_path: Path) -> 
         "--- silent _run_bash_smoke failure diagnostic ---\n"
         "The bash smoke subprocess exited non-zero with empty stdout/stderr.\n"
         f"--- guarded_script ---\n{guarded_script}\n"
-        f"--- sourced install/version diagnostics ---\n{_diagnose_sourced_install_version(tmp_path)}"
+        "--- sourced install/version diagnostics ---\n"
+        f"{_diagnose_sourced_install_version(tmp_path)}"
     )
 
 
@@ -744,9 +1147,16 @@ def _fake_python3_fails_snippet() -> str:
     """
 
 
+_VERSION_PROBE_INNER_CMD = (
+    "set -euo pipefail; export SIDAR_INSTALL_TEST_MODE=1 SIDAR_INSTALL_VERSION_PROBE_ONLY=1; "
+    'source ./install_sidar.sh >/dev/null; printf "INSTALL_SIDAR_VERSION=%s\\n" '
+    '"${INSTALL_SIDAR_VERSION:-EMPTY}"'
+)
+
+
 def _diagnose_sourced_install_version(tmp_path: Path) -> str:
     diagnose_timeout = int(os.environ.get("SIDAR_INSTALL_SMOKE_BASH_TIMEOUT", "60"))
-    diagnosis_env = {**os.environ, "SIDAR_INSTALL_TEST_MODE": "1", "TMPDIR": str(tmp_path)}
+    diagnosis_env = _installer_test_env(tmp_path)
     diagnosis_env.pop("INSTALL_SIDAR_VERSION", None)
     diagnostic_script = f"""
     unset INSTALL_SIDAR_VERSION
@@ -765,12 +1175,12 @@ def _diagnose_sourced_install_version(tmp_path: Path) -> str:
     echo '--- timed probe ---'
     {_fake_python3_fails_snippet()}
     TIMEFORMAT='probe real=%3R user=%3U sys=%3S'
-    time bash -c 'set -euo pipefail; export SIDAR_INSTALL_TEST_MODE=1 SIDAR_INSTALL_VERSION_PROBE_ONLY=1; source ./install_sidar.sh >/dev/null; printf "INSTALL_SIDAR_VERSION=%s\\n" "${{INSTALL_SIDAR_VERSION:-EMPTY}}"'
+    time bash -c '{_VERSION_PROBE_INNER_CMD}'
     printf 'timed_probe_status=%s\n' "$?"
     echo '--- xtrace probe ---'
     trace_file="$TMPDIR/install-sidar-source-xtrace.log"
     PS4='+${{BASH_SOURCE}}:${{LINENO}}:${{FUNCNAME[0]:-main}}: '
-    BASH_XTRACEFD=2 bash -x -c 'set -euo pipefail; export SIDAR_INSTALL_TEST_MODE=1 SIDAR_INSTALL_VERSION_PROBE_ONLY=1; source ./install_sidar.sh >/dev/null; printf "INSTALL_SIDAR_VERSION=%s\\n" "${{INSTALL_SIDAR_VERSION:-EMPTY}}"' 2>"$trace_file"
+    BASH_XTRACEFD=2 bash -x -c '{_VERSION_PROBE_INNER_CMD}' 2>"$trace_file"
     printf 'xtrace_probe_status=%s\n' "$?"
     tail -n 80 "$trace_file" 2>/dev/null || true
     """
@@ -820,9 +1230,9 @@ def test_install_sidar_probe_failure_diagnosis_includes_command_context(tmp_path
     assert "--- xtrace probe ---" in diagnosis
     assert "probe real=" in diagnosis or "--- diagnosis timeout ---" in diagnosis, diagnosis
     assert "timed_probe_status=" in diagnosis or "--- diagnosis timeout ---" in diagnosis, diagnosis
-    assert (
-        "xtrace_probe_status=" in diagnosis or "--- diagnosis timeout ---" in diagnosis
-    ), diagnosis
+    assert "xtrace_probe_status=" in diagnosis or "--- diagnosis timeout ---" in diagnosis, (
+        diagnosis
+    )
 
 
 def test_install_sidar_smoke_source_uses_repo_relative_installer_when_path_is_shadowed(
@@ -880,6 +1290,8 @@ def test_install_sidar_test_mode_and_uv_only_contract() -> None:
     repo_root = Path(os.getcwd())
     installer = repo_root / "install_sidar.sh"
     installer_text = installer.read_text(encoding="utf-8")
+    dispatcher_module = repo_root / "scripts" / "install_modules" / "install_dispatcher.sh"
+    dispatcher_text = dispatcher_module.read_text(encoding="utf-8")
     alembic_phase = repo_root / "scripts" / "install_modules" / "phases" / "12_alembic.sh"
     alembic_prelude = alembic_phase.read_text(encoding="utf-8").split(
         "resolve_alembic_python", maxsplit=1
@@ -958,7 +1370,7 @@ def test_install_sidar_test_mode_and_uv_only_contract() -> None:
         'sidar_run_install_phase "02_repo" sidar_phase_bootstrap_repo_system\n'
         "    cleanup_bootstrap_script_copy\n"
         '    sidar_run_install_phase "03_runtime" sidar_phase_runtime_prerequisites'
-    ) in installer_text
+    ) in dispatcher_text
     assert "Accepted values:" in installer_text
     assert "  Commands: doctor | prepare-system" in installer_text
     assert "Kabul edilen değerler:" in installer_text
@@ -1004,7 +1416,8 @@ def test_install_sidar_test_mode_source_resolves_pyproject_version_without_pytho
         {_fake_python3_fails_snippet()}
         source ./install_sidar.sh >/dev/null
         if [[ "${{INSTALL_SIDAR_VERSION:-}}" != {shlex.quote(pyproject_version)} ]]; then
-          echo "INSTALL_SIDAR_VERSION=${{INSTALL_SIDAR_VERSION:-<boş>}}; expected={pyproject_version}" >&2
+          echo "INSTALL_SIDAR_VERSION=${{INSTALL_SIDAR_VERSION:-<boş>}}; \
+expected={pyproject_version}" >&2
           exit 1
         fi
         """,
@@ -1031,7 +1444,8 @@ def test_install_sidar_source_exports_pyproject_version_without_python(tmp_path:
         {_fake_python3_fails_snippet()}
         source ./install_sidar.sh >/dev/null
         if [[ "${{INSTALL_SIDAR_VERSION:-}}" != {shlex.quote(pyproject_version)} ]]; then
-          echo "INSTALL_SIDAR_VERSION=${{INSTALL_SIDAR_VERSION:-<boş>}}; expected={pyproject_version}" >&2
+          echo "INSTALL_SIDAR_VERSION=${{INSTALL_SIDAR_VERSION:-<boş>}}; \
+expected={pyproject_version}" >&2
           exit 1
         fi
         """,
@@ -1073,26 +1487,6 @@ def test_install_sidar_version_probe_fails_on_env_pyproject_mismatch(tmp_path: P
     assert f"pyproject.toml={pyproject_version}" in mismatch_result.stderr
 
 
-def test_install_sidar_is_blank_helper_handles_whitespace(tmp_path: Path) -> None:
-    result = _run_bash_smoke(
-        """
-        set -euo pipefail
-        source ./install_sidar.sh >/dev/null
-        is_blank ""
-        is_blank "   "
-        is_blank $'\\t\\n'
-        ! is_blank "5.2.0"
-        """,
-        tmp_path,
-    )
-    assert result.returncode == 0, (
-        "is_blank helper boş/whitespace sürüm kontrollerini beklenen şekilde ele almadı.\n"
-        f"--- args ---\n{result.args}\n"
-        f"--- stdout ---\n{result.stdout!r}\n"
-        f"--- stderr ---\n{result.stderr!r}"
-    )
-
-
 def test_install_sidar_fail_reports_clean_auto_heal_command(tmp_path: Path) -> None:
     result = _run_bash_smoke(
         """
@@ -1125,10 +1519,12 @@ def test_install_remediation_explains_legacy_conda_non_retryable_signature() -> 
             warn() { printf 'WARN:%s\\n' "$*"; }
             sidar_write_remediation_report() { printf 'REPORT:%s|%s|%s\\n' "$1" "$2" "$3"; }
             export SIDAR_CURRENT_INSTALL_PHASE=06_services
-            sidar_handle_install_failure 1 42 'conda env create' 'EnvironmentFileNotFound: environment.yml'
+            sidar_handle_install_failure 1 42 'conda env create' \
+              'EnvironmentFileNotFound: environment.yml'
             """,
         ],
         cwd=Path(os.getcwd()),
+        env=_installer_test_env(),
         capture_output=True,
         text=True,
     )
@@ -1141,6 +1537,59 @@ def test_install_remediation_explains_legacy_conda_non_retryable_signature() -> 
     assert "REPORT:06_services|learned-non-retryable-failure|" in result.stdout
 
 
+def test_install_remediation_fail_fast_for_test_gate_failures() -> None:
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """
+            set -euo pipefail
+            source scripts/install_modules/utils/install_remediation.sh
+            warn() { printf 'WARN:%s\n' "$*"; }
+            sidar_write_remediation_report() { printf 'REPORT:%s|%s|%s\n' "$1" "$2" "$3"; }
+            sidar_resume_after_remediation() { printf 'UNEXPECTED_RESUME\n'; exit 99; }
+            export SIDAR_CURRENT_INSTALL_PHASE=06_services
+            export SCRIPT_DIR=/repo/Sidar
+            sidar_handle_install_failure \
+              1 \
+              42 \
+              fail \
+              'Smoke testlerde hata var. FAILED '\
+'tests/smoke/test_install_python_env_lock.py::test_profile_matrix - AssertionError' || true
+            """,
+        ],
+        cwd=Path(os.getcwd()),
+        env=_installer_test_env(),
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "UNEXPECTED_RESUME" not in result.stdout
+    assert "deterministik test gate hatası" in result.stdout
+    assert (
+        "Başarısız test: tests/smoke/test_install_python_env_lock.py::test_profile_matrix"
+        in result.stdout
+    )
+    assert (
+        "Tekrar komutu: uv run pytest "
+        "tests/smoke/test_install_python_env_lock.py::test_profile_matrix -v --no-cov"
+        in result.stdout
+    )
+    assert "REPORT:06_services|test-gate-failure|fail-fast;no-retry;no-resume;" in result.stdout
+
+
+def test_install_sidar_fail_records_last_fail_message_for_err_trap() -> None:
+    installer = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    assert 'SIDAR_LAST_FAIL_MESSAGE="$fail_reason"' in installer
+    assert 'local remediation_reason="${SIDAR_LAST_FAIL_MESSAGE:-ERR trap}"' in installer
+    assert (
+        'sidar_handle_install_failure "$exit_code" "$failed_line" "$failed_cmd" '
+        '"$remediation_reason"' in installer
+    )
+
+
 def test_install_remediation_explains_installer_hash_drift_next_step() -> None:
     result = subprocess.run(
         [
@@ -1151,17 +1600,23 @@ def test_install_remediation_explains_installer_hash_drift_next_step() -> None:
             source scripts/install_modules/utils/install_remediation.sh
             warn() { printf 'WARN:%s\\n' "$*"; }
             sidar_write_remediation_report() { printf 'REPORT:%s|%s|%s\\n' "$1" "$2" "$3"; }
-            sidar_phase_remediation_strategy 02_repo fail 'Mevcut /home/user/Sidar re-exec install_sidar.sh SHA256 farklı' || true
-            sidar_emit_remediation_guidance 02_repo fail 'Mevcut /home/user/Sidar re-exec install_sidar.sh SHA256 farklı'
+            sidar_phase_remediation_strategy 02_repo fail \
+              'Mevcut /home/user/Sidar re-exec install_sidar.sh SHA256 farklı' || true
+            sidar_emit_remediation_guidance 02_repo fail \
+              'Mevcut /home/user/Sidar re-exec install_sidar.sh SHA256 farklı'
             """,
         ],
         cwd=Path(os.getcwd()),
+        env=_installer_test_env(),
         capture_output=True,
         text=True,
     )
 
     assert result.returncode == 0
-    assert "REPORT:02_repo|installer-hash-drift|no-retry;remove-stale-home-installer-or-refresh-clone" in result.stdout
+    assert (
+        "REPORT:02_repo|installer-hash-drift|no-retry;remove-stale-home-installer-or-refresh-clone"
+        in result.stdout
+    )
     assert "installer hash drift hatası" in result.stdout
     assert 'rm -f "$HOME/Sidar/install_sidar.sh"' in result.stdout
     assert "git pull --ff-only" in result.stdout
@@ -1194,6 +1649,10 @@ def test_pre_service_smoke_gate_uses_pyproject_version_without_source_preflight(
     assert "Add-MpPreference -ExclusionPath" in troubleshooting
     assert "pyproject.toml" in version_contract_block
     assert 'SIDAR_INSTALL_SMOKE_BASH_TIMEOUT="${SIDAR_INSTALL_SMOKE_BASH_TIMEOUT:-180}"' in phase
+    assert "SIDAR_ENV=test" in phase
+    assert 'SIDAR_KEYS_FILE=""' in phase
+    assert "SIDAR_TEST_LOAD_REAL_KEYS=0" in phase
+    assert '--confcutdir="$SCRIPT_DIR/tests/smoke"' in phase
     assert "SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=240" in phase
     assert "WSL2 ortamında smoke bash helper timeout değeri 180 saniyeye yükseltildi" in installer
     assert "export SIDAR_INSTALL_SMOKE_BASH_TIMEOUT=180" in installer
@@ -1203,6 +1662,12 @@ def test_pre_service_smoke_gate_uses_pyproject_version_without_source_preflight(
     assert "güncel akış Conda değil `uv` kullanır" in troubleshooting
     assert "60 saniyelik varsayılan timeout" in troubleshooting
     assert "--skip-smoke-test veya RUN_SMOKE_TESTS_MODE=never" in phase
+    assert "SIDAR_LAST_FAILED_TEST" in phase
+    assert "Smoke subprocess environment boyutu işletim sistemi sınırını aştı." in phase
+    assert "SIDAR_KEYS_FILE ve dotenv zincirindeki büyük değerleri kontrol edin." in phase
+    assert "Argument list too long" in troubleshooting
+    assert "TOTAL_ENV_BYTES" in troubleshooting
+    assert "--confcutdir=tests/smoke" in troubleshooting
     assert "Smoke gate probe timeout belirtisi" in phase
     assert "test_install_sidar_bootstrap_core_hash_drift_reports_core_layer" in phase
     assert "core_manifest_status=2 durumunu maskelemediğini kontrol edin" in phase
@@ -1224,21 +1689,41 @@ def test_pre_service_smoke_gate_uses_pyproject_version_without_source_preflight(
     assert "sidar_install_auto_heal_enabled || return 1" in remediation_utils
 
 
-def test_docker_compose_start_checks_daemon_access_before_up() -> None:
-    phase = Path("scripts/install_modules/phases/06_services.sh").read_text(encoding="utf-8")
-    start_idx = phase.index("start_docker_services_or_fail()")
-    start_body = phase[start_idx : phase.index("wait_for_compose_services_health()", start_idx)]
+def test_ci_verifies_installer_smoke_isolation_from_user_secrets() -> None:
+    ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 
-    assert "ensure_docker_compose_access_or_fail()" in phase
-    assert "docker info" in phase
-    assert "sudo -n docker info" in phase
-    assert "ensure_docker_compose_access_or_fail \"${compose_cmd[@]}\"" in start_body
-    assert "permission denied" in phase
-    assert "docker grubuna ekleyin" in phase
-    assert start_body.index("ensure_docker_compose_access_or_fail") < start_body.index(
-        "maybe_reset_postgres_volume_after_password_hardening"
+    assert "Verify installer smoke isolation from user secrets" in ci
+    assert "OPENAI_API_KEY=%0200000d" in ci
+    assert "SIDAR_TEST_LOAD_REAL_KEYS=0" in ci
+    assert "--confcutdir=tests/smoke" in ci
+    assert "tests/smoke/test_install_verification.py" in ci
+
+
+def test_install_remediation_prefers_last_failed_test_from_smoke_log() -> None:
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """
+            set -euo pipefail
+            source scripts/install_modules/utils/install_remediation.sh
+            export SIDAR_LAST_FAILED_TEST=tests/smoke/test_install_verification.py::test_dark\
+_mode_assets_exist
+            sidar_test_gate_failure_guidance fail 'Servis öncesi installer smoke gate başarısız'
+            """,
+        ],
+        cwd=Path(os.getcwd()),
+        env=_installer_test_env(),
+        capture_output=True,
+        text=True,
     )
-    assert start_body.index("ensure_docker_compose_access_or_fail") < start_body.index(" up -d ")
+
+    assert result.returncode == 0
+    assert (
+        "Başarısız test: tests/smoke/test_install_verification.py::test_dark_mode_assets_exist"
+        in result.stdout
+    )
+    assert "bilinmiyor" not in result.stdout
 
 
 def test_pre_service_smoke_gate_does_not_source_installer_before_pytest(tmp_path: Path) -> None:
@@ -1291,7 +1776,7 @@ def test_pre_service_smoke_gate_does_not_source_installer_before_pytest(tmp_path
             str(script_dir),
         ],
         cwd=Path(os.getcwd()),
-        env={**os.environ, "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}"},
+        env=_installer_test_env(tmp_path) | {"PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}"},
         capture_output=True,
         text=True,
     )
@@ -1350,7 +1835,7 @@ def test_pre_service_smoke_gate_ignores_silent_installer_source_abort(tmp_path: 
             str(script_dir),
         ],
         cwd=Path(os.getcwd()),
-        env={**os.environ, "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}"},
+        env=_installer_test_env(tmp_path) | {"PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}"},
         capture_output=True,
         text=True,
     )
@@ -1407,7 +1892,8 @@ def test_install_alembic_head_check_after_migration(
         f"""
         set -euo pipefail
         source ./install_sidar.sh > "$TMPDIR/source-install.out" 2>&1
-        if grep -Eq "Ön Koşullar Kontrol Ediliyor|Kurulum yöneticisi|Sidar AI.*Kurulum" "$TMPDIR/source-install.out"; then
+        if grep -Eq "Ön Koşullar Kontrol Ediliyor|Kurulum yöneticisi|Sidar AI.*Kurulum" \
+          "$TMPDIR/source-install.out"; then
           echo "install_sidar.sh source işlemi main() kurulum akışını tetikledi" >&2
           cat "$TMPDIR/source-install.out" >&2
           exit 1
@@ -1459,115 +1945,54 @@ def test_install_alembic_head_check_requires_database_url(tmp_path: Path) -> Non
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_env_keys_synced_to_runtime_profiles_but_not_test_by_default(tmp_path: Path) -> None:
+def test_install_alembic_head_check_derives_url_from_postgres_parts(tmp_path: Path) -> None:
     script_dir = tmp_path / "sidar"
-    script_dir.mkdir()
-    source_check = _run_bash_smoke(
-        "set -euo pipefail; source ./install_sidar.sh; type sidar_user_api_key_names >/dev/null",
-        tmp_path,
+    venv_bin = script_dir / ".venv" / "bin"
+    venv_bin.mkdir(parents=True)
+    (script_dir / ".env").write_text(
+        "\n".join(
+            [
+                "POSTGRES_USER=sidar",
+                "POSTGRES_PASSWORD=secret",
+                "POSTGRES_HOST=localhost",
+                "POSTGRES_PORT=5432",
+                "POSTGRES_DB=sidar",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
     )
-    if source_check.returncode != 0:
-        pytest.skip(
-            "install_sidar.sh source edilemedi; API key senkronizasyon adımı anlamlı şekilde çalıştırılamaz.\n"
-            f"{source_check.stdout}{source_check.stderr}"
-        )
-
-    key_script = "source ./install_sidar.sh; sidar_user_api_key_names"
-    keys_result = _run_bash_smoke(key_script, tmp_path)
-    assert keys_result.returncode == 0, keys_result.stdout + keys_result.stderr
-    keys = [line.strip() for line in keys_result.stdout.splitlines() if line.strip()]
-    assert len(keys) == 18
-
-    env_lines = [f"{key}=value_{idx}" for idx, key in enumerate(keys, start=1)]
-    (script_dir / ".env").write_text("\n".join(env_lines) + "\n", encoding="utf-8")
-    for name in (".env.advanced", ".env.development", ".env.test"):
-        (script_dir / name).write_text(
-            "\n".join(f"{key}=" for key in keys) + "\n", encoding="utf-8"
-        )
+    (script_dir / "alembic.ini").write_text("[alembic]\n", encoding="utf-8")
+    fake_python = venv_bin / "python"
+    fake_python.write_text(
+        textwrap.dedent(
+            """
+            #!/usr/bin/env bash
+            set -euo pipefail
+            printf '%s|%s\n' "${DATABASE_URL:-}" "$*" >> "$SCRIPT_DIR/dburl.log"
+            case "$*" in
+              "-m alembic current --check-heads") exit 2 ;;
+              "-m alembic current") printf '%s\n' "  0006_access_control_schema (head)" ;;
+              "-m alembic heads") printf '%s\n' "  0006_access_control_schema (head)" ;;
+              *) exit 2 ;;
+            esac
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    fake_python.chmod(0o755)
 
     result = _run_bash_smoke(
         f"""
         set -euo pipefail
         source ./install_sidar.sh
         SCRIPT_DIR={shlex.quote(str(script_dir))}
-        ENV_FILE="$SCRIPT_DIR/.env"
-        NO_INTERACTION=true
-        unset SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV
-        export SCRIPT_DIR ENV_FILE NO_INTERACTION
-        collect_api_keys_interactive "$ENV_FILE"
-        for profile in .env.advanced .env.development; do
-          for key in $(sidar_user_api_key_names); do
-            expected=$(read_env_value_from_file "$key" "$ENV_FILE")
-            actual=$(read_env_value_from_file "$key" "$SCRIPT_DIR/$profile")
-            if [[ "$actual" != "$expected" ]]; then
-              echo "$profile:$key expected=$expected actual=$actual" >&2
-              exit 1
-            fi
-          done
-        done
-        for key in $(sidar_user_api_key_names); do
-          expected=$(read_env_value_from_file "$key" "$ENV_FILE")
-          actual=$(read_env_value_from_file "$key" "$SCRIPT_DIR/.env.test")
-          if [[ -n "$actual" && "$actual" == "$expected" ]]; then
-            echo ".env.test:$key unexpectedly received real key value: $actual" >&2
-            exit 1
-          fi
-        done
-        report_env_api_key_status "$ENV_FILE"
-        test "$ENV_API_KEYS_TOTAL" -eq 18
-        test "$ENV_API_KEYS_FILLED" -eq 18
-        """,
-        tmp_path,
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
-
-
-def test_env_keys_synced_to_test_profile_with_explicit_opt_in(tmp_path: Path) -> None:
-    script_dir = tmp_path / "sidar"
-    script_dir.mkdir()
-    source_check = _run_bash_smoke(
-        "set -euo pipefail; source ./install_sidar.sh; type sidar_user_api_key_names >/dev/null",
-        tmp_path,
-    )
-    if source_check.returncode != 0:
-        pytest.skip(
-            "install_sidar.sh source edilemedi; API key senkronizasyon adımı anlamlı şekilde çalıştırılamaz.\n"
-            f"{source_check.stdout}{source_check.stderr}"
-        )
-
-    key_script = "source ./install_sidar.sh; sidar_user_api_key_names"
-    keys_result = _run_bash_smoke(key_script, tmp_path)
-    assert keys_result.returncode == 0, keys_result.stdout + keys_result.stderr
-    keys = [line.strip() for line in keys_result.stdout.splitlines() if line.strip()]
-    assert len(keys) == 18
-
-    env_lines = [f"{key}=value_{idx}" for idx, key in enumerate(keys, start=1)]
-    (script_dir / ".env").write_text("\n".join(env_lines) + "\n", encoding="utf-8")
-    for name in (".env.advanced", ".env.development", ".env.test"):
-        (script_dir / name).write_text(
-            "\n".join(f"{key}=" for key in keys) + "\n", encoding="utf-8"
-        )
-
-    result = _run_bash_smoke(
-        f"""
-        set -euo pipefail
-        source ./install_sidar.sh
-        SCRIPT_DIR={shlex.quote(str(script_dir))}
-        ENV_FILE="$SCRIPT_DIR/.env"
-        NO_INTERACTION=true
-        SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV=1
-        export SCRIPT_DIR ENV_FILE NO_INTERACTION SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV
-        collect_api_keys_interactive "$ENV_FILE"
-        for profile in .env.advanced .env.development .env.test; do
-          for key in $(sidar_user_api_key_names); do
-            expected=$(read_env_value_from_file "$key" "$ENV_FILE")
-            actual=$(read_env_value_from_file "$key" "$SCRIPT_DIR/$profile")
-            if [[ "$actual" != "$expected" ]]; then
-              echo "$profile:$key expected=$expected actual=$actual" >&2
-              exit 1
-            fi
-          done
-        done
+        export SCRIPT_DIR
+        unset DATABASE_URL
+        is_alembic_at_head
+        grep -q '^postgresql+asyncpg://sidar:secret@localhost:5432/sidar|-m alembic current$' \
+          "$SCRIPT_DIR/dburl.log"
         """,
         tmp_path,
     )
@@ -1587,10 +2012,12 @@ def test_playwright_ubuntu26_override_used(tmp_path: Path) -> None:
         set -euo pipefail
         source scripts/install_modules/utils/playwright_ubuntu_override.sh
         is_playwright_ubuntu_override_recommended {shlex.quote(str(os_release))}
-        supported=$(playwright_latest_supported_ubuntu_version {shlex.quote(str(os_release))} {shlex.quote(str(fake_python))})
+        supported=$(playwright_latest_supported_ubuntu_version {shlex.quote(str(os_release))} \
+          {shlex.quote(str(fake_python))})
         test "$supported" = "26.04"
         test "$(playwright_ubuntu_override_platform "$supported")" = "ubuntu26.04-x64"
-        prepare_playwright_ubuntu_override_file {shlex.quote(str(os_release))} {shlex.quote(str(override_file))} "$supported"
+        prepare_playwright_ubuntu_override_file {shlex.quote(str(os_release))} \
+          {shlex.quote(str(override_file))} "$supported"
         grep -q 'VERSION_ID="26.04"' {shlex.quote(str(override_file))}
         """,
         tmp_path,
@@ -1598,46 +2025,12 @@ def test_playwright_ubuntu26_override_used(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_compose_health_wait_timeout_honors_env(tmp_path: Path) -> None:
-    fake_bin = tmp_path / "bin"
-    fake_bin.mkdir()
-    compose = fake_bin / "compose"
-    compose.write_text(
-        "#!/usr/bin/env bash\nif [[ $1 == ps && $2 == -q ]]; then echo fake-container; exit 0; fi\nexit 2\n",
-        encoding="utf-8",
-    )
-    docker = fake_bin / "docker"
-    docker.write_text(
-        "#!/usr/bin/env bash\nif [[ $1 == inspect ]]; then echo starting; exit 0; fi\nexit 0\n",
-        encoding="utf-8",
-    )
-    compose.chmod(0o755)
-    docker.chmod(0o755)
-
-    result = _run_bash_smoke(
-        f"""
-        set -euo pipefail
-        export PATH={shlex.quote(str(fake_bin))}:$PATH
-        export COMPOSE_HEALTH_WAIT_TIMEOUT_SECONDS=1
-        export COMPOSE_HEALTH_WAIT_POLL_SECONDS=1
-        source ./install_sidar.sh
-        if wait_for_compose_services_health compose -- postgres; then
-          echo "timeout was expected" >&2
-          exit 1
-        fi
-        """,
-        tmp_path,
-    )
-    combined = result.stdout + result.stderr
-    assert result.returncode == 0, combined
-    assert "timeout=1s" in combined
-    assert "Servis health timeout: postgres" in combined
-
-
 def test_bundled_install_sidar_manifest_matches() -> None:
     repo_root = Path(os.getcwd())
     bundle_script = repo_root / "scripts" / "tools" / "bundle_install_sidar.sh"
-    subprocess.run(["bash", str(bundle_script)], cwd=repo_root, check=True)
+    subprocess.run(
+        ["bash", str(bundle_script)], cwd=repo_root, env=_installer_test_env(), check=True
+    )
 
     bundled_installer = repo_root / "dist" / "install_sidar.sh"
     module_hashes = repo_root / "dist" / "MODULE_HASHES.txt"
@@ -1655,3 +2048,70 @@ def test_bundled_install_sidar_manifest_matches() -> None:
         "uyumsuz. Bundle release'i durdurun ve scripts/sync_install_module_hashes.sh "
         "çalıştırdıktan sonra yeniden bundle alın."
     )
+
+
+def test_repo_sync_repoints_install_modules_to_cloned_repo(tmp_path: Path) -> None:
+    target_dir = tmp_path / "Sidar"
+    fallback_dir = tmp_path / "fallback_modules"
+    fallback_dir.mkdir()
+
+    script = textwrap.dedent(
+        f"""\
+        set -Eeuo pipefail
+        SCRIPT_DIR={shlex.quote(str(tmp_path / "raw-installer"))}
+        TARGET_DIR={shlex.quote(str(target_dir))}
+        REPO_URL=https://example.invalid/sidar.git
+        REPO_BRANCH=main
+        OFFLINE_MODE=false
+        NO_INTERACTION=true
+        INSTALL_MODULE_DIR={shlex.quote(str(fallback_dir))}
+        INSTALL_MODULES_DIR="$INSTALL_MODULE_DIR"
+        INSTALL_HELPERS_MODULE="$INSTALL_MODULE_DIR/install_helpers.sh"
+        info() {{ :; }}
+        warn() {{ :; }}
+        ok() {{ :; }}
+        step() {{ :; }}
+        fail() {{ printf 'FAIL:%s\\n' "$*" >&2; exit 1; }}
+        refresh_install_sidar_version_from_repo() {{ INSTALL_SIDAR_VERSION=9.9.9; }}
+        banner() {{ :; }}
+        sidar_set_install_module_dir() {{
+            INSTALL_MODULE_DIR="$1"
+            INSTALL_MODULES_DIR="$INSTALL_MODULE_DIR"
+            INSTALL_HELPERS_MODULE="$INSTALL_MODULE_DIR/install_helpers.sh"
+        }}
+        git() {{
+            if [[ "$1" == "clone" ]]; then
+                local clone_target="${{@: -1}}"
+                mkdir -p "$clone_target/.git" "$clone_target/scripts/install_modules"
+                printf '# cloned helper\\n' \
+                  > "$clone_target/scripts/install_modules/install_helpers.sh"
+                return 0
+            fi
+            command git "$@"
+        }}
+        command() {{
+            if [[ "$1" == "-v" && "$2" == "git" ]]; then
+                printf 'git\\n'
+                return 0
+            fi
+            builtin command "$@"
+        }}
+        source scripts/install_modules/phases/02_repo.sh
+        sync_repo
+        printf '%s\\n%s\\n%s\\n' "$SCRIPT_DIR" "$INSTALL_MODULE_DIR" "$INSTALL_HELPERS_MODULE"
+        """
+    )
+
+    result = subprocess.run(
+        ["bash", "-c", script],
+        check=True,
+        capture_output=True,
+        cwd=Path.cwd(),
+        env=_installer_test_env(tmp_path),
+        text=True,
+    )
+
+    script_dir, module_dir, helpers_module = result.stdout.strip().splitlines()
+    assert script_dir == str(target_dir)
+    assert module_dir == str(target_dir / "scripts/install_modules")
+    assert helpers_module == str(target_dir / "scripts/install_modules/install_helpers.sh")

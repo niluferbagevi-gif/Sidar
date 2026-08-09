@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 
 # ── 12. Alembic migrasyonları ────────────────────────────────────────────────
+sidar_weak_password_recovery_allowed() {
+    local sidar_env="${1:-development}"
+    sidar_env="$(printf '%s' "$sidar_env" | tr '[:upper:]' '[:lower:]' | tr -d '"'\''[:space:]')"
+    [[ "$sidar_env" != "production" && "$sidar_env" != "prod" ]]
+}
+
+
 resolve_alembic_python() {
     local venv_python="$SCRIPT_DIR/.venv/bin/python"
 
@@ -37,6 +45,31 @@ log_alembic_revision_observation() {
     info "Alembic head revizyon: ${head_rev:-ayrıştırılamadı}"
 }
 
+extract_alembic_revisions() {
+    if [[ $# -gt 0 ]]; then
+        printf '%s\n' "$1"
+    else
+        cat
+    fi | awk '
+        /^[[:space:]]*[0-9][[:alnum:]_]*/ {
+            rev=$1
+            sub(/,.*/, "", rev)
+            print rev
+        }
+    ' | sort -u
+}
+
+alembic_revision_sets_match() {
+    local current_output="$1"
+    local heads_output="$2"
+    local current_revs=""
+    local head_revs=""
+
+    current_revs="$(extract_alembic_revisions "$current_output")"
+    head_revs="$(extract_alembic_revisions "$heads_output")"
+    [[ -n "$current_revs" && -n "$head_revs" && "$current_revs" == "$head_revs" ]]
+}
+
 run_migrations() {
     step "Veritabanı Migrasyonları"
     ALEMBIC_INI="$SCRIPT_DIR/alembic.ini"
@@ -48,53 +81,19 @@ run_migrations() {
         return
     fi
 
-    DB_URL=""
-    DB_URL_SOURCE=""
-    if [[ -f "$ENV_FILE" ]]; then
-        DB_URL=$(read_env_value_from_file "DATABASE_URL" "$ENV_FILE")
-        [[ -n "$DB_URL" ]] && DB_URL_SOURCE=".env:DATABASE_URL"
-    fi
-
     cd "$SCRIPT_DIR" || return 1
 
     ALEMBIC_PYTHON="$(resolve_alembic_python)" || \
         fail "Python yorumlayıcısı bulunamadı. python3 kurup yeniden deneyin (örn. sudo apt-get install -y python3)."
     ALEMBIC_CMD=("$ALEMBIC_PYTHON" -m alembic upgrade head)
 
-    if [[ -z "$DB_URL" && -f "$ENV_FILE" ]]; then
-        DB_URL=$("$ALEMBIC_PYTHON" - "$ENV_FILE" <<'PY'
-from pathlib import Path
-from urllib.parse import quote
-import sys
-
-env_path = Path(sys.argv[1])
-values = {}
-for raw_line in env_path.read_text(encoding="utf-8").splitlines():
-    line = raw_line.strip()
-    if not line or line.startswith("#") or "=" not in line:
-        continue
-    key, value = line.split("=", 1)
-    value = value.strip()
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
-        value = value[1:-1]
-    values[key.strip()] = value
-
-password = values.get("POSTGRES_PASSWORD", "")
-if password:
-    user = values.get("POSTGRES_USER") or "sidar"
-    host = values.get("POSTGRES_HOST") or "127.0.0.1"
-    port = values.get("POSTGRES_PORT") or "5432"
-    database = values.get("POSTGRES_DB") or "sidar"
-    print(
-        "postgresql+asyncpg://"
-        f"{quote(user, safe='')}:{quote(password, safe='')}"
-        f"@{host}:{port}/{quote(database, safe='')}"
-    )
-PY
-)
-        if [[ -n "$DB_URL" ]]; then
-            DB_URL_SOURCE=".env:POSTGRES_*"
-            info "DATABASE_URL .env içinde kasıtlı olarak tek kaynak yaklaşımıyla tutulmuyor; migrasyon DSN'i POSTGRES_* parçalarından üretildi."
+    DB_URL=""
+    DB_URL_SOURCE=""
+    if resolve_runtime_database_url >/dev/null; then
+        DB_URL="$RUNTIME_DATABASE_URL"
+        DB_URL_SOURCE="$RUNTIME_DATABASE_URL_SOURCE"
+        if [[ "$DB_URL_SOURCE" == *":POSTGRES_*" ]]; then
+            info "DATABASE_URL dotenv zincirinde kasıtlı olarak tek kaynak yaklaşımıyla tutulmuyor; migrasyon DSN'i POSTGRES_* parçalarından üretildi."
         fi
     fi
 
@@ -208,18 +207,27 @@ PY
             warn "PostgreSQL kimlik doğrulaması doğrulanamadı (psql/asyncpg denetimi kullanılamadı). Alembic denenecek."
         elif [[ "$auth_check_rc" -eq 10 ]]; then
             warn "PostgreSQL erişilebilir ancak parola doğrulaması başarısız. Eski volume kaynaklı şifre uyuşmazlığı giderilmeye çalışılıyor."
-            local -a recovery_password_candidates=()
-            if [[ -n "${PRE_HARDEN_DB_PASSWORD:-}" ]]; then
-                recovery_password_candidates+=("$PRE_HARDEN_DB_PASSWORD")
+            local migration_sidar_env="${SIDAR_ENV:-}"
+            if [[ -z "$migration_sidar_env" && -f "$ENV_FILE" ]]; then
+                migration_sidar_env="$(read_env_value_from_file "SIDAR_ENV" "$ENV_FILE")"
             fi
-            recovery_password_candidates+=("sidar" "postgres" "password" "admin" "changeme" "123456")
-            if try_recover_postgres_password_with_alter_user \
-                "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_NAME" "$DB_PASSWORD" "${recovery_password_candidates[@]}"; then
-                auth_check_rc=0
-                verify_postgres_auth "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_NAME" "$DB_PASSWORD" || auth_check_rc=$?
-                if [[ "$auth_check_rc" -eq 0 ]]; then
-                    ok "ALTER USER kurtarma adımı sonrası PostgreSQL parola doğrulaması başarılı."
+            migration_sidar_env="${migration_sidar_env:-development}"
+            if sidar_weak_password_recovery_allowed "$migration_sidar_env"; then
+                local -a recovery_password_candidates=()
+                if [[ -n "${PRE_HARDEN_DB_PASSWORD:-}" ]]; then
+                    recovery_password_candidates+=("$PRE_HARDEN_DB_PASSWORD")
                 fi
+                recovery_password_candidates+=("sidar" "postgres" "password" "admin" "changeme" "123456")
+                if try_recover_postgres_password_with_alter_user \
+                    "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_NAME" "$DB_PASSWORD" "${recovery_password_candidates[@]}"; then
+                    auth_check_rc=0
+                    verify_postgres_auth "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_NAME" "$DB_PASSWORD" || auth_check_rc=$?
+                    if [[ "$auth_check_rc" -eq 0 ]]; then
+                        ok "ALTER USER kurtarma adımı sonrası PostgreSQL parola doğrulaması başarılı."
+                    fi
+                fi
+            else
+                warn "SIDAR_ENV=${migration_sidar_env}: bilinen zayıf parolalarla otomatik ALTER USER kurtarması production ortamında devre dışıdır."
             fi
 
             if [[ "$auth_check_rc" -eq 10 ]]; then
@@ -267,17 +275,20 @@ PY
     unset POSTGRES_PASSWORD
     if [[ -f "$ENV_FILE" ]]; then
         local refreshed_db_url=""
-        local refreshed_postgres_password=""
-        refreshed_db_url=$(read_env_value_from_file "DATABASE_URL" "$ENV_FILE")
-        refreshed_postgres_password=$(read_env_value_from_file "POSTGRES_PASSWORD" "$ENV_FILE")
+        if resolve_runtime_database_url >/dev/null; then
+            refreshed_db_url="$RUNTIME_DATABASE_URL"
+        fi
 
+        # DATABASE_URL/POSTGRES_PASSWORD kasıtlı olarak env'e export edilmiyor:
+        # ALEMBIC_CMD ve sonraki alembic current/heads çağrıları bu değerleri
+        # her seferinde `env` prefix'i ile açıkça alır. Export etmek, üstteki
+        # `unset DATABASE_URL` ile önlenmeye çalışılan sızıntıyı geri getirir
+        # ve installer sürecinin geri kalanındaki (ör. Doctor fazı, SIDAR_ENV
+        # değişikliği sonrası is_alembic_at_head çağrısı) DATABASE_URL
+        # çözümlemesini proses ortamından gelen bayat değere kilitler.
         if [[ -n "$refreshed_db_url" ]]; then
             DB_URL="$refreshed_db_url"
-            DB_URL_SOURCE=".env:DATABASE_URL (yenilendi)"
-            export DATABASE_URL="$refreshed_db_url"
-        fi
-        if [[ -n "$refreshed_postgres_password" ]]; then
-            export POSTGRES_PASSWORD="$refreshed_postgres_password"
+            DB_URL_SOURCE="${RUNTIME_DATABASE_URL_SOURCE} (yenilendi)"
         fi
     fi
 
@@ -295,8 +306,8 @@ PY
         local post_head_rev=""
         post_current_output="$(env "DATABASE_URL=$DB_URL" "$ALEMBIC_PYTHON" -m alembic current 2>&1 || true)"
         post_heads_output="$(env "DATABASE_URL=$DB_URL" "$ALEMBIC_PYTHON" -m alembic heads 2>&1 || true)"
-        post_current_rev="$(printf '%s\n' "$post_current_output" | awk '/^[[:space:]]*[0-9][[:alnum:]_]*/ {print $1}' | tail -n1)"
-        post_head_rev="$(printf '%s\n' "$post_heads_output" | awk '/^[[:space:]]*[0-9][[:alnum:]_]*/ {print $1}' | tail -n1)"
+        post_current_rev="$(extract_alembic_revisions "$post_current_output" | tr '\n' ',' | sed 's/,$//')"
+        post_head_rev="$(extract_alembic_revisions "$post_heads_output" | tr '\n' ',' | sed 's/,$//')"
         log_alembic_revision_observation "$post_current_rev" "$post_head_rev" "${DB_URL_SOURCE:-bilinmiyor}" "$(mask_alembic_db_url "$DB_URL")"
         ok "Alembic migrasyonları DATABASE_URL ile tamamlandı."
         MIGRATION_STATUS="tamamlandi"
@@ -318,19 +329,18 @@ is_alembic_at_head() {
     local heads_output=""
     local current_rev=""
     local head_rev=""
+    local check_output=""
+    local check_rc=0
     local db_url_source=""
 
     [[ -f "$alembic_ini" ]] || return 1
     py_bin="$(resolve_alembic_python)" || return 1
 
-    if [[ -n "${DATABASE_URL:-}" ]]; then
-        db_url="$DATABASE_URL"
-        db_url_source="process:DATABASE_URL"
-    elif [[ -f "$env_file" ]]; then
-        db_url="$(read_env_value_from_file "DATABASE_URL" "$env_file")"
-        [[ -n "$db_url" ]] && db_url_source=".env:DATABASE_URL"
+    if resolve_runtime_database_url >/dev/null; then
+        db_url="$RUNTIME_DATABASE_URL"
+        db_url_source="$RUNTIME_DATABASE_URL_SOURCE"
     else
-        debug "Alembic head kontrolü için DATABASE_URL bulunamadı: ortam değişkeni ve ${env_file} yok."
+        debug "Alembic head kontrolü için DATABASE_URL çözümlenemedi: proses env, ${env_file} ve dotenv zincirinde DATABASE_URL/POSTGRES_* yok."
         return 1
     fi
 
@@ -340,15 +350,25 @@ is_alembic_at_head() {
         return 1
     fi
 
+    check_output="$(env "DATABASE_URL=$db_url" "$py_bin" -m alembic current --check-heads 2>&1)" || check_rc=$?
+    if [[ "$check_rc" -eq 0 ]]; then
+        current_output="$check_output"
+        heads_output="$(env "DATABASE_URL=$db_url" "$py_bin" -m alembic heads 2>&1 || true)"
+        current_rev="$(printf '%s\n' "$current_output" | extract_alembic_revisions | tr '\n' ',' | sed 's/,$//')"
+        head_rev="$(printf '%s\n' "$heads_output" | extract_alembic_revisions | tr '\n' ',' | sed 's/,$//')"
+        log_alembic_revision_observation "$current_rev" "$head_rev" "${db_url_source:-bilinmiyor}" "$(mask_alembic_db_url "$db_url")"
+        return 0
+    fi
+
     current_output="$(env "DATABASE_URL=$db_url" "$py_bin" -m alembic current 2>&1)" || return 1
     heads_output="$(env "DATABASE_URL=$db_url" "$py_bin" -m alembic heads 2>&1)" || return 1
-    current_rev="$(printf '%s\n' "$current_output" | awk '/^[[:space:]]*[0-9][[:alnum:]_]*/ {print $1}' | tail -n1)"
-    head_rev="$(printf '%s\n' "$heads_output" | awk '/^[[:space:]]*[0-9][[:alnum:]_]*/ {print $1}' | tail -n1)"
+    current_rev="$(printf '%s\n' "$current_output" | extract_alembic_revisions | tr '\n' ',' | sed 's/,$//')"
+    head_rev="$(printf '%s\n' "$heads_output" | extract_alembic_revisions | tr '\n' ',' | sed 's/,$//')"
     if [[ -z "$current_rev" || -z "$head_rev" ]]; then
         debug "Alembic current/head çıktısı ayrıştırılamadı. current=$(printf '%s' "$current_output" | tail -n 3 | tr '\n' ' ') heads=$(printf '%s' "$heads_output" | tail -n 3 | tr '\n' ' ')"
     fi
     log_alembic_revision_observation "$current_rev" "$head_rev" "${db_url_source:-bilinmiyor}" "$(mask_alembic_db_url "$db_url")"
-    [[ -n "$current_rev" && -n "$head_rev" && "$current_rev" == "$head_rev" ]]
+    alembic_revision_sets_match "$current_output" "$heads_output"
 }
 
 ensure_postgres_databases_exist() (
@@ -505,4 +525,3 @@ prepare_docker_for_migrations() {
             ;;
     esac
 }
-

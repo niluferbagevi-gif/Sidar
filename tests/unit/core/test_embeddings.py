@@ -94,6 +94,9 @@ def test_scoped_hf_runtime_env_restores_unset_and_existing_values(monkeypatch) -
 
 
 def test_embedding_load_timeout_ignores_malformed_values() -> None:
-    assert embeddings._embedding_load_timeout_seconds(
-        SimpleNamespace(RAG_EMBEDDING_LOAD_TIMEOUT_SECONDS="not-a-float")
-    ) == 0.0
+    assert (
+        embeddings._embedding_load_timeout_seconds(
+            SimpleNamespace(RAG_EMBEDDING_LOAD_TIMEOUT_SECONDS="not-a-float")
+        )
+        == 0.0
+    )

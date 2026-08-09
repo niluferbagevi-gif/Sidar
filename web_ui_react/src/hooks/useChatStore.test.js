@@ -261,6 +261,18 @@ describe("useChatStore — commitAssistantMessage", () => {
     expect(useChatStore.getState().messages[0].content).toBe("özel içerik");
   });
 
+  it("converts a legacy string completion into a structured assistant message", () => {
+    useChatStore.getState().commitAssistantMessage("legacy tamamlandı", "legacy-req");
+
+    const [message] = useChatStore.getState().messages;
+    expect(message).toEqual(expect.objectContaining({
+      role: "assistant",
+      content: "legacy tamamlandı",
+      request_id: "legacy-req",
+    }));
+    expect(message.id).toBeTruthy();
+  });
+
   it("uses streamingText if provided message object lacks content", () => {
     useChatStore.setState({ streamingText: "akış metni", isStreaming: true });
     useChatStore.getState().commitAssistantMessage({ id: "custom-1", role: "assistant" });

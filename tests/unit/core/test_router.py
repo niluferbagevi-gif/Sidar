@@ -252,7 +252,9 @@ def test_router_routes_to_cloud_for_complex_queries() -> None:
         [
             {
                 "role": "user",
-                "content": "Please analyze and compare design pattern tradeoff with algorithm complexity?",
+                "content": (
+                    "Please analyze and compare design pattern tradeoff with algorithm complexity?"
+                ),
             }
         ],
         "default-provider",
@@ -326,6 +328,14 @@ def test_router_stress_token_threshold_always_falls_back_to_local() -> None:
             "default-model",
         )
         assert (provider, model) == ("ollama", "llama3")
+
+
+def test_sqlite_tracker_table_name_is_validated_via_shared_identifier_helper() -> None:
+    from core.db.dialect import assert_safe_sql_identifier
+
+    assert router._SqliteDailyBudgetTracker._TABLE_NAME == assert_safe_sql_identifier(
+        "cost_routing_daily_budget"
+    )
 
 
 def test_router_uses_sqlite_shared_budget_tracker_when_configured(tmp_path) -> None:
@@ -534,9 +544,41 @@ def test_estimate_tokens_uses_tiktoken_when_available(monkeypatch: pytest.Monkey
         "import_module",
         lambda name: _FakeTiktokenModule() if name == "tiktoken" else None,
     )
-    router._TIKTOKEN_ENCODER = None
+    monkeypatch.setattr(router, "_TIKTOKEN_ENCODER", None)
 
     assert CostAwareRouter._estimate_tokens([{"role": "user", "content": "merhaba dünya"}]) == 5
+
+
+def test_estimate_tokens_reuses_cached_tiktoken_encoder(monkeypatch: pytest.MonkeyPatch) -> None:
+    import_calls: list[str] = []
+
+    class _FakeEncoder:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def encode(self, text: str) -> list[int]:
+            self.calls += 1
+            return list(range(len(text.split())))
+
+    class _FakeTiktokenModule:
+        @staticmethod
+        def get_encoding(name: str):
+            assert name == "cl100k_base"
+            return _FakeEncoder()
+
+    def _fake_import_module(name: str):
+        import_calls.append(name)
+        assert name == "tiktoken"
+        return _FakeTiktokenModule()
+
+    monkeypatch.setattr(router.importlib, "import_module", _fake_import_module)
+    monkeypatch.setattr(router, "_TIKTOKEN_ENCODER", None)
+
+    messages = [{"role": "user", "content": "bir iki üç"}]
+
+    assert CostAwareRouter._estimate_tokens(messages) == 3
+    assert CostAwareRouter._estimate_tokens(messages) == 3
+    assert import_calls == ["tiktoken"]
 
 
 def test_estimate_tokens_falls_back_when_tiktoken_unavailable(
@@ -546,7 +588,7 @@ def test_estimate_tokens_falls_back_when_tiktoken_unavailable(
         raise ModuleNotFoundError("tiktoken not installed")
 
     monkeypatch.setattr(router.importlib, "import_module", _raise_import_error)
-    router._TIKTOKEN_ENCODER = None
+    monkeypatch.setattr(router, "_TIKTOKEN_ENCODER", None)
 
     content = "a" * 8
     assert CostAwareRouter._estimate_tokens([{"role": "user", "content": content}]) == 3
@@ -631,3 +673,39 @@ def test_redis_daily_budget_tracker_zero_add_and_none_read_paths(
     tracker.add(0.0)
     assert tracker._redis.pipe.execute_called == 0
     assert tracker.daily_usage() == 0.0
+
+
+def test_llm_routing_service_delegates_selection(monkeypatch: pytest.MonkeyPatch) -> None:
+    from core.llm.router import LLMRoutingService
+
+    class FakeCostAwareRouter:
+        def __init__(self, config: SimpleNamespace) -> None:
+            self.config = config
+
+        def select(
+            self, messages: list[dict[str, str]], provider: str, model: str | None
+        ) -> tuple[str, str | None]:
+            assert messages == [{"role": "user", "content": "analyze"}]
+            assert (provider, model) == ("openai", "gpt-4o-mini")
+            assert self.config.ENABLE_COST_ROUTING is True
+            return "ollama", "qwen2.5-coder:7b"
+
+    monkeypatch.setattr("core.llm.router.CostAwareRouter", FakeCostAwareRouter)
+
+    service = LLMRoutingService(_make_config())
+
+    assert service.select([{"role": "user", "content": "analyze"}], "openai", "gpt-4o-mini") == (
+        "ollama",
+        "qwen2.5-coder:7b",
+    )
+
+
+def test_llm_routing_service_records_cost(monkeypatch: pytest.MonkeyPatch) -> None:
+    from core.llm.router import LLMRoutingService
+
+    recorded: list[float] = []
+    monkeypatch.setattr("core.llm.router.record_routing_cost", recorded.append)
+
+    LLMRoutingService.record_cost(0.42)
+
+    assert recorded == [0.42]

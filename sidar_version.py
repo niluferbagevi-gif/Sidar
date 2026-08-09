@@ -25,7 +25,6 @@ def _read_pyproject_version() -> str:
 
 def resolve_version() -> str:
     """Paket metadata'sından, yoksa `pyproject.toml` dosyasından ürün sürümünü çöz."""
-
     try:
         resolved = package_version(PACKAGE_NAME).strip()
     except Exception:

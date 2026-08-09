@@ -47,13 +47,13 @@ repo-local `.env`, `.env.advanced`, and `.env.${SIDAR_ENV}`. `DOTENV_FILE` and
 
 | File | Purpose | Commit? | Notes |
 | --- | --- | --- | --- |
-| `.env` | Primary local runtime config generated from `.env.example`. | No | Canonical for local secrets and DB credentials. |
-| `.env.advanced` | Optional advanced runtime knobs generated from `.env.advanced.example`. | No | Use for uncommon tuning, not duplicate baseline secrets manually. |
+| `.env` | Primary local runtime config generated from `.env.example`. | No | Canonical for local DB credentials and generated app secrets. Personal provider API keys should live in `SIDAR_KEYS_FILE`. |
+| `.env.advanced` | Optional advanced runtime knobs generated from `.env.advanced.example`. | No | Use for uncommon tuning, not duplicate baseline secrets or real provider API keys manually. |
 | `.env.development` | Development-profile overrides generated from `.env.development.example`. | No | Keep only values that should differ from `.env`. |
 | `.env.test` | Smoke/unit-test profile overrides generated from `.env.test.example`. | No | Real service API keys are not copied here unless explicitly opted in. |
-| `.env.production` | Production-profile overrides generated from `.env.production.example`. | No | Review manually before production use. |
+| `.env.production` | Explicit production-only overrides created by the rotation workflow or secret manager integration; the installer never copies local/dev secrets into it. | No | Required secrets must be populated and isolated before `SIDAR_ENV=production` can be persisted. |
 | `.env.*.example` | Versioned templates. | Yes | Add new keys here when a new setting is introduced. |
-| `~/.sidar_keys.env` or `SIDAR_KEYS_FILE` | User-private secret overlay. | No | Preferred place for personal provider API keys. |
+| `~/.sidar_keys.env` or `SIDAR_KEYS_FILE` | User-private secret overlay. | No | Preferred and default installer target for personal provider API keys. Keep mode `600` or stricter. |
 
 ## Recommended workflows
 
@@ -77,6 +77,19 @@ default. If a test explicitly needs real keys, opt in consciously:
 SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV=1 ./install_sidar.sh --with-integration
 ```
 
+
+### Production secret rotation
+
+Installer, lokal geliştirme ve smoke test tutarlılığı için 8 ortak secret'ı `.env`
+üzerinden profil dosyalarına senkronize edebilir: `API_KEY`, `JWT_SECRET_KEY`,
+`MEMORY_ENCRYPTION_KEY`, `AUTONOMY_WEBHOOK_SECRET`,
+`SWARM_FEDERATION_SHARED_SECRET`, `GITHUB_WEBHOOK_SECRET`,
+`GRAFANA_ADMIN_PASSWORD` ve `METRICS_TOKEN`. Bu davranış local/dev/test için
+uygundur; ancak `.env.production` gerçek dağıtıma kaynak olacaksa production
+öncesinde bu değerlerin tamamı dev/test/local değerlerden farklı olacak şekilde
+rotate edilmelidir. Operasyon adımları için
+`docs/runbooks/production-secret-rotation.md` runbook'unu uygulayın.
+
 ### One-off overrides
 
 For temporary experiments, prefer `DOTENV_FILE` instead of editing multiple profile
@@ -91,6 +104,36 @@ For personal secrets shared across checkouts, prefer `SIDAR_KEYS_FILE`:
 ```bash
 SIDAR_KEYS_FILE=~/.sidar_keys.env ./install_sidar.sh
 ```
+
+By default, `install_sidar.sh` writes real service/provider API keys only to
+`SIDAR_KEYS_FILE` and leaves repo-local `.env*` files as non-secret runtime
+configuration. If you need the legacy behavior for an isolated environment, opt in
+explicitly:
+
+Seeing `.env` report `0/18` filled service API keys is therefore not a failure when
+`SIDAR_KEYS_FILE`/`~/.sidar_keys.env` contains the real keys. The `.env` status line
+describes only repo-local materialization; the runtime loader still reads the final
+secret overlay from `SIDAR_KEYS_FILE`. Keep that file outside the repository with mode
+`600` or stricter, and do not copy personal provider keys into `.env` unless the
+explicit materialization opt-in below is intentional.
+
+The installer summary reports the non-secret counts separately: `.env: 0/18` describes
+repo-local materialization, while `Secret overlay durumu: N/18` counts non-empty provider
+keys in `SIDAR_KEYS_FILE` without printing their values. An overlay count below 18 is also
+valid when those optional integrations are unused; provider availability should be judged
+from the masked key-source table rather than by copying secrets back into `.env`.
+
+Sidar validates this boundary before initial dotenv loading and runtime reloads.
+Relative paths resolve from the repository root, so `SIDAR_KEYS_FILE=.env` and
+`SIDAR_KEYS_FILE=config/keys.env` fail closed. Symlinks that ultimately resolve into
+the repository are rejected as well.
+
+```bash
+SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV=1 ./install_sidar.sh
+```
+
+When this opt-in is used, `.env.test` is still protected separately and receives real
+keys only with `SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV=1`.
 
 ## Troubleshooting drift
 

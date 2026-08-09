@@ -114,7 +114,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             manifest = build_manifest(root)
         except OSError as exc:
             print(
-                f"offline manifest creation failed: {_io_error('could not read bundle files under', root, exc)}"
+                f"offline manifest creation failed: "
+                f"{_io_error('could not read bundle files under', root, exc)}"
             )
             return 1
         try:
@@ -125,7 +126,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         except OSError as exc:
             print(
-                f"offline manifest creation failed: {_io_error('could not write manifest', root / MANIFEST_NAME, exc)}"
+                f"offline manifest creation failed: "
+                f"{_io_error('could not write manifest', root / MANIFEST_NAME, exc)}"
             )
             return 1
         print(f"wrote {root / MANIFEST_NAME} ({len(manifest['files'])} files)")

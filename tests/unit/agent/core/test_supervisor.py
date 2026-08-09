@@ -719,33 +719,6 @@ def test_run_task_code_flow_skips_reviewer_in_cli_fast_mode() -> None:
     assert calls == [("coder", "code")]
 
 
-def test_ensure_delegation_request_shape_uses_existing_class(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    contracts_mod = types.SimpleNamespace(DelegationRequest=DelegationRequest)
-    monkeypatch.setattr(supervisor_mod.importlib, "import_module", lambda _name: contracts_mod)
-
-    assert supervisor_mod._ensure_delegation_request_shape() is DelegationRequest
-
-
-def test_ensure_delegation_request_shape_builds_compat_class(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    contracts_mod = types.SimpleNamespace(DelegationRequest=object)
-    monkeypatch.setattr(supervisor_mod.importlib, "import_module", lambda _name: contracts_mod)
-
-    compat_cls = supervisor_mod._ensure_delegation_request_shape()
-    req = compat_cls(
-        task_id="t", reply_to="a", target_agent="b", payload="p", handoff_depth=2, meta={"k": "v"}
-    )
-    bumped = req.bumped()
-
-    assert req.handoff_depth == 2
-    assert bumped.handoff_depth == 3
-    assert bumped.meta == {"k": "v"}
-    assert contracts_mod.DelegationRequest is compat_cls
-
-
 def test_null_span_noop_methods() -> None:
     span = supervisor_mod._NullSpan()
     with span as ctx:
@@ -1355,7 +1328,7 @@ def test_run_task_circuit_breaker_before_initial_reviewer() -> None:
 
 
 def test_run_task_circuit_breaker_while_loop_start() -> None:
-    """while başlangıcındaki turn_count >= max_turns dalını kapsar."""
+    """While başlangıcındaki turn_count >= max_turns dalını kapsar."""
     sup = _build_supervisor(max_qa_retries=2)
     sup._max_turns = lambda: 2
 
@@ -1390,7 +1363,7 @@ class MockMaxTurnsForDeadCode:
 
 
 def test_run_task_circuit_breaker_before_revise_coder() -> None:
-    """while içindeki revise-coder öncesi _consume_turn dalını kapsar."""
+    """While içindeki revise-coder öncesi _consume_turn dalını kapsar."""
     sup = _build_supervisor(max_qa_retries=2)
     sup._max_turns = lambda: MockMaxTurnsForDeadCode()
 
@@ -1411,7 +1384,7 @@ def test_run_task_circuit_breaker_before_revise_coder() -> None:
 
 
 def test_run_task_circuit_breaker_before_second_reviewer() -> None:
-    """while içindeki ikinci reviewer öncesi _consume_turn dalını kapsar."""
+    """While içindeki ikinci reviewer öncesi _consume_turn dalını kapsar."""
     sup = _build_supervisor(max_qa_retries=2)
     sup._max_turns = lambda: 3
 

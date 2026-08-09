@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 # shellcheck disable=SC2034  # sentinel read indirectly by sidar_source_install_utils.
 SIDAR_INSTALL_UTIL_DATABASE_URL_SH_LOADED=1
 
@@ -18,6 +19,91 @@ sidar_write_env_value() {
 
     sed_inplace "/^${key}=/d" "$env_file"
     echo "${key}=${value}" >> "$env_file"
+}
+
+resolve_runtime_database_url_from_file() {
+    local env_file="$1"
+    local db_url=""
+    local postgres_user=""
+    local postgres_password=""
+    local postgres_host=""
+    local postgres_port=""
+    local postgres_db=""
+    local source_label=""
+
+    [[ -f "$env_file" ]] || return 1
+    source_label="$(basename "$env_file")"
+
+    db_url="$(read_env_value_from_file "DATABASE_URL" "$env_file" | tr -d '\n[:space:]')"
+    if [[ -n "$db_url" ]]; then
+        printf '%s|%s\n' "$db_url" "${source_label}:DATABASE_URL"
+        return 0
+    fi
+
+    postgres_password="$(read_env_value_from_file "POSTGRES_PASSWORD" "$env_file" | tr -d '\n')"
+    [[ -n "${postgres_password//[[:space:]]/}" ]] || return 1
+    postgres_user="$(read_env_value_from_file "POSTGRES_USER" "$env_file" | tr -d '\n')"
+    postgres_host="$(read_env_value_from_file "POSTGRES_HOST" "$env_file" | tr -d '\n')"
+    postgres_port="$(read_env_value_from_file "POSTGRES_PORT" "$env_file" | tr -d '\n')"
+    postgres_db="$(read_env_value_from_file "POSTGRES_DB" "$env_file" | tr -d '\n')"
+
+    postgres_user="${postgres_user:-sidar}"
+    postgres_host="${postgres_host:-127.0.0.1}"
+    postgres_port="${postgres_port:-5432}"
+    postgres_db="${postgres_db:-sidar}"
+
+    printf 'postgresql+asyncpg://%s:%s@%s:%s/%s|%s\n' \
+        "$postgres_user" "$postgres_password" "$postgres_host" "$postgres_port" "$postgres_db" "-"
+}
+
+resolve_runtime_database_url() {
+    local db_url=""
+    local env_file=""
+    local sidar_env=""
+    local -a candidate_env_files=()
+    local resolved=""
+    local source=""
+
+    db_url="${DATABASE_URL:-}"
+    db_url="$(printf '%s' "$db_url" | tr -d '\n[:space:]')"
+    if [[ -n "$db_url" ]]; then
+        RUNTIME_DATABASE_URL="$db_url"
+        RUNTIME_DATABASE_URL_SOURCE="process:DATABASE_URL"
+        printf '%s\n' "$RUNTIME_DATABASE_URL"
+        return 0
+    fi
+
+    candidate_env_files+=("${SCRIPT_DIR:-.}/.env")
+    sidar_env="$(read_env_value_from_file "SIDAR_ENV" "${SCRIPT_DIR:-.}/.env" 2>/dev/null | tr -d '\n[:space:]' | tr '[:upper:]' '[:lower:]')"
+    candidate_env_files+=("${SCRIPT_DIR:-.}/.env.advanced")
+    [[ -n "$sidar_env" ]] && candidate_env_files+=("${SCRIPT_DIR:-.}/.env.${sidar_env}")
+    if [[ -n "${DOTENV_FILE:-}" ]]; then
+        if [[ "$DOTENV_FILE" = /* ]]; then
+            candidate_env_files+=("$DOTENV_FILE")
+        else
+            candidate_env_files+=("${SCRIPT_DIR:-.}/$DOTENV_FILE")
+        fi
+    fi
+
+    for env_file in "${candidate_env_files[@]}"; do
+        [[ -n "$env_file" && -f "$env_file" ]] || continue
+        if resolved="$(resolve_runtime_database_url_from_file "$env_file")"; then
+            db_url="${resolved%%|*}"
+            source="${resolved#*|}"
+            if [[ "$source" == "-" ]]; then
+                source="$(basename "$env_file"):POSTGRES_*"
+            fi
+            RUNTIME_DATABASE_URL="$db_url"
+            RUNTIME_DATABASE_URL_SOURCE="$source"
+            printf '%s\n' "$RUNTIME_DATABASE_URL"
+            return 0
+        fi
+    done
+
+    RUNTIME_DATABASE_URL=""
+    # shellcheck disable=SC2034  # Read by later phase modules after sourcing.
+    RUNTIME_DATABASE_URL_SOURCE=""
+    return 1
 }
 
 sync_postgres_env_variants_with_source() {
@@ -150,9 +236,27 @@ write_generated_default_database_url() {
     } >> "$env_file"
 }
 
+database_name_from_postgresql_url() {
+    local db_url="$1"
+    local authority_and_path=""
+    local db_path=""
+
+    [[ "$db_url" == postgresql://* || "$db_url" == postgresql+asyncpg://* ]] || return 1
+    authority_and_path="${db_url#*://}"
+    [[ "$authority_and_path" == */* ]] || return 1
+    db_path="${authority_and_path#*/}"
+    db_path="${db_path%%\?*}"
+    db_path="${db_path%%\#*}"
+    [[ -n "$db_path" ]] || return 1
+    printf '%s\n' "$db_path"
+}
+
 ensure_database_url_defaults() {
     local env_file="$1"
+    local env_label="${env_file##*/}"
     local current_db_url=""
+    local current_db_name=""
+    local configured_db_name=""
 
     if [[ ! -f "$env_file" ]]; then
         return
@@ -164,33 +268,76 @@ ensure_database_url_defaults() {
         DB_PASSWORD_HARDENED=false
         write_generated_default_database_url "$env_file"
         if [[ "${DB_PASSWORD_HARDENED:-false}" == "true" ]]; then
-            ok ".env: DATABASE_URL güçlü rastgele PostgreSQL parolasıyla eklendi."
+            ok "${env_label}: DATABASE_URL güçlü rastgele PostgreSQL parolasıyla eklendi."
         else
-            ok ".env: DATABASE_URL mevcut güçlü PostgreSQL parolası korunarak eklendi."
+            ok "${env_label}: DATABASE_URL mevcut güçlü PostgreSQL parolası korunarak eklendi."
         fi
-        return
+        # Keep fresh-create on the same validation path as pre-existing URLs.
+        # Re-read the generated value instead of returning early so future changes
+        # to DSN generation cannot silently bypass ssl/query and database-name checks.
+        current_db_url=$(read_env_value_from_file "DATABASE_URL" "$env_file")
     fi
 
     if [[ "$current_db_url" == sqlite* ]] && [[ "${ALLOW_SQLITE_DATABASE_URL:-0}" != "1" ]]; then
-        warn ".env içinde SQLite DATABASE_URL tespit edildi: $current_db_url"
+        warn "${env_label} içinde SQLite DATABASE_URL tespit edildi: $current_db_url"
         DB_PASSWORD_HARDENED=false
         write_generated_default_database_url "$env_file"
         if [[ "${DB_PASSWORD_HARDENED:-false}" == "true" ]]; then
-            ok ".env: DATABASE_URL güçlü rastgele PostgreSQL parolasıyla güncellendi."
+            ok "${env_label}: DATABASE_URL güçlü rastgele PostgreSQL parolasıyla güncellendi."
         else
-            ok ".env: DATABASE_URL mevcut güçlü PostgreSQL parolası korunarak güncellendi."
+            ok "${env_label}: DATABASE_URL mevcut güçlü PostgreSQL parolası korunarak güncellendi."
         fi
         return
     fi
 
     if [[ "$current_db_url" == *lotus* ]]; then
-        warn ".env içinde eski ürün adına ait DATABASE_URL tespit edildi; Sidar varsayılanına geçirilecek."
+        warn "${env_label} içinde eski ürün adına ait DATABASE_URL tespit edildi; Sidar varsayılanına geçirilecek."
         DB_PASSWORD_HARDENED=false
         write_generated_default_database_url "$env_file"
         if [[ "${DB_PASSWORD_HARDENED:-false}" == "true" ]]; then
-            ok ".env: DATABASE_URL güçlü rastgele Sidar PostgreSQL DSN değerine güncellendi."
+            ok "${env_label}: DATABASE_URL güçlü rastgele Sidar PostgreSQL DSN değerine güncellendi."
         else
-            ok ".env: DATABASE_URL mevcut güçlü PostgreSQL parolası korunarak Sidar DSN değerine güncellendi."
+            ok "${env_label}: DATABASE_URL mevcut güçlü PostgreSQL parolası korunarak Sidar DSN değerine güncellendi."
+        fi
+        return
+    fi
+
+    if [[ "${current_db_url,,}" =~ [\?\&]ssl= ]]; then
+        warn "${env_label} içinde asyncpg ile uyumsuz ssl query parametresi içeren DATABASE_URL tespit edildi; güvenli PostgreSQL DSN yeniden üretilecek."
+        DB_PASSWORD_HARDENED=false
+        write_generated_default_database_url "$env_file"
+        if [[ "${DB_PASSWORD_HARDENED:-false}" == "true" ]]; then
+            ok "${env_label}: Uyumsuz ssl parametresi kaldırıldı ve DATABASE_URL güçlü rastgele PostgreSQL parolasıyla güncellendi."
+        else
+            ok "${env_label}: Uyumsuz ssl parametresi kaldırıldı ve DATABASE_URL mevcut güçlü PostgreSQL parolasıyla güncellendi."
+        fi
+        return
+    fi
+
+    configured_db_name=$(read_env_value_from_file "POSTGRES_DB" "$env_file" | tr -d '\n')
+    if [[ -n "${configured_db_name//[[:space:]]/}" ]] && \
+        current_db_name=$(database_name_from_postgresql_url "$current_db_url") && \
+        [[ "$current_db_name" != "$configured_db_name" ]]; then
+        warn "${env_label} içinde DATABASE_URL veritabanı (${current_db_name}) POSTGRES_DB (${configured_db_name}) ile eşleşmiyor; profile özgü PostgreSQL DSN yeniden üretilecek."
+        DB_PASSWORD_HARDENED=false
+        write_generated_default_database_url "$env_file"
+        if [[ "${DB_PASSWORD_HARDENED:-false}" == "true" ]]; then
+            ok "${env_label}: DATABASE_URL, POSTGRES_DB ile güçlü rastgele PostgreSQL parolası kullanılarak senkronize edildi."
+        else
+            ok "${env_label}: DATABASE_URL, POSTGRES_DB ile mevcut güçlü PostgreSQL parolası korunarak senkronize edildi."
         fi
     fi
+}
+
+ensure_database_url_defaults_for_variants() {
+    local spec=""
+    local variant_file=""
+    local -a variant_specs=()
+
+    mapfile -t variant_specs < <(sidar_default_db_env_variant_specs)
+    for spec in "${variant_specs[@]}"; do
+        variant_file="${spec%%:*}"
+        [[ -n "$variant_file" && -f "$variant_file" ]] || continue
+        ensure_database_url_defaults "$variant_file"
+    done
 }

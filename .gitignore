@@ -50,6 +50,10 @@ artifacts/
 .benchmarks/
 
 # Generated reports (kept as CI/job artifacts, not source-controlled)
+coverage.json
+coverage-final.json
+coverage.xml
+htmlcov/
 reports/*.json
 reports/*.xml
 reports/*.txt

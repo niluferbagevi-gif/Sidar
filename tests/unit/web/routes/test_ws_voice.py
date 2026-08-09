@@ -64,9 +64,11 @@ class _NeverSendsWs(_Ws):
 
 
 class _RepeatedGarbageWs(_Ws):
-    """A websocket that keeps sending unparseable junk fast enough to reset
+    """A websocket that keeps sending unparseable junk to defeat a naive timeout.
 
-    a naive per-message timeout, without ever authenticating."""
+    Sends fast enough to reset a naive per-message timeout, without ever
+    authenticating.
+    """
 
     async def receive(self) -> dict[str, object]:
         await asyncio.sleep(0.001)
@@ -108,7 +110,9 @@ class _VoicePipeline:
 
     def begin_assistant_turn(self, duplex_state) -> int:
         if isinstance(duplex_state, dict):
-            duplex_state["assistant_turn_id"] = int(duplex_state.get("assistant_turn_id", 0) or 0) + 1
+            duplex_state["assistant_turn_id"] = (
+                int(duplex_state.get("assistant_turn_id", 0) or 0) + 1
+            )
             return int(duplex_state["assistant_turn_id"])
         return 1
 
@@ -160,6 +164,28 @@ def _deps(**overrides) -> SimpleNamespace:
 
 
 @pytest.mark.asyncio
+async def test_websocket_voice_rejects_connection_flood_before_accept_and_agent_init() -> None:
+    ws = _Ws()
+
+    async def _limited(_websocket) -> bool:
+        return True
+
+    async def _unexpected_agent():
+        raise AssertionError("rate-limited socket must not initialize the agent")
+
+    await ws_voice.websocket_voice(
+        ws,
+        _deps(
+            ws_connection_is_rate_limited=_limited,
+            resolve_agent_instance=_unexpected_agent,
+        ),
+    )
+
+    assert ws.accepted == []
+    assert ws.closed == [(1013, "WebSocket connection rate limit exceeded")]
+
+
+@pytest.mark.asyncio
 async def test_websocket_voice_import_error_closes_connection(monkeypatch) -> None:
     original_import = builtins.__import__
 
@@ -202,9 +228,10 @@ async def test_websocket_voice_rejects_binary_before_auth(monkeypatch) -> None:
 async def test_websocket_voice_closes_idle_unauthenticated_connection_after_timeout(
     monkeypatch,
 ) -> None:
-    """Regression test: an unauthenticated client that never sends anything
+    """Regression test: an idle unauthenticated client must not stay connected forever.
 
-    must not keep the connection open forever (slow DoS / resource exhaustion).
+    An unauthenticated client that never sends anything must not keep the
+    connection open forever (slow DoS / resource exhaustion).
     """
     original_import = builtins.__import__
 
@@ -233,9 +260,10 @@ async def test_websocket_voice_closes_idle_unauthenticated_connection_after_time
 async def test_websocket_voice_auth_timeout_is_absolute_not_reset_by_junk_messages(
     monkeypatch,
 ) -> None:
-    """Regression test: repeatedly sending unparseable junk must not let an
+    """Regression test: junk messages must not reset the auth timeout.
 
-    unauthenticated client reset the auth timeout and stay connected forever.
+    Repeatedly sending unparseable junk must not let an unauthenticated
+    client reset the auth timeout and stay connected forever.
     """
     original_import = builtins.__import__
 
@@ -527,8 +555,7 @@ async def test_websocket_voice_start_resets_session_and_buffers_base64(monkeypat
             {"text": '{"action":"auth","token":"voice-token"}'},
             {
                 "text": (
-                    '{"action":"start","mime_type":"audio/wav",'
-                    '"language":"tr","prompt":"kisa"}'
+                    '{"action":"start","mime_type":"audio/wav","language":"tr","prompt":"kisa"}'
                 )
             },
             {"text": f'{{"action":"append_base64","chunk":"{chunk}"}}'},
@@ -626,8 +653,7 @@ async def test_websocket_voice_cancel_action_cancels_active_response(monkeypatch
     )
 
     assert any(
-        payload.get("voice_interruption") == "user_cancelled"
-        and payload.get("cancelled") is True
+        payload.get("voice_interruption") == "user_cancelled" and payload.get("cancelled") is True
         for payload in ws.sent
     )
     assert {"cancelled": True, "done": True} in ws.sent
@@ -971,7 +997,9 @@ async def test_websocket_voice_cancels_active_response_on_new_turn(monkeypatch) 
 
 
 @pytest.mark.asyncio
-async def test_websocket_voice_cancel_does_not_emit_interruption_without_active_task(monkeypatch) -> None:
+async def test_websocket_voice_cancel_does_not_emit_interruption_without_active_task(
+    monkeypatch,
+) -> None:
     _install_voice_imports(monkeypatch, _SuccessfulTranscriptionPipeline)
     ws = _Ws(
         [
