@@ -6,6 +6,7 @@ import logging
 import os
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from typing import Any
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request
@@ -14,6 +15,18 @@ from fastapi.responses import JSONResponse
 from sidar_version import PRODUCT_VERSION
 
 logger = logging.getLogger("sidar.web")
+
+_RUNTIME_STATE_DEFAULTS: dict[str, Any] = {
+    "agent": None,
+    "agent_lock": None,
+    "redis_lock": None,
+    "local_rate_lock": None,
+    "rag_prewarm_task": None,
+    "autonomy_cron_task": None,
+    "autonomy_cron_stop": None,
+    "nightly_memory_task": None,
+    "nightly_memory_stop": None,
+}
 
 
 @asynccontextmanager
@@ -25,11 +38,15 @@ def _expose_exception_details() -> bool:
     return os.getenv("SIDAR_ENV", "").strip().lower() != "production"
 
 
+def _expose_api_docs() -> bool:
+    """Return whether interactive API schemas may be published in this environment."""
+    return os.getenv("SIDAR_ENV", "").strip().lower() != "production"
+
+
 def register_exception_handlers(
     application: FastAPI, *, expose_exception_details: bool | None = None
 ) -> None:
     """Register Sidar's JSON exception handlers on a FastAPI application."""
-
     if not hasattr(application, "exception_handler"):
         return
     include_detail = (
@@ -68,7 +85,6 @@ def register_routers(application: FastAPI, routers: list[APIRouter]) -> dict[str
     direct imports/tests while app construction keeps router registration in one
     orchestration point.
     """
-
     legacy_exports: dict[str, Any] = {}
     for router in routers:
         application.include_router(router)
@@ -78,11 +94,36 @@ def register_routers(application: FastAPI, routers: list[APIRouter]) -> dict[str
     return legacy_exports
 
 
+def initialize_runtime_state(application: FastAPI, **overrides: Any) -> SimpleNamespace:
+    """Attach Sidar's mutable runtime state to ``app.state``.
+
+    ``web_server.py`` still exposes legacy module globals for direct imports/tests, but
+    new route factories and dependencies should prefer this app-bound state object so
+    isolated FastAPI instances do not accidentally share singleton state.
+    """
+    state = getattr(application.state, "sidar_runtime", None)
+    if state is None:
+        state = SimpleNamespace()
+        application.state.sidar_runtime = state
+    for key, value in _RUNTIME_STATE_DEFAULTS.items():
+        if not hasattr(state, key):
+            setattr(state, key, value)
+    for key, value in overrides.items():
+        setattr(state, key, value)
+    return state
+
+
+def get_runtime_state(application: FastAPI) -> SimpleNamespace:
+    """Return the app-bound Sidar runtime state, creating it if needed."""
+    return initialize_runtime_state(application)
+
+
 def create_app(
     *,
     lifespan: Callable[[FastAPI], Any] | None = None,
     register_handlers: bool = True,
     expose_exception_details: bool | None = None,
+    expose_api_docs: bool | None = None,
     version: str = PRODUCT_VERSION,
 ) -> FastAPI:
     """Create the Sidar FastAPI application shell.
@@ -91,7 +132,7 @@ def create_app(
     router registration is centralized through ``register_routers`` in this
     factory module.
     """
-
+    include_api_docs = _expose_api_docs() if expose_api_docs is None else expose_api_docs
     application = FastAPI(
         title="Sidar Web UI & REST API",
         description=(
@@ -99,10 +140,12 @@ def create_app(
             "RAG, GitHub, Görev Yönetimi ve Sistem İzleme API'lerini içerir."
         ),
         version=str(version or PRODUCT_VERSION),
-        docs_url="/docs",
-        redoc_url="/redoc",
+        docs_url="/docs" if include_api_docs else None,
+        redoc_url="/redoc" if include_api_docs else None,
+        openapi_url="/openapi.json" if include_api_docs else None,
         lifespan=lifespan or _noop_lifespan,
     )
     if register_handlers:
         register_exception_handlers(application, expose_exception_details=expose_exception_details)
+    initialize_runtime_state(application)
     return application

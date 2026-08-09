@@ -1,7 +1,6 @@
-import React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { PromptAdminPanel } from "./PromptAdminPanel.jsx";
+import { PromptAdminPanel } from "./PromptAdminPanel.js";
 
 const { fetchJson } = vi.hoisted(() => ({ fetchJson: vi.fn() }));
 
@@ -56,6 +55,14 @@ describe("PromptAdminPanel", () => {
     await user.click(screen.getByRole("button", { name: "Kaydet" }));
 
     expect(await screen.findByText("Kaydetme hatası")).toBeInTheDocument();
+  });
+
+  it("normalizes non-Error API rejections", async () => {
+    fetchJson.mockRejectedValueOnce("invalid rejection");
+
+    render(<PromptAdminPanel />);
+
+    expect(await screen.findByText("Promptlar yüklenemedi.")).toBeInTheDocument();
   });
 
   it("activates prompt versions and surfaces activation errors", async () => {

@@ -1,3 +1,10 @@
+> **ARŞİV NOTU (2026-07-15):** Bu belge tarihsel audit snapshot'ı olarak korunur.
+> Güncel teknik borç, dosya boyutu ve refactor takibi için aktif kaynak
+> [`docs/REFACTOR_PLAN.md`](REFACTOR_PLAN.md) dosyasıdır. Bu rapordaki satır
+> sayıları ve “production ready / zero-debt” özetleri güncel kalite kapısı
+> yerine kullanılmamalıdır; örneğin `config.py` satır sayısı bu snapshot'taki
+> 784 değerinden sonra önemli ölçüde değişmiştir.
+
 # Sidar Proje Kapsamlı Denetim Raporu v5.1.0
 **Tarih:** 2026-03-26 | **Durum:** ✅ Tamamlandı | **Denetçi:** Claude Code Audit Agent
 
@@ -356,13 +363,13 @@ addopts = --cov=. --cov-report=term-missing --cov-report=html --cov-report=xml
 
 | Service | Image | Purpose | Status |
 |---------|-------|---------|--------|
-| redis | redis:alpine | Caching, event bus | ✅ |
-| postgres | postgres:16-alpine | Primary DB | ✅ |
+| redis | redis:7.4-alpine | Caching, event bus | ✅ |
+| postgres | pgvector/pgvector:0.8.1-pg16 | Primary DB + pgvector | ✅ |
 | sidar-ai | python:3.11-slim | CPU worker | ✅ |
-| sidar-gpu | nvidia/cuda:12.4.1 | GPU worker | ✅ |
-| jaeger | jaegertracing/all-in-one | Distributed tracing | ✅ |
-| prometheus | prom/prometheus | Metrics collection | ✅ |
-| grafana | grafana/grafana | Dashboards | ✅ |
+| sidar-gpu | nvidia/cuda:13.0.0-runtime-ubuntu22.04 | GPU worker | ✅ |
+| jaeger | jaegertracing/all-in-one:1.63.0 | Distributed tracing | ✅ |
+| prometheus | prom/prometheus:v2.54.1 | Metrics collection | ✅ |
+| grafana | grafana/grafana:11.2.0 | Dashboards | ✅ |
 
 **Dual-Mode Support:**
 - ✅ CPU mode: `docker compose up sidar-ai`

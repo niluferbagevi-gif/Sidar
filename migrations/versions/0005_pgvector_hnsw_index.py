@@ -17,15 +17,43 @@ down_revision = "0004_faz_e_tables"
 branch_labels = None
 depends_on = None
 
+HNSW_M_ENV = "PGVECTOR_HNSW_M"
+HNSW_EF_CONSTRUCTION_ENV = "PGVECTOR_HNSW_EF_CONSTRUCTION"
+DEFAULT_HNSW_M = 16
+DEFAULT_HNSW_EF_CONSTRUCTION = 64
+
 
 def _resolve_engine_name(bind: object) -> str:
     engine = getattr(bind, "engine", None)
     if engine is not None and getattr(engine, "name", None):
-        return str(getattr(engine, "name")).strip().lower()
+        return str(engine.name).strip().lower()
     dialect = getattr(bind, "dialect", None)
     if dialect is not None and getattr(dialect, "name", None):
-        return str(getattr(dialect, "name")).strip().lower()
+        return str(dialect.name).strip().lower()
     return ""
+
+
+def _bounded_int_env(name: str, default: int, *, minimum: int, maximum: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return max(minimum, min(maximum, value))
+
+
+def _hnsw_index_options() -> str:
+    """Resolve bounded HNSW index options for different memory/VRAM profiles."""
+    m = _bounded_int_env(HNSW_M_ENV, DEFAULT_HNSW_M, minimum=4, maximum=64)
+    ef_construction = _bounded_int_env(
+        HNSW_EF_CONSTRUCTION_ENV,
+        DEFAULT_HNSW_EF_CONSTRUCTION,
+        minimum=16,
+        maximum=512,
+    )
+    return f"WITH (m = {m}, ef_construction = {ef_construction})"
 
 
 def upgrade() -> None:
@@ -70,31 +98,40 @@ def upgrade() -> None:
 
     op.execute(
         """
-        DO $$
-        BEGIN
-            EXECUTE '
-                CREATE TABLE IF NOT EXISTS rag_embeddings (
-                    doc_id TEXT NOT NULL,
-                    parent_id TEXT NOT NULL,
-                    session_id TEXT NOT NULL,
-                    chunk_index INTEGER NOT NULL,
-                    title TEXT,
-                    source TEXT,
-                    chunk_content TEXT,
-                    embedding vector(384),
-                    PRIMARY KEY (doc_id, chunk_index)
-                )
-            ';
-
-            EXECUTE 'CREATE INDEX IF NOT EXISTS idx_rag_embeddings_session '
-                 || 'ON rag_embeddings(session_id)';
-            EXECUTE 'CREATE INDEX IF NOT EXISTS idx_rag_embeddings_parent '
-                 || 'ON rag_embeddings(parent_id)';
-            EXECUTE 'CREATE INDEX IF NOT EXISTS idx_rag_embeddings_embedding_hnsw '
-                 || 'ON rag_embeddings USING hnsw (embedding vector_cosine_ops)';
-        END $$;
+        CREATE TABLE IF NOT EXISTS rag_embeddings (
+            doc_id TEXT NOT NULL,
+            parent_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            chunk_index INTEGER NOT NULL,
+            title TEXT,
+            source TEXT,
+            chunk_content TEXT,
+            embedding vector(384),
+            PRIMARY KEY (doc_id, chunk_index)
+        )
         """
     )
+
+    # CREATE INDEX CONCURRENTLY cannot run inside a transaction block (or a DO/
+    # PL/pgSQL block), so each index is built as the sole statement in its own
+    # autocommit block. This avoids holding a write lock on rag_embeddings for
+    # the entire index build, which matters once the table holds real data.
+    with op.get_context().autocommit_block():
+        op.execute(
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_rag_embeddings_session "
+            "ON rag_embeddings(session_id)"
+        )
+    with op.get_context().autocommit_block():
+        op.execute(
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_rag_embeddings_parent "
+            "ON rag_embeddings(parent_id)"
+        )
+    hnsw_options = _hnsw_index_options()
+    with op.get_context().autocommit_block():
+        op.execute(
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_rag_embeddings_embedding_hnsw "
+            f"ON rag_embeddings USING hnsw (embedding vector_cosine_ops) {hnsw_options}"
+        )
 
 
 def downgrade() -> None:

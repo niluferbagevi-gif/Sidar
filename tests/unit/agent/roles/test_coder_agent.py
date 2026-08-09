@@ -71,7 +71,15 @@ def _build_code_manager_mock(code_manager_cls):
     code_manager = create_autospec(code_manager_cls, instance=True, spec_set=True)
     code_manager.read_file.side_effect = lambda path: (True, f"read:{path}")
     code_manager.write_file.side_effect = lambda path, content: (True, f"write:{path}:{content}")
+    code_manager.write_file_hitl.side_effect = lambda path, content: (
+        True,
+        f"write:{path}:{content}",
+    )
     code_manager.patch_file.side_effect = lambda path, target, replacement: (
+        True,
+        f"patch:{path}:{target}->{replacement}",
+    )
+    code_manager.patch_file_hitl.side_effect = lambda path, target, replacement: (
         True,
         f"patch:{path}:{target}->{replacement}",
     )
@@ -301,11 +309,69 @@ async def test_run_task_paths(monkeypatch, coder_module):
     nl = await agent.run_task("foo.py isimli bir dosyaya 'hello' yaz")
     assert nl == "tool:write_file:foo.py|hello"
 
+    async def fake_call_llm(messages, **kwargs):
+        assert "unknown command" in messages[-1]["content"]
+        assert kwargs["json_mode"] is True
+        return '{"final":"LLM handled unknown command"}'
+
+    agent.call_llm = fake_call_llm
     fallback = await agent.run_task("unknown command")
-    assert fallback == "[LEGACY_FALLBACK] coder_unhandled task=unknown command"
+    assert fallback == "LLM handled unknown command"
 
     assert len(agent.events.messages) >= 1
     assert all(role == "coder" for role, _ in agent.events.messages)
+
+
+@pytest.mark.asyncio
+async def test_run_task_general_prompt_uses_llm_tool_loop(coder_module):
+    agent = await _new_runtime_agent(coder_module)
+    calls: list[tuple[str, str]] = []
+    llm_messages: list[list[dict[str, str]]] = []
+    agent.tools = {"read_file": agent._tool_read_file, "patch_file": agent._tool_patch_file}
+
+    async def fake_call_tool(name: str, arg: str) -> str:
+        calls.append((name, arg))
+        return f"result:{name}:{arg}"
+
+    responses = iter(
+        [
+            '{"tool_calls":[{"name":"read_file","arg":"src/app.py"}],"final":""}',
+            '{"tool_calls":[{"name":"patch_file","arg":"src/app.py|old|new"}],"final":"patched"}',
+            '{"final":"Implemented requested change"}',
+        ]
+    )
+
+    async def fake_call_llm(messages, **kwargs):
+        llm_messages.append(messages)
+        assert kwargs["json_mode"] is True
+        return next(responses)
+
+    agent.call_tool = fake_call_tool
+    agent.call_llm = fake_call_llm
+
+    result = await agent.run_task("Implement the requested app change")
+
+    assert result == "Implemented requested change"
+    assert calls == [("read_file", "src/app.py"), ("patch_file", "src/app.py|old|new")]
+    assert "Araç sonuçları" in llm_messages[-1][-1]["content"]
+
+
+@pytest.mark.asyncio
+async def test_run_task_general_prompt_returns_plain_llm_response(coder_module):
+    agent = await _new_runtime_agent(coder_module)
+    agent.tools = {}
+
+    async def fake_call_llm(messages, **kwargs):
+        assert "Kullanabileceğin araçlar" in messages[0]["content"]
+        assert kwargs["json_mode"] is True
+        return "Kod değişikliği için önce dosya yolu gerekli."
+
+    agent.call_llm = fake_call_llm
+
+    assert (
+        await agent.run_task("bir özellik implement et")
+        == "Kod değişikliği için önce dosya yolu gerekli."
+    )
 
 
 @pytest.mark.asyncio
@@ -345,3 +411,116 @@ async def test_call_maybe_async_with_async_callable(coder_module):
 
     result = await coder_module.CoderAgent._call_maybe_async(_async_sum, 4, 6)
     assert result == 10
+
+
+def test_parse_llm_tool_plan_handles_fenced_json_lists_malformed_and_scalars(coder_module):
+    CoderAgent = coder_module.CoderAgent
+
+    assert CoderAgent._parse_llm_tool_plan('```json\n{"final":"ok"}\n```') == {"final": "ok"}
+    assert CoderAgent._parse_llm_tool_plan('[{"name":"read_file","arg":"a.py"}]') == {
+        "tool_calls": [{"name": "read_file", "arg": "a.py"}],
+        "final": "",
+    }
+    assert CoderAgent._parse_llm_tool_plan("{not-json") == {"final": "{not-json"}
+    assert CoderAgent._parse_llm_tool_plan('"done"') == {"final": "done"}
+    assert CoderAgent._parse_llm_tool_plan("   ") == {"final": ""}
+
+
+@pytest.mark.asyncio
+async def test_llm_tool_loop_handles_unknown_tool_dict_call_then_final(coder_module):
+    agent = await _new_runtime_agent(coder_module)
+    agent.tools = {"read_file": agent._tool_read_file}
+    llm_messages: list[list[dict[str, str]]] = []
+
+    responses = iter(
+        [
+            '{"tool_calls":{"name":"not_registered","arg":"x"},"final":""}',
+            '{"final":"unknown tool reported"}',
+        ]
+    )
+
+    async def fake_call_llm(messages, **kwargs):
+        llm_messages.append(messages)
+        assert kwargs["json_mode"] is True
+        return next(responses)
+
+    agent.call_llm = fake_call_llm
+
+    result = await agent._run_llm_tool_loop("use a tool")
+
+    assert result == "unknown tool reported"
+    assert "Bilinmeyen araç: not_registered" in llm_messages[-1][-1]["content"]
+
+
+@pytest.mark.asyncio
+async def test_llm_tool_loop_handles_list_tool_calls_and_ignores_non_dict_items(coder_module):
+    agent = await _new_runtime_agent(coder_module)
+    agent.tools = {"read_file": agent._tool_read_file}
+    calls: list[tuple[str, str]] = []
+
+    async def fake_call_tool(name: str, arg: str) -> str:
+        calls.append((name, arg))
+        return f"ok:{arg}"
+
+    responses = iter(
+        [
+            '["skip-me", {"tool":"read_file","input":"src/app.py"}]',
+            '{"final":"read complete"}',
+        ]
+    )
+
+    async def fake_call_llm(_messages, **_kwargs):
+        return next(responses)
+
+    agent.call_tool = fake_call_tool
+    agent.call_llm = fake_call_llm
+
+    assert await agent._run_llm_tool_loop("read") == "read complete"
+    assert calls == [("read_file", "src/app.py")]
+
+
+@pytest.mark.asyncio
+async def test_llm_tool_loop_returns_raw_response_when_tool_calls_are_not_valid_dicts(
+    coder_module,
+) -> None:
+    agent = await _new_runtime_agent(coder_module)
+    agent.tools = {"read_file": agent._tool_read_file}
+
+    async def fake_call_llm(_messages, **_kwargs):
+        return '{"tool_calls":["skip-me"],"final":""}'
+
+    agent.call_llm = fake_call_llm
+
+    assert await agent._run_llm_tool_loop("read") == '{"tool_calls":["skip-me"],"final":""}'
+
+
+@pytest.mark.asyncio
+async def test_llm_tool_loop_returns_limit_message_after_repeated_tool_calls(coder_module):
+    agent = await _new_runtime_agent(coder_module)
+    agent.tools = {"read_file": agent._tool_read_file}
+    calls: list[tuple[str, str]] = []
+
+    async def fake_call_tool(name: str, arg: str) -> str:
+        calls.append((name, arg))
+        return f"still looping:{arg}"
+
+    async def fake_call_llm(_messages, **_kwargs):
+        return '{"tool_calls":[{"name":"read_file","arg":"loop.py"}],"final":""}'
+
+    agent.call_tool = fake_call_tool
+    agent.call_llm = fake_call_llm
+
+    assert (
+        await agent._run_llm_tool_loop("loop")
+        == "[CODER:TOOL_LOOP_LIMIT] Araç döngüsü sınırına ulaşıldı."
+    )
+    assert calls == [("read_file", "loop.py")] * 3
+
+
+@pytest.mark.asyncio
+async def test_run_task_qa_feedback_malformed_json_defaults_to_approved_raw_summary(coder_module):
+    agent = await _new_runtime_agent(coder_module)
+
+    result = await agent.run_task("qa_feedback|{bad json")
+
+    assert result == "[CODER:APPROVED] Reviewer onayı alındı: {bad json"

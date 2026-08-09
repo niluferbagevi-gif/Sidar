@@ -1,8 +1,15 @@
-# 3.3 `cli.py` — CLI Arayüzü (232 satır)
+# 3.3 `cli.py` — CLI Arayüzü (465 satır)
 
 ## Rapor İçeriği (Taşınan Bölüm)
 
-**Amaç:** Terminal tabanlı etkileşimli REPL döngüsü.
+**Amaç:** Terminal tabanlı etkileşimli REPL döngüsü; ajanın gerçek giriş noktası.
+
+**İsimlendirme notu:** `cli.py`, ismi tarihsel olarak `main.py`'den taşınmıştır
+(kaynak dosyanın kendi docstring'i bunu belgeler). Kökteki *güncel* `main.py`
+bu tarihsel taşımadan bağımsız, sonradan eklenen bir sihirbaz/launcher
+modülüdür — ajan mantığı içermez, sonunda bu dosyayı (`cli.py`) veya
+`web_server.py`'yi alt süreçte başlatır. `python cli.py` sihirbazı atlayıp
+doğrudan bu REPL'e girer. Bkz. `docs/module-notes/main.py.md`.
 
 **Mimari Düzeltme:**
 Eski kodda `while` döngüsü içinde her turda `asyncio.run()` çağrılıyordu; bu `asyncio.Lock` ömrünü bozuyordu. Yeni yapıda tüm döngü tek bir `async` fonksiyona (`_interactive_loop_async`) alınmıştır — lock tüm oturum boyunca aynı event loop'ta yaşar.

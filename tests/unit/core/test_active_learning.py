@@ -426,11 +426,12 @@ async def test_pipeline_build_dataset_bundle_and_manifest(tmp_path):
     assert manifest["counts"]["signals"] == 3
     assert manifest["counts"]["sft_examples"] == 1
     assert manifest["counts"]["preference_examples"] == 1
-    assert Path(
+    manifest_path = Path(
         manifest["manifest_path"] if "manifest_path" in manifest else manifest["bundle_dir"]
-    ).exists()
-    assert Path(manifest["sft_path"]).exists()
-    assert Path(manifest["preference_path"]).exists()
+    )
+    assert await asyncio.to_thread(manifest_path.exists)
+    assert await asyncio.to_thread(Path(manifest["sft_path"]).exists)
+    assert await asyncio.to_thread(Path(manifest["preference_path"]).exists)
 
 
 @pytest.mark.asyncio

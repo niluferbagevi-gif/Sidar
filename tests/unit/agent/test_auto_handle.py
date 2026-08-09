@@ -1,5 +1,6 @@
 import asyncio
 import importlib
+import logging
 import sys
 import types
 from unittest.mock import AsyncMock
@@ -319,7 +320,7 @@ def test_try_validate_file_read_fail_and_no_path(monkeypatch):
     assert response.startswith("✗ Dosya okunamadı")
 
 
-def test_try_audit_health_gpu_timeout_and_exception(monkeypatch):
+def test_try_audit_health_gpu_timeout_and_exception(monkeypatch, caplog):
     h = _build_handler(monkeypatch)
 
     async def raise_timeout(*_args, **_kwargs):
@@ -337,9 +338,15 @@ def test_try_audit_health_gpu_timeout_and_exception(monkeypatch):
     )
 
     h._run_blocking = raise_exc
-    assert (asyncio.run(h._try_audit("audit")))[1].startswith("⚠ Denetim sırasında hata oluştu")
-    assert (asyncio.run(h._try_health(".health")))[1].startswith("⚠ Sağlık raporu alınamadı")
-    assert (asyncio.run(h._try_gpu_optimize(".gpu")))[1].startswith("⚠ GPU optimizasyonu başarısız")
+    with caplog.at_level(logging.ERROR, logger="agent.auto_handle"):
+        assert (asyncio.run(h._try_audit("audit")))[1].startswith("⚠ Denetim sırasında hata oluştu")
+        assert (asyncio.run(h._try_health(".health")))[1].startswith("⚠ Sağlık raporu alınamadı")
+        assert (asyncio.run(h._try_gpu_optimize(".gpu")))[1].startswith(
+            "⚠ GPU optimizasyonu başarısız"
+        )
+    assert "AutoHandle audit command failed" in caplog.text
+    assert "AutoHandle health report command failed" in caplog.text
+    assert "AutoHandle GPU optimization command failed" in caplog.text
 
 
 def test_try_health_gpu_requires_health_manager(monkeypatch):

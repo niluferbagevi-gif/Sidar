@@ -216,6 +216,21 @@ ensure_uv() {
   ok "uv kuruldu: $(uv --version)"
 }
 
+install_pre_commit_hooks() {
+  if [ ! -d .git ]; then
+    warn "Git deposu bulunamadı; pre-commit hook kurulumu atlandı."
+    return 0
+  fi
+
+  log "pre-commit ve pre-push hook'ları kuruluyor"
+  if uv run pre-commit install --hook-type pre-commit --hook-type pre-push; then
+    ok "pre-commit ve pre-push hook'ları kuruldu."
+  else
+    warn "pre-commit hook kurulumu başarısız oldu; manuel çalıştırın: uv run pre-commit install --hook-type pre-commit --hook-type pre-push"
+    return 1
+  fi
+}
+
 ensure_pyright_lsp_tool() {
   if command -v pyright-langserver >/dev/null 2>&1; then
     ok "Pyright LSP hazır: $(command -v pyright-langserver)"
@@ -413,6 +428,7 @@ sync_python_environment() {
     warn "Sanal ortam Python yorumlayıcısı bulunamadı: ${venv_python}"
   fi
 
+  install_pre_commit_hooks
   ensure_pyright_lsp_tool
 
   if [ ! -f .env.test ] && [ -f .env.test.example ]; then

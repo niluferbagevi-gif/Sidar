@@ -1,5 +1,5 @@
-"""
-Sidar Project - Belge Deposu ve Arama (RAG)
+"""Sidar Project - Belge Deposu ve Arama (RAG).
+
 ChromaDB tabanlı Vektör Arama + BM25 Hibrit Sistemi.
 Sürüm: 2.7.0 (GPU Hızlandırmalı Embedding + Motor Bağımsız Sorgu)
 
@@ -13,18 +13,17 @@ Sürüm: 2.7.0 (GPU Hızlandırmalı Embedding + Motor Bağımsız Sorgu)
 
 import asyncio
 import builtins
-import hashlib
 import importlib
 import ipaddress
 import json
 import logging
 import os
 import re
+import socket
 import tempfile
 import threading
 import time
 import urllib.parse
-import uuid
 from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
@@ -41,10 +40,45 @@ from core.embeddings import (
 )
 
 from . import backends as _rag_backends
+from . import facade as _rag_facade
 from .backends import bm25 as bm25_backend
 from .backends import chroma as chroma_backend
 from .backends import keyword as keyword_backend
 from .backends import pgvector as pgvector_backend
+from .chunking import recursive_chunk_text as _recursive_chunk_text_impl
+from .entity_extraction import (
+    extract_document_entities as _extract_document_entities_impl,
+)
+from .entity_extraction import (
+    extract_json_entities as _extract_json_entities_impl,
+)
+from .entity_graph_store import (
+    delete_document_entities as _delete_document_entities_impl,
+)
+from .entity_graph_store import (
+    ensure_entity_graph as _ensure_entity_graph_impl,
+)
+from .entity_graph_store import (
+    load_entity_graph as _load_entity_graph_impl,
+)
+from .entity_graph_store import (
+    save_entity_graph as _save_entity_graph_impl,
+)
+from .entity_graph_store import (
+    search_entity_graph as _search_entity_graph_impl,
+)
+from .entity_graph_store import (
+    upsert_document_entities as _upsert_document_entities_impl,
+)
+from .entity_helpers import (
+    clean_entity_value as _clean_entity_value_impl,
+)
+from .entity_helpers import (
+    entity_id as _entity_id_impl,
+)
+from .entity_helpers import (
+    entity_slug as _entity_slug_impl,
+)
 from .facade import (
     _build_embedding_function as _build_embedding_function,
 )
@@ -52,21 +86,90 @@ from .facade import (
     _build_embedding_function_cached as _build_embedding_function_cached,
 )
 from .facade import (
-    _resolve_sentence_transformer_embedding_function as _resolve_sentence_transformer_embedding_function,
-)
-from .facade import (
     embed_texts_for_semantic_cache as embed_texts_for_semantic_cache,
+)
+from .formatting import extract_snippet as _extract_snippet_impl
+from .formatting import format_results_from_struct as _format_results_from_struct_impl
+from .graph import (
+    LLM_ENTITY_EXTRACTION_TODO as LLM_ENTITY_EXTRACTION_TODO,
 )
 from .graph import (
     ExtractedKnowledgeEntity,
     ExtractedKnowledgeRelation,
     GraphIndex,
-    KnowledgeGraphEdge,
-    KnowledgeGraphNode,
+)
+from .graph import (
+    KnowledgeGraphEdge as KnowledgeGraphEdge,
+)
+from .graph import (
+    KnowledgeGraphNode as KnowledgeGraphNode,
 )
 from .graph import ast as ast  # compatibility re-export for legacy monkeypatches
+from .graph_formatting import format_graph_impact_analysis as _format_graph_impact_analysis_impl
+from .graph_formatting import format_graph_search_results as _format_graph_search_results_impl
+from .llm_entity_extraction import (
+    LLM_ENTITY_SCHEMA_VERSION as LLM_ENTITY_SCHEMA_VERSION,
+)
+from .llm_entity_extraction import (
+    LLMEntityExtractionSettings as LLMEntityExtractionSettings,
+)
+from .llm_entity_extraction import (
+    extract_llm_entity_payload as _extract_llm_entity_payload_impl,
+)
+from .llm_entity_extraction import (
+    normalize_llm_entity_payload as normalize_llm_entity_payload,
+)
+from .metadata import (
+    build_chunk_ids as _build_chunk_ids_impl,
+)
+from .metadata import (
+    build_chunk_metadatas as _build_chunk_metadatas_impl,
+)
+from .metadata import (
+    build_document_identity as _build_document_identity_impl,
+)
+from .metadata import (
+    build_index_metadata as _build_index_metadata_impl,
+)
+from .metadata import (
+    now_timestamp as _now_timestamp_impl,
+)
+from .pgvector_helpers import (
+    is_valid_pgvector_identifier as _is_valid_pgvector_identifier_impl,
+)
+from .pgvector_helpers import (
+    pgvector_failure_action_message as _pgvector_failure_action_message_impl,
+)
+from .projection import (
+    build_knowledge_graph_projection_payload as _build_knowledge_graph_projection_payload_impl,
+)
 from .query import GraphRAGSearchPlan
+from .query import build_query_candidates as build_query_candidates
+from .session_documents import (
+    build_session_summary_lines as _build_session_summary_lines_impl,
+)
+from .session_documents import (
+    documents_for_session as _documents_for_session_impl,
+)
+from .session_documents import (
+    format_document_listing as _format_document_listing_impl,
+)
+from .session_documents import (
+    nightly_digest_document_ids as _nightly_digest_document_ids_impl,
+)
+from .session_documents import (
+    normalize_session_id as _normalize_session_id_impl,
+)
+from .session_documents import (
+    select_removable_session_documents as _select_removable_session_documents_impl,
+)
 from .strategies import BM25OnlyStrategy, HybridStrategy, VectorOnlyStrategy
+
+# Re-exported via assignment (not `import ... as`) because the combined
+# `name as name` idiom for explicit mypy reexport would exceed line-length=100.
+_resolve_sentence_transformer_embedding_function = (
+    _rag_facade._resolve_sentence_transformer_embedding_function
+)
 
 _BLEACH_AVAILABLE = True
 
@@ -84,7 +187,6 @@ def build_embedding_function(
     cfg: Any | None = None,
 ) -> Any:
     """Compatibility wrapper that delegates through the patchable module global."""
-
     return _build_embedding_function(
         use_gpu=use_gpu,
         gpu_device=gpu_device,
@@ -94,26 +196,17 @@ def build_embedding_function(
 
 
 def _is_valid_pgvector_identifier(identifier: str) -> bool:
-    """Return True for unquoted PostgreSQL identifiers safe to embed in DDL."""
-    return pgvector_backend.is_valid_pgvector_identifier(identifier)
+    """Backwards-compatible facade for the extracted pgvector identifier helper."""
+    return _is_valid_pgvector_identifier_impl(identifier)
 
 
 def _pgvector_failure_action_message(exc: BaseException) -> str:
-    """Return a single-line pgvector fallback message using DB diagnostics."""
-
-    diagnosis = postgres_failure_diagnosis("pgvector backend başlatılamadı", exc)
-    if "yetki/parola" in diagnosis:
-        return (
-            "pgvector pasif, BM25 fallback aktif edildi. DATABASE_URL, SIDAR_CONTAINER_DATABASE_URL "
-            "ve POSTGRES_PASSWORD değerleriyle parola/yetki ayarlarını "
-            f"kontrol edin. Teşhis: {diagnosis}."
-        )
-    return f"pgvector pasif, BM25 fallback aktif. Teşhis: {diagnosis}."
+    """Backwards-compatible facade for the extracted pgvector diagnostic helper."""
+    return _pgvector_failure_action_message_impl(exc, diagnosis_func=postgres_failure_diagnosis)
 
 
 class DocumentStore:
-    """
-    Yerel belge deposu — ChromaDB ile semantik arama.
+    """Yerel belge deposu — ChromaDB ile semantik arama.
 
     Güncellemeler (v2.6.0):
     - Recursive Character Chunking ile büyük belgeleri mantıksal parçalara ayırır.
@@ -170,6 +263,14 @@ class DocumentStore:
             getattr(self.cfg, "ENABLE_RAG_ENTITY_EXTRACTION", True)
         )
         self._entity_max_per_doc = int(getattr(self.cfg, "RAG_ENTITY_MAX_PER_DOC", 24) or 24)
+        self._llm_entity_extraction_settings = LLMEntityExtractionSettings(
+            enabled=bool(getattr(self.cfg, "ENABLE_RAG_LLM_ENTITY_EXTRACTION", False)),
+            max_entities=self._entity_max_per_doc,
+            review_target=str(
+                getattr(self.cfg, "RAG_LLM_ENTITY_REVIEW_TARGET", "2026-Q3") or "2026-Q3"
+            ),
+        )
+        self._llm_entity_extractor = getattr(self.cfg, "RAG_LLM_ENTITY_EXTRACTOR", None)
 
         self._vector_backend = (
             str(getattr(self.cfg, "RAG_VECTOR_BACKEND", "chroma") or "chroma").strip().lower()
@@ -271,7 +372,9 @@ class DocumentStore:
 
         self._log_backend_init_status_once(
             "vector_preference_bm25_hint",
-            "RAG_VECTOR_BACKEND=bm25 olduğu için aktif bellek BM25 olarak kalacak; hazır vektör backend(ler): %s. GPU/vektör kullanmak için RAG_VECTOR_BACKEND=chroma (veya pgvector), hibrit için RAG_LOCAL_ENABLE_HYBRID=true ayarlayın.",
+            "RAG_VECTOR_BACKEND=bm25 olduğu için aktif bellek BM25 olarak kalacak; hazır vektör "
+            "backend(ler): %s. GPU/vektör kullanmak için RAG_VECTOR_BACKEND=chroma (veya "
+            "pgvector), hibrit için RAG_LOCAL_ENABLE_HYBRID=true ayarlayın.",
             ",".join(available_vector),
         )
 
@@ -450,94 +553,79 @@ class DocumentStore:
 
     @staticmethod
     def _entity_slug(value: str) -> str:
-        normalized = re.sub(r"[^a-z0-9]+", "-", str(value or "").strip().lower())
-        normalized = normalized.strip("-")
-        if normalized:
-            return normalized[:80]
-        return hashlib.md5(str(value).encode(), usedforsecurity=False).hexdigest()[:12]
+        """Backwards-compatible facade for extracted GraphRAG entity slugging."""
+        return _entity_slug_impl(value)
 
     @classmethod
     def _entity_id(cls, label: str, name: str) -> str:
-        return f"{label.lower()}:{cls._entity_slug(name)}"
+        """Backwards-compatible facade for extracted GraphRAG entity ids."""
+        return _entity_id_impl(label, name)
 
     @staticmethod
     def _clean_entity_value(value: Any) -> str:
-        cleaned = re.sub(r"\s+", " ", str(value or "")).strip(" \t\r\n-–—:|,.;")
-        return cleaned[:180]
+        """Backwards-compatible facade for extracted entity value cleanup."""
+        return _clean_entity_value_impl(value)
 
     def _load_entity_graph(self) -> dict[str, Any]:
         graph_file = getattr(self, "entity_graph_file", self.store_dir / "entity_graph.json")
-        if graph_file.exists():
-            try:
-                loaded = json.loads(graph_file.read_text(encoding="utf-8"))
-                if isinstance(loaded, dict):
-                    return {
-                        "nodes": dict(loaded.get("nodes") or {}),
-                        "edges": list(loaded.get("edges") or []),
-                    }
-            except Exception as exc:
-                logger.warning("RAG entity graph okunamadı: %s", exc)
-        return {"nodes": {}, "edges": []}
+        return _load_entity_graph_impl(graph_file)
 
     def _save_entity_graph(self) -> None:
         graph_file = getattr(self, "entity_graph_file", self.store_dir / "entity_graph.json")
-        graph_file.write_text(
-            json.dumps(self._ensure_entity_graph(), ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+        _save_entity_graph_impl(self, graph_file)
 
     def _ensure_entity_graph(self) -> dict[str, Any]:
-        graph = getattr(self, "_entity_graph", None)
-        if not isinstance(graph, dict):
-            graph = {"nodes": {}, "edges": []}
-            self._entity_graph = graph
-        if not isinstance(graph.get("nodes"), dict):
-            graph["nodes"] = {}
-        if not isinstance(graph.get("edges"), list):
-            graph["edges"] = []
-        return graph
+        return _ensure_entity_graph_impl(self)
 
     def _extract_json_entities(
         self, payload: Any, prefix: str = ""
     ) -> builtins.list[ExtractedKnowledgeEntity]:
-        key_to_label = {
-            "campaign": "Campaign",
-            "campaign_name": "Campaign",
-            "name": "Campaign" if prefix.endswith("campaign") else "",
-            "brand": "Brand",
-            "brand_name": "Brand",
-            "audience": "Audience",
-            "target_audience": "Audience",
-            "persona": "Audience",
-            "tone": "Tone",
-            "brand_voice": "Tone",
-            "language": "Tone",
-            "channel": "Channel",
-            "platform": "Channel",
-        }
-        entities: builtins.list[ExtractedKnowledgeEntity] = []
-        if isinstance(payload, dict):
-            for raw_key, raw_value in payload.items():
-                key = str(raw_key).strip().lower().replace("-", "_").replace(" ", "_")
-                label = key_to_label.get(key, "")
-                if label and isinstance(raw_value, str | int | float):
-                    name = self._clean_entity_value(raw_value)
-                    if name:
-                        entities.append(
-                            ExtractedKnowledgeEntity(
-                                id=self._entity_id(label, name),
-                                label=label,
-                                name=name,
-                                properties={"source_field": key},
-                            )
-                        )
-                if isinstance(raw_value, dict | list):
-                    child_prefix = f"{prefix}.{key}" if prefix else key
-                    entities.extend(self._extract_json_entities(raw_value, child_prefix))
-        elif isinstance(payload, list):
-            for item in payload[:20]:
-                entities.extend(self._extract_json_entities(item, prefix))
-        return entities
+        return _extract_json_entities_impl(
+            payload,
+            prefix=prefix,
+            clean_entity_value=self._clean_entity_value,
+            entity_id=self._entity_id,
+        )
+
+    def _build_llm_entity_client(self) -> Any:
+        """Build the configured LLM client for feature-flagged entity extraction."""
+        from core.llm_client import LLMClient
+
+        provider = str(
+            getattr(self.cfg, "RAG_LLM_ENTITY_PROVIDER", "")
+            or getattr(self.cfg, "AI_PROVIDER", "ollama")
+            or "ollama"
+        )
+        return LLMClient(provider, self.cfg)
+
+    def _extract_llm_entity_payload(
+        self,
+        title: str,
+        content: str,
+        *,
+        tags: builtins.list[str] | None = None,
+        source: str = "",
+    ) -> dict[str, Any] | None:
+        """Run optional LLM-assisted GraphRAG extraction behind its feature flag."""
+        settings = getattr(
+            self,
+            "_llm_entity_extraction_settings",
+            LLMEntityExtractionSettings(
+                enabled=False, max_entities=getattr(self, "_entity_max_per_doc", 24)
+            ),
+        )
+        extractor = getattr(self, "_llm_entity_extractor", None)
+        llm_factory = None if extractor is not None else self._build_llm_entity_client
+        return _extract_llm_entity_payload_impl(
+            title,
+            content,
+            tags=tags,
+            source=source,
+            settings=settings,
+            extractor=extractor,
+            llm_client_factory=llm_factory,
+            model=getattr(self.cfg, "RAG_LLM_ENTITY_MODEL", None),
+        )
 
     def extract_document_entities(
         self,
@@ -547,108 +635,17 @@ class DocumentStore:
         tags: builtins.list[str] | None = None,
         source: str = "",
     ) -> tuple[builtins.list[ExtractedKnowledgeEntity], builtins.list[ExtractedKnowledgeRelation]]:
-        """RAG belgesinden deterministik pazarlama/kurumsal entity ilişkileri çıkarır."""
-        text = f"{title}\n{content}"
-        tag_values = tags or []
-        patterns: dict[str, builtins.list[str]] = {
-            "Campaign": [
-                r"(?:kampanya(?: adı)?|campaign(?: name)?)\s*[:：=-]\s*([^\n;|]+)",
-            ],
-            "Brand": [
-                r"(?:marka|brand(?: name)?)\s*[:：=-]\s*([^\n;|]+)",
-            ],
-            "Audience": [
-                r"(?:hedef kitle|target audience|audience|persona)\s*[:：=-]\s*([^\n;|]+)",
-            ],
-            "Tone": [
-                r"(?:marka dili|brand voice|tone|üslup|dil)\s*[:：=-]\s*([^\n;|]+)",
-            ],
-            "Channel": [
-                r"(?:kanal|channel|platform)\s*[:：=-]\s*([^\n;|]+)",
-            ],
-        }
-
-        by_id: dict[str, ExtractedKnowledgeEntity] = {}
-
-        def add_entity(label: str, raw_name: Any, **properties: Any) -> None:
-            name = self._clean_entity_value(raw_name)
-            if not name:
-                return
-            entity_id = self._entity_id(label, name)
-            current = dict(
-                by_id.get(entity_id, ExtractedKnowledgeEntity(entity_id, label, name)).properties
-            )
-            current.update(
-                {key: value for key, value in properties.items() if value not in (None, "")}
-            )
-            by_id[entity_id] = ExtractedKnowledgeEntity(
-                id=entity_id,
-                label=label,
-                name=name,
-                properties=current,
-            )
-
-        for label, label_patterns in patterns.items():
-            for pattern in label_patterns:
-                for match in re.finditer(pattern, text, flags=re.IGNORECASE):
-                    value = self._clean_entity_value(match.group(1))
-                    if value:
-                        add_entity(label, value, extraction="regex")
-
-        for tag in tag_values:
-            if ":" not in str(tag):
-                continue
-            key, value = [part.strip() for part in str(tag).split(":", 1)]
-            tag_label = {
-                "campaign": "Campaign",
-                "brand": "Brand",
-                "audience": "Audience",
-                "target_audience": "Audience",
-                "tone": "Tone",
-                "channel": "Channel",
-            }.get(key.lower())
-            if tag_label:
-                add_entity(tag_label, value, extraction="tag", tag=tag)
-
-        stripped = content.strip()
-        if stripped.startswith("{") or stripped.startswith("["):
-            try:
-                for entity in self._extract_json_entities(json.loads(stripped)):
-                    add_entity(entity.label, entity.name, **entity.properties, extraction="json")
-            except json.JSONDecodeError:
-                pass
-
-        if "kampanya" in title.lower() or "campaign" in title.lower():
-            add_entity("Campaign", title, extraction="title")
-        if source:
-            add_entity("Source", source, extraction="source")
-
-        entities = list(by_id.values())[: max(1, getattr(self, "_entity_max_per_doc", 24))]
-        ids_by_label: dict[str, builtins.list[str]] = {}
-        for entity in entities:
-            ids_by_label.setdefault(entity.label, []).append(entity.id)
-
-        relations: builtins.list[ExtractedKnowledgeRelation] = []
-        campaign_ids = ids_by_label.get("Campaign", [])
-        for campaign_id in campaign_ids:
-            for audience_id in ids_by_label.get("Audience", []):
-                relations.append(
-                    ExtractedKnowledgeRelation(campaign_id, audience_id, "TARGETS_AUDIENCE")
-                )
-            for tone_id in ids_by_label.get("Tone", []):
-                relations.append(ExtractedKnowledgeRelation(campaign_id, tone_id, "USES_TONE"))
-            for brand_id in ids_by_label.get("Brand", []):
-                relations.append(
-                    ExtractedKnowledgeRelation(campaign_id, brand_id, "PROMOTES_BRAND")
-                )
-            for channel_id in ids_by_label.get("Channel", []):
-                relations.append(ExtractedKnowledgeRelation(campaign_id, channel_id, "RUNS_ON"))
-
-        for brand_id in ids_by_label.get("Brand", []):
-            for tone_id in ids_by_label.get("Tone", []):
-                relations.append(ExtractedKnowledgeRelation(brand_id, tone_id, "HAS_BRAND_VOICE"))
-
-        return entities, relations
+        """RAG belgesinden deterministik ve opsiyonel LLM entity ilişkileri çıkarır."""
+        return _extract_document_entities_impl(
+            title,
+            content,
+            tags=tags,
+            source=source,
+            entity_max_per_doc=getattr(self, "_entity_max_per_doc", 24),
+            clean_entity_value=self._clean_entity_value,
+            entity_id=self._entity_id,
+            llm_payload=self._extract_llm_entity_payload(title, content, tags=tags, source=source),
+        )
 
     def _upsert_document_entities(
         self,
@@ -660,194 +657,33 @@ class DocumentStore:
         tags: builtins.list[str] | None = None,
         session_id: str = "global",
     ) -> None:
-        if not getattr(self, "_entity_extraction_enabled", True):
-            return
-        graph = self._ensure_entity_graph()
-        nodes: dict[str, dict[str, Any]] = graph["nodes"]
-        edges: builtins.list[dict[str, Any]] = graph["edges"]
-        doc_node_id = f"doc:{doc_id}"
-
-        edges[:] = [
-            edge
-            for edge in edges
-            if edge.get("source") != doc_node_id and edge.get("doc_id") != doc_id
-        ]
-        nodes[doc_node_id] = {
-            "id": doc_node_id,
-            "label": "Document",
-            "name": title or doc_id,
-            "properties": {"doc_id": doc_id, "session_id": session_id, "source": source},
-        }
-
-        entities, relations = self.extract_document_entities(
-            title, content, tags=tags, source=source
+        _upsert_document_entities_impl(
+            self,
+            doc_id,
+            title,
+            content,
+            source=source,
+            tags=tags,
+            session_id=session_id,
         )
-        entity_ids = {entity.id for entity in entities}
-        for entity in entities:
-            properties = dict(entity.properties)
-            properties.update({"session_id": session_id, "last_doc_id": doc_id})
-            nodes[entity.id] = {
-                "id": entity.id,
-                "label": entity.label,
-                "name": entity.name,
-                "properties": properties,
-            }
-            edges.append(
-                {
-                    "source": doc_node_id,
-                    "target": entity.id,
-                    "relation": "MENTIONS",
-                    "doc_id": doc_id,
-                    "session_id": session_id,
-                }
-            )
-
-        for relation in relations:
-            if relation.source not in entity_ids or relation.target not in entity_ids:
-                continue
-            edges.append(
-                {
-                    "source": relation.source,
-                    "target": relation.target,
-                    "relation": relation.relation,
-                    "doc_id": doc_id,
-                    "session_id": session_id,
-                    "properties": dict(relation.properties),
-                }
-            )
-
-        self._save_entity_graph()
 
     def _delete_document_entities(self, doc_id: str) -> None:
-        graph = self._ensure_entity_graph()
-        nodes: dict[str, dict[str, Any]] = graph["nodes"]
-        doc_node_id = f"doc:{doc_id}"
-        nodes.pop(doc_node_id, None)
-        graph["edges"] = [edge for edge in graph["edges"] if edge.get("doc_id") != doc_id]
-        referenced = {
-            str(edge.get("source"))
-            for edge in graph["edges"]
-            if str(edge.get("source", "")).startswith(
-                ("campaign:", "brand:", "audience:", "tone:", "channel:", "source:")
-            )
-        } | {
-            str(edge.get("target"))
-            for edge in graph["edges"]
-            if str(edge.get("target", "")).startswith(
-                ("campaign:", "brand:", "audience:", "tone:", "channel:", "source:")
-            )
-        }
-        for node_id in list(nodes):
-            if (
-                node_id.startswith(
-                    ("campaign:", "brand:", "audience:", "tone:", "channel:", "source:")
-                )
-                and node_id not in referenced
-            ):
-                nodes.pop(node_id, None)
-        self._save_entity_graph()
+        _delete_document_entities_impl(self, doc_id)
 
     def search_entity_graph(
         self, query: str, *, session_id: str = "global", top_k: int = 5
     ) -> builtins.list[dict[str, Any]]:
-        graph = self._ensure_entity_graph()
-        tokens = [token for token in re.split(r"[\s/_.:-]+", query.lower()) if token]
-        if not tokens:
-            return []
-        scored: builtins.list[tuple[str, int]] = []
-        nodes: dict[str, dict[str, Any]] = graph["nodes"]
-        for node_id, node in nodes.items():
-            raw_properties = node.get("properties")
-            properties: dict[str, Any] = raw_properties if isinstance(raw_properties, dict) else {}
-            node_session = str(properties.get("session_id", "global") or "global")
-            if session_id != "global" and node_session not in {session_id, "global"}:
-                continue
-            haystack = " ".join(
-                [str(node_id), str(node.get("label", "")), str(node.get("name", ""))]
-                + [str(value) for value in properties.values()]
-            ).lower()
-            score = sum(haystack.count(token) for token in tokens)
-            if score > 0:
-                scored.append((node_id, score))
-        scored.sort(key=lambda item: item[1], reverse=True)
-
-        results: builtins.list[dict[str, Any]] = []
-        for node_id, score in scored[:top_k]:
-            relations = [
-                edge
-                for edge in graph["edges"]
-                if edge.get("source") == node_id or edge.get("target") == node_id
-            ][:8]
-            results.append({"node": nodes[node_id], "score": score, "relations": relations})
-        return results
+        return _search_entity_graph_impl(
+            self._ensure_entity_graph(), query, session_id=session_id, top_k=top_k
+        )
 
     # ─────────────────────────────────────────────
     #  BELGE YÖNETİMİ & CHUNKING
     # ─────────────────────────────────────────────
 
     def _recursive_chunk_text(self, text: str, size: int, overlap: int) -> builtins.list[str]:
-        """
-        Metni kod yapısına uygun ayırıcılarla (separators) mantıksal parçalara böler.
-        LangChain'in RecursiveCharacterTextSplitter mantığını simüle eder.
-        """
-        if not text or size <= 0:
-            return []
-        overlap = max(0, int(overlap or 0))
-        if overlap >= size:
-            overlap = max(0, size - 1)
-
-        # Öncelik sırasına göre ayırıcılar (Python ve genel metin için optimize)
-        separators = ["\nclass ", "\ndef ", "\n\n", "\n", " ", ""]
-
-        def _split(text_part: str, sep_idx: int) -> builtins.list[str]:
-            """Recursive bölme fonksiyonu"""
-            if len(text_part) <= size:
-                return [text_part]
-
-            if sep_idx >= len(separators):
-                # Hiçbir ayırıcı ile bölünemiyorsa zorla böl (character limit)
-                step = max(1, size - overlap)
-                return [text_part[i : i + size] for i in range(0, len(text_part), step)]
-
-            sep = separators[sep_idx]
-            # Ayırıcıya göre böl (ayırıcı başta kalsın diye lookahead simülasyonu yapılabilir ama basit split yeterli)
-            # Not: Python split ayırıcıyı yutar, tekrar eklemek gerekebilir.
-            # Burada basit split kullanıyoruz, bağlam kaybı olmaması için overlap önemli.
-            if sep == "":
-                parts = list(text_part)  # Karakter karakter
-            else:
-                parts = text_part.split(sep)
-                # Ayırıcıyı parçalara geri ekleyelim (özellikle class/def için önemli)
-                parts = [parts[0]] + [sep + p for p in parts[1:]] if parts else []
-
-            new_chunks = []
-            current_chunk = ""
-
-            for part in parts:
-                # Eğer parça tek başına bile çok büyükse, bir sonraki ayırıcı ile böl
-                if len(part) > size:
-                    if current_chunk:
-                        new_chunks.append(current_chunk)
-                        current_chunk = ""
-                    sub_chunks = _split(part, sep_idx + 1)
-                    new_chunks.extend(sub_chunks)
-                    continue
-
-                # Mevcut parça ile limiti aşıyor mu?
-                if len(current_chunk) + len(part) > size:
-                    new_chunks.append(current_chunk)
-                    # Overlap mekanizması: Bir önceki chunk'ın sonundan biraz al
-                    overlap_len = min(len(current_chunk), overlap)
-                    current_chunk = current_chunk[-overlap_len:] + part
-                else:
-                    current_chunk += part
-
-            if current_chunk:
-                new_chunks.append(current_chunk)
-
-            return new_chunks
-
-        return _split(text, 0)
+        """Backwards-compatible facade for extracted recursive chunking."""
+        return _recursive_chunk_text_impl(text, size, overlap, list_factory=list)
 
     def _chunk_text(
         self,
@@ -882,44 +718,35 @@ class DocumentStore:
         tags: builtins.list[str] | None = None,
         session_id: str = "global",
     ) -> str:
-        doc_id = uuid.uuid4().hex[:12]
-        parent_id = hashlib.md5(f"{title}{source}".encode(), usedforsecurity=False).hexdigest()[:12]
+        doc_id, parent_id = _build_document_identity_impl(title, source)
         tags = tags or []
-        now = time.time()
+        now = _now_timestamp_impl()
 
         chunks = self._chunk_text(content)
-        ids = [f"{doc_id}_{i}" for i in range(len(chunks))]
-        metadatas = [
-            {
-                "source": source,
-                "title": title,
-                "tags": ",".join(tags),
-                "parent_id": parent_id,
-                "chunk_index": i,
-                "session_id": session_id,
-                "created_at": now,
-                "last_accessed_at": now,
-                "access_count": 0,
-            }
-            for i in range(len(chunks))
-        ]
+        ids = _build_chunk_ids_impl(doc_id, len(chunks))
+        metadatas = _build_chunk_metadatas_impl(
+            chunk_count=len(chunks),
+            source=source,
+            title=title,
+            tags=tags,
+            parent_id=parent_id,
+            session_id=session_id,
+            timestamp=now,
+        )
 
         with self._write_lock:
             doc_file = self.store_dir / f"{doc_id}.txt"
             doc_file.write_text(content, encoding="utf-8")
 
-            self._index[doc_id] = {
-                "title": title,
-                "source": source,
-                "tags": tags,
-                "size": len(content),
-                "preview": content[:300],
-                "parent_id": parent_id,
-                "session_id": session_id,
-                "created_at": now,
-                "last_accessed_at": now,
-                "access_count": 0,
-            }
+            self._index[doc_id] = _build_index_metadata_impl(
+                title=title,
+                source=source,
+                tags=tags,
+                content=content,
+                parent_id=parent_id,
+                session_id=session_id,
+                timestamp=now,
+            )
             self._save_index()
             self._update_bm25_cache_on_add(doc_id, content)
 
@@ -982,7 +809,15 @@ class DocumentStore:
         )
 
     @staticmethod
-    def _validate_url_safe(url: str) -> None:
+    def _is_public_ip_address(address: str) -> bool:
+        """Return whether an IP address is globally routable for URL ingestion."""
+        try:
+            return ipaddress.ip_address(address).is_global
+        except ValueError:
+            return False
+
+    @classmethod
+    def _validate_url_safe(cls, url: str, *, resolve_dns: bool = False) -> None:
         """SSRF koruması: yalnızca public HTTP/HTTPS URL'lerine izin verir."""
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme not in ("http", "https"):
@@ -992,17 +827,35 @@ class DocumentStore:
         hostname = parsed.hostname or ""
         if not hostname:
             raise ValueError("URL geçerli bir hostname içermiyor.")
+
+        normalized_hostname = hostname.rstrip(".").lower()
+        blocked_hosts = {"localhost", "metadata.google.internal", "169.254.169.254"}
+        if normalized_hostname in blocked_hosts:
+            raise ValueError(f"Engellenen hostname: {hostname}")
+
         try:
             addr = ipaddress.ip_address(hostname)
-            if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved:
-                raise ValueError(f"İç ağ adresine erişim engellendi: {hostname}")
-        except ValueError as exc:
-            # ip_address() hata fırlattıysa ama "İç ağ" mesajımız değilse → hostname (DNS adı)
-            if "İç ağ" in str(exc):
-                raise
-        blocked_hosts = {"localhost", "metadata.google.internal", "169.254.169.254"}
-        if hostname.lower() in blocked_hosts:
-            raise ValueError(f"Engellenen hostname: {hostname}")
+        except ValueError:
+            addr = None
+        if addr is not None and not addr.is_global:
+            raise ValueError(f"İç ağ adresine erişim engellendi: {hostname}")
+
+        if not resolve_dns or addr is not None:
+            return
+
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        try:
+            resolved = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+        except socket.gaierror as exc:
+            raise ValueError(f"Hostname çözümlenemedi: {hostname}") from exc
+        if not resolved:
+            raise ValueError(f"Hostname çözümlenemedi: {hostname}")
+        for family_info in resolved:
+            resolved_address = str(family_info[4][0])
+            if not cls._is_public_ip_address(resolved_address):
+                raise ValueError(
+                    f"Hostname public olmayan adrese çözümlendi: {hostname} -> {resolved_address}"
+                )
 
     async def add_document_from_url(
         self,
@@ -1014,22 +867,33 @@ class DocumentStore:
         import httpx
 
         try:
-            self._validate_url_safe(url)
+            current_url = url
+            max_redirects = 5
             async with httpx.AsyncClient(
                 timeout=15,
-                follow_redirects=True,
-                max_redirects=5,
+                follow_redirects=False,
                 headers={"User-Agent": "Mozilla/5.0"},
             ) as client:
-                resp = await client.get(url)
+                for _redirect_count in range(max_redirects + 1):
+                    self._validate_url_safe(current_url, resolve_dns=True)
+                    resp = await client.get(current_url)
+                    if not 300 <= resp.status_code < 400:
+                        break
+                    location = resp.headers.get("Location", "")
+                    if not location:
+                        raise ValueError("Redirect yanıtında Location başlığı yok.")
+                    current_url = urllib.parse.urljoin(str(resp.url), location)
+                else:
+                    raise ValueError(f"Redirect limiti aşıldı: {max_redirects}")
+            self._validate_url_safe(str(resp.url), resolve_dns=True)
             resp.raise_for_status()
             content = self._clean_html(resp.text)
 
             if not title:
                 m = re.search(r"<title[^>]*>([^<]+)</title>", resp.text, re.IGNORECASE)
-                title = m.group(1).strip() if m else url.split("/")[-1] or url
+                title = m.group(1).strip() if m else str(resp.url).rstrip("/").split("/")[-1] or url
 
-            doc_id = await self.add_document(title, content, url, tags, session_id)
+            doc_id = await self.add_document(title, content, str(resp.url), tags, session_id)
             return True, f"✓ Belge eklendi: [{doc_id}] {title} ({len(content)} karakter)"
         except Exception as exc:
             logger.error("URL belge çekme hatası: %s", exc)
@@ -1042,7 +906,8 @@ class DocumentStore:
         tags: builtins.list[str] | None = None,
         session_id: str = "global",
     ) -> tuple[bool, str]:
-        # Boş uzantı ("") kaldırıldı — uzantısız dosyalar ikili olabilir ve path traversal riski taşır
+        # Boş uzantı ("") kaldırıldı — uzantısız dosyalar ikili olabilir ve path traversal
+        # riski taşır
         _TEXT_EXTS = {
             ".py",
             ".txt",
@@ -1073,8 +938,8 @@ class DocumentStore:
                 return False, f"✗ Dosya bulunamadı: {path}"
             if not file.is_file():
                 return False, f"✗ Belirtilen yol bir dosya değil: {path}"
-            # Base directory sınırı: proje kökü veya sistem geçici dizini altındaki dosyalara izin ver
-            # (upload endpoint geçici dosyaları /tmp/ altında oluşturur)
+            # Base directory sınırı: proje kökü veya sistem geçici dizini altındaki dosyalara
+            # izin ver (upload endpoint geçici dosyaları /tmp/ altında oluşturur)
             _allowed_roots = (Config.BASE_DIR, Path(tempfile.gettempdir()).resolve())
             if not any(file.is_relative_to(root) for root in _allowed_roots):
                 return False, f"✗ Erişim engellendi: dosya proje dizini dışında: {path}"
@@ -1237,43 +1102,13 @@ class DocumentStore:
                 f"GraphRAG içinde '{query}' için ilgili modül bulunamadı veya entity eşleşmedi.",
             )
 
-        lines = [f"[GraphRAG: {query}]", ""]
-        if entity_results:
-            lines.append("İlişkisel bellek entity sonuçları:")
-            graph = self._ensure_entity_graph()
-            graph_nodes = graph["nodes"]
-            for item in entity_results:
-                node = item["node"]
-                lines.append(
-                    f"- {node.get('label')}: {node.get('name')} "
-                    f"(score={item['score']}, id={node.get('id')})"
-                )
-                for relation in item.get("relations", [])[:4]:
-                    source_node = graph_nodes.get(str(relation.get("source")), {})
-                    target_node = graph_nodes.get(str(relation.get("target")), {})
-                    lines.append(
-                        "  "
-                        f"{source_node.get('name', relation.get('source'))} "
-                        f"-[{relation.get('relation')}]-> "
-                        f"{target_node.get('name', relation.get('target'))}"
-                    )
-            lines.append("")
-
-        if results:
-            lines.append("Kod bağımlılık grafı sonuçları:")
-        for item in results:
-            lines.append(f"- {item['id']} (score={item['score']})")
-            neighbors_raw = item.get("neighbors") or []
-            neighbors_iter = neighbors_raw if isinstance(neighbors_raw, list | tuple | set) else []
-            neighbors = [str(n) for n in neighbors_iter]
-            if neighbors:
-                lines.append(f"  Komşular: {', '.join(neighbors)}")
-            reverse_raw = item.get("reverse_neighbors") or []
-            reverse_iter = reverse_raw if isinstance(reverse_raw, list | tuple | set) else []
-            reverse_neighbors = [str(n) for n in reverse_iter]
-            if reverse_neighbors:
-                lines.append(f"  Ters Komşular: {', '.join(reverse_neighbors)}")
-        return True, "\n".join(lines)
+        graph_nodes = self._ensure_entity_graph()["nodes"] if entity_results else {}
+        return True, _format_graph_search_results_impl(
+            query,
+            code_results=results,
+            entity_results=entity_results,
+            graph_nodes=graph_nodes,
+        )
 
     def explain_dependency_path(self, source: str, target: str) -> tuple[bool, str]:
         """İki modül arasındaki en kısa bağımlılık yolunu açıklar."""
@@ -1298,36 +1133,7 @@ class DocumentStore:
 
         if not isinstance(analysis, dict):
             return False, "Graph impact analizi beklenen formatta dönmedi."
-        lines = [f"[GraphRAG Impact] {analysis['target']}", ""]
-        impacted_endpoints = analysis.get("impacted_endpoints") or []
-        impacted_endpoint_handlers = analysis.get("impacted_endpoint_handlers") or []
-        caller_files = analysis.get("caller_files") or []
-        direct_dependents = analysis.get("direct_dependents") or []
-        dependencies = analysis.get("dependencies") or []
-        review_targets = analysis.get("review_targets") or []
-        dependency_paths = analysis.get("dependency_paths") or []
-
-        lines.append(f"- Düğüm tipi: {analysis.get('node_type', 'file')}")
-        lines.append(f"- Risk seviyesi: {analysis.get('risk_level', 'low')}")
-        if direct_dependents:
-            lines.append(f"- Doğrudan bağımlılar: {', '.join(direct_dependents)}")
-        if dependencies:
-            lines.append(f"- Aşağı akış bağımlılıklar: {', '.join(dependencies)}")
-        if impacted_endpoints:
-            lines.append(f"- Etkilenen endpoint'ler: {', '.join(impacted_endpoints)}")
-        if impacted_endpoint_handlers:
-            lines.append(
-                f"- Etkilenen endpoint handler dosyaları: {', '.join(impacted_endpoint_handlers)}"
-            )
-        if caller_files:
-            lines.append(f"- Çağıran dosyalar: {', '.join(caller_files)}")
-        if review_targets:
-            lines.append(f"- Reviewer için önerilen hedefler: {', '.join(review_targets)}")
-        if dependency_paths:
-            lines.append("- Örnek etki zincirleri:")
-            for idx, path in enumerate(dependency_paths, start=1):
-                lines.append(f"  {idx}. {' -> '.join(path)}")
-        return True, "\n".join(lines)
+        return True, _format_graph_impact_analysis_impl(analysis)
 
     def graph_impact_details(
         self, target: str, top_k: int = 10
@@ -1358,145 +1164,19 @@ class DocumentStore:
         Neo4j gibi bir katmana doğrudan yazmak yerine, önce taşınabilir bir projection
         üretir. Böylece ileride GraphRAG için `MERGE` tabanlı sync işleri kolaylaşır.
         """
-        max_items = max(1, min(int(limit or 100), 1000))
-        nodes: builtins.list[KnowledgeGraphNode] = []
-        edges: builtins.list[KnowledgeGraphEdge] = []
-
-        doc_items = list(self._index.items())[:max_items]
-        for doc_id, meta in doc_items:
-            doc_session = str(meta.get("session_id", "global") or "global")
-            if session_id != "global" and doc_session != session_id:
-                continue
-            title = str(meta.get("title", "") or "")
-            source = str(meta.get("source", "") or "")
-            nodes.append(
-                KnowledgeGraphNode(
-                    id=f"doc:{doc_id}",
-                    label="Document",
-                    properties={
-                        "doc_id": doc_id,
-                        "title": title,
-                        "source": source,
-                        "session_id": doc_session,
-                        "vector_backend": "pgvector"
-                        if getattr(self, "_pgvector_available", False)
-                        else getattr(self, "_vector_backend", "bm25"),
-                    },
-                )
-            )
-            nodes.append(
-                KnowledgeGraphNode(
-                    id=f"session:{doc_session}",
-                    label="Session",
-                    properties={"session_id": doc_session},
-                )
-            )
-            edges.append(
-                KnowledgeGraphEdge(
-                    source=f"session:{doc_session}",
-                    target=f"doc:{doc_id}",
-                    relation="CONTAINS_DOCUMENT",
-                )
-            )
-            if source:
-                nodes.append(
-                    KnowledgeGraphNode(
-                        id=f"source:{source}",
-                        label="Source",
-                        properties={"source": source},
-                    )
-                )
-                edges.append(
-                    KnowledgeGraphEdge(
-                        source=f"doc:{doc_id}",
-                        target=f"source:{source}",
-                        relation="DERIVED_FROM",
-                    )
-                )
-
-        entity_graph = self._ensure_entity_graph()
-        for node_id, node in list(entity_graph["nodes"].items())[:max_items]:
-            properties = node.get("properties") if isinstance(node.get("properties"), dict) else {}
-            node_session = str(properties.get("session_id", "global") or "global")
-            if session_id != "global" and node_session not in {session_id, "global"}:
-                continue
-            nodes.append(
-                KnowledgeGraphNode(
-                    id=f"entity:{node_id}",
-                    label=str(node.get("label") or "Entity"),
-                    properties={
-                        **properties,
-                        "entity_id": node_id,
-                        "name": str(node.get("name") or ""),
-                    },
-                )
-            )
-        entity_edge_count = 0
-        for edge in entity_graph["edges"]:
-            if entity_edge_count >= max_items:
-                break
-            edge_session = str(edge.get("session_id", "global") or "global")
-            if session_id != "global" and edge_session not in {session_id, "global"}:
-                continue
-            source_id = str(edge.get("source") or "")
-            target_id = str(edge.get("target") or "")
-            if not source_id or not target_id:
-                continue
-            entity_edge_count += 1
-            edges.append(
-                KnowledgeGraphEdge(
-                    source=f"entity:{source_id}",
-                    target=f"entity:{target_id}",
-                    relation=str(edge.get("relation") or "RELATED_TO"),
-                    properties=dict(edge.get("properties") or {}),
-                )
-            )
-
         if include_code_graph and self._graph_rag_enabled:
             self._ensure_graph_ready()
-            for node_id, attrs in list(self._graph_index.nodes.items())[:max_items]:
-                nodes.append(
-                    KnowledgeGraphNode(
-                        id=f"code:{node_id}",
-                        label="CodeNode",
-                        properties=dict(attrs),
-                    )
-                )
-            edge_count = 0
-            for source_id, targets in self._graph_index.edges.items():
-                for target_id in sorted(targets):
-                    edge_count += 1
-                    if edge_count > max_items:
-                        break
-                    edge_kinds = sorted(
-                        self._graph_index.edge_kinds.get((source_id, target_id), {"RELATED_TO"})
-                    )
-                    edges.append(
-                        KnowledgeGraphEdge(
-                            source=f"code:{source_id}",
-                            target=f"code:{target_id}",
-                            relation=edge_kinds[0],
-                            properties={"edge_kinds": edge_kinds},
-                        )
-                    )
-                if edge_count > max_items:
-                    break
-
-        unique_nodes = list({(node.id, node.label): node for node in nodes}.values())
-        cypher_hint = (
-            "UNWIND $nodes AS node MERGE (n:KG {id: node.id}) "
-            "SET n += node.properties, n.label = node.label "
-            "WITH n UNWIND $edges AS edge MATCH (s:KG {id: edge.source}), (t:KG {id: edge.target}) "
-            "MERGE (s)-[r:RELATED {relation: edge.relation}]->(t) SET r += edge.properties"
+        return _build_knowledge_graph_projection_payload_impl(
+            index=self._index,
+            entity_graph=self._ensure_entity_graph(),
+            graph_index=self._graph_index,
+            session_id=session_id,
+            include_code_graph=include_code_graph,
+            graph_rag_enabled=self._graph_rag_enabled,
+            pgvector_available=getattr(self, "_pgvector_available", False),
+            vector_backend=getattr(self, "_vector_backend", "bm25"),
+            limit=limit,
         )
-        return {
-            "nodes": unique_nodes,
-            "edges": edges,
-            "cypher_hint": cypher_hint,
-            "vector_backend": "pgvector"
-            if getattr(self, "_pgvector_available", False)
-            else getattr(self, "_vector_backend", "bm25"),
-        }
 
     def build_graphrag_search_plan(
         self,
@@ -1531,7 +1211,9 @@ class DocumentStore:
         graph_edges = list(projection["edges"])
 
         def _broker_topic(receiver: str, intent: str, namespace: str = "sidar.swarm") -> str:
-            return f"{namespace}.{str(receiver or 'unknown').strip().lower() or 'unknown'}.{str(intent or 'mixed').strip().lower() or 'mixed'}"
+            receiver_part = str(receiver or "unknown").strip().lower() or "unknown"
+            intent_part = str(intent or "mixed").strip().lower() or "mixed"
+            return f"{namespace}.{receiver_part}.{intent_part}"
 
         broker_topics = [
             _broker_topic(receiver="researcher", intent="rag_search"),
@@ -1559,7 +1241,8 @@ class DocumentStore:
         if mode != "graph" and not session_docs:
             return (
                 False,
-                "⚠ Bu oturum için belge deposu boş. Belge eklemek için: TOOL:docs_add:<başlık>|<url>",
+                "⚠ Bu oturum için belge deposu boş. Belge eklemek için: "
+                "TOOL:docs_add:<başlık>|<url>",
             )
 
         if mode == "graph":
@@ -1592,7 +1275,16 @@ class DocumentStore:
                 if self._chroma_available and self.collection:  # pragma: no cover
                     return self._chroma_search(query, top_k, session_id)
             if self._bm25_available:
+                logger.info(
+                    "RAG BM25 fallback/search selected: reason=local_llm_auto_no_vector, "
+                    "session_id=%s",
+                    session_id,
+                )
                 return self._bm25_search(query, top_k, session_id)
+            logger.info(
+                "RAG keyword fallback selected: reason=local_llm_auto_no_bm25, session_id=%s",
+                session_id,
+            )
             return self._keyword_search(query, top_k, session_id)
 
         if (
@@ -1637,7 +1329,16 @@ class DocumentStore:
                 logger.warning("ChromaDB arama hatası (BM25'e düşülüyor): %s", exc)
 
         if self._bm25_available:
+            logger.info(
+                "RAG BM25 fallback/search selected: reason=vector_backends_unavailable, "
+                "session_id=%s",
+                session_id,
+            )
             return self._bm25_search(query, top_k, session_id)
+        logger.info(
+            "RAG keyword fallback selected: reason=no_vector_or_bm25_backend, session_id=%s",
+            session_id,
+        )
         return self._keyword_search(query, top_k, session_id)
 
     async def search(
@@ -1717,43 +1418,13 @@ class DocumentStore:
     def _format_results_from_struct(
         self, results: list[dict[str, Any]], query: str, source_name: str
     ) -> tuple[bool, str]:
-        """Ortak sonuç biçimlendirici."""
-        if not results:
-            return False, f"'{query}' için belge deposunda ilgili sonuç bulunamadı."
-
-        lines = [f"[RAG Arama: {query}] (Motor: {source_name})", ""]
-        for res in results:
-            lines.append(f"**[{res['id']}] {res['title']}**")
-            if res["source"]:
-                lines.append(f"  Kaynak: {res['source']}")
-
-            # Snippet uzunluğunu sınırla ve satır sonlarını temizle
-            snippet = res["snippet"].replace("\n", " ").strip()
-            if len(snippet) > 400:
-                snippet = snippet[:400] + "..."
-
-            lines.append(f"  {snippet}")
-            lines.append("")
-
-        return True, "\n".join(lines)
+        """Backwards-compatible facade for extracted result formatting."""
+        return _format_results_from_struct_impl(results, query, source_name)
 
     @staticmethod
     def _extract_snippet(content: str, query: str, window: int = 400) -> str:
-        """Sorgudaki ilk anahtar kelimenin etrafındaki metni çıkar (BM25 ve Keyword için)."""
-        keywords = query.lower().split()
-        content_lower = content.lower()
-
-        # Önce tam eşleşme ara
-        for kw in keywords:
-            idx = content_lower.find(kw)
-            if idx != -1:
-                start = max(0, idx - 100)
-                end = min(len(content), idx + window)
-                snippet = content[start:end].strip()
-                return f"...{snippet}..." if start > 0 else snippet
-
-        # Bulunamazsa baş tarafı döndür
-        return content[:window] + ("..." if len(content) > window else "")
+        """Backwards-compatible facade for extracted snippet selection."""
+        return _extract_snippet_impl(content, query, window)
 
     # ─────────────────────────────────────────────
     #  LİSTELEME & STATÜ
@@ -1766,12 +1437,8 @@ class DocumentStore:
         keep_recent_docs: int = 2,
     ) -> dict[str, Any]:
         """Oturumdaki eski RAG belgelerini özetleyip düşük değerli embedding'leri temizler."""
-        normalized_session = str(session_id or "").strip() or "global"
-        docs = [
-            (doc_id, dict(meta))
-            for doc_id, meta in self._index.items()
-            if meta.get("session_id", "global") == normalized_session
-        ]
+        normalized_session = _normalize_session_id_impl(session_id)
+        docs = _documents_for_session_impl(self._index, normalized_session)
         keep_count = max(1, int(keep_recent_docs or 1))
         if len(docs) <= keep_count:
             return {
@@ -1781,22 +1448,7 @@ class DocumentStore:
                 "summary_doc_id": "",
             }
 
-        sorted_docs = sorted(
-            docs,
-            key=lambda item: (
-                float(item[1].get("last_accessed_at", item[1].get("created_at", 0.0)) or 0.0),
-                int(item[1].get("access_count", 0) or 0),
-            ),
-            reverse=True,
-        )
-        removable: builtins.list[tuple[str, dict[str, Any]]] = []
-        for doc_id, meta in sorted_docs[keep_count:]:
-            tags = {str(tag).strip().lower() for tag in list(meta.get("tags", []) or [])}
-            if "pinned" in tags or "memory-summary" in tags:
-                continue
-            if int(meta.get("access_count", 0) or 0) > 1:
-                continue
-            removable.append((doc_id, meta))
+        removable = _select_removable_session_documents_impl(docs, keep_recent_docs=keep_count)
 
         if not removable:
             return {
@@ -1806,19 +1458,10 @@ class DocumentStore:
                 "summary_doc_id": "",
             }
 
-        for doc_id, meta in list(docs):
-            if str(meta.get("source", "") or "").startswith("memory://nightly-digest"):
-                self.delete_document(doc_id, normalized_session)
+        for doc_id in _nightly_digest_document_ids_impl(docs):
+            self.delete_document(doc_id, normalized_session)
 
-        summary_lines = [
-            f"Oturum: {normalized_session}",
-            f"Konsolide edilen belge sayısı: {len(removable)}",
-            "Öne çıkan eski belge özetleri:",
-        ]
-        for doc_id, meta in removable[:8]:
-            summary_lines.append(
-                f"- [{doc_id}] {meta.get('title', doc_id)} :: {str(meta.get('preview', '') or '')[:160]}"
-            )
+        summary_lines = _build_session_summary_lines_impl(normalized_session, removable)
         summary_doc_id = self._add_document_sync(
             title=f"Nightly Memory Digest ({normalized_session})",
             content="\n".join(summary_lines),
@@ -1845,23 +1488,11 @@ class DocumentStore:
             for k, v in self._index.items()
             if session_id is None or v.get("session_id", "global") == session_id
         }
-        if not docs:
-            return "Belge deposu boş veya bu oturum için belge bulunamadı."
-
-        backend_note = ""
-        if getattr(self, "_vector_backend", "bm25") == "pgvector" and not getattr(
-            self, "_pgvector_available", False
-        ):
-            backend_note = " (pgvector pasif)"
-        lines = [f"[Belge Deposu — {len(docs)} belge]{backend_note}", ""]
-        for doc_id, meta in docs.items():
-            tags = ", ".join(meta.get("tags", [])) or "-"
-            size_kb = meta.get("size", 0) / 1024
-            lines.append(f"  [{doc_id}] {meta['title']}")
-            lines.append(
-                f"    Kaynak: {meta.get('source', '-')} | Boyut: {size_kb:.1f} KB | Etiketler: {tags}"
-            )
-        return "\n".join(lines)
+        return _format_document_listing_impl(
+            docs,
+            vector_backend=getattr(self, "_vector_backend", "bm25"),
+            pgvector_available=getattr(self, "_pgvector_available", False),
+        )
 
     # ─────────────────────────────────────────────
     #  YARDIMCILAR

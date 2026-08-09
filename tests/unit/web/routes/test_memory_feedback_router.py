@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import pytest
 from fastapi import HTTPException
 
@@ -45,8 +47,13 @@ def _exports(*, entity_memory=None, feedback_store=None):
         cfg=object(),
         entity_memory_cache={"instance": entity_memory},
         feedback_store_cache={"instance": feedback_store},
+        get_request_user=lambda: None,
     )
     return router.legacy_exports
+
+
+def _user(user_id: str = "u1") -> SimpleNamespace:
+    return SimpleNamespace(id=user_id, username=f"user-{user_id}", role="user")
 
 
 @pytest.mark.asyncio
@@ -55,15 +62,16 @@ async def test_memory_feedback_router_legacy_exports_success_paths():
     feedback_store = _FeedbackStore()
     exports = _exports(entity_memory=entity_memory, feedback_store=feedback_store)
 
+    user = _user("u1")
     upsert = await exports["api_entity_upsert"](
-        EntityUpsertRequest(user_id="u1", key="skill", value="python", ttl_days=7)
+        EntityUpsertRequest(user_id="u1", key="skill", value="python", ttl_days=7), user
     )
-    profile = await exports["api_entity_get_profile"]("u1")
-    delete = await exports["api_entity_delete"]("u1", "skill")
+    profile = await exports["api_entity_get_profile"]("u1", user)
+    delete = await exports["api_entity_delete"]("u1", "skill", user)
     record = await exports["api_feedback_record"](
-        FeedbackRecordRequest(user_id="u1", prompt="p", response="r", rating=5)
+        FeedbackRecordRequest(user_id="u1", prompt="p", response="r", rating=5), user
     )
-    stats = await exports["api_feedback_stats"]()
+    stats = await exports["api_feedback_stats"](user)
 
     assert upsert.status_code == 200
     assert entity_memory.upserts == [
@@ -79,6 +87,36 @@ async def test_memory_feedback_router_legacy_exports_success_paths():
 
 
 @pytest.mark.asyncio
+async def test_memory_feedback_router_rejects_cross_user_entity_and_feedback_access():
+    entity_memory = _EntityMemory()
+    feedback_store = _FeedbackStore()
+    exports = _exports(entity_memory=entity_memory, feedback_store=feedback_store)
+    user = _user("u1")
+
+    with pytest.raises(HTTPException) as upsert_exc:
+        await exports["api_entity_upsert"](
+            EntityUpsertRequest(user_id="u2", key="skill", value="python"), user
+        )
+    with pytest.raises(HTTPException) as profile_exc:
+        await exports["api_entity_get_profile"]("u2", user)
+    with pytest.raises(HTTPException) as delete_exc:
+        await exports["api_entity_delete"]("u2", "skill", user)
+    with pytest.raises(HTTPException) as feedback_exc:
+        await exports["api_feedback_record"](
+            FeedbackRecordRequest(user_id="u2", prompt="p", response="r", rating=5), user
+        )
+
+    assert {
+        upsert_exc.value.status_code,
+        profile_exc.value.status_code,
+        delete_exc.value.status_code,
+        feedback_exc.value.status_code,
+    } == {403}
+    assert entity_memory.upserts == []
+    assert feedback_store.records == []
+
+
+@pytest.mark.asyncio
 async def test_memory_feedback_router_entity_memory_factory_failure(monkeypatch):
     def _raise_factory(_cfg):
         raise RuntimeError("entity unavailable")
@@ -89,7 +127,7 @@ async def test_memory_feedback_router_entity_memory_factory_failure(monkeypatch)
     exports = _exports(entity_memory=None)
 
     with pytest.raises(HTTPException) as exc_info:
-        await exports["api_entity_get_profile"]("u1")
+        await exports["api_entity_get_profile"]("u1", _user("u1"))
 
     assert exc_info.value.status_code == 501
     assert "EntityMemory başlatılamadı" in exc_info.value.detail
@@ -106,7 +144,7 @@ async def test_memory_feedback_router_feedback_store_factory_failure(monkeypatch
     exports = _exports(feedback_store=None)
 
     with pytest.raises(HTTPException) as exc_info:
-        await exports["api_feedback_stats"]()
+        await exports["api_feedback_stats"](_user("u1"))
 
     assert exc_info.value.status_code == 501
     assert "FeedbackStore başlatılamadı" in exc_info.value.detail

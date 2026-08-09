@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 
 verify_wsl_integration_listed() {
     [[ "$WSL2" == true ]] || return 0
@@ -464,9 +465,14 @@ ensure_docker_daemon_running() {
 }
 
 sidar_phase_runtime_prerequisites() {
-    sidar_source_install_utils "gpu_utils.sh"
+    sidar_source_install_utils "gpu_utils.sh" "python_env.sh"
     ensure_prerequisites
     select_runtime_mode
+    if [[ "${APP_RUNTIME_MODE_SELECTED:-local}" == "local" ]]; then
+        select_dependency_profile
+    else
+        info "Tam Docker modu: lokal Python bağımlılık profili seçimi atlanıyor."
+    fi
     detect_gpu
     setup_nvidia_docker
     if [[ "${APP_RUNTIME_MODE_SELECTED:-local}" != "local" ]]; then

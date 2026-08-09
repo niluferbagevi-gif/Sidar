@@ -34,6 +34,8 @@ def test_module_metadata(monkeypatch):
     assert module.down_revision == "0003_audit_trail"
     assert module.branch_labels is None
     assert module.depends_on is None
+    assert module.TABLE_PURPOSES["marketing_campaigns"].startswith("Poyraz marketing")
+    assert "CoverageAgent" in module.TABLE_PURPOSES["coverage_tasks"]
 
 
 def test_upgrade_creates_all_five_tables(monkeypatch):

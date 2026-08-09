@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 # shellcheck disable=SC2034  # sentinel read indirectly by sidar_source_install_utils.
 SIDAR_INSTALL_UTIL_INSTALL_REMEDIATION_SH_LOADED=1
 
@@ -9,6 +10,12 @@ SIDAR_INSTALL_UTIL_INSTALL_REMEDIATION_SH_LOADED=1
 # the operator to restart from scratch.
 
 sidar_install_auto_heal_enabled() {
+    local suppress_raw="${SIDAR_INSTALL_SUPPRESS_AUTO_HEAL:-0}"
+    suppress_raw="$(echo "$suppress_raw" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+    case "$suppress_raw" in
+        1|true|yes|y|evet|e|on|enable|enabled) return 1 ;;
+    esac
+
     local raw="${SIDAR_INSTALL_AUTO_HEAL:-1}"
     raw="$(echo "$raw" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
     case "$raw" in
@@ -49,29 +56,65 @@ sidar_phase_is_informational() {
 sidar_is_non_retryable_failure_code() {
     local exit_code="${1:-0}"
     case "$exit_code" in
-        2|127) return 0 ;;
+        -9|2|124|127) return 0 ;;
         *) return 1 ;;
     esac
+}
+
+
+sidar_failure_code_for_signal() {
+    local failed_cmd="${1:-}"
+    local reason="${2:-}"
+    local signal="${failed_cmd} ${reason}"
+    local normalized=""
+    normalized="$(printf '%s' "$signal" | tr '[:upper:]' '[:lower:]')"
+
+    case "$normalized" in
+        *"checksum değeri tanımlı değil"*|*"_install_sha256"*|*"allow_unverified_remote_scripts"*|*"supply-chain"*|*"checksum doğrulaması başarısız"*)
+            echo "remote-script-checksum-missing"
+            return 0
+            ;;
+        *"installer smoke gate başarısız"*|*"install_sidar_version"*"eşleşmiyor"*)
+            echo "installer-smoke-gate-failure"
+            return 0
+            ;;
+        *"install_sidar.sh sha256 farklı"*|*"hash drift kaynağını temizleyin"*|*"sidar_install_allow_stale_reexec"*)
+            echo "installer-hash-drift"
+            return 0
+            ;;
+        *"environmentfilenotfound"*|*"environment.yml"*|*"is_alembic_at_head failed"*)
+            echo "learned-non-retryable-failure"
+            return 0
+            ;;
+        *"smoke testlerde hata var"*|*"smoke test failed"*|*"pytest"*|*"failed tests/"*|*"test gate failure"*)
+            echo "test-gate-failure"
+            return 0
+            ;;
+        *"assert"*|*"unit test"*|*"test failed"*|*"deterministic"*)
+            echo "deterministic-failure"
+            return 0
+            ;;
+    esac
+
+    return 1
 }
 
 sidar_is_deterministic_failure_signal() {
     local failed_cmd="${1:-}"
     local reason="${2:-}"
-    local signal="${failed_cmd} ${reason}"
-    local normalized=""
-    normalized="$(printf '%s' "$signal" | tr '[:upper:]' '[:lower:]')"
-    # Eksik checksum / supply-chain doğrulama hataları deterministiktir:
-    # ortam değişkeni sağlanmadan retry aynı duvara çarpar.
-    case "$normalized" in
-        *"checksum değeri tanımlı değil"*|*"_install_sha256"*|*"allow_unverified_remote_scripts"*|*"supply-chain"*|*"checksum doğrulaması başarısız"*)
-            return 0
-            ;;
-    esac
-    case "$normalized" in
-        *"sudo: timed out"*|*"ollama_install"*)
-            return 1
-            ;;
-        *"assert"*|*"smoke test failed"*|*"pytest"*|*"unit test"*|*"test failed"*|*"deterministic"*)
+    local code=""
+
+    code="$(sidar_failure_code_for_signal "$failed_cmd" "$reason" || true)"
+    if [[ "$code" != "remote-script-checksum-missing" ]]; then
+        case "$(printf '%s %s' "$failed_cmd" "$reason" | tr '[:upper:]' '[:lower:]')" in
+            *"sudo: timed out"*|*"ollama_install"*)
+                return 1
+                ;;
+        esac
+    fi
+
+    case "$code" in
+        remote-script-checksum-missing|installer-smoke-gate-failure|installer-hash-drift|learned-non-retryable-failure|test-gate-failure|deterministic-failure)
             return 0
             ;;
         *)
@@ -80,14 +123,77 @@ sidar_is_deterministic_failure_signal() {
     esac
 }
 
-sidar_is_remote_script_checksum_missing() {
+
+sidar_is_test_gate_failure_signal() {
+    local failed_cmd="${1:-}"
+    local reason="${2:-}"
+    [[ "$(sidar_failure_code_for_signal "$failed_cmd" "$reason" || true)" == "test-gate-failure" ]]
+}
+
+
+sidar_test_gate_failure_guidance() {
+    local failed_cmd="${1:-}"
+    local reason="${2:-}"
+    local signal="${failed_cmd} ${reason}"
+    local test_ref=""
+    local rerun_command=""
+
+    test_ref="${SIDAR_LAST_FAILED_TEST:-}"
+    if [[ -n "$test_ref" && "$test_ref" != tests/* ]]; then
+        test_ref=""
+    fi
+    if [[ -z "$test_ref" ]]; then
+        test_ref="$(printf '%s\n' "$signal" | sed -nE 's/.*(FAILED[[:space:]]+)?(tests\/[^[:space:]]+).*/\2/p' | head -n1 || true)"
+    fi
+    if [[ -n "$test_ref" ]]; then
+        rerun_command="uv run pytest ${test_ref} -v --no-cov"
+    else
+        rerun_command="uv run pytest tests/smoke --rootdir=\"${SCRIPT_DIR:-.}\" -v --no-cov"
+    fi
+
+    cat <<EOF
+Test gate failure deterministiktir; aynı kodu yeniden çalıştırmak sonucu değiştirmez. Başarısız test: ${test_ref:-bilinmiyor}. Tekrar komutu: ${rerun_command}
+EOF
+}
+
+sidar_failure_signature() {
+    local phase="${1:-}"
+    local failed_cmd="${2:-}"
+    local reason="${3:-}"
+    local exit_code="${4:-}"
+    local normalized=""
+    normalized="$(printf '%s' "${phase}|${exit_code}|${failed_cmd}|${reason}" \
+        | tr '[:upper:]' '[:lower:]' \
+        | sed -E 's#/tmp/[^[:space:]]+#/tmp/<tmp>#g; s#[0-9]{4}-[0-9]{2}-[0-9]{2}t[0-9:]+z#<timestamp>#g; s#[0-9]+(\.[0-9]+)?s#<duration>#g; s#[[:space:]]+# #g')"
+    if command -v sha256sum >/dev/null 2>&1; then
+        printf '%s' "$normalized" | sha256sum | awk '{print $1}'
+        return 0
+    fi
+    if command -v shasum >/dev/null 2>&1; then
+        printf '%s' "$normalized" | shasum -a 256 | awk '{print $1}'
+        return 0
+    fi
+    printf '%s' "$normalized" | cksum | awk '{print $1}'
+}
+
+sidar_is_non_retryable_failure_signal() {
+    local failed_cmd="${1:-}"
+    local reason="${2:-}"
+    [[ "$(sidar_failure_code_for_signal "$failed_cmd" "$reason" || true)" == "learned-non-retryable-failure" ]]
+}
+
+
+sidar_non_retryable_failure_guidance() {
     local failed_cmd="${1:-}"
     local reason="${2:-}"
     local signal="${failed_cmd} ${reason}"
     local normalized=""
     normalized="$(printf '%s' "$signal" | tr '[:upper:]' '[:lower:]')"
     case "$normalized" in
-        *"checksum değeri tanımlı değil"*|*"_install_sha256"*|*"supply-chain doğrulamasını korumak"*)
+        *"environmentfilenotfound"*|*"environment.yml"*)
+            cat <<'EOF'
+Bu imza eski conda tabanlı kurulumdan kalma olabilir. Güncel Sidar installer akışı uv kullanır; ~/Sidar veya PATH üzerinde stale install_sidar.sh kopyası olup olmadığını kontrol edin ve kurulumu repo kökündeki ./install_sidar.sh ile yeniden başlatın.
+EOF
             return 0
             ;;
         *)
@@ -95,6 +201,27 @@ sidar_is_remote_script_checksum_missing() {
             ;;
     esac
 }
+
+sidar_is_installer_smoke_gate_failure() {
+    local failed_cmd="${1:-}"
+    local reason="${2:-}"
+    [[ "$(sidar_failure_code_for_signal "$failed_cmd" "$reason" || true)" == "installer-smoke-gate-failure" ]]
+}
+
+
+sidar_is_installer_hash_drift_failure() {
+    local failed_cmd="${1:-}"
+    local reason="${2:-}"
+    [[ "$(sidar_failure_code_for_signal "$failed_cmd" "$reason" || true)" == "installer-hash-drift" ]]
+}
+
+
+sidar_is_remote_script_checksum_missing() {
+    local failed_cmd="${1:-}"
+    local reason="${2:-}"
+    [[ "$(sidar_failure_code_for_signal "$failed_cmd" "$reason" || true)" == "remote-script-checksum-missing" ]]
+}
+
 
 sidar_detect_missing_checksum_var() {
     local failed_cmd="${1:-}"
@@ -134,6 +261,20 @@ sidar_retry_budget_for_failure() {
             echo "$default_budget"
             ;;
     esac
+}
+
+
+sidar_is_root_owned_venv_remediation_signal() {
+    local phase="${1:-}"
+    local failed_cmd="${2:-}"
+    local reason="${3:-}"
+    local venv_dir="${VENV_DIR:-.venv}"
+
+    [[ "$phase" == "04_workspace" ]] || return 1
+    [[ "$failed_cmd" == *"rm -rf"* ]] || return 1
+    [[ "$reason" == *"Permission denied"* || "$reason" == *"permission denied"* ]] || return 1
+    [[ "$failed_cmd" == *"$venv_dir"* || "$failed_cmd" == *".venv"* ]] || return 1
+    return 0
 }
 
 sidar_should_skip_phase_for_resume() {
@@ -319,14 +460,31 @@ sidar_phase_remediation_strategy() {
     local failed_cmd="$2"
     local reason="$3"
 
-    # Tüm fazlarda geçerli: uzak betik checksum metadata eksikse self-heal
-    # uygulanamaz; retry aynı duvara çarpar. Fail-fast davran ve operatöre yönlendir.
+    # Tüm fazlarda geçerli deterministic imzalar en özelden en genele sınıflandırılır.
+    # Generic test-gate deseni "installer smoke gate başarısız" metnini de kapsadığı
+    # için installer-specific sınıflandırmalar mutlaka önce çalışmalıdır.
     if sidar_is_remote_script_checksum_missing "$failed_cmd" "$reason"; then
         local missing_var=""
         missing_var="$(sidar_detect_missing_checksum_var "$failed_cmd" "$reason")"
         local action="no-retry;manual-fix-required"
         [[ -n "$missing_var" ]] && action="${action};missing-var=${missing_var}"
         sidar_write_remediation_report "$phase" "remote-script-checksum-missing" "$action"
+        return 1
+    fi
+    if sidar_is_installer_smoke_gate_failure "$failed_cmd" "$reason"; then
+        sidar_write_remediation_report "$phase" "installer-smoke-gate-failure" "no-retry;manual-fix-required"
+        return 1
+    fi
+    if sidar_is_installer_hash_drift_failure "$failed_cmd" "$reason"; then
+        sidar_write_remediation_report "$phase" "installer-hash-drift" "no-retry;remove-stale-home-installer-or-refresh-clone"
+        return 1
+    fi
+    if sidar_is_non_retryable_failure_signal "$failed_cmd" "$reason"; then
+        sidar_write_remediation_report "$phase" "learned-non-retryable-failure" "fail-fast;no-retry;no-resume"
+        return 1
+    fi
+    if sidar_is_test_gate_failure_signal "$failed_cmd" "$reason"; then
+        sidar_write_remediation_report "$phase" "test-gate-failure" "fail-fast;no-retry;no-resume"
         return 1
     fi
 
@@ -342,7 +500,7 @@ sidar_phase_remediation_strategy() {
             fi
             ;;
         04_workspace)
-            if [[ "$failed_cmd" == *"rm -rf"* && "$reason" == *"Permission denied"* ]]; then
+            if sidar_is_root_owned_venv_remediation_signal "$phase" "$failed_cmd" "$reason"; then
                 sidar_remediate_root_owned_venv
                 return $?
             fi
@@ -375,18 +533,36 @@ sidar_emit_remediation_guidance() {
             *) script_url="<ilgili uzak betik URL'i>" ;;
         esac
         warn "Auto-heal: ${phase} fazı uzak betik checksum metadata eksikliği nedeniyle durdu. Bu durum self-heal ile güvenli biçimde onarılamaz (retry aynı duvara çarpar)."
-        warn "Çözüm (önerilen TOFU akışı): betiği indir, gözden geçir ve aynı içerikten SHA-256 üret:"
-        if [[ -n "$missing_var" && "$script_url" != "<"* ]]; then
-            warn "  tmp=\$(mktemp)"
-            warn "  curl -fsSL --retry 3 --retry-all-errors -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' '${script_url}' -o \"\$tmp\""
-            warn "  less \"\$tmp\"                    # betiği gözden geçir"
-            warn "  export ${missing_var}=\$(sha256sum \"\$tmp\" | awk '{print \$1}')"
-            warn "  rm -f \"\$tmp\""
-            warn "  ./install_sidar.sh"
-        else
-            warn "  İlgili *_SHA256 değişkenini (UV_INSTALL_SHA256 veya OLLAMA_INSTALL_SHA256) tanımlayın."
+        if ! declare -F remote_script_checksum_hint >/dev/null 2>&1; then
+            local remediation_utils_dir=""
+            remediation_utils_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+            # shellcheck source=/dev/null
+            # shellcheck disable=SC1090
+            source "${remediation_utils_dir}/remote_script.sh"
         fi
-        warn "Alternatif (sadece bilinçli test amaçlı): ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1 ./install_sidar.sh"
+        if [[ -n "$missing_var" && "$script_url" != "<"* ]]; then
+            local script_label="remote_install"
+            case "$missing_var" in
+                OLLAMA_INSTALL_SHA256) script_label="ollama_install" ;;
+                UV_INSTALL_SHA256) script_label="uv_install" ;;
+            esac
+            while IFS= read -r guidance_line; do
+                warn "$guidance_line"
+            done < <(remote_script_checksum_hint "$script_url" "$script_label" "$missing_var")
+        else
+            warn "NEXT STEP → <ilgili>_SHA256=<hash> ./install_sidar.sh  (detay aşağıda)"
+            warn "İlgili *_SHA256 değişkenini (UV_INSTALL_SHA256 veya OLLAMA_INSTALL_SHA256) tanımlayın."
+        fi
+        return 0
+    fi
+    if sidar_is_installer_smoke_gate_failure "$failed_cmd" "$reason"; then
+        warn "Auto-heal: ${phase} fazı installer smoke gate hatası nedeniyle durdu. Bu sinyal deterministiktir; aynı imza retry ile düzelmez."
+        warn "NEXT STEP → Smoke gate version preflight logundaki stderr satırlarını inceleyin; INSTALL_SIDAR_VERSION, pyproject.toml version ve source install_sidar.sh erken çıkış nedenini düzeltip ./install_sidar.sh çalıştırın."
+        return 0
+    fi
+    if sidar_is_installer_hash_drift_failure "$failed_cmd" "$reason"; then
+        warn "Auto-heal: ${phase} fazı installer hash drift hatası nedeniyle durdu. Bu sinyal deterministiktir; stale/tampered installer retry ile güvenli şekilde düzelmez."
+        warn "NEXT STEP → \$HOME/Sidar/install_sidar.sh eski/modifiye ise 'rm -f \"\$HOME/Sidar/install_sidar.sh\"' komutuyla kaldırın, güncel install_sidar.sh dosyasını yeniden indirin veya repo clone'unu 'git pull --ff-only' ile güncelleyin, ardından ./install_sidar.sh komutunu tekrar çalıştırın."
         return 0
     fi
 
@@ -400,10 +576,31 @@ sidar_resume_after_remediation() {
     local resume_runtime_mode="${APP_RUNTIME_MODE:-}"
     local resume_gpu_available="${GPU_AVAILABLE:-}"
     local resume_cwd="${SCRIPT_DIR:-${TARGET_DIR:-$PWD}}"
+    local resume_failure_signature="${SIDAR_INSTALL_LAST_FAILURE_SIGNATURE:-}"
+    local resume_failure_phase="${SIDAR_INSTALL_LAST_FAILURE_PHASE:-}"
+    local resume_script=""
 
-    warn "Auto-heal: kurulum ${phase} fazından resume edilecek (attempt=${next_attempt})."
+    if declare -F sidar_resolve_resume_installer_path >/dev/null 2>&1; then
+        resume_script="$(sidar_resolve_resume_installer_path)"
+    elif [[ -n "${SCRIPT_DIR:-}" && -f "${SCRIPT_DIR}/install_sidar.sh" ]]; then
+        resume_script="${SCRIPT_DIR}/install_sidar.sh"
+    elif [[ -n "${ORIGINAL_SCRIPT_PATH:-}" && -f "$ORIGINAL_SCRIPT_PATH" ]]; then
+        resume_script="$ORIGINAL_SCRIPT_PATH"
+    else
+        fail "Auto-heal resume için çalıştırılabilir install_sidar.sh bulunamadı. Denenenler: SCRIPT_DIR=${SCRIPT_DIR:-boş}, ORIGINAL_SCRIPT_PATH=${ORIGINAL_SCRIPT_PATH:-boş}."
+    fi
+
+    if declare -F sidar_verify_resume_installer_or_fail >/dev/null 2>&1; then
+        sidar_verify_resume_installer_or_fail "$resume_script"
+    elif declare -F verify_reexec_installer_or_fail >/dev/null 2>&1; then
+        verify_reexec_installer_or_fail "$resume_script" "Auto-heal resume re-exec"
+    fi
+    chmod +x "$resume_script" 2>/dev/null || true
+
+    warn "Auto-heal: kurulum ${phase} fazından resume edilecek (attempt=${next_attempt}, installer=${resume_script})."
     export SIDAR_INSTALL_RESUME_FROM_PHASE="$phase"
     export SIDAR_INSTALL_REMEDIATION_ATTEMPT="$next_attempt"
+    # shellcheck disable=SC2016  # Inner bash expands env-provided cwd and argv after exec.
     exec env \
         SIDAR_INSTALL_RESUME_FROM_PHASE="$phase" \
         SIDAR_INSTALL_REMEDIATION_ATTEMPT="$next_attempt" \
@@ -412,8 +609,10 @@ sidar_resume_after_remediation() {
         APP_RUNTIME_MODE_SELECTED="$resume_runtime_mode_selected" \
         APP_RUNTIME_MODE="$resume_runtime_mode" \
         GPU_AVAILABLE="$resume_gpu_available" \
+        SIDAR_INSTALL_LAST_FAILURE_SIGNATURE="$resume_failure_signature" \
+        SIDAR_INSTALL_LAST_FAILURE_PHASE="$resume_failure_phase" \
         bash -c 'cd "$SIDAR_INSTALL_RESUME_CWD" && exec "$0" "$@"' \
-        "$ORIGINAL_SCRIPT_PATH" "${SIDAR_INSTALL_ORIGINAL_ARGS[@]}"
+        "$resume_script" "${SIDAR_INSTALL_ORIGINAL_ARGS[@]}"
 }
 
 sidar_handle_install_failure() {
@@ -424,23 +623,72 @@ sidar_handle_install_failure() {
     local phase="${SIDAR_CURRENT_INSTALL_PHASE:-}"
     local attempt="${SIDAR_INSTALL_REMEDIATION_ATTEMPT:-0}"
     local max_attempts="${SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS:-1}"
+    local failure_signature=""
 
+    sidar_install_auto_heal_enabled || return 1
     [[ -n "$phase" ]] || return 1
     if sidar_phase_is_informational "$phase"; then
         warn "Auto-heal: ${phase} bilgilendirme fazı; retry/resume atlanıyor (warn-only)."
         sidar_write_remediation_report "$phase" "informational-phase" "warn-only;no-retry;no-resume"
         return 1
     fi
-    sidar_install_auto_heal_enabled || return 1
     [[ "$attempt" =~ ^[0-9]+$ ]] || attempt=0
     max_attempts="$(sidar_retry_budget_for_failure "$phase" "$failed_cmd" "$reason")"
     [[ "$max_attempts" =~ ^[0-9]+$ ]] || max_attempts=1
+    failure_signature="$(sidar_failure_signature "$phase" "$failed_cmd" "$reason" "$exit_code")"
 
     if sidar_is_non_retryable_failure_code "$exit_code"; then
         warn "Auto-heal: ${phase} fazında deterministik hata (rc=${exit_code}) algılandı; retry/resume atlanıyor."
         sidar_write_remediation_report "$phase" "deterministic-failure-rc-${exit_code}" "fail-fast;no-retry;no-resume"
         return 1
     fi
+    if sidar_is_remote_script_checksum_missing "$failed_cmd" "$reason"; then
+        local missing_var=""
+        missing_var="$(sidar_detect_missing_checksum_var "$failed_cmd" "$reason")"
+        local action="no-retry;manual-fix-required;signature=${failure_signature}"
+        [[ -n "$missing_var" ]] && action="${action};missing-var=${missing_var}"
+        sidar_write_remediation_report "$phase" "remote-script-checksum-missing" "$action"
+        return 1
+    fi
+    if sidar_is_installer_smoke_gate_failure "$failed_cmd" "$reason"; then
+        sidar_write_remediation_report "$phase" "installer-smoke-gate-failure" "no-retry;manual-fix-required;signature=${failure_signature}"
+        return 1
+    fi
+    if sidar_is_installer_hash_drift_failure "$failed_cmd" "$reason"; then
+        sidar_write_remediation_report "$phase" "installer-hash-drift" "no-retry;remove-stale-home-installer-or-refresh-clone;signature=${failure_signature}"
+        return 1
+    fi
+    # Daha spesifik öğrenilmiş imza kontrolü, genel test-gate deseninden (ör. "pytest"
+    # geçen her komut) önce çalışmalı; aksi halde environment.yml gibi bilinen
+    # kalıcı hatalar yanlışlıkla genel "test gate failure" olarak sınıflandırılır.
+    if sidar_is_non_retryable_failure_signal "$failed_cmd" "$reason"; then
+        warn "Auto-heal: ${phase} fazında öğrenilmiş kalıcı hata imzası algılandı; retry/resume atlanıyor."
+        local non_retryable_guidance=""
+        non_retryable_guidance="$(sidar_non_retryable_failure_guidance "$failed_cmd" "$reason" || true)"
+        if [[ -n "$non_retryable_guidance" ]]; then
+            warn "Auto-heal: ${non_retryable_guidance}"
+        fi
+        sidar_write_remediation_report "$phase" "learned-non-retryable-failure" "fail-fast;no-retry;signature=${failure_signature}"
+        return 1
+    fi
+    if sidar_is_test_gate_failure_signal "$failed_cmd" "$reason"; then
+        warn "Auto-heal: ${phase} fazında deterministik test gate hatası algılandı; retry/resume atlanıyor."
+        local test_gate_guidance=""
+        test_gate_guidance="$(sidar_test_gate_failure_guidance "$failed_cmd" "$reason" || true)"
+        if [[ -n "$test_gate_guidance" ]]; then
+            warn "Auto-heal: ${test_gate_guidance}"
+        fi
+        sidar_write_remediation_report "$phase" "test-gate-failure" "fail-fast;no-retry;no-resume;signature=${failure_signature}"
+        return 1
+    fi
+    if [[ "$attempt" -gt 0 && "${SIDAR_INSTALL_LAST_FAILURE_PHASE:-}" == "$phase" && "${SIDAR_INSTALL_LAST_FAILURE_SIGNATURE:-}" == "$failure_signature" ]]; then
+        warn "Auto-heal: ${phase} fazında aynı failure imzası tekrarlandı (${failure_signature}); retry erken kesiliyor."
+        sidar_write_remediation_report "$phase" "repeated-failure-signature" "fail-fast;no-retry;signature=${failure_signature}"
+        return 1
+    fi
+    export SIDAR_INSTALL_LAST_FAILURE_SIGNATURE="$failure_signature"
+    export SIDAR_INSTALL_LAST_FAILURE_PHASE="$phase"
+
     if sidar_is_deterministic_failure_signal "$failed_cmd" "$reason"; then
         warn "Auto-heal: ${phase} fazında deterministik failure sinyali algılandı; retry bütçesi ${max_attempts} ile sınırlandı."
     fi

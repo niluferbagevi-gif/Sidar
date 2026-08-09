@@ -11,6 +11,7 @@ from typing import Any, cast
 import httpx
 
 import core.llm_client as llm_facade
+from core.llm.streaming_http import enter_httpx_stream
 from core.llm_client import BaseLLMClient, LLMAPIError, logger
 
 
@@ -223,8 +224,7 @@ class LiteLLMClient(BaseLLMClient):
             async def _open_stream() -> tuple[httpx.AsyncClient, Any, httpx.Response]:
                 stream_client = httpx.AsyncClient(timeout=req_timeout)
                 cm = stream_client.stream("POST", endpoint, json=payload, headers=headers)
-                response = await cm.__aenter__()
-                response.raise_for_status()
+                response = await enter_httpx_stream(stream_client, cm)
                 return stream_client, cm, response
 
             client, stream_cm, resp = await _retry_with_backoff(

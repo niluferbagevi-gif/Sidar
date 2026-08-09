@@ -1,44 +1,42 @@
-"""
-Sidar Project - Kod Yöneticisi
+"""Sidar Project - Kod Yöneticisi.
+
 Dosya okuma, yazma, sözdizimi doğrulama ve DOCKER İZOLELİ kod analizi (REPL).
 Sürüm: 2.7.0
 """
 
+import asyncio
 import contextlib
 import logging
 import os
 import shlex
 import shutil
-import stat
 import subprocess  # nosec B404
 import sys
 import tempfile
 import threading
 import time
+from enum import Enum
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
+from core.hitl import get_hitl_gate
 from managers.code import docker as docker_helpers
-from managers.code import file_io_security, linter_runners, test_runner_orchestrator
+from managers.code import file_io_security, linter_runners, runner, test_runner_orchestrator
 from managers.code.docker import (
     LEGACY_PROJECT_IMAGE_PREFIXES as _LEGACY_PROJECT_IMAGE_PREFIXES,
-)
-from managers.code.docker import (
-    PROJECT_TEST_IMAGE_CANDIDATES as _PROJECT_TEST_IMAGE_CANDIDATES,
 )
 from managers.code.docker import (
     build_docker_cli_command,
     execute_code_with_docker_cli,
     resolve_sandbox_limits,
+    sanitize_docker_image,
     sanitize_docker_network,
     sanitize_docker_token,
 )
 from managers.code.docker import (
-    sanitize_docker_image as _sanitize_docker_image,
-)
-from managers.code.docker import (
     to_int as _to_int,
 )
+from managers.code.docker_lifecycle import DockerLifecycleAdapter
 from managers.code.lsp import (
     LSPProtocolError,
     decode_lsp_stream,
@@ -54,6 +52,7 @@ from managers.code.pytest_parser import (
 )
 from managers.code.runner import build_sanitized_shell_args
 from managers.code.security_adapter import CodeSecurityAdapter
+from managers.code.shell_sandbox import ShellSandboxAdapter
 from managers.image_resolver import canonical_project_image_alias, is_gpu_project_image
 
 try:
@@ -75,6 +74,31 @@ _DOCKER_NETWORK_ALLOWED = docker_helpers.DOCKER_NETWORK_ALLOWED
 _DOCKER_IMAGE_RE = docker_helpers.DOCKER_IMAGE_RE
 _sanitize_docker_token = sanitize_docker_token
 _sanitize_docker_network = sanitize_docker_network
+_sanitize_docker_image = sanitize_docker_image
+
+
+def _coerce_bool(value: Any, *, default: bool = False) -> bool:
+    if value is None:  # pragma: no cover - defensive default branch
+        return default
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:  # pragma: no cover - env parsing branch
+        return True
+    if normalized in {"0", "false", "no", "off", ""}:
+        return False
+    logger.warning("Unknown boolean value %r; using default=%s.", value, default)
+    return default
+
+
+class DockerState(Enum):
+    """Lazy Docker initialization lifecycle for code execution backends."""
+
+    UNINITIALIZED = "uninitialized"
+    INITIALIZING = "initializing"
+    READY = "ready"
+    FAILED = "failed"
+    DISABLED = "disabled"
 
 
 def _path_to_file_uri(path: Path) -> str:
@@ -104,8 +128,8 @@ def _is_gpu_project_image(image: str) -> bool:
 
 
 class CodeManager:
-    """
-    PEP 8 uyumlu dosya işlemleri ve sözdizimi doğrulama.
+    """PEP 8 uyumlu dosya işlemleri ve sözdizimi doğrulama.
+
     Thread-safe RLock ile korunur.
     Kod çalıştırma (execute_code) işlemleri Docker ile izole edilir.
     """
@@ -124,6 +148,22 @@ class CodeManager:
         self.security_adapter = CodeSecurityAdapter(security)
         self.base_dir = Path(base_dir).resolve()
         self.cfg = cfg or Config()
+        self.code_execution_backend = (
+            str(
+                getattr(
+                    self.cfg,
+                    "CODE_EXECUTION_BACKEND",
+                    os.getenv("CODE_EXECUTION_BACKEND", "docker"),
+                )
+                or "docker"
+            )
+            .strip()
+            .lower()
+        )
+        self.docker_autodetect = _coerce_bool(
+            getattr(self.cfg, "DOCKER_AUTODETECT", os.getenv("DOCKER_AUTODETECT", "1")),
+            default=True,
+        )
         self.docker_runtime = str(getattr(self.cfg, "DOCKER_RUNTIME", "") or "").strip()
         self.docker_allowed_runtimes = list(
             getattr(self.cfg, "DOCKER_ALLOWED_RUNTIMES", ["", "runc", "runsc", "kata-runtime"])
@@ -179,24 +219,67 @@ class CodeManager:
         # Docker İstemcisi Bağlantısı
         self.docker_available = False
         self.docker_client: Any | None = None
-        self._init_docker()
-        self._autodetect_project_test_image()
+        self._docker_state = DockerState.UNINITIALIZED
+        self._docker_init_lock = threading.RLock()
+        self._docker_init_attempts = 0
+        self._docker_init_max_attempts = max(
+            1, _to_int(getattr(self.cfg, "DOCKER_INIT_MAX_ATTEMPTS", 2), 2)
+        )
+        self.docker_lifecycle = DockerLifecycleAdapter(self)
+        self.shell_sandbox = ShellSandboxAdapter(self)
+        if self.code_execution_backend not in {"docker", "disabled", "none", "off"}:
+            raise ValueError(
+                "Unsupported CODE_EXECUTION_BACKEND value "
+                f"{self.code_execution_backend!r}; expected 'docker' or 'disabled'."
+            )
+
+    @property
+    def _docker_initialized(self) -> bool:
+        """Backward-compatible test facade for legacy lazy-init assertions."""
+        return self._docker_state in {DockerState.READY, DockerState.DISABLED}
+
+    def ensure_docker_initialized(self) -> None:
+        """Initialize Docker lazily when code execution actually needs it."""
+        with self._docker_init_lock:
+            if self._docker_state in {DockerState.READY, DockerState.DISABLED}:
+                return
+            if self.code_execution_backend in {
+                "disabled",
+                "none",
+                "off",
+            }:  # pragma: no cover - deployment-mode branch
+                logger.info("Code execution backend disabled; Docker initialization skipped.")
+                self.docker_available = False
+                self.docker_client = None
+                self._docker_state = DockerState.DISABLED
+                return
+            if self._docker_init_attempts >= self._docker_init_max_attempts:
+                logger.warning(
+                    "Docker initialization retry limit reached (%s attempts);"
+                    " leaving backend degraded.",
+                    self._docker_init_attempts,
+                )
+                self._docker_state = DockerState.FAILED
+                return
+
+            self._docker_state = DockerState.INITIALIZING
+            self._docker_init_attempts += 1
+            try:
+                self._init_docker()
+                if self.docker_available:
+                    self._docker_state = DockerState.READY
+                    if self.docker_autodetect:
+                        self._autodetect_project_test_image()
+                else:
+                    self._docker_state = DockerState.FAILED
+            except Exception:
+                self._docker_state = DockerState.FAILED
+                self.docker_available = False
+                self.docker_client = None
+                raise
 
     def _resolve_runtime(self) -> str:
-        runtime = self.docker_runtime
-        if self.docker_microvm_mode in ("gvisor", "runsc") and not runtime:
-            runtime = "runsc"
-        elif self.docker_microvm_mode in ("kata", "firecracker") and not runtime:
-            runtime = "kata-runtime"
-
-        if runtime not in self.docker_allowed_runtimes:
-            logger.warning(
-                "Docker runtime '%s' izinli listede değil (%s); varsayılan runtime kullanılacak.",
-                runtime,
-                self.docker_allowed_runtimes,
-            )
-            return ""
-        return runtime
+        return self.docker_lifecycle.resolve_runtime()
 
     def _resolve_sandbox_limits(self) -> dict[str, object]:
         """Docker çalıştırma limitlerini normalize eder (cgroups)."""
@@ -214,229 +297,32 @@ class CodeManager:
 
     def _try_wsl_socket_fallback(self, docker_module: Any) -> bool:
         """Docker Desktop/WSL2 socket yollarını deneyerek istemci başlatır."""
-        wsl_sockets = [
-            "unix:///var/run/docker.sock",
-            "unix:///mnt/wsl/docker-desktop/run/guest-services/backend.sock",
-        ]
-        for socket_path in wsl_sockets:
-            fs_path = socket_path.removeprefix("unix://")
-            try:
-                file_stat = os.stat(fs_path)
-            except OSError:
-                continue
-            if not stat.S_ISSOCK(file_stat.st_mode):
-                logger.warning("Beklenen socket değil, atlanıyor: %s", fs_path)
-                continue
-            try:
-                candidate = docker_module.DockerClient(base_url=socket_path)
-                candidate.ping()
-            except RuntimeError as exc:
-                logger.warning("WSL2 socket ping başarısız (%s): %s", socket_path, exc)
-                continue
-            except self._docker_exception_types(docker_module):
-                continue
-            self.docker_client = candidate
-            self.docker_available = True
-            logger.info("Docker bağlantısı WSL2 socket ile kuruldu: %s", socket_path)
-            return True
-        return False
+        return self.docker_lifecycle.try_wsl_socket_fallback(docker_module)
 
     def _try_docker_cli_fallback(self) -> bool:
         """Docker SDK yoksa CLI üzerinden daemon erişimini doğrular."""
-        docker_bin = shutil.which("docker")
-        if not docker_bin:
-            return False
-        try:
-            result = subprocess.run(  # nosec B603
-                [docker_bin, "info"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                cwd=str(self.base_dir),
-            )
-        except (FileNotFoundError, PermissionError, subprocess.TimeoutExpired, OSError):
-            return False
-
-        if result.returncode != 0:
-            return False
-
-        self.docker_client = None
-        self.docker_available = True
-        logger.info(
-            "Docker SDK bulunamadı ancak docker CLI erişilebilir; CLI fallback etkinleştirildi."
-        )
-        return True
+        return self.docker_lifecycle.try_docker_cli_fallback()
 
     @staticmethod
     def _docker_exception_types(docker_module: Any) -> tuple[type[BaseException], ...]:
         """Docker bağlantı denemelerinde yakalanacak güvenli exception tiplerini döndürür."""
-        docker_errors = getattr(docker_module, "errors", None)
-        docker_exception = getattr(docker_errors, "DockerException", None)
-        if isinstance(docker_exception, type) and issubclass(docker_exception, BaseException):
-            return (docker_exception, OSError, ValueError)
-        return (OSError, ValueError)
+        return DockerLifecycleAdapter.docker_exception_types(docker_module)
 
     def _init_docker(self) -> None:
         """Docker daemon'a bağlanmayı dener. WSL2 ortamında alternatif socket yollarını dener."""
-        self.docker_available = False
-        self.docker_client = None
-        docker_module: Any | None = sys.modules.get("docker")
-        try:
-            if docker_module is None:
-                import docker
-
-                docker_module = docker
-
-            client = docker_module.from_env()
-            client.ping()
-            self.docker_client = client
-            self.docker_available = True
-            logger.info("Docker bağlantısı başarılı. REPL işlemleri izole konteynerde çalışacak.")
-        except ImportError:
-            if docker_module is not None and self._try_wsl_socket_fallback(docker_module):
-                return
-            if self._try_docker_cli_fallback():
-                return
-            logger.warning("Docker SDK kurulu değil. (uv pip install docker)")
-        except Exception as first_err:
-            # WSL2 fallback: Docker Desktop alternatif socket yollarını dene
-            # (docker modülü try bloğunda import edildiyse kullan; yoksa yeniden import dene)
-            fallback_module = docker_module
-            if fallback_module is None:
-                try:
-                    import docker as fallback_module  # type: ignore[no-redef]
-                except ImportError:
-                    fallback_module = None
-
-            if fallback_module is not None and self._try_wsl_socket_fallback(fallback_module):
-                return
-            # SDK kurulu ama daemon/socket erişimi başarısız olduğunda CLI fallback'e
-            # geçmeyiz; bu durum mevcut daemon erişim problemini maskeleyip test/üretim
-            # davranışını belirsizleştirebilir. CLI fallback yalnızca SDK yoksa denenir.
-            logger.warning(
-                "Docker Daemon'a bağlanılamadı. Kod çalıştırma kapalı. "
-                "WSL2 kullanıcıları: Docker Desktop'u açın ve "
-                "Settings > Resources > WSL Integration'dan bu dağıtımı etkinleştirin. "
-                "Hata: %s",
-                first_err,
-            )
+        self.docker_lifecycle.init_docker()
 
     def _docker_image_exists(self, image: str) -> bool:
         """Docker daemon'da verilen imajın mevcut olup olmadığını SDK/CLI ile kontrol et."""
-        safe_image = _sanitize_docker_image(image)
-        if safe_image != image:
-            return False
-
-        if self.docker_client is not None:
-            images_api = getattr(self.docker_client, "images", None)
-            get_image = getattr(images_api, "get", None)
-            if callable(get_image):
-                try:
-                    get_image(safe_image)
-                    return True
-                except Exception:
-                    return False
-
-        docker_bin = shutil.which("docker")
-        if not docker_bin:
-            return False
-        try:
-            result = subprocess.run(  # nosec B603
-                [docker_bin, "image", "inspect", safe_image],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                cwd=str(self.base_dir),
-            )
-        except (FileNotFoundError, PermissionError, subprocess.TimeoutExpired, OSError):
-            return False
-        return result.returncode == 0
+        return self.docker_lifecycle.docker_image_exists(image)
 
     def _autodetect_project_test_image(self) -> None:
-        """Docker daemon'da bulunan Sidar test imajını güvenli biçimde seç.
-
-        Güncel proje imaj adı ``sidar:latest``tir. Eski dokümantasyon veya .env
-        dosyalarından gelen ``sidar-ai``/``sidar-ai-gpu`` değerleri yalnızca aynı
-        imaj gerçekten lokalde varsa kullanılır; aksi halde lokalde bulunan güncel
-        ``sidar``/``sidar-gpu`` tag'ine yönlendirilir. Bu akış Docker Hub'dan
-        yanlış ``sidar-ai`` pull denemesini engeller.
-        """
-        if not self.docker_available:
-            return
-
-        canonical_alias = _canonical_project_image_alias(self.docker_test_image)
-        if self._docker_test_image_explicit:
-            if not canonical_alias:
-                self._warn_gpu_image_runtime_mismatch(self.docker_test_image)
-                return
-            if self._docker_image_exists(self.docker_test_image):
-                self._warn_gpu_image_runtime_mismatch(self.docker_test_image)
-                return
-            if self._docker_image_exists(canonical_alias):
-                logger.warning(
-                    "DOCKER_TEST_IMAGE eski Sidar imaj adını gösteriyor (%s) ancak bu imaj "
-                    "lokalde yok; bulunan güncel imaj kullanılacak: %s",
-                    self.docker_test_image,
-                    canonical_alias,
-                )
-                self.docker_test_image = canonical_alias
-                self._warn_gpu_image_runtime_mismatch(self.docker_test_image)
-            return
-
-        prefer_gpu_image = (
-            bool(getattr(self.cfg, "USE_GPU", False)) and self._gpu_runtime_available()
-        )
-        if bool(getattr(self.cfg, "USE_GPU", False)) and not prefer_gpu_image:
-            logger.warning(
-                "USE_GPU=True ancak CUDA/NVIDIA runtime tespit edilemedi; CPU test imajı tercih edilecek"
-            )
-
-        for candidate in _PROJECT_TEST_IMAGE_CANDIDATES:
-            if _is_gpu_project_image(candidate) and not prefer_gpu_image:
-                logger.warning(
-                    "GPU runtime uygun olmadığı için GPU test imajı otomatik seçimde atlanıyor: %s",
-                    candidate,
-                )
-                continue
-            if self._docker_image_exists(candidate):
-                self.docker_test_image = candidate
-                logger.info(
-                    "DOCKER_TEST_IMAGE verilmedi; Docker daemon'da bulunan proje test imajı kullanılacak: %s",
-                    candidate,
-                )
-                self._warn_gpu_image_runtime_mismatch(candidate)
-                return
-
-        logger.warning(
-            "DOCKER_TEST_IMAGE otomatik bulunamadı; varsayılan sandbox imajı (%s) pytest/uv içermeyebilir. "
-            "Önerilen sıra: (1) `docker build -t sidar:latest .` (2) `.env` veya `.env.development` içine "
-            "`DOCKER_TEST_IMAGE=sidar:latest` ekleyin (3) kalite kapısında bilinçli otomatik hazırlık için "
-            "`AUTO_BUILD_DOCKER_TEST_IMAGE=1 DOCKER_TEST_IMAGE=sidar:latest bash run_tests.sh` çalıştırın "
-            "(4) Docker dışı fallback için `uv sync --frozen --all-extras` çalıştırın.",
-            self.docker_test_image,
-        )
+        """Docker daemon'da bulunan Sidar test imajını güvenli biçimde seç."""
+        self.docker_lifecycle.autodetect_project_test_image()
 
     def _gpu_runtime_available(self) -> bool:
-        cached = getattr(self, "_gpu_runtime_available_cached", None)
-        if cached is not None:
-            return bool(cached)
-
-        available = False
-        try:
-            probe = subprocess.run(  # nosec B603
-                [shutil.which("nvidia-smi") or "nvidia-smi"],
-                capture_output=True,
-                text=True,
-                timeout=3,
-                cwd=str(self.base_dir),
-            )
-            if probe.returncode == 0:
-                available = True
-        except (FileNotFoundError, PermissionError, subprocess.TimeoutExpired, OSError):
-            pass
-
-        self._gpu_runtime_available_cached = available
-        return available
+        """CUDA/NVIDIA runtime kullanılabilirliğini önbellekli olarak kontrol et."""
+        return self.docker_lifecycle.gpu_runtime_available()
 
     def _warn_gpu_image_runtime_mismatch(self, image_name: str) -> None:
         if not _is_gpu_project_image(image_name):
@@ -459,6 +345,22 @@ class CodeManager:
 
     def write_file(self, path: str, content: str, validate: bool = True) -> tuple[bool, str]:
         """Dosyaya güvenli biçimde içerik yazar."""
+        return file_io_security.write_file(self, path, content, validate=validate)
+
+    async def write_file_hitl(
+        self, path: str, content: str, validate: bool = True
+    ) -> tuple[bool, str]:
+        """Require human approval before overwriting an existing file."""
+        target = Path(path)
+        if await asyncio.to_thread(target.exists):
+            approved = await get_hitl_gate().request_approval(
+                action="file_overwrite",
+                description=f"Dosyanın üzerine yazılacak: {target}",
+                payload={"path": str(target)},
+                requested_by="CodeManager",
+            )
+            if not approved:
+                return False, "Dosya üzerine yazma işlemi insan onayı olmadan reddedildi."
         return file_io_security.write_file(self, path, content, validate=validate)
 
     @staticmethod
@@ -485,9 +387,23 @@ class CodeManager:
         """Dosyada hedef bloğu güvenli biçimde değiştirir."""
         return file_io_security.patch_file(self, path, target_block, replacement_block)
 
+    async def patch_file_hitl(
+        self, path: str, target_block: str, replacement_block: str
+    ) -> tuple[bool, str]:
+        """Require human approval before patching an existing file."""
+        ok, content = self.read_file(path, line_numbers=False)
+        if not ok:
+            return False, content
+        ok, patched_or_error = file_io_security.apply_exact_block_patch(
+            content, target_block, replacement_block
+        )
+        if not ok:
+            return False, patched_or_error
+        return await self.write_file_hitl(path, patched_or_error, validate=True)
+
     def execute_code(self, code: str) -> tuple[bool, str]:
-        """
-        Kodu tamamen İZOLE ve geçici bir Docker konteynerinde çalıştırır.
+        """Kodu tamamen İZOLE ve geçici bir Docker konteynerinde çalıştırır.
+
         - Ağ erişimi kapalı (network_disabled=True)
         - Dosya sistemi okunaksız/geçici
         - Bellek/CPU/PID kotaları (cgroups)
@@ -495,20 +411,20 @@ class CodeManager:
         """
         if not self.security.can_execute():
             return False, "[OpenClaw] Kod çalıştırma yetkisi yok (Restricted Mod)."
+        if self.code_execution_backend in {
+            "disabled",
+            "none",
+            "off",
+        }:  # pragma: no cover - deployment-mode branch
+            return False, "Kod çalıştırma backend'i devre dışı (CODE_EXECUTION_BACKEND=disabled)."
+
+        self.ensure_docker_initialized()
 
         if not self.docker_available:
-            if self.security.level == SANDBOX:
-                return False, (
-                    "HATA: Docker Sandbox erişilemedi ve güvenlik politikası gereği "
-                    "yerel (unsafe) çalıştırma engellendi."
-                )
-            if Config.DOCKER_REQUIRED:
-                return False, (
-                    "[GÜVENLİK] DOCKER_REQUIRED=true — yerel subprocess fallback devre dışı. "
-                    "Docker daemon'ı başlatın veya DOCKER_REQUIRED=false olarak ayarlayın."
-                )
-            logger.warning("Docker yok — FULL modda yerel subprocess fallback kullanılacak.")
-            return self.execute_code_local(code)
+            return False, (
+                "[GÜVENLİK] Docker sandbox erişilemedi; access level'dan bağımsız olarak "
+                "host üzerinde izolasyonsuz kod çalıştırma reddedildi."
+            )
 
         try:
             import docker  # noqa: F401
@@ -578,7 +494,8 @@ class CodeManager:
             # Çıktı Boyutu Limiti (Güvenlik)
             if len(logs) > self.max_output_chars:
                 logs = logs[: self.max_output_chars] + (
-                    f"\n\n... [ÇIKTI KIRPILDI: Maksimum {self.max_output_chars} karakter sınırı aşıldı] ..."
+                    "\n\n... [ÇIKTI KIRPILDI: Maksimum"
+                    f" {self.max_output_chars} karakter sınırı aşıldı] ..."
                 )
 
             if logs:
@@ -607,17 +524,24 @@ class CodeManager:
                     "zorla durduruldu (sonsuz döngü koruması)."
                 )
             except Exception as cli_exc:
-                logger.warning(
-                    "Docker çalıştırma hatası — FULL modda yerel subprocess fallback: %s", cli_exc
+                logger.error(
+                    "Docker SDK ve CLI sandbox çalıştırması başarısız; "
+                    "host fallback reddedildi: %s",
+                    cli_exc,
                 )
-                return self.execute_code_local(code)
+                return False, (
+                    "[GÜVENLİK] Docker sandbox çalıştırılamadı; host üzerinde izolasyonsuz "
+                    f"kod çalıştırma reddedildi. Detay: {cli_exc}"
+                )
 
     def execute_code_local(self, code: str) -> tuple[bool, str]:
-        """
-        Docker kullanılamadığında Python kodu güvenli subprocess ile çalıştırır.
+        """Python kodunu açıkça istenen, izolasyonsuz yerel subprocess ile çalıştırır.
+
         - sys.executable kullanır (aktif Conda/venv ortamı korunur)
         - Geçici dosyaya yazar, 10 sn timeout ile çalıştırır
         - Ağ erişimi açıktır (yalnızca Docker izolasyonundan farklı)
+
+        Bu düşük seviye yardımcı ``execute_code`` tarafından fallback olarak çağrılmaz.
         """
         # Güvenlik uyarısı: Docker sandbox yok, kod izole edilmeden çalışıyor
         logger.warning(
@@ -652,7 +576,8 @@ class CodeManager:
             # Çıktı Boyutu Limiti (Güvenlik)
             if len(output) > self.max_output_chars:
                 output = output[: self.max_output_chars] + (
-                    f"\n\n... [ÇIKTI KIRPILDI: Maksimum {self.max_output_chars} karakter sınırı aşıldı] ..."
+                    "\n\n... [ÇIKTI KIRPILDI: Maksimum"
+                    f" {self.max_output_chars} karakter sınırı aşıldı] ..."
                 )
 
             if result.returncode != 0:
@@ -694,11 +619,7 @@ class CodeManager:
 
     def _select_shell_sandbox_image(self, command: str, image: str | None) -> str:
         """Test/uv komutlarında proje test imajını, diğerlerinde normal sandbox imajını seç."""
-        if image:
-            return image
-        if self._command_requires_uv_tooling(command):
-            return self.docker_test_image
-        return self.docker_image
+        return self.shell_sandbox.select_shell_sandbox_image(command, image)
 
     @staticmethod
     def _command_invokes_pytest(command: str) -> bool:
@@ -707,7 +628,7 @@ class CodeManager:
 
     def _build_shell_preflight_command(self, command: str) -> str:
         """Sandbox shell komutları için PATH ve uv/pytest pre-flight koruması ekle."""
-        return test_runner_orchestrator.build_shell_preflight_command(self, command)
+        return self.shell_sandbox.build_shell_preflight_command(command)
 
     def run_shell_in_sandbox(
         self,
@@ -716,7 +637,7 @@ class CodeManager:
         image: str | None = None,
     ) -> tuple[bool, str]:
         """Kabuk komutunu Docker sandbox içinde çalıştırır."""
-        return test_runner_orchestrator.run_shell_in_sandbox(self, command, cwd=cwd, image=image)
+        return self.shell_sandbox.run_shell_in_sandbox(command, cwd=cwd, image=image)
 
     @staticmethod
     def analyze_pytest_output(output: str) -> dict[str, Any]:
@@ -735,119 +656,17 @@ class CodeManager:
         cwd: str | None = None,
         allow_shell_features: bool = False,
     ) -> tuple[bool, str]:
-        """
-        Kabuk komutunu güvenli subprocess ile çalıştırır.
-        Claude Code'daki Bash aracına eşdeğer.
-
-        Güvenlik: Yalnızca FULL erişim seviyesinde çalışır.
-        - Varsayılan modda `shell=False` ve `shlex.split(...)` kullanır.
-        - Pipe/redirect gibi shell operatörleri için `allow_shell_features=True` gerekir.
-        - 60 saniyelik zaman aşımı koruması vardır.
-
-        Args:
-            command: Çalıştırılacak komut
-            cwd: Çalışma dizini (None ise base_dir kullanılır)
-            allow_shell_features: True ise shell operatörleri (|, >, &&, vb.) aktif edilir.
-
-        Returns:
-            (başarı, çıktı_veya_hata)
-        """
-        if not self.security.can_run_shell():
-            return False, (
-                "[OpenClaw] Kabuk komutu çalıştırma yetkisi yok.\n"
-                "Shell erişimi yalnızca ACCESS_LEVEL=full modunda aktiftir.\n"
-                "Değiştirmek için: .env → ACCESS_LEVEL=full"
-            )
-
-        if not command or not command.strip():
-            return False, "⚠ Çalıştırılacak komut belirtilmedi."
-
-        work_dir = cwd or str(self.base_dir)
-
-        shell_meta_chars = ("|", "&", ";", ">", "<", "$(", "`")
-        uses_shell_features = any(token in command for token in shell_meta_chars)
-        if uses_shell_features and not allow_shell_features:
-            return False, (
-                "⚠ Komut shell operatörleri içeriyor (|, >, &&, vb.).\n"
-                "Güvenlik için varsayılan modda bu operatörler kapalıdır.\n"
-                "Gerekliyse allow_shell_features=True ile tekrar deneyin."
-            )
-
-        # allow_shell_features=True yolunda yıkıcı komut kalıplarını engelle
-        _BLOCKED_SHELL_PATTERNS = (
-            "rm -rf /",
-            "rm -fr /",
-            ":(){ :|:& };",
-            "> /dev/sda",
-            "dd if=/dev/zero of=/dev/",
-            "mkfs",
-            "chmod -R 777 /",
-            "chown -R root /",
-            "> /etc/passwd",
-            "> /etc/shadow",
-            "shred /dev/",
-            "wipefs /dev/",
+        """Kabuk komutunu güvenli subprocess helper'ı üzerinden çalıştırır."""
+        return runner.run_shell_command(
+            self, command, cwd=cwd, allow_shell_features=allow_shell_features
         )
-        if allow_shell_features:
-            cmd_lower = command.lower()
-            for _pat in _BLOCKED_SHELL_PATTERNS:
-                if _pat in cmd_lower:
-                    return False, (
-                        f"⛔ Engellendi: tehlikeli kabuk komutu kalıbı algılandı ({_pat!r}). "
-                        "Bu işlem yıkıcı olabilir ve izin verilmemektedir."
-                    )
-
-        try:
-            if allow_shell_features:
-                logger.warning(
-                    "[GÜVENLİK] Shell özellikleri etkin; Python subprocess shell=True kapalı, "
-                    "sabit yorumlayıcı argv listesi kullanılacak. "
-                    "Komut pipe/redirect/subshell içerebilir — yalnızca güvenilir kaynaklardan çalıştırılmalıdır. "
-                    "Komut (ilk 200 kar): %.200s",
-                    command,
-                )
-            args = _build_sanitized_shell_args(command, allow_shell_features=allow_shell_features)
-            result = subprocess.run(  # nosec B603
-                args,
-                shell=False,
-                capture_output=True,
-                text=True,
-                timeout=60,
-                cwd=work_dir,
-                env={**os.environ},
-            )
-            output_parts = []
-            if result.stdout.strip():
-                output_parts.append(result.stdout.strip())
-            if result.stderr.strip():
-                output_parts.append(f"[stderr]\n{result.stderr.strip()}")
-
-            combined = "\n".join(output_parts) if output_parts else "(komut çıktı üretmedi)"
-
-            # Çıktı Boyutu Limiti (Güvenlik)
-            if len(combined) > self.max_output_chars:
-                combined = combined[: self.max_output_chars] + (
-                    f"\n\n... [ÇIKTI KIRPILDI: Maksimum {self.max_output_chars} karakter sınırı aşıldı] ..."
-                )
-
-            if result.returncode != 0:
-                return False, (f"Komut başarısız (çıkış kodu: {result.returncode}):\n{combined}")
-            return True, combined
-
-        except ValueError as exc:
-            return False, f"Komut ayrıştırılamadı: {exc}"
-        except subprocess.TimeoutExpired:
-            return False, "⚠ Zaman aşımı! Komut 60 saniyeden uzun sürdü ve durduruldu."
-        except Exception as exc:
-            return False, f"Kabuk hatası: {exc}"
 
     # ─────────────────────────────────────────────
     #  GLOB DOSYA ARAMA
     # ─────────────────────────────────────────────
 
     def glob_search(self, pattern: str, base_path: str = ".") -> tuple[bool, str]:
-        """
-        Glob deseni ile dosya ara. Claude Code'daki Glob aracına eşdeğer.
+        """Glob deseni ile dosya ara. Claude Code'daki Glob aracına eşdeğer.
 
         Örnek desenler:
           **/*.py          → tüm .py dosyaları
@@ -877,8 +696,7 @@ class CodeManager:
         context_lines: int = 0,
         max_results: int = 100,
     ) -> tuple[bool, str]:
-        """
-        Regex ile dosya içeriği ara. Claude Code'daki Grep aracına eşdeğer.
+        """Regex ile dosya içeriği ara. Claude Code'daki Grep aracına eşdeğer.
 
         Args:
             pattern: Aranacak regex kalıbı
@@ -1024,7 +842,10 @@ class CodeManager:
 
     @staticmethod
     def _lsp_stderr_indicates_missing_binary(stderr_text: str) -> bool:
-        """uv/uvx benzeri sarmalayıcıların 'binary bulunamadı' hatasını sezgisel olarak tespit et."""
+        """Sezgisel olarak 'binary bulunamadı' hatasını tespit et.
+
+        uv/uvx benzeri sarmalayıcıların stderr çıktısını kontrol eder.
+        """
         if not stderr_text:
             return False
         lowered = stderr_text.lower()
@@ -1204,9 +1025,9 @@ class CodeManager:
             rng = entry.get("range", {})
             start = rng.get("start", {})
             path = _file_uri_to_path(uri)
-            lines.append(
-                f"- {path}: satır {int(start.get('line', 0)) + 1}, sütun {int(start.get('character', 0)) + 1}"
-            )
+            line_no = int(start.get("line", 0)) + 1
+            column_no = int(start.get("character", 0)) + 1
+            lines.append(f"- {path}: satır {line_no}, sütun {column_no}")
         if len(normalized) > limit:
             lines.append(f"... ve {len(normalized) - limit} ek sonuç daha.")
         return "\n".join(lines)
@@ -1393,7 +1214,10 @@ class CodeManager:
         summary = (
             "LSP diagnostics temiz."
             if total == 0
-            else f"LSP semantik denetimi {total} bulgu üretti (error={errors}, warning={warnings}, info={infos})."
+            else (
+                f"LSP semantik denetimi {total} bulgu üretti"
+                f" (error={errors}, warning={warnings}, info={infos})."
+            )
         )
         return {
             "status": status,
@@ -1592,7 +1416,10 @@ class CodeManager:
         lsp_status = "LSP on" if self.enable_lsp else "LSP off"
         if self.docker_available:
             return f"CodeManager: Docker Sandbox Aktif (imaj: {self.docker_image}) | {lsp_status}"
-        return f"CodeManager: Subprocess Modu (Docker erişilemez — kod yerel Python ile çalışır) | {lsp_status}"
+        return (
+            "CodeManager: Subprocess Modu (Docker erişilemez — kod yerel Python ile çalışır)"
+            f" | {lsp_status}"
+        )
 
     def __repr__(self) -> str:
         m = self.get_metrics()

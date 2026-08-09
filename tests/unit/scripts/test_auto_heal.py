@@ -157,9 +157,48 @@ def test_prompt_hitl_approval_reprompts_until_value_is_parseable(
 ) -> None:
     answers = iter(["belki", "e"])
     monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+    monkeypatch.setattr(auto_heal, "_has_interactive_tty", lambda: True)
 
     assert auto_heal._prompt_hitl_approval() is True
     assert "Lütfen" in capsys.readouterr().out
+
+
+def test_prompt_hitl_approval_fails_closed_without_tty(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Regression test for EOFError on input() without an interactive TTY.
+
+    Without a TTY guard, input() raises EOFError on closed stdin (e.g. a
+    cron/CI run of the autonomous loop), crashing the process instead of
+    failing closed like the rest of the HITL approval chain.
+    """
+    monkeypatch.setattr(auto_heal, "_has_interactive_tty", lambda: False)
+
+    def _unexpected_input(_prompt: str) -> str:
+        raise AssertionError("input() must not be called without an interactive TTY")
+
+    monkeypatch.setattr("builtins.input", _unexpected_input)
+
+    assert auto_heal._prompt_hitl_approval() is False
+    assert "Etkileşimli terminal bulunamadı" in capsys.readouterr().out
+
+
+def test_has_interactive_tty_returns_false_when_stdin_is_not_a_tty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(auto_heal.sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr(auto_heal.sys.stdout, "isatty", lambda: True)
+
+    assert auto_heal._has_interactive_tty() is False
+
+
+def test_has_interactive_tty_returns_true_when_stdin_and_stdout_are_ttys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(auto_heal.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(auto_heal.sys.stdout, "isatty", lambda: True)
+
+    assert auto_heal._has_interactive_tty() is True
 
 
 def test_initialize_agent_soft_dependency_continues_after_failure() -> None:
@@ -208,12 +247,12 @@ def test_parse_approval_value_returns_none_for_unknown_and_prompt() -> None:
 
 
 def test_select_auto_heal_model_promotes_3b_for_mypy() -> None:
-    assert _select_auto_heal_model("qwen2.5-coder:" "3b", "mypy", None) == "qwen2.5-coder:7b"
+    assert _select_auto_heal_model("qwen2.5-coder:3b", "mypy", None) == "qwen2.5-coder:7b"
 
 
 def test_select_auto_heal_model_honors_requested_model() -> None:
     assert (
-        _select_auto_heal_model("qwen2.5-coder:" "3b", "mypy", "qwen2.5-coder:14b")
+        _select_auto_heal_model("qwen2.5-coder:3b", "mypy", "qwen2.5-coder:14b")
         == "qwen2.5-coder:14b"
     )
 
@@ -634,7 +673,7 @@ def test_run_returns_partial_when_later_retry_applies(
     log_path.write_text("pkg/a.py:10: error: incompatible types", encoding="utf-8")
 
     class _Cfg:
-        CODING_MODEL = "qwen2.5-coder:" "3b"
+        CODING_MODEL = "qwen2.5-coder:3b"
         ENABLE_AUTONOMOUS_SELF_HEAL = False
 
     class _Agent:

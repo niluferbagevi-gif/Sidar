@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from fastapi import HTTPException
 
 from web.routes import autonomy, federation
 
@@ -33,7 +34,11 @@ async def test_autonomy_webhook_dispatches_general_event() -> None:
 
     autonomy.configure_autonomy_dependencies(
         lambda: SimpleNamespace(
-            cfg=SimpleNamespace(ENABLE_EVENT_WEBHOOKS=True, AUTONOMY_WEBHOOK_SECRET=""),
+            cfg=SimpleNamespace(
+                ENABLE_EVENT_WEBHOOKS=True,
+                AUTONOMY_WEBHOOK_SECRET="",
+                AUTONOMY_WEBHOOK_REQUIRE_SIGNATURE=False,
+            ),
             verify_hmac_signature=lambda *_args, **_kwargs: None,
             resolve_ci_failure_context=lambda *_args, **_kwargs: None,
             run_event_driven_federation_workflow=lambda **_kwargs: None,
@@ -49,6 +54,32 @@ async def test_autonomy_webhook_dispatches_general_event() -> None:
     assert response.status_code == 200
     assert calls[0]["trigger_source"] == "webhook:jira"
     assert calls[0]["event_name"] == "issue_created"
+
+
+@pytest.mark.asyncio
+async def test_autonomy_webhook_fails_closed_when_production_secret_missing() -> None:
+    async def _dispatch(**_kwargs):
+        raise AssertionError("unsigned production autonomy request must not dispatch")
+
+    autonomy.configure_autonomy_dependencies(
+        lambda: SimpleNamespace(
+            cfg=SimpleNamespace(
+                ENABLE_EVENT_WEBHOOKS=True,
+                SIDAR_ENV="production",
+                AUTONOMY_WEBHOOK_SECRET="",
+            ),
+            verify_hmac_signature=lambda *_args, **_kwargs: None,
+            dispatch_autonomy_trigger=_dispatch,
+        )
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await autonomy.autonomy_webhook(
+            "jira", _Request({"event_name": "unsigned_production_event"})
+        )
+
+    assert exc_info.value.status_code == 401
+    assert "Autonomy webhook secret" in str(exc_info.value.detail)
 
 
 @dataclass
@@ -118,3 +149,79 @@ async def test_federation_execute_builds_autonomy_payload() -> None:
     assert response.status_code == 200
     assert calls[0]["trigger_source"] == "federation:external"
     assert calls[0]["payload"]["federation_task"]["task_id"] == "task-1"
+
+
+@pytest.mark.asyncio
+async def test_federation_execute_fails_closed_when_production_secret_missing() -> None:
+    async def _dispatch(**_kwargs):
+        raise AssertionError("unsigned production federation request must not dispatch")
+
+    federation.configure_federation_dependencies(
+        lambda: SimpleNamespace(
+            cfg=SimpleNamespace(
+                ENABLE_SWARM_FEDERATION=True,
+                SIDAR_ENV="production",
+                SWARM_FEDERATION_SHARED_SECRET="",
+            ),
+            verify_hmac_signature=lambda *_args, **_kwargs: None,
+            federation_task_envelope_cls=_Envelope,
+            federation_task_result_cls=_Result,
+            normalize_federation_protocol=lambda protocol: protocol or "federation.v1",
+            legacy_federation_protocol_v1="v1",
+            dispatch_autonomy_trigger=_dispatch,
+            action_feedback_cls=None,
+            derive_correlation_id=lambda *parts: "corr",
+        )
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await federation.swarm_federation_execute(
+            federation.FederationTaskRequest(
+                task_id="task-prod",
+                source_system="external",
+                source_agent="crew",
+                goal="run it",
+            )
+        )
+
+    assert exc_info.value.status_code == 401
+    assert "SWARM_FEDERATION_SHARED_SECRET" in str(exc_info.value.detail)
+
+
+@pytest.mark.asyncio
+async def test_federation_feedback_fails_closed_when_production_secret_missing() -> None:
+    async def _dispatch(**_kwargs):
+        raise AssertionError("unsigned production federation feedback must not dispatch")
+
+    federation.configure_federation_dependencies(
+        lambda: SimpleNamespace(
+            cfg=SimpleNamespace(
+                ENABLE_SWARM_FEDERATION=True,
+                SIDAR_ENV="production",
+                SWARM_FEDERATION_SHARED_SECRET="",
+            ),
+            verify_hmac_signature=lambda *_args, **_kwargs: None,
+            federation_task_envelope_cls=_Envelope,
+            federation_task_result_cls=_Result,
+            normalize_federation_protocol=lambda protocol: protocol or "federation.v1",
+            legacy_federation_protocol_v1="v1",
+            dispatch_autonomy_trigger=_dispatch,
+            action_feedback_cls=None,
+            derive_correlation_id=lambda *parts: "corr",
+        )
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await federation.swarm_federation_feedback(
+            federation.FederationFeedbackRequest(
+                feedback_id="fb-prod",
+                source_system="external",
+                source_agent="crew",
+                action_name="deploy",
+                status="done",
+                summary="ok",
+            )
+        )
+
+    assert exc_info.value.status_code == 401
+    assert "SWARM_FEDERATION_SHARED_SECRET" in str(exc_info.value.detail)

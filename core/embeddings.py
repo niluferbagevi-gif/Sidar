@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import concurrent.futures
 import logging
 import os
 from collections.abc import Callable
@@ -18,6 +19,51 @@ except ImportError:  # pragma: no cover - test doubles may only expose Config
 logger = logging.getLogger(__name__)
 _MODEL_CACHE: dict[tuple[str, str, bool], Any] = {}
 _MODEL_CACHE_MAX_SIZE = 4
+
+
+class EmbeddingModelLoadTimeout(TimeoutError):
+    """Raised when SentenceTransformer model loading exceeds configured timeout."""
+
+
+def _embedding_load_timeout_seconds(cfg: Any) -> float:
+    raw = getattr(cfg, "RAG_EMBEDDING_LOAD_TIMEOUT_SECONDS", 0)
+    try:
+        return max(0.0, float(raw or 0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _construct_sentence_transformer_with_timeout(
+    sentence_transformer_cls: type[Any],
+    model_name: str,
+    *,
+    device: str,
+    local_files_only: bool,
+    timeout_seconds: float,
+) -> Any:
+    """Construct a SentenceTransformer with an optional bounded load timeout."""
+
+    def _load() -> Any:
+        return sentence_transformer_cls(
+            model_name,
+            device=device,
+            local_files_only=local_files_only,
+        )
+
+    if timeout_seconds <= 0:
+        return _load()
+
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="rag-embed")
+    future = executor.submit(_load)
+    try:
+        return future.result(timeout=timeout_seconds)
+    except concurrent.futures.TimeoutError as exc:
+        future.cancel()
+        raise EmbeddingModelLoadTimeout(
+            f"Embedding model load timed out after {timeout_seconds:.3f}s: {model_name}"
+        ) from exc
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
 
 def clear_model_cache() -> None:
@@ -162,11 +208,14 @@ def get_sentence_transformer_model(model_name: str, cfg: Any) -> Any:
         else:
             return model
 
+    timeout_seconds = _embedding_load_timeout_seconds(cfg)
     with _scoped_hf_runtime_env():
-        model = SentenceTransformer(
+        model = _construct_sentence_transformer_with_timeout(
+            SentenceTransformer,
             model_name,
             device=device,
             local_files_only=local_files_only,
+            timeout_seconds=timeout_seconds,
         )
     _MODEL_CACHE[cache_key] = model
     if len(_MODEL_CACHE) > _MODEL_CACHE_MAX_SIZE:

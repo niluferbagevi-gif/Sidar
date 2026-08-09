@@ -1,4 +1,4 @@
-"""Sidar Project - Agent Modülleri"""
+"""Sidar Project - Agent Modülleri."""
 
 from importlib import import_module
 from typing import Any

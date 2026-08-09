@@ -2,6 +2,7 @@ import importlib
 import logging
 import os
 import sys
+import threading
 import types
 import warnings
 from pathlib import Path
@@ -9,7 +10,48 @@ from pathlib import Path
 import pytest
 
 import config
-from core import config_env_helpers, config_validators
+import config_autonomy
+import config_gpu
+import config_llm
+import config_quality
+import config_rag_defaults
+from core import config_env_helpers, config_postgres, config_validators
+
+
+def test_rag_defaults_module_name_disambiguates_runtime_rag_modules() -> None:
+    import config_rag  # noqa: PLC0415 - verifies legacy compatibility shim.
+
+    docs = Path("docs/module-notes/config.py.md").read_text(encoding="utf-8")
+    refactor_plan = Path("docs/REFACTOR_PLAN.md").read_text(encoding="utf-8")
+
+    assert config_rag.SEMANTIC_CACHE_THRESHOLD_DEFAULT == (
+        config_rag_defaults.SEMANTIC_CACHE_THRESHOLD_DEFAULT
+    )
+    assert config.Config.SEMANTIC_CACHE_THRESHOLD == (
+        config_rag_defaults.SEMANTIC_CACHE_THRESHOLD_DEFAULT
+    )
+    assert "config_rag_defaults.py" in docs
+    assert "legacy `config_rag.py` yalnız backward-compatible shim" in docs
+    assert "config_rag_defaults.py" in refactor_plan
+
+
+def test_llm_and_quality_gate_loaders_share_the_scoped_settings_builder() -> None:
+    """Guard against reintroducing the duplicated scoped-settings block.
+
+    `load_llm_settings`/`load_quality_gate_settings` must not re-inline the
+    ~15-line dotenv-scoped `type(...)` subclass block; it was duplicated
+    verbatim across config_llm.py/config_quality.py before both were switched
+    to `core.config_scoped_settings.build_scoped_settings_type`.
+    """
+    llm_source = Path("config_llm.py").read_text(encoding="utf-8")
+    quality_source = Path("config_quality.py").read_text(encoding="utf-8")
+
+    for source in (llm_source, quality_source):
+        assert "from core.config_scoped_settings import build_scoped_settings_type" in source
+        assert "build_scoped_settings_type(" in source
+        # The old inlined metaprogramming block used this exact marker key;
+        # its presence would mean the duplication crept back in.
+        assert '"__module__": __name__,' not in source
 
 
 def test_config_reexports_split_env_helpers_and_validators() -> None:
@@ -17,6 +59,67 @@ def test_config_reexports_split_env_helpers_and_validators() -> None:
     assert config.get_web_scrape_max_chars is config_env_helpers.get_web_scrape_max_chars
     assert config.normalize_ai_provider is config_validators.normalize_ai_provider
     assert config.is_valid_http_url is config_validators.is_valid_http_url
+
+
+def test_config_facade_scope_and_typed_settings_roadmap_are_documented() -> None:
+    docs = Path("docs/module-notes/config.py.md").read_text(encoding="utf-8")
+    refactor_plan = Path("docs/REFACTOR_PLAN.md").read_text(encoding="utf-8")
+
+    assert "God object değil, compatibility facade" in docs
+    assert "yaklaşık yirmi" in docs
+    assert "domain ayar modülünü birleştiren compatibility facade" in docs
+    assert "Tekrarlayan business logic" in docs
+    assert "typed domain settings facade alias" in docs
+    assert "Config.llm_settings" in docs
+    assert "Config.security_settings" in docs
+    assert "Config.sandbox_settings" in docs
+    assert "gerçek bir god object değil" in refactor_plan
+    assert "typed domain settings objeleri doğrudan expose edildi" in refactor_plan
+
+
+def test_config_uses_split_domain_modules() -> None:
+    assert config.LLMClientSettings is config_llm.LLMClientSettings
+    assert config.OLLAMA_BATCH_POLICY is config_llm.OLLAMA_BATCH_POLICY
+    assert config.build_postgres_dsn is config_postgres.build_postgres_dsn
+    assert config.gpu_mixed_precision_default is config_gpu.gpu_mixed_precision_default
+    assert (
+        config.Config.SEMANTIC_CACHE_THRESHOLD
+        == config_rag_defaults.SEMANTIC_CACHE_THRESHOLD_DEFAULT
+    )
+    assert config._SELF_HEAL_SETTINGS == config_autonomy.load_self_heal_settings()
+    assert config.QualityGateSettings is config_quality.QualityGateSettings
+
+
+def test_config_exposes_typed_domain_settings_facades() -> None:
+    assert config.Config.llm_settings is config.LLM_SETTINGS
+    assert config.Config.quality_gate_settings is config._QUALITY_GATE_SETTINGS
+    assert config.Config.security_settings is config.SECURITY_SETTINGS
+    assert config.Config.rate_limit_settings is config._RATE_LIMIT_SETTINGS
+    assert config.Config.event_bus_settings is config._EVENT_BUS_SETTINGS
+    assert config.Config.rag_store_settings is config._RAG_STORE_SETTINGS
+    assert config.Config.sandbox_settings is config._SANDBOX_SETTINGS
+    assert config.Config.observability_settings is config._OBSERVABILITY_SETTINGS
+    assert config.Config.self_heal_settings is config._SELF_HEAL_SETTINGS
+
+
+def test_config_legacy_import_surface_survives_split() -> None:
+    from config import (  # noqa: PLC0415 - verifies public compatibility import path.
+        OLLAMA_BATCH_POLICY,
+        SANDBOX_LIMITS,
+        Config,
+        get_config,
+        get_dotenv_load_report,
+        register_config_reload_callback,
+        reload_environment,
+    )
+
+    assert Config is config.Config
+    assert OLLAMA_BATCH_POLICY is config_llm.OLLAMA_BATCH_POLICY
+    assert SANDBOX_LIMITS is config.SANDBOX_LIMITS
+    assert get_config is config.get_config
+    assert get_dotenv_load_report is config.get_dotenv_load_report
+    assert register_config_reload_callback is config.register_config_reload_callback
+    assert reload_environment is config.reload_environment
 
 
 def test_get_bool_env_strict_true_false_and_default(monkeypatch):
@@ -66,6 +169,17 @@ def test_require_gpu_defaults_to_false_for_cpu_only_bootstrap() -> None:
 
     assert 'REQUIRE_GPU: bool = get_bool_env("REQUIRE_GPU", False)' in source
     assert "CPU-only hosts should boot without failing critical validation" in source
+
+
+def test_agent_max_react_steps_aliases_legacy_default() -> None:
+    assert config.Config.AGENT_MAX_REACT_STEPS == config.Config.MAX_REACT_STEPS
+
+
+def test_swarm_timeout_config_exposes_model_and_ollama_overrides() -> None:
+    assert config.Config.SWARM_TASK_TIMEOUT_BY_MODEL == ""
+    assert (
+        config.Config.SWARM_TASK_TIMEOUT_SECONDS_OLLAMA == config.Config.SWARM_TASK_TIMEOUT_SECONDS
+    )
 
 
 def test_gpu_mixed_precision_defaults_to_true_only_for_production(monkeypatch):
@@ -202,6 +316,199 @@ def test_llm_client_settings_default_ollama_num_batch_is_safe_for_long_prompts(m
     assert settings.OLLAMA_NUM_BATCH == 2048
 
 
+def test_llm_client_settings_tolerates_blank_ollama_coding_num_ctx(monkeypatch):
+    """Blank OLLAMA_CODING_NUM_CTX must fall back to the field default, not raise.
+
+    .env.advanced.example ships OLLAMA_CODING_NUM_CTX= (blank) on purpose so a
+    fresh install can auto-tune it from detected GPU VRAM (see
+    Config._autoselect_ollama_coding_ctx_window). config.py's dotenv chain loads
+    that blank value straight into os.environ (override=False keeps it once no
+    earlier layer set it), so pydantic-settings must fall back to the field
+    default instead of raising on int_parsing -- regression test for the crash
+    every entrypoint hit on a real install (`ScopedLLMClientSettings /
+    OLLAMA_CODING_NUM_CTX: Input should be a valid integer ... input_value=''`).
+    """
+    monkeypatch.setenv("OLLAMA_CODING_NUM_CTX", "")
+    settings = config.LLMClientSettings()
+    assert settings.OLLAMA_CODING_NUM_CTX == 8192
+
+
+def test_load_llm_settings_tolerates_blank_ollama_coding_num_ctx(tmp_path, monkeypatch):
+    monkeypatch.delenv("OLLAMA_CODING_NUM_CTX", raising=False)
+    env_path = tmp_path / ".env"
+    env_path.write_text("OLLAMA_CODING_NUM_CTX=\n", encoding="utf-8")
+
+    settings = config_llm.load_llm_settings(env_path=env_path, skip_default_dotenv=False)
+
+    assert settings.OLLAMA_CODING_NUM_CTX == 8192
+
+
+def test_load_llm_settings_reads_scoped_dotenv_without_dynamic_init_kwargs(tmp_path, monkeypatch):
+    monkeypatch.delenv("OLLAMA_TIMEOUT", raising=False)
+    env_path = tmp_path / ".env"
+    env_path.write_text("OLLAMA_TIMEOUT=321\n", encoding="utf-8")
+
+    settings = config_llm.load_llm_settings(env_path=env_path, skip_default_dotenv=False)
+
+    assert settings.OLLAMA_TIMEOUT == 321
+
+
+def test_load_llm_settings_can_skip_scoped_dotenv(tmp_path, monkeypatch):
+    monkeypatch.delenv("OLLAMA_TIMEOUT", raising=False)
+    env_path = tmp_path / ".env"
+    env_path.write_text("OLLAMA_TIMEOUT=321\n", encoding="utf-8")
+
+    settings = config_llm.load_llm_settings(env_path=env_path, skip_default_dotenv=True)
+
+    assert settings.OLLAMA_TIMEOUT == 600
+
+
+_QUALITY_GATE_ENV_KEYS = (
+    "DLP_ENABLED",
+    "HITL_ENABLED",
+    "HITL_TIMEOUT_SECONDS",
+    "SIDAR_JUDGE_ENABLED",
+    "JUDGE_ENABLED",
+    "SIDAR_JUDGE_MODEL",
+    "JUDGE_MODEL",
+    "SIDAR_JUDGE_PROVIDER",
+    "JUDGE_PROVIDER",
+    "SIDAR_JUDGE_SAMPLE_RATE",
+    "JUDGE_SAMPLE_RATE",
+    "SIDAR_JUDGE_AUTO_FEEDBACK_ENABLED",
+    "JUDGE_AUTO_FEEDBACK_ENABLED",
+    "SIDAR_JUDGE_AUTO_FEEDBACK_THRESHOLD",
+    "JUDGE_AUTO_FEEDBACK_THRESHOLD",
+    "SIDAR_JUDGE_RESPONSE_MODEL",
+    "JUDGE_RESPONSE_MODEL",
+)
+
+
+def _clear_quality_gate_env(monkeypatch) -> None:
+    for key in _QUALITY_GATE_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+
+
+def test_quality_gate_settings_defaults_match_original_hardcoded_values(monkeypatch):
+    _clear_quality_gate_env(monkeypatch)
+    settings = config_quality.QualityGateSettings()
+
+    assert settings.DLP_ENABLED is True
+    assert settings.HITL_ENABLED is True
+    assert settings.HITL_TIMEOUT_SECONDS == 120
+    assert settings.JUDGE_ENABLED is False
+    assert settings.JUDGE_MODEL == ""
+    assert settings.JUDGE_PROVIDER == "ollama"
+    assert settings.JUDGE_SAMPLE_RATE == 0.2
+    assert settings.JUDGE_AUTO_FEEDBACK_ENABLED is True
+    assert settings.JUDGE_AUTO_FEEDBACK_THRESHOLD == 8.0
+    assert settings.JUDGE_RESPONSE_MODEL == ""
+
+
+def test_quality_gate_settings_sidar_prefix_takes_precedence_over_legacy(monkeypatch):
+    _clear_quality_gate_env(monkeypatch)
+    monkeypatch.setenv("JUDGE_ENABLED", "false")
+    monkeypatch.setenv("SIDAR_JUDGE_ENABLED", "true")
+    monkeypatch.setenv("JUDGE_SAMPLE_RATE", "0.9")
+    monkeypatch.setenv("SIDAR_JUDGE_SAMPLE_RATE", "0.3")
+
+    settings = config_quality.QualityGateSettings()
+
+    assert settings.JUDGE_ENABLED is True
+    assert settings.JUDGE_SAMPLE_RATE == 0.3
+
+
+def test_quality_gate_settings_legacy_env_var_works_without_prefix(monkeypatch):
+    _clear_quality_gate_env(monkeypatch)
+    monkeypatch.setenv("JUDGE_ENABLED", "true")
+    monkeypatch.setenv("JUDGE_SAMPLE_RATE", "0.5")
+
+    settings = config_quality.QualityGateSettings()
+
+    assert settings.JUDGE_ENABLED is True
+    assert settings.JUDGE_SAMPLE_RATE == 0.5
+
+
+@pytest.mark.parametrize(
+    ("prefixed_key", "legacy_key", "field_name"),
+    [
+        ("SIDAR_JUDGE_MODEL", "JUDGE_MODEL", "JUDGE_MODEL"),
+        ("SIDAR_JUDGE_PROVIDER", "JUDGE_PROVIDER", "JUDGE_PROVIDER"),
+        ("SIDAR_JUDGE_RESPONSE_MODEL", "JUDGE_RESPONSE_MODEL", "JUDGE_RESPONSE_MODEL"),
+    ],
+)
+def test_quality_gate_blank_prefixed_strings_use_legacy_values(
+    monkeypatch, prefixed_key, legacy_key, field_name
+):
+    """Blank preferred aliases must not disable configured legacy judge settings."""
+    _clear_quality_gate_env(monkeypatch)
+    monkeypatch.setenv(prefixed_key, "   ")
+    monkeypatch.setenv(legacy_key, "legacy-value")
+
+    settings = config_quality.QualityGateSettings()
+
+    assert getattr(settings, field_name) == "legacy-value"
+
+
+@pytest.mark.parametrize(
+    "env_key,env_value",
+    [
+        ("JUDGE_SAMPLE_RATE", "1.5"),
+        ("JUDGE_SAMPLE_RATE", "-0.1"),
+        ("JUDGE_AUTO_FEEDBACK_THRESHOLD", "10.1"),
+        ("JUDGE_AUTO_FEEDBACK_THRESHOLD", "-1"),
+    ],
+)
+def test_quality_gate_settings_rejects_out_of_range_values(monkeypatch, env_key, env_value):
+    """Regression test: out-of-range values must fail fast via pydantic Field constraints.
+
+    Instead of being silently clamped into range, replacing the manual
+    `max(0.0, min(1.0, ...))`-style validation the fields used before.
+    """
+    _clear_quality_gate_env(monkeypatch)
+    monkeypatch.setenv(env_key, env_value)
+
+    with pytest.raises(Exception, match="(?i)validation error"):
+        config_quality.QualityGateSettings()
+
+
+def test_quality_gate_settings_accepts_boundary_values(monkeypatch):
+    _clear_quality_gate_env(monkeypatch)
+    monkeypatch.setenv("JUDGE_SAMPLE_RATE", "0")
+    monkeypatch.setenv("JUDGE_AUTO_FEEDBACK_THRESHOLD", "10")
+
+    settings = config_quality.QualityGateSettings()
+
+    assert settings.JUDGE_SAMPLE_RATE == 0.0
+    assert settings.JUDGE_AUTO_FEEDBACK_THRESHOLD == 10.0
+
+
+def test_load_quality_gate_settings_reads_scoped_dotenv_without_dynamic_init_kwargs(
+    tmp_path, monkeypatch
+):
+    _clear_quality_gate_env(monkeypatch)
+    env_path = tmp_path / ".env"
+    env_path.write_text("HITL_TIMEOUT_SECONDS=321\n", encoding="utf-8")
+
+    settings = config_quality.load_quality_gate_settings(
+        env_path=env_path, skip_default_dotenv=False
+    )
+
+    assert settings.HITL_TIMEOUT_SECONDS == 321
+
+
+def test_load_quality_gate_settings_can_skip_scoped_dotenv(tmp_path, monkeypatch):
+    _clear_quality_gate_env(monkeypatch)
+    env_path = tmp_path / ".env"
+    env_path.write_text("HITL_TIMEOUT_SECONDS=321\n", encoding="utf-8")
+
+    settings = config_quality.load_quality_gate_settings(
+        env_path=env_path, skip_default_dotenv=True
+    )
+
+    assert settings.HITL_TIMEOUT_SECONDS == 120
+
+
 def test_ollama_batch_policy_centralizes_runtime_bounds():
     policy = config.OllamaBatchPolicy()
 
@@ -228,6 +535,68 @@ def test_get_int_float_and_list_env_parsing(monkeypatch):
     assert config.get_list_env("LIST_VAL", []) == ["a", "b", "c"]
     assert config.get_list_env("LIST_EMPTY", ["fallback"]) == ["fallback"]
     assert config.get_list_env("LIST_EMPTY", None) == []
+
+
+def test_get_int_and_float_env_warn_on_malformed_value(monkeypatch, caplog):
+    monkeypatch.setenv("INT_OK", "42")
+    monkeypatch.setenv("INT_BAD", "abc")
+    monkeypatch.setenv("FLOAT_OK", "3.14")
+    monkeypatch.setenv("FLOAT_BAD", "-")
+    monkeypatch.delenv("INT_MISSING", raising=False)
+
+    with caplog.at_level(logging.WARNING, logger="core.config_env_helpers"):
+        assert config.get_int_env("INT_OK", 7) == 42
+        assert config.get_int_env("INT_MISSING", 7) == 7
+        assert config.get_int_env("INT_BAD", 7) == 7
+        assert config.get_float_env("FLOAT_OK", 1.2) == 3.14
+        assert config.get_float_env("FLOAT_BAD", 1.2) == 1.2
+
+    assert "INT_OK" not in caplog.text
+    assert "INT_MISSING" not in caplog.text
+    assert "INT_BAD ortam değişkeni geçerli bir tam sayı değil" in caplog.text
+    assert "FLOAT_BAD ortam değişkeni geçerli bir ondalık sayı değil" in caplog.text
+
+
+def test_prefixed_env_helpers_use_legacy_and_default_fallbacks(monkeypatch):
+    monkeypatch.delenv("SIDAR_TEXT", raising=False)
+    monkeypatch.setenv("LEGACY_TEXT", "legacy-value")
+    monkeypatch.delenv("SIDAR_INT", raising=False)
+    monkeypatch.delenv("LEGACY_INT", raising=False)
+    monkeypatch.setenv("SIDAR_FLOAT", "   ")
+    monkeypatch.setenv("LEGACY_FLOAT", "4.5")
+    monkeypatch.delenv("SIDAR_FLOAT_MISSING", raising=False)
+    monkeypatch.delenv("LEGACY_FLOAT_MISSING", raising=False)
+
+    assert config.get_prefixed_env("SIDAR_TEXT", "LEGACY_TEXT", "default") == "legacy-value"
+    assert config.get_int_prefixed_env("SIDAR_INT", "LEGACY_INT", 9) == 9
+    assert config.get_float_prefixed_env("SIDAR_FLOAT", "LEGACY_FLOAT", 2.5) == 4.5
+    assert config.get_float_prefixed_env("SIDAR_FLOAT_MISSING", "LEGACY_FLOAT_MISSING", 3.5) == 3.5
+
+
+def test_blank_prefixed_string_env_helpers_use_legacy_fallbacks(monkeypatch):
+    """Blank optional overrides must not shadow configured legacy values."""
+    monkeypatch.setenv("SIDAR_TEXT", "   ")
+    monkeypatch.setenv("LEGACY_TEXT", "legacy-value")
+
+    assert config.get_prefixed_env("SIDAR_TEXT", "LEGACY_TEXT", "default") == "legacy-value"
+    assert config.get_optional_prefixed_env("SIDAR_TEXT", "LEGACY_TEXT") == "legacy-value"
+
+
+def test_get_int_and_float_prefixed_env_warn_on_malformed_value(monkeypatch, caplog):
+    monkeypatch.setenv("SIDAR_INT_BAD", "not-a-number")
+    monkeypatch.setenv("SIDAR_FLOAT_BAD", "not-a-float")
+
+    with caplog.at_level(logging.WARNING, logger="core.config_env_helpers"):
+        assert config.get_int_prefixed_env("SIDAR_INT_BAD", "LEGACY_INT_BAD", 7) == 7
+        assert config.get_float_prefixed_env("SIDAR_FLOAT_BAD", "LEGACY_FLOAT_BAD", 1.5) == 1.5
+
+    assert (
+        "SIDAR_INT_BAD / LEGACY_INT_BAD ortam değişkeni geçerli bir tam sayı değil" in caplog.text
+    )
+    assert (
+        "SIDAR_FLOAT_BAD / LEGACY_FLOAT_BAD ortam değişkeni geçerli bir ondalık sayı değil"
+        in caplog.text
+    )
 
 
 def test_get_db_pool_size_default_scales_with_cpu_and_pg_limits(monkeypatch):
@@ -287,6 +656,49 @@ def test_ensure_hardware_info_loaded_cpu_only(monkeypatch):
     assert config.Config.CPU_COUNT >= 1
 
 
+def test_ensure_hardware_info_loaded_is_thread_safe(monkeypatch):
+    calls = 0
+    release = threading.Event()
+
+    def fake_check_hardware():
+        nonlocal calls
+        calls += 1
+        release.wait(timeout=2)
+        return config.HardwareInfo(
+            has_cuda=True,
+            gpu_name="ThreadSafeGPU",
+            gpu_count=1,
+            cpu_count=8,
+            cuda_version="12.1",
+            driver_version="535",
+            gpu_vram_mb=8192,
+        )
+
+    monkeypatch.setattr(config.Config, "_hardware_loaded", False)
+    monkeypatch.setattr(config.Config, "USE_GPU", True)
+    monkeypatch.setattr(config.Config, "_autoselect_ollama_coding_ctx_window", lambda: None)
+    monkeypatch.setattr(config, "resolve_adaptive_gpu_pool_size", lambda *args, **kwargs: 2)
+    monkeypatch.setattr(config, "check_hardware", fake_check_hardware)
+
+    threads = [
+        threading.Thread(target=config.Config._ensure_hardware_info_loaded) for _ in range(4)
+    ]
+    for thread in threads:
+        thread.start()
+    release.set()
+    for thread in threads:
+        thread.join(timeout=2)
+
+    assert calls == 1
+    assert config.Config._hardware_loaded is True
+    assert config.Config.GPU_INFO == "ThreadSafeGPU"
+
+
+def test_dotenv_reload_plan_rejects_profile_path_traversal():
+    with pytest.raises(ValueError, match="SIDAR_ENV profile cannot contain path separators"):
+        config._build_dotenv_reload_plan({}, profile="../prod")
+
+
 def test_get_system_info_sanitizes_sensitive_fields(monkeypatch):
     monkeypatch.setattr(
         config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None)
@@ -314,6 +726,7 @@ def test_get_system_info_sanitizes_sensitive_fields(monkeypatch):
     monkeypatch.setattr(config.Config, "RATE_LIMIT_CHAT", 20)
     monkeypatch.setattr(config.Config, "RATE_LIMIT_MUTATIONS", 60)
     monkeypatch.setattr(config.Config, "RATE_LIMIT_GET_IO", 30)
+    monkeypatch.setattr(config.Config, "RATE_LIMIT_WS_CONNECTIONS", 12)
     monkeypatch.setattr(config.Config, "ENABLE_TRACING", False)
     monkeypatch.setattr(config.Config, "OTEL_EXPORTER_ENDPOINT", "http://jaeger:4317")
     monkeypatch.setattr(config.Config, "ENABLE_SEMANTIC_CACHE", False)
@@ -326,6 +739,7 @@ def test_get_system_info_sanitizes_sensitive_fields(monkeypatch):
     assert info["provider"] == "ollama"
     assert info["gpu_enabled"] is False
     assert info["hf_use_local_cache_only"] is True
+    assert info["rate_limit_ws_connections"] == 12
     assert "REDIS_URL" not in info
 
 
@@ -496,15 +910,55 @@ def test_validate_critical_settings_provider_and_memory_branches(monkeypatch):
     assert config.Config.validate_critical_settings() is False
 
 
+def test_validate_critical_settings_rejects_unsafe_production_secret(monkeypatch, caplog):
+    monkeypatch.setenv("SIDAR_ENV", "production")
+    monkeypatch.setattr(
+        config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None)
+    )
+    monkeypatch.setattr(
+        config.Config, "_apply_gpu_memory_safety_check", classmethod(lambda cls: None)
+    )
+    monkeypatch.setattr(config.Config, "initialize_directories", classmethod(lambda cls: True))
+    monkeypatch.setattr(
+        config.Config,
+        "get_missing_critical_runtime_keys",
+        classmethod(lambda cls: ["METRICS_TOKEN"]),
+    )
+    monkeypatch.setattr(
+        config.Config, "_validate_ai_provider_settings", classmethod(lambda cls: True)
+    )
+    monkeypatch.setattr(config.Config, "REQUIRE_GPU", False)
+    monkeypatch.setattr(config.Config, "ACCESS_LEVEL", "sandbox")
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", "openai")
+    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "valid-fernet-key")
+    monkeypatch.setattr(config.config_postgres, "postgres_password_drift_messages", lambda: [])
+
+    class _Fernet:
+        def __init__(self, _key):
+            pass
+
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "cryptography.fernet",
+        types.SimpleNamespace(Fernet=_Fernet),
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        config.Config.validate_critical_settings()
+
+    assert exc_info.value.code == 1
+    assert "Production secret doğrulaması başarısız: METRICS_TOKEN" in caplog.text
+
+
 def test_normalize_gpu_memory_fractions_reports_effective_budget() -> None:
     safe = config.normalize_gpu_memory_fractions(0.6, 0.3)
     assert safe == {
-        "llm": 0.6,
-        "rag": 0.3,
-        "gpu": 0.9,
-        "total": 0.9,
+        "llm": 0.5333,
+        "rag": 0.2667,
+        "gpu": 0.8,
+        "total": 0.8,
         "original_total": 0.9,
-        "normalized": False,
+        "normalized": True,
     }
 
     normalized = config.normalize_gpu_memory_fractions(0.9, 0.4)
@@ -514,7 +968,7 @@ def test_normalize_gpu_memory_fractions_reports_effective_budget() -> None:
     assert normalized["llm"] + normalized["rag"] == pytest.approx(0.8)
 
 
-def test_apply_gpu_memory_safety_check_normalizes_when_sum_exceeds_one(monkeypatch):
+def test_apply_gpu_memory_safety_check_normalizes_when_sum_exceeds_safe_target(monkeypatch):
     monkeypatch.setattr(config.Config, "LLM_GPU_MEMORY_FRACTION", 0.9)
     monkeypatch.setattr(config.Config, "RAG_GPU_MEMORY_FRACTION", 0.4)
     monkeypatch.setattr(config.Config, "GPU_MEMORY_FRACTION", 0.9)
@@ -1606,6 +2060,146 @@ def test_trusted_proxies_defaults_to_loopback(monkeypatch) -> None:
     assert "127.0.0.1" in reloaded.Config.TRUSTED_PROXIES
 
 
+def test_jwt_secret_no_longer_falls_back_to_api_key(monkeypatch):
+    # Prevent a developer's real dotenv chain from clobbering the API_KEY set
+    # below on reload: base/.env.advanced/.env.{SIDAR_ENV} (SIDAR_SKIP_DEFAULT_DOTENV
+    # skips all three), the explicit DOTENV_FILE layer (run_tests.sh sets this
+    # to .env.test for the whole pytest process, and that file also gets a
+    # real synced API_KEY via install_sidar.sh), and ~/.sidar_keys.env — the
+    # last two are always loaded with override=True regardless of the skip flag.
+    monkeypatch.setenv("SIDAR_SKIP_DEFAULT_DOTENV", "1")
+    monkeypatch.setenv("DOTENV_FILE", "")
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+    monkeypatch.setenv("API_KEY", "api-key-must-not-sign-jwt")
+    monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+    monkeypatch.setenv("SIDAR_ENV", "development")
+
+    reloaded = importlib.reload(config)
+
+    assert reloaded.Config.API_KEY == "api-key-must-not-sign-jwt"
+    assert reloaded.Config.JWT_SECRET_KEY
+    assert reloaded.Config.JWT_SECRET_KEY != "api-key-must-not-sign-jwt"
+    assert reloaded.Config._JWT_SECRET_KEY_EXPLICITLY_CONFIGURED is False
+
+
+def test_production_requires_explicit_jwt_secret_and_api_key(monkeypatch):
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.setenv("SIDAR_ENV", "production")
+    monkeypatch.delenv("API_KEY", raising=False)
+    monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+    # get_missing_critical_runtime_keys() reads POSTGRES_PASSWORD straight from
+    # os.environ and also accepts a strong password embedded in DATABASE_URL, so
+    # a developer's real process/dotenv values would otherwise mask it from the
+    # expected missing-keys list below.
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setattr(config.Config, "API_KEY", "")
+    monkeypatch.setattr(config.Config, "JWT_SECRET_KEY", "generated-runtime-secret")
+    monkeypatch.setattr(config.Config, "_JWT_SECRET_KEY_EXPLICITLY_CONFIGURED", False)
+    monkeypatch.setattr(config.Config, "DATABASE_URL", "")
+
+    missing = config.Config.get_missing_critical_runtime_keys()
+
+    assert "JWT_SECRET_KEY" in missing
+    assert "API_KEY" in missing
+    assert "POSTGRES_PASSWORD" in missing
+    with pytest.raises(
+        ValueError, match="JWT_SECRET_KEY, API_KEY, POSTGRES_PASSWORD boş bırakılamaz"
+    ):
+        config.Config()
+
+
+def _read_dotenv_example_values(relative_path: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    dotenv_path = Path(__file__).resolve().parents[3] / relative_path
+    for raw_line in dotenv_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip()
+    return values
+
+
+def test_prefixed_legacy_env_example_pairs_stay_in_parity() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    base_values = _read_dotenv_example_values(".env.example")
+    prefixed_legacy_pairs = {
+        key: key.removeprefix("SIDAR_")
+        for key in base_values
+        if key.startswith("SIDAR_") and key.removeprefix("SIDAR_") in base_values
+    }
+
+    assert prefixed_legacy_pairs["SIDAR_CODE_EXECUTION_BACKEND"] == "CODE_EXECUTION_BACKEND"
+    for example_path in repo_root.glob(".env*.example"):
+        values = _read_dotenv_example_values(example_path.name)
+        for prefixed_key, legacy_key in prefixed_legacy_pairs.items():
+            if legacy_key not in values:
+                continue
+
+            assert values[prefixed_key] == values[legacy_key], example_path.name
+
+
+def test_runtime_manager_flags_are_centralized_in_config(monkeypatch):
+    monkeypatch.setenv("SIDAR_SKIP_DEFAULT_DOTENV", "1")
+    monkeypatch.setenv("DOTENV_FILE", "")
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+    monkeypatch.delenv("SIDAR_CODE_EXECUTION_BACKEND", raising=False)
+    monkeypatch.setenv("CODE_EXECUTION_BACKEND", "disabled")
+    # SIDAR_-prefixed variants take precedence over these legacy keys (see
+    # core/config_sandbox.py::load_sandbox_settings). A developer's real
+    # .env.advanced (generated by install_sidar.sh from
+    # .env.advanced.example, which ships SIDAR_DOCKER_AUTODETECT=true) can
+    # leak these prefixed values into the process environment before this
+    # test runs, so they must be explicitly cleared to make the legacy-key
+    # assertions below deterministic regardless of local dotenv state.
+    monkeypatch.delenv("SIDAR_DOCKER_AUTODETECT", raising=False)
+    monkeypatch.delenv("SIDAR_PROMPT_GUARD_ENABLED", raising=False)
+    monkeypatch.delenv("SIDAR_GUARDRAILS_REQUIRED", raising=False)
+    monkeypatch.setenv("DOCKER_AUTODETECT", "false")
+    monkeypatch.setenv("PROMPT_GUARD_ENABLED", "false")
+    monkeypatch.setenv("GUARDRAILS_REQUIRED", "true")
+
+    reloaded = importlib.reload(config)
+
+    assert reloaded.Config.CODE_EXECUTION_BACKEND == "disabled"
+    assert reloaded.Config.DOCKER_AUTODETECT is False
+    assert reloaded.Config.PROMPT_GUARD_ENABLED is False
+    assert reloaded.Config.GUARDRAILS_REQUIRED is True
+
+
+def test_invalid_code_execution_backend_falls_back_to_safe_config_default(monkeypatch):
+    monkeypatch.setenv("SIDAR_SKIP_DEFAULT_DOTENV", "1")
+    monkeypatch.setenv("DOTENV_FILE", "")
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+    monkeypatch.delenv("SIDAR_CODE_EXECUTION_BACKEND", raising=False)
+    monkeypatch.setenv("CODE_EXECUTION_BACKEND", "podman")
+
+    reloaded = importlib.reload(config)
+
+    assert reloaded.Config.CODE_EXECUTION_BACKEND == "docker"
+
+
+def test_production_accepts_strong_database_url_password_without_postgres_env(monkeypatch):
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.setenv("SIDAR_ENV", "production")
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setattr(config.Config, "API_KEY", "ApiKey-N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh")
+    monkeypatch.setattr(config.Config, "JWT_SECRET_KEY", "JwtKey-P8tYv3wXc5aHj6sDf4GhN7b_Uz9mKq2pR")
+    monkeypatch.setattr(config.Config, "_JWT_SECRET_KEY_EXPLICITLY_CONFIGURED", True)
+    monkeypatch.setattr(
+        config.Config,
+        "DATABASE_URL",
+        "postgresql://sidar:H7sQ9vL2mR5xT8nB3kY6pW1zC4aD%21@127.0.0.1:5432/sidar",
+    )
+
+    missing = config.Config.get_missing_critical_runtime_keys()
+
+    assert "POSTGRES_PASSWORD" not in missing
+    config.Config()
+
+
 def test_config_requires_jwt_secret_outside_test_env(monkeypatch):
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
     monkeypatch.delenv("SIDAR_ENV", raising=False)
@@ -1687,7 +2281,14 @@ def test_config_helper_edge_cases_cover_centralized_env_helpers(monkeypatch):
     assert config.get_bool_prefixed_env("SIDAR_BOOL_FALSE", "LEGACY_BOOL_FALSE", True) is False
 
 
-def test_dotenv_load_report_tracks_advanced_explicit_and_secret_precedence(monkeypatch):
+def test_dotenv_reload_plan_rejects_repo_local_secret_overlay():
+    effective_env = {"SIDAR_ENV": "development", "SIDAR_KEYS_FILE": ".env"}
+
+    with pytest.raises(ValueError, match="repository dışında"):
+        config._build_dotenv_reload_plan(effective_env, profile=None)
+
+
+def test_dotenv_load_report_tracks_advanced_explicit_and_secret_precedence(monkeypatch, tmp_path):
     values_by_name = {
         ".env": {"OPENAI_API_KEY": "from-base", "JWT_SECRET_KEY": "jwt-base"},
         ".env.advanced": {"OPENAI_API_KEY": "from-advanced", "SIDAR_ENV": "development"},
@@ -1710,7 +2311,7 @@ def test_dotenv_load_report_tracks_advanced_explicit_and_secret_precedence(monke
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
     monkeypatch.setenv("DOTENV_FILE", "runtime.env")
-    monkeypatch.setenv("SIDAR_KEYS_FILE", "keys.env")
+    monkeypatch.setenv("SIDAR_KEYS_FILE", str(tmp_path / "keys.env"))
     monkeypatch.setattr(Path, "exists", fake_exists)
     monkeypatch.setattr("dotenv.load_dotenv", fake_load_dotenv)
 
@@ -1741,7 +2342,9 @@ def test_reload_environment_skip_default_dotenv_keeps_explicit_and_secret_layers
     explicit_env.write_text(
         "OPENAI_API_KEY=from-explicit\nJWT_SECRET_KEY=jwt-explicit\n", encoding="utf-8"
     )
-    keys_env = tmp_path / "keys.env"
+    secret_dir = tmp_path.parent / f"{tmp_path.name}-secrets"
+    secret_dir.mkdir()
+    keys_env = secret_dir / "keys.env"
     keys_env.write_text("OPENAI_API_KEY=from-secret\n", encoding="utf-8")
 
     monkeypatch.setattr(config, "BASE_DIR", tmp_path)
@@ -1778,6 +2381,64 @@ def test_config_init_logs_env_status_before_missing_jwt_failure(monkeypatch, cap
     assert "SIDAR_KEYS_FILE" in caplog.text
 
 
+def test_config_init_warns_on_unconfigured_jwt_secret_outside_test_env(monkeypatch, caplog):
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.delenv("WEB_CONCURRENCY", raising=False)
+    monkeypatch.setenv("POSTGRES_PASSWORD", "H7sQ9vL2mR5xT8nB3kY6pW1zC4aD!")
+    monkeypatch.setattr(config.Config, "JWT_SECRET_KEY", "runtime-generated-secret")
+    monkeypatch.setattr(config.Config, "_JWT_SECRET_KEY_EXPLICITLY_CONFIGURED", False)
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "")
+    monkeypatch.setattr(
+        config.Config,
+        "DATABASE_URL",
+        "postgresql://sidar:H7sQ9vL2mR5xT8nB3kY6pW1zC4aD!@127.0.0.1:5432/sidar",
+    )
+
+    config.Config()
+
+    assert "JWT_SECRET_KEY tanımlanmamış" in caplog.text
+    assert "geçersiz olacaktır" in caplog.text
+    assert "POSTGRES_PASSWORD zayıf" not in caplog.text
+
+
+def test_config_init_warns_on_weak_postgres_password_outside_production(monkeypatch, caplog):
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.delenv("WEB_CONCURRENCY", raising=False)
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    monkeypatch.setattr(config.Config, "JWT_SECRET_KEY", "explicit-strong-jwt-secret")
+    monkeypatch.setattr(config.Config, "_JWT_SECRET_KEY_EXPLICITLY_CONFIGURED", True)
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "")
+    monkeypatch.setattr(
+        config.Config, "DATABASE_URL", "postgresql://sidar:sidar@127.0.0.1:5432/sidar"
+    )
+
+    config.Config()
+
+    assert "POSTGRES_PASSWORD zayıf" in caplog.text
+    assert "JWT_SECRET_KEY tanımlanmamış" not in caplog.text
+
+
+def test_config_init_skips_silent_fallback_warnings_in_test_env(monkeypatch, caplog):
+    monkeypatch.setenv("PYTEST_CURRENT_TEST", "test_config_init_skips_silent_fallback_warnings")
+    monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+    monkeypatch.setattr(config.Config, "JWT_SECRET_KEY", "runtime-generated-secret")
+    monkeypatch.setattr(config.Config, "_JWT_SECRET_KEY_EXPLICITLY_CONFIGURED", False)
+    monkeypatch.setattr(config.Config, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "")
+    monkeypatch.setattr(
+        config.Config, "DATABASE_URL", "postgresql://sidar:sidar@127.0.0.1:5432/sidar"
+    )
+
+    config.Config()
+
+    assert "JWT_SECRET_KEY tanımlanmamış" not in caplog.text
+    assert "POSTGRES_PASSWORD zayıf" not in caplog.text
+
+
 def test_new_env_runtime_helpers_cover_remaining_branches(monkeypatch, caplog):
     before = len(config.get_dotenv_load_report())
     assert (
@@ -1799,12 +2460,19 @@ def test_new_env_runtime_helpers_cover_remaining_branches(monkeypatch, caplog):
     monkeypatch.setattr(config.Config, "AI_PROVIDER", "litellm")
     monkeypatch.setattr(config.Config, "LITELLM_GATEWAY_URL", "bad-url")
     monkeypatch.setattr(config.Config, "JWT_SECRET_KEY", "jwt-ok")
+    monkeypatch.setattr(config.Config, "API_KEY", "")
     monkeypatch.setattr(config.Config, "MEMORY_ENCRYPTION_KEY", "")
     monkeypatch.setenv("SIDAR_ENV", "production")
-    assert config.Config.get_missing_critical_runtime_keys() == [
-        "LITELLM_GATEWAY_URL",
-        "MEMORY_ENCRYPTION_KEY",
-    ]
+    monkeypatch.setenv("POSTGRES_PASSWORD", "sidar")
+    monkeypatch.setattr(
+        config.Config, "DATABASE_URL", "postgresql://sidar:sidar@127.0.0.1:5432/sidar"
+    )
+
+    missing = config.Config.get_missing_critical_runtime_keys()
+    assert "API_KEY" in missing
+    assert "POSTGRES_PASSWORD" in missing
+    assert "LITELLM_GATEWAY_URL" in missing
+    assert "MEMORY_ENCRYPTION_KEY" in missing
 
     monkeypatch.setattr(config, "_DOTENV_LOAD_EVENTS", [], raising=False)
     config.Config._log_dotenv_load_status(missing_keys=[])
@@ -1882,6 +2550,31 @@ def test_ensure_hardware_info_loaded_uses_check_hardware_result(monkeypatch):
     assert config.Config.GPU_VRAM_MB == 24 * 1024
     assert config.Config.OLLAMA_CODING_NUM_CTX == 16384
     assert config.Config.OLLAMA_GPU_REQUEST_POOL_SIZE == 6
+
+
+def test_autoselect_ollama_coding_ctx_window_treats_blank_env_as_unset(monkeypatch):
+    """Blank OLLAMA_CODING_NUM_CTX must still allow GPU-VRAM auto-tuning.
+
+    .env.advanced.example ships OLLAMA_CODING_NUM_CTX= (blank) so a fresh
+    install still auto-tunes from GPU VRAM; `os.getenv(...) is not None` alone
+    treats that shipped blank string as an explicit override and skips
+    auto-tuning forever. A real explicit override (non-blank) must still win.
+    """
+    monkeypatch.setenv("OLLAMA_CODING_NUM_CTX", "")
+    monkeypatch.setattr(config.Config, "USE_GPU", True)
+    monkeypatch.setattr(config.Config, "GPU_VRAM_MB", 16384)
+    monkeypatch.setattr(config.Config, "OLLAMA_CODING_NUM_CTX", 8192)
+
+    config.Config._autoselect_ollama_coding_ctx_window()
+
+    assert config.Config.OLLAMA_CODING_NUM_CTX == 16384
+
+    monkeypatch.setenv("OLLAMA_CODING_NUM_CTX", "4096")
+    monkeypatch.setattr(config.Config, "OLLAMA_CODING_NUM_CTX", 8192)
+
+    config.Config._autoselect_ollama_coding_ctx_window()
+
+    assert config.Config.OLLAMA_CODING_NUM_CTX == 8192
 
 
 def test_get_missing_critical_runtime_keys_accepts_valid_litellm_url(monkeypatch):
@@ -2047,6 +2740,17 @@ def test_reload_environment_keeps_os_environ_stable_until_effective_finalize(mon
     assert os.environ["DATABASE_URL"] == "postgresql://sidar:second@localhost:5432/sidar"
 
 
+def test_config_logging_facade_uses_dedicated_setup_module() -> None:
+    import core.config_logging_setup as config_logging_setup
+
+    assert config.get_sidar_locale is not None
+    assert config.localized_log_message("env_loaded") == config_logging_setup.localized_log_message(
+        "env_loaded"
+    )
+    assert config._configure_noisy_dependency_loggers is not None
+    assert config_logging_setup.log_first_load_info.__name__ == "log_first_load_info"
+
+
 def test_log_first_load_info_switches_from_info_to_debug(monkeypatch, caplog):
     monkeypatch.setattr(config, "_FIRST_CONFIG_LOAD_LOGGED", False)
     caplog.set_level("DEBUG", logger="Sidar.Config")
@@ -2063,3 +2767,15 @@ def test_log_first_load_info_switches_from_info_to_debug(monkeypatch, caplog):
     assert second_record.levelname == "DEBUG"
     assert [r.name for r in caplog.records if "first-load-message" in r.message] == ["Sidar.Config"]
     assert [r.name for r in caplog.records if "reload-message" in r.message] == ["Sidar.Config"]
+
+
+def test_config_domain_loaders_back_extracted_backend_settings() -> None:
+    """Config god-object should delegate extracted backend domains to typed loaders."""
+    assert (
+        config.Config.SIDAR_RATE_LIMIT_WINDOW == config._RATE_LIMIT_SETTINGS.sidar_rate_limit_window
+    )
+    assert (
+        config.Config.SIDAR_EVENT_BUS_BACKEND == config._EVENT_BUS_SETTINGS.sidar_event_bus_backend
+    )
+    assert config.Config.RAG_VECTOR_BACKEND == config._RAG_STORE_SETTINGS.rag_vector_backend
+    assert config.Config.DOCKER_TEST_IMAGE == config._SANDBOX_SETTINGS.docker_test_image

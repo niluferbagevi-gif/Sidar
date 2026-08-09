@@ -1,5 +1,5 @@
-"""
-Sidar Project — Sistem Sağlığı Yöneticisi
+"""Sidar Project — Sistem Sağlığı Yöneticisi.
+
 Sürüm: 2.7.0 (GPU Genişletilmiş İzleme)
 
 Özellikler:
@@ -54,7 +54,8 @@ def render_llm_metrics_prometheus(snapshot: dict[str, object]) -> str:
         "# TYPE sidar_semantic_cache_hit_rate gauge",
         "# HELP sidar_semantic_cache_items Semantic cache içindeki aktif kayıt sayısı",
         "# TYPE sidar_semantic_cache_items gauge",
-        "# HELP sidar_semantic_cache_redis_latency_ms Semantic cache için son Redis erişim gecikmesi (ms)",
+        "# HELP sidar_semantic_cache_redis_latency_ms Semantic cache için son Redis erişim"
+        " gecikmesi (ms)",
         "# TYPE sidar_semantic_cache_redis_latency_ms gauge",
         "# HELP sidar_cache_hits_total Legacy alias for semantic cache isabet sayısı",
         "# TYPE sidar_cache_hits_total counter",
@@ -66,13 +67,15 @@ def render_llm_metrics_prometheus(snapshot: dict[str, object]) -> str:
         "# TYPE sidar_cache_evictions_total counter",
         "# HELP sidar_cache_redis_errors_total Legacy alias for semantic cache Redis hata sayısı",
         "# TYPE sidar_cache_redis_errors_total counter",
-        "# HELP sidar_cache_circuit_open_total Legacy alias for semantic cache circuit-open bypass sayısı",
+        "# HELP sidar_cache_circuit_open_total Legacy alias for semantic cache circuit-open bypass "
+        "sayısı",
         "# TYPE sidar_cache_circuit_open_total counter",
         "# HELP sidar_cache_hit_rate Legacy alias for semantic cache isabet oranı (0.0–1.0)",
         "# TYPE sidar_cache_hit_rate gauge",
         "# HELP sidar_cache_items Legacy alias for semantic cache içindeki aktif kayıt sayısı",
         "# TYPE sidar_cache_items gauge",
-        "# HELP sidar_cache_redis_latency_ms Legacy alias for semantic cache son Redis erişim gecikmesi (ms)",
+        "# HELP sidar_cache_redis_latency_ms Legacy alias for semantic cache son Redis erişim "
+        "gecikmesi (ms)",
         "# TYPE sidar_cache_redis_latency_ms gauge",
     ]
 
@@ -136,7 +139,8 @@ def render_llm_metrics_prometheus(snapshot: dict[str, object]) -> str:
             f'sidar_llm_failures_total{{provider="{p}"}} {int(row.get("failures", 0) or 0)}'
         )
         lines.append(
-            f'sidar_llm_latency_ms_avg{{provider="{p}"}} {float(row.get("latency_ms_avg", 0.0) or 0.0)}'
+            f'sidar_llm_latency_ms_avg{{provider="{p}"}} '
+            f"{float(row.get('latency_ms_avg', 0.0) or 0.0)}"
         )
 
     by_user = cast(
@@ -149,7 +153,8 @@ def render_llm_metrics_prometheus(snapshot: dict[str, object]) -> str:
             f'sidar_llm_user_calls_total{{user_id="{uid}"}} {int(row.get("calls", 0) or 0)}'
         )
         lines.append(
-            f'sidar_llm_user_cost_total_usd{{user_id="{uid}"}} {float(row.get("cost_usd", 0.0) or 0.0)}'
+            f'sidar_llm_user_cost_total_usd{{user_id="{uid}"}} '
+            f"{float(row.get('cost_usd', 0.0) or 0.0)}"
         )
         lines.append(
             f'sidar_llm_user_tokens_total{{user_id="{uid}"}} {int(row.get("total_tokens", 0) or 0)}'
@@ -159,8 +164,8 @@ def render_llm_metrics_prometheus(snapshot: dict[str, object]) -> str:
 
 
 class SystemHealthManager:
-    """
-    Donanım sağlığını izler, raporlar ve GPU belleğini optimize eder.
+    """Donanım sağlığını izler, raporlar ve GPU belleğini optimize eder.
+
     nvidia-ml-py (pynvml) kuruluysa GPU sıcaklık/kullanım verisi de sağlar.
     """
 
@@ -249,8 +254,7 @@ class SystemHealthManager:
     # ─────────────────────────────────────────────
 
     def get_cpu_usage(self, interval: float | None = None) -> float | None:
-        """
-        CPU kullanım yüzdesini döndür.
+        """CPU kullanım yüzdesini döndür.
 
         interval None ise `self.cpu_sample_interval` kullanılır (varsayılan 0.0, bloklamaz).
         """
@@ -286,8 +290,7 @@ class SystemHealthManager:
     # ─────────────────────────────────────────────
 
     def get_gpu_info(self) -> dict[str, Any]:
-        """
-        Detaylı GPU bilgisini döndür.
+        """Detaylı GPU bilgisini döndür.
 
         Alanlar:
           available, device_count, cuda_version, driver_version,
@@ -380,8 +383,7 @@ class SystemHealthManager:
         return "N/A"
 
     def optimize_gpu_memory(self) -> str:
-        """
-        GPU VRAM'ını boşalt ve Python GC'yi çalıştır.
+        """GPU VRAM'ını boşalt ve Python GC'yi çalıştır.
 
         try-finally garantisi: torch.cuda.empty_cache() hata verse bile
         gc.collect() her koşulda çalıştırılır (bellek sızıntısı önlenir).

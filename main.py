@@ -1,28 +1,40 @@
-"""
-Sidar Project - Ultimate Launcher
+"""Sidar Project - Ultimate Launcher.
+
 =================================
 Görsel olarak zenginleştirilmiş etkileşimli menüler ile
 argparse tabanlı, ön kontrollü (preflight) akıllı başlatıcı.
 Kullanım: python main.py
 Hızlı Kullanım: python main.py --quick web --provider ollama --level full
+
+Not (isimlendirme): Bu dosya ajan REPL'i değildir -- yalnızca sihirbaz/preflight
+akışını çalıştırıp sonuçta `build_command()`/`execute_command()` ile `cli.py`
+(CLI REPL) veya `web_server.py`'yi alt süreçte başlatır. Gerçek ajan giriş
+noktası `cli.py`'dir; `python cli.py` ile bu sihirbazı hiç atlayarak doğrudan
+çalıştırılabilir. Bkz. `docs/module-notes/main.py.md`/`cli.py.md`.
 """
 
 from __future__ import annotations
 
 import argparse
-import concurrent.futures
+import asyncio
 import contextlib
+import fcntl
 import json
 import logging
 import os
-import shlex
 import subprocess  # nosec B404
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, cast
 
+from launcher import doctor as launcher_doctor
+from launcher import process as launcher_process
+from launcher import selection as launcher_selection
+
 LAUNCHER_SESSION_FILENAME = ".sidar_session.json"
 LAUNCHER_SESSION_VERSION = 1
+MAX_AUTOFIX_RETRIES = 3
 
 
 # Terminal Renkleri (ANSI)
@@ -60,6 +72,46 @@ _LAST_DOCTOR_AUTO_FIX_REVALIDATION: Any | None = None
 _DOCTOR_APPLY_ALL_APPROVED: bool | None = None
 _LAUNCHER_DOCTOR_AUTO_FIX_YES = False
 BASE_DIR = str(Path(__file__).resolve().parent)
+
+
+class LauncherError(Exception):
+    """Base error for typed launcher diagnostics."""
+
+
+class ConfigReloadError(LauncherError):
+    """Raised when launcher-side config reload cannot complete."""
+
+
+class DoctorCheckError(LauncherError):
+    """Raised when a Doctor check or auto-fix step cannot complete."""
+
+
+class LauncherEventLoopError(LauncherError):
+    """Raised when the launcher cannot safely run an async coroutine."""
+
+
+class LauncherEventLoopManager:
+    """Centralize synchronous launcher access to async coroutines.
+
+    main.py is mostly synchronous.  New async call sites should use this manager
+    instead of scattering direct ``asyncio.Runner`` calls, so nested loop errors
+    surface as a typed launcher diagnostic.
+    """
+
+    def run(self, coro: Any) -> Any:
+        """Run one coroutine from a synchronous launcher context."""
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            with asyncio.Runner() as runner:
+                return runner.run(coro)
+        raise LauncherEventLoopError(
+            "LauncherEventLoopManager.run() cannot be called from an active event loop; "
+            "await the coroutine in the caller instead."
+        )
+
+
+_EVENT_LOOP_MANAGER = LauncherEventLoopManager()
 
 try:
     import config as config_module
@@ -178,59 +230,28 @@ def _development_env_path(base_dir: Path | None = None) -> Path:
 
 def _normalize_launch_selection(selection: dict[str, object]) -> dict[str, Any]:
     """Cache/varsayılan kaynaklı launcher seçimlerini güvenli değerlere normalize eder."""
-    mode = _safe_choice(selection.get("mode"), "web", {"web", "cli"})
-    provider = _safe_choice(
-        selection.get("provider"),
-        _safe_choice(
-            getattr(cfg, "AI_PROVIDER", "ollama"),
-            "ollama",
-            {"ollama", "gemini", "openai", "anthropic"},
-        ),
-        {"ollama", "gemini", "openai", "anthropic"},
-    )
-    level = _safe_choice(
-        selection.get("level"),
-        _safe_choice(
-            getattr(cfg, "ACCESS_LEVEL", "full"), "full", {"restricted", "sandbox", "full"}
-        ),
-        {"restricted", "sandbox", "full"},
-    )
-    log_level = _safe_choice(selection.get("log"), "info", {"info", "debug", "warning", "error"})
-
-    raw_extra_args = selection.get("extra_args")
-    extra_args = raw_extra_args if isinstance(raw_extra_args, dict) else {}
-    normalized_extra_args = {
-        "model": _safe_text(
-            extra_args.get("model"),
-            _safe_text(getattr(cfg, "CODING_MODEL", "qwen2.5-coder:7b"), "qwen2.5-coder:7b"),
-        ),
-        "host": _safe_host(extra_args.get("host", getattr(cfg, "WEB_HOST", "127.0.0.1"))),
-        "port": _safe_port(extra_args.get("port", getattr(cfg, "WEB_PORT", 7860)), "7860"),
-    }
-    return {
-        "mode": mode,
-        "provider": provider,
-        "level": level,
-        "log": log_level,
-        "extra_args": normalized_extra_args,
-    }
+    return launcher_selection.normalize_launch_selection(selection, cfg=cfg)
 
 
 def _default_launch_selection() -> dict[str, Any]:
     """--skip-wizard için config/default değerlerinden çalıştırılabilir seçim üretir."""
-    return _normalize_launch_selection(
-        {
-            "mode": "web",
-            "provider": getattr(cfg, "AI_PROVIDER", "ollama"),
-            "level": getattr(cfg, "ACCESS_LEVEL", "full"),
-            "log": "info",
-            "extra_args": {
-                "model": getattr(cfg, "CODING_MODEL", "qwen2.5-coder:7b"),
-                "host": getattr(cfg, "WEB_HOST", "127.0.0.1"),
-                "port": getattr(cfg, "WEB_PORT", 7860),
-            },
-        }
-    )
+    return launcher_selection.default_launch_selection(cfg=cfg)
+
+
+@contextlib.contextmanager
+def _launcher_session_lock(session_path: Path, *, exclusive: bool) -> Iterator[None]:
+    """Lock launcher session cache access across concurrent terminal processes."""
+    lock_path = session_path.with_suffix(session_path.suffix + ".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock_path, "a+", encoding="utf-8") as lock_file:
+        with contextlib.suppress(OSError):
+            os.chmod(lock_path, 0o600)
+        operation = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+        fcntl.flock(lock_file.fileno(), operation)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 def _save_launcher_session(selection: dict[str, object], path: Path | None = None) -> Path:
@@ -241,13 +262,16 @@ def _save_launcher_session(selection: dict[str, object], path: Path | None = Non
         "selection": _normalize_launch_selection(selection),
     }
     session_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = session_path.with_suffix(session_path.suffix + ".tmp")
-    tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    # Session cache may contain provider/model choices and future auth/session metadata;
-    # keep it readable only by the current user before and after the atomic replace.
-    os.chmod(tmp_path, 0o600)
-    tmp_path.replace(session_path)
-    os.chmod(session_path, 0o600)
+    with _launcher_session_lock(session_path, exclusive=True):
+        tmp_path = session_path.with_suffix(f"{session_path.suffix}.{os.getpid()}.tmp")
+        tmp_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+        # Session cache may contain provider/model choices and future auth/session metadata;
+        # keep it readable only by the current user before and after the atomic replace.
+        os.chmod(tmp_path, 0o600)
+        tmp_path.replace(session_path)
+        os.chmod(session_path, 0o600)
     return session_path
 
 
@@ -255,7 +279,8 @@ def _load_launcher_session(path: Path | None = None) -> dict[str, Any] | None:
     """Son sihirbaz seçimlerini cache'den güvenli şekilde okur."""
     session_path = path or _launcher_session_path()
     try:
-        payload = json.loads(session_path.read_text(encoding="utf-8"))
+        with _launcher_session_lock(session_path, exclusive=False):
+            payload = json.loads(session_path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         logger.debug(
             "Launcher oturum cache'i henüz yok (ilk çalıştırma olabilir): %s", session_path
@@ -289,8 +314,9 @@ def _reload_config_environment(*, profile: str | None, reason: str) -> bool:
     global cfg
     try:
         reloaded_cfg = reload_environment(profile=profile)
-    except Exception as exc:
-        logger.warning("%s sonrası environment reload başarısız: %s", reason, exc)
+    except (ConfigReloadError, RuntimeError, ValueError, OSError, TypeError) as exc:
+        error = ConfigReloadError(f"{reason} sonrası environment reload başarısız")
+        logger.warning("%s: %s", error, exc)
         print(f"{YELLOW}⚠ Environment reload başarısız: {exc}{RESET}")
         return False
 
@@ -365,7 +391,7 @@ def _reload_database_env_from_loaded_dotenv_chain() -> bool:
 
     try:
         events = config_module.get_dotenv_load_report()
-    except Exception as exc:
+    except (RuntimeError, ValueError, OSError, TypeError, AttributeError) as exc:
         logger.debug("Doctor auto-fix dotenv raporu okunamadı: %s", exc)
         return False
 
@@ -432,7 +458,8 @@ def _maybe_bootstrap_development_env() -> bool:
         return False
 
     print(
-        f"{YELLOW}⚠ .env.development bulunamadı. Yerel profil sihirbazdan önce oluşturulabilir.{RESET}"
+        f"{YELLOW}⚠ .env.development bulunamadı. Yerel profil sihirbazdan önce "
+        f"oluşturulabilir.{RESET}"
     )
     if not confirm(
         "Şimdi uv run python -m scripts.bootstrap_env --profile development çalıştırılsın mı?",
@@ -461,22 +488,7 @@ def _maybe_bootstrap_development_env() -> bool:
 
 def _apply_cli_overrides(selection: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
     """--skip-wizard akışında config/default seçime açık CLI override'larını uygular."""
-    merged = dict(selection)
-    extra_args = dict(selection.get("extra_args", {}))
-    if args.provider:
-        merged["provider"] = args.provider
-    if args.level:
-        merged["level"] = args.level
-    if args.log:
-        merged["log"] = str(args.log).lower()
-    if args.model:
-        extra_args["model"] = args.model
-    if args.host:
-        extra_args["host"] = args.host
-    if args.port:
-        extra_args["port"] = args.port
-    merged["extra_args"] = extra_args
-    return _normalize_launch_selection(merged)
+    return launcher_selection.apply_cli_overrides(selection, args, cfg=cfg)
 
 
 def _execute_launch_selection(
@@ -495,32 +507,17 @@ def _execute_launch_selection(
 
 def _safe_choice(value: object, default: str, allowed: set[str]) -> str:
     """Config/env kökenli seçimleri normalize eder; geçersizde default döner."""
-    if not isinstance(value, str):
-        return default
-
-    normalized = value.strip().lower()
-    if not normalized or normalized not in allowed:
-        return default
-    return normalized
+    return launcher_selection.safe_choice(value, default, allowed)
 
 
 def _safe_text(value: object, default: str) -> str:
     """Config/env kökenli metinleri normalize eder; boş/geçersizde default döner."""
-    if value is None:
-        return default
-
-    normalized = str(value).strip()
-    return normalized or default
+    return launcher_selection.safe_text(value, default)
 
 
 def _safe_port(value: object, default: str = "7860") -> str:
     """Config/env kökenli port değerlerini güvenli biçimde doğrular."""
-    normalized = _safe_text(value, default)
-    try:
-        port = int(normalized)
-    except (TypeError, ValueError):
-        return default
-    return str(port) if 1 <= port <= 65535 else default
+    return launcher_selection.safe_port(value, default)
 
 
 def _safe_host(value: object, default: str = "127.0.0.1") -> str:
@@ -530,83 +527,46 @@ def _safe_host(value: object, default: str = "127.0.0.1") -> str:
     fallback (`127.0.0.1`) döner; böylece `# nosec B104` ile bypass yapmak
     yerine politika tek bir noktada uygulanır.
     """
-    from core.utils.network_validation import validate_bind_host
-
-    candidate = _safe_text(value, default)
-    try:
-        return validate_bind_host(candidate)
-    except ValueError:
-        try:
-            return validate_bind_host(default)
-        except ValueError:
-            return "127.0.0.1"
+    return launcher_selection.safe_host(value, default)
 
 
 def _doctor_status_icon(status: str) -> str:
-    if status == "pass":
-        return "✅"
-    if status == "warn":
-        return "⚠"
-    if status == "fail":
-        return "❌"
-    return "ℹ️"
+    return launcher_doctor.doctor_status_icon(status)
 
 
 def _print_doctor_check_summary(check: Any) -> None:
-    status = str(getattr(check, "status", "warn") or "warn")
-    name = str(getattr(check, "name", "doctor") or "doctor")
-    message = str(getattr(check, "message", "") or "")
-    details = getattr(check, "details", {}) or {}
-    color = GREEN if status == "pass" else (RED if status == "fail" else YELLOW)
-    print(f"{color}{_doctor_status_icon(status)} Doctor/{name}: {message}{RESET}")
-
-    hints = details.get("root_cause_hints") if isinstance(details, dict) else None
-    if isinstance(hints, list) and status in {"warn", "fail"}:
-        for hint in hints[:3]:
-            print(f"{YELLOW}   • Olası neden: {hint}{RESET}")
-
-    steps = details.get("remediation_steps") if isinstance(details, dict) else None
-    if isinstance(steps, list) and status in {"warn", "fail"}:
-        for step in steps[:2]:
-            print(f"{YELLOW}   • Çözüm: {step}{RESET}")
-
-    commands = details.get("recommended_commands") if isinstance(details, dict) else None
-    if isinstance(commands, list) and status in {"warn", "fail"}:
-        for command in commands[:3]:
-            print(f"{CYAN}   • Komut: {command}{RESET}")
+    launcher_doctor.print_doctor_check_summary(check)
 
 
 def _doctor_auto_fix_commands(details: dict[str, Any]) -> list[str]:
     """Return ordered Doctor auto-fix commands from legacy or multi-step metadata."""
-    steps = details.get("auto_fix_steps")
-    status = str(details.get("status", "warn") or "warn")
-    if isinstance(steps, list) and status in {"warn", "fail"}:
-        commands = [step.strip() for step in steps if isinstance(step, str) and step.strip()]
-        if commands:
-            return commands
+    return launcher_doctor.doctor_auto_fix_commands(details)
 
-    auto_fix = details.get("auto_fix")
-    if isinstance(auto_fix, list):
-        return [step.strip() for step in auto_fix if isinstance(step, str) and step.strip()]
-    if isinstance(auto_fix, str) and auto_fix.strip():
-        return [auto_fix.strip()]
-    return []
+
+def _doctor_auto_fix_fallback_commands(details: dict[str, Any]) -> list[str]:
+    """Return fallback Doctor commands when primary auto-fix fails."""
+    return launcher_doctor.doctor_auto_fix_fallback_commands(details)
 
 
 def _select_doctor_auto_fix_commands(check_name: str, commands: list[str]) -> list[str]:
     """Interactive selector for checks that publish multiple auto-fix alternatives."""
-    return commands
+    return launcher_doctor.select_doctor_auto_fix_commands(check_name, commands)
 
 
 def _launcher_auto_fix_command(cmd: list[str]) -> list[str]:
     """Normalize Doctor auto-fix command tokens without altering caller intent."""
-    return [str(part) for part in cmd]
+    return launcher_doctor.launcher_auto_fix_command(cmd)
 
 
 def _run_doctor_auto_fix_command(auto_fix: str) -> bool:
-    """Run one Doctor auto-fix command without invoking a shell."""
-    cmd = shlex.split(auto_fix)
-    if not cmd:
+    """Run one validated Doctor auto-fix command without invoking a shell."""
+    try:
+        from core.doctor import validate_auto_fix_command
+
+        cmd = validate_auto_fix_command(auto_fix)
+    except ValueError as exc:
+        logger.warning("Doctor auto_fix komutu reddedildi: %s", exc)
+        print(f"{RED}   • Auto-fix komutu güvenlik doğrulamasından geçmedi: {exc}{RESET}")
         return False
     cmd = _launcher_auto_fix_command(cmd)
     print(f"{CYAN}   • Auto-fix çalışıyor: {_format_cmd(cmd)}{RESET}")
@@ -615,7 +575,8 @@ def _run_doctor_auto_fix_command(auto_fix: str) -> bool:
             cmd, check=False, cwd=_project_base_dir(), env=_launcher_child_env()
         )
     except OSError as exc:
-        logger.warning("Doctor auto_fix başlatılamadı: %s", exc)
+        error = DoctorCheckError("Doctor auto_fix başlatılamadı")
+        logger.warning("%s: %s", error, exc)
         print(f"{RED}   • Auto-fix başlatılamadı: {exc}{RESET}")
         return False
     returncode = int(completed.returncode)
@@ -649,14 +610,34 @@ def _run_doctor_auto_fix(
         selected_auto_fix_commands = _select_doctor_auto_fix_commands(check_name, auto_fix_commands)
         prompt_suffix = "adımları" if len(selected_auto_fix_commands) > 1 else "komutu"
         if not confirm(
-            f"Doctor/{getattr(check, 'name', 'doctor')} için önerilen auto-fix {prompt_suffix} şimdi çalıştırılsın mı?",
+            f"Doctor/{getattr(check, 'name', 'doctor')} için önerilen auto-fix {prompt_suffix} "
+            "şimdi çalıştırılsın mı?",
             False,
         ):
             return False
 
     ran_any = False
-    for auto_fix in selected_auto_fix_commands:
+    pending_commands = list(selected_auto_fix_commands)
+    fallback_commands = _doctor_auto_fix_fallback_commands(details)
+    used_fallback = False
+    index = 0
+    attempts = 0
+    while index < len(pending_commands):
+        if attempts >= MAX_AUTOFIX_RETRIES:
+            print(
+                f"{YELLOW}   • Auto-fix tekrar limiti aşıldı "
+                f"({MAX_AUTOFIX_RETRIES}); kalan komutlar atlandı.{RESET}"
+            )
+            return ran_any
+        attempts += 1
+        auto_fix = pending_commands[index]
+        index += 1
         if not _run_doctor_auto_fix_command(auto_fix):
+            if not used_fallback and fallback_commands:
+                used_fallback = True
+                pending_commands.extend(fallback_commands)
+                print(f"{YELLOW}   • Auto-fix başarısız; fallback komutları denenecek.{RESET}")
+                continue
             return ran_any
         ran_any = True
         if check_func is None:
@@ -682,24 +663,7 @@ def _doctor_auto_fix_lost_env_keys(
     source_details: dict[str, Any] | None, updated_check: Any
 ) -> list[str]:
     """Return env keys that were set before auto-fix but missing after re-validation."""
-    if not isinstance(source_details, dict):
-        return []
-    updated_details = getattr(updated_check, "details", {}) or {}
-    if not isinstance(updated_details, dict):
-        return []
-
-    set_flags = {
-        "database_url_set": "DATABASE_URL",
-        "container_database_url_set": "SIDAR_CONTAINER_DATABASE_URL",
-        "postgres_user_set": "POSTGRES_USER",
-        "postgres_password_set": "POSTGRES_" + "PASSWORD",
-        "postgres_db_set": "POSTGRES_DB",
-    }
-    lost_keys: list[str] = []
-    for detail_key, env_key in set_flags.items():
-        if source_details.get(detail_key) is True and updated_details.get(detail_key) is False:
-            lost_keys.append(env_key)
-    return lost_keys
+    return launcher_doctor.doctor_auto_fix_lost_env_keys(source_details, updated_check)
 
 
 def _revalidate_doctor_check_after_auto_fix(
@@ -724,7 +688,14 @@ def _revalidate_doctor_check_after_auto_fix(
         _reload_environment_after_auto_fix(source_details)
     try:
         updated_check = check_func()
-    except Exception as exc:  # pragma: no cover - defensive launcher path
+    except (
+        DoctorCheckError,
+        RuntimeError,
+        ValueError,
+        OSError,
+        TypeError,
+        AttributeError,
+    ) as exc:  # pragma: no cover - defensive launcher path
         logger.warning("Doctor auto-fix sonrası doğrulama çalıştırılamadı: %s", exc)
         print(f"{YELLOW}   • Auto-fix sonrası doğrulama çalıştırılamadı: {exc}{RESET}")
         _LAST_DOCTOR_AUTO_FIX_REVALIDATION = None
@@ -791,96 +762,50 @@ def _doctor_final_check_after_auto_fix(initial_check: Any, auto_fix_applied: boo
 
 
 def _run_launcher_doctor_preflight(*, doctor_apply_all_yes: bool = False) -> None:
-    try:
-        from core.doctor import (
-            check_database_connectivity,
-            check_database_env,
-            check_gpu_memory_config,
-            check_graphrag_entity_memory_ready,
-            check_rag_readiness,
-        )
-    except Exception as exc:  # pragma: no cover - defensive launcher path
-        logger.debug("Doctor ön kontrol modülü yüklenemedi: %s", exc)
-        return
+    from core.doctor.launcher_preflight import (
+        LauncherDoctorPreflightHooks,
+        LauncherDoctorPreflightStyle,
+        run_launcher_doctor_preflight,
+    )
 
-    print(f"\n{CYAN}🩺 Doctor kısa kontrolleri...{RESET}")
-    apply_all_mode = doctor_apply_all_yes
     global _DOCTOR_APPLY_ALL_APPROVED
     _DOCTOR_APPLY_ALL_APPROVED = None if not doctor_apply_all_yes else True
-    if sys.stdin.isatty() and not doctor_apply_all_yes:
-        apply_all_mode = confirm(
-            "Doctor için bulunan tüm auto-fix önerileri tek seferde otomatik uygulansın mı?",
-            False,
-        )
-        _DOCTOR_APPLY_ALL_APPROVED = apply_all_mode
-    skip_database_dependents = False
-    skip_summary_printed = False
 
-    def _run_single_doctor_check(check_name: str, check_func: Any) -> str:
-        nonlocal skip_database_dependents, skip_summary_printed
-        if skip_database_dependents and check_name in {
-            "database_connectivity",
-            "rag_readiness",
-            "graphrag_entity_memory_ready",
-        }:
-            if not skip_summary_printed:
-                print(
-                    f"{YELLOW}   • Doctor/database_env hâlâ fail; "
-                    "database_connectivity ve rag_readiness kontrolleri atlandı. "
-                    f"Önce yukarıdaki database_env düzeltmesini tamamlayın.{RESET}"
-                )
-                skip_summary_printed = True
-            return "skipped"
+    def _confirm_apply_all(prompt: str, default: bool) -> bool:
+        approved = confirm(prompt, default)
+        global _DOCTOR_APPLY_ALL_APPROVED
+        _DOCTOR_APPLY_ALL_APPROVED = approved
+        return approved
 
-        try:
-            check = check_func()
-            _print_doctor_check_summary(check)
-            _clear_doctor_auto_fix_revalidation_cache()
-            auto_fix_applied = _invoke_doctor_auto_fix(check, check_func, apply_all_mode)
-            final_check = _doctor_final_check_after_auto_fix(check, auto_fix_applied)
-            final_status = str(getattr(final_check, "status", "warn") or "warn")
-            if check_name == "database_env":
-                skip_database_dependents = final_status == "fail"
-            return final_status
-        except Exception as exc:  # pragma: no cover - defensive launcher path
-            logger.warning("Doctor ön kontrolü çalıştırılamadı: %s", exc)
-            print(f"{YELLOW}⚠ Doctor ön kontrolü çalıştırılamadı: {exc}{RESET}")
-            return "error"
+    run_launcher_doctor_preflight(
+        doctor_apply_all_yes=doctor_apply_all_yes,
+        hooks=LauncherDoctorPreflightHooks(
+            confirm=_confirm_apply_all,
+            print_check_summary=_print_doctor_check_summary,
+            doctor_auto_fix_commands=_doctor_auto_fix_commands,
+            invoke_auto_fix=_invoke_doctor_auto_fix,
+            clear_revalidation_cache=_clear_doctor_auto_fix_revalidation_cache,
+            final_check_after_auto_fix=_doctor_final_check_after_auto_fix,
+        ),
+        style=LauncherDoctorPreflightStyle(cyan=CYAN, yellow=YELLOW, reset=RESET),
+        max_autofix_retries=MAX_AUTOFIX_RETRIES,
+        handled_exceptions=(
+            DoctorCheckError,
+            RuntimeError,
+            ValueError,
+            OSError,
+            TypeError,
+            AttributeError,
+        ),
+    )
 
-    _run_single_doctor_check("database_env", check_database_env)
-    _run_single_doctor_check("database_connectivity", check_database_connectivity)
-    if skip_database_dependents:
-        _run_single_doctor_check("rag_readiness", check_rag_readiness)
-        _run_single_doctor_check("graphrag_entity_memory_ready", check_graphrag_entity_memory_ready)
-        _run_single_doctor_check("gpu_memory_config", check_gpu_memory_config)
-        return
 
-    parallel_checks = [
-        ("rag_readiness", check_rag_readiness),
-        ("graphrag_entity_memory_ready", check_graphrag_entity_memory_ready),
-        ("gpu_memory_config", check_gpu_memory_config),
-    ]
-    with concurrent.futures.ThreadPoolExecutor(max_workers=len(parallel_checks)) as executor:
-        futures = {
-            executor.submit(check_func): (check_name, check_func)
-            for check_name, check_func in parallel_checks
-        }
-        completed: dict[str, Any] = {}
-        for future in concurrent.futures.as_completed(futures):
-            check_name, _check_func = futures[future]
-            try:
-                completed[check_name] = future.result()
-            except Exception as exc:  # pragma: no cover - defensive launcher path
-                completed[check_name] = exc
-
-    for check_name, check_func in parallel_checks:
-        result = completed.get(check_name)
-        if isinstance(result, Exception):
-            logger.warning("Doctor ön kontrolü çalıştırılamadı: %s", result)
-            print(f"{YELLOW}⚠ Doctor ön kontrolü çalıştırılamadı: {result}{RESET}")
-            continue
-        _print_doctor_check_summary(result)
-        _invoke_doctor_auto_fix(result, check_func, apply_all_mode)
+def _run_provider_preflight(provider: str) -> None:
+    """Sağlayıcı ön kontrollerini geriye dönük uyumlu imzayla çalıştırır."""
+    try:
+        preflight(provider, doctor_apply_all_yes=_LAUNCHER_DOCTOR_AUTO_FIX_YES)
+    except TypeError:
+        preflight(provider)
 
 
 def preflight(provider: str, *, doctor_apply_all_yes: bool = False) -> None:
@@ -926,6 +851,7 @@ def preflight(provider: str, *, doctor_apply_all_yes: bool = False) -> None:
         try:
             import httpx
 
+            httpx_http_error: type[BaseException] = getattr(httpx, "HTTPError", RuntimeError)
             base = getattr(cfg, "OLLAMA_URL", "http://localhost:11434").rstrip("/")
             tags_url = base + "/tags" if base.endswith("/api") else base + "/api/tags"
             with httpx.Client(timeout=2) as client:
@@ -938,10 +864,11 @@ def preflight(provider: str, *, doctor_apply_all_yes: bool = False) -> None:
         except ImportError:
             logger.warning("'httpx' kütüphanesi kurulu değil, Ollama ağ kontrolü atlandı.")
             print(f"{YELLOW}⚠ 'httpx' kütüphanesi kurulu değil, Ollama ağ kontrolü atlandı.{RESET}")
-        except Exception as exc:
+        except (httpx_http_error, RuntimeError, OSError) as exc:
             logger.warning("Ollama erişimi doğrulanamadı: %s", exc)
             print(
-                f"{RED}⚠ Ollama erişimi doğrulanamadı. Servisin (Ollama) çalıştığından emin olun.{RESET}"
+                f"{RED}⚠ Ollama erişimi doğrulanamadı. Servisin (Ollama) çalıştığından emin "
+                f"olun.{RESET}"
             )
 
 
@@ -949,120 +876,38 @@ def build_command(
     mode: str, provider: str, level: str, log: str, extra_args: dict[str, str]
 ) -> list[str]:
     """Seçimlere göre çalıştırılacak terminal komutunu inşa eder."""
-    valid_modes = {"web", "cli"}
-    valid_providers = {"ollama", "gemini", "openai", "anthropic"}
-    valid_levels = {"restricted", "sandbox", "full"}
-    valid_logs = {"info", "debug", "warning", "error"}
-
-    if mode not in valid_modes:
-        raise ValueError(f"Geçersiz mode: {mode}")
-    if provider not in valid_providers:
-        raise ValueError(f"Geçersiz provider: {provider}")
-    if level not in valid_levels:
-        raise ValueError(f"Geçersiz level: {level}")
-    if log not in valid_logs:
-        raise ValueError(f"Geçersiz log seviyesi: {log}")
-
-    target_script = "web_server.py" if mode == "web" else "cli.py"
-    cmd = [sys.executable, target_script, "--provider", provider, "--level", level, "--log", log]
-
-    if mode == "cli" and provider == "ollama" and extra_args.get("model"):
-        cmd.extend(["--model", extra_args["model"]])
-    elif mode == "web":
-        cmd.extend(
-            [
-                "--host",
-                extra_args.get("host", "127.0.0.1"),
-                "--port",
-                extra_args.get("port", "8000"),
-            ]
-        )
-
-    return cmd
+    return launcher_process.build_command(mode, provider, level, log, extra_args)
 
 
 def _launcher_child_env() -> dict[str, str]:
-    """Environment for child processes launched by main.py without duplicate config banners."""
-    child_env = os.environ.copy()
-    child_env["SIDAR_CONFIG_QUIET"] = "true"
-    child_env["SIDAR_LAUNCHED_BY_MAIN"] = "true"
-    child_env["SIDAR_SKIP_BOOT_CHECKS"] = "1"
-    child_env["SIDAR_BANNER_SHOWN"] = "1"
-    return child_env
+    return launcher_process.launcher_child_env()
 
 
 def _format_cmd(cmd: list[str]) -> str:
-    """Komutu terminalde güvenli/görsel şekilde yazdırmak için quote eder."""
-    return " ".join(shlex.quote(part) for part in cmd)
+    return launcher_process.format_cmd(cmd)
 
 
 def _stream_pipe(
     pipe: Any, target: Any, prefix: str = "", color: str = "", mirror: bool = True
 ) -> None:
     """Backward-compatible helper to stream lines from a pipe."""
-    for line in iter(pipe.readline, ""):
-        payload = f"{prefix} {line}" if prefix else line
-        target.write(payload)
-        target.flush()
-        if mirror:
-            print(f"{color}{prefix}{RESET} {line}", end="")
-    with contextlib.suppress(Exception):
-        pipe.close()
+    launcher_process.stream_pipe(pipe, target, prefix, color, mirror)
 
 
 def _run_with_streaming(cmd: list[str], child_log_path: str | None) -> int:
-    """Child process çıktısını canlı ve sıralı biçimde (stdout+stderr) loglar."""
-    process = subprocess.Popen(  # nosec B603  # komut listesi launcher tarafından güvenli şekilde üretilir.
+    """Child process çıktısını canlı ve sıralı biçimde (stdout+stderr) loglar.
+
+    ``base_dir``/``cwd`` are resolved from this module's current ``cfg``/
+    ``__file__`` at call time and threaded through explicitly, so
+    monkeypatching ``main.cfg`` (as the test suite does) is observed exactly
+    as it was before this logic moved to launcher/process.py.
+    """
+    return launcher_process.run_with_streaming(
         cmd,
+        child_log_path,
+        base_dir=getattr(cfg, "BASE_DIR", "."),
         cwd=os.path.dirname(__file__) or ".",
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        bufsize=1,
-        env=_launcher_child_env(),
     )
-
-    if process.stdout is None or process.stderr is None:
-        raise RuntimeError("Child process stdout/stderr pipe oluşturulamadı.")
-
-    f = None
-    log_path = None
-    if child_log_path:
-        candidate = Path(child_log_path)
-        base_dir = Path(getattr(cfg, "BASE_DIR", ".")).resolve()
-        log_path = candidate if candidate.is_absolute() else (base_dir / candidate)
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        f = open(log_path, "w", encoding="utf-8")
-        f.write(f"$ {_format_cmd(cmd)}\n\n")
-        f.flush()
-
-    return_code = 1
-    try:
-        _stream_pipe(process.stdout, f or sys.stdout, "[stdout]", CYAN, mirror=True)
-        _stream_pipe(process.stderr, f or sys.stdout, "[stderr]", CYAN, mirror=True)
-        return_code = process.wait()
-    finally:
-        with contextlib.suppress(Exception):
-            process.stdout.close()
-        with contextlib.suppress(Exception):
-            process.stderr.close()
-        poll = getattr(process, "poll", None)
-        terminate = getattr(process, "terminate", None)
-        kill = getattr(process, "kill", None)
-        still_running = (callable(poll) and poll() is None) or (poll is None)
-        if still_running and callable(terminate):
-            terminate()
-            try:
-                process.wait(timeout=3)
-            except Exception:
-                if callable(kill):  # pragma: no cover
-                    kill()  # pragma: no cover
-        if f:
-            f.write(f"\n[exit_code]\n{return_code}\n")
-            f.close()
-            print(f"{GREEN}📝 Child process çıktısı kaydedildi: {log_path}{RESET}")
-
-    return return_code
 
 
 def run_wizard() -> int:
@@ -1196,10 +1041,7 @@ def run_wizard() -> int:
     )
     _save_launcher_session(selection)
 
-    try:
-        preflight(provider, doctor_apply_all_yes=_LAUNCHER_DOCTOR_AUTO_FIX_YES)
-    except TypeError:
-        preflight(provider)
+    _run_provider_preflight(provider)
 
     runtime_ok, runtime_error = validate_runtime_dependencies(mode)
     if not runtime_ok:
@@ -1243,7 +1085,7 @@ def execute_command(
     except subprocess.CalledProcessError as e:
         print(f"\n{RED}Program hata ile sonlandı (Çıkış Kodu: {e.returncode}){RESET}")
         return e.returncode
-    except Exception as e:
+    except (LauncherError, RuntimeError, OSError, ValueError) as e:
         print(f"\n{RED}Beklenmeyen bir hata oluştu: {e}{RESET}")
         return 1
 
@@ -1334,7 +1176,8 @@ def main() -> None:
         selection = _load_launcher_session()
         if selection is None:
             print(
-                f"{RED}❌ Son sihirbaz oturumu bulunamadı veya okunamadı: {_launcher_session_path()}{RESET}"
+                f"{RED}❌ Son sihirbaz oturumu bulunamadı veya okunamadı: "
+                f"{_launcher_session_path()}{RESET}"
             )
             sys.exit(2)
         runtime_ok, runtime_error = validate_runtime_dependencies(selection["mode"])
@@ -1387,7 +1230,7 @@ def main() -> None:
         print(f"{RED}⛔ {runtime_error}{RESET}")
         sys.exit(2)
 
-    preflight(provider, doctor_apply_all_yes=_LAUNCHER_DOCTOR_AUTO_FIX_YES)
+    _run_provider_preflight(provider)
     cmd = build_command(args.quick, provider, level, args.log.lower(), extra_args)
     sys.exit(
         execute_command(cmd, capture_output=args.capture_output, child_log_path=args.child_log)

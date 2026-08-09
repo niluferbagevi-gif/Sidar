@@ -33,6 +33,65 @@ def test_extract_ws_header_token_preserves_sidar_protocol_without_echoing_token(
     assert protocol != token
 
 
+@pytest.mark.parametrize("kwargs", [{"ttl_seconds": 0}, {"ttl_seconds": -1}])
+def test_webhook_replay_guard_rejects_non_positive_ttl(kwargs: dict[str, float]) -> None:
+    with pytest.raises(ValueError, match="ttl_seconds pozitif olmalıdır"):
+        security.WebhookReplayGuard(**kwargs)
+
+
+@pytest.mark.parametrize("kwargs", [{"max_entries": 0}, {"max_entries": -1}])
+def test_webhook_replay_guard_rejects_non_positive_max_entries(kwargs: dict[str, int]) -> None:
+    with pytest.raises(ValueError, match="max_entries pozitif olmalıdır"):
+        security.WebhookReplayGuard(**kwargs)
+
+
+def test_webhook_replay_guard_expires_and_bounds_entries() -> None:
+    guard = security.WebhookReplayGuard(ttl_seconds=10, max_entries=2)
+    guard.reject_replay(label="GitHub", replay_key="old", now=0)
+    guard.reject_replay(label="GitHub", replay_key="new", now=5)
+
+    guard.reject_replay(label="GitHub", replay_key="latest", now=6)
+    assert set(guard.seen) == {"GitHub:new", "GitHub:latest"}
+
+    guard.reject_replay(label="GitHub", replay_key="old", now=20)
+    assert set(guard.seen) == {"GitHub:old"}
+
+
+def test_verify_webhook_hmac_signature_uses_replay_guard() -> None:
+    payload = b'{"delivery": true}'
+    secret = "webhook-secret"
+    signature = (
+        "sha256=" + security.hmac.new(secret.encode(), payload, security.hashlib.sha256).hexdigest()
+    )
+    guard = security.WebhookReplayGuard()
+
+    security.verify_webhook_hmac_signature(
+        payload, secret, signature, label="GitHub", replay_key="delivery-1", replay_guard=guard
+    )
+    with pytest.raises(HTTPException, match="replay") as exc_info:
+        security.verify_webhook_hmac_signature(
+            payload,
+            secret,
+            signature,
+            label="GitHub",
+            replay_key="delivery-1",
+            replay_guard=guard,
+        )
+
+    assert exc_info.value.status_code == 409
+
+
+def test_verify_webhook_hmac_signature_without_replay_guard_still_validates() -> None:
+    payload = b'{"delivery": true}'
+    secret = "webhook-secret"
+    signature = (
+        "sha256=" + security.hmac.new(secret.encode(), payload, security.hashlib.sha256).hexdigest()
+    )
+
+    # No replay_guard passed: the guard branch must be skippable without raising.
+    security.verify_webhook_hmac_signature(payload, secret, signature, label="GitHub")
+
+
 def test_extract_ws_header_token_supports_raw_token_without_subprotocol_echo() -> None:
     token, protocol = security.extract_ws_header_token("raw-token-1")
 
@@ -68,10 +127,11 @@ def test_extract_ws_header_token_keeps_legacy_token_without_subprotocol_echo() -
     assert protocol is None
 
 
-def test_get_jwt_secret_uses_development_fallback_and_logs() -> None:
+def test_get_jwt_secret_fails_closed_instead_of_dev_fallback() -> None:
     logger = _Logger()
 
-    assert security.get_jwt_secret(SimpleNamespace(JWT_SECRET_KEY=""), logger) == "sidar-dev-secret"
+    with pytest.raises(RuntimeError, match="JWT_SECRET_KEY"):
+        security.get_jwt_secret(SimpleNamespace(JWT_SECRET_KEY=""), logger)
     assert logger.critical_messages
 
 
@@ -79,14 +139,19 @@ def test_get_jwt_secret_uses_development_fallback_and_logs() -> None:
 async def test_resolve_user_from_token_uses_jwt_then_opaque_db_fallback() -> None:
     logger = _Logger()
     token = jwt.encode(
-        {"sub": "42", "username": "ada", "role": "admin", "tenant_id": "team"},
+        {
+            "sub": "22222222-2222-4222-8222-222222222222",
+            "username": "ada",
+            "role": "admin",
+            "tenant_id": "team",
+        },
         _Config.JWT_SECRET_KEY,
         algorithm=_Config.JWT_ALGORITHM,
     )
 
     user = await security.resolve_user_from_token(None, token, config=_Config, logger_obj=logger)
 
-    assert user.id == "42"
+    assert user.id == "22222222-2222-4222-8222-222222222222"
     assert user.username == "ada"
     assert user.role == "admin"
     assert user.tenant_id == "team"
@@ -105,6 +170,28 @@ async def test_resolve_user_from_token_uses_jwt_then_opaque_db_fallback() -> Non
         await security.resolve_user_from_token(agent, "missing", config=_Config, logger_obj=logger)
         is None
     )
+
+
+def test_is_valid_user_id_accepts_uuids_and_rejects_everything_else() -> None:
+    assert security.is_valid_user_id("22222222-2222-4222-8222-222222222222") is True
+    assert security.is_valid_user_id("regular-user") is False
+    assert security.is_valid_user_id("42") is False
+    assert security.is_valid_user_id("") is False
+
+
+@pytest.mark.asyncio
+async def test_resolve_user_from_token_rejects_non_uuid_sub_without_reaching_db() -> None:
+    """A JWT with a non-UUID sub must fail auth instead of reaching a DB lookup."""
+    logger = _Logger()
+    token = jwt.encode(
+        {"sub": "regular-user", "username": "regular", "role": "user", "tenant_id": "default"},
+        _Config.JWT_SECRET_KEY,
+        algorithm=_Config.JWT_ALGORITHM,
+    )
+
+    user = await security.resolve_user_from_token(None, token, config=_Config, logger_obj=logger)
+
+    assert user is None
 
 
 @pytest.mark.asyncio
@@ -137,10 +224,47 @@ def test_request_admin_and_metrics_access_guards() -> None:
         security.require_admin_user(regular)
     assert forbidden_admin.value.status_code == 403
 
-    metrics_request = SimpleNamespace(headers=Headers({"Authorization": "Bearer metrics-token"}))
+    metrics_request = SimpleNamespace(
+        method="GET",
+        url=SimpleNamespace(path="/metrics"),
+        headers=Headers({"Authorization": "Bearer metrics-token"}),
+    )
     assert security.require_metrics_access(metrics_request, regular, config=_Config) is regular
 
-    denied_request = SimpleNamespace(headers=Headers({}))
+    service_user = security.authenticate_metrics_service(metrics_request, config=_Config)
+    assert service_user.id == "metrics-service"
+    assert service_user.role == "metrics"
+
+    wrong_path = SimpleNamespace(
+        method="GET",
+        url=SimpleNamespace(path="/admin/stats"),
+        headers=Headers({"Authorization": "Bearer metrics-token"}),
+    )
+    assert security.authenticate_metrics_service(wrong_path, config=_Config) is None
+
+    denied_request = SimpleNamespace(
+        method="GET", url=SimpleNamespace(path="/metrics"), headers=Headers({})
+    )
     with pytest.raises(HTTPException) as forbidden_metrics:
         security.require_metrics_access(denied_request, regular, config=_Config)
     assert forbidden_metrics.value.status_code == 403
+
+
+def test_metrics_service_token_uses_constant_time_comparison(monkeypatch) -> None:
+    comparisons: list[tuple[str, str]] = []
+
+    def _compare_digest(supplied: str, configured: str) -> bool:
+        comparisons.append((supplied, configured))
+        return supplied == configured
+
+    monkeypatch.setattr(security.hmac, "compare_digest", _compare_digest)
+    request = SimpleNamespace(
+        method="GET",
+        url=SimpleNamespace(path="/metrics"),
+        headers=Headers({"Authorization": "Bearer metrics-token"}),
+    )
+
+    principal = security.authenticate_metrics_service(request, config=_Config)
+
+    assert principal is not None
+    assert comparisons == [("metrics-token", "metrics-token")]

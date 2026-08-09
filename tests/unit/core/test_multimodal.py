@@ -9,6 +9,12 @@ import pytest
 
 import core.multimodal as multimodal
 
+# Captured before any test monkeypatches `multimodal.asyncio.to_thread` (which patches the
+# real asyncio.to_thread, since multimodal.asyncio *is* the asyncio module), so fakes that
+# only want to intercept subprocess calls can still delegate pathlib-check calls to the
+# real implementation.
+_REAL_TO_THREAD = asyncio.to_thread
+
 
 class DummyLLM:
     def __init__(self, response: str = "analiz") -> None:
@@ -188,7 +194,13 @@ def test_download_remote_media_requires_remote_source(tmp_path):
 
 def test_download_remote_media_ytdlp_without_output_raises(monkeypatch, tmp_path):
     monkeypatch.setattr(multimodal, "_command_exists", lambda name: name == "yt-dlp")
-    monkeypatch.setattr(multimodal.asyncio, "to_thread", lambda _fn, _cmd: asyncio.sleep(0))
+
+    async def fake_to_thread(fn, *args, **kwargs):
+        if fn is multimodal._run_subprocess:
+            return None
+        return await _REAL_TO_THREAD(fn, *args, **kwargs)
+
+    monkeypatch.setattr(multimodal.asyncio, "to_thread", fake_to_thread)
     with pytest.raises(RuntimeError):
         run(
             multimodal.download_remote_media(
@@ -251,8 +263,11 @@ def test_materialize_remote_media_for_ffmpeg_happy_path(monkeypatch, tmp_path):
             "title": "A/B: Demo",
         }
 
-    async def fake_to_thread(_fn, command):
-        Path(command[-1]).write_bytes(b"x")
+    async def fake_to_thread(fn, *args, **kwargs):
+        if fn is multimodal._run_subprocess:
+            await _REAL_TO_THREAD(Path(args[0][-1]).write_bytes, b"x")
+            return None
+        return await _REAL_TO_THREAD(fn, *args, **kwargs)
 
     monkeypatch.setattr(multimodal, "resolve_remote_media_stream", fake_resolve)
     monkeypatch.setattr(multimodal.asyncio, "to_thread", fake_to_thread)
@@ -271,10 +286,13 @@ def test_extract_video_frames_generates_frame_metadata(monkeypatch, tmp_path):
     frames_dir = tmp_path / "frames"
     monkeypatch.setattr(multimodal, "_command_exists", lambda _name: True)
 
-    async def fake_to_thread(_fn, _command):
-        frames_dir.mkdir(parents=True, exist_ok=True)
-        (frames_dir / "frame_001.jpg").write_bytes(b"a")
-        (frames_dir / "frame_002.jpg").write_bytes(b"b")
+    async def fake_to_thread(fn, *args, **kwargs):
+        if fn is multimodal._run_subprocess:
+            frames_dir.mkdir(parents=True, exist_ok=True)
+            (frames_dir / "frame_001.jpg").write_bytes(b"a")
+            (frames_dir / "frame_002.jpg").write_bytes(b"b")
+            return None
+        return await _REAL_TO_THREAD(fn, *args, **kwargs)
 
     monkeypatch.setattr(multimodal.asyncio, "to_thread", fake_to_thread)
     frames = run(
@@ -300,18 +318,25 @@ def test_extract_audio_track_and_transcribe_audio_paths(monkeypatch, tmp_path):
     output = tmp_path / "audio.wav"
     monkeypatch.setattr(multimodal, "_command_exists", lambda _name: True)
 
-    async def fake_audio(_fn, _command):
-        output.write_bytes(b"wav")
+    async def fake_audio(fn, *args, **kwargs):
+        if fn is multimodal._run_subprocess:
+            output.write_bytes(b"wav")
+            return None
+        return await _REAL_TO_THREAD(fn, *args, **kwargs)
 
     monkeypatch.setattr(multimodal.asyncio, "to_thread", fake_audio)
     audio_path = run(multimodal.extract_audio_track(source, output_path=output))
     assert Path(audio_path).exists()
 
-    async def fake_whisper(_fn, command):
-        out = Path(command[command.index("--output_dir") + 1])
-        (out / f"{source.stem}.json").write_text(
-            '{"text":" tx ","segments":[1],"language":"tr"}', encoding="utf-8"
-        )
+    async def fake_whisper(fn, *args, **kwargs):
+        if fn is multimodal._run_subprocess:
+            command = args[0]
+            out = Path(command[command.index("--output_dir") + 1])
+            (out / f"{source.stem}.json").write_text(
+                '{"text":" tx ","segments":[1],"language":"tr"}', encoding="utf-8"
+            )
+            return None
+        return await _REAL_TO_THREAD(fn, *args, **kwargs)
 
     monkeypatch.setattr(multimodal.asyncio, "to_thread", fake_whisper)
     result = run(multimodal.transcribe_audio(source, language="tr"))
@@ -337,12 +362,14 @@ def test_transcribe_audio_failure_modes(monkeypatch, tmp_path):
 
     monkeypatch.setattr(multimodal, "_command_exists", lambda _name: True)
 
-    async def raise_called_process_error(_fn, _command):
-        raise multimodal.subprocess.CalledProcessError(
-            returncode=1,
-            cmd="whisper",
-            stderr=b"boom",
-        )
+    async def raise_called_process_error(fn, *args, **kwargs):
+        if fn is multimodal._run_subprocess:
+            raise multimodal.subprocess.CalledProcessError(
+                returncode=1,
+                cmd="whisper",
+                stderr=b"boom",
+            )
+        return await _REAL_TO_THREAD(fn, *args, **kwargs)
 
     monkeypatch.setattr(multimodal.asyncio, "to_thread", raise_called_process_error)
     errored = run(multimodal.transcribe_audio(audio))
@@ -432,7 +459,7 @@ def test_pipeline_transcribe_bytes_and_analyze_media_shortcuts(monkeypatch, tmp_
     pipeline = multimodal.MultimodalPipeline(DummyLLM(), DummyConfig())
 
     async def fake_transcribe(path, **_kwargs):
-        assert Path(path).exists()
+        assert await asyncio.to_thread(Path(path).exists)
         return {"success": True, "text": "ses"}
 
     monkeypatch.setattr(multimodal, "transcribe_audio", fake_transcribe)
@@ -641,7 +668,13 @@ def test_download_remote_media_ytdlp_success_returns_downloaded_media(monkeypatc
     target = tmp_path / "video.mp4"
     target.write_bytes(b"x")
     monkeypatch.setattr(multimodal, "_command_exists", lambda name: name == "yt-dlp")
-    monkeypatch.setattr(multimodal.asyncio, "to_thread", lambda _fn, _cmd: asyncio.sleep(0))
+
+    async def fake_to_thread(fn, *args, **kwargs):
+        if fn is multimodal._run_subprocess:
+            return None
+        return await _REAL_TO_THREAD(fn, *args, **kwargs)
+
+    monkeypatch.setattr(multimodal.asyncio, "to_thread", fake_to_thread)
     result = run(
         multimodal.download_remote_media(
             "https://youtube.com/watch?v=abcdefghijk", output_dir=tmp_path
@@ -684,10 +717,12 @@ def test_transcribe_audio_prompt_and_missing_output_json(monkeypatch, tmp_path):
     captured = {}
     monkeypatch.setattr(multimodal, "_command_exists", lambda _name: True)
 
-    async def fake_to_thread(_fn, command):
-        captured["command"] = command
-        # intentionally do not create output json
-        return None
+    async def fake_to_thread(fn, *args, **kwargs):
+        if fn is multimodal._run_subprocess:
+            captured["command"] = args[0]
+            # intentionally do not create output json
+            return None
+        return await _REAL_TO_THREAD(fn, *args, **kwargs)
 
     monkeypatch.setattr(multimodal.asyncio, "to_thread", fake_to_thread)
     result = run(multimodal.transcribe_audio(audio, language="tr", prompt="ilk komut"))
