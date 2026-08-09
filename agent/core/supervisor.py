@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-import importlib
 import json
 import logging
+import re
 import time
 import uuid
 from collections.abc import Callable
@@ -27,46 +27,6 @@ from config import Config
 
 logger = logging.getLogger(__name__)
 
-
-def _ensure_delegation_request_shape() -> type[DelegationRequest]:
-    contracts_mod = importlib.import_module("agent.core.contracts")
-    req_cls = getattr(contracts_mod, "DelegationRequest", None)
-    if isinstance(req_cls, type) and req_cls is not object:
-        return cast(type[DelegationRequest], req_cls)
-
-    class _CompatDelegationRequest:
-        def __init__(self, **kwargs: object) -> None:
-            self.task_id = kwargs.get("task_id", "")
-            self.reply_to = kwargs.get("reply_to", "")
-            self.target_agent = kwargs.get("target_agent", "")
-            self.payload = kwargs.get("payload", "")
-            self.intent = kwargs.get("intent", "mixed")
-            self.parent_task_id = kwargs.get("parent_task_id")
-            handoff_depth_raw = kwargs.get("handoff_depth", 0)
-            self.handoff_depth = int(handoff_depth_raw) if isinstance(handoff_depth_raw, int) else 0
-            self.protocol = kwargs.get("protocol", "p2p.v1")
-            meta_raw = kwargs.get("meta", {})
-            self.meta = dict(meta_raw) if isinstance(meta_raw, dict) else {}
-
-        def bumped(self) -> _CompatDelegationRequest:
-            return type(self)(
-                task_id=self.task_id,
-                reply_to=self.reply_to,
-                target_agent=self.target_agent,
-                payload=self.payload,
-                intent=self.intent,
-                parent_task_id=self.parent_task_id,
-                handoff_depth=self.handoff_depth + 1,
-                protocol=self.protocol,
-                meta=dict(self.meta),
-            )
-
-    contracts_mod_any = cast(Any, contracts_mod)
-    contracts_mod_any.DelegationRequest = _CompatDelegationRequest
-    return cast(type[DelegationRequest], _CompatDelegationRequest)
-
-
-_ensure_delegation_request_shape()
 
 try:
     from opentelemetry import trace as otel_trace
@@ -208,18 +168,66 @@ class SupervisorAgent(BaseAgent):
         return "code"
 
     @staticmethod
-    def _review_requires_revision(review_summary: str) -> bool:
+    def _extract_review_decision(review_summary: object) -> str | None:
+        """Return a normalized reviewer decision when the summary carries one."""
+        text = str(review_summary or "").strip()
+        if not text:
+            return None
+        body = text.split("|", 1)[1].strip() if text.startswith("qa_feedback|") else text
+        if not body:
+            return None
+        if body.startswith("{"):
+            try:
+                parsed = json.loads(body)
+            except json.JSONDecodeError:
+                parsed = None
+            decision = SupervisorAgent._decision_from_review_payload(parsed)
+            if decision:
+                return decision
+        match = re.search(
+            r"\b(?:decision|verdict|status|result)\s*(?::|=|-|\bis\b)\s*[\"']?([a-z_-]+)",
+            body,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            return match.group(1).strip().lower()
+        review_tag = re.search(r"\[review\s*[:=]\s*([a-z_-]+)\]", body, flags=re.IGNORECASE)
+        if review_tag:
+            return review_tag.group(1).strip().lower()
+        return None
+
+    @staticmethod
+    def _decision_from_review_payload(payload: object) -> str | None:
+        """Extract reviewer decision variants from a decoded JSON payload."""
+        if not isinstance(payload, dict):
+            return None
+        for key in ("decision", "verdict", "status", "result", "review_decision"):
+            decision = str(payload.get(key, "") or "").strip().lower()
+            if decision:
+                return decision
+        approved = payload.get("approved")
+        if isinstance(approved, bool):
+            return "approve" if approved else "reject"
+        review = payload.get("review")
+        if isinstance(review, dict):
+            return SupervisorAgent._decision_from_review_payload(review)
+        return None
+
+    @classmethod
+    def _review_requires_revision(cls, review_summary: str) -> bool:
+        decision = cls._extract_review_decision(review_summary)
+        if decision in {"reject", "rejected", "fail", "failed", "rework_required"}:
+            return True
+        if decision in {"approve", "approved", "pass", "passed"}:
+            return False
+
         text = (review_summary or "").lower()
         revision_signals = (
             "fail(",
             "[test:fail",
             "[test:fail-closed",
-            "regresyon",
-            "hata",
             "risk: yüksek",
             "iyileştirme gerekli",
-            "düzelt",
-            "decision=reject",
             "rework_required",
         )
         return any(sig in text for sig in revision_signals)
@@ -366,8 +374,14 @@ class SupervisorAgent(BaseAgent):
         parent_task_id: str | None = None,
         max_hops: int = 4,
         max_turns: int | None = None,
+        consume_turn: Callable[[], bool] | None = None,
     ) -> TaskResult:
-        """P2P delegasyon isteğini hedef ajana ileten hafif router köprüsü."""
+        """P2P delegasyon isteğini hedef ajana ileten hafif router köprüsü.
+
+        ``consume_turn`` shares the caller's cumulative turn budget with recursive
+        P2P hops. When omitted, direct callers get a local budget for backwards
+        compatibility with focused router tests.
+        """
         if max_turns is None:
             turn_limit = self._max_turns()
         else:
@@ -375,10 +389,28 @@ class SupervisorAgent(BaseAgent):
                 turn_limit = max(0, int(max_turns))
             except (TypeError, ValueError):
                 turn_limit = self._max_turns()
+        local_turns = 0
+
+        def _consume_route_turn() -> bool:
+            nonlocal local_turns
+            if consume_turn is not None:
+                return consume_turn()
+            local_turns += 1
+            return local_turns <= turn_limit
+
         hop = 0
         qa_retries = 0
         current = request
-        while hop < max_hops and hop < turn_limit:
+        while hop < max_hops:
+            if not _consume_route_turn():
+                return TaskResult(
+                    task_id=str(uuid.uuid4()),
+                    status="failed",
+                    summary=(
+                        "[P2P:STOP] Circuit breaker tetiklendi: "
+                        f"maksimum tur limiti aşıldı ({turn_limit})."
+                    ),
+                )
             hop += 1
             missing = self._validate_p2p_request(current)
             if missing:
@@ -396,7 +428,8 @@ class SupervisorAgent(BaseAgent):
                         task_id=str(uuid.uuid4()),
                         status="failed",
                         summary=(
-                            f"[P2P:STOP] Maksimum QA retry limiti aşıldı ({self._max_qa_retries()}). "
+                            "[P2P:STOP] Maksimum QA retry limiti aşıldı "
+                            f"({self._max_qa_retries()}). "
                             "Reviewer red zinciri fail-closed sonlandırıldı."
                         ),
                     )
@@ -425,18 +458,27 @@ class SupervisorAgent(BaseAgent):
                 current = next_request
                 continue
             return result
-        stop_reason = (
-            f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({turn_limit})."
-            if hop >= turn_limit
-            else "[P2P:FAIL] Maksimum delegasyon hop sayısı aşıldı."
-        )
+        stop_reason = "[P2P:FAIL] Maksimum delegasyon hop sayısı aşıldı."
         return TaskResult(task_id=str(uuid.uuid4()), status="failed", summary=stop_reason)
 
-    async def run_task(self, task_prompt: str) -> str:
+    async def run_task(self, task_prompt: str, *, max_turns: int | None = None) -> str:
+        """Run a task, optionally capping this call's own turn budget.
+
+        ``max_turns`` lets a caller that already spent part of a shared budget
+        (e.g. SwarmOrchestrator's supervisor fallback after N handoff hops)
+        hand over what's left instead of this call always starting a fresh
+        ``MAX_TURNS`` budget from zero.
+        """
         await self.events.publish("supervisor", "Görev analiz ediliyor...")
         intent = self._intent(task_prompt)
         self.memory_hub.add_global(task_prompt)
-        max_turns = self._max_turns()
+        if max_turns is None:
+            max_turns = self._max_turns()
+        else:
+            try:
+                max_turns = max(0, int(max_turns))
+            except (TypeError, ValueError):
+                max_turns = self._max_turns()
         turn_count = 0
 
         if intent == "chat":
@@ -450,39 +492,53 @@ class SupervisorAgent(BaseAgent):
             turn_count += 1
             return turn_count <= max_turns
 
+        def _turn_limit_message() -> str:
+            return (
+                f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
+            )
+
         if intent == "research":
             await self.events.publish("supervisor", "Researcher ajanına yönlendiriliyor...")
             if not _consume_turn():
-                return f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
+                return _turn_limit_message()
             result = await self._delegate("researcher", task_prompt, "research")
             delegated = self._coerce_delegation_request(result.summary)
             if delegated is not None:
                 result = await self._route_p2p(
-                    delegated, parent_task_id=result.task_id, max_turns=max_turns
+                    delegated,
+                    parent_task_id=result.task_id,
+                    max_turns=max_turns,
+                    consume_turn=_consume_turn,
                 )
             return str(result.summary)
 
         if intent == "review":
             await self.events.publish("supervisor", "Reviewer ajanına yönlendiriliyor...")
             if not _consume_turn():
-                return f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
+                return _turn_limit_message()
             result = await self._delegate("reviewer", task_prompt, "review")
             delegated = self._coerce_delegation_request(result.summary)
             if delegated is not None:
                 result = await self._route_p2p(
-                    delegated, parent_task_id=result.task_id, max_turns=max_turns
+                    delegated,
+                    parent_task_id=result.task_id,
+                    max_turns=max_turns,
+                    consume_turn=_consume_turn,
                 )
             return str(result.summary)
 
         if intent == "marketing":
             await self.events.publish("supervisor", "Poyraz ajanına yönlendiriliyor...")
             if not _consume_turn():
-                return f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
+                return _turn_limit_message()
             result = await self._delegate("poyraz", task_prompt, "marketing")
             delegated = self._coerce_delegation_request(result.summary)
             if delegated is not None:
                 result = await self._route_p2p(
-                    delegated, parent_task_id=result.task_id, max_turns=max_turns
+                    delegated,
+                    parent_task_id=result.task_id,
+                    max_turns=max_turns,
+                    consume_turn=_consume_turn,
                 )
             return str(result.summary)
 
@@ -490,44 +546,52 @@ class SupervisorAgent(BaseAgent):
             await self.events.publish("supervisor", "Coverage ajanına yönlendiriliyor...")
             receiver = "coverage" if self.registry.has("coverage") else "qa"
             if not _consume_turn():
-                return f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
+                return _turn_limit_message()
             result = await self._delegate(receiver, task_prompt, "coverage")
             delegated = self._coerce_delegation_request(result.summary)
             if delegated is not None:
                 result = await self._route_p2p(
-                    delegated, parent_task_id=result.task_id, max_turns=max_turns
+                    delegated,
+                    parent_task_id=result.task_id,
+                    max_turns=max_turns,
+                    consume_turn=_consume_turn,
                 )
             return str(result.summary)
 
         if intent == "qa":
             await self.events.publish("supervisor", "QA ajanına yönlendiriliyor...")
             if not _consume_turn():
-                return f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
+                return _turn_limit_message()
             result = await self._delegate("qa", task_prompt, "qa")
             delegated = self._coerce_delegation_request(result.summary)
             if delegated is not None:
                 result = await self._route_p2p(
-                    delegated, parent_task_id=result.task_id, max_turns=max_turns
+                    delegated,
+                    parent_task_id=result.task_id,
+                    max_turns=max_turns,
+                    consume_turn=_consume_turn,
                 )
             return str(result.summary)
 
         await self.events.publish("supervisor", "Coder ajanı kod üzerinde çalışıyor...")
         if not _consume_turn():
-            return (
-                f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
-            )
+            return _turn_limit_message()
         code_result = await self._delegate("coder", task_prompt, "code")
         delegated = self._coerce_delegation_request(code_result.summary)
         if delegated is not None:
             code_result = await self._route_p2p(
-                delegated, parent_task_id=code_result.task_id, max_turns=max_turns
+                delegated,
+                parent_task_id=code_result.task_id,
+                max_turns=max_turns,
+                consume_turn=_consume_turn,
             )
 
         code_summary = str(code_result.summary)
         if bool(getattr(getattr(self, "cfg", None), "CLI_FAST_MODE", False)):
             await self.events.publish(
                 "supervisor",
-                "CLI fast mode aktif: reviewer kalite kapısı atlandı, coder çıktısı döndürülüyor...",
+                "CLI fast mode aktif: reviewer kalite kapısı atlandı, "
+                "coder çıktısı döndürülüyor...",
             )
             return code_summary
 
@@ -536,16 +600,17 @@ class SupervisorAgent(BaseAgent):
             "supervisor", "Reviewer kodu inceliyor ve testleri değerlendiriyor..."
         )
         if not _consume_turn():
-            return (
-                f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
-            )
+            return _turn_limit_message()
         review_result = await self._delegate(
             "reviewer", review_goal, "review", parent_task_id=code_result.task_id
         )
         delegated = self._coerce_delegation_request(review_result.summary)
         if delegated is not None:
             review_result = await self._route_p2p(
-                delegated, parent_task_id=review_result.task_id, max_turns=max_turns
+                delegated,
+                parent_task_id=review_result.task_id,
+                max_turns=max_turns,
+                consume_turn=_consume_turn,
             )
 
         review_summary = str(review_result.summary)
@@ -558,7 +623,7 @@ class SupervisorAgent(BaseAgent):
                 return (
                     f"{latest_code_summary}\n\n---\n"
                     f"Reviewer QA Özeti (circuit breaker):\n{review_summary}\n"
-                    f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
+                    + _turn_limit_message()
                 )
             if retries > self._max_qa_retries():
                 return (
@@ -574,23 +639,27 @@ class SupervisorAgent(BaseAgent):
             )
             await self.events.publish(
                 "supervisor",
-                f"Reviewer geri bildirimi sonrası kod turu başlatılıyor ({retries}/{self._max_qa_retries()})...",
+                "Reviewer geri bildirimi sonrası kod turu başlatılıyor "
+                f"({retries}/{self._max_qa_retries()})...",
             )
             if not _consume_turn():
-                return f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
+                return _turn_limit_message()
             next_code = await self._delegate(
                 "coder", revise_prompt, "code", parent_task_id=review_result.task_id
             )
             delegated = self._coerce_delegation_request(next_code.summary)
             if delegated is not None:
                 next_code = await self._route_p2p(
-                    delegated, parent_task_id=next_code.task_id, max_turns=max_turns
+                    delegated,
+                    parent_task_id=next_code.task_id,
+                    max_turns=max_turns,
+                    consume_turn=_consume_turn,
                 )
 
             latest_code_summary = str(next_code.summary)
             await self.events.publish("supervisor", "Reviewer kontrolü tekrar çalıştırılıyor...")
             if not _consume_turn():
-                return f"[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı ({max_turns})."
+                return _turn_limit_message()
             review_result = await self._delegate(
                 "reviewer",
                 f"review_code|{latest_code_summary[:800]}",
@@ -600,7 +669,10 @@ class SupervisorAgent(BaseAgent):
             delegated = self._coerce_delegation_request(review_result.summary)
             if delegated is not None:
                 review_result = await self._route_p2p(
-                    delegated, parent_task_id=review_result.task_id, max_turns=max_turns
+                    delegated,
+                    parent_task_id=review_result.task_id,
+                    max_turns=max_turns,
+                    consume_turn=_consume_turn,
                 )
             review_summary = str(review_result.summary)
 

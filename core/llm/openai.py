@@ -12,6 +12,7 @@ from typing import Any, cast
 import httpx
 
 import core.llm_client as llm_facade
+from core.llm.streaming_http import enter_httpx_stream
 from core.llm_client import SIDAR_TOOL_JSON_SCHEMA, BaseLLMClient, LLMAPIError, logger
 
 
@@ -253,8 +254,7 @@ class OpenAIClient(BaseLLMClient):
                     json=payload,
                     headers=headers,
                 )
-                response = await cm.__aenter__()
-                response.raise_for_status()
+                response = await enter_httpx_stream(stream_client, cm)
                 return stream_client, cm, response
 
             client, stream_cm, resp = await _retry_with_backoff(

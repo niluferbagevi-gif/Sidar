@@ -52,11 +52,16 @@ for _submodule in (
     "audit_log",
     "auth",
     "coverage",
+    "marketing",
     "metrics",
     "models",
+    "diagnostics",
+    "helpers",
+    "records",
     "prompt_registry",
     "session",
     "sessions",
+    "users",
 ):
     try:
         setattr(_monolith, _submodule, _importlib.import_module(f"{__name__}.{_submodule}"))

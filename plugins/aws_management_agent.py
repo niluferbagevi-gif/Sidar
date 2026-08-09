@@ -11,6 +11,8 @@ from collections.abc import Iterable
 from typing import Any
 
 from agent.base_agent import BaseAgent
+from config import Config
+from managers.security import SecurityManager
 
 
 class AWSManagementAgent(BaseAgent):
@@ -32,10 +34,21 @@ class AWSManagementAgent(BaseAgent):
         ],
     }
 
+    def _security_manager(self) -> SecurityManager:
+        """Return the runtime security manager used to gate host shell access."""
+        cfg = getattr(self, "cfg", None) or Config()
+        return SecurityManager(cfg=cfg)
+
     async def run_task(self, task_prompt: str) -> str:
         prompt = (task_prompt or "").strip()
         if not prompt:
             return "AWS işlemi için görev açıklaması gerekli."
+
+        if not self._security_manager().can_run_shell():
+            return (
+                "AWS yönetim eklentisi host üzerinde AWS CLI çalıştırmayı gerektirir; "
+                "ACCESS_LEVEL=full olmadan komut çalıştırma reddedildi."
+            )
 
         aws_cli = shutil.which("aws")
         if not aws_cli:
@@ -100,7 +113,8 @@ class AWSManagementAgent(BaseAgent):
         for reservation in reservations:
             for instance in reservation.get("Instances", []) or []:
                 instances.append(
-                    f"{instance.get('InstanceId', '?')} ({instance.get('State', {}).get('Name', 'unknown')})"
+                    f"{instance.get('InstanceId', '?')} "
+                    f"({instance.get('State', {}).get('Name', 'unknown')})"
                 )
         if instances:
             return f"EC2 instance envanteri: {', '.join(instances[:8])}"

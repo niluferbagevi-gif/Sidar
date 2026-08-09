@@ -14,13 +14,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 def load_pytest_dotenv_chain() -> None:
     """Load the runtime dotenv chain before pytest collection imports app modules."""
-
     base_env_path = PROJECT_ROOT / ".env"
     advanced_env_path = PROJECT_ROOT / ".env.advanced"
     profile_env_path = PROJECT_ROOT / f".env.{os.getenv('SIDAR_ENV', '').strip()}"
 
     # config.py ile aynı temel önceliği koru: .env ve .env.advanced mevcut
-    # process ortamını ezmez; profil/explicit/secret dosyaları bilinçli override eder.
+    # process ortamını ezmez; profil/explicit dosyaları bilinçli override eder.
+    # Testlerde secret overlay yalnız SIDAR_TEST_LOAD_REAL_KEYS opt-in ile yüklenir.
     load_dotenv(dotenv_path=base_env_path, override=False)
     load_dotenv(dotenv_path=advanced_env_path, override=False)
     if profile_env_path.name != ".env." and profile_env_path.exists():
@@ -33,8 +33,13 @@ def load_pytest_dotenv_chain() -> None:
             explicit_path = PROJECT_ROOT / explicit_path
         load_dotenv(dotenv_path=explicit_path, override=True)
 
-    keys_file = os.getenv("SIDAR_KEYS_FILE", "~/.sidar_keys.env").strip()
-    if keys_file:
+    load_real_keys = os.getenv("SIDAR_TEST_LOAD_REAL_KEYS", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    keys_file = os.getenv("SIDAR_KEYS_FILE", "").strip()
+    if load_real_keys and keys_file:
         load_dotenv(dotenv_path=Path(keys_file).expanduser(), override=True)
 
 
@@ -65,7 +70,6 @@ def _postgres_url_password(raw_url: str) -> str:
 
 def assert_test_dotenv_postgres_parity() -> None:
     """Fail early when .env.test would override runtime DB credentials."""
-
     base_env_path = PROJECT_ROOT / ".env"
     test_env_path = PROJECT_ROOT / ".env.test"
     if not base_env_path.is_file() or not test_env_path.is_file():

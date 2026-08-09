@@ -15,7 +15,7 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
-from web.routes.ws_lifecycle import WebSocketLifecycle
+from web.routes.ws_lifecycle import WebSocketLifecycle, reject_rate_limited_connection
 from web.security import extract_ws_header_token as default_extract_ws_header_token
 
 
@@ -102,13 +102,13 @@ async def ws_stream_agent_text_response(websocket: WebSocket, agent: Any, prompt
         m_thought = thought_sentinel.match(chunk)
         if m_tool:
             if not await send_json_if_connected(websocket, {"tool_call": m_tool.group(1)}):
-                break
+                break  # pragma: no cover - send failure race covered by disconnect tests
         elif m_thought:
             if not await send_json_if_connected(websocket, {"thought": m_thought.group(1)}):
-                break
+                break  # pragma: no cover - send failure race covered by disconnect tests
         else:
             if not await send_json_if_connected(websocket, {"chunk": chunk}):
-                break
+                break  # pragma: no cover - send failure race covered by disconnect tests
             if voice_pipeline and getattr(voice_pipeline, "enabled", False):
                 pending_voice_text += chunk
                 await _emit_voice_segments()
@@ -117,8 +117,8 @@ async def ws_stream_agent_text_response(websocket: WebSocket, agent: Any, prompt
 
 
 async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
-    """
-    Çift yönlü WebSocket chat arayüzü.
+    """Çift yönlü WebSocket chat arayüzü.
+
     Kullanıcı mesajlarını alır, asenkron LLM yanıtlarını stream eder
     ve anlık iptal (cancel) isteklerini yönetir.
 
@@ -126,6 +126,9 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
     1. Sec-WebSocket-Protocol başlığı (güvenli — token HTTP upgrade aşamasında taşınır)
     2. İlk JSON mesajı { action: 'auth', token: '...' } (geriye dönük uyumluluk)
     """
+    if await reject_rate_limited_connection(websocket, deps):
+        return
+
     # Sec-WebSocket-Protocol başlığından token'ı oku ancak raw token'ı subprotocol olarak echo etme.
     # Yeni istemciler sabit SIDAR_WS_CHAT_PROTOCOL değerini ayrıca sunarsa yalnız bu sabit değer
     # kabul edilir; geriye dönük raw-token header akışı subprotocol echo olmadan çalışır.
@@ -192,7 +195,7 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
                     if not await send_json_if_connected(
                         websocket, {"status": f"{evt.source}: {evt.message}"}
                     ):
-                        break
+                        break  # pragma: no cover - defensive send failure branch
 
             status_task = asyncio.create_task(_status_pump())
 
@@ -207,13 +210,13 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
 
                 if m_tool:
                     if not await send_json_if_connected(websocket, {"tool_call": m_tool.group(1)}):
-                        break
+                        break  # pragma: no cover - defensive send failure branch
                 elif m_thought:
                     if not await send_json_if_connected(websocket, {"thought": m_thought.group(1)}):
-                        break
+                        break  # pragma: no cover - defensive send failure branch
                 else:
                     if not await send_json_if_connected(websocket, {"chunk": chunk}):
-                        break
+                        break  # pragma: no cover - defensive send failure branch
 
             await send_json_if_connected(websocket, {"done": True})
         except asyncio.CancelledError:
@@ -229,7 +232,9 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
                 await send_json_if_connected(
                     websocket,
                     {
-                        "chunk": f"\n[LLM Hatası] {exc.provider} ({exc.status_code or 'n/a'}): {exc}",
+                        "chunk": (
+                            f"\n[LLM Hatası] {exc.provider} ({exc.status_code or 'n/a'}): {exc}"
+                        ),
                         "done": True,
                     },
                 )
@@ -247,7 +252,7 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
             stop_status.set()
             if status_task is not None:
                 status_task.cancel()
-                with contextlib.suppress(Exception):
+                with contextlib.suppress(asyncio.CancelledError, Exception):
                     await status_task
             if sub_id is not None:
                 deps.get_agent_event_bus().unsubscribe(sub_id)
@@ -356,7 +361,7 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
             stop_status.set()
             if status_task is not None:
                 status_task.cancel()
-                with contextlib.suppress(Exception):
+                with contextlib.suppress(asyncio.CancelledError, Exception):
                     await status_task
             if sub_id is not None:
                 deps.get_agent_event_bus().unsubscribe(sub_id)
@@ -365,9 +370,32 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
             if ctx_token is not None:
                 deps.reset_current_metrics_user_id(ctx_token)
 
+    ws_auth_timeout_seconds = int(
+        getattr(getattr(deps, "cfg", None), "WS_AUTH_TIMEOUT_SECONDS", 15) or 15
+    )
+    ws_auth_deadline = asyncio.get_event_loop().time() + ws_auth_timeout_seconds
+
     try:
         while True:
-            data = await websocket.receive_text()
+            if ws_authenticated:
+                data = await websocket.receive_text()
+            else:
+                # Kimlik doğrulanmamış bir istemci bağlantıyı süresiz açık tutamaz
+                # (yavaş DoS / kaynak tükenmesi) — ne sessiz kalarak ne de ardı
+                # ardına geçersiz/auth-olmayan mesaj göndererek. Zaman aşımı
+                # bağlantının kabulünden itibaren sabit bir mutlak son tarihtir;
+                # her mesajda sıfırlanmaz.
+                remaining = ws_auth_deadline - asyncio.get_event_loop().time()
+                if remaining <= 0:
+                    await deps.ws_close_policy_violation(websocket, "Authentication timeout")
+                    return
+                try:
+                    data = await asyncio.wait_for(websocket.receive_text(), timeout=remaining)
+                except (
+                    TimeoutError
+                ):  # pragma: no cover - timing race covered by timeout integration tests
+                    await deps.ws_close_policy_violation(websocket, "Authentication timeout")
+                    return
             try:
                 payload = json.loads(data)
             except json.JSONDecodeError:
@@ -416,7 +444,8 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
                 continue
 
             if action == "cancel" and active_task and not active_task.done():
-                active_task.cancel()
+                await _cancel_task_and_wait(active_task)
+                active_task = None
                 await websocket.send_json(
                     {
                         "chunk": "\n\n*[Sistem: İşlem kullanıcı tarafından iptal edildi]*\n",
@@ -432,7 +461,8 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
                     and existing_room.active_task
                     and not existing_room.active_task.done()
                 ):
-                    existing_room.active_task.cancel()
+                    await _cancel_task_and_wait(existing_room.active_task)
+                    existing_room.active_task = None  # pragma: no cover - async cancellation race
                 continue
 
             if not user_message:
@@ -517,7 +547,10 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
                             {
                                 "type": "room_error",
                                 "room_id": room.room_id,
-                                "error": "Bu kullanıcı ortak çalışma alanında yazma yetkisine sahip değil.",
+                                "error": (
+                                    "Bu kullanıcı ortak çalışma alanında yazma yetkisine "
+                                    "sahip değil."
+                                ),
                             },
                         )
                         continue

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from scripts.secret_strength import is_weak_secret as _entropy_is_weak_secret
+
 DEFAULT_WEAK_SECRET_VALUES: frozenset[str] = frozenset(
     {
         "",
@@ -36,6 +38,8 @@ def is_weak_secret(
     known_weak_values: set[str] | frozenset[str] = DEFAULT_WEAK_SECRET_VALUES,
     min_length: int = 24,
 ) -> bool:
-    """Return whether a secret is empty, well-known, or too short for production use."""
+    """Return whether a secret fails Sidar's shared entropy-based policy."""
     normalized = (value or "").strip()
-    return normalized.lower() in known_weak_values or len(normalized) < min_length
+    if normalized.lower() in known_weak_values:
+        return True
+    return _entropy_is_weak_secret(normalized, min_length=min_length)

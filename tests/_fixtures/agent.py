@@ -4,10 +4,86 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-import agent.sidar_agent as sidar_agent_module
+
+def _build_null_agent_dependencies(config: Any) -> Any:
+    """Build deterministic SidarAgent dependencies for unit-test factories."""
+    from agent.sidar_agent import AgentDependencies
+
+    security = MagicMock()
+    security.level_name = getattr(config, "ACCESS_LEVEL", "safe")
+    security.set_level.return_value = True
+
+    code = MagicMock()
+    code.get_metrics.return_value = {"files_read": 0, "files_written": 0}
+    code.read_file.return_value = (False, "")
+
+    health = MagicMock()
+    health.full_report.return_value = "System health unavailable in unit fixture."
+
+    github = MagicMock()
+    github.is_available.return_value = False
+    github.status.return_value = "GitHub: disabled for unit tests"
+
+    memory = MagicMock()
+    memory.db = MagicMock()
+    memory.db.get_active_prompt = AsyncMock(return_value=None)
+    memory_turns: list[dict[str, Any]] = []
+
+    async def _add_memory_turn(role: str, content: str, **_: Any) -> None:
+        memory_turns.append({"role": role, "content": content})
+
+    async def _get_memory_history(n_last: int | None = None) -> list[dict[str, Any]]:
+        return memory_turns if n_last is None else memory_turns[-n_last:]
+
+    async def _clear_memory() -> None:
+        memory_turns.clear()
+
+    memory.initialize = AsyncMock(return_value=None)
+    memory._ensure_initialized = AsyncMock(return_value=None)
+    memory.add = AsyncMock(side_effect=_add_memory_turn)
+    memory.get_history = AsyncMock(side_effect=_get_memory_history)
+    memory.clear = AsyncMock(side_effect=_clear_memory)
+    memory.apply_summary = AsyncMock(return_value=None)
+    memory.set_active_user = AsyncMock(return_value=None)
+    memory.get_last_file.return_value = None
+    memory.__len__.return_value = 0
+
+    llm = MagicMock()
+    llm.chat = AsyncMock(return_value="mock-response")
+
+    web = MagicMock()
+    web.is_available.return_value = False
+    web.status.return_value = "WebSearch: disabled for unit tests"
+
+    pkg = MagicMock()
+    pkg.status.return_value = "PackageInfo: disabled for unit tests"
+
+    docs = MagicMock()
+    docs.collection = None
+    docs.status.return_value = "RAG: disabled for unit tests"
+    docs.search = MagicMock(return_value=[])
+    docs.add_document = AsyncMock(return_value=None)
+
+    todo = MagicMock()
+    todo.__len__.return_value = 0
+    todo.list_tasks.return_value = ""
+
+    return AgentDependencies(
+        security=security,
+        code=code,
+        health=health,
+        github=github,
+        memory=memory,
+        llm=llm,
+        web=web,
+        pkg=pkg,
+        docs=docs,
+        todo=todo,
+    )
 
 
 @pytest.fixture
@@ -33,7 +109,10 @@ def sidar_agent_factory(mock_config: Callable[..., Any]) -> Callable[..., Any]:
                 "Örn: sidar_agent_factory(cfg=mock_config(USE_GPU=True))"
             )
 
-        return sidar_agent_module.SidarAgent(config=config)
+        from agent.sidar_agent import SidarAgent
+
+        deps = _build_null_agent_dependencies(config)
+        return SidarAgent(config=config, deps=deps)
 
     return _create_agent
 

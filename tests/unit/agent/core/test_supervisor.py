@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import json
 import sys
 import types
 from collections.abc import Iterator
@@ -201,12 +202,49 @@ def test_intent_classification(prompt: str, expected_intent: str) -> None:
     ("summary", "expected"),
     [
         ("decision=reject", True),
+        ("decision=approve; summary=Dinamik + regresyon denetimleri değerlendirildi", False),
+        ('qa_feedback|{"decision":"APPROVE","summary":"regresyon kelimesi sabit şablonda"}', False),
+        ('{"decision":"REJECT","summary":"düzeltme gerekli"}', True),
         ("risk: yüksek", True),
         ("Tüm testler geçti", False),
     ],
 )
 def test_review_requires_revision(summary: str, expected: bool) -> None:
     assert SupervisorAgent._review_requires_revision(summary) is expected
+
+
+def test_extract_review_decision_prefers_structured_signal_over_summary_words() -> None:
+    payload = {
+        "decision": "APPROVE",
+        "summary": "[REVIEW:PASS] Dinamik + regresyon + LSP semantik denetimleri değerlendirildi.",
+    }
+
+    assert SupervisorAgent._extract_review_decision(json.dumps(payload)) == "approve"
+    assert SupervisorAgent._review_requires_revision(json.dumps(payload)) is False
+
+
+def test_decision_from_review_payload_returns_none_for_unrecognized_dict() -> None:
+    assert SupervisorAgent._decision_from_review_payload({"summary": "yalnız açıklama"}) is None
+
+
+@pytest.mark.parametrize(
+    ("summary", "expected"),
+    [
+        ("", None),
+        ("qa_feedback|   ", None),
+        ('qa_feedback|{"decision":', None),
+        (json.dumps({"approved": False}), "reject"),
+        (json.dumps({"verdict": "PASSED"}), "passed"),
+        (json.dumps({"review": {"status": "FAILED"}}), "failed"),
+        ("verdict - approved", "approved"),
+        ("Result is rework_required", "rework_required"),
+        ("[REVIEW:PASS] Dinamik denetim tamam", "pass"),
+    ],
+)
+def test_extract_review_decision_handles_fallback_formats(
+    summary: object, expected: str | None
+) -> None:
+    assert SupervisorAgent._extract_review_decision(summary) == expected
 
 
 @pytest.mark.parametrize(
@@ -300,6 +338,46 @@ def test_route_p2p_coerces_max_turns_and_fails_closed_at_zero(
     assert result.status == expected_status
     assert expected_summary in str(result.summary)
     assert len(calls) == expected_delegate_calls
+
+
+def test_route_p2p_uses_shared_turn_budget_for_chained_handoffs() -> None:
+    sup = _build_supervisor()
+    remaining_turns = 1
+    calls: list[str] = []
+
+    def _consume_turn() -> bool:
+        nonlocal remaining_turns
+        remaining_turns -= 1
+        return remaining_turns >= 0
+
+    async def _delegate(receiver: str, *_args: object, **_kwargs: object) -> TaskResult:
+        calls.append(receiver)
+        return TaskResult(
+            task_id=f"hop-{len(calls)}",
+            status="done",
+            summary=DelegationRequest(
+                task_id=f"next-{len(calls)}",
+                reply_to=receiver,
+                target_agent="reviewer",
+                payload="devam",
+                intent="p2p",
+            ),
+        )
+
+    sup._delegate = _delegate
+    req = DelegationRequest(
+        task_id="start",
+        reply_to="coder",
+        target_agent="reviewer",
+        payload="ilk",
+        intent="p2p",
+    )
+
+    result = asyncio.run(sup._route_p2p(req, max_hops=5, max_turns=10, consume_turn=_consume_turn))
+
+    assert calls == ["reviewer"]
+    assert result.status == "failed"
+    assert "maksimum tur limiti" in str(result.summary)
 
 
 def test_route_p2p_stops_when_reject_feedback_exceeds_retry_limit() -> None:
@@ -419,6 +497,26 @@ def test_run_task_qa_intent_delegates_and_routes_p2p_request() -> None:
     assert ("supervisor", "QA ajanına yönlendiriliyor...") in sup.events.messages
 
 
+def test_run_task_qa_intent_returns_terminal_summary_without_p2p() -> None:
+    sup = _build_supervisor(max_qa_retries=2)
+    calls: list[tuple[str, str]] = []
+
+    async def _delegate(receiver: str, _goal: str, intent: str, **_kwargs):
+        calls.append((receiver, intent))
+        return TaskResult(task_id="qa-task", status="done", summary="qa tamam")
+
+    async def _route_p2p(*_args, **_kwargs):
+        raise AssertionError("_route_p2p should not be called for terminal QA result")
+
+    sup._delegate = _delegate
+    sup._route_p2p = _route_p2p
+
+    result = asyncio.run(sup.run_task("qa kalite kapısı kontrolü"))
+
+    assert result == "qa tamam"
+    assert calls == [("qa", "qa")]
+
+
 def test_run_task_qa_intent_stops_when_max_turns_exceeded() -> None:
     sup = _build_supervisor(max_qa_retries=2)
     sup.cfg.MAX_TURNS = 0
@@ -429,6 +527,29 @@ def test_run_task_qa_intent_stops_when_max_turns_exceeded() -> None:
     sup._delegate = _delegate
 
     result = asyncio.run(sup.run_task("qa kalite kapısı kontrolü"))
+
+    assert result == "[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı (0)."
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "web kaynak araştır",
+        "github issue review et",
+        "seo kampanya üret",
+        "eksik test yaz",
+        "qa kalite kapısı kontrolü",
+    ],
+)
+def test_run_task_non_code_intents_stop_when_turn_budget_is_exhausted(prompt: str) -> None:
+    sup = _build_supervisor(max_qa_retries=2)
+
+    async def _delegate(*_args, **_kwargs):
+        raise AssertionError("delegation should not run after max_turns=0")
+
+    sup._delegate = _delegate
+
+    result = asyncio.run(sup.run_task(prompt, max_turns=0))
 
     assert result == "[P2P:STOP] Circuit breaker tetiklendi: maksimum tur limiti aşıldı (0)."
 
@@ -497,6 +618,55 @@ def test_run_task_code_flow_retries_and_returns_final_review_summary() -> None:
     assert "Tüm testler geçti" in result
 
 
+def test_run_task_invalid_max_turns_argument_falls_back_to_configured_budget() -> None:
+    sup = _build_supervisor(max_qa_retries=2)
+    sup.cfg.MAX_TURNS = 3
+    calls: list[str] = []
+
+    async def _delegate(receiver: str, _goal: str, intent: str, **_kwargs):
+        calls.append(f"{receiver}:{intent}")
+        if receiver == "coder":
+            return TaskResult(task_id="c1", status="done", summary="kod")
+        return TaskResult(task_id="r1", status="done", summary="decision=approve")
+
+    async def _route_p2p(*_args, **_kwargs):
+        raise AssertionError("_route_p2p should not be called in this scenario")
+
+    sup._delegate = _delegate
+    sup._route_p2p = _route_p2p
+
+    result = asyncio.run(sup.run_task("bir modül geliştir", max_turns="geçersiz"))
+
+    assert calls == ["coder:code", "reviewer:review"]
+    assert "Reviewer QA Özeti" in result
+    assert "decision=approve" in result
+
+
+def test_run_task_code_flow_stops_on_turn_budget_during_review_retry() -> None:
+    sup = _build_supervisor(max_qa_retries=2)
+    responses = iter(
+        [
+            TaskResult(task_id="c1", status="done", summary="ilk kod"),
+            TaskResult(task_id="r1", status="done", summary="decision=reject"),
+        ]
+    )
+
+    async def _delegate(*_args, **_kwargs):
+        return next(responses)
+
+    async def _route_p2p(*_args, **_kwargs):
+        raise AssertionError("_route_p2p should not be called in this scenario")
+
+    sup._delegate = _delegate
+    sup._route_p2p = _route_p2p
+
+    result = asyncio.run(sup.run_task("bir modül geliştir", max_turns=2))
+
+    assert "Reviewer QA Özeti (circuit breaker)" in result
+    assert "maksimum tur limiti aşıldı (2)" in result
+    assert "ilk kod" in result
+
+
 def test_run_task_code_flow_stops_after_retry_limit() -> None:
     sup = _build_supervisor(max_qa_retries=1)
 
@@ -547,33 +717,6 @@ def test_run_task_code_flow_skips_reviewer_in_cli_fast_mode() -> None:
 
     assert result == "hızlı kod çıktısı"
     assert calls == [("coder", "code")]
-
-
-def test_ensure_delegation_request_shape_uses_existing_class(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    contracts_mod = types.SimpleNamespace(DelegationRequest=DelegationRequest)
-    monkeypatch.setattr(supervisor_mod.importlib, "import_module", lambda _name: contracts_mod)
-
-    assert supervisor_mod._ensure_delegation_request_shape() is DelegationRequest
-
-
-def test_ensure_delegation_request_shape_builds_compat_class(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    contracts_mod = types.SimpleNamespace(DelegationRequest=object)
-    monkeypatch.setattr(supervisor_mod.importlib, "import_module", lambda _name: contracts_mod)
-
-    compat_cls = supervisor_mod._ensure_delegation_request_shape()
-    req = compat_cls(
-        task_id="t", reply_to="a", target_agent="b", payload="p", handoff_depth=2, meta={"k": "v"}
-    )
-    bumped = req.bumped()
-
-    assert req.handoff_depth == 2
-    assert bumped.handoff_depth == 3
-    assert bumped.meta == {"k": "v"}
-    assert contracts_mod.DelegationRequest is compat_cls
 
 
 def test_null_span_noop_methods() -> None:
@@ -974,6 +1117,43 @@ def test_delegate_records_circuit_failure_before_reraising(monkeypatch: pytest.M
     assert failures == ["coder"]
 
 
+def test_delegate_records_circuit_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    sup = SupervisorAgent.__new__(SupervisorAgent)
+    sup.cfg = SimpleNamespace(REACT_TIMEOUT=1)
+    sup.memory_hub = _DummyMemoryHub()
+    sup.events = _DummyEvents()
+
+    class _Worker:
+        async def run_task(self, goal: str) -> str:
+            return f"ok:{goal}"
+
+    class _Registry:
+        def get(self, _role: str):
+            return _Worker()
+
+    successes: list[str] = []
+
+    class _Breaker:
+        def is_open(self, _receiver: str) -> bool:
+            return False
+
+        def record_success(self, receiver: str) -> None:
+            successes.append(receiver)
+
+        def record_failure(self, _receiver: str) -> None:
+            raise AssertionError("failure should not be recorded on success")
+
+    monkeypatch.setattr(supervisor_mod, "_tracer", None)
+    monkeypatch.setattr(supervisor_mod, "_get_agent_metrics", None)
+    sup.registry = _Registry()
+    sup.circuit_breaker = _Breaker()
+
+    result = asyncio.run(sup._delegate("reviewer", "incele", "review"))
+
+    assert result.summary == "ok:incele"
+    assert successes == ["reviewer"]
+
+
 def test_route_p2p_delegates_and_returns_terminal_result() -> None:
     sup = _build_supervisor(max_qa_retries=3)
     calls: list[dict[str, object]] = []
@@ -1148,7 +1328,7 @@ def test_run_task_circuit_breaker_before_initial_reviewer() -> None:
 
 
 def test_run_task_circuit_breaker_while_loop_start() -> None:
-    """while başlangıcındaki turn_count >= max_turns dalını kapsar."""
+    """While başlangıcındaki turn_count >= max_turns dalını kapsar."""
     sup = _build_supervisor(max_qa_retries=2)
     sup._max_turns = lambda: 2
 
@@ -1183,7 +1363,7 @@ class MockMaxTurnsForDeadCode:
 
 
 def test_run_task_circuit_breaker_before_revise_coder() -> None:
-    """while içindeki revise-coder öncesi _consume_turn dalını kapsar."""
+    """While içindeki revise-coder öncesi _consume_turn dalını kapsar."""
     sup = _build_supervisor(max_qa_retries=2)
     sup._max_turns = lambda: MockMaxTurnsForDeadCode()
 
@@ -1204,7 +1384,7 @@ def test_run_task_circuit_breaker_before_revise_coder() -> None:
 
 
 def test_run_task_circuit_breaker_before_second_reviewer() -> None:
-    """while içindeki ikinci reviewer öncesi _consume_turn dalını kapsar."""
+    """While içindeki ikinci reviewer öncesi _consume_turn dalını kapsar."""
     sup = _build_supervisor(max_qa_retries=2)
     sup._max_turns = lambda: 3
 

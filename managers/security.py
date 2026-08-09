@@ -1,10 +1,12 @@
-"""
-Sidar Project - Güvenlik Yöneticisi
+"""Sidar Project - Güvenlik Yöneticisi.
+
 OpenClaw erişim kontrol sistemi.
 Sürüm: 2.7.0
 """
 
+import importlib
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -46,12 +48,53 @@ _PROMPT_INJECTION_PATTERNS = [
     re.compile(r"(do not follow|stop following).*(policy|rules|instructions)", re.IGNORECASE),
     re.compile(r"(act as|pretend to be).*(system|developer|admin)", re.IGNORECASE),
     re.compile(r"(exfiltrate|leak).*(secret|token|credential|api key|password)", re.IGNORECASE),
+    # Türkçe eşdeğerleri — ürün Türkçe pazar için üretildiğinden İngilizce kalıplar
+    # yeterli değil. Türkçe SOV cümle yapısı nedeniyle nesne genelde fiilden önce
+    # gelir (İngilizce kalıplardaki fiil-önce sırasının tersi); ekler \w* ile
+    # (çekim/iyelik) kabaca kapsanır — tam bir morfolojik analiz değildir.
+    re.compile(
+        r"(önceki|tüm|bütün|herhangi bir)\s+(talimat|kural|komut|prompt)\w*"
+        r"(?:\s+\w+){0,3}\s+(unut\w*|yok\s*say\w*|dikkate\s*alma\w*|görmezden\s*gel\w*)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(sistem\s*prompt\w*|gizli\s*talimat\w*|geliştirici\s*mesaj\w*)"
+        r"(?:\s+\w+){0,4}\s+(göster\w*|yazdır\w*|paylaş\w*)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(güvenlik\s*önlem\w*|güvenlik\w*|politika\w*|kısıtlama\w*|koruma\w*)"
+        r"(?:\s+\w+){0,3}\s+(aş\w*|atla\w*|bypass\w*|devre\s*dışı\s*bırak\w*)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(kural\w*|talimat\w*|komut\w*)(?:\s+\w+){0,3}\s+(uyma\b|uymayın\b|dinleme\b|dinlemeyin\b)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(sistem|geliştirici|yönetici|admin)\s*(gibi|rolü\w*)"
+        r"(?:\s+\w+){0,2}\s+(davran\w*|ol\w*|yap\w*)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(gizli\s*anahtar\w*|şifre\w*|parola\w*|api\s*anahtar\w*|token\w*)"
+        r"(?:\s+\w+){0,3}\s+(sız\w*|ifşa\s*et\w*|paylaş\w*)",
+        re.IGNORECASE,
+    ),
 ]
 
 _SUSPICIOUS_OUTPUT_PATTERNS = [
     re.compile(r"(BEGIN|START).*(SYSTEM|DEVELOPER).*(PROMPT|MESSAGE)", re.IGNORECASE),
     re.compile(r"(api[_ -]?key|token|password|secret)\s*[:=]\s*[A-Za-z0-9_\-]{8,}", re.IGNORECASE),
 ]
+
+
+def _coerce_bool(value: Any, *, default: bool = False) -> bool:
+    if value is None:  # pragma: no cover - defensive default branch
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 @dataclass(frozen=True)
@@ -63,8 +106,8 @@ class ValidationResult:
 
 
 class SecurityManager:
-    """
-    OpenClaw erişim kontrol sistemi.
+    """OpenClaw erişim kontrol sistemi.
+
     Sidar'ın dosya/sistem işlemlerine yetki verir veya reddeder.
 
     Güvenlik katmanları:
@@ -72,6 +115,8 @@ class SecurityManager:
       2. Yol geçişi (path traversal) koruması — "../" dizileri ve tehlikeli sistem yolları
       3. Sembolik bağlantı (symlink) koruması — resolve() ile gerçek yol doğrulama
     """
+
+    _guardrails_import_log_keys: set[str] = set()
 
     def __init__(
         self,
@@ -95,25 +140,63 @@ class SecurityManager:
         self.base_dir: Path = Path(raw_base_dir).resolve()
         self.temp_dir: Path = (self.base_dir / "temp").resolve()
         self.temp_dir.mkdir(parents=True, exist_ok=True)
-        self.prompt_guard_enabled = bool(getattr(self.cfg, "PROMPT_GUARD_ENABLED", True))
+        self.prompt_guard_enabled = _coerce_bool(
+            getattr(self.cfg, "PROMPT_GUARD_ENABLED", os.getenv("PROMPT_GUARD_ENABLED", "1")),
+            default=True,
+        )
+        self.guardrails_required = _coerce_bool(
+            getattr(self.cfg, "GUARDRAILS_REQUIRED", os.getenv("GUARDRAILS_REQUIRED", "0")),
+            default=False,
+        )
+        self.guardrails_degraded_reason: str | None = None
         self._guardrails_engine: Any = None
         if self.prompt_guard_enabled:
             self._init_guardrails()
         logger.info("SecurityManager başlatıldı — seviye: %s (%d)", self.level_name, self.level)
 
     def _init_guardrails(self) -> None:
-        """NeMo Guardrails motorunu başlatır."""
+        """NeMo Guardrails motorunu başlatır veya açık degraded/fail-closed moda geçer."""
         try:
-            from nemoguardrails import LLMRails  # type: ignore
-        except ImportError:
-            logger.info("NeMo Guardrails yüklü değil; içerik filtrelemesi devre dışı.")
-            self._guardrails_engine = None
+            guardrails_module = importlib.import_module("nemoguardrails")
+            llm_rails = guardrails_module.LLMRails
+        except ModuleNotFoundError as exc:
+            if exc.name != "nemoguardrails":  # pragma: no cover - dependency subimport failure
+                self._handle_guardrails_unavailable("import-error", exc)
+                return
+            self._handle_guardrails_unavailable("missing-dependency", exc)
             return
         except Exception as exc:  # pragma: no cover - ortama bağlı import hatası
-            logger.warning("NeMo Guardrails başlatılamadı, guardrails devre dışı: %s", exc)
-            self._guardrails_engine = None
+            self._handle_guardrails_unavailable("import-error", exc)
             return
-        self._guardrails_engine = LLMRails
+        self.guardrails_degraded_reason = None
+        self._guardrails_engine = llm_rails
+
+    def _handle_guardrails_unavailable(self, reason: str, exc: BaseException) -> None:
+        """Report Guardrails unavailability once per process and optionally fail closed."""
+        message = str(exc) or exc.__class__.__name__
+        self.guardrails_degraded_reason = f"{reason}: {message}"
+        self._guardrails_engine = None
+        if self.guardrails_required:
+            raise RuntimeError(
+                "NeMo Guardrails zorunlu fakat başlatılamadı; fail-closed uygulandı: "
+                f"{self.guardrails_degraded_reason}"
+            ) from exc
+
+        log_key = f"{reason}:{exc.__class__.__name__}:{message}"
+        if log_key in SecurityManager._guardrails_import_log_keys:
+            return
+        SecurityManager._guardrails_import_log_keys.add(log_key)
+        if reason == "missing-dependency":
+            logger.info(
+                "NeMo Guardrails yüklü değil; regex tabanlı prompt koruması degraded mode'da"
+                " çalışıyor."
+            )
+        else:
+            logger.warning(
+                "NeMo Guardrails başlatılamadı; regex tabanlı prompt koruması degraded"
+                " mode'da çalışıyor: %s",
+                exc,
+            )
 
     # ─────────────────────────────────────────────
     #  YARDIMCI — YOL GÜVENLİĞİ
@@ -133,8 +216,7 @@ class SecurityManager:
 
     @staticmethod
     def _has_dangerous_pattern(path_str: str) -> bool:
-        """
-        Ham yol dizesinde path traversal veya kritik sistem yolu kalıplarını arar.
+        """Ham yol dizesinde path traversal veya kritik sistem yolu kalıplarını arar.
 
         Returns:
             True → tehlikeli kalıp bulundu (yol reddedilmeli)
@@ -142,8 +224,7 @@ class SecurityManager:
         return bool(_DANGEROUS_PATH_RE.search(path_str))
 
     def _resolve_safe(self, path_str: str) -> Path | None:
-        """
-        Yolu güvenle çözümler. Hata durumunda None döndürür.
+        """Yolu güvenle çözümler. Hata durumunda None döndürür.
 
         Sembolik bağlantılar resolve() ile takip edilir; gerçek hedef döner.
         Bu sayede symlink traversal saldırıları da yakalanır.
@@ -160,8 +241,8 @@ class SecurityManager:
             return None
 
     def is_path_under(self, path_str: str, base: Path) -> bool:
-        """
-        Verilen yolun base dizini altında olup olmadığını doğrular.
+        """Verilen yolun base dizini altında olup olmadığını doğrular.
+
         Sembolik bağlantılar takip edilerek gerçek hedef kontrol edilir.
 
         Args:
@@ -249,17 +330,16 @@ class SecurityManager:
         return self.validate_prompt_text(text, source="agent_output")
 
     def is_safe_path(self, path_str: str) -> bool:
-        """Path traversal + base_dir + hassas yol desenleri doğrulaması."""
+        """Resolve from ``base_dir`` and apply the shared traversal/path safety policy."""
+        if self._has_dangerous_pattern(path_str):
+            return False
+        resolved = self._resolve_safe(path_str)
+        if resolved is None or self._is_blocked_path(str(resolved)):
+            return False
         try:
-            if self._has_dangerous_pattern(path_str):
-                return False
-            resolved = Path(path_str).resolve()
-            resolved_str = str(resolved)
-            if self._is_blocked_path(resolved_str):
-                return False
             resolved.relative_to(self.base_dir)
             return True
-        except Exception:
+        except ValueError:
             return False
 
     # ─────────────────────────────────────────────
@@ -294,8 +374,8 @@ class SecurityManager:
     # ─────────────────────────────────────────────
 
     def can_write(self, path: str) -> bool:
-        """
-        Yazma iznini kontrol et.
+        """Yazma iznini kontrol et.
+
         - RESTRICTED: hiçbir zaman
         - SANDBOX: yalnızca temp/ dizini (symlink korumalı)
         - FULL: base_dir altındaki her yere (symlink + traversal korumalı)
@@ -345,8 +425,8 @@ class SecurityManager:
     # ─────────────────────────────────────────────
 
     def can_execute(self) -> bool:
-        """
-        Kod/REPL çalıştırma izni.
+        """Kod/REPL çalıştırma izni.
+
         - RESTRICTED : yasak
         - SANDBOX    : izinli (yalnızca /temp üzerinde çalışır)
         - FULL       : izinli (tam erişim)
@@ -354,8 +434,8 @@ class SecurityManager:
         return self.level >= SANDBOX
 
     def can_run_shell(self) -> bool:
-        """
-        Terminal/Shell komut çalıştırma izni.
+        """Terminal/Shell komut çalıştırma izni.
+
         - RESTRICTED : yasak
         - SANDBOX    : yasak (yalnızca Docker izole Python REPL izinli)
         - FULL       : izinli (git, npm, pip vb. tüm kabuk komutları)
@@ -386,9 +466,13 @@ class SecurityManager:
         """Erişim seviyesi ve izin özetini döndürür."""
         perms = []
         perms.append("Okuma   : ✓ (tehlikeli yol koruması aktif)")
-        perms.append(
-            f"Yazma   : {'✓ (tam — proje kökü)' if self.level == FULL else ('✓ (yalnızca /temp)' if self.level == SANDBOX else '✗')}"
-        )
+        if self.level == FULL:
+            write_status = "✓ (tam — proje kökü)"
+        elif self.level == SANDBOX:
+            write_status = "✓ (yalnızca /temp)"
+        else:
+            write_status = "✗"
+        perms.append(f"Yazma   : {write_status}")
         perms.append(f"Terminal: {'✓' if self.level >= SANDBOX else '✗'}")
         perms.append(f"Shell   : {'✓ (git, npm, pip vb.)' if self.level == FULL else '✗'}")
         perms.append("Symlink : ✓ korumalı (resolve() ile doğrulama)")

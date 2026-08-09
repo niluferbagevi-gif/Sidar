@@ -3,10 +3,12 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import importlib.util
+import inspect
 import json
 import logging
 import sqlite3
 import sys
+import threading
 import types
 import uuid
 from dataclasses import dataclass
@@ -23,7 +25,6 @@ from core.db import (
     Database,
     _expires_in,
     _hash_password,
-    _json_dumps,
     _new_entity_id,
     _parse_asyncpg_affected_rows,
     _parse_iso_datetime,
@@ -31,6 +32,12 @@ from core.db import (
     _utc_now_iso,
     _verify_password,
 )
+from core.db.dialect import (
+    assert_safe_sql_identifier,
+    is_safe_sql_identifier,
+    join_sql_identifiers,
+)
+from core.db.helpers import json_dumps as _json_dumps
 
 
 @dataclass
@@ -424,6 +431,47 @@ def test_quote_sql_identifier_rejects_invalid(identifier: str) -> None:
         _quote_sql_identifier(identifier)
 
 
+@pytest.mark.parametrize(
+    "identifier,allowed,expected",
+    [
+        ("events", None, True),
+        ("_private_1", None, True),
+        ("", None, False),
+        ("1abc", None, False),
+        ("bad-name", None, False),
+        ("bad space", None, False),
+        ("events", {"events", "messages"}, True),
+        ("events", {"messages"}, False),
+    ],
+)
+def test_is_safe_sql_identifier(identifier: str, allowed: set[str] | None, expected: bool) -> None:
+    assert is_safe_sql_identifier(identifier, allowed=allowed) is expected
+
+
+def test_assert_safe_sql_identifier_returns_identifier_when_valid() -> None:
+    assert assert_safe_sql_identifier("events") == "events"
+    assert assert_safe_sql_identifier("events", allowed={"events"}) == "events"
+
+
+def test_assert_safe_sql_identifier_raises_when_invalid() -> None:
+    with pytest.raises(ValueError, match="Invalid SQL identifier: 'bad-name'"):
+        assert_safe_sql_identifier("bad-name")
+    with pytest.raises(ValueError, match="Invalid SQL identifier: 'events'"):
+        assert_safe_sql_identifier("events", allowed={"messages"})
+
+
+def test_join_sql_identifiers_validates_the_joined_values() -> None:
+    assert join_sql_identifiers(("id", "role_name")) == "id, role_name"
+    assert join_sql_identifiers(("id",), allowed={"id"}) == "id"
+
+    with pytest.raises(ValueError, match="SQL identifier list cannot be empty"):
+        join_sql_identifiers(())
+    with pytest.raises(ValueError, match="Invalid SQL identifier"):
+        join_sql_identifiers(("id", "unsafe-name"))
+    with pytest.raises(ValueError, match="Invalid SQL identifier"):
+        join_sql_identifiers(("id", "role_name"), allowed={"id"})
+
+
 @pytest.mark.asyncio
 async def test_user_session_message_lifecycle(sqlite_db: Database) -> None:
     user = await sqlite_db.create_user("alice", role="admin", password="pw")
@@ -601,7 +649,8 @@ async def test_run_sqlite_op_rolls_back_on_failure(sqlite_db: Database) -> None:
         # Database._sqlite_conn, sqlite3.Connection olduğundan execute senkrondur.
         # Cursor döndüğünü doğrulayarak "await edilmemiş coroutine" riskini engelleriz.
         cursor = sqlite_db._sqlite_conn.execute(
-            "INSERT INTO sessions (id, user_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO sessions (id, user_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, "
+            "?)",
             ("s1", user.id, "t", _utc_now_iso(), _utc_now_iso()),
         )
         assert isinstance(cursor, sqlite3.Cursor)
@@ -611,6 +660,71 @@ async def test_run_sqlite_op_rolls_back_on_failure(sqlite_db: Database) -> None:
         await sqlite_db._run_sqlite_op(_failing_op)
 
     assert await sqlite_db.load_session("s1") is None
+
+
+@pytest.mark.asyncio
+async def test_run_sqlite_op_recreates_missing_executor(sqlite_db: Database) -> None:
+    executor = sqlite_db._sqlite_executor
+    assert executor is not None
+    executor.shutdown(wait=True)
+    sqlite_db._sqlite_executor = None
+
+    assert await sqlite_db._run_sqlite_op(lambda: "executor-restored") == "executor-restored"
+    assert sqlite_db._sqlite_executor is not None
+
+
+@pytest.mark.asyncio
+async def test_run_sqlite_op_read_failures_skip_rollback(sqlite_db: Database) -> None:
+    class _RollbackTrackingConn:
+        rollback_called = False
+
+        def rollback(self) -> None:
+            self.rollback_called = True
+
+    conn = _RollbackTrackingConn()
+    original_conn = sqlite_db._sqlite_conn
+    sqlite_db._sqlite_conn = conn  # type: ignore[assignment]
+
+    try:
+        with pytest.raises(sqlite3.OperationalError, match="database is locked"):
+            await sqlite_db._run_sqlite_op(
+                lambda: (_ for _ in ()).throw(sqlite3.OperationalError("database is locked")),
+                write=False,
+            )
+        with pytest.raises(ValueError, match="read failed"):
+            await sqlite_db._run_sqlite_op(
+                lambda: (_ for _ in ()).throw(ValueError("read failed")),
+                write=False,
+            )
+    finally:
+        sqlite_db._sqlite_conn = original_conn
+
+    assert conn.rollback_called is False
+
+
+@pytest.mark.asyncio
+async def test_close_sqlite_connection_without_executor_uses_thread_fallback(tmp_path) -> None:
+    class _CloseOnlyConn:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    db = Database(
+        DummyCfg(
+            DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'close.db'}", BASE_DIR=str(tmp_path)
+        )
+    )
+    conn = _CloseOnlyConn()
+    db._sqlite_conn = conn  # type: ignore[assignment]
+    db._sqlite_executor = None
+    db._sqlite_closed = False
+
+    await db.close()
+
+    assert conn.closed is True
+    assert db._sqlite_conn is None
 
 
 @pytest.mark.asyncio
@@ -633,6 +747,26 @@ async def test_jwt_token_flow_prefers_db_user(sqlite_db: Database) -> None:
     resolved = await sqlite_db.get_user_by_token(token_record.token)
     assert resolved is not None
     assert resolved.username == "jwt-user"
+
+
+@pytest.mark.asyncio
+async def test_create_and_verify_auth_token_fail_closed_without_jwt_secret(
+    sqlite_db: Database,
+) -> None:
+    """Regression test: an empty JWT_SECRET_KEY must never fall back to a known constant.
+
+    Mirrors the fix applied to web.security.get_jwt_secret — a missing secret should
+    raise instead of silently signing/verifying with the hardcoded "sidar-dev-secret".
+    """
+    sqlite_db.cfg.JWT_SECRET_KEY = ""
+
+    with pytest.raises(RuntimeError, match="JWT_SECRET_KEY"):
+        await sqlite_db.create_auth_token(
+            "u1", role="admin", username="jwt-user", tenant_id="tenant-a"
+        )
+
+    with pytest.raises(RuntimeError, match="JWT_SECRET_KEY"):
+        sqlite_db.verify_auth_token("irrelevant-token")
 
 
 @pytest.mark.asyncio
@@ -889,6 +1023,18 @@ async def test_verify_and_get_user_by_token_invalid_paths(sqlite_db: Database) -
     assert sqlite_db.verify_auth_token(bad_token) is None
 
     assert await sqlite_db.get_user_by_token("not-a-token") is None
+
+
+@pytest.mark.asyncio
+async def test_verify_auth_token_rejects_non_uuid_sub_without_reaching_db(
+    sqlite_db: Database,
+) -> None:
+    """users.id is a UUID column in PostgreSQL; a non-UUID sub must fail auth here."""
+    payload = {"sub": "regular-user", "role": "user", "username": "x", "tenant_id": "default"}
+    token = jwt.encode(payload, sqlite_db.cfg.JWT_SECRET_KEY, algorithm=sqlite_db.cfg.JWT_ALGORITHM)
+
+    assert sqlite_db.verify_auth_token(token) is None
+    assert await sqlite_db.get_user_by_token(token) is None
 
 
 @pytest.mark.asyncio
@@ -1727,6 +1873,77 @@ async def test_postgresql_prompt_activation_and_upsert_edges() -> None:
 
 
 @pytest.mark.asyncio
+async def test_sqlite_password_hash_and_verify_run_off_event_loop_thread(
+    sqlite_db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    event_loop_thread = threading.get_ident()
+    hash_threads: list[int] = []
+    verify_threads: list[int] = []
+
+    def _fake_hash(password: str) -> str:
+        hash_threads.append(threading.get_ident())
+        return f"sqlite-hashed::{password}"
+
+    def _fake_verify(password: str, encoded: str) -> bool:
+        verify_threads.append(threading.get_ident())
+        return encoded == f"sqlite-hashed::{password}"
+
+    monkeypatch.setattr(core_db, "_hash_password", _fake_hash)
+    monkeypatch.setattr(core_db, "_verify_password", _fake_verify)
+
+    created = await sqlite_db.create_user("sqlite-thread-user", password="pw")
+    authenticated = await sqlite_db.authenticate_user(created.username, "pw")
+
+    assert authenticated is not None
+    assert hash_threads and all(thread_id != event_loop_thread for thread_id in hash_threads)
+    assert verify_threads and all(thread_id != event_loop_thread for thread_id in verify_threads)
+
+
+@pytest.mark.asyncio
+async def test_password_hash_and_verify_are_offloaded_to_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR="."))
+    fake_pg = FakePgAdapter()
+    db._pg_pool = fake_pg
+    calls: list[tuple[str, tuple[object, ...]]] = []
+
+    async def _fake_to_thread(func, *args, **kwargs):
+        calls.append((getattr(func, "__name__", repr(func)), args))
+        return func(*args, **kwargs)
+
+    def _fake_hash(password: str) -> str:
+        return f"hashed::{password}"
+
+    def _fake_verify(password: str, encoded: str) -> bool:
+        return encoded == f"hashed::{password}"
+
+    monkeypatch.setattr(core_db.asyncio, "to_thread", _fake_to_thread)
+    monkeypatch.setattr(core_db, "_hash_password", _fake_hash)
+    monkeypatch.setattr(core_db, "_verify_password", _fake_verify)
+
+    created = await db.create_user("thread-user", password="pw", tenant_id="tenant-thread")
+    assert created.username == "thread-user"
+    assert fake_pg.conn.execute.await_args.args[3] == "hashed::pw"
+
+    fake_pg.conn.fetchrow = AsyncMock(
+        return_value={
+            "id": "u-thread",
+            "username": "thread-user",
+            "password_hash": "hashed::pw",
+            "role": "user",
+            "created_at": "created",
+            "tenant_id": "tenant-thread",
+        }
+    )
+    authenticated = await db.authenticate_user("thread-user", "pw")
+
+    assert authenticated is not None
+    assert authenticated.id == "u-thread"
+    assert calls == [("_fake_hash", ("pw",)), ("_fake_verify", ("pw", "hashed::pw"))]
+
+
+@pytest.mark.asyncio
 async def test_postgresql_user_and_session_branches() -> None:
     db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR="."))
     fake_pg = FakePgAdapter()
@@ -2316,12 +2533,28 @@ def test_postgres_degraded_sqlite_url_returns_configured_when_set(tmp_path) -> N
     assert db._postgres_degraded_sqlite_url() == "sqlite+aiosqlite:////tmp/configured-degraded.db"
 
 
-def test_postgres_degraded_sqlite_url_falls_back_to_base_dir_default(tmp_path) -> None:
+def test_postgres_degraded_sqlite_url_falls_back_to_base_dir_default(tmp_path, monkeypatch) -> None:
+    # Run outside any xdist worker context: run_tests.sh always executes unit
+    # tests under `-n auto`, which sets PYTEST_XDIST_WORKER and would append a
+    # worker suffix (see test_..._is_xdist_worker_specific below) that this
+    # serial-mode assertion doesn't expect.
+    monkeypatch.delenv("PYTEST_XDIST_WORKER", raising=False)
     cfg = DummyCfg(DATABASE_URL="postgresql://x", BASE_DIR=str(tmp_path))
     db = Database(cfg=cfg)
     fallback_url = db._postgres_degraded_sqlite_url()
     assert fallback_url.startswith("sqlite+aiosqlite:///")
     assert "data/sidar_degraded.db" in fallback_url
+
+
+def test_postgres_degraded_sqlite_url_is_xdist_worker_specific(tmp_path, monkeypatch) -> None:
+    """Concurrent degraded workers must not share SQLite WAL/SHM files."""
+    monkeypatch.setenv("PYTEST_XDIST_WORKER", "gw/1")
+    cfg = DummyCfg(DATABASE_URL="postgresql://x", BASE_DIR=str(tmp_path))
+    db = Database(cfg=cfg)
+
+    fallback_url = db._postgres_degraded_sqlite_url()
+
+    assert fallback_url.endswith("/data/sidar_degraded.gw_1.db")
 
 
 @pytest.mark.asyncio
@@ -2386,8 +2619,9 @@ def test_expires_in_uses_default_days_when_no_argument() -> None:
 async def test_get_user_by_token_returns_jwt_user_when_db_lookup_missing(
     sqlite_db: Database,
 ) -> None:
+    missing_user_id = "55555555-5555-4555-8555-555555555555"
     token = await sqlite_db.create_auth_token(
-        user_id="missing-user",
+        user_id=missing_user_id,
         role="analyst",
         username="jwt-only",
         tenant_id="tenant-z",
@@ -2396,7 +2630,7 @@ async def test_get_user_by_token_returns_jwt_user_when_db_lookup_missing(
 
     resolved = await sqlite_db.get_user_by_token(token.token)
     assert resolved is not None
-    assert resolved.id == "missing-user"
+    assert resolved.id == missing_user_id
     assert resolved.username == "jwt-only"
     assert resolved.role == "analyst"
     assert resolved.tenant_id == "tenant-z"
@@ -2656,6 +2890,38 @@ def test_doctor_database_env_reason_and_remaining_diagnosis_fallbacks(monkeypatc
     )
 
 
+def test_doctor_database_env_reason_returns_empty_when_env_check_does_not_fail(
+    monkeypatch,
+) -> None:
+    """A failing PostgreSQL connection can coexist with a healthy database_env probe."""
+    import core.doctor as doctor
+
+    monkeypatch.setattr(
+        doctor,
+        "check_database_env",
+        lambda: types.SimpleNamespace(
+            status="pass", details={"failure_reason": "should be ignored"}, message="ignored too"
+        ),
+    )
+
+    assert core_db._doctor_database_env_failure_reason() == ""
+
+
+def test_postgres_user_action_message_handles_missing_database_url(monkeypatch) -> None:
+    import core.db.diagnostics as db_diagnostics
+
+    monkeypatch.setattr(
+        db_diagnostics,
+        "_doctor_database_env_failure_reason",
+        lambda: "database_url is not set",
+    )
+
+    message = db_diagnostics.postgres_user_action_message("unexpected")
+
+    assert "DATABASE_URL yok/kayboldu" in message
+    assert "dotenv reload zincirini" in message
+
+
 def test_doctor_database_env_reason_uses_message_when_details_are_not_mapping(monkeypatch) -> None:
     import core.doctor as doctor
 
@@ -2735,3 +3001,36 @@ def test_verify_password_records_error_latency_when_digest_fails(
         db_auth._verify_password("pw", "pbkdf2_sha256$700000$salt$digest")
 
     assert records == [("verify", "error")]
+
+
+def test_database_delegates_user_crud_to_core_db_users_module() -> None:
+    """Regression test: user account CRUD must stay delegated to core.db.users.
+
+    ensure_user/create_user/authenticate_user/_get_user_by_id/ensure_user_id/
+    register_user must not be reinlined into Database's ~2400-line body,
+    mirroring the existing sessions.py/prompt_registry.py extraction pattern.
+    """
+    import core.db.users as db_users
+
+    for name in (
+        "ensure_user",
+        "create_user",
+        "register_user",
+        "authenticate_user",
+        "get_user_by_id",
+        "ensure_user_id",
+    ):
+        assert callable(getattr(db_users, name)), name
+
+    assert core_db.users is db_users
+
+    for method_name, module_call in (
+        ("ensure_user", "db_users.ensure_user"),
+        ("create_user", "db_users.create_user"),
+        ("register_user", "db_users.register_user"),
+        ("authenticate_user", "db_users.authenticate_user"),
+        ("_get_user_by_id", "db_users.get_user_by_id"),
+        ("ensure_user_id", "db_users.ensure_user_id"),
+    ):
+        source = inspect.getsource(getattr(Database, method_name))
+        assert module_call in source, f"{method_name} should delegate via {module_call}"

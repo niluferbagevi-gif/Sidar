@@ -1,6 +1,5 @@
-import React from "react";
 import { render, screen } from "@testing-library/react";
-import { ChatWindow } from "./ChatWindow.jsx";
+import { ChatWindow } from "./ChatWindow.tsx";
 
 // jsdom'da scrollIntoView tanımlı değil — stub ekle
 beforeAll(() => {
@@ -8,7 +7,7 @@ beforeAll(() => {
 });
 
 // ChatMessage bileşenini stub'la — içerik kontrolü için basit gösterim
-vi.mock("./ChatMessage.jsx", () => ({
+vi.mock("./ChatMessage.tsx", () => ({
   ChatMessage: ({ message, isStreaming }) => (
     <div data-testid="chat-message" data-streaming={isStreaming ? "true" : "false"}>
       {message.content}
@@ -25,7 +24,7 @@ const mockStore = {
 };
 
 vi.mock("../hooks/useChatStore.js", () => ({
-  useChatStore: () => mockStore,
+  useChatStore: (selector) => (typeof selector === "function" ? selector(mockStore) : mockStore),
 }));
 
 describe("ChatWindow — boş durum", () => {

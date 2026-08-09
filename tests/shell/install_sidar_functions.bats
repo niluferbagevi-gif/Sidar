@@ -1,5 +1,7 @@
 #!/usr/bin/env bats
 
+bats_require_minimum_version 1.5.0
+
 repo_root() {
   cd "$BATS_TEST_DIRNAME/../.." && pwd
 }
@@ -13,11 +15,38 @@ run_installer_function() {
     repo_root="$1"
     test_snippet="$2"
     cd "$repo_root"
+    test_summary_tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$test_summary_tmpdir\"" EXIT
+    export TEST_SUMMARY_JSON="$test_summary_tmpdir/nonexistent-test-summary.json"
     export SIDAR_INSTALL_TEST_MODE=1
+    # Installer function tests must not inherit quality-gate state from the
+    # run_tests.sh process that invokes BATS (notably production-readiness).
+    unset DATABASE_URL TEST_DATABASE_URL POSTGRES_PASSWORD
+    unset SIDAR_PRODUCTION_READINESS PRODUCTION_READINESS TEST_PROFILE
+    unset RUN_BENCHMARKS RUN_FRONTEND_E2E AUTO_OPEN_ARTIFACTS
     set --
     source ./install_sidar.sh
     eval "$test_snippet"
   ' _ "$root" "$snippet"
+}
+
+@test "installer helper isolates tests from inherited quality-gate environment" {
+  export SIDAR_PRODUCTION_READINESS=1
+  export PRODUCTION_READINESS=1
+  export TEST_PROFILE=ci
+  export RUN_BENCHMARKS=required
+  export RUN_FRONTEND_E2E=1
+  export AUTO_OPEN_ARTIFACTS=1
+
+  run_installer_function '
+    [[ -z "${SIDAR_PRODUCTION_READINESS+x}" ]]
+    [[ -z "${PRODUCTION_READINESS+x}" ]]
+    [[ -z "${TEST_PROFILE+x}" ]]
+    [[ -z "${RUN_BENCHMARKS+x}" ]]
+    [[ -z "${RUN_FRONTEND_E2E+x}" ]]
+    [[ -z "${AUTO_OPEN_ARTIFACTS+x}" ]]
+  '
+  [ "$status" -eq 0 ]
 }
 
 @test "normalize_bool maps accepted true/false values and rejects unknown input" {
@@ -27,6 +56,191 @@ run_installer_function() {
     [[ "$(normalize_bool 0)" == "false" ]]
     [[ "$(normalize_bool hayır)" == "false" ]]
     [[ -z "$(normalize_bool maybe)" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "Redis smoke readiness prefers SIDAR_REDIS_URL and honors its custom port" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/.env" <<EOF
+SIDAR_REDIS_URL=redis://sidar-primary.example:6387/0
+REDIS_URL=redis://legacy-fallback.example:6399/0
+EOF
+    cat > "$tmpdir/bin/python3" <<EOF
+#!/usr/bin/env bash
+if [[ "\$#" -eq 2 ]]; then
+  printf "%s\\n" "\$2" > "$tmpdir/parsed-url"
+  printf "sidar-primary.example\\n6387\\n"
+  exit 0
+fi
+[[ "\$2" == sidar-primary.example && "\$3" == 6387 ]]
+EOF
+    chmod +x "$tmpdir/bin/python3"
+    PATH="$tmpdir/bin:$PATH"
+    SCRIPT_DIR="$tmpdir"
+    DOCKER_DB_SERVICES_STARTED=false
+
+    wait_for_redis_before_smoke_tests
+    [[ "$(cat "$tmpdir/parsed-url")" == "redis://sidar-primary.example:6387/0" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"sidar-primary.example:6387"* ]]
+}
+
+@test "Redis smoke readiness falls back to legacy REDIS_URL" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    printf "REDIS_URL=redis://legacy-only.example:6388/0\\n" > "$tmpdir/.env"
+    cat > "$tmpdir/bin/python3" <<EOF
+#!/usr/bin/env bash
+if [[ "\$#" -eq 2 ]]; then
+  printf "%s\\n" "\$2" > "$tmpdir/parsed-url"
+  printf "legacy-only.example\\n6388\\n"
+  exit 0
+fi
+[[ "\$2" == legacy-only.example && "\$3" == 6388 ]]
+EOF
+    chmod +x "$tmpdir/bin/python3"
+    PATH="$tmpdir/bin:$PATH"
+    SCRIPT_DIR="$tmpdir"
+    DOCKER_DB_SERVICES_STARTED=false
+
+    wait_for_redis_before_smoke_tests
+    [[ "$(cat "$tmpdir/parsed-url")" == "redis://legacy-only.example:6388/0" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "post-Compose Redis readiness authenticates PONG with REDISCLI_AUTH" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/.env" <<EOF
+SIDAR_REDIS_URL=redis://127.0.0.1:6391/0
+REDIS_PORT=6392
+REDIS_PASSWORD=correct-horse-battery-staple
+EOF
+    cat > "$tmpdir/bin/redis-cli" <<EOF
+#!/usr/bin/env bash
+printf "%s|%s\\n" "\${REDISCLI_AUTH:-}" "\$*" > "$tmpdir/redis-cli.log"
+[[ "\${REDISCLI_AUTH:-}" == correct-horse-battery-staple ]]
+[[ "\$*" == "-h 127.0.0.1 -p 6392 ping" ]]
+printf "PONG\\n"
+EOF
+    chmod +x "$tmpdir/bin/redis-cli"
+    PATH="$tmpdir/bin:$PATH"
+    SCRIPT_DIR="$tmpdir"
+
+    wait_for_redis_ready_after_docker_start
+    grep -q "correct-horse-battery-staple|-h 127.0.0.1 -p 6392 ping" "$tmpdir/redis-cli.log"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"correct-horse-battery-staple"* ]]
+}
+
+@test "healthy Redis container with closed host port fails fast with mapping diagnosis" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    printf "SIDAR_REDIS_URL=redis://127.0.0.1:6379/0\\n" > "$tmpdir/.env"
+    cat > "$tmpdir/bin/python3" <<EOF
+#!/usr/bin/env bash
+if [[ "\$#" -eq 2 ]]; then printf "127.0.0.1\\n6379\\n"; exit 0; fi
+exit 1
+EOF
+    cat > "$tmpdir/bin/docker" <<EOF
+#!/usr/bin/env bash
+case "\$*" in
+  "compose version") exit 0 ;;
+  "compose ps -q redis") printf "redis-container-id\\n" ;;
+  "inspect --format "*) printf "healthy\\n" ;;
+  "compose port redis 6379") exit 0 ;;
+  *) exit 0 ;;
+esac
+EOF
+    chmod +x "$tmpdir/bin/python3" "$tmpdir/bin/docker"
+    PATH="$tmpdir/bin:$PATH"
+    SCRIPT_DIR="$tmpdir"
+    DOCKER_DB_SERVICES_STARTED=false
+    sleep() { touch "$tmpdir/unexpected-sleep"; }
+    ensure_docker_daemon_running() { return 0; }
+    start_docker_services_or_fail() { printf "%s\\n" "$*" > "$tmpdir/docker-start.log"; }
+
+    ! wait_for_redis_before_smoke_tests
+    [[ ! -e "$tmpdir/docker-start.log" ]]
+    [[ ! -e "$tmpdir/unexpected-sleep" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Redis container healthy ancak beklenen host port mapping bulunamadı"* ]]
+  [[ "$output" == *"--force-recreate redis"* ]]
+}
+
+@test "post-Compose Redis PONG wait also fails fast for healthy stale mapping" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/.env" <<EOF
+SIDAR_REDIS_URL=redis://127.0.0.1:6379/0
+REDIS_PASSWORD=local-password
+EOF
+    cat > "$tmpdir/bin/redis-cli" <<EOF
+#!/usr/bin/env bash
+exit 1
+EOF
+    cat > "$tmpdir/bin/docker" <<EOF
+#!/usr/bin/env bash
+case "\$*" in
+  "compose version") exit 0 ;;
+  "compose ps -q redis") printf "redis-container-id\\n" ;;
+  "inspect --format "*) printf "healthy\\n" ;;
+  "compose port redis 6379") printf "127.0.0.1:6399\\n" ;;
+  *) exit 0 ;;
+esac
+EOF
+    chmod +x "$tmpdir/bin/redis-cli" "$tmpdir/bin/docker"
+    PATH="$tmpdir/bin:$PATH"
+    SCRIPT_DIR="$tmpdir"
+    sleep() { touch "$tmpdir/unexpected-sleep"; }
+
+    ! wait_for_redis_ready_after_docker_start
+    [[ ! -e "$tmpdir/unexpected-sleep" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"beklenen=127.0.0.1:6379, görülen=127.0.0.1:6399"* ]]
+}
+
+@test "remote Redis URL is checked as-is and never triggers local Compose remediation" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    printf "SIDAR_REDIS_URL=rediss://user:explicit@cache.example.com:7443/5\\n" > "$tmpdir/.env"
+    cat > "$tmpdir/bin/python3" <<EOF
+#!/usr/bin/env bash
+if [[ "\$#" -eq 2 ]]; then
+  printf "%s\\n" "\$2" > "$tmpdir/parsed-url"
+  printf "cache.example.com\\n7443\\n"
+  exit 0
+fi
+[[ "\$2" == cache.example.com && "\$3" == 7443 ]]
+EOF
+    chmod +x "$tmpdir/bin/python3"
+    PATH="$tmpdir/bin:$PATH"
+    SCRIPT_DIR="$tmpdir"
+    DOCKER_DB_SERVICES_STARTED=false
+    start_docker_services_or_fail() { touch "$tmpdir/unexpected-compose"; return 1; }
+
+    wait_for_redis_before_smoke_tests
+    [[ "$(cat "$tmpdir/parsed-url")" == "rediss://user:explicit@cache.example.com:7443/5" ]]
+    [[ ! -e "$tmpdir/unexpected-compose" ]]
   '
   [ "$status" -eq 0 ]
 }
@@ -75,7 +289,7 @@ EOF
   [ "$status" -eq 0 ]
 }
 
-@test "install_playwright_browsers skips uv add when installed Playwright satisfies the repo spec" {
+@test "install_playwright_browsers skips uv add and reports manual fallback when installed Playwright already satisfies the spec on a non-Ubuntu host" {
   run_installer_function '
     tmpdir="$(mktemp -d)"
     trap "rm -rf \"$tmpdir\"" EXIT
@@ -90,14 +304,7 @@ printf "%s|%s\\n" "\$*" "\${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-}" >> "$tmpdir/py
 case "\$*" in
   "-c import playwright") exit 0 ;;
   "-m playwright install --with-deps chromium") echo "ERROR: Playwright does not support chromium on debian13-x64" >&2; exit 1 ;;
-  "-m playwright install chromium")
-    if [[ "\${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-}" == "ubuntu24.04-x64" ]]; then
-      echo "BEWARE: your OS is not officially supported by Playwright; downloading fallback build for ubuntu24.04-x64." >&2
-      exit 0
-    fi
-    echo "ERROR: Playwright does not support chromium on debian13-x64" >&2
-    exit 1
-    ;;
+  "-m playwright install chromium") echo "ERROR: Playwright does not support chromium on debian13-x64" >&2; exit 1 ;;
   "-m playwright install-deps chromium") exit 0 ;;
   "- playwright>=1.60,<1.62") exit 1 ;;
 esac
@@ -116,13 +323,19 @@ EOF
 
     install_playwright_browsers
 
+    # Debian is not an is_playwright_ubuntu_override_recommended host, so the
+    # already-satisfies-spec case has no override fallback to fall through to
+    # (unlike Ubuntu 25+) -- it must skip the needless uv add and surface
+    # manual instructions instead, without ever depending on the exact CLI
+    # error text (see test_playwright_install_fallback_does_not_depend_on_cli_error_text).
     [[ ! -e "$tmpdir/uv-called" ]]
     grep -q "^- playwright>=1.60,<1.62|$" "$tmpdir/python.log"
   '
   [ "$status" -eq 0 ]
-  [[ "$output" == *"gereksiz uv add upgrade fallback atlanıyor"* ]]
-  [[ "$output" == *"OS override fallback ile tamamlandı"* ]]
-  [[ "$output" != *"BEWARE: your OS is not officially supported"* ]]
+  [[ "$output" == *"Çıktı metninden bağımsız fallback: yalnızca Chromium binary kurulumu deneniyor"* ]]
+  [[ "$output" == *"Playwright binary fallback kurulumu başarısız oldu. Manuel deneyin"* ]]
+  [[ "$output" != *"gereksiz uv add upgrade fallback atlanıyor"* ]]
+  [[ "$output" != *"OS override fallback ile tamamlandı"* ]]
 }
 
 @test "install_playwright_browsers upgrades outdated Playwright with the repo spec" {
@@ -193,27 +406,37 @@ if [[ "\$*" == "-m playwright install-deps chromium" ]]; then
   echo "0 upgraded, 0 newly installed, 0 to remove and 4 not upgraded."
 fi
 EOF
+    cat > "$tmpdir/bin/apt" <<EOF
+#!/usr/bin/env bash
+echo "Listing..."
+EOF
     cat > "$tmpdir/bin/dpkg-query" <<EOF
 #!/usr/bin/env bash
 printf "ii "
 EOF
-    chmod +x "$tmpdir/bin/python" "$tmpdir/bin/dpkg-query"
+    chmod +x "$tmpdir/bin/python" "$tmpdir/bin/apt" "$tmpdir/bin/dpkg-query"
     export PATH="$tmpdir/bin:$PATH"
     export OS_RELEASE_PATH="$tmpdir/os-release"
     PLAYWRIGHT_BROWSERS_MODE=always
 
     install_playwright_browsers
 
+    # playwright_linux_dependencies_ready() consults the mocked apt (which
+    # reports nothing installed) and falls through to the mocked dpkg-query
+    # (which reports every package as "ii", i.e. installed) so the apt
+    # pre-check short-circuits before install-deps chromium ever runs; only
+    # -c import playwright, the host-support probe, the latest-supported
+    # Ubuntu probe and the override chromium install invoke python.
     [[ "$(wc -l < "$tmpdir/python.log")" -eq 4 ]]
     sed -n "1p" "$tmpdir/python.log" | grep -q "^-c import playwright||$tmpdir/os-release$"
     sed -n "2p" "$tmpdir/python.log" | grep -q "^-||$tmpdir/os-release$"
-    sed -n "3p" "$tmpdir/python.log" | grep -q "^-m playwright install chromium|ubuntu24.04-x64|"
-    sed -n "4p" "$tmpdir/python.log" | grep -q "^-m playwright install-deps chromium||$tmpdir/os-release$"
+    sed -n "3p" "$tmpdir/python.log" | grep -q "^-||$tmpdir/os-release$"
+    sed -n "4p" "$tmpdir/python.log" | grep -q "^-m playwright install chromium|ubuntu24.04-x64|"
   '
   [ "$status" -eq 0 ]
-  [[ "$output" == *"ubuntu24.04 OS override kurulumu doğrudan deneniyor"* ]]
+  [[ "$output" == *"en yakın desteklenen Ubuntu OS override kurulumu doğrudan deneniyor"* ]]
   [[ "$output" == *"Chromium override browser downloaded"* ]]
-  [[ "$output" == *"install-deps ile doğrulandı"* ]]
+  [[ "$output" == *"apt ön taramasında hazır görünüyor"* ]]
   [[ "$output" == *"proaktif OS override ile tamamlandı"* ]]
   [[ "$output" != *"0 upgraded, 0 newly installed, 0 to remove and 4 not upgraded"* ]]
   [[ "$output" != *"Solving dependencies"* ]]
@@ -239,24 +462,44 @@ case "\$*" in
 esac
 exit 1
 EOF
+    cat > "$tmpdir/bin/apt" <<EOF
+#!/usr/bin/env bash
+echo "Listing..."
+EOF
+    cat > "$tmpdir/bin/dpkg-query" <<EOF
+#!/usr/bin/env bash
+exit 1
+EOF
     cat > "$tmpdir/bin/apt-cache" <<EOF
 #!/usr/bin/env bash
 [[ "\$*" == "show libgtk-3-0t64" ]]
 EOF
     cat > "$tmpdir/bin/sudo" <<EOF
 #!/usr/bin/env bash
+count=0
+[[ -f "$tmpdir/sudo-count" ]] && count="\$(cat "$tmpdir/sudo-count")"
+count=\$((count + 1))
+printf "%s" "\$count" > "$tmpdir/sudo-count"
 printf "%s\\n" "\$*" >> "$tmpdir/sudo.log"
+[[ "\$count" -eq 1 ]] && exit 1
+exit 0
 EOF
-    chmod +x "$tmpdir/bin/python" "$tmpdir/bin/apt-cache" "$tmpdir/bin/sudo"
+    chmod +x "$tmpdir/bin/python" "$tmpdir/bin/apt" "$tmpdir/bin/dpkg-query" "$tmpdir/bin/apt-cache" "$tmpdir/bin/sudo"
     export PATH="$tmpdir/bin:$PATH"
     export OS_RELEASE_PATH="$tmpdir/os-release"
     PLAYWRIGHT_BROWSERS_MODE=always
 
     install_playwright_browsers
 
+    # apt/dpkg-query report every dependency missing, so the apt pre-check
+    # is not ready; the proactive fixed apt-list attempt (1st sudo call)
+    # deliberately fails so install-deps chromium actually runs, fails, and
+    # the fixed apt dependency list is retried (2nd sudo call) and succeeds.
+    [[ "$(cat "$tmpdir/sudo-count")" -eq 2 ]]
     grep -q "^DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libxshmfence1 libgbm1 libgtk-3-0t64 libpango-1.0-0 libcairo2 libasound2t64$" "$tmpdir/sudo.log"
   '
   [ "$status" -eq 0 ]
+  [[ "$output" == *"apt ön taraması eksik Chromium bağımlılıkları buldu"* ]]
   [[ "$output" == *"Ubuntu 26.04 için sabit Chromium apt bağımlılık listesi deneniyor"* ]]
   [[ "$output" == *"sabit apt fallback ile kuruldu"* ]]
   [[ "$output" == *"proaktif OS override ile tamamlandı"* ]]
@@ -284,17 +527,41 @@ case "\$*" in
 esac
 exit 1
 EOF
+    cat > "$tmpdir/bin/apt" <<EOF
+#!/usr/bin/env bash
+echo "Listing..."
+EOF
+    cat > "$tmpdir/bin/dpkg-query" <<EOF
+#!/usr/bin/env bash
+exit 1
+EOF
+    cat > "$tmpdir/bin/apt-cache" <<EOF
+#!/usr/bin/env bash
+[[ "\$*" == "show libgtk-3-0t64" ]]
+EOF
     cat > "$tmpdir/bin/sudo" <<EOF
 #!/usr/bin/env bash
+count=0
+[[ -f "$tmpdir/sudo-count" ]] && count="\$(cat "$tmpdir/sudo-count")"
+count=\$((count + 1))
+printf "%s" "\$count" > "$tmpdir/sudo-count"
 printf "%s\\n" "\$*" >> "$tmpdir/sudo.log"
+[[ "\$count" -eq 1 ]] && exit 1
+exit 0
 EOF
-    chmod +x "$tmpdir/bin/python" "$tmpdir/bin/sudo"
+    chmod +x "$tmpdir/bin/python" "$tmpdir/bin/apt" "$tmpdir/bin/dpkg-query" "$tmpdir/bin/apt-cache" "$tmpdir/bin/sudo"
     export PATH="$tmpdir/bin:$PATH"
     export OS_RELEASE_PATH="$tmpdir/os-release"
     PLAYWRIGHT_BROWSERS_MODE=always
 
     install_playwright_browsers
 
+    # apt pre-check is forced not-ready, the proactive fixed apt-list attempt
+    # (1st sudo call) deliberately fails so install-deps chromium actually
+    # runs and returns its exit-zero-but-actually-failed BEWARE/Cannot output,
+    # which must still be treated as a failure requiring the fixed apt list
+    # fallback (2nd sudo call, which succeeds).
+    [[ "$(cat "$tmpdir/sudo-count")" -eq 2 ]]
     grep -q "libnss3 libnspr4" "$tmpdir/sudo.log"
   '
   [ "$status" -eq 0 ]
@@ -322,21 +589,41 @@ case "\$*" in
 esac
 exit 1
 EOF
+    cat > "$tmpdir/bin/apt" <<EOF
+#!/usr/bin/env bash
+echo "Listing..."
+EOF
     cat > "$tmpdir/bin/dpkg-query" <<EOF
 #!/usr/bin/env bash
 exit 1
 EOF
+    cat > "$tmpdir/bin/apt-cache" <<EOF
+#!/usr/bin/env bash
+[[ "\$*" == "show libgtk-3-0t64" ]]
+EOF
     cat > "$tmpdir/bin/sudo" <<EOF
 #!/usr/bin/env bash
+count=0
+[[ -f "$tmpdir/sudo-count" ]] && count="\$(cat "$tmpdir/sudo-count")"
+count=\$((count + 1))
+printf "%s" "\$count" > "$tmpdir/sudo-count"
 printf "%s\\n" "\$*" >> "$tmpdir/sudo.log"
+[[ "\$count" -eq 1 ]] && exit 1
+exit 0
 EOF
-    chmod +x "$tmpdir/bin/python" "$tmpdir/bin/dpkg-query" "$tmpdir/bin/sudo"
+    chmod +x "$tmpdir/bin/python" "$tmpdir/bin/apt" "$tmpdir/bin/dpkg-query" "$tmpdir/bin/apt-cache" "$tmpdir/bin/sudo"
     export PATH="$tmpdir/bin:$PATH"
     export OS_RELEASE_PATH="$tmpdir/os-release"
     PLAYWRIGHT_BROWSERS_MODE=always
 
     install_playwright_browsers
 
+    # apt pre-check is forced not-ready throughout (both before and after
+    # install-deps), the proactive fixed apt-list attempt (1st sudo call)
+    # deliberately fails so install-deps chromium actually runs; it exits 0
+    # silently but the post-install readiness re-check still reports missing
+    # libraries, so the fixed apt list is retried (2nd sudo call) and succeeds.
+    [[ "$(cat "$tmpdir/sudo-count")" -eq 2 ]]
     grep -q "libnss3 libnspr4" "$tmpdir/sudo.log"
   '
   [ "$status" -eq 0 ]
@@ -429,6 +716,36 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "mask_install_log_stream masks every user API key/secret collected by sidar_user_api_key_names" {
+  run_installer_function '
+    mapfile -t collected_keys < <(sidar_user_api_key_names)
+    [ "${#collected_keys[@]}" -gt 0 ]
+
+    lines=()
+    for key in "${collected_keys[@]}"; do
+      lines+=("${key}=super-secret-value-${key}")
+    done
+    lines+=("random_line=not_a_secret")
+
+    masked_output="$(printf "%s\n" "${lines[@]}" | mask_install_log_stream)"
+
+    for key in "${collected_keys[@]}"; do
+      if ! printf "%s\n" "$masked_output" | grep -qF "${key}=****"; then
+        echo "FAIL: ${key} was not masked" >&2
+        printf "%s\n" "$masked_output" >&2
+        exit 1
+      fi
+      if printf "%s\n" "$masked_output" | grep -qF "super-secret-value-${key}"; then
+        echo "FAIL: ${key} value leaked unmasked" >&2
+        exit 1
+      fi
+    done
+
+    printf "%s\n" "$masked_output" | grep -qF "random_line=not_a_secret"
+  '
+  [ "$status" -eq 0 ]
+}
+
 @test "harden_database_credentials rewrites weak DATABASE_URL and syncs postgres env values" {
   local tmpdir env_file
   tmpdir="$(mktemp -d)"
@@ -440,6 +757,15 @@ POSTGRES_PASSWORD=postgres
 ENV
 
   run_installer_function "
+    # harden_database_credentials is called with only \$env_file (no explicit
+    # variant specs) below, on purpose, to exercise its default variant-sync
+    # fallback. That fallback resolves .env.development/.env.test/.env.advanced
+    # relative to \$SCRIPT_DIR (see sidar_default_db_env_variant_specs), so
+    # SCRIPT_DIR must point at the isolated tmpdir here — otherwise it silently
+    # writes this fixture's generated password into the real repo's dotenv
+    # files, which previously broke unrelated CI steps (PostgreSQL smoke
+    # tests) that run later in the same job/workspace.
+    SCRIPT_DIR='$tmpdir'
     generate_secure_token() { printf '%s\\n' 'GeneratedStrongDbToken_1234567890'; }
     harden_database_credentials '$env_file'
     grep -q '^DATABASE_URL=postgresql+asyncpg://sidar:GeneratedStrongDbToken_1234567890@localhost:5432/sidar?ssl=disable$' '$env_file'
@@ -504,13 +830,25 @@ API_KEY=example_api_key
 ENV
     done
 
+    # PostgreSQL credential rewriting itself is delegated to the idempotent
+    # scripts.sync_database_passwords Python helper (see
+    # tests/unit/scripts/test_sync_database_passwords.py for its coverage),
+    # invoked unconditionally via sync_database_env_chain_after_setup at the
+    # end of propagate_shared_secrets_to_env_variants. Stub that call out
+    # here so this bats test stays hermetic (no real uv/python invocation
+    # against a fake SCRIPT_DIR) while still asserting the delegation always
+    # happens exactly once, alongside the direct bash-level shared secret
+    # (API_KEY etc.) propagation.
+    sync_database_env_chain_after_setup() {
+      echo "called" >> "$tmpdir/db-sync-calls"
+    }
+
     SCRIPT_DIR="$tmpdir"
     propagate_shared_secrets_to_env_variants "$tmpdir/.env"
 
+    [[ "$(wc -l < "$tmpdir/db-sync-calls")" -eq 1 ]]
+
     for variant in .env.development .env.test .env.advanced; do
-      grep -q "^POSTGRES_PASSWORD=${master_pw}$" "$tmpdir/$variant"
-      grep -q "^DATABASE_URL=postgresql+asyncpg://sidar:${master_pw}@127.0.0.1:5432/sidar$" "$tmpdir/$variant"
-      grep -q "^SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:${master_pw}@postgres:5432/sidar$" "$tmpdir/$variant"
       grep -q "^API_KEY=${preserved_api_key}$" "$tmpdir/$variant"
     done
   '
@@ -594,6 +932,7 @@ ENV
   [[ "$output" == *"Usage:"* ]]
   [[ "$output" == *"Select installer message language"* ]]
   [[ "$output" == *"--with-integration"* ]]
+  [[ "$output" == *"--ci-full"* ]]
   [[ "$output" == *"--enable-autonomous-cron"* ]]
   [[ "$output" != *"Kullanım:"* ]]
 }
@@ -615,6 +954,7 @@ ENV
   [[ "$output" == *"Kullanım:"* ]]
   [[ "$output" == *"Kurulum mesaj dilini seçer"* ]]
   [[ "$output" == *"--with-integration"* ]]
+  [[ "$output" == *"--ci-full"* ]]
   [[ "$output" == *"--enable-autonomous-cron"* ]]
 }
 
@@ -622,10 +962,448 @@ ENV
   local root
   root="$(repo_root)"
 
-  grep -q "bash run_tests.sh --stage all" "$root/install_sidar.sh"
-  grep -q "bash run_tests.sh --stage integration" "$root/install_sidar.sh"
-  grep -q "bash run_tests.sh --stage e2e" "$root/install_sidar.sh"
-  grep -q "RUN_BENCHMARKS=required bash run_tests.sh" "$root/install_sidar.sh"
+  # Kurulum özeti/kapanış rehberliği scripts/install_modules/phases/07_finish.sh
+  # ve tam doğrulama kapsamı özeti scripts/install_modules/phases/10_validation.sh
+  # içine modülerize edildi; install_sidar.sh yalnızca bu fazları yükler.
+  grep -q "bash run_tests.sh --stage all" "$root/scripts/install_modules/phases/07_finish.sh"
+  grep -q "bash run_tests.sh --stage integration" "$root/scripts/install_modules/phases/07_finish.sh"
+  grep -q "bash run_tests.sh --stage e2e" "$root/scripts/install_modules/phases/07_finish.sh"
+  grep -q "RUN_BENCHMARKS=required bash run_tests.sh" "$root/scripts/install_modules/phases/07_finish.sh"
+  grep -q "./install_sidar.sh --ci-full" "$root/scripts/install_modules/phases/10_validation.sh"
+  grep -q "📊 Kurulum doğrulama kapsamı" "$root/scripts/install_modules/phases/10_validation.sh"
+  grep -q "scripts/install_modules/phases/07_finish.sh" "$root/install_sidar.sh"
+  grep -q "scripts/install_modules/phases/10_validation.sh" "$root/install_sidar.sh"
+}
+
+@test "Playwright browser installer lives in a dedicated phase module" {
+  local root
+  root="$(repo_root)"
+
+  grep -q '"phases/13_playwright.sh"' "$root/install_sidar.sh"
+  grep -q "scripts/install_modules/phases/13_playwright.sh" "$root/install_sidar.sh"
+  grep -q "^install_playwright_browsers()" "$root/scripts/install_modules/phases/13_playwright.sh"
+  ! grep -q "^install_playwright_browsers()" "$root/install_sidar.sh"
+}
+
+@test "Alembic migration helpers live in a dedicated phase module" {
+  local root
+  root="$(repo_root)"
+
+  grep -q '"phases/12_alembic.sh"' "$root/install_sidar.sh"
+  grep -q "scripts/install_modules/phases/12_alembic.sh" "$root/install_sidar.sh"
+  grep -q "^run_migrations()" "$root/scripts/install_modules/phases/12_alembic.sh"
+  grep -q "^is_alembic_at_head()" "$root/scripts/install_modules/phases/12_alembic.sh"
+  grep -q "^ensure_postgres_databases_exist()" "$root/scripts/install_modules/phases/12_alembic.sh"
+  run ! grep -q "^run_migrations()" "$root/install_sidar.sh"
+  ! grep -q "^is_alembic_at_head()" "$root/install_sidar.sh"
+}
+
+@test "React frontend setup lives in a dedicated phase module" {
+  local root
+  root="$(repo_root)"
+
+  grep -q '"phases/14_react.sh"' "$root/install_sidar.sh"
+  grep -q "scripts/install_modules/phases/14_react.sh" "$root/install_sidar.sh"
+  grep -q "^setup_react_frontend()" "$root/scripts/install_modules/phases/14_react.sh"
+  grep -q "setup_react_frontend" "$root/scripts/install_modules/phases/05_frontend.sh"
+  ! grep -q "^setup_react_frontend()" "$root/install_sidar.sh"
+}
+
+@test "React build summary warns that frontend QA was not run" {
+  run_installer_function '
+    FRONTEND_QUALITY_STATUS="atlandi_bayrak"
+    print_react_frontend_qa_status_block
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"FRONTEND QA ÇALIŞTIRILMADI"* ]]
+  [[ "$output" == *"React build geçti ≠ frontend QA geçti"* ]]
+  [[ "$output" == *"npm run lint && npm run typecheck && npm run test:coverage && npm run test:e2e:smoke"* ]]
+}
+
+@test "React build summary uses red block when frontend QA failed" {
+  run_installer_function '
+    FRONTEND_QUALITY_STATUS="hata"
+    print_react_frontend_qa_status_block
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"FRONTEND QA BAŞARISIZ"* ]]
+  [[ "$output" == *"build geçti ≠ frontend QA geçti"* ]]
+}
+
+@test "DATABASE_URL defaults live in a dedicated utility module" {
+  local root
+  root="$(repo_root)"
+
+  grep -q '"utils/database_url.sh"' "$root/install_sidar.sh"
+  grep -q "scripts/install_modules/utils/database_url.sh" "$root/install_sidar.sh"
+  grep -q "database_url.sh" "$root/scripts/install_modules/phases/04_workspace.sh"
+  grep -q "^ensure_database_url_defaults()" "$root/scripts/install_modules/utils/database_url.sh"
+  grep -q "^write_generated_default_database_url()" "$root/scripts/install_modules/utils/database_url.sh"
+  grep -q "^sync_postgres_env_with_database_url()" "$root/scripts/install_modules/utils/database_url.sh"
+  run ! grep -q "^ensure_database_url_defaults()" "$root/install_sidar.sh"
+  ! grep -q "^sync_postgres_env_with_database_url()" "$root/scripts/install_modules/utils/db_credentials.sh"
+}
+
+@test "ensure_database_url_defaults preserves existing strong PostgreSQL password when composing missing DSNs" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    env_file="$tmpdir/.env"
+    existing_password="N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh"
+    cat > "$env_file" <<EOF
+POSTGRES_USER=sidar_user
+POSTGRES_PASSWORD=$existing_password
+POSTGRES_DB=sidar_db
+EOF
+    generate_secure_token() {
+      printf "%s\n" "SHOULD_NOT_BE_USED_1234567890"
+    }
+
+    ensure_database_url_defaults "$env_file"
+
+    grep -q "^POSTGRES_USER=sidar_user$" "$env_file"
+    grep -q "^POSTGRES_PASSWORD=$existing_password$" "$env_file"
+    grep -q "^POSTGRES_DB=sidar_db$" "$env_file"
+    grep -q "^DATABASE_URL=postgresql+asyncpg://sidar_user:$existing_password@127.0.0.1:5432/sidar_db$" "$env_file"
+    grep -q "^SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar_user:$existing_password@postgres:5432/sidar_db$" "$env_file"
+    ! grep -q "SHOULD_NOT_BE_USED" "$env_file"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "ensure_database_url_defaults validates a freshly composed DSN" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    env_file="$tmpdir/.env"
+    existing_password="N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh"
+    cat > "$env_file" <<EOF
+POSTGRES_USER=sidar_user
+POSTGRES_PASSWORD=$existing_password
+POSTGRES_DB=sidar_development
+EOF
+    validation_log="$tmpdir/database-name-validation.log"
+    database_name_from_postgresql_url() {
+      printf "%s\n" "$1" >> "$validation_log"
+      printf "%s\n" "sidar_development"
+    }
+
+    ensure_database_url_defaults "$env_file"
+
+    grep -q "^postgresql+asyncpg://sidar_user:$existing_password@127.0.0.1:5432/sidar_development$" "$validation_log"
+    grep -q "^DATABASE_URL=postgresql+asyncpg://sidar_user:$existing_password@127.0.0.1:5432/sidar_development$" "$env_file"
+    ! grep -q "[?&]ssl=" "$env_file"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "ensure_database_url_defaults rotates weak PostgreSQL password when composing missing DSNs" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    env_file="$tmpdir/.env"
+    generated_password="R9mKq2pT7vXc5aHj6sDf4Gh8N"
+    cat > "$env_file" <<EOF
+POSTGRES_PASSWORD=postgres
+EOF
+    generate_secure_token() {
+      printf "%s\n" "$generated_password"
+    }
+
+    ensure_database_url_defaults "$env_file"
+
+    grep -q "^POSTGRES_USER=sidar$" "$env_file"
+    grep -q "^POSTGRES_PASSWORD=$generated_password$" "$env_file"
+    grep -q "^POSTGRES_DB=sidar$" "$env_file"
+    grep -q "^DATABASE_URL=postgresql+asyncpg://sidar:$generated_password@127.0.0.1:5432/sidar$" "$env_file"
+    grep -q "^SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:$generated_password@postgres:5432/sidar$" "$env_file"
+    [[ "${DB_PASSWORD_HARDENED:-}" == "true" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "ensure_database_url_defaults replaces asyncpg-incompatible ssl query URLs" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    env_file="$tmpdir/.env"
+    strong_password="N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh"
+    cat > "$env_file" <<EOF
+POSTGRES_USER=sidar
+POSTGRES_PASSWORD=$strong_password
+POSTGRES_DB=sidar_development
+DATABASE_URL=postgresql+asyncpg://sidar:legacy@localhost:5432/sidar?application_name=sidar&ssl=disable
+EOF
+
+    ensure_database_url_defaults "$env_file"
+
+    grep -q "^DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@127.0.0.1:5432/sidar_development$" "$env_file"
+    grep -q "^SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@postgres:5432/sidar_development$" "$env_file"
+    ! grep -q "[?&]ssl=" "$env_file"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "ensure_database_url_defaults identifies the target env variant in ssl repair logs" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    env_file="$tmpdir/.env.development"
+    strong_password="N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh"
+    cat > "$env_file" <<EOF
+POSTGRES_USER=sidar
+POSTGRES_PASSWORD=$strong_password
+POSTGRES_DB=sidar_development
+DATABASE_URL=postgresql+asyncpg://sidar:legacy@localhost:5432/sidar?ssl=disable
+EOF
+
+    ensure_database_url_defaults "$env_file"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *".env.development içinde asyncpg ile uyumsuz ssl query parametresi"* ]]
+  [[ "$output" == *".env.development: Uyumsuz ssl parametresi kaldırıldı"* ]]
+}
+
+@test "ensure_database_url_defaults aligns database name with profile POSTGRES_DB" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    env_file="$tmpdir/.env"
+    strong_password="N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh"
+    cat > "$env_file" <<EOF
+POSTGRES_USER=sidar
+POSTGRES_PASSWORD=$strong_password
+POSTGRES_DB=sidar_development
+DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@localhost:5432/sidar
+EOF
+
+    ensure_database_url_defaults "$env_file"
+
+    grep -q "^POSTGRES_DB=sidar_development$" "$env_file"
+    grep -q "^DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@127.0.0.1:5432/sidar_development$" "$env_file"
+    grep -q "^SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@postgres:5432/sidar_development$" "$env_file"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "database URL defaults repair stale ssl parameters in every existing env variant" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    strong_password="N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh"
+
+    for variant in .env.development .env.test .env.advanced; do
+      cat > "$tmpdir/$variant" <<EOF
+POSTGRES_USER=sidar
+POSTGRES_PASSWORD=$strong_password
+POSTGRES_DB=sidar
+DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@127.0.0.1:5432/sidar?ssl=disable
+EOF
+    done
+
+    ensure_database_url_defaults_for_variants
+
+    for variant in .env.development .env.test .env.advanced; do
+      grep -q "^DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@127.0.0.1:5432/sidar$" "$tmpdir/$variant"
+      grep -q "^SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@postgres:5432/sidar$" "$tmpdir/$variant"
+      ! grep -q "[?&]ssl=" "$tmpdir/$variant"
+    done
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "database URL variant repair skips missing dotenv files" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+
+    ensure_database_url_defaults_for_variants
+
+    [[ ! -e "$tmpdir/.env.development" ]]
+    [[ ! -e "$tmpdir/.env.test" ]]
+    [[ ! -e "$tmpdir/.env.advanced" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "sync_database_env_chain_after_setup reruns helper even when prior sync marker exists" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    mkdir -p "$tmpdir/bin" "$tmpdir/scripts"
+    touch "$tmpdir/scripts/sync_database_passwords.py"
+    cat > "$tmpdir/bin/uv" <<EOF
+#!/usr/bin/env bash
+printf "%s\n" "\$*" >> "$tmpdir/uv.log"
+exit 0
+EOF
+    chmod +x "$tmpdir/bin/uv"
+    export PATH="$tmpdir/bin:$PATH"
+    export SIDAR_DATABASE_ENV_CHAIN_SYNCED=1
+
+    sync_database_env_chain_after_setup
+    sync_database_env_chain_after_setup
+
+    [[ "$(wc -l < "$tmpdir/uv.log")" -eq 4 ]]
+    [[ "$(grep -c -- "-m scripts.sync_database_passwords --all-envs" "$tmpdir/uv.log")" -eq 2 ]]
+    [[ "$(grep -c -- "-m scripts.sync_database_passwords --remove-explicit-urls" "$tmpdir/uv.log")" -eq 2 ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"zaten eşitlendi; tekrar yazım atlandı"* ]]
+}
+
+@test "installer validation coverage summary calls out skipped full suites" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    cat > "$tmpdir/pyproject.toml" <<EOF
+[tool.coverage.report]
+fail_under = 87
+EOF
+
+    SMOKE_TEST_STATUS="tamamlandi"
+    INTEGRATION_TEST_STATUS="atlandi_bayrak"
+    CI_FULL_VALIDATION_STATUS="atlandi_bayrak"
+    print_install_validation_coverage
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Smoke:"*"TAMAMLANDI"* ]]
+  [[ "$output" == *"Integration:"*"ATLANDI"*"run_tests.sh --stage integration"* ]]
+  [[ "$output" == *"E2E:"*"ATLANDI"*"run_tests.sh --stage e2e"* ]]
+  [[ "$output" == *"Benchmark:"*"ATLANDI"* ]]
+  [[ "$output" == *"Coverage ratchet / fail-under notu"* ]]
+  [[ "$output" == *"pyproject.toml coverage fail-under eşiği: 87%"* ]]
+  [[ "$output" == *"Local/CI gate:"*"ratchet baseline 87%"* ]]
+  [[ "$output" == *"Coverage campaign hedefi: 100%"*"coverage-campaign opt-in"* ]]
+  [[ "$output" == *"tam doğrulama çalışmadıysa coverage fail-under ve ratchet devreye girmiş sayılmaz"* ]]
+  [[ "$output" == *"Test rehberi: docs/TESTING.md"* ]]
+  [[ "$output" == *"GitHub Actions CI parite haritası"* ]]
+  [[ "$output" == *"CI step: Run frontend lint/type-check/audit gate"*"bash run_tests.sh --stage frontend"* ]]
+  [[ "$output" == *"CI step: Run test suite + coverage + benchmark"*"bash run_tests.sh --stage all"* ]]
+  [[ "$output" == *"./install_sidar.sh --production-readiness"* ]]
+  [[ "$output" == *"bash run_tests.sh --stage all"* ]]
+}
+
+
+@test "installer source exposes validation and GPU functions from modular files" {
+  run_installer_function '
+    shopt -s extdebug
+    validation_source="$(declare -F run_install_ci_full_validation)"
+    gpu_source="$(declare -F detect_gpu)"
+    [[ "$validation_source" == *"scripts/install_modules/phases/10_validation.sh" ]]
+    [[ "$gpu_source" == *"scripts/install_modules/utils/gpu_utils.sh" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "ci-full validation runs canonical production-readiness make target" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    RUN_CI_FULL_VALIDATION=true
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/Makefile" <<EOF
+production-readiness:
+	@true
+EOF
+    cat > "$tmpdir/bin/make" <<EOF
+#!/usr/bin/env bash
+printf "%s|%s|%s|%s|%s\\n" "\${TEST_PROFILE:-}" "\${RUN_BENCHMARKS:-}" "\${RUN_FRONTEND_E2E:-}" "\${AUTO_OPEN_ARTIFACTS:-}" "\$*" > "$tmpdir/make.log"
+EOF
+    chmod +x "$tmpdir/bin/make"
+    export PATH="$tmpdir/bin:$PATH"
+    cat > "$tmpdir/run_tests.sh" <<EOF
+#!/usr/bin/env bash
+exit 99
+EOF
+    chmod +x "$tmpdir/run_tests.sh"
+
+    run_install_ci_full_validation
+
+    [[ "$CI_FULL_VALIDATION_STATUS" == "tamamlandi" ]]
+    grep -q "^|||0|production-readiness$" "$tmpdir/make.log"
+  '
+  [ "$status" -eq 0 ]
+}
+
+
+@test "development full validation prompt runs GPU stress full gate when accepted" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    RUN_CI_FULL_VALIDATION=false
+    GPU_AVAILABLE=true
+    SMOKE_TEST_STATUS="tamamlandi"
+    NO_INTERACTION=false
+    AUTO_INSTALL=false
+    SILENT_MODE=false
+    prompt_yes_no_with_timeout_default_no() { printf "e"; }
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/Makefile" <<EOF
+dev-full:
+	@true
+EOF
+    cat > "$tmpdir/bin/make" <<EOF
+#!/usr/bin/env bash
+printf "%s|%s\\n" "\${AUTO_OPEN_ARTIFACTS:-}" "\$*" > "$tmpdir/make.log"
+mkdir -p "$tmpdir/artifacts"
+cat > "$tmpdir/artifacts/test-summary.json" <<JSON
+{"frontend_lint":"passed","frontend_typecheck":"passed","frontend_coverage":"passed","frontend_e2e":"passed"}
+JSON
+EOF
+    chmod +x "$tmpdir/bin/make"
+    export PATH="$tmpdir/bin:$PATH"
+    cat > "$tmpdir/run_tests.sh" <<EOF
+#!/usr/bin/env bash
+exit 99
+EOF
+    chmod +x "$tmpdir/run_tests.sh"
+    TEST_PROFILE=local
+    SIDAR_PRODUCTION_READINESS=0
+    PRODUCTION_READINESS=0
+    RUN_BENCHMARKS=""
+    RUN_FRONTEND_E2E=""
+    export TEST_SUMMARY_JSON="$tmpdir/artifacts/test-summary.json"
+
+    run_install_ci_full_validation
+
+    [[ "$CI_FULL_VALIDATION_STATUS" == "tamamlandi" ]]
+    [[ "$FRONTEND_QUALITY_STATUS" == "tamamlandi" ]]
+    grep -q "^0|dev-full$" "$tmpdir/make.log"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "development full validation prompt is skipped unless GPU and smoke service gate are ready" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    RUN_CI_FULL_VALIDATION=false
+    GPU_AVAILABLE=false
+    SMOKE_TEST_STATUS="tamamlandi"
+    NO_INTERACTION=false
+    AUTO_INSTALL=false
+    SILENT_MODE=false
+    prompt_yes_no_with_timeout_default_no() { exit 99; }
+    touch "$tmpdir/run_tests.sh"
+    TEST_PROFILE=local
+    SIDAR_PRODUCTION_READINESS=0
+    PRODUCTION_READINESS=0
+    RUN_BENCHMARKS=""
+    RUN_FRONTEND_E2E=""
+
+    run_install_ci_full_validation
+
+    [[ "$CI_FULL_VALIDATION_STATUS" == "atlandi_bayrak" ]]
+  '
+  [ "$status" -eq 0 ]
 }
 
 @test "run_smoke_tests defensively repairs private key and session file permissions after pytest" {
@@ -720,30 +1498,26 @@ EOF
   [[ "$output" == *"crontab satırı olarak kuruldu"* ]]
 }
 
-@test "run_install_integration_api_tests is opt-in and passes service env to pytest" {
+@test "run_install_integration_api_tests is opt-in and runs full integration gate with service env" {
   run_installer_function '
     tmpdir="$(mktemp -d)"
     trap "rm -rf \"$tmpdir\"" EXIT
-    mkdir -p "$tmpdir/tests/integration/api" "$tmpdir/bin"
+    mkdir -p "$tmpdir/bin"
+    touch "$tmpdir/run_tests.sh"
     cat > "$tmpdir/.env" <<EOF
 DATABASE_URL=postgresql+asyncpg://sidar:secret@127.0.0.1:5432/sidar
 POSTGRES_PASSWORD=secret
 SIDAR_REDIS_URL=redis://127.0.0.1:6379/0
+REDIS_URL=redis://legacy.example:6379/0
+REDIS_PASSWORD=redis-secret
 EOF
-    cat > "$tmpdir/bin/uv" <<EOF
-#!/usr/bin/env bash
-printf "%s\n" "\$*" > "$tmpdir/uv.args"
-printf "DATABASE_URL=%s\nPOSTGRES_PASSWORD=%s\nREDIS_URL=%s\n" "\${DATABASE_URL:-}" "\${POSTGRES_PASSWORD:-}" "\${REDIS_URL:-}" > "$tmpdir/uv.env"
+    cat > "$tmpdir/bin/bash" <<EOF
+#!/bin/bash
+printf "%s\n" "\$*" > "$tmpdir/bash.args"
+printf "AUTO_OPEN_ARTIFACTS=%s\nDATABASE_URL=%s\nPOSTGRES_PASSWORD=%s\nSIDAR_REDIS_URL=%s\nREDIS_URL=%s\nREDIS_PASSWORD=%s\n" "\${AUTO_OPEN_ARTIFACTS:-}" "\${DATABASE_URL:-}" "\${POSTGRES_PASSWORD:-}" "\${SIDAR_REDIS_URL:-}" "\${REDIS_URL:-}" "\${REDIS_PASSWORD:-}" > "$tmpdir/bash.env"
 exit 0
 EOF
-    chmod +x "$tmpdir/bin/uv"
-    # pytest precheck (install_sidar.sh:`python -c "import pytest"`) runs against the
-    # system python, which has no pytest on the CI runner; stub it to satisfy the gate.
-    cat > "$tmpdir/bin/python" <<EOF
-#!/usr/bin/env bash
-exit 0
-EOF
-    chmod +x "$tmpdir/bin/python"
+    chmod +x "$tmpdir/bin/bash"
     export PATH="$tmpdir/bin:$PATH"
     SCRIPT_DIR="$tmpdir"
     wait_for_redis_before_smoke_tests() { return 0; }
@@ -752,15 +1526,53 @@ EOF
     RUN_INSTALL_INTEGRATION_TESTS=false
     run_install_integration_api_tests
     [[ "$INTEGRATION_TEST_STATUS" == "atlandi_bayrak" ]]
-    [[ ! -e "$tmpdir/uv.args" ]]
+    [[ ! -e "$tmpdir/bash.args" ]]
 
     RUN_INSTALL_INTEGRATION_TESTS=true
     run_install_integration_api_tests
     [[ "$INTEGRATION_TEST_STATUS" == "tamamlandi" ]]
-    grep -q "tests/integration/api" "$tmpdir/uv.args"
-    grep -q "DATABASE_URL=postgresql+asyncpg://sidar:secret@127.0.0.1:5432/sidar" "$tmpdir/uv.env"
-    grep -q "POSTGRES_PASSWORD=secret" "$tmpdir/uv.env"
-    grep -q "REDIS_URL=redis://127.0.0.1:6379/0" "$tmpdir/uv.env"
+    grep -q "run_tests.sh" "$tmpdir/bash.args"
+    grep -q -- "--stage" "$tmpdir/bash.args"
+    grep -q "integration" "$tmpdir/bash.args"
+    grep -q "AUTO_OPEN_ARTIFACTS=0" "$tmpdir/bash.env"
+    grep -q "DATABASE_URL=postgresql+asyncpg://sidar:secret@127.0.0.1:5432/sidar" "$tmpdir/bash.env"
+    grep -q "POSTGRES_PASSWORD=secret" "$tmpdir/bash.env"
+    grep -q "SIDAR_REDIS_URL=redis://127.0.0.1:6379/0" "$tmpdir/bash.env"
+    grep -q "REDIS_URL=redis://127.0.0.1:6379/0" "$tmpdir/bash.env"
+    grep -q "REDIS_PASSWORD=redis-secret" "$tmpdir/bash.env"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "run_install_frontend_quality_validation uses run_tests frontend stage with e2e enabled" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    touch "$tmpdir/run_tests.sh"
+    cat > "$tmpdir/bin/bash" <<EOF
+#!/bin/bash
+printf "%s\n" "\$*" > "$tmpdir/bash.args"
+printf "RUN_FRONTEND_E2E=%s\nAUTO_OPEN_ARTIFACTS=%s\n" "\${RUN_FRONTEND_E2E:-}" "\${AUTO_OPEN_ARTIFACTS:-}" > "$tmpdir/bash.env"
+exit 0
+EOF
+    chmod +x "$tmpdir/bin/bash"
+    export PATH="$tmpdir/bin:$PATH"
+    SCRIPT_DIR="$tmpdir"
+
+    RUN_INSTALL_INTEGRATION_TESTS=false
+    run_install_frontend_quality_validation
+    [[ "$FRONTEND_QUALITY_STATUS" == "atlandi_bayrak" ]]
+    [[ ! -e "$tmpdir/bash.args" ]]
+
+    RUN_INSTALL_INTEGRATION_TESTS=true
+    run_install_frontend_quality_validation
+    [[ "$FRONTEND_QUALITY_STATUS" == "tamamlandi" ]]
+    grep -q "run_tests.sh" "$tmpdir/bash.args"
+    grep -q -- "--stage" "$tmpdir/bash.args"
+    grep -q "frontend" "$tmpdir/bash.args"
+    grep -q "RUN_FRONTEND_E2E=1" "$tmpdir/bash.env"
+    grep -q "AUTO_OPEN_ARTIFACTS=0" "$tmpdir/bash.env"
   '
   [ "$status" -eq 0 ]
 }
@@ -804,6 +1616,7 @@ EOF
     sidar_source_install_utils() { events+=("source:$*"); }
     ensure_prerequisites() { events+=(ensure_prerequisites); }
     select_runtime_mode() { events+=(select_runtime_mode); APP_RUNTIME_MODE_SELECTED=local; }
+    select_dependency_profile() { events+=(select_dependency_profile); DEPENDENCY_PROFILE=dev-light; }
     detect_gpu() { events+=(detect_gpu); }
     setup_nvidia_docker() { events+=(setup_nvidia_docker); }
     install_uv_cli() { events+=(unexpected_uv); return 99; }
@@ -811,7 +1624,7 @@ EOF
     install_python_deps() { events+=(unexpected_deps); return 99; }
 
     sidar_phase_runtime_prerequisites
-    [[ "${events[*]}" == "source:gpu_utils.sh ensure_prerequisites select_runtime_mode detect_gpu setup_nvidia_docker" ]]
+    [[ "${events[*]}" == "source:gpu_utils.sh python_env.sh ensure_prerequisites select_runtime_mode select_dependency_profile detect_gpu setup_nvidia_docker" ]]
   '
   [ "$status" -eq 0 ]
 }
@@ -824,6 +1637,7 @@ EOF
     install_uv_cli() { events+=(install_uv_cli); }
     create_uv_venv() { events+=(create_uv_venv); }
     install_python_deps() { events+=(install_python_deps); }
+    install_pre_commit_hooks() { events+=(install_pre_commit_hooks); }
     install_pyright_lsp_tool() { events+=(install_pyright_lsp_tool); }
     verify_torch_cuda() { events+=(verify_torch_cuda); }
     create_directories() { events+=(create_directories); }
@@ -831,7 +1645,7 @@ EOF
     setup_env_file() { events+=(setup_env_file); }
 
     sidar_phase_workspace_config
-    [[ "${events[*]}" == "source:python_env.sh db_credentials.sh env_utils.sh install_uv_cli create_uv_venv install_python_deps install_pyright_lsp_tool verify_torch_cuda create_directories setup_vscode_workspace setup_env_file" ]]
+    [[ "${events[*]}" == "source:python_env.sh database_url.sh db_credentials.sh env_utils.sh install_uv_cli create_uv_venv install_python_deps install_pre_commit_hooks install_pyright_lsp_tool verify_torch_cuda create_directories setup_vscode_workspace setup_env_file" ]]
   '
   [ "$status" -eq 0 ]
 }
@@ -851,7 +1665,64 @@ EOF
     setup_env_file() { events+=(setup_env_file); }
 
     sidar_phase_workspace_config
-    [[ "${events[*]}" == "source:python_env.sh db_credentials.sh env_utils.sh create_directories setup_vscode_workspace setup_env_file" ]]
+    [[ "${events[*]}" == "source:python_env.sh database_url.sh db_credentials.sh env_utils.sh create_directories setup_vscode_workspace setup_env_file" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "select_dependency_profile defaults noninteractive installer to dev-full" {
+  run_installer_function '
+    DEPENDENCY_PROFILE=ask
+    NO_INTERACTION=true
+    AUTO_INSTALL=false
+    RUN_CI_FULL_VALIDATION=false
+
+    select_dependency_profile
+
+    [[ "$DEPENDENCY_PROFILE" == "dev-full" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"varsayılan tam geliştirici bağımlılık profili seçildi (developer-full)"* ]]
+}
+
+@test "select_dependency_profile promotes production readiness validation to dev-full" {
+  run_installer_function '
+    DEPENDENCY_PROFILE=ask
+    NO_INTERACTION=true
+    AUTO_INSTALL=false
+    RUN_CI_FULL_VALIDATION=true
+
+    select_dependency_profile
+
+    [[ "$DEPENDENCY_PROFILE" == "dev-full" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"developer-full"* ]]
+}
+
+@test "install_python_deps custom profile syncs only selected extras" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf -- \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    SCRIPT_DIR="$tmpdir"
+    UPGRADE_LOCK=false
+    DEPENDENCY_PROFILE=custom
+    SIDAR_DEPENDENCY_EXTRAS="dev openai postgres"
+    touch "$tmpdir/uv.lock"
+    ensure_env_file_secrets_after_uv_sync() { :; }
+    validate_runtime_env_loading() { :; }
+    cat > "$tmpdir/bin/uv" <<EOF
+#!/usr/bin/env bash
+printf "%s\n" "\$*" >> "$tmpdir/uv.log"
+exit 0
+EOF
+    chmod +x "$tmpdir/bin/uv"
+    export PATH="$tmpdir/bin:$PATH"
+
+    install_python_deps
+
+    grep -q "^sync --frozen --extra dev --extra openai --extra postgres$" "$tmpdir/uv.log"
   '
   [ "$status" -eq 0 ]
 }
@@ -863,6 +1734,7 @@ EOF
     mkdir -p "$tmpdir/bin"
     SCRIPT_DIR="$tmpdir"
     UPGRADE_LOCK=false
+    DEPENDENCY_PROFILE=dev-full
     touch "$tmpdir/uv.lock"
     ensure_env_file_secrets_after_uv_sync() { :; }
     validate_runtime_env_loading() { :; }
@@ -922,6 +1794,7 @@ EOF
     mkdir -p "$tmpdir/bin"
     SCRIPT_DIR="$tmpdir"
     UPGRADE_LOCK=false
+    DEPENDENCY_PROFILE=dev-full
     SIDAR_INSTALL_EFFECTIVE_UID=0
     touch "$tmpdir/uv.lock"
     ensure_env_file_secrets_after_uv_sync() { :; }
@@ -959,6 +1832,7 @@ EOF
     mkdir -p "$tmpdir/bin"
     SCRIPT_DIR="$tmpdir"
     UPGRADE_LOCK=false
+    DEPENDENCY_PROFILE=dev-full
     SIDAR_INSTALL_EFFECTIVE_UID=1000
     touch "$tmpdir/uv.lock"
     ensure_env_file_secrets_after_uv_sync() { :; }
@@ -1006,6 +1880,7 @@ EOF
     mkdir -p "$tmpdir/bin"
     SCRIPT_DIR="$tmpdir"
     UPGRADE_LOCK=false
+    DEPENDENCY_PROFILE=dev-full
     SIDAR_INSTALL_EFFECTIVE_UID=1000
     touch "$tmpdir/uv.lock"
     ensure_env_file_secrets_after_uv_sync() { :; }
@@ -1045,6 +1920,7 @@ EOF
     trap "rm -rf \"$tmpdir\"" EXIT
     mkdir -p "$tmpdir/bin"
     SCRIPT_DIR="$tmpdir"
+    unset DATABASE_URL
     touch "$tmpdir/alembic.ini"
     cat > "$tmpdir/.env" <<EOF
 DATABASE_URL=postgresql+asyncpg://sidar:secret@localhost:5432/sidar
@@ -1053,8 +1929,12 @@ EOF
 #!/usr/bin/env bash
 printf "%s|%s\n" "\${DATABASE_URL:-}" "\$*" >> "$tmpdir/python.log"
 case "\$*" in
-  "-m alembic current") echo "0006_access_control_schema (head)" ;;
-  "-m alembic heads") echo "0006_access_control_schema (head)" ;;
+  "-m alembic current --check-heads") exit 2 ;;
+  "-m alembic current")
+    echo "INFO  [alembic.runtime.migration] Context impl PostgresqlImpl." >&2
+    echo "  0006_access_control_schema (head)"
+    ;;
+  "-m alembic heads") echo "    0006_access_control_schema (head)" ;;
 esac
 EOF
     chmod +x "$tmpdir/bin/python3"
@@ -1062,11 +1942,48 @@ EOF
 
     is_alembic_at_head
 
-    [[ "$(wc -l < "$tmpdir/python.log")" -eq 2 ]]
+    [[ "$(wc -l < "$tmpdir/python.log")" -eq 3 ]]
+    grep -q "^postgresql+asyncpg://sidar:secret@localhost:5432/sidar|-m alembic current --check-heads$" "$tmpdir/python.log"
     grep -q "^postgresql+asyncpg://sidar:secret@localhost:5432/sidar|-m alembic current$" "$tmpdir/python.log"
     grep -q "^postgresql+asyncpg://sidar:secret@localhost:5432/sidar|-m alembic heads$" "$tmpdir/python.log"
   '
   [ "$status" -eq 0 ]
+}
+
+@test "is_alembic_at_head derives DATABASE_URL from POSTGRES parts when explicit URL is absent" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    SCRIPT_DIR="$tmpdir"
+    unset DATABASE_URL
+    touch "$tmpdir/alembic.ini"
+    cat > "$tmpdir/.env" <<EOF
+POSTGRES_USER=sidar
+POSTGRES_PASSWORD=secret
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_DB=sidar
+EOF
+    cat > "$tmpdir/bin/python3" <<EOF
+#!/usr/bin/env bash
+printf "%s|%s\n" "\${DATABASE_URL:-}" "\$*" >> "$tmpdir/python.log"
+case "\$*" in
+  "-m alembic current --check-heads") exit 2 ;;
+  "-m alembic current") echo "  0006_access_control_schema (head)" ;;
+  "-m alembic heads") echo "    0006_access_control_schema (head)" ;;
+esac
+EOF
+    chmod +x "$tmpdir/bin/python3"
+    export PATH="$tmpdir/bin:$PATH"
+
+    is_alembic_at_head
+
+    grep -q "^postgresql+asyncpg://sidar:secret@localhost:5432/sidar|-m alembic current$" "$tmpdir/python.log"
+    grep -q "^postgresql+asyncpg://sidar:secret@localhost:5432/sidar|-m alembic heads$" "$tmpdir/python.log"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Alembic DB URL kaynağı:"* ]]
 }
 
 @test "is_alembic_at_head prefers the project venv Python over system python3" {
@@ -1075,6 +1992,7 @@ EOF
     trap "rm -rf \"$tmpdir\"" EXIT
     mkdir -p "$tmpdir/.venv/bin" "$tmpdir/bin"
     SCRIPT_DIR="$tmpdir"
+    unset DATABASE_URL
     touch "$tmpdir/alembic.ini"
     cat > "$tmpdir/.env" <<EOF
 DATABASE_URL=postgresql+asyncpg://sidar:secret@localhost:5432/sidar
@@ -1083,8 +2001,9 @@ EOF
 #!/usr/bin/env bash
 printf "venv|%s|%s\n" "\${DATABASE_URL:-}" "\$*" >> "$tmpdir/python.log"
 case "\$*" in
-  "-m alembic current") echo "0006_access_control_schema (head)" ;;
-  "-m alembic heads") echo "0006_access_control_schema (head)" ;;
+  "-m alembic current --check-heads") exit 2 ;;
+  "-m alembic current") echo "  0006_access_control_schema (head)" ;;
+  "-m alembic heads") echo "    0006_access_control_schema (head)" ;;
 esac
 EOF
     cat > "$tmpdir/bin/python3" <<EOF
@@ -1097,7 +2016,8 @@ EOF
 
     is_alembic_at_head
 
-    [[ "$(wc -l < "$tmpdir/python.log")" -eq 2 ]]
+    [[ "$(wc -l < "$tmpdir/python.log")" -eq 3 ]]
+    grep -q "^venv|postgresql+asyncpg://sidar:secret@localhost:5432/sidar|-m alembic current --check-heads$" "$tmpdir/python.log"
     grep -q "^venv|postgresql+asyncpg://sidar:secret@localhost:5432/sidar|-m alembic current$" "$tmpdir/python.log"
     grep -q "^venv|postgresql+asyncpg://sidar:secret@localhost:5432/sidar|-m alembic heads$" "$tmpdir/python.log"
     ! grep -q "^system|" "$tmpdir/python.log"
@@ -1153,23 +2073,178 @@ EOF
   [[ "$output" == *"SIDAR_ENV değişti (production -> development) ve Alembic current/head uyuşmuyor; veritabanı migrasyonu tekrar doğrulanıyor..."* ]]
 }
 
+@test "production environment selection requires production-readiness before persisting SIDAR_ENV" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    cat > "$tmpdir/.env" <<EOF
+SIDAR_ENV=development
+EOF
+    # production_secret_rotation_gate_passes requires every rotation key to have
+    # a non-empty .env.production value that differs from the (unset) .env value.
+    cat > "$tmpdir/.env.production" <<EOF
+API_KEY=prod-only-api-key-value-1
+JWT_SECRET_KEY=prod-only-jwt-key-value-1
+MEMORY_ENCRYPTION_KEY=prod-only-mem-key-value-1
+AUTONOMY_WEBHOOK_SECRET=prod-only-autonomy-value-1
+SWARM_FEDERATION_SHARED_SECRET=prod-only-swarm-value-1
+GITHUB_WEBHOOK_SECRET=prod-only-github-value-1
+GRAFANA_ADMIN_PASSWORD=prod-only-grafana-value-1
+METRICS_TOKEN=prod-only-metrics-value-1
+EOF
+    AUTO_ENV_TYPE=production
+    NO_INTERACTION=true
+    summary_production_ready=false
+    validation_calls=0
+    sidar_ensure_autonomy_scripts_executable() { :; }
+    sidar_configure_autonomous_cron() { :; }
+    print_summary() { :; }
+    relocate_log_file_if_needed() { :; }
+    cleanup_bootstrap_script_copy() { :; }
+    launch_ide() { :; }
+    sidar_install_summary_field_or_empty() {
+      [[ "$1" == "production_ready" ]] && printf "%s" "$summary_production_ready"
+    }
+    is_alembic_at_head() { return 0; }
+    run_migrations() { return 0; }
+    run_install_ci_full_validation() {
+      validation_calls=$((validation_calls + 1))
+      [[ "$SIDAR_SELECTED_ENV_TYPE" == "production" ]]
+      sidar_install_production_gate_required
+      summary_production_ready=true
+    }
+
+    sidar_phase_finish
+
+    [[ "$validation_calls" -eq 1 ]]
+    grep -q "^SIDAR_ENV=production$" "$tmpdir/.env"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Production seçimi kaydedildi; production-readiness gate geçmeden SIDAR_ENV=production kalıcılaştırılmayacak."* ]]
+  [[ "$output" == *"production-readiness, secret rotasyon ve migration doğrulamaları tamamlandı"* ]]
+}
+
+@test "production gate failure does not leave .env in production mode" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    cat > "$tmpdir/.env" <<EOF
+SIDAR_ENV=development
+EOF
+    AUTO_ENV_TYPE=production
+    NO_INTERACTION=true
+    sidar_ensure_autonomy_scripts_executable() { :; }
+    sidar_configure_autonomous_cron() { :; }
+    print_summary() { :; }
+    relocate_log_file_if_needed() { :; }
+    cleanup_bootstrap_script_copy() { :; }
+    launch_ide() { :; }
+    sidar_install_summary_field_or_empty() {
+      [[ "$1" == "production_ready" ]] && printf "false"
+    }
+    run_install_ci_full_validation() { return 23; }
+
+    sidar_phase_finish
+  '
+  [ "$status" -eq 23 ]
+  [[ "$output" == *"Production seçimi kaydedildi; production-readiness gate geçmeden SIDAR_ENV=production kalıcılaştırılmayacak."* ]]
+}
+
+@test "production gate failure keeps persisted SIDAR_ENV out of production" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    SCRIPT_DIR="$tmpdir"
+    cat > "$tmpdir/.env" <<EOF
+SIDAR_ENV=development
+EOF
+    AUTO_ENV_TYPE=production
+    NO_INTERACTION=true
+    sidar_install_summary_field_or_empty() {
+      [[ "$1" == "production_ready" ]] && printf "false"
+    }
+
+    prompt_post_install_sidar_env_mode
+
+    grep -q "^SIDAR_ENV=development$" "$tmpdir/.env"
+    ! grep -q "^SIDAR_ENV=production$" "$tmpdir/.env"
+    rm -rf "$tmpdir"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "development environment selection preserves current validation behavior" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    cat > "$tmpdir/.env" <<EOF
+SIDAR_ENV=development
+EOF
+    AUTO_ENV_TYPE=development
+    NO_INTERACTION=true
+    validation_calls=0
+    sidar_ensure_autonomy_scripts_executable() { :; }
+    sidar_configure_autonomous_cron() { :; }
+    print_summary() { :; }
+    relocate_log_file_if_needed() { :; }
+    cleanup_bootstrap_script_copy() { :; }
+    launch_ide() { :; }
+    is_alembic_at_head() { return 0; }
+    run_migrations() { return 0; }
+    run_install_ci_full_validation() {
+      validation_calls=$((validation_calls + 1))
+      ! sidar_install_production_gate_required
+    }
+
+    sidar_phase_finish
+
+    [[ "$validation_calls" -eq 1 ]]
+    grep -q "^SIDAR_ENV=development$" "$tmpdir/.env"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Ortam değişkenleri 'Development'"* ]]
+}
+
 @test "06 services phases gate local migrations models smoke and audit in order" {
   run_installer_function '
     events=()
     APP_RUNTIME_MODE_SELECTED=local
     sidar_source_install_utils() { events+=("source:$*"); }
     phase06_docker_daemon_gate_or_fail() { events+=(phase06_docker_daemon_gate_or_fail); }
+    run_pre_service_installer_smoke_gate() { events+=(run_pre_service_installer_smoke_gate); }
     prepare_docker_for_migrations() { events+=(prepare_docker_for_migrations); }
+    ensure_postgres_databases_exist() { events+=(ensure_postgres_databases_exist); }
     run_migrations() { events+=(run_migrations); }
+    seed_rag_metadata_after_migrations() { events+=(seed_rag_metadata_after_migrations); }
     download_ollama_models() { events+=(download_ollama_models); }
     launch_docker_services() { events+=(launch_docker_services); }
     run_smoke_tests() { events+=(run_smoke_tests); }
     run_install_integration_api_tests() { events+=(run_install_integration_api_tests); }
+    run_install_frontend_quality_validation() { events+=(run_install_frontend_quality_validation); }
     run_test_artifact_audit() { events+=(run_test_artifact_audit); }
 
     sidar_phase_local_migrations_and_models
     sidar_phase_services_and_validation
-    [[ "${events[*]}" == "source:ollama_models.sh prepare_docker_for_migrations run_migrations download_ollama_models phase06_docker_daemon_gate_or_fail launch_docker_services run_smoke_tests run_install_integration_api_tests run_test_artifact_audit" ]]
+    [[ "${events[*]}" == "source:ollama_models.sh prepare_docker_for_migrations ensure_postgres_databases_exist run_migrations seed_rag_metadata_after_migrations download_ollama_models phase06_docker_daemon_gate_or_fail run_pre_service_installer_smoke_gate launch_docker_services run_smoke_tests run_install_integration_api_tests run_install_frontend_quality_validation run_test_artifact_audit" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "06 services stops before Docker launch when pre-service installer smoke fails" {
+  run_installer_function '
+    events=()
+    APP_RUNTIME_MODE_SELECTED=local
+    phase06_docker_daemon_gate_or_fail() { events+=(phase06_docker_daemon_gate_or_fail); }
+    run_pre_service_installer_smoke_gate() { events+=(run_pre_service_installer_smoke_gate); return 42; }
+    launch_docker_services() { events+=(unexpected_launch); return 99; }
+    run_smoke_tests() { events+=(unexpected_smoke); return 99; }
+
+    if sidar_phase_services_and_validation; then
+      exit 1
+    fi
+    [[ "${events[*]}" == "phase06_docker_daemon_gate_or_fail run_pre_service_installer_smoke_gate" ]]
   '
   [ "$status" -eq 0 ]
 }
@@ -1186,6 +2261,7 @@ EOF
     launch_docker_services() { events+=(launch_docker_services); }
     run_smoke_tests() { events+=(unexpected_smoke); return 99; }
     run_install_integration_api_tests() { events+=(unexpected_integration); return 99; }
+    run_install_frontend_quality_validation() { events+=(unexpected_frontend); return 99; }
     run_test_artifact_audit() { events+=(unexpected_audit); return 99; }
 
     sidar_phase_local_migrations_and_models
@@ -1220,6 +2296,19 @@ EOF
     [[ "$MIGRATION_STATUS" == "tam_docker_modu_nedeniyle_atlandi" ]]
   '
   [ "$status" -eq 0 ]
+}
+
+@test "finish summary links RAG onboarding and explains automatic metadata seed" {
+  run_installer_function '
+    print_optional_rag_next_step
+  '
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"RAG/GraphRAG hazır oluşunu doğrula"* ]]
+  [[ "$output" == *"metadata seed varsayılan olarak migrasyondan sonra uygulanır"* ]]
+  [[ "$output" == *"uv run python -m scripts.seed_rag"* ]]
+  [[ "$output" == *"uv run python -m core.doctor artifacts/install/doctor.json"* ]]
+  [[ "$output" == *"docs/RAG_ONBOARDING.md"* ]]
 }
 
 @test "WSL GPU preflight supports explicit off and CPU skip modes" {
@@ -1272,6 +2361,61 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "auto-heal suppression env disables remediation for installer smoke gates" {
+  run_installer_function '
+    SIDAR_INSTALL_SUPPRESS_AUTO_HEAL=1
+    SIDAR_CURRENT_INSTALL_PHASE=04_workspace
+    sidar_resume_after_remediation() {
+      echo "unexpected-resume"
+      return 1
+    }
+    if sidar_install_auto_heal_enabled; then
+      exit 1
+    fi
+    if sidar_handle_install_failure 1 10 "uv sync" "uv sync"; then
+      exit 1
+    fi
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"unexpected-resume"* ]]
+}
+
+@test "auto-heal fails fast for learned non-retryable installer failures" {
+  run_installer_function '
+    SIDAR_CURRENT_INSTALL_PHASE=06_services
+    SIDAR_INSTALL_REMEDIATION_ATTEMPT=0
+    sidar_resume_after_remediation() {
+      echo "unexpected-resume"
+      return 1
+    }
+    if sidar_handle_install_failure 1 20 "pytest smoke" "EnvironmentFileNotFound: environment.yml"; then
+      exit 1
+    fi
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"öğrenilmiş kalıcı hata imzası"* ]]
+  [[ "$output" != *"unexpected-resume"* ]]
+}
+
+@test "auto-heal cuts off repeated failure signatures before transient retry budget" {
+  run_installer_function '
+    SIDAR_CURRENT_INSTALL_PHASE=06_services
+    SIDAR_INSTALL_REMEDIATION_ATTEMPT=1
+    SIDAR_INSTALL_LAST_FAILURE_PHASE=06_services
+    SIDAR_INSTALL_LAST_FAILURE_SIGNATURE="$(sidar_failure_signature 06_services "docker compose up" "service still starting" 1)"
+    sidar_resume_after_remediation() {
+      echo "unexpected-resume"
+      return 1
+    }
+    if sidar_handle_install_failure 1 20 "docker compose up" "service still starting"; then
+      exit 1
+    fi
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"aynı failure imzası tekrarlandı"* ]]
+  [[ "$output" != *"unexpected-resume"* ]]
+}
+
 @test "postgres volume discovery catches Sidar volumes after project directory mismatch" {
   run_installer_function '
     docker() {
@@ -1295,6 +2439,11 @@ EOF
 
 @test "postgres password hardening reset runs compose down fallback when no volume is directly detected" {
   run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    echo "SIDAR_ENV=development" > "$tmpdir/.env"
+    SCRIPT_DIR="$tmpdir"
+
     down_called=false
     fake_compose() {
       case "$1" in
@@ -1466,6 +2615,44 @@ SMI
   [ "$status" -eq 0 ]
 }
 
+@test "detect_cuda_driver_capability falls back to libcuda cuDriverGetVersion when nvidia-smi lacks CUDA banner info" {
+  if ! command -v cc &>/dev/null; then
+    skip "cc derleyicisi mevcut değil"
+  fi
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    cat > "$tmpdir/nvidia-smi" <<SMI
+#!/usr/bin/env bash
+if [[ "\$*" == "--query-gpu=cuda_version --format=csv,noheader" ]]; then
+  echo "Field \"cuda_version\" is not a valid field to query" >&2
+  exit 1
+fi
+echo "NVIDIA-SMI banner without CUDA token (WSL2 N/A case)"
+SMI
+    chmod +x "$tmpdir/nvidia-smi"
+
+    cat > "$tmpdir/libcuda_stub.c" <<CSRC
+int cuInit(unsigned int flags) { return 0; }
+int cuDriverGetVersion(int *version) { *version = 12040; return 0; }
+CSRC
+    cc -shared -fPIC -o "$tmpdir/libcuda.so.1" "$tmpdir/libcuda_stub.c"
+    export SIDAR_LIBCUDA_CANDIDATE_PATHS="$tmpdir/libcuda.so.1"
+
+    [[ "$(detect_cuda_driver_capability "$tmpdir/nvidia-smi")" == "12.4" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "detect_cuda_driver_capability_via_libcuda returns empty when libcuda is unavailable" {
+  run_installer_function '
+    unset LD_LIBRARY_PATH
+    export SIDAR_LIBCUDA_CANDIDATE_PATHS=""
+    [[ -z "$(detect_cuda_driver_capability_via_libcuda)" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
 @test "detect_gpu reports CUDA Driver Cap from query fallback on changed nvidia-smi banners" {
   run_installer_function '
     tmpdir="$(mktemp -d)"
@@ -1492,6 +2679,14 @@ ENV
     FORCE_CPU=false
     WSL2=false
     RUN_GPU_STRESS=0
+    unset SIDAR_GPU_PREFLIGHT_NAME
+    unset SIDAR_GPU_PREFLIGHT_DRIVER_VERSION
+    unset SIDAR_GPU_PREFLIGHT_CUDA_DRIVER_CAPABILITY
+    unset SIDAR_GPU_PREFLIGHT_COMPUTE_CAPABILITY
+    unset SIDAR_GPU_PREFLIGHT_VRAM_MB
+    unset SIDAR_WSL_CUDA_PASSTHROUGH_ACTIVE
+    unset SIDAR_USE_GPU_PREFLIGHT_FACTS
+
     detect_gpu
     [[ "$GPU_AVAILABLE" == "true" ]]
     [[ "$CUDA_VERSION" == "12.9" ]]
@@ -1499,7 +2694,112 @@ ENV
     grep -q "^RUN_GPU_STRESS=1$" "$tmpdir/.env.development"
   '
   [ "$status" -eq 0 ]
-  [[ "$output" == *"CUDA Driver Cap : 12.9"* ]]
+  [[ "$output" == *"Driver CUDA API Capability : 12.9"* ]]
+}
+
+@test "detect_gpu reports unknown CUDA driver cap and separate WSL runtime CUDA" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf -- \"$tmpdir\"" EXIT
+    cat > "$tmpdir/nvidia-smi" <<SMI
+#!/usr/bin/env bash
+case "\$*" in
+  "-L") echo "GPU 0: WSL Test GPU (UUID: GPU-test)" ;;
+  "--query-gpu=name --format=csv,noheader") echo "WSL Test GPU" ;;
+  "--query-gpu=memory.total --format=csv,noheader,nounits") echo "24576" ;;
+  "--query-gpu=compute_cap --format=csv,noheader") echo "8.9" ;;
+  "--query-gpu=cuda_version --format=csv,noheader") exit 1 ;;
+  "--query-gpu=driver_version --format=csv,noheader") echo "610.62" ;;
+  *) echo "NVIDIA-SMI WSL banner without CUDA token" ;;
+esac
+SMI
+    cat > "$tmpdir/uv" <<UV
+#!/usr/bin/env bash
+if [[ "\${1:-} \${2:-}" == "run python" ]]; then
+  echo "13.0"
+fi
+UV
+    chmod +x "$tmpdir/nvidia-smi" "$tmpdir/uv"
+    cat > "$tmpdir/.env.development.example" <<ENV
+SIDAR_ENV=development
+RUN_GPU_STRESS=0
+ENV
+    export PATH="$tmpdir:$PATH"
+    SCRIPT_DIR="$tmpdir"
+    FORCE_CPU=false
+    WSL2=true
+    RUN_GPU_STRESS=0
+    export SIDAR_LIBCUDA_CANDIDATE_PATHS=""
+
+    unset SIDAR_GPU_PREFLIGHT_NAME
+    unset SIDAR_GPU_PREFLIGHT_DRIVER_VERSION
+    unset SIDAR_GPU_PREFLIGHT_CUDA_DRIVER_CAPABILITY
+    unset SIDAR_GPU_PREFLIGHT_COMPUTE_CAPABILITY
+    unset SIDAR_GPU_PREFLIGHT_VRAM_MB
+    unset SIDAR_WSL_CUDA_PASSTHROUGH_ACTIVE
+    unset SIDAR_USE_GPU_PREFLIGHT_FACTS
+
+    detect_gpu
+
+    [[ "$GPU_AVAILABLE" == "true" ]]
+    [[ -z "$CUDA_VERSION" ]]
+    [[ "$PYTORCH_RUNTIME_CUDA_VERSION" == "13.0" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Driver CUDA API Capability : bilinmiyor"* ]]
+  [[ "$output" == *"NVIDIA Windows Driver : 610.62"* ]]
+  [[ "$output" == *"WSL CUDA Passthrough : bilinmiyor"* ]]
+  [[ "$output" == *"PyTorch Runtime CUDA : 13.0"* ]]
+}
+
+@test "detect_gpu reuses WSL preflight GPU facts when available" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf -- \"$tmpdir\"" EXIT
+    cat > "$tmpdir/nvidia-smi" <<SMI
+#!/usr/bin/env bash
+case "\$*" in
+  "-L") echo "GPU 0: Runtime GPU (UUID: GPU-runtime)" ;;
+  "--query-gpu=name --format=csv,noheader") echo "Runtime GPU" ;;
+  "--query-gpu=memory.total --format=csv,noheader,nounits") echo "1024" ;;
+  "--query-gpu=compute_cap --format=csv,noheader") echo "7.5" ;;
+  "--query-gpu=cuda_version --format=csv,noheader") echo "12.1" ;;
+  "--query-gpu=driver_version --format=csv,noheader") echo "500.00" ;;
+  *) echo "unexpected nvidia-smi args: \$*" >&2; exit 1 ;;
+esac
+SMI
+    chmod +x "$tmpdir/nvidia-smi"
+    cat > "$tmpdir/.env.development.example" <<ENV
+SIDAR_ENV=development
+RUN_GPU_STRESS=0
+ENV
+    export PATH="$tmpdir:$PATH"
+    SCRIPT_DIR="$tmpdir"
+    FORCE_CPU=false
+    WSL2=true
+    RUN_GPU_STRESS=0
+    SIDAR_GPU_PREFLIGHT_NAME="Preflight GPU"
+    SIDAR_GPU_PREFLIGHT_DRIVER_VERSION="610.62"
+    SIDAR_GPU_PREFLIGHT_CUDA_DRIVER_CAPABILITY="13.0"
+    SIDAR_GPU_PREFLIGHT_COMPUTE_CAPABILITY="8.6"
+    SIDAR_GPU_PREFLIGHT_VRAM_MB="8192"
+    SIDAR_WSL_CUDA_PASSTHROUGH_ACTIVE=true
+    SIDAR_USE_GPU_PREFLIGHT_FACTS=true
+
+    detect_gpu
+
+    [[ "$GPU_NAME" == "Preflight GPU" ]]
+    [[ "$DRIVER_VER" == "610.62" ]]
+    [[ "$CUDA_VERSION" == "13.0" ]]
+    [[ "$GPU_COMPUTE_CAPABILITY" == "8.6" ]]
+    [[ "$VRAM_MB" == "8192" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"GPU     : Preflight GPU"* ]]
+  [[ "$output" == *"NVIDIA Windows Driver : 610.62"* ]]
+  [[ "$output" == *"Driver CUDA API Capability : 13.0"* ]]
+  [[ "$output" == *"WSL CUDA Passthrough : aktif"* ]]
+  [[ "$output" == *"Compute : 8.6"* ]]
 }
 
 @test "persist_run_gpu_stress_dotenv creates development dotenv from example" {
@@ -1515,6 +2815,98 @@ ENV
     persist_run_gpu_stress_dotenv
     grep -q "^SIDAR_ENV=development$" "$tmpdir/.env.development"
     grep -q "^RUN_GPU_STRESS=1$" "$tmpdir/.env.development"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "propagate_gpu_settings_to_env_variants syncs GPU flags to development and advanced but not production" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+
+    cat > "$tmpdir/.env" <<ENV
+USE_GPU=true
+REQUIRE_GPU=true
+GPU_MIXED_PRECISION=true
+COMPOSE_PROFILES=gpu
+ENV
+
+    cat > "$tmpdir/.env.development" <<ENV
+USE_GPU=false
+REQUIRE_GPU=false
+GPU_MIXED_PRECISION=false
+ENV
+    cp "$tmpdir/.env.development" "$tmpdir/.env.development.example"
+
+    cat > "$tmpdir/.env.advanced" <<ENV
+USE_GPU=false
+REQUIRE_GPU=false
+GPU_MIXED_PRECISION=false
+ENV
+    cp "$tmpdir/.env.advanced" "$tmpdir/.env.advanced.example"
+
+    cat > "$tmpdir/.env.production" <<ENV
+USE_GPU=false
+REQUIRE_GPU=false
+GPU_MIXED_PRECISION=true
+ENV
+
+    SCRIPT_DIR="$tmpdir"
+    propagate_gpu_settings_to_env_variants "$tmpdir/.env"
+
+    grep -q "^USE_GPU=true$" "$tmpdir/.env.development"
+    grep -q "^REQUIRE_GPU=true$" "$tmpdir/.env.development"
+    grep -q "^GPU_MIXED_PRECISION=true$" "$tmpdir/.env.development"
+    grep -q "^COMPOSE_PROFILES=gpu$" "$tmpdir/.env.development"
+
+    grep -q "^USE_GPU=true$" "$tmpdir/.env.advanced"
+    grep -q "^REQUIRE_GPU=true$" "$tmpdir/.env.advanced"
+    grep -q "^GPU_MIXED_PRECISION=true$" "$tmpdir/.env.advanced"
+
+    # .env.production kasıtlı olarak yayılım dışı: production GPU etkinleştirme
+    # production-readiness gate geçmeden manuel olmalı.
+    grep -q "^USE_GPU=false$" "$tmpdir/.env.production"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "configure_gpu_env_defaults fixes stale USE_GPU=false left over in .env.development" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+
+    # Kurulum sırasında GPU tespit edilmeden önce oluşturulmuş .env, GPU
+    # tespitinden sonra USE_GPU=true olarak güncellenecek.
+    cat > "$tmpdir/.env" <<ENV
+USE_GPU=false
+REQUIRE_GPU=false
+GPU_MIXED_PRECISION=false
+ENV
+
+    # .env.development.example şablonundan kopyalanan .env.development bu
+    # bug senaryosunu üretiyordu: USE_GPU=false hiç güncellenmiyordu ve
+    # runtime dotenv zinciri (config.py) development ortamında bunu .env
+    # üzerine override=True ile en son yüklüyordu.
+    cat > "$tmpdir/.env.development" <<ENV
+SIDAR_ENV=development
+USE_GPU=false
+REQUIRE_GPU=false
+GPU_MIXED_PRECISION=false
+ENV
+    cp "$tmpdir/.env.development" "$tmpdir/.env.development.example"
+
+    SCRIPT_DIR="$tmpdir"
+    GPU_AVAILABLE=true
+
+    configure_gpu_env_defaults "$tmpdir/.env"
+
+    grep -q "^USE_GPU=true$" "$tmpdir/.env"
+    grep -q "^COMPOSE_PROFILES=gpu$" "$tmpdir/.env"
+
+    grep -q "^USE_GPU=true$" "$tmpdir/.env.development"
+    grep -q "^REQUIRE_GPU=true$" "$tmpdir/.env.development"
+    grep -q "^GPU_MIXED_PRECISION=true$" "$tmpdir/.env.development"
+    grep -q "^COMPOSE_PROFILES=gpu$" "$tmpdir/.env.development"
   '
   [ "$status" -eq 0 ]
 }
@@ -1536,6 +2928,108 @@ ENV
   [[ "$output" == *"mode=600"* ]]
   [[ "$output" == *"mode=400"* ]]
   [[ "$output" != *"izinleri güvenli değil"* ]]
+}
+
+@test "summary counts non-empty API keys from external secret overlay" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SIDAR_KEYS_FILE="$tmpdir/.sidar_keys.env"
+    cat > "$SIDAR_KEYS_FILE" <<EOF
+OPENAI_API_KEY=secret-openai
+GEMINI_API_KEY=secret-gemini
+ANTHROPIC_API_KEY=
+EOF
+
+    [[ "$(sidar_summary_external_api_key_count)" == "2" ]]
+  '
+
+  [ "$status" -eq 0 ]
+}
+
+@test "verify_sidar_keys_file_permissions repairs generated env secret file permissions" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    SIDAR_KEYS_FILE="$tmpdir/.sidar_keys.env"
+    for env_name in .env .env.advanced .env.development .env.test .env.production; do
+      printf "API_KEY=secret_%s\\n" "$env_name" > "$tmpdir/$env_name"
+      chmod 644 "$tmpdir/$env_name"
+    done
+
+    verify_sidar_keys_file_permissions
+
+    for env_name in .env .env.advanced .env.development .env.test .env.production; do
+      [[ "$(stat -c %a "$tmpdir/$env_name")" == "600" ]]
+    done
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *".env izinleri güvenli değil"* ]]
+  [[ "$output" == *".env.production izinleri 600 olarak düzeltildi"* ]]
+}
+
+@test "collect_api_keys_interactive warns once when real keys are not synced to .env.test" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    HOME="$tmpdir"
+    NO_INTERACTION=true
+    SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV=0
+    SIDAR_KEYS_FILE="$tmpdir/.sidar_keys.env"
+    env_file="$tmpdir/.env"
+    : > "$env_file"
+    : > "$tmpdir/.env.test"
+    valid_user_api_value() {
+      case "$1" in
+        SLACK_WEBHOOK_URL) printf "https://hooks.slack.com/services/test/%s" "$2" ;;
+        JIRA_URL) printf "https://example-%s.atlassian.net" "$2" ;;
+        TEAMS_WEBHOOK_URL) printf "https://example.invalid/teams/%s" "$2" ;;
+        *) printf "value_%s" "$1" ;;
+      esac
+    }
+    idx=0
+    while IFS= read -r key; do
+      idx=$((idx + 1))
+      printf "%s=%s\\n" "$key" "$(valid_user_api_value "$key" "$idx")" >> "$env_file"
+    done < <(sidar_user_api_key_names)
+
+    collect_api_keys_interactive "$env_file"
+
+    grep -q "^OPENAI_API_KEY=value_OPENAI_API_KEY$" "$SIDAR_KEYS_FILE"
+    grep -q "^OPENAI_API_KEY=value_OPENAI_API_KEY$" "$env_file"
+    ! grep -q "^OPENAI_API_KEY=value_OPENAI_API_KEY$" "$tmpdir/.env.test"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$(grep -c "SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV" <<<"$output")" -eq 1 ]]
+  [[ "$(grep -c "SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV" <<<"$output")" -eq 0 ]]
+}
+
+@test "collect_api_keys_interactive materializes real keys to env files only with explicit opt-in" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    HOME="$tmpdir"
+    NO_INTERACTION=true
+    SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV=1
+    SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV=0
+    SIDAR_KEYS_FILE="$tmpdir/.sidar_keys.env"
+    env_file="$tmpdir/.env"
+    : > "$env_file"
+    : > "$tmpdir/.env.development"
+    : > "$tmpdir/.env.test"
+    printf "OPENAI_API_KEY=from_env\\n" >> "$env_file"
+
+    collect_api_keys_interactive "$env_file"
+
+    grep -q "^OPENAI_API_KEY=from_env$" "$env_file"
+    grep -q "^OPENAI_API_KEY=from_env$" "$tmpdir/.env.development"
+    ! grep -q "^OPENAI_API_KEY=from_env$" "$tmpdir/.env.test"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$(grep -c "SIDAR_SYNC_REAL_KEYS_TO_TEST_ENV" <<<"$output")" -eq 1 ]]
 }
 
 @test "ensure_auto_secrets preserves existing MEMORY_ENCRYPTION_KEY and logs reuse" {
@@ -1561,6 +3055,51 @@ ENV
   [[ "$output" != *"MEMORY_ENCRYPTION_KEY (Fernet) otomatik üretildi"* ]]
 }
 
+@test "ensure_auto_secrets retries generated tokens that match weak placeholder patterns" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    env_file="$tmpdir/.env"
+    printf "JWT_SECRET_KEY=replace-with-a-local-development-jwt-secret-32-plus-chars\\n" > "$env_file"
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/bin/python3" <<EOF
+#!/usr/bin/env bash
+count_file="$tmpdir/python3.count"
+count=0
+if [[ -f "\$count_file" ]]; then
+  count=\$(cat "\$count_file")
+fi
+count=\$((count + 1))
+printf "%s\\n" "\$count" > "\$count_file"
+if [[ "\$*" == "-c import secrets; print(secrets.token_urlsafe(64))" ]]; then
+  jwt_count_file="$tmpdir/python3.jwt.count"
+  jwt_count=0
+  if [[ -f "\$jwt_count_file" ]]; then
+    jwt_count=\$(cat "\$jwt_count_file")
+  fi
+  jwt_count=\$((jwt_count + 1))
+  printf "%s\\n" "\$jwt_count" > "\$jwt_count_file"
+  if [[ "\$jwt_count" -eq 1 ]]; then
+    printf "%s\\n" "GeneratedTESTTokenThatShouldBeRejectedBecauseItContainsTest1234567890"
+  else
+    printf "%s\\n" "GnrtdStrongToknWithoutPlacehldrWords_QwE9RtY8UiO7PaS6DfG5HjK4LmN3"
+  fi
+  exit 0
+fi
+exit 1
+EOF
+    chmod +x "$tmpdir/bin/python3"
+    export PATH="$tmpdir/bin:$PATH"
+    secret_strength_script_file() { return 0; }
+
+    ensure_auto_secrets "$env_file"
+
+    grep -q "^JWT_SECRET_KEY=GnrtdStrongToknWithoutPlacehldrWords_QwE9RtY8UiO7PaS6DfG5HjK4LmN3$" "$env_file"
+    ! grep -q "GeneratedTESTToken" "$env_file"
+  '
+  [ "$status" -eq 0 ]
+}
+
 @test "verify_sidar_keys_file_permissions warns when secret file is group-readable" {
   run_installer_function '
     tmpdir="$(mktemp -d)"
@@ -1574,4 +3113,23 @@ ENV
   [ "$status" -eq 0 ]
   [[ "$output" == *"SIDAR_KEYS_FILE izinleri güvenli değil"* ]]
   [[ "$output" == *"chmod 600"* ]]
+}
+
+@test "finish summary prefers run_tests all summary for integration e2e and frontend status" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    TEST_SUMMARY_JSON="$tmpdir/test-summary.json"
+    cat > "$TEST_SUMMARY_JSON" <<JSON
+{"integration":"passed","e2e":"passed","frontend_lint":"passed","frontend_typecheck":"passed","frontend_coverage":"passed","frontend_e2e":"passed"}
+JSON
+    INTEGRATION_TEST_STATUS="atlandi_bayrak"
+    FRONTEND_QUALITY_STATUS="atlandi_bayrak"
+    print_install_summary_extended_test_statuses
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Entegrasyon testleri: başarılı (run_tests.sh --stage all içinde doğrulandı)."* ]]
+  [[ "$output" == *"E2E testleri: başarılı (run_tests.sh --stage all içinde doğrulandı)."* ]]
+  [[ "$output" == *"Frontend kalite kapısı: başarılı (run_tests.sh --stage all içinde lint/typecheck/coverage/e2e doğrulandı)."* ]]
+  [[ "$output" != *"Entegrasyon testleri: atlandı"* ]]
 }

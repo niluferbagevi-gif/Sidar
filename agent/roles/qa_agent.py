@@ -25,7 +25,8 @@ class QAAgent(BaseAgent):
     SYSTEM_PROMPT = (
         "Sen coverage ve test otomasyonu odaklı bir QA ajansın. "
         "Eksik test alanlarını belirler, .coveragerc hedeflerini dikkate alır ve "
-        "CI remediation bağlamını kullanarak tests/ altında deterministik pytest çıktıları üretirsin."
+        "CI remediation bağlamını kullanarak tests/ altında deterministik pytest çıktıları "
+        "üretirsin."
     )
 
     TEST_GENERATION_PROMPT = (
@@ -187,7 +188,8 @@ class QAAgent(BaseAgent):
         diagnosis = str(
             structured.pop(
                 "diagnosis",
-                "Coverage açığını kapatmak için hedefli pytest senaryoları ve CI remediation adımları öner.",
+                "Coverage açığını kapatmak için hedefli pytest senaryoları ve CI remediation "
+                "adımları öner.",
             )
         ).strip()
         remediation = build_ci_remediation_payload(structured, diagnosis)

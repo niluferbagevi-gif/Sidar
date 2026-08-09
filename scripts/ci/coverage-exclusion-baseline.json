@@ -1,0 +1,6 @@
+{
+  "captured_at": "2026-07-31",
+  "maximum_production_exclusions": 108,
+  "owner": "QA/Coverage bakım ekibi",
+  "policy": "one-way; lower after removing exclusions, never raise without reviewed justification"
+}

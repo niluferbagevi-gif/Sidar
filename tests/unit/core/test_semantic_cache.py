@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -8,6 +9,7 @@ import pytest
 
 import core.cache.semantic_cache as semantic_cache_module
 from core.cache.semantic_cache import SemanticCacheManager
+from core.llm.cache import SemanticChatCache
 from core.llm_client import LLMClient, OllamaClient
 
 
@@ -24,6 +26,54 @@ def _cfg(**overrides: object) -> SimpleNamespace:
     }
     base.update(overrides)
     return SimpleNamespace(**base)
+
+
+@pytest.mark.asyncio
+async def test_semantic_chat_cache_skips_empty_prompt_and_preserves_miss(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cache_get = AsyncMock(return_value=None)
+    cache_set = AsyncMock()
+
+    monkeypatch.setattr(SemanticCacheManager, "get", cache_get)
+    monkeypatch.setattr(SemanticCacheManager, "set", cache_set)
+
+    chat_cache = SemanticChatCache(_cfg())
+
+    assert await chat_cache.get("") is None
+    assert await chat_cache.get("cache miss") is None
+    await chat_cache.set("", "ignored-response")
+
+    cache_get.assert_awaited_once_with("cache miss")
+    cache_set.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_semantic_chat_cache_stringifies_cached_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cache_get = AsyncMock(return_value=123)
+
+    monkeypatch.setattr(SemanticCacheManager, "get", cache_get)
+
+    chat_cache = SemanticChatCache(_cfg())
+
+    assert await chat_cache.get("cached prompt") == "123"
+    cache_get.assert_awaited_once_with("cached prompt")
+
+
+def test_semantic_chat_cache_records_stream_skip(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = 0
+
+    def fake_record_cache_skip() -> None:
+        nonlocal calls
+        calls += 1
+
+    monkeypatch.setattr("core.llm.cache.record_cache_skip", fake_record_cache_skip)
+
+    SemanticChatCache.record_stream_skip()
+
+    assert calls == 1
 
 
 @pytest.mark.asyncio
@@ -90,6 +140,185 @@ async def test_semantic_cache_manager_hit_and_miss_with_fake_redis(
     frozen_time.move_to("2026-04-01 12:10:00")
     miss = await manager.get("different prompt")
     assert miss is None
+
+
+@pytest.mark.asyncio
+async def test_semantic_cache_get_batches_reads_into_single_pipeline(
+    fake_redis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression test: get() must batch its Redis reads instead of looping.
+
+    It must not issue one sequential hgetall await per cached item (N Redis
+    round-trips for N items); it should batch all reads for the candidate
+    keys into a single pipelined round-trip instead.
+    """
+    manager = SemanticCacheManager(_cfg())
+    manager._get_redis = AsyncMock(return_value=fake_redis)
+
+    embeddings = {
+        "prompt one": [1.0, 0.0, 0.0],
+        "prompt two": [0.9, 0.1, 0.0],
+        "prompt three": [0.8, 0.2, 0.0],
+        "query": [1.0, 0.0, 0.0],
+    }
+    monkeypatch.setattr(manager, "_embed_prompt", lambda prompt: embeddings.get(prompt, []))
+
+    for prompt in ("prompt one", "prompt two", "prompt three"):
+        await manager.set(prompt, f"{prompt}-answer")
+
+    direct_hgetall_calls = {"count": 0}
+    original_hgetall = type(fake_redis).hgetall
+
+    async def _counting_hgetall(self, *args, **kwargs):
+        direct_hgetall_calls["count"] += 1
+        return await original_hgetall(self, *args, **kwargs)
+
+    monkeypatch.setattr(type(fake_redis), "hgetall", _counting_hgetall)
+
+    pipeline_execute_calls = {"count": 0}
+    original_pipeline = fake_redis.pipeline
+
+    def _counting_pipeline(*args, **kwargs):
+        pipe = original_pipeline(*args, **kwargs)
+        original_execute = pipe.execute
+
+        async def _counting_execute(*e_args, **e_kwargs):
+            pipeline_execute_calls["count"] += 1
+            return await original_execute(*e_args, **e_kwargs)
+
+        pipe.execute = _counting_execute
+        return pipe
+
+    monkeypatch.setattr(fake_redis, "pipeline", _counting_pipeline)
+
+    hit = await manager.get("query")
+
+    assert hit == "prompt one-answer"
+    assert direct_hgetall_calls["count"] == 0
+    assert pipeline_execute_calls["count"] == 1
+
+
+class _MinimalFakePipeline:
+    """Lightweight stand-in for a Redis pipeline, avoiding a fakeredis dependency."""
+
+    def __init__(self, client: _MinimalFakeRedis) -> None:
+        self.client = client
+        self.commands: list[tuple[object, ...]] = []
+
+    def hgetall(self, key: str) -> _MinimalFakePipeline:
+        self.commands.append(("hgetall", key))
+        return self
+
+    def hset(self, key: str, mapping: dict[str, str]) -> _MinimalFakePipeline:
+        self.commands.append(("hset", key, mapping))
+        return self
+
+    def expire(self, key: str, ttl: int) -> _MinimalFakePipeline:
+        self.commands.append(("expire", key, ttl))
+        return self
+
+    def lrem(self, key: str, count: int, value: str) -> _MinimalFakePipeline:
+        self.commands.append(("lrem", key, count, value))
+        return self
+
+    def lpush(self, key: str, value: str) -> _MinimalFakePipeline:
+        self.commands.append(("lpush", key, value))
+        return self
+
+    def ltrim(self, key: str, start: int, end: int) -> _MinimalFakePipeline:
+        self.commands.append(("ltrim", key, start, end))
+        return self
+
+    async def execute(self) -> list[object]:
+        results: list[object] = []
+        for cmd in self.commands:
+            name = cmd[0]
+            if name == "hgetall":
+                results.append(dict(self.client.hashes.get(cmd[1], {})))
+            elif name == "hset":
+                self.client.hashes.setdefault(cmd[1], {}).update(cmd[2])
+                results.append(True)
+            elif name == "expire":
+                results.append(True)
+            elif name == "lrem":
+                _, key, count, value = cmd
+                lst = self.client.lists.setdefault(key, [])
+                removed = 0
+                while value in lst:
+                    lst.remove(value)
+                    removed += 1
+                results.append(removed)
+            elif name == "lpush":
+                _, key, value = cmd
+                self.client.lists.setdefault(key, []).insert(0, value)
+                results.append(len(self.client.lists[key]))
+            elif name == "ltrim":
+                _, key, start, end = cmd
+                lst = self.client.lists.setdefault(key, [])
+                self.client.lists[key] = lst[start : end + 1] if end != -1 else lst[start:]
+                results.append(True)
+        return results
+
+    async def __aenter__(self) -> _MinimalFakePipeline:
+        return self
+
+    async def __aexit__(self, *_exc: object) -> bool:
+        return False
+
+
+class _MinimalFakeRedis:
+    """Lightweight stand-in for an async Redis client, avoiding a fakeredis dependency."""
+
+    def __init__(self) -> None:
+        self.hashes: dict[str, dict[str, str]] = {}
+        self.lists: dict[str, list[str]] = {}
+
+    async def lrange(self, key: str, start: int, end: int) -> list[str]:
+        lst = self.lists.get(key, [])
+        return lst[start:] if end == -1 else lst[start : end + 1]
+
+    async def llen(self, key: str) -> int:
+        return len(self.lists.get(key, []))
+
+    def pipeline(self, transaction: bool = True) -> _MinimalFakePipeline:
+        return _MinimalFakePipeline(self)
+
+
+@pytest.mark.asyncio
+async def test_semantic_cache_get_and_set_offload_embed_prompt_to_a_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression test: _embed_prompt must be offloaded off the event loop.
+
+    _embed_prompt (which may run a real, CPU-bound sentence-transformers
+    model) must be offloaded via asyncio.to_thread in both get() and set(),
+    matching how core/rag/__init__.py already offloads its own
+    embedding/search work, instead of blocking the event loop.
+    """
+    manager = SemanticCacheManager(_cfg())
+    fake_redis = _MinimalFakeRedis()
+    manager._get_redis = AsyncMock(return_value=fake_redis)
+
+    embed_call_threads: list[int] = []
+    event_loop_thread = threading.get_ident()
+
+    def _tracking_embed(prompt: str) -> list[float]:
+        embed_call_threads.append(threading.get_ident())
+        return {"cached prompt": [1.0, 0.0, 0.0], "similar prompt": [0.99, 0.01, 0.0]}.get(
+            prompt, []
+        )
+
+    manager._embed_prompt = _tracking_embed
+
+    await manager.set("cached prompt", "cached-answer")
+    hit = await manager.get("similar prompt")
+
+    assert hit == "cached-answer"
+    assert len(embed_call_threads) == 2
+    assert all(thread_id != event_loop_thread for thread_id in embed_call_threads), (
+        "get()/set() must run _embed_prompt off the event loop thread via asyncio.to_thread"
+    )
 
 
 @pytest.mark.asyncio

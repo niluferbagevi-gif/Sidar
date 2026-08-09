@@ -41,8 +41,10 @@ def build_query_candidates(
     original = str(query or "").strip()
     if not original:
         return []
+    candidate_limit = max(1, max_candidates)
+    expansion_limit = max(0, candidate_limit - 1)
     candidates: builtins.list[str] = []
-    if expander is not None:
+    if expander is not None and expansion_limit > 0:
         try:
             expanded = expander(original)
             raw_candidates: Iterable[Any]
@@ -54,13 +56,12 @@ def build_query_candidates(
                 normalized = str(candidate or "").strip()
                 if normalized and normalized != original and normalized not in candidates:
                     candidates.append(normalized)
-                    if len(candidates) >= max(0, max_candidates - 1):
+                    if len(candidates) >= expansion_limit:
                         break
         except Exception as exc:
             logger.warning("RAG query expansion failed; falling back to original query: %s", exc)
-    if original not in candidates:
-        candidates.append(original)
-    return candidates[: max(1, max_candidates)]
+    candidates.append(original)
+    return candidates[:candidate_limit]
 
 
 __all__ = ["GraphRAGSearchPlan", "QueryExpansionFn", "build_query_candidates"]

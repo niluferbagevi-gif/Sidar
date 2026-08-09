@@ -91,7 +91,56 @@ async def test_rate_limit_impl_blocks_get_io_bucket() -> None:
         mutation_limit=3,
         get_io_limit=4,
         window_sec=60,
-        get_io_paths=("/files",),
+    )
+
+    assert response.status_code == 429
+    assert calls == [("get", "10.0.0.1", 4, 60)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "path", ["/healthz", "/readyz", "/metrics", "/ui/index.html", "/static/app.css"]
+)
+async def test_rate_limit_impl_skips_get_bucket_for_exempt_paths(path: str) -> None:
+    calls: list[tuple[str, str, int, int]] = []
+
+    async def _limited(namespace: str, key: str, limit: int, window: int) -> bool:
+        calls.append((namespace, key, limit, window))
+        return True
+
+    response = await rate_limit_middleware_impl(
+        _request(path, "GET"),
+        _ok_next,
+        get_client_ip=lambda _request: "10.0.0.1",
+        redis_is_rate_limited=_limited,
+        chat_limit=2,
+        mutation_limit=3,
+        get_io_limit=4,
+        window_sec=60,
+    )
+
+    assert response.status_code == 200
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_impl_applies_get_bucket_by_default_to_new_paths() -> None:
+    """A GET path with no special handling still hits the get_io bucket by default."""
+    calls: list[tuple[str, str, int, int]] = []
+
+    async def _limited(namespace: str, key: str, limit: int, window: int) -> bool:
+        calls.append((namespace, key, limit, window))
+        return namespace == "get"
+
+    response = await rate_limit_middleware_impl(
+        _request("/api/brand-new-endpoint", "GET"),
+        _ok_next,
+        get_client_ip=lambda _request: "10.0.0.1",
+        redis_is_rate_limited=_limited,
+        chat_limit=2,
+        mutation_limit=3,
+        get_io_limit=4,
+        window_sec=60,
     )
 
     assert response.status_code == 429
@@ -115,7 +164,6 @@ async def test_rate_limit_impl_uses_principal_key_resolver() -> None:
         mutation_limit=3,
         get_io_limit=4,
         window_sec=60,
-        get_io_paths=("/files",),
         get_rate_limit_key=lambda request, fallback_ip: "user:t1:u1",
     )
 

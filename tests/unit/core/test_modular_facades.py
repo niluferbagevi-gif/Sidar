@@ -35,6 +35,7 @@ def test_rag_graph_and_query_facades_keep_stable_imports(tmp_path: Path) -> None
     assert GraphRAGSearchPlan(query="q", vector_backend="bm25").query == "q"
     assert rag.build_query_candidates("q") == ["q"]
     assert "LLM-assisted extractor" in LLM_ENTITY_EXTRACTION_TODO
+    assert rag.LLM_ENTITY_SCHEMA_VERSION == "graphrag.entity.v1"
 
 
 def test_rag_query_expansion_keeps_original_fallback(caplog) -> None:
@@ -49,6 +50,52 @@ def test_rag_query_expansion_keeps_original_fallback(caplog) -> None:
 
     with caplog.at_level("WARNING", logger="core.rag.query"):
         assert build_query_candidates("orijinal", expander=_broken_expander) == ["orijinal"]
+    assert "falling back to original query" in caplog.text
+
+
+def test_rag_query_candidates_handle_empty_and_single_candidate_limits() -> None:
+    assert build_query_candidates("   ") == []
+    assert build_query_candidates("orijinal", expander=lambda _q: "expanded", max_candidates=0) == [
+        "orijinal"
+    ]
+    assert build_query_candidates("orijinal", expander=lambda _q: "expanded", max_candidates=1) == [
+        "orijinal"
+    ]
+
+
+def test_rag_query_candidates_accept_string_expansion() -> None:
+    assert build_query_candidates("orijinal", expander=lambda _q: "expanded", max_candidates=2) == [
+        "expanded",
+        "orijinal",
+    ]
+
+
+def test_rag_query_candidates_empty_expansion_iterable_keeps_original() -> None:
+    assert build_query_candidates("orijinal", expander=lambda _q: [], max_candidates=3) == [
+        "orijinal"
+    ]
+
+
+def test_rag_query_candidates_dedupe_normalize_and_limit_expansions() -> None:
+    def _expander(_query: str):
+        yield "  semantic campaign  "
+        yield ""
+        yield None
+        yield "semantic campaign"
+        yield "orijinal"
+        yield "graph campaign"
+
+    assert build_query_candidates("orijinal", expander=_expander, max_candidates=3) == [
+        "semantic campaign",
+        "graph campaign",
+        "orijinal",
+    ]
+
+
+def test_rag_query_candidates_fall_back_for_invalid_expander_payload(caplog) -> None:
+    with caplog.at_level("WARNING", logger="core.rag.query"):
+        assert build_query_candidates("orijinal", expander=lambda _q: 42) == ["orijinal"]
+
     assert "falling back to original query" in caplog.text
 
 
@@ -99,3 +146,140 @@ def test_code_helper_modules_are_usable_without_code_manager(tmp_path: Path) -> 
     )
     assert [path.suffix for path in windows_candidates[:4]] == [".cmd", ".exe", ".bat", ""]
     assert tmp_path / ".venv" / "Scripts" / "ruff.cmd" in windows_candidates
+
+
+def test_rag_session_document_helpers_select_and_format_documents() -> None:
+    from core.rag.session_documents import (
+        build_session_summary_lines,
+        documents_for_session,
+        format_document_listing,
+        nightly_digest_document_ids,
+        select_removable_session_documents,
+    )
+
+    index = {
+        "recent": {"title": "Recent", "session_id": "s1", "created_at": 3, "size": 1024},
+        "old": {
+            "title": "Old",
+            "session_id": "s1",
+            "created_at": 1,
+            "preview": "legacy",
+            "size": 512,
+        },
+        "pinned": {"title": "Pinned", "session_id": "s1", "created_at": 0, "tags": ["pinned"]},
+        "digest": {"title": "Digest", "session_id": "s1", "source": "memory://nightly-digest/1"},
+        "other": {"title": "Other", "session_id": "s2"},
+    }
+
+    docs = documents_for_session(index, "s1")
+    assert [doc_id for doc_id, _meta in docs] == ["recent", "old", "pinned", "digest"]
+    assert [
+        doc_id for doc_id, _meta in select_removable_session_documents(docs, keep_recent_docs=1)
+    ] == [
+        "old",
+        "digest",
+    ]
+    assert nightly_digest_document_ids(docs) == ["digest"]
+    assert build_session_summary_lines("s1", [("old", index["old"])]) == [
+        "Oturum: s1",
+        "Konsolide edilen belge sayısı: 1",
+        "Öne çıkan eski belge özetleri:",
+        "- [old] Old :: legacy",
+    ]
+    assert "[Belge Deposu — 1 belge] (pgvector pasif)" in format_document_listing(
+        {"old": index["old"]}, vector_backend="pgvector", pgvector_available=False
+    )
+
+
+def test_rag_graph_formatting_helpers_preserve_legacy_text_shape() -> None:
+    from core.rag.graph_formatting import format_graph_impact_analysis, format_graph_search_results
+
+    graph_text = format_graph_search_results(
+        "auth",
+        code_results=[{"id": "core/auth.py", "score": 3, "neighbors": {"core/db.py"}}],
+        entity_results=[
+            {
+                "score": 2,
+                "node": {"id": "entity:auth", "label": "Feature", "name": "Auth"},
+                "relations": [{"source": "entity:auth", "target": "entity:db", "relation": "USES"}],
+            }
+        ],
+        graph_nodes={"entity:auth": {"name": "Auth"}, "entity:db": {"name": "DB"}},
+    )
+
+    assert "[GraphRAG: auth]" in graph_text
+    assert "Auth -[USES]-> DB" in graph_text
+    assert "Komşular: core/db.py" in graph_text
+
+    impact_text = format_graph_impact_analysis(
+        {
+            "target": "web_server.py",
+            "node_type": "file",
+            "risk_level": "high",
+            "direct_dependents": ["tests/unit/root/test_web_server.py"],
+            "dependency_paths": [["web_server.py", "web/routes/ws_chat.py"]],
+        }
+    )
+
+    assert "[GraphRAG Impact] web_server.py" in impact_text
+    assert "- Risk seviyesi: high" in impact_text
+    assert "1. web_server.py -> web/routes/ws_chat.py" in impact_text
+
+
+def test_rag_projection_helper_builds_document_entity_and_code_nodes() -> None:
+    from types import SimpleNamespace
+
+    from core.rag.projection import build_knowledge_graph_projection_payload
+
+    graph_index = SimpleNamespace(
+        nodes={"core/db.py": {"type": "file"}},
+        edges={"core/db.py": {"core/rag.py"}},
+        edge_kinds={("core/db.py", "core/rag.py"): {"IMPORTS"}},
+    )
+    payload = build_knowledge_graph_projection_payload(
+        index={
+            "doc1": {
+                "title": "Doc 1",
+                "source": "file://doc1",
+                "session_id": "s1",
+            },
+            "doc2": {"title": "Doc 2", "session_id": "s2"},
+        },
+        entity_graph={
+            "nodes": {
+                "feature": {
+                    "label": "Feature",
+                    "name": "Campaign",
+                    "properties": {"session_id": "s1"},
+                }
+            },
+            "edges": [
+                {
+                    "source": "feature",
+                    "target": "audience",
+                    "relation": "TARGETS",
+                    "session_id": "s1",
+                    "properties": {"confidence": 1.0},
+                }
+            ],
+        },
+        graph_index=graph_index,
+        session_id="s1",
+        pgvector_available=True,
+        vector_backend="bm25",
+        limit=10,
+    )
+
+    node_ids = {node.id for node in payload["nodes"]}
+    edge_relations = {edge.relation for edge in payload["edges"]}
+    assert {
+        "doc:doc1",
+        "session:s1",
+        "source:file://doc1",
+        "entity:feature",
+        "code:core/db.py",
+    }.issubset(node_ids)
+    assert "doc:doc2" not in node_ids
+    assert {"CONTAINS_DOCUMENT", "DERIVED_FROM", "TARGETS", "IMPORTS"}.issubset(edge_relations)
+    assert payload["vector_backend"] == "pgvector"
+    assert "UNWIND $nodes" in payload["cypher_hint"]

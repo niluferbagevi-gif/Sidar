@@ -14,6 +14,28 @@ async function readJson(req) {
   return JSON.parse(text);
 }
 
+async function readRawBody(req) {
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  return Buffer.concat(chunks);
+}
+
+/**
+ * Extract a single text field's value out of a raw multipart/form-data
+ * body. Good enough for e2e purposes (AgentManagerPanel's file-upload
+ * form) without pulling in a multipart-parsing dependency.
+ */
+function readMultipartField(buffer, boundary, fieldName) {
+  const text = buffer.toString("latin1");
+  const marker = `name="${fieldName}"`;
+  const markerIndex = text.indexOf(marker);
+  if (markerIndex === -1) return "";
+  const valueStart = text.indexOf("\r\n\r\n", markerIndex) + 4;
+  const valueEnd = text.indexOf(`--${boundary}`, valueStart);
+  if (valueStart < 4 || valueEnd === -1) return "";
+  return Buffer.from(text.slice(valueStart, valueEnd), "latin1").toString("utf8").trim();
+}
+
 function selectFirstSubprotocol(protocols) {
   return protocols.values().next().value ?? undefined;
 }
@@ -40,6 +62,24 @@ const pendingHitl = [
 ];
 
 export async function startMockSidarBackend({ port = 0 } = {}) {
+  const pluginCatalog = [
+    {
+      plugin_id: "e2e-sample-plugin",
+      name: "E2E Sample Plugin",
+      category: "automation",
+      summary: "Mock marketplace girdisi.",
+      description: "Yalnızca e2e testleri için sağlanan örnek plugin.",
+      role_name: "e2e_sample",
+      version: "1.0.0",
+      entrypoint: "e2e_sample_plugin.py",
+      capabilities: ["automation"],
+      installed: false,
+      live_registered: false,
+    },
+  ];
+  const rbacPolicies = [];
+  const promptRegistry = [];
+
   const server = http.createServer(async (req, res) => {
     if (req.url === "/healthz") {
       sendJson(res, 200, { ok: true });
@@ -48,6 +88,132 @@ export async function startMockSidarBackend({ port = 0 } = {}) {
 
     if (req.method === "GET" && req.url === "/api/hitl/pending") {
       sendJson(res, 200, { pending: pendingHitl });
+      return;
+    }
+
+    if (req.method === "GET" && req.url === "/api/plugin-marketplace/catalog") {
+      sendJson(res, 200, { items: pluginCatalog });
+      return;
+    }
+
+    if (req.method === "POST" && req.url === "/api/plugin-marketplace/install") {
+      const body = await readJson(req);
+      const entry = pluginCatalog.find((item) => item.plugin_id === body.plugin_id);
+      if (entry) {
+        entry.installed = true;
+        entry.live_registered = true;
+      }
+      sendJson(res, 200, { success: true, plugin_id: body.plugin_id });
+      return;
+    }
+
+    if (req.method === "POST" && req.url === "/api/plugin-marketplace/reload") {
+      const body = await readJson(req);
+      sendJson(res, 200, { success: true, plugin_id: body.plugin_id });
+      return;
+    }
+
+    if (req.method === "DELETE" && req.url?.startsWith("/api/plugin-marketplace/install/")) {
+      const pluginId = decodeURIComponent(req.url.split("/").pop() || "");
+      const entry = pluginCatalog.find((item) => item.plugin_id === pluginId);
+      if (entry) {
+        entry.installed = false;
+        entry.live_registered = false;
+      }
+      sendJson(res, 200, { success: true, plugin_id: pluginId });
+      return;
+    }
+
+    if (req.method === "GET" && req.url?.startsWith("/admin/audit-logs")) {
+      sendJson(res, 200, { items: [] });
+      return;
+    }
+
+    if (req.method === "GET" && req.url?.startsWith("/admin/policies/")) {
+      const userId = decodeURIComponent(req.url.split("?")[0].split("/").pop() || "");
+      sendJson(res, 200, { items: rbacPolicies.filter((item) => item.user_id === userId) });
+      return;
+    }
+
+    if (req.method === "POST" && req.url === "/admin/policies") {
+      const body = await readJson(req);
+      const policy = {
+        id: `policy-e2e-${rbacPolicies.length + 1}`,
+        user_id: body.user_id || "",
+        tenant_id: body.tenant_id || "default",
+        resource_type: body.resource_type || "rag",
+        resource_id: body.resource_id || "*",
+        action: body.action || "read",
+        effect: body.effect || "allow",
+      };
+      rbacPolicies.push(policy);
+      sendJson(res, 200, {
+        items: rbacPolicies.filter((item) => item.user_id === policy.user_id),
+      });
+      return;
+    }
+
+    if (req.method === "GET" && req.url?.startsWith("/admin/prompts")) {
+      const roleFilter = new URL(req.url, "http://sidar.local").searchParams.get("role_name");
+      const items = roleFilter
+        ? promptRegistry.filter((item) => item.role_name === roleFilter)
+        : promptRegistry;
+      sendJson(res, 200, { items });
+      return;
+    }
+
+    if (req.method === "POST" && req.url === "/admin/prompts") {
+      const body = await readJson(req);
+      const roleName = body.role_name || "system";
+      const version = promptRegistry.filter((item) => item.role_name === roleName).length + 1;
+      if (body.activate) {
+        promptRegistry.forEach((item) => {
+          if (item.role_name === roleName) item.is_active = false;
+        });
+      }
+      const record = {
+        id: `prompt-e2e-${promptRegistry.length + 1}`,
+        role_name: roleName,
+        prompt_text: body.prompt_text || "",
+        version,
+        is_active: body.activate !== false,
+        updated_at: new Date().toISOString(),
+      };
+      promptRegistry.push(record);
+      sendJson(res, 200, { item: record });
+      return;
+    }
+
+    if (req.method === "POST" && req.url === "/admin/prompts/activate") {
+      const body = await readJson(req);
+      const target = promptRegistry.find((item) => item.id === body.prompt_id);
+      if (!target) {
+        sendJson(res, 404, { detail: "Prompt bulunamadı" });
+        return;
+      }
+      promptRegistry.forEach((item) => {
+        if (item.role_name === target.role_name) item.is_active = item.id === target.id;
+      });
+      sendJson(res, 200, { version: target.version });
+      return;
+    }
+
+    if (req.method === "POST" && req.url === "/api/agents/register-file") {
+      const contentType = req.headers["content-type"] || "";
+      const boundaryMatch = contentType.match(/boundary=(.+)$/);
+      const raw = await readRawBody(req);
+      const boundary = boundaryMatch ? boundaryMatch[1] : "";
+      const roleName = boundary ? readMultipartField(raw, boundary, "role_name") : "";
+      const className = boundary ? readMultipartField(raw, boundary, "class_name") : "";
+      const version = boundary ? readMultipartField(raw, boundary, "version") : "";
+      sendJson(res, 200, {
+        agent: {
+          role_name: roleName || "e2e_uploaded_agent",
+          class_name: className || "E2EUploadedAgent",
+          version: version || "1.0.0",
+          capabilities: ["e2e_capability"],
+        },
+      });
       return;
     }
 
@@ -222,6 +388,14 @@ export async function startMockSidarBackend({ port = 0 } = {}) {
       }
 
       if (payload.action === "message") {
+        socket.send(JSON.stringify({
+          type: "collaboration_event",
+          event: {
+            kind: "thought",
+            source: "reviewer",
+            content: "Reviewer ajanı gelen mesajı inceliyor.",
+          },
+        }));
         socket.send(JSON.stringify({ type: "assistant_stream_start", request_id: "req-e2e-1" }));
         socket.send(JSON.stringify({ type: "assistant_chunk", request_id: "req-e2e-1", chunk: "Mock backend " }));
         socket.send(JSON.stringify({ type: "assistant_chunk", request_id: "req-e2e-1", chunk: "yanıtı" }));

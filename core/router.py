@@ -1,4 +1,4 @@
-"""Cost-Aware Model Routing (v5.0)
+"""Cost-Aware Model Routing (v5.0).
 
 Sorgu karmaşıklığını analiz ederek lokal (Ollama) veya bulut (cloud) modele
 otomatik olarak yönlendirir. Günlük bütçe aşımında otomatik lokal-fallback uygular.
@@ -21,6 +21,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import Mock
+
+from core.db.dialect import assert_safe_sql_identifier
 
 logger = logging.getLogger(__name__)
 
@@ -225,7 +227,9 @@ def _configure_budget_tracker(config: object) -> None:
 class _SqliteDailyBudgetTracker:
     """Günlük maliyeti SQLite üzerinde processler arası paylaşarak takip eder."""
 
-    _TABLE_NAME = "cost_routing_daily_budget"
+    # Validated once at class-definition time via the shared identifier helper (see
+    # core/db_components/dialect.py) instead of a bare "trust me" nosec comment.
+    _TABLE_NAME = assert_safe_sql_identifier("cost_routing_daily_budget")
 
     def __init__(self, db_path: str) -> None:
         self._db_path = str(db_path).strip()
@@ -262,12 +266,13 @@ class _SqliteDailyBudgetTracker:
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(
-                f"SELECT day_epoch, daily_cost FROM {self._TABLE_NAME} WHERE id = 1"  # nosec B608  # _TABLE_NAME sabit iç tanımlı değerdir, kullanıcı girdisi değildir.
+                f"SELECT day_epoch, daily_cost FROM {self._TABLE_NAME} WHERE id = 1"  # nosec B608  # _TABLE_NAME assert_safe_sql_identifier ile doğrulanmıştır.
             ).fetchone()
             if row is None or int(row[0]) != day_epoch:
                 conn.execute(
-                    f"INSERT INTO {self._TABLE_NAME} (id, day_epoch, daily_cost) VALUES (1, ?, ?)"  # nosec B608  # _TABLE_NAME sabit iç tanımlı değerdir, kullanıcı girdisi değildir.
-                    " ON CONFLICT(id) DO UPDATE SET day_epoch=excluded.day_epoch, daily_cost=excluded.daily_cost",
+                    f"INSERT INTO {self._TABLE_NAME} (id, day_epoch, daily_cost) VALUES (1, ?, ?)"  # nosec B608  # _TABLE_NAME assert_safe_sql_identifier ile doğrulanmıştır.
+                    " ON CONFLICT(id) DO UPDATE SET"
+                    " day_epoch=excluded.day_epoch, daily_cost=excluded.daily_cost",
                     (day_epoch, increment),
                 )
             elif increment > 0.0:
@@ -284,7 +289,7 @@ class _SqliteDailyBudgetTracker:
         self._upsert_usage(delta=0.0)
         with self._connect() as conn:
             row = conn.execute(
-                f"SELECT daily_cost FROM {self._TABLE_NAME} WHERE id = 1"  # nosec B608  # _TABLE_NAME sabit iç tanımlı değerdir, kullanıcı girdisi değildir.
+                f"SELECT daily_cost FROM {self._TABLE_NAME} WHERE id = 1"  # nosec B608  # _TABLE_NAME assert_safe_sql_identifier ile doğrulanmıştır.
             ).fetchone()
             return float(row[0]) if row else 0.0
 
@@ -364,8 +369,7 @@ def record_routing_cost(cost_usd: float) -> None:
 
 
 class CostAwareRouter:
-    """
-    Sorgu karmaşıklığı + günlük bütçeye göre lokal / bulut model seçer.
+    """Sorgu karmaşıklığı + günlük bütçeye göre lokal / bulut model seçer.
 
     Seçim mantığı:
     1. ENABLE_COST_ROUTING=false ise karar vermez, varsayılana bırakır.
@@ -400,8 +404,8 @@ class CostAwareRouter:
         default_provider: str,
         default_model: str | None = None,
     ) -> tuple[str, str | None]:
-        """
-        (provider, model) çifti döner.
+        """(provider, model) çifti döner.
+
         Router devre dışıysa veya karar verilemiyorsa (default_provider, default_model) döner.
         """
         if not self.enabled:
@@ -456,8 +460,8 @@ class CostAwareRouter:
 
     @staticmethod
     def _estimate_tokens(messages: list[dict[str, str]]) -> int:
-        """
-        Provider bağımsız yaklaşık token hesabı.
+        """Provider bağımsız yaklaşık token hesabı.
+
         Öncelik: tiktoken `cl100k_base` encoder.
         Fallback: Türkçe içerik için daha korumacı ~3 karakter ≈ 1 token yaklaşımı.
         """

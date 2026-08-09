@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-import re
 import subprocess  # nosec B404
 import sys
 from collections.abc import Awaitable, Callable
@@ -12,6 +11,7 @@ from typing import Any, cast
 from fastapi import Depends, Request
 from fastapi.responses import JSONResponse
 
+from managers.code.git_validation import is_valid_git_ref_name
 from web.routes import LegacyExportRouter
 
 _ALLOWED_GIT_COMMANDS: tuple[tuple[str, ...], ...] = (
@@ -22,7 +22,6 @@ _ALLOWED_GIT_COMMANDS: tuple[tuple[str, ...], ...] = (
     ("git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"),
     ("git", "branch", "--format=%(refname:short)"),
 )
-_BRANCH_RE = re.compile(r"^[a-zA-Z0-9/_.-]+$")
 _SAFE_EXTENSIONS = {
     ".py",
     ".txt",
@@ -172,7 +171,7 @@ def build_project_ops_router(
         return JSONResponse({"success": False, "error": "Silinemedi."}, status_code=500)
 
     @router.get("/files")
-    async def list_project_files(path: str = "") -> Any:
+    async def list_project_files(path: str = "", _user: Any = Depends(get_request_user)) -> Any:
         root = resolve_server_root()
         root = root.resolve()
         target = (root / path).resolve()
@@ -204,7 +203,7 @@ def build_project_ops_router(
         )
 
     @router.get("/file-content")
-    async def file_content(path: str) -> Any:
+    async def file_content(path: str, _user: Any = Depends(get_request_user)) -> Any:
         root = resolve_server_root()
         root = root.resolve()
         target = (root / path).resolve()
@@ -225,7 +224,9 @@ def build_project_ops_router(
         if size_bytes > max_bytes:
             return JSONResponse(
                 {
-                    "error": f"Dosya boyutu limiti aşıldı: {size_bytes} bayt (maksimum {max_bytes} bayt)"
+                    "error": (
+                        f"Dosya boyutu limiti aşıldı: {size_bytes} bayt (maksimum {max_bytes} bayt)"
+                    )
                 },
                 status_code=413,
             )
@@ -301,11 +302,14 @@ def build_project_ops_router(
         branch_name = body.get("branch", "").strip()
         if not branch_name:
             return JSONResponse({"success": False, "error": "Dal adı boş."}, status_code=400)
-        if not _BRANCH_RE.match(branch_name):
+        if not is_valid_git_ref_name(branch_name):
             return JSONResponse(
                 {
                     "success": False,
-                    "error": "Geçersiz dal adı: yalnızca harf, rakam, '/', '_', '-', '.' kullanılabilir.",
+                    "error": (
+                        "Geçersiz dal adı: '-' ile başlayamaz, boşluk/kontrol karakteri veya "
+                        "Git ref için riskli semboller (~^:?*[\\], '..', '//', '@{') içeremez."
+                    ),
                 },
                 status_code=400,
             )

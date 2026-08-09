@@ -7,9 +7,11 @@ import {
   setStoredToken,
   clearStoredToken,
   getTokenPrincipal,
+  isAdminPrincipal,
   getCurrentUser,
   buildAuthHeaders,
   fetchJson,
+  DEFAULT_FETCH_TIMEOUT_MS,
   runPoyrazOperation,
   generateLandingPage,
   generateCampaignCopy,
@@ -188,6 +190,13 @@ describe("api.js localStorage checks", () => {
 });
 
 describe("buildAuthHeaders", () => {
+  it("normalizes tuple arrays and Headers instances", () => {
+    expect(buildAuthHeaders([["X-Array", "yes"]])).toEqual({ "X-Array": "yes" });
+    expect(buildAuthHeaders(new globalThis.Headers({ "X-Headers": "yes" }))).toEqual({
+      "x-headers": "yes",
+    });
+  });
+
   it("returns Authorization header when token exists", () => {
     setStoredToken("my-token");
     const headers = buildAuthHeaders();
@@ -257,6 +266,21 @@ describe("getTokenPrincipal", () => {
   });
 });
 
+describe("isAdminPrincipal", () => {
+  it("accepts the admin role case-insensitively", () => {
+    expect(isAdminPrincipal({ role: "ADMIN", username: "operator" })).toBe(true);
+  });
+
+  it("accepts the bootstrap default_admin identity", () => {
+    expect(isAdminPrincipal({ role: "user", username: "default_admin" })).toBe(true);
+  });
+
+  it("rejects ordinary and missing principals", () => {
+    expect(isAdminPrincipal({ role: "user", username: "operator" })).toBe(false);
+    expect(isAdminPrincipal(null)).toBe(false);
+  });
+});
+
 
 describe("fetchJson — başarılı JSON yanıtı", () => {
   it("returns parsed JSON for 200 response", async () => {
@@ -280,7 +304,9 @@ describe("fetchJson — başarılı JSON yanıtı", () => {
 
     await fetchJson("/api/secure");
     const [, options] = fetchMock.mock.calls[0];
-    expect(options.credentials).toBe("include");
+    // Bearer token is the only auth model — no cookie-based credentials
+    // should ever be requested alongside it (see fetchJson's comment).
+    expect(options.credentials).toBeUndefined();
     expect(options.headers["Authorization"]).toBe("Bearer test-tok");
   });
 
@@ -341,6 +367,17 @@ describe("fetchJson — hata yanıtları", () => {
     await expect(fetchJson("/api/unprocessable")).rejects.toThrow("İstek başarısız oldu");
   });
 
+  it("throws the default message for primitive JSON error payloads", async () => {
+    mockFetch({
+      ok: false,
+      status: 500,
+      headers: { get: () => "application/json" },
+      json: async () => 42,
+    });
+
+    await expect(fetchJson("/api/primitive-error")).rejects.toThrow("İstek başarısız oldu");
+  });
+
   it("passes custom options to fetch", async () => {
     const fetchMock = mockFetch({
       ok: true,
@@ -370,6 +407,103 @@ describe("fetchJson — hata yanıtları", () => {
     mockFetch(response);
     await expect(fetchJson("/api/broken-response")).rejects.toThrow("ok değeri okunamadı");
   });
+
+  it("passes an AbortSignal to fetch so requests can be cancelled", async () => {
+    const fetchMock = mockFetch({
+      ok: true,
+      headers: { get: () => "application/json" },
+      json: async () => ({}),
+    });
+
+    await fetchJson("/api/test");
+    const [, options] = fetchMock.mock.calls[0];
+    expect(options.signal).toBeInstanceOf(AbortSignal);
+  });
+});
+
+describe("fetchJson — timeout & cancellation", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // Gerçek fetch, signal abort edildiğinde AbortError ile reddeder; testte
+  // backend'in hiç yanıt vermediği (isteğin sonsuza kadar askıda kaldığı)
+  // durumu simüle etmek için bu davranışı taklit ediyoruz.
+  function abortError() {
+    const err = new Error("The operation was aborted.");
+    err.name = "AbortError";
+    return err;
+  }
+
+  function mockAbortAwareFetch() {
+    const fetchMock = vi.fn((_url, opts) => {
+      // Real fetch rejects synchronously (checking signal.aborted) when given
+      // an already-aborted signal, instead of waiting for a future event.
+      if (opts?.signal?.aborted) {
+        return Promise.reject(abortError());
+      }
+      return new Promise((_resolve, reject) => {
+        opts?.signal?.addEventListener("abort", () => reject(abortError()));
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  it("rejects with a clear timeout error instead of hanging forever", async () => {
+    mockAbortAwareFetch();
+
+    const pending = fetchJson("/api/hangs-forever");
+    const assertion = expect(pending).rejects.toThrow(/zaman aşımına uğradı/);
+    await vi.advanceTimersByTimeAsync(DEFAULT_FETCH_TIMEOUT_MS);
+    await assertion;
+  });
+
+  it("honors a custom timeoutMs option", async () => {
+    mockAbortAwareFetch();
+
+    const pending = fetchJson("/api/slow", { timeoutMs: 5000 });
+    const assertion = expect(pending).rejects.toThrow(/zaman aşımına uğradı \(5000ms\)/);
+    await vi.advanceTimersByTimeAsync(5000);
+    await assertion;
+  });
+
+  it("does not time out when timeoutMs is disabled", async () => {
+    mockFetch({
+      ok: true,
+      headers: { get: () => "application/json" },
+      json: async () => ({ ok: true }),
+    });
+
+    const data = await fetchJson("/api/no-timeout", { timeoutMs: 0 });
+    expect(data).toEqual({ ok: true });
+  });
+
+  it("propagates an externally supplied AbortSignal's cancellation (e.g. component unmount)", async () => {
+    mockAbortAwareFetch();
+    const externalController = new AbortController();
+
+    const pending = fetchJson("/api/cancel-me", { signal: externalController.signal });
+    const assertion = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    externalController.abort();
+    await assertion;
+    // External cancellation must not be reworded as a timeout error.
+    await expect(pending).rejects.not.toThrow(/zaman aşımına uğradı/);
+  });
+
+  it("aborts immediately when an already-aborted signal is passed in", async () => {
+    mockAbortAwareFetch();
+    const externalController = new AbortController();
+    externalController.abort();
+
+    await expect(
+      fetchJson("/api/already-cancelled", { signal: externalController.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+  });
 });
 
 
@@ -389,10 +523,7 @@ describe("agent API bridge helpers", () => {
 
     await getCurrentUser();
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/auth/me",
-      expect.objectContaining({ credentials: "include", headers: {} }),
-    );
+    expect(fetchMock).toHaveBeenCalledWith("/auth/me", expect.objectContaining({ headers: {} }));
   });
 
   it("posts Poyraz operation payloads to operation endpoints", async () => {
@@ -418,6 +549,20 @@ describe("agent API bridge helpers", () => {
       expect(options.method).toBe("POST");
       expect(options.headers["Content-Type"]).toBe("application/json");
     }
+  });
+
+  it("normalizes explicit null operation payloads to empty objects", async () => {
+    const fetchMock = mockJsonFetch();
+
+    await generateLandingPage(null);
+    await generateCampaignCopy(null);
+    await planServiceOperations(null);
+
+    expect(fetchMock.mock.calls.map(([, options]) => options.body)).toEqual([
+      "{}",
+      "{}",
+      "{}",
+    ]);
   });
 
   it("uses QA coverage REST endpoints", async () => {
@@ -483,7 +628,7 @@ describe("agent API bridge helpers", () => {
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/qa/coverage/tasks",
-      expect.objectContaining({ credentials: "include", headers: {} }),
+      expect.objectContaining({ headers: {} }),
     );
   });
 

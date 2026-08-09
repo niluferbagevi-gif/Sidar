@@ -1,0 +1,125 @@
+# Sidar Docker build context exclusions
+#
+# .gitignore docker build context'ini ETKİLEMEZ — `docker build .` ile
+# çalışma dizinindeki her dosya (git tarafından izlenmese bile) COPY . .
+# katmanına gömülebilir. install_sidar.sh sonrası kökte oluşan
+# .env / .env.production / .env.test gibi secret dosyalarının image
+# katmanlarına sızmasını önlemek için bu dosya zorunludur.
+#
+# Not: .env değerleri runtime'da docker-compose.yml içindeki `env_file: .env`
+# ile enjekte edilir; build zamanında hiçbir .env dosyasına ihtiyaç yoktur.
+
+# Version control
+.git
+.gitattributes
+
+# Secrets & environment files — asla image katmanına gömülmemeli
+.env
+.env.*
+!.env.example
+!.env.advanced.example
+!.env.development.example
+!.env.production.example
+!.env.test.example
+.sidar_keys.env
+.sidar_keys.env.local
+.sidar_session.json
+.sidar_session.json.lock
+/secrets/
+/credentials/
+*.pem
+*.key
+*.cert
+*.cer
+*.p12
+*.pfx
+id_rsa*
+
+# Python bytecode / venvs / caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.venv-container/
+venv/
+env/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.hypothesis/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.coverage-baseline
+htmlcov/
+coverage.xml
+coverage.json
+coverage-final.json
+.benchmarks/
+
+# Node (yalnızca node_modules hariç — web_ui_react/dist CI'da build edilip
+# COPY . . ile imaja gömülür, bu yüzden dist/build burada HARİÇ TUTULMAZ)
+web_ui_react/node_modules/
+web_ui_react/.eslintcache
+web_ui_react/.parcel-cache/
+web_ui_react/.vite/
+web_ui_react/coverage/
+web_ui_react/test-results/
+web_ui_react/playwright-report/
+web_ui_react/blob-report/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime veri, log ve oturum dosyaları
+# (kök dizine "/" ile ankraj — docs/module-notes/data gibi iç içe aynı adlı
+# dizinlerin yanlışlıkla build context'inden düşmesini önler)
+/data/
+/logs/
+/temp/
+/tmp/
+/sessions/
+/chroma_db/
+/models/
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.sqlite3
+*.log
+*.pid
+*.sock
+
+# Docker volume verileri (yerel geliştirmeden kalan bind mount içerikleri)
+/prometheus_data/
+/grafana_data/
+/postgres_data/
+/pgdata/
+/redis_data/
+
+# Rapor / yedek / build artifact'leri
+# NOT: "dist/" ve "build/" burada KASITLI OLARAK yok — web_ui_react/dist,
+# release-quality CI'da `npm run build` ile üretilip COPY . . aracılığıyla
+# imaja gömülüyor (web_server.py REACT_DIST_DIR / web_dist_path()).
+# Genel bir "dist/" veya "build/" kuralı bu dizini de build context'inden
+# düşürüp React SPA'yı imajdan kaybettirir.
+/reports/
+/backups/
+/artifacts/
+/wheels/
+*.whl
+
+# IDE / OS
+.idea/
+.vscode/
+.cursor/
+.fleet/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Media / indirilenler
+/media_cache/
+/downloads/

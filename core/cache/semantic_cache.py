@@ -165,7 +165,7 @@ class SemanticCacheManager:
             return None
         redis_client = cast(Any, redis)
 
-        query_vector = self._embed_prompt(prompt)
+        query_vector = await asyncio.to_thread(self._embed_prompt, prompt)
         if not query_vector:
             return None
 
@@ -178,10 +178,14 @@ class SemanticCacheManager:
                 return None
             set_cache_items(len(keys))
 
+            async with redis_client.pipeline(transaction=False) as pipe:
+                for key in keys:
+                    pipe.hgetall(key)
+                all_raw = await pipe.execute()
+
             best_sim = -1.0
             best_response: str | None = None
-            for key in keys:
-                raw = await redis_client.hgetall(key)
+            for raw in all_raw:
                 if not raw:
                     continue
                 try:
@@ -218,7 +222,7 @@ class SemanticCacheManager:
             return
         redis_client = cast(Any, redis)
 
-        vector = self._embed_prompt(prompt)
+        vector = await asyncio.to_thread(self._embed_prompt, prompt)
         if not vector:
             return
 

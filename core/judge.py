@@ -1,5 +1,5 @@
-"""
-Sidar Project — LLM-as-a-Judge Kalite Değerlendirme Modülü
+"""Sidar Project — LLM-as-a-Judge Kalite Değerlendirme Modülü.
+
 RAG sonuçları ve ajan yanıtlarını asenkron olarak LLM tabanlı değerlendirir.
 
 Özellikler:
@@ -40,7 +40,8 @@ logger = logging.getLogger(__name__)
 _RELEVANCE_SYSTEM = (
     "Sen bir RAG kalite değerlendirme asistanısın. "
     "Sana bir kullanıcı sorgusu ve bir belge parçası verilecek. "
-    "Belgenin sorguyla ne kadar alakalı olduğunu 0.0 ile 1.0 arasında bir ondalıklı sayı olarak döndür. "
+    "Belgenin sorguyla ne kadar alakalı olduğunu 0.0 ile 1.0 arasında bir ondalıklı sayı olarak "
+    "döndür. "
     "Sadece sayıyı döndür, başka hiçbir şey yazma. Örnek: 0.85"
 )
 
@@ -99,7 +100,7 @@ class JudgeResult:
 
     @property
     def passed(self) -> bool:
-        """Kalite eşiğini geçti mi? (relevance ≥ 0.5 ve risk ≤ 0.5)"""
+        """Kalite eşiğini geçti mi? (relevance ≥ 0.5 ve risk ≤ 0.5)."""
         return self.relevance_score >= 0.5 and self.hallucination_risk <= 0.5
 
     @property
@@ -134,8 +135,7 @@ class ResponseEvaluation:
 
 
 class LLMJudge:
-    """
-    LLM tabanlı kalite değerlendirici.
+    """LLM tabanlı kalite değerlendirici.
 
     Async arka plan görevi olarak çalışır; ana ReAct döngüsünü bloklamaz.
     Değerlendirme sonuçları LLMMetricsCollector'a ve Prometheus'a yazılır.
@@ -352,8 +352,7 @@ class LLMJudge:
         documents: list[str],
         answer: str | None = None,
     ) -> JudgeResult | None:
-        """
-        RAG sorgusunu ve belgelerini değerlendir.
+        """RAG sorgusunu ve belgelerini değerlendir.
 
         Args:
             query:     Kullanıcı sorgusu
@@ -373,7 +372,7 @@ class LLMJudge:
         model_used = self.model or "default"
 
         # Alaka puanı
-        relevance_prompt = f"Sorgu: {query}\n\n" f"Belge:\n{context_text[:2000]}"
+        relevance_prompt = f"Sorgu: {query}\n\nBelge:\n{context_text[:2000]}"
         relevance = await self._call_llm(_RELEVANCE_SYSTEM, relevance_prompt)
         if relevance is None:
             relevance = 0.5  # bilinmiyor → nötr
@@ -382,7 +381,7 @@ class LLMJudge:
         hallucination = 0.0
         if answer:
             hall_prompt = (
-                f"Soru: {query}\n\n" f"Bağlam:\n{context_text[:1500]}\n\n" f"Yanıt:\n{answer[:500]}"
+                f"Soru: {query}\n\nBağlam:\n{context_text[:1500]}\n\nYanıt:\n{answer[:500]}"
             )
             hall_val = await self._call_llm(_HALLUCINATION_SYSTEM, hall_prompt)
             if hall_val is not None:
@@ -441,7 +440,8 @@ class LLMJudge:
                 score=int(round(result.quality_score_10)),
                 reasoning=(
                     "judge:auto relevance="
-                    f"{result.relevance_score:.4f} hallucination_risk={result.hallucination_risk:.4f}"
+                    f"{result.relevance_score:.4f} "
+                    f"hallucination_risk={result.hallucination_risk:.4f}"
                 ),
                 user_id="",
                 session_id="judge:auto",
@@ -479,8 +479,8 @@ class LLMJudge:
         documents: list[str],
         answer: str | None = None,
     ) -> None:
-        """
-        Değerlendirmeyi asyncio arka plan görevi olarak zamanla.
+        """Değerlendirmeyi asyncio arka plan görevi olarak zamanla.
+
         Ana akışı bloklamaz; fire-and-forget yaklaşımı.
         """
         if not self._should_evaluate():

@@ -1,22 +1,20 @@
-"""
-Sidar Project - Ana Ajan
+"""Sidar Project - Ana Ajan.
+
 Supervisor tabanlı multi-agent omurgasıyla çalışan yazılım mühendisi AI asistanı (Asenkron).
 """
 
 import asyncio
 import contextlib
-import importlib
 import inspect
 import json
 import logging
-import sys
 import threading
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -25,10 +23,27 @@ try:
 except Exception:  # OpenTelemetry opsiyoneldir
     trace = None  # type: ignore[assignment]
 
+from agent.autonomy.service import (
+    append_autonomy_history as append_autonomy_history_service,
+)
+from agent.autonomy.service import (
+    ensure_autonomy_runtime_state as ensure_autonomy_runtime_state_service,
+)
+from agent.autonomy.service import (
+    get_autonomy_activity as get_autonomy_activity_service,
+)
 from agent.bootstrap import log_sidar_agent_startup
 from agent.core.contracts_fallback import (
-    bind_fallback_contracts,
-    default_derive_correlation_id,
+    default_derive_correlation_id as _default_derive_correlation_id,
+)
+from agent.definitions import SIDAR_SYSTEM_PROMPT
+from agent.federation import service as federation_service
+from agent.github import smart_pr as github_smart_pr
+from agent.maintenance.nightly import (
+    run_nightly_memory_maintenance as run_nightly_memory_maintenance_service,
+)
+from agent.self_heal.executor import (
+    execute_mechanical_autofix as execute_mechanical_autofix_service,
 )
 from agent.self_heal.executor import (
     execute_self_heal_plan as execute_self_heal_plan_service,
@@ -36,6 +51,14 @@ from agent.self_heal.executor import (
 from agent.self_heal.executor import (
     restore_self_heal_backups as restore_self_heal_backups_service,
 )
+from agent.self_heal.orchestrator import (
+    attempt_autonomous_self_heal as attempt_autonomous_self_heal_service,
+)
+from agent.self_heal.planner import build_plan as build_self_heal_plan_service
+from agent.self_heal.planner import collect_snapshots as collect_self_heal_snapshots_service
+from agent.self_heal.planner import resolve_scope_batches as resolve_self_heal_scope_batches_service
+from agent.triggers import build_trigger_correlation as build_trigger_correlation_service
+from agent.triggers import handle_external_trigger as handle_external_trigger_service
 from config import Config
 from core.ci_remediation import (
     build_ci_failure_context,
@@ -57,11 +80,6 @@ from managers.system_health import SystemHealthManager
 from managers.todo_manager import TodoManager
 from managers.web_search import WebSearchManager
 
-agent_contracts = sys.modules.get("agent.core.contracts") or import_module("agent.core.contracts")
-agent_definitions = sys.modules.get("agent.definitions") or import_module("agent.definitions")
-
-SIDAR_SYSTEM_PROMPT = agent_definitions.SIDAR_SYSTEM_PROMPT
-ExternalTrigger = agent_contracts.ExternalTrigger
 if TYPE_CHECKING:
     from agent.core.contracts import ExternalTrigger as ExternalTriggerType
 else:
@@ -74,36 +92,39 @@ def get_agent_metrics_collector() -> Any:
     return _get_agent_metrics_collector()
 
 
-_default_derive_correlation_id = default_derive_correlation_id
-
-
-derive_correlation_id = getattr(
-    agent_contracts, "derive_correlation_id", _default_derive_correlation_id
-)
-
-
-(
-    _FallbackFederationTaskEnvelope,
-    _FallbackActionFeedback,
-) = bind_fallback_contracts(derive_correlation_id)
-
-FederationTaskEnvelope = getattr(
-    agent_contracts, "FederationTaskEnvelope", _FallbackFederationTaskEnvelope
-)
-ActionFeedback = getattr(agent_contracts, "ActionFeedback", _FallbackActionFeedback)
-
 logger = logging.getLogger(__name__)
+
+ActionFeedback = federation_service.ActionFeedback
+FederationTaskEnvelope = federation_service.FederationTaskEnvelope
+derive_correlation_id = federation_service.derive_correlation_id
+_FallbackActionFeedback = federation_service.FallbackActionFeedback
+_FallbackFederationTaskEnvelope = federation_service.FallbackFederationTaskEnvelope
+build_trigger_prompt_service = federation_service.build_trigger_prompt
+trigger_attr_service = federation_service.trigger_attr
+trigger_meta_service = federation_service.trigger_meta
+trigger_payload_service = federation_service.trigger_payload
+trigger_to_prompt_service = federation_service.trigger_to_prompt
+
+__all__ = [
+    "ActionFeedback",
+    "FederationTaskEnvelope",
+    "SidarAgent",
+    "ToolCall",
+    "_FallbackActionFeedback",
+    "_default_derive_correlation_id",
+    "_FallbackFederationTaskEnvelope",
+]
 
 ARCHIVE_CONTEXT_HEADER = "[Geçmiş Sohbet Arşivinden İlgili Notlar]"
 CONTEXT_GEMINI_MODEL_LABEL = "Gemini Modeli"
 CONTEXT_GITHUB_CONNECTED_PREFIX = "Bağlı — "
 CONTEXT_TASK_LIST_HEADER = "[Aktif Görev Listesi]"
 SUBTASK_MAX_STEPS_MESSAGE = "✗ Maksimum adım sınırına ulaşıldı. Alt görev tamamlanamadı."
-GITHUB_SMART_PR_NO_TOKEN_MESSAGE = "⚠ GitHub token bulunamadı."  # nosec B105
-GITHUB_SMART_PR_NO_BRANCH_MESSAGE = "✗ Aktif branch bulunamadı."
-GITHUB_SMART_PR_NO_CHANGES_MESSAGE = "ℹ Değişiklik bulunamadı; PR oluşturulmadı."
-GITHUB_SMART_PR_CREATE_FAILED_PREFIX = "✗ PR oluşturulamadı:"
-GITHUB_SMART_PR_CREATE_SUCCESS_PREFIX = "✓ PR oluşturuldu:"
+GITHUB_SMART_PR_NO_TOKEN_MESSAGE = github_smart_pr.GITHUB_SMART_PR_NO_TOKEN_MESSAGE
+GITHUB_SMART_PR_NO_BRANCH_MESSAGE = github_smart_pr.GITHUB_SMART_PR_NO_BRANCH_MESSAGE
+GITHUB_SMART_PR_NO_CHANGES_MESSAGE = github_smart_pr.GITHUB_SMART_PR_NO_CHANGES_MESSAGE
+GITHUB_SMART_PR_CREATE_FAILED_PREFIX = github_smart_pr.GITHUB_SMART_PR_CREATE_FAILED_PREFIX
+GITHUB_SMART_PR_CREATE_SUCCESS_PREFIX = github_smart_pr.GITHUB_SMART_PR_CREATE_SUCCESS_PREFIX
 
 
 class ToolCall(BaseModel):
@@ -146,6 +167,7 @@ class AgentDependencies:
             file_path=cfg.MEMORY_FILE,
             max_turns=cfg.MAX_MEMORY_TURNS,
             encryption_key=getattr(cfg, "MEMORY_ENCRYPTION_KEY", ""),
+            previous_encryption_keys=getattr(cfg, "MEMORY_ENCRYPTION_KEY_PREVIOUS", ""),
             keep_last=getattr(cfg, "MEMORY_SUMMARY_KEEP_LAST", 4),
         )
         llm = LLMClient(cfg.AI_PROVIDER, cfg)
@@ -172,8 +194,8 @@ class AgentDependencies:
 
 
 class SidarAgent:
-    """
-    Sidar — Yazılım Mimarı ve Baş Mühendis AI Asistanı.
+    """Sidar — Yazılım Mimarı ve Baş Mühendis AI Asistanı.
+
     Tamamen asenkron ağ istekleri, stream, yapısal veri ve sonsuz vektör hafıza uyumlu yapı.
     """
 
@@ -238,6 +260,8 @@ class SidarAgent:
         self.system_prompt: str = SIDAR_SYSTEM_PROMPT
         self._autonomy_history: list[dict[str, Any]] = []
         self._autonomy_lock: asyncio.Lock | None = None
+        self._self_heal_attempts: dict[str, int] = {}
+        self._self_heal_attempts_lock: asyncio.Lock | None = None
         self._last_activity_ts: float = time.time()
         self._nightly_maintenance_lock: asyncio.Lock | None = None
         self._nightly_distributed_lock: RedisDistributedLock | None = None
@@ -323,9 +347,7 @@ class SidarAgent:
     # ─────────────────────────────────────────────
 
     async def respond(self, user_input: str) -> AsyncIterator[str]:
-        """
-        Kullanıcı girdisini asenkron işle ve yanıtı STREAM olarak döndür.
-        """
+        """Kullanıcı girdisini asenkron işle ve yanıtı STREAM olarak döndür."""
         user_input = user_input.strip()
         if not user_input:
             yield "⚠ Boş girdi."
@@ -415,19 +437,10 @@ class SidarAgent:
             logger.warning("Nightly distributed lock release failed: %s", exc)
 
     def _ensure_autonomy_runtime_state(self) -> None:
-        if not hasattr(self, "_autonomy_history") or self._autonomy_history is None:
-            self._autonomy_history = []
-        if not hasattr(self, "_autonomy_lock"):
-            self._autonomy_lock = None
+        ensure_autonomy_runtime_state_service(self)
 
     async def _append_autonomy_history(self, record: dict[str, Any]) -> None:
-        self._ensure_autonomy_runtime_state()
-        if self._autonomy_lock is None:
-            self._autonomy_lock = asyncio.Lock()
-        async with self._autonomy_lock:
-            history = list(self._autonomy_history[-49:])
-            history.append(dict(record))
-            self._autonomy_history = history
+        await append_autonomy_history_service(self, record)
 
     @staticmethod
     def _update_remediation_step(
@@ -442,58 +455,15 @@ class SidarAgent:
             break
 
     async def _collect_self_heal_snapshots(self, scope_paths: list[str]) -> list[dict[str, str]]:
-        snapshots: list[dict[str, str]] = []
-        for path in scope_paths[:6]:
-            normalized = str(path or "").strip().lstrip("./")
-            if not normalized:
-                continue
-            ok, content = await asyncio.to_thread(self.code.read_file, normalized, False)
-            if not ok:
-                continue
-            snapshots.append({"path": normalized, "content": str(content)})
-        return snapshots
+        return await collect_self_heal_snapshots_service(self.code, scope_paths)
 
     def _resolve_self_heal_scope_batches(
         self, scope_paths: list[str], remediation_loop: dict[str, Any]
     ) -> list[list[str]]:
-        configured_batch_size = max(
-            1, int(getattr(self.cfg, "SELF_HEAL_AUTONOMOUS_BATCH_SIZE", 5) or 5)
+        batch_size = max(1, int(getattr(self.cfg, "SELF_HEAL_AUTONOMOUS_BATCH_SIZE", 5) or 5))
+        return resolve_self_heal_scope_batches_service(
+            scope_paths, remediation_loop, batch_size=batch_size
         )
-        candidate_batches: list[list[str]] = []
-        for item in list(remediation_loop.get("autonomous_batches") or []):
-            if not isinstance(item, dict):
-                continue
-            batch_scope = [
-                str(path).strip()
-                for path in list(item.get("scope_paths") or [])
-                if str(path).strip()
-            ]
-            if batch_scope:
-                candidate_batches.append(batch_scope)
-        if not candidate_batches:
-            candidate_batches = [
-                scope_paths[index : index + configured_batch_size]
-                for index in range(0, len(scope_paths), configured_batch_size)
-            ]
-
-        normalized: list[list[str]] = []
-        seen_keys: set[tuple[str, ...]] = set()
-        for batch_scope in candidate_batches:
-            chunk: list[str] = []
-            seen_in_chunk: set[str] = set()
-            for path in batch_scope:
-                if path not in scope_paths or path in seen_in_chunk:
-                    continue
-                seen_in_chunk.add(path)
-                chunk.append(path)
-            if not chunk:
-                continue
-            key = tuple(chunk)
-            if key in seen_keys:
-                continue
-            seen_keys.add(key)
-            normalized.append(chunk)
-        return normalized
 
     async def _build_self_heal_plan(
         self,
@@ -502,148 +472,18 @@ class SidarAgent:
         diagnosis: str,
         remediation_loop: dict[str, Any],
     ) -> dict[str, Any]:
-        scope_paths = [
-            str(item).strip()
-            for item in list(remediation_loop.get("scope_paths") or [])
-            if str(item).strip()
-        ]
-        if not scope_paths:
-            return {
-                "summary": "Self-heal kapsamı boş olduğu için plan oluşturulmadı.",
-                "confidence": "unknown",
-                "operations": [],
-                "validation_commands": list(remediation_loop.get("validation_commands") or []),
-            }
-
-        max_operations = max(1, int(getattr(self.cfg, "SELF_HEAL_MAX_PATCHES", 3) or 3))
-        fallback_validation_commands = list(remediation_loop.get("validation_commands") or [])
-        plan_timeout_seconds = max(
-            30,
-            int(getattr(self.cfg, "SELF_HEAL_PLAN_TIMEOUT_SECONDS", 180) or 180),
+        return await build_self_heal_plan_service(
+            code=self.code,
+            llm=self.llm,
+            cfg=self.cfg,
+            ci_context=ci_context,
+            diagnosis=diagnosis,
+            remediation_loop=remediation_loop,
+            prompt_builder=build_self_heal_patch_prompt,
+            plan_normalizer=normalize_self_heal_plan,
+            logger=logger,
+            range_factory=globals().get("range", range),
         )
-        plan_max_retries = max(
-            1,
-            int(getattr(self.cfg, "SELF_HEAL_PLAN_MAX_RETRIES", 3) or 3),
-        )
-        skip_full_scope_min_files = max(
-            1,
-            int(getattr(self.cfg, "SELF_HEAL_SKIP_FULL_SCOPE_MIN_FILES", 6) or 6),
-        )
-
-        async def _generate_plan_for_scope(paths: list[str]) -> dict[str, Any]:
-            last_plan: dict[str, Any] | None = None
-            for attempt in range(1, plan_max_retries + 1):
-                snapshots = await self._collect_self_heal_snapshots(paths)
-                scope_loop = dict(remediation_loop)
-                scope_loop["scope_paths"] = paths
-                scope_loop["plan_retry"] = {"attempt": attempt, "max_retries": plan_max_retries}
-                prompt = build_self_heal_patch_prompt(ci_context, diagnosis, scope_loop, snapshots)
-                try:
-                    raw_plan = await asyncio.wait_for(
-                        self.llm.chat(
-                            messages=[{"role": "user", "content": prompt}],
-                            model=getattr(self.cfg, "CODING_MODEL", None),
-                            temperature=0.1,
-                            stream=False,
-                            json_mode=True,
-                        ),
-                        timeout=plan_timeout_seconds,
-                    )
-                except TimeoutError:
-                    logger.warning(
-                        "Self-heal plan generation timeout: scope=%s timeout=%ss attempt=%s/%s",
-                        ",".join(paths[:6]),
-                        plan_timeout_seconds,
-                        attempt,
-                        plan_max_retries,
-                    )
-                    last_plan = {
-                        "summary": (
-                            "Self-heal planı zaman aşımına uğradı; "
-                            "daha küçük batch ile yeniden denenecek."
-                        ),
-                        "confidence": "unknown",
-                        "operations": [],
-                        "validation_commands": fallback_validation_commands,
-                    }
-                    continue
-                except Exception as exc:
-                    logger.warning(
-                        "Self-heal plan generation failed for scope %s at attempt %s/%s: %s",
-                        paths,
-                        attempt,
-                        plan_max_retries,
-                        exc,
-                    )
-                    last_plan = {
-                        "summary": f"Self-heal planı üretilemedi: {exc}",
-                        "confidence": "unknown",
-                        "operations": [],
-                        "validation_commands": fallback_validation_commands,
-                    }
-                    continue
-
-                normalized = normalize_self_heal_plan(
-                    raw_plan,
-                    scope_paths=paths,
-                    fallback_validation_commands=fallback_validation_commands,
-                    max_operations=max_operations,
-                )
-                normalized["plan_attempt"] = attempt
-                normalized["plan_max_retries"] = plan_max_retries
-                if list(normalized.get("operations") or []):
-                    return normalized
-                last_plan = normalized
-
-            if last_plan is not None:
-                summary = str(last_plan.get("summary") or "").strip()
-                attempts_info = f" (attempts: {plan_max_retries}/{plan_max_retries})"
-                last_plan["summary"] = (
-                    f"{summary}{attempts_info}" if summary else attempts_info.strip()
-                )
-                last_plan["plan_attempt"] = plan_max_retries
-                last_plan["plan_max_retries"] = plan_max_retries
-                return last_plan
-
-            return {
-                "summary": "Self-heal planı üretilemedi; plan deneme döngüsü çalışmadı.",
-                "confidence": "unknown",
-                "operations": [],
-                "validation_commands": fallback_validation_commands,
-                "plan_attempt": 0,
-                "plan_max_retries": plan_max_retries,
-            }
-
-        should_attempt_full_scope = len(scope_paths) < skip_full_scope_min_files and not list(
-            remediation_loop.get("autonomous_batches") or []
-        )
-        fallback_plan: dict[str, Any] | None = None
-        if should_attempt_full_scope:
-            initial_plan = await _generate_plan_for_scope(scope_paths)
-            if list(initial_plan.get("operations") or []):
-                return initial_plan
-            fallback_plan = initial_plan
-
-        for chunk in self._resolve_self_heal_scope_batches(scope_paths, remediation_loop):
-            batch_plan = await _generate_plan_for_scope(chunk)
-            if list(batch_plan.get("operations") or []):
-                summary = str(batch_plan.get("summary") or "").strip()
-                batch_plan["summary"] = (
-                    f"{summary} (batch plan: {len(chunk)}/{len(scope_paths)} dosya)"
-                    if summary
-                    else f"Batch plan ile patch üretildi: {len(chunk)}/{len(scope_paths)} dosya."
-                )
-                return batch_plan
-            fallback_plan = batch_plan
-
-        if fallback_plan is not None:
-            return fallback_plan
-        return {
-            "summary": "Self-heal planı üretilemedi.",
-            "confidence": "unknown",
-            "operations": [],
-            "validation_commands": fallback_validation_commands,
-        }
 
     async def _restore_self_heal_backups(self, backups: dict[str, str]) -> None:
         await restore_self_heal_backups_service(self.code, backups)
@@ -661,6 +501,15 @@ class SidarAgent:
             plan=plan,
         )
 
+    async def _attempt_mechanical_autofix(
+        self, *, remediation_loop: dict[str, Any]
+    ) -> dict[str, Any]:
+        return await execute_mechanical_autofix_service(
+            code=self.code,
+            base_dir=str(self.cfg.BASE_DIR),
+            remediation_loop=remediation_loop,
+        )
+
     async def _attempt_autonomous_self_heal(
         self,
         *,
@@ -669,202 +518,32 @@ class SidarAgent:
         remediation: dict[str, Any],
         human_approval: bool | None = None,
     ) -> dict[str, Any]:
-        remediation_loop = dict(remediation.get("remediation_loop") or {})
-        execution: dict[str, Any]
-        if not bool(getattr(self.cfg, "ENABLE_AUTONOMOUS_SELF_HEAL", False)):
-            execution = {"status": "disabled", "summary": "Autonomous self-heal kapalı."}
-            remediation["self_heal_execution"] = execution
-            return execution
-        if str(remediation_loop.get("status", "")).strip() != "planned":
-            execution = {"status": "skipped", "summary": "Remediation loop plan durumunda değil."}
-            remediation["self_heal_execution"] = execution
-            return execution
-        if bool(remediation_loop.get("needs_human_approval")):
-            default_hitl_decision = (
-                str(getattr(self.cfg, "SELF_HEAL_DEFAULT_DECISION", "prompt")).strip().lower()
-            )
-            if human_approval is None and default_hitl_decision in {
-                "approve",
-                "approved",
-                "yes",
-                "true",
-                "1",
-            }:
-                human_approval = True
-            elif human_approval is None and default_hitl_decision in {
-                "reject",
-                "rejected",
-                "no",
-                "false",
-                "0",
-            }:
-                human_approval = False
-            elif human_approval is None and default_hitl_decision in {
-                "prompt",
-                "ask",
-                "interactive",
-            }:
-                human_approval = None
-            if human_approval is False:
-                remediation_loop["status"] = "rejected"
-                self._update_remediation_step(
-                    remediation_loop,
-                    "handoff",
-                    status="rejected",
-                    detail="HITL onayı reddedildi; self-heal uygulanmadı.",
-                )
-                execution = cast(
-                    dict[str, Any],
-                    {
-                        "status": "rejected",
-                        "summary": "İnsan onayı verilmediği için self-heal iptal edildi.",
-                        "hitl_reasons": list(remediation_loop.get("hitl_reasons") or []),
-                    },
-                )
-                remediation["remediation_loop"] = remediation_loop
-                remediation["self_heal_execution"] = execution
-                return execution
-            if human_approval is True:
-                remediation_loop["needs_human_approval"] = False
-                self._update_remediation_step(
-                    remediation_loop,
-                    "handoff",
-                    status="running",
-                    detail="HITL onayı alındı; otonom self-heal devam ediyor.",
-                )
-            else:
-                self._update_remediation_step(
-                    remediation_loop,
-                    "handoff",
-                    status="awaiting_hitl",
-                    detail="Riskli remediation otomatik uygulanmadı; HITL onayı bekleniyor.",
-                )
-                execution = cast(
-                    dict[str, Any],
-                    {
-                        "status": "awaiting_hitl",
-                        "summary": "Risk seviyesi nedeniyle self-heal HITL onayına bırakıldı.",
-                        "hitl_reasons": list(remediation_loop.get("hitl_reasons") or []),
-                    },
-                )
-                remediation["remediation_loop"] = remediation_loop
-                remediation["self_heal_execution"] = execution
-                return execution
-        if not hasattr(self, "code") or not hasattr(self, "llm"):
-            execution = {
-                "status": "blocked",
-                "summary": "Self-heal için code/llm bağımlılıkları hazır değil.",
-            }
-            remediation["self_heal_execution"] = execution
-            return execution
-
-        plan = await self._build_self_heal_plan(
+        """Delegate bounded self-heal orchestration to its domain service."""
+        return await attempt_autonomous_self_heal_service(
+            self,
             ci_context=ci_context,
             diagnosis=diagnosis,
-            remediation_loop=remediation_loop,
+            remediation=remediation,
+            human_approval=human_approval,
         )
-        remediation["self_heal_plan"] = plan
-        if not list(plan.get("operations") or []):
-            execution = {"status": "blocked", "summary": "LLM patch planı üretilemedi."}
-            if int(plan.get("plan_attempt") or 0) >= int(plan.get("plan_max_retries") or 0) > 0:
-                remediation_loop["needs_human_intervention"] = True
-                self._update_remediation_step(
-                    remediation_loop,
-                    "handoff",
-                    status="pending",
-                    detail=(
-                        "Maksimum self-heal plan retry limiti aşıldı; "
-                        "insan müdahalesi gerekiyor."
-                    ),
-                )
-            self._update_remediation_step(
-                remediation_loop,
-                "patch",
-                status="blocked",
-                detail="LLM güvenli patch planı üretemedi.",
-            )
-            remediation["remediation_loop"] = remediation_loop
-            remediation["self_heal_execution"] = execution
-            return execution
-
-        self._update_remediation_step(
-            remediation_loop,
-            "patch",
-            status="running",
-            detail="Self-heal patch operasyonları uygulanıyor.",
-        )
-        execution = await self._execute_self_heal_plan(remediation_loop=remediation_loop, plan=plan)
-        remediation["self_heal_execution"] = execution
-
-        if execution["status"] == "applied":
-            remediation_loop["status"] = "applied"
-            self._update_remediation_step(
-                remediation_loop,
-                "patch",
-                status="completed",
-                detail=f"{len(execution.get('operations_applied', []))} patch uygulandı.",
-            )
-            self._update_remediation_step(
-                remediation_loop,
-                "validate",
-                status="completed",
-                detail="Sandbox doğrulamaları başarıyla geçti.",
-            )
-            self._update_remediation_step(
-                remediation_loop,
-                "handoff",
-                status="completed",
-                detail="Değişiklikler başarıyla uygulandı; sonraki adım PR/proposal güncellemesi.",
-            )
-        else:
-            remediation_loop["status"] = execution["status"]
-            self._update_remediation_step(
-                remediation_loop,
-                "patch",
-                status="failed",
-                detail=execution["summary"],
-            )
-            self._update_remediation_step(
-                remediation_loop,
-                "validate",
-                status="failed",
-                detail="Self-heal doğrulaması başarısız olduğu için rollback yapıldı.",
-            )
-        remediation["remediation_loop"] = remediation_loop
-        return execution
 
     @staticmethod
     def _trigger_attr(
         trigger: ExternalTriggerType | dict[str, Any], name: str, default: Any = ""
     ) -> Any:
-        if isinstance(trigger, dict):
-            return trigger.get(name, default)
-        return getattr(trigger, name, default)
+        return trigger_attr_service(trigger, name, default)
 
     @staticmethod
     def _trigger_payload(trigger: ExternalTriggerType | dict[str, Any]) -> dict[str, Any]:
-        raw_payload = SidarAgent._trigger_attr(trigger, "payload", {})
-        return dict(raw_payload or {}) if isinstance(raw_payload, dict) else {}
+        return trigger_payload_service(trigger)
 
     @staticmethod
     def _trigger_meta(trigger: ExternalTriggerType | dict[str, Any]) -> dict[str, Any]:
-        raw_meta = SidarAgent._trigger_attr(trigger, "meta", {})
-        return dict(raw_meta or {}) if isinstance(raw_meta, dict) else {}
+        return trigger_meta_service(trigger)
 
     @staticmethod
     def _trigger_to_prompt(trigger: ExternalTriggerType | dict[str, Any]) -> str:
-        if isinstance(trigger, dict):
-            event_name = str(trigger.get("event_name", "event"))
-            payload = dict(trigger.get("payload", {}) or {})
-            source = str(trigger.get("source", "external"))
-            return f"[EXTERNAL EVENT]\\nsource={source}\\nevent_name={event_name}\\npayload={json.dumps(payload, ensure_ascii=False)}"
-        to_prompt = getattr(trigger, "to_prompt", None)
-        if callable(to_prompt):
-            return str(to_prompt())
-        event_name = str(getattr(trigger, "event_name", "event"))
-        source = str(getattr(trigger, "source", "external"))
-        payload = SidarAgent._trigger_payload(trigger)
-        return f"[EXTERNAL EVENT]\\nsource={source}\\nevent_name={event_name}\\npayload={json.dumps(payload, ensure_ascii=False)}"
+        return trigger_to_prompt_service(trigger)
 
     @staticmethod
     def _build_trigger_prompt(
@@ -874,209 +553,26 @@ class SidarAgent:
     ) -> str:
         if ci_context:
             return build_ci_failure_prompt(ci_context)
-
-        if payload_dict.get("kind") == "federation_task":
-            federation_payload = dict(payload_dict.get("federation_task") or payload_dict)
-            if payload_dict.get("federation_prompt"):
-                return str(payload_dict.get("federation_prompt"))
-            return FederationTaskEnvelope(
-                task_id=str(
-                    federation_payload.get("task_id")
-                    or SidarAgent._trigger_attr(trigger, "trigger_id", "")
-                ),
-                source_system=str(
-                    federation_payload.get("source_system")
-                    or SidarAgent._trigger_attr(trigger, "source", "external")
-                ),
-                source_agent=str(federation_payload.get("source_agent") or "external"),
-                target_system=str(federation_payload.get("target_system") or "sidar"),
-                target_agent=str(federation_payload.get("target_agent") or "supervisor"),
-                goal=str(federation_payload.get("goal") or ""),
-                protocol=str(federation_payload.get("protocol") or "federation.v1"),
-                intent=str(federation_payload.get("intent") or "mixed"),
-                context=dict(federation_payload.get("context") or {}),
-                inputs=list(federation_payload.get("inputs") or []),
-                meta=dict(federation_payload.get("meta") or {}),
-                correlation_id=str(
-                    federation_payload.get("correlation_id")
-                    or SidarAgent._trigger_attr(trigger, "correlation_id", "")
-                ),
-            ).to_prompt()
-
-        event_name = str(SidarAgent._trigger_attr(trigger, "event_name", "event"))
-        if payload_dict.get("kind") == "action_feedback" or event_name == "action_feedback":
-            return ActionFeedback(
-                feedback_id=str(
-                    payload_dict.get("feedback_id")
-                    or SidarAgent._trigger_attr(trigger, "trigger_id", "")
-                ),
-                source_system=str(
-                    payload_dict.get("source_system")
-                    or SidarAgent._trigger_attr(trigger, "source", "external")
-                ),
-                source_agent=str(payload_dict.get("source_agent") or "external"),
-                action_name=str(payload_dict.get("action_name") or event_name),
-                status=str(payload_dict.get("status") or "received"),
-                summary=str(
-                    payload_dict.get("summary") or "Dış sistem action feedback sinyali alındı."
-                ),
-                related_task_id=str(payload_dict.get("related_task_id") or ""),
-                related_trigger_id=str(payload_dict.get("related_trigger_id") or ""),
-                details=dict(payload_dict.get("details") or {}),
-                meta=dict(payload_dict.get("meta") or SidarAgent._trigger_meta(trigger) or {}),
-                correlation_id=str(
-                    payload_dict.get("correlation_id")
-                    or SidarAgent._trigger_attr(trigger, "correlation_id", "")
-                ),
-            ).to_prompt()
-
-        return SidarAgent._trigger_to_prompt(trigger)
+        return build_trigger_prompt_service(trigger, payload_dict, None)
 
     def _build_trigger_correlation(
         self,
         trigger: ExternalTriggerType | dict[str, Any],
         payload_dict: dict[str, Any],
     ) -> dict[str, Any]:
-        self._ensure_autonomy_runtime_state()
-        trigger_meta = SidarAgent._trigger_meta(trigger)
-        correlation_id = derive_correlation_id(
-            SidarAgent._trigger_attr(trigger, "correlation_id", ""),
-            trigger_meta.get("correlation_id", ""),
-            payload_dict.get("correlation_id", ""),
-            payload_dict.get("related_task_id", ""),
-            payload_dict.get("task_id", ""),
-            SidarAgent._trigger_attr(trigger, "trigger_id", ""),
-        )
-        related_trigger_id = str(payload_dict.get("related_trigger_id") or "").strip()
-        related_task_id = str(
-            payload_dict.get("related_task_id") or payload_dict.get("task_id") or ""
-        ).strip()
-
-        matches: list[dict[str, Any]] = []
-        for item in reversed(list(getattr(self, "_autonomy_history", []) or [])):
-            item_trigger_id = str(item.get("trigger_id", "") or "")
-            item_payload = dict(item.get("payload") or {})
-            item_corr = derive_correlation_id(
-                item.get("correlation", {}).get("correlation_id", "")
-                if isinstance(item.get("correlation"), dict)
-                else "",
-                item.get("meta", {}).get("correlation_id", "")
-                if isinstance(item.get("meta"), dict)
-                else "",
-                item_payload.get("correlation_id", ""),
-                item_payload.get("related_task_id", ""),
-                item_payload.get("task_id", ""),
-                item_trigger_id,
-            )
-            if correlation_id and item_corr == correlation_id:
-                matches.append(item)
-            elif related_trigger_id and item_trigger_id == related_trigger_id:
-                matches.append(item)
-            elif related_task_id and str(item_payload.get("task_id", "") or "") == related_task_id:
-                matches.append(item)
-
-        unique_matches: list[dict[str, Any]] = []
-        seen_ids: set[str] = set()
-        for item in matches:
-            item_id = str(item.get("trigger_id", "") or "")
-            if not item_id or item_id in seen_ids:
-                continue
-            seen_ids.add(item_id)
-            unique_matches.append(item)
-
-        related_trigger_ids = [str(item.get("trigger_id", "") or "") for item in unique_matches[:8]]
-        related_sources = list(
-            dict.fromkeys(
-                str(item.get("source", "") or "")
-                for item in unique_matches[:8]
-                if str(item.get("source", "") or "")
-            )
-        )
-        return {
-            "correlation_id": correlation_id,
-            "related_trigger_id": related_trigger_id,
-            "related_task_id": related_task_id,
-            "matched_records": len(unique_matches),
-            "related_trigger_ids": related_trigger_ids,
-            "related_sources": related_sources,
-            "latest_related_status": str(unique_matches[0].get("status", "") or "")
-            if unique_matches
-            else "",
-        }
+        """Delegate external-trigger correlation to its domain service."""
+        return build_trigger_correlation_service(self, trigger, payload_dict)
 
     async def handle_external_trigger(
         self, trigger: ExternalTriggerType | dict[str, Any]
     ) -> dict[str, Any]:
-        """Webhook/cron/federation kaynaklı proaktif tetikleri işler ve geçmişe kaydeder."""
-        await self.initialize()
-        self._ensure_autonomy_runtime_state()
-        self.mark_activity("external_trigger")
-
-        if isinstance(trigger, dict):
-            trigger = ExternalTrigger(
-                trigger_id=str(trigger.get("trigger_id", f"trigger-{int(time.time())}")),
-                source=str(trigger.get("source", "external")),
-                event_name=str(trigger.get("event_name", "event")),
-                payload=dict(trigger.get("payload", {}) or {}),
-                meta=dict(trigger.get("meta", {}) or {}),
-            )
-
-        payload_dict = self._trigger_payload(trigger)
-        event_name = str(self._trigger_attr(trigger, "event_name", "event"))
-        ci_context = (
-            payload_dict
-            if payload_dict.get("kind") in {"workflow_run", "check_run", "check_suite"}
-            and payload_dict.get("workflow_name")
-            else build_ci_failure_context(event_name, payload_dict)
+        """Delegate external-trigger processing to its domain service."""
+        return await handle_external_trigger_service(
+            self,
+            trigger,
+            ci_context_builder=build_ci_failure_context,
+            remediation_builder=build_ci_remediation_payload,
         )
-        correlation = self._build_trigger_correlation(trigger, payload_dict)
-        prompt = self._build_trigger_prompt(trigger, payload_dict, ci_context)
-        started_at = time.time()
-        status = "success"
-        summary = ""
-        remediation: dict[str, Any] | None = None
-        try:
-            summary = await self._try_multi_agent(prompt)
-            if not isinstance(summary, str) or not summary.strip():
-                status = "empty"
-                summary = "⚠ Proaktif tetik işlendikten sonra boş çıktı üretildi."
-            elif ci_context:
-                remediation = build_ci_remediation_payload(ci_context, summary)
-                try:
-                    await self._attempt_autonomous_self_heal(
-                        ci_context=ci_context,
-                        diagnosis=summary,
-                        remediation=remediation,
-                    )
-                except Exception as exc:
-                    remediation["self_heal_execution"] = {
-                        "status": "failed",
-                        "summary": f"Autonomous self-heal hata verdi: {exc}",
-                    }
-        except Exception as exc:
-            status = "failed"
-            summary = f"⚠ Proaktif tetik işlenemedi: {exc}"
-
-        record = {
-            "trigger_id": str(self._trigger_attr(trigger, "trigger_id", "")),
-            "source": str(self._trigger_attr(trigger, "source", "external")),
-            "event_name": event_name,
-            "status": status,
-            "summary": summary,
-            "payload": payload_dict,
-            "meta": self._trigger_meta(trigger),
-            "correlation": correlation,
-            "prompt": prompt,
-            "created_at": started_at,
-            "completed_at": time.time(),
-        }
-        if remediation:
-            record["remediation"] = remediation
-
-        await self._append_autonomy_history(record)
-        await self._memory_add("user", f"[AUTONOMY_TRIGGER] {prompt}")
-        await self._memory_add("assistant", summary)
-        return record
 
     async def run_nightly_memory_maintenance(
         self,
@@ -1085,170 +581,21 @@ class SidarAgent:
         reason: str = "nightly_idle",
     ) -> dict[str, Any]:
         """Uzun süreli kullanım için sohbet/RAG belleğini sıkıştırır ve temizler."""
-        await self.initialize()
-        if not bool(getattr(self.cfg, "ENABLE_NIGHTLY_MEMORY_PRUNING", False)):
-            return {"status": "disabled", "reason": "config_disabled"}
-
-        idle_seconds = max(60, int(getattr(self.cfg, "NIGHTLY_MEMORY_IDLE_SECONDS", 1800) or 1800))
-        idle_for = self.seconds_since_last_activity()
-        if not force and idle_for < idle_seconds:
-            return {
-                "status": "skipped",
-                "reason": "not_idle",
-                "idle_for_seconds": round(idle_for, 2),
-                "idle_threshold_seconds": idle_seconds,
-            }
-
-        if self._nightly_maintenance_lock is None:
-            self._nightly_maintenance_lock = asyncio.Lock()
-        if self._nightly_maintenance_lock.locked():
-            return {
-                "status": "skipped",
-                "reason": "already_running",
-                "idle_for_seconds": round(idle_for, 2),
-            }
-
-        async with self._nightly_maintenance_lock:
-            distributed_lease, distributed_skip = await self._acquire_nightly_distributed_lease()
-            if distributed_skip is not None:
-                distributed_skip.setdefault("idle_for_seconds", round(idle_for, 2))
-                return distributed_skip
-
-            try:
-                entity_report: dict[str, Any] = {"purged": 0, "status": "disabled"}
-                try:
-                    entity_memory = get_entity_memory(self.cfg)
-                    await entity_memory.initialize()
-                    entity_report = {
-                        "status": "completed",
-                        "purged": await entity_memory.purge_expired(),
-                    }
-                except Exception as exc:
-                    entity_report = {"status": "failed", "error": str(exc), "purged": 0}
-
-                memory_report = await self.memory.run_nightly_consolidation(
-                    keep_recent_sessions=max(
-                        0, int(getattr(self.cfg, "NIGHTLY_MEMORY_KEEP_RECENT_SESSIONS", 2) or 2)
-                    ),
-                    min_messages=max(
-                        2, int(getattr(self.cfg, "NIGHTLY_MEMORY_SESSION_MIN_MESSAGES", 12) or 12)
-                    ),
-                )
-
-                rag_reports: list[dict[str, Any]] = []
-                keep_recent_docs = max(
-                    1, int(getattr(self.cfg, "NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS", 2) or 2)
-                )
-                raw_session_ids = memory_report.get("session_ids", [])
-                session_ids = raw_session_ids if isinstance(raw_session_ids, list) else []
-                for session_id in session_ids:
-                    report = await asyncio.to_thread(
-                        self.docs.consolidate_session_documents,
-                        str(session_id),
-                        keep_recent_docs=keep_recent_docs,
-                    )
-                    rag_reports.append(report)
-
-                removed_docs = sum(int(item.get("removed_docs", 0) or 0) for item in rag_reports)
-                raw_sessions_compacted = memory_report.get("sessions_compacted", 0)
-                sessions_compacted = (
-                    raw_sessions_compacted
-                    if isinstance(raw_sessions_compacted, int)
-                    else int(raw_sessions_compacted)
-                    if isinstance(raw_sessions_compacted, str) and raw_sessions_compacted.isdigit()
-                    else 0
-                )
-                result: dict[str, Any] = {
-                    "status": "completed",
-                    "reason": reason,
-                    "idle_for_seconds": round(idle_for, 2),
-                    "memory_report": memory_report,
-                    "entity_report": entity_report,
-                    "rag_reports": rag_reports,
-                    "sessions_compacted": sessions_compacted,
-                    "rag_docs_pruned": removed_docs,
-                    "distributed_lock": (
-                        {"backend": distributed_lease.backend, "key": distributed_lease.key}
-                        if distributed_lease is not None
-                        else {"backend": "local"}
-                    ),
-                }
-                self._last_nightly_maintenance_ts = time.time()
-                await self._append_autonomy_history(
-                    {
-                        "trigger_id": f"nightly-{int(self._last_nightly_maintenance_ts)}",
-                        "source": "nightly_memory",
-                        "event_name": "memory_consolidation",
-                        "status": result["status"],
-                        "summary": (
-                            f"Nightly maintenance tamamlandı: "
-                            f"{result['sessions_compacted']} oturum sıkıştırıldı, "
-                            f"{removed_docs} RAG dokümanı budandı, "
-                            f"{entity_report.get('purged', 0)} entity kaydı temizlendi."
-                        ),
-                        "payload": {
-                            "reason": reason,
-                            "idle_for_seconds": round(idle_for, 2),
-                        },
-                        "meta": {
-                            "kind": "nightly_memory_maintenance",
-                            "force": str(bool(force)).lower(),
-                            "distributed_lock_backend": result["distributed_lock"]["backend"],
-                        },
-                        "created_at": self._last_nightly_maintenance_ts,
-                        "completed_at": self._last_nightly_maintenance_ts,
-                    }
-                )
-                return result
-            finally:
-                await self._release_nightly_distributed_lease(distributed_lease)
+        return await run_nightly_memory_maintenance_service(
+            self,
+            force=force,
+            reason=reason,
+            entity_memory_factory=get_entity_memory,
+        )
 
     def get_autonomy_activity(self, limit: int = 20) -> dict[str, Any]:
         """Son proaktif tetik kayıtlarını özet metriklerle birlikte döndürür."""
-        self._ensure_autonomy_runtime_state()
-        normalized_limit = max(1, int(limit or 20))
-        items = [dict(item) for item in self._autonomy_history[-normalized_limit:]]
-        counts_by_status: dict[str, int] = {}
-        counts_by_source: dict[str, int] = {}
-        for item in items:
-            status = str(item.get("status", "unknown") or "unknown")
-            source = str(item.get("source", "unknown") or "unknown")
-            counts_by_status[status] = counts_by_status.get(status, 0) + 1
-            counts_by_source[source] = counts_by_source.get(source, 0) + 1
-
-        return {
-            "items": items,
-            "total": len(self._autonomy_history),
-            "returned": len(items),
-            "counts_by_status": counts_by_status,
-            "counts_by_source": counts_by_source,
-            "latest_trigger_id": items[-1]["trigger_id"] if items else "",
-        }
+        return get_autonomy_activity_service(self, limit)
 
     async def _try_multi_agent(self, user_input: str) -> str:
         """Görevi SupervisorAgent'a yönlendirir (tek omurga)."""
         if getattr(self, "_supervisor", None) is None:
             supervisor_mod = import_module("agent.core.supervisor")
-            # Bazı izolasyon testleri `agent.core.supervisor` modülünü stub rol sınıflarıyla
-            # import eder ve modülü cache'te bırakabilir. Bu durumda gerçek role-agent
-            # zinciri yerine `stub:*` çıktıları dönebilir. Role sınıflarının kaynak modülünü
-            # doğrulayarak gerekiyorsa supervisor modülünü yeniden yükle.
-            role_symbols = (
-                "ResearcherAgent",
-                "CoderAgent",
-                "ReviewerAgent",
-                "PoyrazAgent",
-                "QAAgent",
-                "CoverageAgent",
-            )
-            needs_reload = any(
-                not str(
-                    getattr(getattr(supervisor_mod, symbol, None), "__module__", "")
-                ).startswith("agent.roles.")
-                for symbol in role_symbols
-            )
-            if needs_reload:
-                supervisor_mod = importlib.reload(supervisor_mod)
             SupervisorAgent = supervisor_mod.SupervisorAgent
             self._supervisor = SupervisorAgent(self.cfg)
             if self._supervisor is not None:
@@ -1361,8 +708,8 @@ class SidarAgent:
     # ─────────────────────────────────────────────
 
     async def _build_context(self) -> str:
-        """
-        Tüm alt sistem durumlarını özetleyen bağlam dizesi.
+        """Tüm alt sistem durumlarını özetleyen bağlam dizesi.
+
         Her LLM turunda system_prompt'a eklenir; model bu değerleri
         ASLA tahmin etmemelidir — gerçek runtime değerler burada verilir.
 
@@ -1468,8 +815,8 @@ class SidarAgent:
         return context_text
 
     def _load_instruction_files(self) -> str:
-        """
-        Proje genelindeki SIDAR.md ve CLAUDE.md dosyalarını hiyerarşik şekilde yükle.
+        """Proje genelindeki SIDAR.md ve CLAUDE.md dosyalarını hiyerarşik şekilde yükle.
+
         - Daha üst dizin dosyaları önce gelir.
         - Alt dizin dosyaları daha sonra gelerek öncelik alır.
         - Dosya değişikliği (mtime) algılandığında otomatik olarak yeniden yükler.
@@ -1555,6 +902,7 @@ class SidarAgent:
         except TimeoutError:
             return "✗ Doküman araması zaman aşımına uğradı."
         except Exception as exc:
+            logger.exception("SidarAgent docs search tool failed: query=%s mode=%s", query, mode)
             return f"✗ Doküman araması başarısız: {exc}"
 
         if not isinstance(resolved_result, tuple) or len(resolved_result) != 2:
@@ -1689,76 +1037,26 @@ class SidarAgent:
                         "failed",
                         max(0.0, time.monotonic() - started_at),
                     )
-                logger.warning(
-                    "Tool execution failed in subtask loop: tool=%s error=%s", tool or "llm", exc
-                )
+                logger.exception("Tool execution failed in subtask loop: tool=%s", tool or "llm")
+                action_argument = getattr(locals().get("action", None), "argument", "")
                 feedback = (
                     "Araç çalışmadı; sonraki adımda bunu dikkate al. "
-                    f"tool={tool or 'llm_decision'} argument={getattr(locals().get('action', None), 'argument', '')!r} "
+                    f"tool={tool or 'llm_decision'} argument={action_argument!r} "
                     f"error={exc}"
                 )
 
         return SUBTASK_MAX_STEPS_MESSAGE
 
     async def _tool_github_smart_pr(self, arg: str) -> str:
-        if not self.github.is_available():
-            return GITHUB_SMART_PR_NO_TOKEN_MESSAGE
-
-        parts = [p.strip() for p in (arg or "").split("|||")]
-        title = parts[0] if len(parts) > 0 and parts[0] else "Otomatik PR"
-        base = parts[1] if len(parts) > 1 and parts[1] else ""
-        notes = parts[2] if len(parts) > 2 else ""
-
-        ok, branch = self.code.run_shell("git branch --show-current")
-        head = (branch or "").strip() if ok else ""
-        if not head:
-            return GITHUB_SMART_PR_NO_BRANCH_MESSAGE
-
-        if not base:
-            try:
-                base = self.github.default_branch
-            except Exception:
-                base = "main"
-
-        ok_status, status_out = self.code.run_shell("git status --short")
-        if not ok_status or not str(status_out).strip():
-            return GITHUB_SMART_PR_NO_CHANGES_MESSAGE
-
-        self.code.run_shell("git diff --stat HEAD")
-        ok_diff, diff_out = self.code.run_shell("git diff --no-color HEAD")
-        diff_text = str(diff_out or "") if ok_diff else ""
-        max_diff_chars = 10000
-        if len(diff_text) > max_diff_chars:
-            diff_text = (
-                diff_text[:max_diff_chars]
-                + "\n\n[Not] Diff çok büyük olduğu için geri kalanı kırpıldı."
-            )
-
-        _ok_log, commits = self.code.run_shell(f"git log --oneline {base}..HEAD")
-        body = (
-            f"{notes}\n\n"
-            f"### Commitler\n{commits}\n\n"
-            f"### Diff Özeti\n```diff\n{diff_text}\n```"
-        )
-        try:
-            ok_pr, pr_out = self.github.create_pull_request(title, body, head, base)
-        except TimeoutError:
-            return f"{GITHUB_SMART_PR_CREATE_FAILED_PREFIX} zaman aşımı"
-        except Exception as exc:
-            return f"{GITHUB_SMART_PR_CREATE_FAILED_PREFIX} {exc}"
-
-        if not ok_pr:
-            reason = str(pr_out or "bilinmeyen hata")
-            return f"{GITHUB_SMART_PR_CREATE_FAILED_PREFIX} {reason}"
-        return f"{GITHUB_SMART_PR_CREATE_SUCCESS_PREFIX} {pr_out}"
+        return await github_smart_pr.create_smart_pr(arg=arg, code=self.code, github=self.github)
 
     # ─────────────────────────────────────────────
     #  BELLEK ÖZETLEME VE VEKTÖR ARŞİVLEME (ASYNC)
     # ─────────────────────────────────────────────
 
     async def _summarize_memory(self) -> None:
-        """
-        Konuşma geçmişini LLM ile özetler ve belleği sıkıştırır.
+        """Konuşma geçmişini LLM ile özetler ve belleği sıkıştırır.
+
         AYRICA: Eski konuşmaları 'Sonsuz Hafıza' için Vektör DB'ye (ChromaDB) gömer.
         """
         history = await self.memory.get_history()
@@ -1767,10 +1065,12 @@ class SidarAgent:
 
         # 1. VEKTÖR BELLEK (SONSUZ HAFIZA) KAYDI
         # Kısa özetlemeye geçmeden önce, tüm detayları RAG sistemine kaydediyoruz
-        full_turns_text = "\n\n".join(
-            f"[{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(t.get('timestamp', time.time())))}] {t['role'].upper()}:\n{t['content']}"
-            for t in history
-        )
+        def _format_turn(turn: dict[str, Any]) -> str:
+            turn_time = time.localtime(turn.get("timestamp", time.time()))
+            ts = time.strftime("%Y-%m-%d %H:%M:%S", turn_time)
+            return f"[{ts}] {turn['role'].upper()}:\n{turn['content']}"
+
+        full_turns_text = "\n\n".join(_format_turn(t) for t in history)
 
         try:
             await self.docs.add_document(
@@ -1812,9 +1112,9 @@ class SidarAgent:
         return "Konuşma belleği temizlendi (dosya silindi). ✓"
 
     async def set_access_level(self, new_level: str) -> str:
-        """
-        Ajanın güvenlik seviyesini dinamik olarak değiştirir ve değişikliği
-        sohbet belleğine kalıcı olarak yazar.
+        """Ajanın güvenlik seviyesini dinamik olarak değiştirir.
+
+        Değişikliği sohbet belleğine kalıcı olarak yazar.
         """
         old_level = self.security.level_name
         changed = self.security.set_level(new_level)

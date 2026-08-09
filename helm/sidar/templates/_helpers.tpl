@@ -17,3 +17,7 @@
 {{- default "http://jaeger:4317" .Values.env.OTEL_EXPORTER_ENDPOINT -}}
 {{- end -}}
 {{- end -}}
+
+{{- define "sidar.postgresqlSecretName" -}}
+{{- required "postgresql.existingSecret.name must reference a Kubernetes Secret or ExternalSecret-managed Secret" .Values.postgresql.existingSecret.name -}}
+{{- end -}}

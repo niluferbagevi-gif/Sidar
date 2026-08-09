@@ -20,7 +20,15 @@ def build_frontend_router(
 
     @router.get("/favicon.ico", include_in_schema=False)
     async def favicon() -> Any:
-        """Tarayıcının favicon isteğini 404 hatası vermeden sessizce (204) geçiştirir."""
+        """Tarayıcının favicon.ico isteğini 404 hatası vermeden sessizce (204) geçiştirir."""
+        return Response(status_code=204)
+
+    @router.get("/favicon.svg", include_in_schema=False)
+    async def favicon_svg() -> Any:
+        """React/Vite favicon.svg isteğini 404 üretmeden karşılar."""
+        svg_file = web_dir() / "favicon.svg"
+        if svg_file.exists():
+            return FileResponse(svg_file)
         return Response(status_code=204)
 
     @router.get("/vendor/{file_path:path}", include_in_schema=False)
@@ -40,10 +48,14 @@ def build_frontend_router(
         html_file = web_dir() / "index.html"
         if not html_file.exists():
             return HTMLResponse(
-                "<h1>Hata: React dist bulunamadı. web_ui_react içinde npm run build çalıştırın.</h1>",
+                "<h1>Hata: React dist bulunamadı. web_ui_react içinde npm run build "
+                "çalıştırın.</h1>",
                 status_code=500,
             )
-        config_script = f'<script>window.__SIDAR_CONFIG__ = {{"grafanaUrl": {json.dumps(grafana_url())}}};</script>'
+        config_script = (
+            f'<script>window.__SIDAR_CONFIG__ = {{"grafanaUrl": '
+            f"{json.dumps(grafana_url())}}};</script>"
+        )
         html = html_file.read_text(encoding="utf-8")
         if "</head>" in html:
             html = html.replace("</head>", f"{config_script}</head>", 1)

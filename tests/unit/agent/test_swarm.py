@@ -59,6 +59,28 @@ class _NoHandlerAgent:
     pass
 
 
+def _valid_contract_module(**overrides):
+    class _Real:
+        def __init__(self, **_kwargs):
+            pass
+
+    values = {
+        "TaskEnvelope": _Real,
+        "TaskResult": _Real,
+        "DelegationRequest": _Real,
+        "BrokerTaskEnvelope": object(),
+        "BrokerTaskResult": object(),
+        "is_delegation_request": lambda _v: False,
+        "LEGACY_FEDERATION_PROTOCOL_V1": "p2p.v1",
+        "ActionFeedback": object(),
+        "ExternalTrigger": object(),
+        "FederationTaskEnvelope": object(),
+        "FederationTaskResult": object(),
+    }
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
 def test_fake_catalog_get_returns_match_and_none():
     coder = AgentSpec(role_name="coder", capabilities=["code_generation"])
     reviewer = AgentSpec(role_name="reviewer", capabilities=["code_review"])
@@ -93,6 +115,15 @@ def test_task_router_falls_back_to_first_candidate_when_preferred_role_missing(m
     monkeypatch.setattr(TaskRouter, "_catalog", staticmethod(lambda: fake_catalog))
 
     assert TaskRouter().route("code") == helper
+
+
+def test_task_router_returns_first_candidate_for_unpreferred_intent(monkeypatch):
+    first = AgentSpec(role_name="first", capabilities=["custom_capability"])
+    second = AgentSpec(role_name="second", capabilities=["custom_capability"])
+    fake_catalog = _FakeCatalog([first, second])
+    monkeypatch.setattr(TaskRouter, "_catalog", staticmethod(lambda: fake_catalog))
+
+    assert TaskRouter().route("custom_capability") == first
 
 
 def test_task_router_route_by_role_supports_legacy_catalog_without_get(monkeypatch):
@@ -176,9 +207,9 @@ def test_execute_task_uses_legacy_run_task_when_handle_missing(monkeypatch):
     monkeypatch.setattr(orchestrator.router, "route", lambda _intent: spec)
     monkeypatch.setattr(
         "agent.swarm.AgentCatalog.create",
-        lambda role_name, **_kwargs: _RunTaskAgent("legacy ok")
-        if role_name == "researcher"
-        else None,
+        lambda role_name, **_kwargs: (
+            _RunTaskAgent("legacy ok") if role_name == "researcher" else None
+        ),
     )
 
     result = __import__("asyncio").run(
@@ -315,15 +346,57 @@ def test_task_timeout_prefers_task_model_provider_then_global():
     orchestrator = SwarmOrchestrator(cfg=cfg)
 
     assert (
-        orchestrator._task_timeout_seconds(
-            SwarmTask(goal="x", context={"timeout_seconds": "5"})
-        )
+        orchestrator._task_timeout_seconds(SwarmTask(goal="x", context={"timeout_seconds": "5"}))
         == 5
     )
     assert orchestrator._task_timeout_seconds(SwarmTask(goal="x")) == 12
-    assert (
-        orchestrator._task_timeout_seconds(SwarmTask(goal="x", context={"model": "other"})) == 8
+    assert orchestrator._task_timeout_seconds(SwarmTask(goal="x", context={"model": "other"})) == 8
+
+
+def test_task_timeout_ignores_invalid_task_model_provider_and_global_values():
+    cfg = SimpleNamespace(
+        AI_PROVIDER="ollama",
+        CODING_MODEL="broken-model",
+        SWARM_TASK_TIMEOUT_BY_MODEL='{"broken-model": "not-a-number"}',
+        SWARM_TASK_TIMEOUT_SECONDS_OLLAMA="bad-provider",
+        SWARM_TASK_TIMEOUT_SECONDS="bad-global",
+        REACT_TIMEOUT=7,
     )
+    orchestrator = SwarmOrchestrator(cfg=cfg)
+
+    assert (
+        orchestrator._task_timeout_seconds(
+            SwarmTask(goal="x", context={"timeout_seconds": "invalid"})
+        )
+        == 7
+    )
+
+
+def test_task_timeout_ignores_invalid_json_and_bad_react_timeout():
+    cfg = SimpleNamespace(
+        AI_PROVIDER="",
+        TEXT_MODEL="m",
+        SWARM_TASK_TIMEOUT_BY_MODEL="{bad json",
+        SWARM_TASK_TIMEOUT_SECONDS=None,
+        REACT_TIMEOUT="bad-react-timeout",
+    )
+    orchestrator = SwarmOrchestrator(cfg=cfg)
+
+    assert orchestrator._task_timeout_seconds(SwarmTask(goal="x")) == 60.0
+
+
+@pytest.mark.parametrize("raw_model_map", ["[]", [], {}, [("m", 4)]])
+def test_task_timeout_ignores_non_dict_model_maps(raw_model_map):
+    cfg = SimpleNamespace(
+        AI_PROVIDER="",
+        TEXT_MODEL="m",
+        SWARM_TASK_TIMEOUT_BY_MODEL=raw_model_map,
+        SWARM_TASK_TIMEOUT_SECONDS=4,
+        REACT_TIMEOUT=2,
+    )
+    orchestrator = SwarmOrchestrator(cfg=cfg)
+
+    assert orchestrator._task_timeout_seconds(SwarmTask(goal="x")) == 4
 
 
 def test_execute_task_runs_rollback_hook_on_failure(monkeypatch):
@@ -374,106 +447,63 @@ def test_is_contracts_module_healthy_rejects_invalid_contract_module():
     assert swarm._is_contracts_module_healthy(bad_type) is False
 
 
+def test_is_contracts_module_healthy_accepts_valid_module_and_rejects_object_delegation():
+    assert swarm._is_contracts_module_healthy(_valid_contract_module()) is True
+    assert (
+        swarm._is_contracts_module_healthy(_valid_contract_module(DelegationRequest=object))
+        is False
+    )
+
+
 def test_is_contracts_module_healthy_rejects_non_callable_task_envelope():
     """Branch L67-70: TaskEnvelope çağrılabilir değilse False dönmeli."""
-
-    class _Real:
-        def __init__(self, **_kwargs):
-            pass
-
-    not_callable_envelope = SimpleNamespace(
-        TaskEnvelope="not-callable",
-        TaskResult=_Real,
-        DelegationRequest=_Real,
-        BrokerTaskEnvelope=object(),
-        BrokerTaskResult=object(),
-        is_delegation_request=lambda _v: False,
-    )
+    not_callable_envelope = _valid_contract_module(TaskEnvelope="not-callable")
     assert swarm._is_contracts_module_healthy(not_callable_envelope) is False
 
 
 def test_is_contracts_module_healthy_rejects_non_callable_task_result():
     """Branch L67-70: TaskResult çağrılabilir değilse False dönmeli."""
-
-    class _Real:
-        def __init__(self, **_kwargs):
-            pass
-
-    not_callable_result = SimpleNamespace(
-        TaskEnvelope=_Real,
-        TaskResult=42,
-        DelegationRequest=_Real,
-        BrokerTaskEnvelope=object(),
-        BrokerTaskResult=object(),
-        is_delegation_request=lambda _v: False,
-    )
+    not_callable_result = _valid_contract_module(TaskResult=42)
     assert swarm._is_contracts_module_healthy(not_callable_result) is False
 
 
 def test_is_contracts_module_healthy_rejects_non_callable_delegation_request():
     """Branch L67-70: DelegationRequest çağrılabilir değilse False dönmeli."""
-
-    class _Real:
-        def __init__(self, **_kwargs):
-            pass
-
-    not_callable_delegation = SimpleNamespace(
-        TaskEnvelope=_Real,
-        TaskResult=_Real,
-        DelegationRequest=SimpleNamespace(),
-        BrokerTaskEnvelope=object(),
-        BrokerTaskResult=object(),
-        is_delegation_request=lambda _v: False,
-    )
+    not_callable_delegation = _valid_contract_module(DelegationRequest=SimpleNamespace())
     assert swarm._is_contracts_module_healthy(not_callable_delegation) is False
 
 
-def test_contracts_module_returns_original_when_spec_or_loader_missing(monkeypatch):
-    broken = SimpleNamespace(
-        TaskEnvelope=lambda **_k: None,
-        TaskResult=lambda **_k: None,
-        DelegationRequest=object,
-        BrokerTaskEnvelope=object(),
-        BrokerTaskResult=object(),
-        is_delegation_request=lambda _v: False,
-    )
+def test_contracts_module_returns_imported_module_without_runtime_repair(monkeypatch):
+    """Runtime kodu test-pollution kaynaklı kontrat modülünü onarmaya çalışmamalı."""
+    imported = SimpleNamespace(marker="imported-stub")
+    calls = {"import": 0}
+
+    def _import_module(name):
+        calls["import"] += 1
+        assert name == "agent.core.contracts"
+        return imported
+
     monkeypatch.setattr(swarm, "_CONTRACTS_MODULE_CACHE", None)
-    monkeypatch.setattr(swarm.importlib, "import_module", lambda _name: broken)
-    monkeypatch.setattr(swarm.importlib.util, "spec_from_file_location", lambda *_a, **_k: None)
+    monkeypatch.setattr(swarm.importlib, "import_module", _import_module)
 
-    assert swarm._contracts_module(force_refresh=True) is broken
+    assert swarm._contracts_module(force_refresh=True) is imported
+    assert calls == {"import": 1}
 
 
-def test_contracts_module_caches_successful_health_check(monkeypatch):
-    class _Real:
-        def __init__(self, **_kwargs):
-            pass
-
-    module = SimpleNamespace(
-        TaskEnvelope=_Real,
-        TaskResult=_Real,
-        DelegationRequest=_Real,
-        BrokerTaskEnvelope=object,
-        BrokerTaskResult=object,
-        is_delegation_request=lambda _v: False,
-    )
-    calls = {"import": 0, "health": 0}
+def test_contracts_module_caches_imported_contracts_module(monkeypatch):
+    module = SimpleNamespace(marker="contracts")
+    calls = {"import": 0}
 
     def _import_module(_name):
         calls["import"] += 1
         return module
 
-    def _healthy(_module):
-        calls["health"] += 1
-        return True
-
     monkeypatch.setattr(swarm.importlib, "import_module", _import_module)
-    monkeypatch.setattr(swarm, "_is_contracts_module_healthy", _healthy)
     monkeypatch.setattr(swarm, "_CONTRACTS_MODULE_CACHE", None)
 
     assert swarm._contracts_module() is module
     assert swarm._contracts_module() is module
-    assert calls == {"import": 1, "health": 1}
+    assert calls == {"import": 1}
 
 
 def test_task_router_catalog_prefers_local_when_live_catalog_invalid(monkeypatch):
@@ -524,11 +554,16 @@ def test_loop_repeat_limit_honors_provider_and_floor():
 
 
 def test_run_supervisor_fallback_success_and_invalid_output(monkeypatch):
+    received_max_turns = []
+
     class _Supervisor:
+        MAX_TURNS = 10
+
         def __init__(self, _cfg):
             pass
 
-        async def run_task(self, _prompt):
+        async def run_task(self, _prompt, *, max_turns=None):
+            received_max_turns.append(max_turns)
             return "fallback yaniti"
 
     monkeypatch.setitem(
@@ -549,9 +584,12 @@ def test_run_supervisor_fallback_success_and_invalid_output(monkeypatch):
     )
     assert ok.status == "success"
     assert ok.agent_role == "supervisor"
+    # Remaining budget = MAX_TURNS (10) - hops already spent (len(route_trace)=1) = 9,
+    # not a fresh 10-turn budget on top of the swarm hops already spent.
+    assert received_max_turns == [9]
 
     class _EmptySupervisor(_Supervisor):
-        async def run_task(self, _prompt):
+        async def run_task(self, _prompt, *, max_turns=None):
             return "   "
 
     monkeypatch.setitem(
@@ -571,6 +609,36 @@ def test_run_supervisor_fallback_success_and_invalid_output(monkeypatch):
                 reason="fallback:JSONDecodeError",
             )
         )
+
+
+def test_remaining_supervisor_turn_budget_deducts_hops_already_spent(monkeypatch):
+    class _Supervisor:
+        MAX_TURNS = 10
+
+    monkeypatch.setitem(
+        sys.modules, "agent.core.supervisor", types.SimpleNamespace(SupervisorAgent=_Supervisor)
+    )
+    orch = SwarmOrchestrator(cfg=SimpleNamespace())
+
+    assert orch._remaining_supervisor_turn_budget([]) == 10
+    assert orch._remaining_supervisor_turn_budget(["a", "b", "c"]) == 7
+    # Never goes below 1, even if hops already spent exceed the full budget.
+    assert orch._remaining_supervisor_turn_budget([f"step{i}" for i in range(20)]) == 1
+
+    orch_with_cfg_override = SwarmOrchestrator(cfg=SimpleNamespace(MAX_TURNS=4))
+    assert orch_with_cfg_override._remaining_supervisor_turn_budget(["a"]) == 3
+
+    # Tolerates a SupervisorAgent test double with no MAX_TURNS attribute.
+    class _SupervisorWithoutMaxTurns:
+        pass
+
+    monkeypatch.setitem(
+        sys.modules,
+        "agent.core.supervisor",
+        types.SimpleNamespace(SupervisorAgent=_SupervisorWithoutMaxTurns),
+    )
+    orch_no_cfg = SwarmOrchestrator(cfg=SimpleNamespace())
+    assert orch_no_cfg._remaining_supervisor_turn_budget(["a", "b"]) == 8
 
 
 def test_run_autonomous_feedback_low_score_flags_and_handles_errors(monkeypatch):
@@ -723,6 +791,40 @@ def test_execute_task_handles_creation_retry_and_fallback_paths(monkeypatch):
     assert "temporary" in retry_failed.summary
 
 
+def test_execute_task_timeout_retry_waits_before_success(monkeypatch):
+    cfg = SimpleNamespace(
+        SWARM_TASK_MAX_RETRIES=1,
+        SWARM_TASK_RETRY_DELAY_MS=25,
+        SWARM_TASK_TIMEOUT_SECONDS=1,
+    )
+    orch = SwarmOrchestrator(cfg=cfg)
+    spec = AgentSpec(role_name="coder", capabilities=["code_generation"])
+    state = {"calls": 0}
+    sleeps: list[float] = []
+
+    class _TimeoutThenSuccessAgent:
+        async def handle(self, _env):
+            state["calls"] += 1
+            if state["calls"] == 1:
+                raise TimeoutError("slow")
+            return TaskResult(task_id="t", status="success", summary="done", evidence=[])
+
+    async def _fake_sleep(delay: float) -> None:
+        sleeps.append(delay)
+
+    monkeypatch.setattr(orch.router, "route", lambda _intent: spec)
+    monkeypatch.setattr(
+        "agent.swarm.AgentCatalog.create", lambda *_a, **_k: _TimeoutThenSuccessAgent()
+    )
+    monkeypatch.setattr(swarm.asyncio, "sleep", _fake_sleep)
+
+    result = __import__("asyncio").run(orch._execute_task(SwarmTask(goal="g", intent="code")))
+
+    assert result.status == "success"
+    assert result.summary == "done"
+    assert sleeps == [0.025]
+
+
 def test_execute_task_handles_empty_retry_iteration(monkeypatch):
     orch = SwarmOrchestrator(
         cfg=SimpleNamespace(SWARM_TASK_MAX_RETRIES=0, SWARM_TASK_RETRY_DELAY_MS=0)
@@ -850,41 +952,75 @@ def test_contract_health_check_handles_constructor_exceptions():
     assert swarm._is_contracts_module_healthy(_ExplodingModule) is False
 
 
-def test_contracts_module_repairs_when_imported_module_is_unhealthy(monkeypatch):
-    original_contracts = sys.modules.get("agent.core.contracts")
-    if original_contracts is not None:
-        monkeypatch.setitem(sys.modules, "agent.core.contracts", original_contracts)
+@pytest.mark.parametrize("broken_contract", ["TaskResult", "DelegationRequest"])
+def test_contract_health_check_handles_result_and_delegation_constructor_exceptions(
+    broken_contract: str,
+) -> None:
+    class _Real:
+        def __init__(self, **_kwargs):
+            pass
 
-    broken = SimpleNamespace()
+    def _broken_ctor(**_kwargs):
+        raise RuntimeError(f"broken {broken_contract}")
 
-    class _Loader:
-        @staticmethod
-        def exec_module(module):
-            module.TaskEnvelope = lambda **_k: SimpleNamespace(**_k)
-            module.TaskResult = lambda **_k: SimpleNamespace(**_k)
-            module.DelegationRequest = lambda **_k: SimpleNamespace(**_k)
-            module.BrokerTaskEnvelope = object
-            module.BrokerTaskResult = object
-            module.is_delegation_request = lambda _v: False
-            module.LEGACY_FEDERATION_PROTOCOL_V1 = "swarm.federation.v1"
-            module.ActionFeedback = object
-            module.ExternalTrigger = object
-            module.FederationTaskEnvelope = object
-            module.FederationTaskResult = object
+    module = SimpleNamespace(
+        TaskEnvelope=_Real,
+        TaskResult=_broken_ctor if broken_contract == "TaskResult" else _Real,
+        DelegationRequest=_broken_ctor if broken_contract == "DelegationRequest" else _Real,
+        BrokerTaskEnvelope=object(),
+        BrokerTaskResult=object(),
+        is_delegation_request=lambda _v: False,
+        LEGACY_FEDERATION_PROTOCOL_V1="p2p.v1",
+        ActionFeedback=object(),
+        ExternalTrigger=object(),
+        FederationTaskEnvelope=object(),
+        FederationTaskResult=object(),
+    )
 
-    class _Spec:
-        loader = _Loader()
+    assert swarm._is_contracts_module_healthy(module) is False
+
+
+def test_contract_health_check_rejects_non_callable_delegation_checker() -> None:
+    class _Real:
+        def __init__(self, **_kwargs):
+            pass
+
+    module = SimpleNamespace(
+        TaskEnvelope=_Real,
+        TaskResult=_Real,
+        DelegationRequest=_Real,
+        BrokerTaskEnvelope=object(),
+        BrokerTaskResult=object(),
+        is_delegation_request="not-callable",
+        LEGACY_FEDERATION_PROTOCOL_V1="p2p.v1",
+        ActionFeedback=object(),
+        ExternalTrigger=object(),
+        FederationTaskEnvelope=object(),
+        FederationTaskResult=object(),
+    )
+
+    assert swarm._is_contracts_module_healthy(module) is False
+
+
+def test_ensure_contract_aliases_propagates_incomplete_contract_module(monkeypatch) -> None:
+    incomplete = SimpleNamespace(TaskEnvelope=object)
+    monkeypatch.setattr(swarm, "_CONTRACTS_MODULE_CACHE", incomplete)
+
+    with pytest.raises(AttributeError, match="BrokerTaskEnvelope"):
+        swarm._ensure_contract_aliases()
+
+
+def test_contracts_module_force_refresh_replaces_cached_module(monkeypatch):
+    first = SimpleNamespace(marker="first")
+    second = SimpleNamespace(marker="second")
+    modules = iter([first, second])
 
     monkeypatch.setattr(swarm, "_CONTRACTS_MODULE_CACHE", None)
-    monkeypatch.setattr(swarm.importlib, "import_module", lambda _name: broken)
-    monkeypatch.setattr(swarm.importlib.util, "spec_from_file_location", lambda *_a, **_k: _Spec())
-    monkeypatch.setattr(swarm.importlib.util, "module_from_spec", lambda _spec: SimpleNamespace())
+    monkeypatch.setattr(swarm.importlib, "import_module", lambda _name: next(modules))
 
-    repaired = swarm._contracts_module(force_refresh=True)
-    assert callable(repaired.TaskEnvelope)
-    assert "agent.core.contracts" in sys.modules
-    if original_contracts is not None:
-        assert sys.modules["agent.core.contracts"] is not original_contracts
+    assert swarm._contracts_module() is first
+    assert swarm._contracts_module() is first
+    assert swarm._contracts_module(force_refresh=True) is second
 
 
 def test_task_router_catalog_prefers_valid_live_catalog_and_last_resort_live(monkeypatch):
@@ -1119,3 +1255,301 @@ def test_execute_task_times_out_hanging_legacy_run_task_agent(monkeypatch):
 
     assert result.status == "failed"
     assert "Swarm task timeout exceeded" in result.summary
+
+
+def test_distributed_idempotency_cache_is_bounded_lru(monkeypatch):
+    orchestrator = SwarmOrchestrator(cfg=SimpleNamespace(SWARM_IDEMPOTENCY_CACHE_MAX=2))
+    backend = InMemoryDelegationBackend()
+    orchestrator.configure_delegation_backend(backend)
+
+    reviewer = AgentSpec(role_name="reviewer", capabilities=["code_review"])
+    monkeypatch.setattr(orchestrator.router, "route", lambda _intent: reviewer)
+    monkeypatch.setattr(orchestrator.router, "route_by_role", lambda _role: reviewer)
+
+    for key in ("delivery-1", "delivery-2", "delivery-3"):
+        __import__("asyncio").run(
+            orchestrator.dispatch_distributed(
+                SwarmTask(goal="Webhook incele", intent="review", context={"idempotency_key": key}),
+                session_id="sess-42",
+                sender="supervisor",
+            )
+        )
+
+    assert list(orchestrator._distributed_idempotency_cache) == ["delivery-2", "delivery-3"]
+    assert len(backend.dispatched) == 3
+
+
+def test_execute_task_retries_timeout_before_success(monkeypatch):
+    cfg = SimpleNamespace(
+        SWARM_TASK_TIMEOUT_SECONDS=0.001,
+        SWARM_TASK_MAX_RETRIES=1,
+        SWARM_TASK_RETRY_DELAY_MS=0,
+    )
+    orch = SwarmOrchestrator(cfg=cfg)
+    spec = AgentSpec(role_name="coder", capabilities=["code_generation"])
+    monkeypatch.setattr(orch.router, "route", lambda _intent: spec)
+
+    class _TimeoutThenSuccessAgent:
+        def __init__(self):
+            self.calls = 0
+
+        async def handle(self, _envelope):
+            self.calls += 1
+            if self.calls == 1:
+                await __import__("asyncio").sleep(1)
+            return TaskResult(
+                task_id="retry-ok", status="success", summary="recovered", evidence=[]
+            )
+
+    agent = _TimeoutThenSuccessAgent()
+    monkeypatch.setattr("agent.swarm.AgentCatalog.create", lambda *_a, **_k: agent)
+
+    result = __import__("asyncio").run(orch._execute_task(SwarmTask(goal="g", intent="code")))
+
+    assert result.status == "success"
+    assert result.summary == "recovered"
+    assert agent.calls == 2
+
+
+def test_execute_task_retries_exception_before_success(monkeypatch):
+    cfg = SimpleNamespace(SWARM_TASK_MAX_RETRIES=1, SWARM_TASK_RETRY_DELAY_MS=0)
+    orch = SwarmOrchestrator(cfg=cfg)
+    spec = AgentSpec(role_name="coder", capabilities=["code_generation"])
+    monkeypatch.setattr(orch.router, "route", lambda _intent: spec)
+
+    class _TransientFailureAgent:
+        def __init__(self):
+            self.calls = 0
+
+        async def handle(self, _envelope):
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("temporary transport error")
+            return TaskResult(
+                task_id="retry-exception-ok",
+                status="success",
+                summary="recovered after exception",
+                evidence=["attempt:2"],
+            )
+
+    agent = _TransientFailureAgent()
+    monkeypatch.setattr("agent.swarm.AgentCatalog.create", lambda *_a, **_k: agent)
+
+    result = __import__("asyncio").run(orch._execute_task(SwarmTask(goal="g", intent="code")))
+
+    assert result.status == "success"
+    assert result.summary == "recovered after exception"
+    assert result.evidence == ["attempt:2"]
+    assert agent.calls == 2
+
+
+def test_execute_task_returns_final_failure_after_retry_budget_exhausted(monkeypatch):
+    cfg = SimpleNamespace(SWARM_TASK_MAX_RETRIES=2, SWARM_TASK_RETRY_DELAY_MS=0)
+    orch = SwarmOrchestrator(cfg=cfg)
+    spec = AgentSpec(role_name="coder", capabilities=["code_generation"])
+    monkeypatch.setattr(orch.router, "route", lambda _intent: spec)
+
+    class _AlwaysFailingAgent:
+        def __init__(self):
+            self.calls = 0
+
+        async def handle(self, _envelope):
+            self.calls += 1
+            raise RuntimeError(f"permanent failure {self.calls}")
+
+    agent = _AlwaysFailingAgent()
+    monkeypatch.setattr("agent.swarm.AgentCatalog.create", lambda *_a, **_k: agent)
+
+    result = __import__("asyncio").run(orch._execute_task(SwarmTask(goal="g", intent="code")))
+
+    assert result.status == "failed"
+    assert "permanent failure 3" in result.summary
+    assert agent.calls == 3
+
+
+def test_task_timeout_ignores_malformed_model_json_and_invalid_provider_timeout() -> None:
+    cfg = SimpleNamespace(
+        AI_PROVIDER="openai",
+        CODING_MODEL="gpt-5.5",
+        SWARM_TASK_TIMEOUT_BY_MODEL="{not-json",
+        SWARM_TASK_TIMEOUT_SECONDS_OPENAI="not-a-number",
+        SWARM_TASK_TIMEOUT_SECONDS=9,
+        REACT_TIMEOUT=3,
+    )
+    orchestrator = SwarmOrchestrator(cfg=cfg)
+
+    assert orchestrator._task_timeout_seconds(SwarmTask(goal="x")) == 9
+
+
+def test_distributed_idempotency_cache_refreshes_lru_before_eviction(monkeypatch):
+    orchestrator = SwarmOrchestrator(cfg=SimpleNamespace(SWARM_IDEMPOTENCY_CACHE_MAX=2))
+    backend = InMemoryDelegationBackend()
+    orchestrator.configure_delegation_backend(backend)
+
+    reviewer = AgentSpec(role_name="reviewer", capabilities=["code_review"])
+    monkeypatch.setattr(orchestrator.router, "route", lambda _intent: reviewer)
+    monkeypatch.setattr(orchestrator.router, "route_by_role", lambda _role: reviewer)
+
+    for key in ("delivery-1", "delivery-2"):
+        __import__("asyncio").run(
+            orchestrator.dispatch_distributed(
+                SwarmTask(goal="Webhook incele", intent="review", context={"idempotency_key": key}),
+                session_id="sess-42",
+                sender="supervisor",
+            )
+        )
+
+    cached_first = orchestrator._get_distributed_idempotency_cache("delivery-1")
+    assert cached_first is not None
+
+    __import__("asyncio").run(
+        orchestrator.dispatch_distributed(
+            SwarmTask(
+                goal="Webhook incele", intent="review", context={"idempotency_key": "delivery-3"}
+            ),
+            session_id="sess-42",
+            sender="supervisor",
+        )
+    )
+
+    assert list(orchestrator._distributed_idempotency_cache) == ["delivery-1", "delivery-3"]
+    assert len(backend.dispatched) == 3
+
+
+def test_execute_task_records_failed_rollback_evidence(monkeypatch):
+    class _RollbackBoomAgent:
+        async def handle(self, _envelope):
+            raise RuntimeError("primary boom")
+
+        async def rollback_task(self, _envelope, _exc):
+            raise RuntimeError("rollback boom")
+
+    orchestrator = SwarmOrchestrator(cfg=SimpleNamespace())
+    spec = AgentSpec(role_name="coder", capabilities=["code_generation"])
+    monkeypatch.setattr(orchestrator.router, "route", lambda _intent: spec)
+    monkeypatch.setattr("agent.swarm.AgentCatalog.create", lambda *_a, **_k: _RollbackBoomAgent())
+
+    result = __import__("asyncio").run(
+        orchestrator._execute_task(SwarmTask(task_id="swarm-rb", goal="Kod yaz", intent="code"))
+    )
+
+    assert result.status == "failed"
+    assert result.summary == "Görev başarısız: primary boom"
+    assert result.evidence == ["rollback:rollback_task:failed:rollback boom"]
+
+
+def test_ensure_contract_aliases_uses_imported_contract_module(monkeypatch):
+    class _Real:
+        def __init__(self, **_kwargs):
+            pass
+
+    module = SimpleNamespace(
+        TaskEnvelope=_Real,
+        TaskResult=_Real,
+        DelegationRequest=_Real,
+        BrokerTaskEnvelope=object,
+        BrokerTaskResult=object,
+        is_delegation_request=lambda _value: False,
+    )
+
+    monkeypatch.setattr(swarm, "_CONTRACTS_MODULE_CACHE", None)
+    monkeypatch.setattr(swarm.importlib, "import_module", lambda _name: module)
+
+    swarm._ensure_contract_aliases()
+
+    assert swarm.TaskEnvelope is _Real
+    assert swarm.TaskResult is _Real
+    assert swarm.DelegationRequest is _Real
+
+
+def test_contracts_module_import_failure_leaves_cache_empty(monkeypatch):
+    monkeypatch.setattr(swarm, "_CONTRACTS_MODULE_CACHE", None)
+
+    def _raise_import(_name):
+        raise ImportError("contracts unavailable")
+
+    monkeypatch.setattr(swarm.importlib, "import_module", _raise_import)
+
+    with pytest.raises(ImportError, match="contracts unavailable"):
+        swarm._contracts_module(force_refresh=True)
+    assert swarm._CONTRACTS_MODULE_CACHE is None
+
+
+def test_looks_like_delegation_request_returns_false_when_checker_fails_and_attrs_missing(
+    monkeypatch,
+):
+    monkeypatch.setattr(swarm, "_ensure_contract_aliases", lambda: None)
+    monkeypatch.setattr(
+        swarm, "is_delegation_request", lambda _value: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
+
+    assert swarm._looks_like_delegation_request(SimpleNamespace(target_agent="coder")) is False
+
+
+def test_task_router_route_falls_back_to_list_all_when_capability_lookup_unavailable(monkeypatch):
+    coder = AgentSpec(role_name="coder", capabilities=["code_generation"])
+    catalog = SimpleNamespace(list_all=lambda: [coder])
+    monkeypatch.setattr(TaskRouter, "_catalog", staticmethod(lambda: catalog))
+
+    assert TaskRouter().route("code") == coder
+
+
+def test_distributed_idempotency_key_prefers_trimmed_correlation_ids_and_falls_back_to_task_id():
+    with_correlation = SwarmTask(
+        task_id="task-1", goal="g", context={"correlation_id": "  corr-42  "}
+    )
+    without_key = SwarmTask(task_id="task-2", goal="g", context={})
+
+    assert (
+        SwarmOrchestrator._distributed_idempotency_key(
+            with_correlation, session_id="sess", receiver="coder"
+        )
+        == "corr-42"
+    )
+    assert (
+        SwarmOrchestrator._distributed_idempotency_key(
+            without_key, session_id="sess", receiver="coder"
+        )
+        == "sess:coder:task-2"
+    )
+
+
+def test_task_timeout_falls_back_from_invalid_global_to_react_timeout() -> None:
+    cfg = SimpleNamespace(SWARM_TASK_TIMEOUT_SECONDS="bad-global", REACT_TIMEOUT="7")
+
+    assert SwarmOrchestrator(cfg=cfg)._task_timeout_seconds(SwarmTask(goal="x")) == 7
+
+
+def test_task_timeout_falls_back_to_sixty_when_global_and_react_timeout_are_invalid() -> None:
+    cfg = SimpleNamespace(SWARM_TASK_TIMEOUT_SECONDS="bad-global", REACT_TIMEOUT="bad-react")
+
+    assert SwarmOrchestrator(cfg=cfg)._task_timeout_seconds(SwarmTask(goal="x")) == 60.0
+
+
+def test_attempt_task_rollback_uses_rollback_hook_when_task_hook_missing() -> None:
+    class _Agent:
+        def rollback(self, envelope, exc):
+            assert envelope.task_id == "task-rb"
+            assert str(exc) == "boom"
+            return None
+
+    orch = SwarmOrchestrator(cfg=SimpleNamespace())
+    envelope = SimpleNamespace(task_id="task-rb")
+
+    result = __import__("asyncio").run(
+        orch._attempt_task_rollback(_Agent(), envelope, RuntimeError("boom"))
+    )
+
+    assert result == "rollback:rollback:completed"
+
+
+def test_attempt_task_rollback_returns_empty_when_no_hook_exists() -> None:
+    orch = SwarmOrchestrator(cfg=SimpleNamespace())
+
+    result = __import__("asyncio").run(
+        orch._attempt_task_rollback(
+            SimpleNamespace(), SimpleNamespace(task_id="t"), RuntimeError("x")
+        )
+    )
+
+    assert result == ""

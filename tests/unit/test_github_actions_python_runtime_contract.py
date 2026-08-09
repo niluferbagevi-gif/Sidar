@@ -42,6 +42,29 @@ def test_required_workflows_pin_setup_python_to_311():
         assert versions == [PYTHON_MAJOR_MINOR] * len(versions)
 
 
+def test_codeql_covers_both_languages_with_security_extended_queries() -> None:
+    """Guard the CodeQL semantic SAST workflow's coverage/cadence.
+
+    A friend code review flagged that no semantic/dataflow SAST (CodeQL,
+    Semgrep, ...) existed for either Python or JS/TS -- Bandit is
+    pattern/AST-based and Python-only, npm audit is dependency-only. This
+    was already closed by adding .github/workflows/codeql.yml; this test
+    pins its language/query/cadence contract so it can't silently regress
+    (e.g. someone drops the javascript-typescript matrix entry or narrows
+    the query suite back to the low-recall default).
+    """
+    workflow = (WORKFLOW_DIR / "codeql.yml").read_text(encoding="utf-8")
+
+    assert "language: python" in workflow
+    assert "language: javascript-typescript" in workflow
+    assert "queries: security-extended" in workflow
+    assert "push:" in workflow
+    assert "pull_request:" in workflow
+    assert "schedule:" in workflow
+    assert "github/codeql-action/init@v3" in workflow
+    assert "github/codeql-action/analyze@v3" in workflow
+
+
 def test_workflows_do_not_reintroduce_python_312_or_multi_version_matrix():
     for workflow_path in WORKFLOW_DIR.glob("*.yml"):
         text = workflow_path.read_text()
@@ -80,6 +103,33 @@ def test_nightly_auth_benchmark_requires_cached_baseline_compare():
     assert "BENCHMARK_COMPARE_REQUIRED=1 ancak .benchmarks" in workflow
 
 
+def test_ci_required_checks_docs_track_benchmark_seed_duplication_and_reactive_keepalive() -> None:
+    """Guard the benchmark-baseline follow-up notes in the required-checks doc.
+
+    docs/CI_REQUIRED_CHECKS.md must keep the follow-up notes a friend code
+    review raised for the benchmark baseline pipeline: keepalive is
+    restore-only (no proactive re-seed/alerting), and
+    benchmark-baseline-seed.yml/ci.yml's seed-benchmark-baseline job carry
+    real (not just cosmetic) drift that a workflow_call merge would need to
+    resolve deliberately.
+    """
+    seed_workflow = (WORKFLOW_DIR / "benchmark-baseline-seed.yml").read_text(encoding="utf-8")
+    ci_workflow = (WORKFLOW_DIR / "ci.yml").read_text(encoding="utf-8")
+    docs = Path("docs/CI_REQUIRED_CHECKS.md").read_text(encoding="utf-8")
+
+    assert "Known follow-up improvements" in docs
+    assert "Keepalive is still purely reactive" in docs
+    assert "workflow_call` reusable workflow is the right fix" in docs
+
+    # The enumerated drift must still be real, not a stale claim.
+    assert "actions/checkout@v5" in seed_workflow
+    assert "actions/checkout@v4" in ci_workflow
+    assert "retention-days: 30" in seed_workflow
+    assert "retention-days: 90" in ci_workflow
+    assert "compare_name" in seed_workflow
+    assert "seed_benchmark_baseline:" in ci_workflow
+
+
 def test_ci_has_required_installer_manifest_smoke_gate() -> None:
     workflow = (WORKFLOW_DIR / "ci.yml").read_text(encoding="utf-8")
     docs = Path("docs/CI_REQUIRED_CHECKS.md").read_text(encoding="utf-8")
@@ -88,25 +138,33 @@ def test_ci_has_required_installer_manifest_smoke_gate() -> None:
     assert "name: Installer manifest and smoke gate" in workflow
     assert "Branch protection should mark this job name as required" in workflow
     assert "uv sync --frozen --extra dev" in workflow
+    assert "Required installer manifest drift gate" in workflow
+    assert "make check-install-manifests" in workflow
+    assert "Required installer ShellCheck gate" in workflow
+    assert "make installer-shellcheck" in workflow
     assert (
-        "tests/smoke/test_install_verification.py::"
-        "test_install_sidar_embedded_manifests_in_sync"
+        "tests/smoke/test_install_verification.py::test_install_sidar_embedded_manifests_in_sync"
     ) in workflow
     assert "sha256sum -c .sidar_manifest.txt" in workflow
+    assert "Verify installer manifests and pinned module commit directly" in workflow
+    assert "Verify install manifest and pinned module commit integrity before bundling" in workflow
     assert "uv run python scripts/tools/update_core_install_manifest.py --check" in workflow
     assert (
         "uv run python scripts/tools/update_install_module_hash_manifest.py "
         "--target install_sidar.sh --check"
     ) in workflow
+    assert (
+        "uv run python scripts/tools/update_install_module_hash_manifest.py "
+        "--target install_sidar.sh --check-pin"
+    ) in workflow
     assert "Treat raw GitHub installer as release artifact" in workflow
     assert "bash -n install_sidar.sh" in workflow
     assert (
-        "SIDAR_INSTALL_TEST_MODE=1 SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY=1 "
-        "bash install_sidar.sh"
+        "SIDAR_INSTALL_TEST_MODE=1 SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY=1 bash install_sidar.sh"
     ) in workflow
     assert "raw installer as a release artifact" in docs
     assert "main/install_sidar.sh" in docs
-    assert "test_install_sidar_wget_raw_bootstrap_clone_smoke" in docs
+    assert "test_install_sidar_wget_raw_direct_module_download_smoke" in docs
     assert "wget-style clean-install simulation" in docs
     assert "Require status checks to pass before merging" in docs
     assert "Installer manifest and smoke gate` selected as a required check" in docs
@@ -132,10 +190,16 @@ def test_installer_security_chain_is_visible_in_pr_review_metadata() -> None:
     assert "Installer manifest checklist" in template
     assert "scripts/sync_install_manifest.sh" in template
     assert "scripts/sync_install_module_hashes.sh" in template
+    assert "make check-install-manifests" in template
+    assert "make installer-shellcheck" in template
     assert "uv run python scripts/tools/update_core_install_manifest.py --check" in template
     assert (
         "uv run python scripts/tools/update_install_module_hash_manifest.py "
         "--target install_sidar.sh --check"
+    ) in template
+    assert (
+        "uv run python scripts/tools/update_install_module_hash_manifest.py "
+        "--target install_sidar.sh --check-pin"
     ) in template
     assert "Install manifest synced" in template
     assert "Installer manifest and smoke gate" in template
@@ -150,6 +214,8 @@ def test_installer_security_chain_is_visible_in_pr_review_metadata() -> None:
         assert protected_path in codeowners
     assert "PR visibility for core installer files" in docs
     assert "installer-impacting" in docs
+    assert "make check-install-manifests" in docs
+    assert "make installer-shellcheck" in docs
 
 
 def test_installer_docs_scope_unverified_script_bypass_to_non_core_checks() -> None:
@@ -168,6 +234,25 @@ def test_installer_docs_scope_unverified_script_bypass_to_non_core_checks() -> N
     assert "Güncellenmiş installer/release" in readme
     assert "core/memory.py" in readme
     assert "core/multimodal.py" in readme
+
+
+def test_ci_runs_frontend_typecheck_gate_after_lint() -> None:
+    workflow = (WORKFLOW_DIR / "ci.yml").read_text()
+
+    assert "Run frontend type-check gate (tsc)" in workflow
+    assert "npm run typecheck" in workflow
+    assert workflow.index("Run frontend lint gate (eslint)") < workflow.index(
+        "Run frontend type-check gate (tsc)"
+    )
+
+
+def test_release_quality_runs_helm_install_dry_run_with_injected_secret():
+    workflow = (WORKFLOW_DIR / "release-quality.yml").read_text()
+
+    assert "Helm install dry-run validation" in workflow
+    assert "helm install sidar helm/sidar --dry-run --debug" in workflow
+    assert "--set postgresql.existingSecret.name=ci-postgresql-secret" in workflow
+    assert "postgresql.password" not in workflow
 
 
 def test_release_quality_runs_benchmark_coverage_trend_gate():

@@ -12,7 +12,7 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from web.routes.ws_chat import send_json_if_connected, websocket_is_connected
-from web.routes.ws_lifecycle import WebSocketLifecycle
+from web.routes.ws_lifecycle import WebSocketLifecycle, reject_rate_limited_connection
 from web.security import (
     SIDAR_WS_VOICE_PROTOCOL,
 )
@@ -32,14 +32,16 @@ def build_ws_voice_router(deps_factory: Callable[[], Any]) -> APIRouter:
 
 
 async def websocket_voice(websocket: WebSocket, deps: Any) -> Any:
-    """
-    Gerçek zamanlı ses oturumu için websocket.
+    """Gerçek zamanlı ses oturumu için websocket.
 
     MVP davranışı:
     - İstemci binary ses chunk'larını gönderir.
     - `commit` / `end` aksiyonu ile biriken ses STT'den geçirilir.
     - Transkript çıkarıldıktan sonra ajan metin yanıtı stream edilir.
     """
+    if await reject_rate_limited_connection(websocket, deps):
+        return
+
     proto_header = websocket.headers.get("sec-websocket-protocol", "").strip()
     extract_ws_header_token = getattr(
         deps, "extract_ws_header_token", default_extract_ws_header_token
@@ -154,10 +156,10 @@ async def websocket_voice(websocket: WebSocket, deps: Any) -> Any:
         if active_response_task is None or active_response_task.done():
             return
         await lifecycle.cancel_task(active_response_task)
-        await send_json_if_connected(
+        await send_json_if_connected(  # pragma: no cover - concurrent cancellation race
             websocket, {"voice_interruption": reason, "cancelled": True, **interrupt_payload}
         )
-        active_response_task = None
+        active_response_task = None  # pragma: no cover - concurrent cancellation race
 
     async def _run_voice_turn(
         *,
@@ -167,8 +169,8 @@ async def websocket_voice(websocket: WebSocket, deps: Any) -> Any:
         prompt: str,
     ) -> None:
         if not websocket_is_connected(websocket):
-            return
-        if not audio_bytes:  # pragma: no cover - _process_audio_commit boş buffer'ı filtrelediği için savunmacı koruma
+            return  # pragma: no cover - disconnect race before background turn starts
+        if not audio_bytes:  # pragma: no cover - defensive, empty buffers filtered upstream
             await send_json_if_connected(
                 websocket, {"error": "İşlenecek ses verisi bulunamadı.", "done": True}
             )
@@ -273,9 +275,32 @@ async def websocket_voice(websocket: WebSocket, deps: Any) -> Any:
         with contextlib.suppress(Exception):
             await websocket.send_json({"auth_ok": True})
 
+    ws_auth_timeout_seconds = int(
+        getattr(getattr(deps, "cfg", None), "WS_AUTH_TIMEOUT_SECONDS", 15) or 15
+    )
+    ws_auth_deadline = asyncio.get_event_loop().time() + ws_auth_timeout_seconds
+
     try:
         while True:
-            packet = await websocket.receive()
+            if ws_authenticated:
+                packet = await websocket.receive()
+            else:
+                # Kimlik doğrulanmamış bir istemci bağlantıyı süresiz açık tutamaz
+                # (yavaş DoS / kaynak tükenmesi) — ne sessiz kalarak ne de ardı
+                # ardına geçersiz/auth-olmayan mesaj göndererek. Zaman aşımı
+                # bağlantının kabulünden itibaren sabit bir mutlak son tarihtir;
+                # her mesajda sıfırlanmaz.
+                remaining = ws_auth_deadline - asyncio.get_event_loop().time()
+                if remaining <= 0:
+                    await deps.ws_close_policy_violation(websocket, "Authentication timeout")
+                    return
+                try:
+                    packet = await asyncio.wait_for(websocket.receive(), timeout=remaining)
+                except (
+                    TimeoutError
+                ):  # pragma: no cover - timing race covered by timeout integration tests
+                    await deps.ws_close_policy_violation(websocket, "Authentication timeout")
+                    return
             packet_type = packet.get("type")
             if packet_type == "websocket.disconnect":
                 raise WebSocketDisconnect()

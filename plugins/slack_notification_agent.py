@@ -25,7 +25,10 @@ class SlackNotificationAgent(BaseAgent):
 
         webhook = (self.cfg.SLACK_WEBHOOK_URL or "").strip()
         if not webhook:
-            return "SLACK_WEBHOOK_URL veya SLACK_TOKEN ayarlanmamış. Önce Slack bağlantısını yapılandırın."
+            return (
+                "SLACK_WEBHOOK_URL veya SLACK_TOKEN ayarlanmamış. Önce Slack bağlantısını "
+                "yapılandırın."
+            )
 
         try:
             req = urllib.request.Request(

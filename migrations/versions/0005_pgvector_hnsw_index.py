@@ -96,34 +96,42 @@ def upgrade() -> None:
         except Exception:
             return
 
-    hnsw_options = _hnsw_index_options()
     op.execute(
-        f"""
-        DO $$
-        BEGIN
-            EXECUTE '
-                CREATE TABLE IF NOT EXISTS rag_embeddings (
-                    doc_id TEXT NOT NULL,
-                    parent_id TEXT NOT NULL,
-                    session_id TEXT NOT NULL,
-                    chunk_index INTEGER NOT NULL,
-                    title TEXT,
-                    source TEXT,
-                    chunk_content TEXT,
-                    embedding vector(384),
-                    PRIMARY KEY (doc_id, chunk_index)
-                )
-            ';
-
-            EXECUTE 'CREATE INDEX IF NOT EXISTS idx_rag_embeddings_session '
-                 || 'ON rag_embeddings(session_id)';
-            EXECUTE 'CREATE INDEX IF NOT EXISTS idx_rag_embeddings_parent '
-                 || 'ON rag_embeddings(parent_id)';
-            EXECUTE 'CREATE INDEX IF NOT EXISTS idx_rag_embeddings_embedding_hnsw '
-                 || 'ON rag_embeddings USING hnsw (embedding vector_cosine_ops) {hnsw_options}';
-        END $$;
+        """
+        CREATE TABLE IF NOT EXISTS rag_embeddings (
+            doc_id TEXT NOT NULL,
+            parent_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            chunk_index INTEGER NOT NULL,
+            title TEXT,
+            source TEXT,
+            chunk_content TEXT,
+            embedding vector(384),
+            PRIMARY KEY (doc_id, chunk_index)
+        )
         """
     )
+
+    # CREATE INDEX CONCURRENTLY cannot run inside a transaction block (or a DO/
+    # PL/pgSQL block), so each index is built as the sole statement in its own
+    # autocommit block. This avoids holding a write lock on rag_embeddings for
+    # the entire index build, which matters once the table holds real data.
+    with op.get_context().autocommit_block():
+        op.execute(
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_rag_embeddings_session "
+            "ON rag_embeddings(session_id)"
+        )
+    with op.get_context().autocommit_block():
+        op.execute(
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_rag_embeddings_parent "
+            "ON rag_embeddings(parent_id)"
+        )
+    hnsw_options = _hnsw_index_options()
+    with op.get_context().autocommit_block():
+        op.execute(
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_rag_embeddings_embedding_hnsw "
+            f"ON rag_embeddings USING hnsw (embedding vector_cosine_ops) {hnsw_options}"
+        )
 
 
 def downgrade() -> None:

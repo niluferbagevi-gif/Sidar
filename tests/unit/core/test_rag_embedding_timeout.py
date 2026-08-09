@@ -22,7 +22,9 @@ class _FastSentenceTransformer:
 
 def test_sentence_transformer_load_timeout(monkeypatch) -> None:
     embeddings.clear_model_cache()
-    monkeypatch.setattr(embeddings, "_load_sentence_transformer_class", lambda: _SlowSentenceTransformer)
+    monkeypatch.setattr(
+        embeddings, "_load_sentence_transformer_class", lambda: _SlowSentenceTransformer
+    )
     monkeypatch.setattr(embeddings, "sentence_transformer_local_files_only", lambda *_args: True)
     cfg = SimpleNamespace(USE_GPU=False, RAG_EMBEDDING_LOAD_TIMEOUT_SECONDS=0.001)
 
@@ -34,7 +36,9 @@ def test_sentence_transformer_load_timeout(monkeypatch) -> None:
 
 def test_sentence_transformer_load_timeout_disabled_allows_normal_load(monkeypatch) -> None:
     embeddings.clear_model_cache()
-    monkeypatch.setattr(embeddings, "_load_sentence_transformer_class", lambda: _FastSentenceTransformer)
+    monkeypatch.setattr(
+        embeddings, "_load_sentence_transformer_class", lambda: _FastSentenceTransformer
+    )
     monkeypatch.setattr(embeddings, "sentence_transformer_local_files_only", lambda *_args: True)
     cfg = SimpleNamespace(USE_GPU=False, RAG_EMBEDDING_LOAD_TIMEOUT_SECONDS=0)
 

@@ -2,6 +2,10 @@ import os
 import subprocess
 import textwrap
 
+import pytest
+
+pytestmark = pytest.mark.installer_smoke
+
 
 def test_preflight_sets_autofix_eligible_when_default_covers_and_hardening_enabled(tmp_path):
     mock_bin = tmp_path / "bin"
