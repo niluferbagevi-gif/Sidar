@@ -10,9 +10,20 @@ import sqlite3
 from pathlib import Path
 from typing import Any, cast
 
+from core.db.dialect import join_sql_identifiers
+
 logger = logging.getLogger(__name__)
 
-PROMPT_REGISTRY_COLUMNS = "id, role_name, prompt_text, version, is_active, created_at, updated_at"
+PROMPT_REGISTRY_COLUMN_NAMES = (
+    "id",
+    "role_name",
+    "prompt_text",
+    "version",
+    "is_active",
+    "created_at",
+    "updated_at",
+)
+PROMPT_REGISTRY_COLUMNS = join_sql_identifiers(PROMPT_REGISTRY_COLUMN_NAMES)
 
 
 def _prompt_record(prompt_record_cls: type[Any], row: Any, *, sqlite_bool: bool = False) -> Any:

@@ -3064,3 +3064,86 @@ async def test_write_file_hitl_requires_approval_for_overwrite(manager, tmp_path
     assert "insan onayı" in message
     assert target.read_text(encoding="utf-8") == "old"
     gate.request_approval.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_write_file_hitl_writes_directly_when_file_does_not_exist(
+    manager, tmp_path, monkeypatch
+):
+    target = tmp_path / "brand_new.txt"
+    gate = SimpleNamespace(request_approval=AsyncMock(return_value=False))
+    monkeypatch.setattr("managers.code_manager.get_hitl_gate", lambda: gate)
+
+    ok, message = await manager.write_file_hitl(str(target), "fresh content", validate=False)
+
+    assert ok is True
+    assert "başarıyla kaydedildi" in message
+    assert target.read_text(encoding="utf-8") == "fresh content"
+    gate.request_approval.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_write_file_hitl_writes_after_approval(manager, tmp_path, monkeypatch):
+    target = tmp_path / "protected.txt"
+    target.write_text("old", encoding="utf-8")
+    gate = SimpleNamespace(request_approval=AsyncMock(return_value=True))
+    monkeypatch.setattr("managers.code_manager.get_hitl_gate", lambda: gate)
+
+    ok, message = await manager.write_file_hitl(str(target), "new", validate=False)
+
+    assert ok is True
+    assert "başarıyla kaydedildi" in message
+    assert target.read_text(encoding="utf-8") == "new"
+    gate.request_approval.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_patch_file_hitl_applies_patch_after_approval(manager, tmp_path, monkeypatch):
+    target = tmp_path / "patchable.txt"
+    target.write_text("hello world", encoding="utf-8")
+    gate = SimpleNamespace(request_approval=AsyncMock(return_value=True))
+    monkeypatch.setattr("managers.code_manager.get_hitl_gate", lambda: gate)
+
+    ok, message = await manager.patch_file_hitl(str(target), "hello", "bye")
+
+    assert ok is True
+    assert "başarıyla kaydedildi" in message
+    assert target.read_text(encoding="utf-8") == "bye world"
+    gate.request_approval.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_patch_file_hitl_blocks_when_approval_rejected(manager, tmp_path, monkeypatch):
+    target = tmp_path / "patchable.txt"
+    target.write_text("hello world", encoding="utf-8")
+    gate = SimpleNamespace(request_approval=AsyncMock(return_value=False))
+    monkeypatch.setattr("managers.code_manager.get_hitl_gate", lambda: gate)
+
+    ok, message = await manager.patch_file_hitl(str(target), "hello", "bye")
+
+    assert ok is False
+    assert "insan onayı" in message
+    assert target.read_text(encoding="utf-8") == "hello world"
+    gate.request_approval.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_patch_file_hitl_returns_error_when_file_missing(manager, tmp_path):
+    missing = tmp_path / "does_not_exist.txt"
+
+    ok, message = await manager.patch_file_hitl(str(missing), "hello", "bye")
+
+    assert ok is False
+    assert "bulunamadı" in message
+
+
+@pytest.mark.asyncio
+async def test_patch_file_hitl_returns_error_when_target_block_not_found(manager, tmp_path):
+    target = tmp_path / "patchable.txt"
+    target.write_text("hello world", encoding="utf-8")
+
+    ok, message = await manager.patch_file_hitl(str(target), "not-in-file", "bye")
+
+    assert ok is False
+    assert "bulunamadı" in message
+    assert target.read_text(encoding="utf-8") == "hello world"

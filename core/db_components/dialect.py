@@ -50,6 +50,22 @@ def quote_sql_identifier(identifier: str) -> str:
     return f'"{assert_safe_sql_identifier(value)}"'
 
 
+def join_sql_identifiers(
+    identifiers: Iterable[str], *, allowed: Iterable[str] | None = None
+) -> str:
+    """Validate and join identifiers for SQL column or table lists.
+
+    Bind parameters cannot represent identifiers.  Callers that need a dynamic
+    comma-separated identifier list should use this helper rather than validating
+    and joining in separate steps, which could accidentally interpolate a different
+    collection than the one that was checked.
+    """
+    values = tuple(identifiers)
+    if not values:
+        raise ValueError("SQL identifier list cannot be empty")
+    return ", ".join(assert_safe_sql_identifier(value, allowed=allowed) for value in values)
+
+
 def parse_asyncpg_affected_rows(
     command_tag: Any, *, pattern: Any = ASYNCPG_COMMAND_TAG_COUNT_RE
 ) -> int:
@@ -68,6 +84,7 @@ __all__ = [
     "ASYNCPG_COMMAND_TAG_COUNT_RE",
     "assert_safe_sql_identifier",
     "is_safe_sql_identifier",
+    "join_sql_identifiers",
     "parse_asyncpg_affected_rows",
     "quote_sql_identifier",
 ]

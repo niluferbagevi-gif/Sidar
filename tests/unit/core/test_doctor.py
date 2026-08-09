@@ -82,8 +82,10 @@ def test_gpu_check_requests_stress_when_nvidia_smi_detected(monkeypatch):
 
 
 def test_websocket_check_falls_back_to_static_routes(monkeypatch, tmp_path):
-    source = tmp_path / "web_server.py"
-    source.write_text('@app.websocket("/ws/chat")\n@app.websocket("/ws/voice")\n', encoding="utf-8")
+    routes_dir = tmp_path / "web" / "routes"
+    routes_dir.mkdir(parents=True)
+    (routes_dir / "ws_chat.py").write_text('@router.websocket("/ws/chat")\n', encoding="utf-8")
+    (routes_dir / "ws_voice.py").write_text('@router.websocket("/ws/voice")\n', encoding="utf-8")
     monkeypatch.setattr(doctor, "BASE_DIR", tmp_path)
 
     import builtins
@@ -189,6 +191,29 @@ def test_postgres_connectivity_failure_guidance_classifies_errors(error, categor
     assert details["failure_category"] == category
 
 
+def test_postgres_connectivity_guidance_distinguishes_invalid_ssl_query_param_from_tls(
+    monkeypatch,
+):
+    """A libpq-style '?ssl=disable' query value is not a TLS handshake failure.
+
+    asyncpg forwards an unrecognized `ssl` query value to PostgreSQL as a server
+    startup parameter, and PostgreSQL rejects it with `parameter "ssl" cannot be
+    changed now` (CantChangeRuntimeParamError). That message previously matched
+    the generic "ssl"/"tls" bucket, which pointed users at certificate/handshake
+    remediation instead of the real fix (drop the invalid query param).
+    """
+
+    class CantChangeRuntimeParamError(RuntimeError):
+        pass
+
+    error = CantChangeRuntimeParamError('parameter "ssl" cannot be changed now')
+    message, details = doctor._postgres_connectivity_failure_guidance(error)
+
+    assert details["failure_category"] == "invalid_ssl_query_param"
+    assert "remove-explicit-urls" in details["auto_fix"]
+    assert "not a certificate" in message.lower()
+
+
 def test_dotenv_helpers_parse_assignments_and_report_effective_sources(monkeypatch, tmp_path):
     env_file = tmp_path / ".env.test"
     env_file.write_text(
@@ -221,6 +246,26 @@ def test_dotenv_helpers_parse_assignments_and_report_effective_sources(monkeypat
 
     assert report["sources"]["DATABASE_URL"]["label"] == "profile"
     assert report["definitions"]["POSTGRES_DB"] == []
+
+
+def test_dotenv_source_report_ignores_non_effective_definition(monkeypatch, tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text("POSTGRES_DB=sidar_file\nDATABASE_URL=postgresql://file/db\n")
+    monkeypatch.setenv("POSTGRES_DB", "sidar_process")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://file/db")
+
+    import config
+
+    monkeypatch.setattr(
+        config,
+        "get_dotenv_load_report",
+        lambda: [{"loaded": True, "path": str(env_file), "label": "base", "override": False}],
+    )
+
+    report = doctor._dotenv_source_report(("POSTGRES_DB", "DATABASE_URL"))
+
+    assert "POSTGRES_DB" not in report["sources"]
+    assert report["sources"]["DATABASE_URL"]["label"] == "base"
 
 
 def test_uv_check_reports_missing_and_lock_failure(monkeypatch):
@@ -259,6 +304,10 @@ def test_database_env_warns_without_url(monkeypatch):
 
     assert check.status == "warn"
     assert check.details["database_url_set"] is False
+    assert (
+        check.details["auto_fix"] == "uv run python -m scripts.bootstrap_env --profile development"
+    )
+    assert check.details["recommended_commands"][1].startswith("SIDAR_ENV=development ")
 
 
 def test_database_env_derives_urls_when_missing_but_postgres_password_present(monkeypatch):
@@ -402,6 +451,98 @@ def test_database_env_flags_unattributed_database_url_as_parent_shell_drift(monk
     assert "sync_database_passwords cannot edit it" in check.message
     assert check.details["database_url_source_unattributed"] is True
     assert check.details["container_database_url_source_unattributed"] is False
+
+
+def test_database_env_rejects_unattributed_asyncpg_ssl_query_with_shell_fix(monkeypatch):
+    """Expose the effective fix when an old exported URL contains ssl=disable."""
+    password = _STRONG_TEST_PASSWORD
+    monkeypatch.setenv("POSTGRES_USER", "sidar")
+    monkeypatch.setenv("POSTGRES_PASSWORD", password)
+    monkeypatch.setenv("POSTGRES_DB", "sidar")
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        f"postgresql+asyncpg://sidar:{password}@localhost:5432/sidar?ssl=disable",
+    )
+    monkeypatch.setattr(
+        doctor,
+        "_dotenv_source_report",
+        lambda keys: {"sources": {}, "definitions": {key: [] for key in keys}},
+    )
+
+    check = doctor.check_database_env()
+
+    assert check.status == "fail"
+    assert "unsupported ssl query parameter" in check.message
+    assert "inherited from the parent process/shell environment" in check.message
+    assert check.details["recommended_commands"][0] == (
+        "unset DATABASE_URL SIDAR_CONTAINER_DATABASE_URL"
+    )
+    assert "parent shell/process" in check.details["remediation_steps"][0]
+
+
+def test_database_connectivity_adds_parent_shell_fix_for_unattributed_ssl_url(monkeypatch):
+    password = _STRONG_TEST_PASSWORD
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        f"postgresql+asyncpg://sidar:{password}@localhost:5432/sidar?ssl=disable",
+    )
+    monkeypatch.setattr(
+        doctor,
+        "_dotenv_source_report",
+        lambda keys: {"sources": {}, "definitions": {key: [] for key in keys}},
+    )
+
+    async def _raise_ssl_error(*_args, **_kwargs):
+        raise RuntimeError('parameter "ssl" cannot be changed now')
+
+    monkeypatch.setattr(doctor, "_probe_postgres_connectivity", _raise_ssl_error)
+
+    check = doctor.check_database_connectivity()
+
+    assert check.status == "warn"
+    assert check.details["failure_category"] == "invalid_ssl_query_param"
+    assert check.details["database_url_source_unattributed"] is True
+    assert check.details["parent_environment_remediation"] == (
+        "unset DATABASE_URL SIDAR_CONTAINER_DATABASE_URL"
+    )
+    assert check.details["recommended_commands"][0] == (
+        "unset DATABASE_URL SIDAR_CONTAINER_DATABASE_URL"
+    )
+    assert "dotenv repair command cannot change it" in check.message
+
+
+@pytest.mark.parametrize(
+    ("env_name", "host", "detail_key"),
+    (
+        ("DATABASE_URL", "localhost", "database_url_source_unattributed"),
+        (
+            "SIDAR_CONTAINER_DATABASE_URL",
+            "postgres",
+            "container_database_url_source_unattributed",
+        ),
+    ),
+)
+def test_database_env_allows_valid_unattributed_database_url(
+    monkeypatch, env_name, host, detail_key
+):
+    """Do not diagnose a healthy parent-shell URL merely because it is unattributed."""
+    password = _STRONG_TEST_PASSWORD
+    monkeypatch.setenv("POSTGRES_USER", "sidar")
+    monkeypatch.setenv("POSTGRES_PASSWORD", password)
+    monkeypatch.setenv("POSTGRES_DB", "sidar")
+    monkeypatch.setenv(env_name, f"postgresql://sidar:{password}@{host}:5432/sidar")
+    monkeypatch.setattr(
+        doctor,
+        "_dotenv_source_report",
+        lambda keys: {"sources": {}, "definitions": {key: [] for key in keys}},
+    )
+
+    check = doctor.check_database_env()
+
+    assert check.status == "pass"
+    assert check.message == "database environment looks secure"
+    assert check.details[detail_key] is True
+    assert "inherited from the parent process/shell environment" not in check.message
 
 
 def test_database_env_allows_non_postgres_url_without_postgres_sync_failures(monkeypatch):
@@ -653,6 +794,76 @@ def test_pgvector_ready_reports_probe_errors_without_leaking_credentials(monkeyp
     assert "secret-value" not in check.details["error"]
 
 
+def test_pgvector_ready_is_blocked_by_failed_connectivity_without_reprobing(monkeypatch):
+    database_url = "postgresql://sidar:secret-value@localhost:5432/sidar"
+    monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
+    monkeypatch.setattr(doctor, "_resolved_database_urls", lambda: (database_url, "", True, False))
+    monkeypatch.setattr(
+        doctor,
+        "_run_coro_sync",
+        lambda _awaitable: pytest.fail("pgvector readiness repeated the connectivity probe"),
+    )
+    connectivity = DoctorCheck(
+        "database_connectivity",
+        "warn",
+        "PostgreSQL unavailable",
+        {
+            "error": "connection refused",
+            "failure_category": "connection",
+        },
+    )
+
+    check = doctor.check_pgvector_ready(database_connectivity=connectivity)
+
+    assert check.status == "warn"
+    assert check.details["blocked_by"] == "database_connectivity"
+    assert check.details["failure_category"] == "connection"
+    assert "blocked by the PostgreSQL connectivity check" in check.message
+
+
+def test_pgvector_ready_probes_when_passed_connectivity_has_no_evidence(monkeypatch):
+    database_url = "postgresql://sidar:secret-value@localhost:5432/sidar"
+    monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
+    monkeypatch.setattr(doctor, "_resolved_database_urls", lambda: (database_url, "", True, False))
+
+    def _successful_probe(awaitable):
+        awaitable.close()
+        return {"select_1": True, "pgvector_extension_installed": True}
+
+    monkeypatch.setattr(doctor, "_run_coro_sync", _successful_probe)
+    connectivity = DoctorCheck(
+        "database_connectivity", "pass", "PostgreSQL connectivity smoke passed", {}
+    )
+
+    check = doctor.check_pgvector_ready(database_connectivity=connectivity)
+
+    assert check.status == "pass"
+    assert check.details["pgvector_extension_installed"] is True
+
+
+def test_pgvector_ready_reuses_successful_connectivity_probe(monkeypatch):
+    database_url = "postgresql://sidar:secret-value@localhost:5432/sidar"
+    monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
+    monkeypatch.setattr(doctor, "_resolved_database_urls", lambda: (database_url, "", True, False))
+    monkeypatch.setattr(
+        doctor,
+        "_run_coro_sync",
+        lambda _awaitable: pytest.fail("pgvector readiness repeated the connectivity probe"),
+    )
+    connectivity = DoctorCheck(
+        "database_connectivity",
+        "pass",
+        "PostgreSQL connectivity smoke passed",
+        {"select_1": True, "pgvector_extension_installed": True},
+    )
+
+    check = doctor.check_pgvector_ready(database_connectivity=connectivity)
+
+    assert check.status == "pass"
+    assert check.details["database_connectivity_status"] == "pass"
+    assert check.details["pgvector_extension_installed"] is True
+
+
 def test_pgvector_ready_passes_when_extension_probe_succeeds(monkeypatch):
     database_url = "postgresql://sidar:secret-value@localhost:5432/sidar"
     monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
@@ -680,6 +891,7 @@ def test_rag_readiness_warns_for_missing_index_with_auto_fix(monkeypatch, tmp_pa
     assert check.status == "warn"
     assert check.details["document_count"] == 0
     assert check.details["index_exists"] is False
+    assert check.details["advisory_only"] is True
     assert check.details["auto_fix"] == "uv run python -m scripts.seed_rag"
     assert "index file is missing" in check.message
     assert "entity memory is empty" in check.message
@@ -698,6 +910,7 @@ def test_rag_readiness_warns_for_existing_empty_index(monkeypatch, tmp_path):
 
     assert check.status == "warn"
     assert check.details["index_exists"] is True
+    assert check.details["advisory_only"] is True
     assert "no indexed documents" in check.message
     assert "index file is missing" not in check.message
 
@@ -721,6 +934,7 @@ def test_rag_readiness_is_blocked_when_pgvector_env_parity_fails(monkeypatch, tm
     assert "blocked until database_env is fixed" in check.message
     assert check.details["database_env_status"] == "fail"
     assert check.details["blocked_by"] == "database_env"
+    assert "advisory_only" not in check.details
     assert (
         check.details["auto_fix"]
         == "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
@@ -734,6 +948,51 @@ def test_rag_readiness_is_blocked_when_pgvector_env_parity_fails(monkeypatch, tm
     )
     assert "uv run python -m scripts.seed_rag" not in check.details["recommended_commands"]
     assert "uv run python -m scripts.seed_rag" in check.details["follow_up_commands"]
+
+
+def test_rag_readiness_accepts_matching_pgvector_database_environment(monkeypatch, tmp_path):
+    password = _STRONG_TEST_PASSWORD
+    monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
+    monkeypatch.setenv("RAG_DIR", str(tmp_path / "rag"))
+    monkeypatch.setenv("POSTGRES_PASSWORD", password)
+    monkeypatch.setenv("DATABASE_URL", f"postgresql://sidar:{password}@localhost:5432/sidar")
+
+    state = doctor._rag_readiness_state()
+
+    assert state["details"]["database_env_status"] == "pass"
+    assert state["details"].get("blocked_by") is None
+
+
+def test_rag_readiness_accepts_pgvector_database_url_derived_from_components(monkeypatch, tmp_path):
+    """Keep RAG checks aligned with Doctor's component-derived DSN contract."""
+    password = "Dk4uZsy@Gys/qY:0MtiFeJIgI69s"
+    monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
+    monkeypatch.setenv("RAG_DIR", str(tmp_path / "rag"))
+    monkeypatch.setenv("POSTGRES_USER", "sidar")
+    monkeypatch.setenv("POSTGRES_PASSWORD", password)
+    monkeypatch.setenv("POSTGRES_DB", "sidar")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setattr(
+        doctor,
+        "check_rag_index_ready",
+        lambda: DoctorCheck("rag_index_ready", "pass", "ok", {"recommended_commands": []}),
+    )
+    monkeypatch.setattr(
+        doctor,
+        "check_graphrag_entity_memory_ready",
+        lambda: DoctorCheck(
+            "graphrag_entity_memory_ready", "pass", "ok", {"recommended_commands": []}
+        ),
+    )
+
+    state = doctor._rag_readiness_state()
+    check = doctor.check_rag_readiness()
+
+    assert state["details"]["database_env_status"] == "pass"
+    assert state["details"].get("blocked_by") is None
+    assert check.status == "pass"
+    assert check.details.get("blocked_by") is None
+    assert check.details.get("database_env_status") != "fail"
 
 
 def test_rag_readiness_pgvector_env_snapshot_does_not_reenter_database_check(monkeypatch, tmp_path):
@@ -874,6 +1133,7 @@ def test_graphrag_entity_memory_ready_warns_when_store_probe_is_empty(monkeypatc
 
     assert check.status == "warn"
     assert "empty after store probe" in check.message
+    assert check.details["advisory_only"] is True
     assert check.details["auto_fix"] == "uv run python -m scripts.seed_rag --metadata-only"
 
 
@@ -1020,7 +1280,7 @@ def test_gpu_memory_config_warns_for_high_budget_profile_drift_and_missing_image
     check = doctor.check_gpu_memory_config()
 
     assert check.status == "warn"
-    assert "VRAM fractions are very high" in check.message
+    assert "exceed the safe 80% target" in check.message
     assert "differs from the Sidar standard" in check.message
     assert "runtime is CPU mode" in check.message
     assert "access level is not sandbox" in check.message
@@ -1059,10 +1319,12 @@ def test_gpu_memory_config_confirms_standard_local_model(monkeypatch):
 
     check = doctor.check_gpu_memory_config()
 
-    assert check.status == "pass"
+    assert check.status == "warn"
     assert check.details["coding_model"] == "qwen2.5-coder:7b"
     assert check.details["access_level"] == "sandbox"
     assert check.details["total_gpu_memory_fraction"] == pytest.approx(0.9)
+    assert check.details["effective_gpu_memory_fraction"] == pytest.approx(0.8)
+    assert check.details["normalized"] is True
 
 
 def test_gpu_memory_config_warns_for_default_slim_test_image(monkeypatch):
@@ -1082,6 +1344,52 @@ def test_gpu_memory_config_warns_for_default_slim_test_image(monkeypatch):
     assert "DOCKER_TEST_IMAGE currently points to python:3.11-slim" in check.message
     assert "docker build -t sidar:latest ." in check.details["recommended_commands"]
     assert "DOCKER_TEST_IMAGE=sidar:latest" in check.details["recommended_commands"][-1]
+
+
+def test_gpu_memory_config_forces_lazy_hardware_probe_before_reading_gpu_info(monkeypatch):
+    """Regression test: gpu_info must not stay frozen at its CPU-mode placeholder.
+
+    Config.GPU_INFO/USE_GPU are only populated by the real hardware probe inside
+    Config._ensure_hardware_info_loaded(), which runs lazily on the first Config()
+    instantiation anywhere in the process. Because check_gpu_memory_config() reads
+    the class attributes directly (without ever constructing a Config()), running
+    it before anything else touched Config used to report a self-contradictory
+    "use_gpu": true / "gpu_info": "Devre Dışı / CPU Modu" pair on real GPU machines.
+    """
+    from config import Config, HardwareInfo
+
+    monkeypatch.setattr(Config, "_hardware_loaded", False)
+    monkeypatch.setattr(Config, "USE_GPU", True)
+    monkeypatch.setattr(Config, "GPU_INFO", "Devre Dışı / CPU Modu")
+    fake_hw = HardwareInfo(
+        has_cuda=True,
+        gpu_name="NVIDIA Test GPU",
+        gpu_count=1,
+        cpu_count=8,
+        cuda_version="12.4",
+        driver_version="550.10",
+        gpu_vram_mb=8192,
+    )
+    monkeypatch.setattr("config.check_hardware", lambda: fake_hw)
+
+    check = doctor.check_gpu_memory_config()
+
+    assert check.details["use_gpu"] is True
+    assert check.details["gpu_info"] == "NVIDIA Test GPU"
+
+
+def test_gpu_memory_config_probe_failure_is_swallowed(monkeypatch):
+    """A broken hardware probe must not turn this diagnostic check into a crash."""
+    from config import Config
+
+    def _raise() -> None:
+        raise RuntimeError("hardware probe broken")
+
+    monkeypatch.setattr(Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: _raise()))
+
+    check = doctor.check_gpu_memory_config()
+
+    assert check.status in {"pass", "warn"}
 
 
 def test_migrations_fail_when_no_revisions(monkeypatch, tmp_path):
@@ -1261,7 +1569,10 @@ def test_websocket_check_reports_imported_routes_and_missing_static(monkeypatch,
     assert imported_missing.status == "fail"
     assert imported_missing.details["websocket_paths"] == ["/ws/chat"]
 
-    (tmp_path / "web_server.py").write_text('@app.websocket("/ws/chat")\n', encoding="utf-8")
+    routes_dir = tmp_path / "web" / "routes"
+    routes_dir.mkdir(parents=True)
+    (routes_dir / "ws_chat.py").write_text('@router.websocket("/ws/chat")\n', encoding="utf-8")
+    (routes_dir / "ws_voice.py").write_text("", encoding="utf-8")
     monkeypatch.setattr(doctor, "BASE_DIR", tmp_path)
 
     def broken_import(name, globals=None, locals=None, fromlist=(), level=0):
@@ -1273,6 +1584,61 @@ def test_websocket_check_reports_imported_routes_and_missing_static(monkeypatch,
     static_missing = doctor.check_websocket_routes()
     assert static_missing.status == "fail"
     assert static_missing.details["websocket_paths"] == ["/ws/chat"]
+
+
+def test_websocket_check_recurses_into_wrapped_included_routers(monkeypatch):
+    """Regression test for FastAPI>=0.137's deferred ``_IncludedRouter`` shape.
+
+    Newer FastAPI versions no longer flatten ``include_router`` calls onto
+    ``app.routes`` eagerly; they wrap the sub-router in a node exposing the
+    original router via ``original_router``. The doctor check must recurse
+    into that wrapper (and into plain ``Mount``-style ``.routes`` containers)
+    to find the real websocket routes instead of reporting a false failure.
+    """
+
+    class WebSocketRoute:
+        def __init__(self, path):
+            self.path = path
+
+    class HttpRoute:
+        path = "/http"
+
+    class OriginalRouter:
+        def __init__(self, routes):
+            self.routes = routes
+
+    class IncludedRouter:
+        def __init__(self, original_router):
+            self.original_router = original_router
+
+    class Mount:
+        def __init__(self, routes):
+            self.routes = routes
+
+    nested_ws_router = OriginalRouter([WebSocketRoute("/ws/voice")])
+    app = type(
+        "App",
+        (),
+        {
+            "routes": [
+                HttpRoute(),
+                IncludedRouter(OriginalRouter([WebSocketRoute("/ws/chat")])),
+                Mount([IncludedRouter(nested_ws_router)]),
+            ]
+        },
+    )()
+    original_import = __import__
+
+    def web_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "web_server":
+            return type("WebServerModule", (), {"app": app})()
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr("builtins.__import__", web_import)
+    check = doctor.check_websocket_routes()
+
+    assert check.status == "pass"
+    assert check.details["websocket_paths"] == ["/ws/chat", "/ws/voice"]
 
 
 def test_gpu_check_uses_torch_fallback_and_records_torch_errors(monkeypatch):
@@ -1826,7 +2192,8 @@ def test_gpu_memory_config_accepts_custom_test_image_without_missing_sidar_hint(
 
     check = doctor.check_gpu_memory_config()
 
-    assert check.status == "pass"
+    assert check.status == "warn"
+    assert "exceed the safe 80% target" in check.message
     assert "docker_test_image_hint" not in check.details
 
 
@@ -1906,6 +2273,152 @@ def test_validate_auto_fix_command_allows_known_commands_and_rejects_injection()
         doctor.validate_auto_fix_command("   ")
     with pytest.raises(ValueError, match="not safe"):
         doctor.validate_auto_fix_command("uv run python -m scripts.seed_rag bad;arg")
+
+
+def test_database_env_fix_skips_check_without_published_auto_fix(monkeypatch) -> None:
+    monkeypatch.setattr(
+        doctor,
+        "check_database_env",
+        lambda: DoctorCheck("database_env", "fail", "drift", {"auto_fix": "  "}),
+    )
+
+    repair = doctor._apply_database_env_fix()
+
+    assert repair == {
+        "check": "database_env",
+        "before_status": "fail",
+        "attempted": False,
+        "success": False,
+        "message": "database environment check did not publish an auto-fix",
+    }
+
+
+def test_database_env_fix_skips_already_healthy_environment(monkeypatch) -> None:
+    monkeypatch.setattr(
+        doctor,
+        "check_database_env",
+        lambda: DoctorCheck("database_env", "pass", "healthy"),
+    )
+
+    repair = doctor._apply_database_env_fix()
+
+    assert repair["attempted"] is False
+    assert repair["success"] is True
+    assert repair["message"] == "database environment already healthy; no repair was needed"
+
+
+def test_database_env_fix_reports_rejected_auto_fix(monkeypatch) -> None:
+    monkeypatch.setattr(
+        doctor,
+        "check_database_env",
+        lambda: DoctorCheck("database_env", "fail", "drift", {"auto_fix": "unsafe command"}),
+    )
+    monkeypatch.setattr(
+        doctor,
+        "validate_auto_fix_command",
+        lambda command: (_ for _ in ()).throw(ValueError(f"rejected {command}")),
+    )
+
+    repair = doctor._apply_database_env_fix()
+
+    assert repair["attempted"] is False
+    assert repair["success"] is False
+    assert (
+        repair["message"] == "database environment auto-fix was rejected: rejected unsafe command"
+    )
+
+
+@pytest.mark.parametrize(
+    ("source_details", "expected_database_url", "expected_container_url"),
+    [
+        (
+            {
+                "database_url_source": ".env",
+                "container_database_url_source": ".env.local",
+            },
+            None,
+            None,
+        ),
+        (
+            {"database_url_source": ".env", "container_database_url_source": ""},
+            None,
+            "shell-container",
+        ),
+        (
+            {"database_url_source": "", "container_database_url_source": None},
+            "shell-db",
+            "shell-container",
+        ),
+    ],
+)
+def test_database_env_fix_clears_only_urls_owned_by_editable_sources(
+    monkeypatch, source_details, expected_database_url, expected_container_url
+) -> None:
+    command = "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
+    monkeypatch.setenv("DATABASE_URL", "shell-db")
+    monkeypatch.setenv("SIDAR_CONTAINER_DATABASE_URL", "shell-container")
+    monkeypatch.setattr(
+        doctor,
+        "check_database_env",
+        lambda: DoctorCheck(
+            "database_env", "fail", "drift", {"auto_fix": command, **source_details}
+        ),
+    )
+    monkeypatch.setattr(doctor, "validate_auto_fix_command", lambda value: [value])
+    monkeypatch.setattr(doctor, "_run_command", lambda tokens, timeout: (0, "password=secret"))
+
+    repair = doctor._apply_database_env_fix()
+
+    assert repair["attempted"] is True
+    assert repair["success"] is True
+    assert repair["output"] == "password=***"
+    assert doctor.os.environ.get("DATABASE_URL") == expected_database_url
+    assert doctor.os.environ.get("SIDAR_CONTAINER_DATABASE_URL") == expected_container_url
+
+
+def test_database_env_fix_preserves_urls_when_repair_command_fails(monkeypatch) -> None:
+    command = "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
+    monkeypatch.setenv("DATABASE_URL", "shell-db")
+    monkeypatch.setattr(
+        doctor,
+        "check_database_env",
+        lambda: DoctorCheck(
+            "database_env",
+            "fail",
+            "drift",
+            {"auto_fix": command, "database_url_source": ".env"},
+        ),
+    )
+    monkeypatch.setattr(doctor, "validate_auto_fix_command", lambda value: [value])
+    monkeypatch.setattr(doctor, "_run_command", lambda tokens, timeout: (1, "repair failed"))
+
+    repair = doctor._apply_database_env_fix()
+
+    assert repair["attempted"] is True
+    assert repair["success"] is False
+    assert repair["message"] == "database environment auto-fix failed"
+    assert doctor.os.environ["DATABASE_URL"] == "shell-db"
+
+
+def test_doctor_main_fix_persists_repair_in_report(monkeypatch, tmp_path, capsys) -> None:
+    repair = {"check": "database_env", "attempted": True, "success": True}
+    report = {"overall_status": "pass", "checks": []}
+    writes = []
+    monkeypatch.setattr(doctor, "_apply_database_env_fix", lambda: repair)
+    monkeypatch.setattr(doctor, "run_doctor_report", lambda output_path: report)
+    monkeypatch.setattr(
+        doctor,
+        "write_doctor_report",
+        lambda payload, output_path: writes.append((payload.copy(), output_path)),
+    )
+    output = tmp_path / "doctor.json"
+
+    exit_code = doctor.main(["--fix", str(output)])
+
+    assert exit_code == 0
+    assert report["repairs"] == [repair]
+    assert writes == [(report, output)]
+    assert json.loads(capsys.readouterr().out)["repairs"] == [repair]
 
 
 def test_doctor_as_dict_masks_passwords_in_nested_details() -> None:

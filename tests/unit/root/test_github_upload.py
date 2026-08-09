@@ -372,10 +372,26 @@ def test_abort_in_progress_merge_and_rollback_tag_helpers(monkeypatch, capsys):
     gu.abort_in_progress_merge()
     tag = gu.create_rollback_backup_tag()
 
-    assert calls[0] == ["git", "merge", "--abort"]
-    assert calls[1][:2] == ["git", "tag"]
+    assert calls[0] == ["git", "rev-parse", "-q", "--verify", "MERGE_HEAD"]
+    assert calls[1] == ["git", "merge", "--abort"]
+    assert calls[2][:2] == ["git", "tag"]
     assert tag.startswith("backup/pre-rollback-")
     assert "Başarısız merge otomatik" in capsys.readouterr().out
+
+
+def test_abort_in_progress_merge_is_silent_without_merge_head(monkeypatch, capsys):
+    calls = []
+
+    def fake_run(cmd, show_output=True):
+        calls.append(cmd)
+        return False, "MERGE_HEAD bulunamadı"
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+
+    gu.abort_in_progress_merge()
+
+    assert calls == [["git", "rev-parse", "-q", "--verify", "MERGE_HEAD"]]
+    assert capsys.readouterr().out == ""
 
 
 def test_report_ours_strategy_changes_prints_changed_files(monkeypatch, capsys):
@@ -1289,6 +1305,17 @@ def test_main_target_branch_merge_made_commit_default_message(monkeypatch):
         inputs=[""],
     )
     gu.main()
+    pull_cmd = [c for c in h.calls if c[:3] == ["git", "pull", "--autostash"]][0]
+    assert pull_cmd == [
+        "git",
+        "pull",
+        "--autostash",
+        "origin",
+        "feature-x",
+        "--no-rebase",
+        "--allow-unrelated-histories",
+        "--no-edit",
+    ]
     commit_cmd = [c for c in h.calls if c[:3] == ["git", "commit", "-m"]][0]
     assert "Merged branch: feature-x" in commit_cmd[3]
 

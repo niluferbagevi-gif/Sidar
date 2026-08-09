@@ -26,8 +26,10 @@ DEFAULT_INCLUDE_PATTERNS = (
     "README.md",
     "AGENTS.md",
     "docs/SIDAR.md",
+    "docs/ARCHITECTURE.md",
     "docs/TEKNIK_REFERANS.md",
     "docs/PROJE_RAPORU.md",
+    "docs/project-report/*.md",
     "docs/SIDAR_v5_0_MIMARI_RAPORU.md",
     "docs/SIDAR_v5_1_MIMARI_RAPORU.md",
     # Curated architecture/runtime code entry points.  This keeps the seed

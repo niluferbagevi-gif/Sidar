@@ -8,6 +8,63 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+class DotenvReloadPlan(BaseModel):
+    """Validated plan for the dotenv precedence chain used during reloads."""
+
+    model_config = ConfigDict(frozen=True)
+
+    profile: str = ""
+    base_path: Path
+    advanced_path: Path
+    explicit_path: str = ""
+    sidar_keys_file: str = "~/.sidar_keys.env"
+    skip_default_layers: bool = False
+    labels: tuple[str, ...] = Field(
+        default=(
+            "base",
+            "advanced",
+            "environment",
+            "explicit:DOTENV_FILE",
+            "secret:SIDAR_KEYS_FILE",
+        ),
+        min_length=5,
+        max_length=5,
+    )
+
+    @field_validator("profile")
+    @classmethod
+    def _normalize_profile(cls, value: str) -> str:
+        """Normalize profile names before environment-specific file lookup."""
+        normalized = str(value or "").strip().lower()
+        if any(char in normalized for char in ("/", "\\", "..")):
+            raise ValueError("SIDAR_ENV profile cannot contain path separators")
+        return normalized
+
+
+def build_dotenv_reload_plan(
+    effective_env: dict[str, str],
+    *,
+    profile: str | None,
+    base_dir: Path,
+    skip_default_layers: bool,
+    validate_secret_overlay: Any,
+) -> DotenvReloadPlan:
+    """Build and validate the dotenv precedence plan without facade globals."""
+    selected_profile = (profile or effective_env.get("SIDAR_ENV", "")).strip().lower()
+    plan = DotenvReloadPlan(
+        profile=selected_profile,
+        base_path=base_dir / ".env",
+        advanced_path=base_dir / ".env.advanced",
+        explicit_path=effective_env.get("DOTENV_FILE", "").strip(),
+        sidar_keys_file=effective_env.get("SIDAR_KEYS_FILE", "~/.sidar_keys.env").strip(),
+        skip_default_layers=skip_default_layers,
+    )
+    validate_secret_overlay(plan.sidar_keys_file)
+    return plan
+
 
 def parse_dotenv_source_values(path: Path) -> dict[str, str]:
     """Parse simple dotenv assignments for source attribution without logging values."""

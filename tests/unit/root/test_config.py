@@ -35,6 +35,25 @@ def test_rag_defaults_module_name_disambiguates_runtime_rag_modules() -> None:
     assert "config_rag_defaults.py" in refactor_plan
 
 
+def test_llm_and_quality_gate_loaders_share_the_scoped_settings_builder() -> None:
+    """Guard against reintroducing the duplicated scoped-settings block.
+
+    `load_llm_settings`/`load_quality_gate_settings` must not re-inline the
+    ~15-line dotenv-scoped `type(...)` subclass block; it was duplicated
+    verbatim across config_llm.py/config_quality.py before both were switched
+    to `core.config_scoped_settings.build_scoped_settings_type`.
+    """
+    llm_source = Path("config_llm.py").read_text(encoding="utf-8")
+    quality_source = Path("config_quality.py").read_text(encoding="utf-8")
+
+    for source in (llm_source, quality_source):
+        assert "from core.config_scoped_settings import build_scoped_settings_type" in source
+        assert "build_scoped_settings_type(" in source
+        # The old inlined metaprogramming block used this exact marker key;
+        # its presence would mean the duplication crept back in.
+        assert '"__module__": __name__,' not in source
+
+
 def test_config_reexports_split_env_helpers_and_validators() -> None:
     assert config.get_bool_env is config_env_helpers.get_bool_env
     assert config.get_web_scrape_max_chars is config_env_helpers.get_web_scrape_max_chars
@@ -297,6 +316,33 @@ def test_llm_client_settings_default_ollama_num_batch_is_safe_for_long_prompts(m
     assert settings.OLLAMA_NUM_BATCH == 2048
 
 
+def test_llm_client_settings_tolerates_blank_ollama_coding_num_ctx(monkeypatch):
+    """Blank OLLAMA_CODING_NUM_CTX must fall back to the field default, not raise.
+
+    .env.advanced.example ships OLLAMA_CODING_NUM_CTX= (blank) on purpose so a
+    fresh install can auto-tune it from detected GPU VRAM (see
+    Config._autoselect_ollama_coding_ctx_window). config.py's dotenv chain loads
+    that blank value straight into os.environ (override=False keeps it once no
+    earlier layer set it), so pydantic-settings must fall back to the field
+    default instead of raising on int_parsing -- regression test for the crash
+    every entrypoint hit on a real install (`ScopedLLMClientSettings /
+    OLLAMA_CODING_NUM_CTX: Input should be a valid integer ... input_value=''`).
+    """
+    monkeypatch.setenv("OLLAMA_CODING_NUM_CTX", "")
+    settings = config.LLMClientSettings()
+    assert settings.OLLAMA_CODING_NUM_CTX == 8192
+
+
+def test_load_llm_settings_tolerates_blank_ollama_coding_num_ctx(tmp_path, monkeypatch):
+    monkeypatch.delenv("OLLAMA_CODING_NUM_CTX", raising=False)
+    env_path = tmp_path / ".env"
+    env_path.write_text("OLLAMA_CODING_NUM_CTX=\n", encoding="utf-8")
+
+    settings = config_llm.load_llm_settings(env_path=env_path, skip_default_dotenv=False)
+
+    assert settings.OLLAMA_CODING_NUM_CTX == 8192
+
+
 def test_load_llm_settings_reads_scoped_dotenv_without_dynamic_init_kwargs(tmp_path, monkeypatch):
     monkeypatch.delenv("OLLAMA_TIMEOUT", raising=False)
     env_path = tmp_path / ".env"
@@ -381,6 +427,27 @@ def test_quality_gate_settings_legacy_env_var_works_without_prefix(monkeypatch):
 
     assert settings.JUDGE_ENABLED is True
     assert settings.JUDGE_SAMPLE_RATE == 0.5
+
+
+@pytest.mark.parametrize(
+    ("prefixed_key", "legacy_key", "field_name"),
+    [
+        ("SIDAR_JUDGE_MODEL", "JUDGE_MODEL", "JUDGE_MODEL"),
+        ("SIDAR_JUDGE_PROVIDER", "JUDGE_PROVIDER", "JUDGE_PROVIDER"),
+        ("SIDAR_JUDGE_RESPONSE_MODEL", "JUDGE_RESPONSE_MODEL", "JUDGE_RESPONSE_MODEL"),
+    ],
+)
+def test_quality_gate_blank_prefixed_strings_use_legacy_values(
+    monkeypatch, prefixed_key, legacy_key, field_name
+):
+    """Blank preferred aliases must not disable configured legacy judge settings."""
+    _clear_quality_gate_env(monkeypatch)
+    monkeypatch.setenv(prefixed_key, "   ")
+    monkeypatch.setenv(legacy_key, "legacy-value")
+
+    settings = config_quality.QualityGateSettings()
+
+    assert getattr(settings, field_name) == "legacy-value"
 
 
 @pytest.mark.parametrize(
@@ -497,10 +564,22 @@ def test_prefixed_env_helpers_use_legacy_and_default_fallbacks(monkeypatch):
     monkeypatch.delenv("LEGACY_INT", raising=False)
     monkeypatch.setenv("SIDAR_FLOAT", "   ")
     monkeypatch.setenv("LEGACY_FLOAT", "4.5")
+    monkeypatch.delenv("SIDAR_FLOAT_MISSING", raising=False)
+    monkeypatch.delenv("LEGACY_FLOAT_MISSING", raising=False)
 
     assert config.get_prefixed_env("SIDAR_TEXT", "LEGACY_TEXT", "default") == "legacy-value"
     assert config.get_int_prefixed_env("SIDAR_INT", "LEGACY_INT", 9) == 9
-    assert config.get_float_prefixed_env("SIDAR_FLOAT", "LEGACY_FLOAT", 2.5) == 2.5
+    assert config.get_float_prefixed_env("SIDAR_FLOAT", "LEGACY_FLOAT", 2.5) == 4.5
+    assert config.get_float_prefixed_env("SIDAR_FLOAT_MISSING", "LEGACY_FLOAT_MISSING", 3.5) == 3.5
+
+
+def test_blank_prefixed_string_env_helpers_use_legacy_fallbacks(monkeypatch):
+    """Blank optional overrides must not shadow configured legacy values."""
+    monkeypatch.setenv("SIDAR_TEXT", "   ")
+    monkeypatch.setenv("LEGACY_TEXT", "legacy-value")
+
+    assert config.get_prefixed_env("SIDAR_TEXT", "LEGACY_TEXT", "default") == "legacy-value"
+    assert config.get_optional_prefixed_env("SIDAR_TEXT", "LEGACY_TEXT") == "legacy-value"
 
 
 def test_get_int_and_float_prefixed_env_warn_on_malformed_value(monkeypatch, caplog):
@@ -874,12 +953,12 @@ def test_validate_critical_settings_rejects_unsafe_production_secret(monkeypatch
 def test_normalize_gpu_memory_fractions_reports_effective_budget() -> None:
     safe = config.normalize_gpu_memory_fractions(0.6, 0.3)
     assert safe == {
-        "llm": 0.6,
-        "rag": 0.3,
-        "gpu": 0.9,
-        "total": 0.9,
+        "llm": 0.5333,
+        "rag": 0.2667,
+        "gpu": 0.8,
+        "total": 0.8,
         "original_total": 0.9,
-        "normalized": False,
+        "normalized": True,
     }
 
     normalized = config.normalize_gpu_memory_fractions(0.9, 0.4)
@@ -889,7 +968,7 @@ def test_normalize_gpu_memory_fractions_reports_effective_budget() -> None:
     assert normalized["llm"] + normalized["rag"] == pytest.approx(0.8)
 
 
-def test_apply_gpu_memory_safety_check_normalizes_when_sum_exceeds_one(monkeypatch):
+def test_apply_gpu_memory_safety_check_normalizes_when_sum_exceeds_safe_target(monkeypatch):
     monkeypatch.setattr(config.Config, "LLM_GPU_MEMORY_FRACTION", 0.9)
     monkeypatch.setattr(config.Config, "RAG_GPU_MEMORY_FRACTION", 0.4)
     monkeypatch.setattr(config.Config, "GPU_MEMORY_FRACTION", 0.9)
@@ -2067,6 +2146,16 @@ def test_runtime_manager_flags_are_centralized_in_config(monkeypatch):
     monkeypatch.setenv("SIDAR_KEYS_FILE", "")
     monkeypatch.delenv("SIDAR_CODE_EXECUTION_BACKEND", raising=False)
     monkeypatch.setenv("CODE_EXECUTION_BACKEND", "disabled")
+    # SIDAR_-prefixed variants take precedence over these legacy keys (see
+    # core/config_sandbox.py::load_sandbox_settings). A developer's real
+    # .env.advanced (generated by install_sidar.sh from
+    # .env.advanced.example, which ships SIDAR_DOCKER_AUTODETECT=true) can
+    # leak these prefixed values into the process environment before this
+    # test runs, so they must be explicitly cleared to make the legacy-key
+    # assertions below deterministic regardless of local dotenv state.
+    monkeypatch.delenv("SIDAR_DOCKER_AUTODETECT", raising=False)
+    monkeypatch.delenv("SIDAR_PROMPT_GUARD_ENABLED", raising=False)
+    monkeypatch.delenv("SIDAR_GUARDRAILS_REQUIRED", raising=False)
     monkeypatch.setenv("DOCKER_AUTODETECT", "false")
     monkeypatch.setenv("PROMPT_GUARD_ENABLED", "false")
     monkeypatch.setenv("GUARDRAILS_REQUIRED", "true")
@@ -2461,6 +2550,31 @@ def test_ensure_hardware_info_loaded_uses_check_hardware_result(monkeypatch):
     assert config.Config.GPU_VRAM_MB == 24 * 1024
     assert config.Config.OLLAMA_CODING_NUM_CTX == 16384
     assert config.Config.OLLAMA_GPU_REQUEST_POOL_SIZE == 6
+
+
+def test_autoselect_ollama_coding_ctx_window_treats_blank_env_as_unset(monkeypatch):
+    """Blank OLLAMA_CODING_NUM_CTX must still allow GPU-VRAM auto-tuning.
+
+    .env.advanced.example ships OLLAMA_CODING_NUM_CTX= (blank) so a fresh
+    install still auto-tunes from GPU VRAM; `os.getenv(...) is not None` alone
+    treats that shipped blank string as an explicit override and skips
+    auto-tuning forever. A real explicit override (non-blank) must still win.
+    """
+    monkeypatch.setenv("OLLAMA_CODING_NUM_CTX", "")
+    monkeypatch.setattr(config.Config, "USE_GPU", True)
+    monkeypatch.setattr(config.Config, "GPU_VRAM_MB", 16384)
+    monkeypatch.setattr(config.Config, "OLLAMA_CODING_NUM_CTX", 8192)
+
+    config.Config._autoselect_ollama_coding_ctx_window()
+
+    assert config.Config.OLLAMA_CODING_NUM_CTX == 16384
+
+    monkeypatch.setenv("OLLAMA_CODING_NUM_CTX", "4096")
+    monkeypatch.setattr(config.Config, "OLLAMA_CODING_NUM_CTX", 8192)
+
+    config.Config._autoselect_ollama_coding_ctx_window()
+
+    assert config.Config.OLLAMA_CODING_NUM_CTX == 8192
 
 
 def test_get_missing_critical_runtime_keys_accepts_valid_litellm_url(monkeypatch):

@@ -24,6 +24,17 @@ fi
 uv run python scripts/tools/update_install_module_hash_manifest.py \
     --target "$TARGET" --check-manifest-only
 
+# --check-pin only requires the pin to be internally consistent (the pinned
+# commit's file contents must match the embedded hash manifest) — it does not
+# require the pin to track current HEAD. If scripts/install_modules hasn't
+# changed since the last pin, the existing pin already satisfies --check-pin,
+# and re-stamping to a newer HEAD would only produce a no-op fixup commit.
+if uv run python scripts/tools/update_install_module_hash_manifest.py \
+    --target "$TARGET" --check-pin >/dev/null 2>&1; then
+    printf '✅ Installer modül pini zaten geçerli (scripts/install_modules değişmedi); yeni damga gerekmiyor.\n'
+    exit 0
+fi
+
 source_commit="$(git rev-parse HEAD)"
 uv run python scripts/tools/update_install_module_hash_manifest.py \
     --target "$TARGET" --stamp-commit "$source_commit"

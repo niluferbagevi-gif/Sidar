@@ -11,6 +11,51 @@ Kurulum veya `run_tests.sh` çıktısındaki sarı `RELEASE KAPSAMI EKSİK` /
 gösterir. Bu durumda geliştirici ortamı sağlıklı olabilir, ancak release/merge için
 aşağıdaki kanonik kapı ayrıca geçmelidir: `make production-readiness`.
 
+Backend `%100` branch coverage tabanı standart local/CI profillerinde korunur; kritik-yol
+dışı modüller için örtük daha düşük bir eşik uygulanmaz. GPU/opsiyonel bağımlılık ve yarış
+koşulu gibi gerçekten deterministik test edilemeyen yollar dar, gerekçeli
+`# pragma: no cover` kullanabilir. Bu istisnaların büyüyerek `%100` değerini anlamsızlaştırmasını
+önlemek için `scripts/ci/check_coverage_exclusion_budget.py`, test ve coverage-omit kapsamı
+dışındaki üretim Python dosyalarını sayar. Commitli
+`scripts/ci/coverage-exclusion-baseline.json` bütçesi tek yönlüdür: istisnalar kaldırıldıkça
+azaltılır; yeni istisna eklemek için başka bir istisnanın kaldırılması veya açık reviewer
+gerekçesi gerekir. Normal çözüm, daha gevşek modül eşiği değil deterministik hata-yolu testidir.
+
+Frontend Vitest kapısı ayrı bir ratchet kullanır: `vite.config.js` içindeki global line,
+function, branch ve statement eşikleri `%90`'dır; tek bir TypeScript modülünün `%100`
+branch coverage altında kalması tek başına gate hatası değildir. Bununla birlikte düşük
+modül oranları görmezden gelinmez. Özellikle WebSocket payload normalizasyonu ve kimlik/
+yetki kararları gibi kritik dallar, toplam eşik hâlâ geçiyor olsa da küçük deterministik
+test dilimleriyle yükseltilmelidir. Backend `%100` tabanı frontend'e örtük olarak
+uygulanmaz; frontend eşiğini değiştirmek ayrıca ölçülmüş bir ratchet kararı gerektirir.
+
+## `run_tests.sh` konfigürasyon yüzeyi ve yazım hatası koruması
+
+`bash run_tests.sh --help` (veya `-h`) kısa bir kullanım özeti verir: `--stage` seçenekleri
+ve production-readiness komutları (bkz. `tests/unit/scripts/test_run_tests_quality_gate.py::
+test_run_tests_help_lists_make_and_direct_production_readiness_commands`). Bu yalnızca CLI
+bayrağını (`--stage`) belgeler — `run_tests.sh`'in kendisi ~60-70 farklı `${VAR:-...}` env-var
+bayrağı okur, `scripts/test_gates/*.sh`+`summary.py` (10 dosya) ile birlikte toplam ~176 farklı
+env-var adı referanslanır; bunların hiçbiri `--help` çıktısında listelenmez.
+
+**Bilinen sınırlama (bir arkadaş kod incelemesinde tespit edildi):** Bilinmeyen `SIDAR_*`/
+`BENCHMARK_*`/`COVERAGE_*` değişkenlerini reddeden bir şema doğrulaması yok — örn.
+`BENCMARK_COMPARE_FAIL=mean:5%` (yazım hatası) sessizce yok sayılır, gerçek
+`BENCHMARK_COMPARE_FAIL` varsayılana düşer. Bunu kapatmak için "run_tests.sh/scripts/test_gates
+kaynağından `${VAR}` referanslarını grep'leyip otomatik bir allowlist türet, ortamdaki
+`SIDAR_*`/`BENCHMARK_*`/`COVERAGE_*` değişkenlerini bununla karşılaştır, tanınmayanları uyar"
+şeklinde bir tasarım denendi ve **gerçek bir false-positive'le karşılaşıldığı için ertelendi**:
+`SIDAR_ENV` — CI'da her zaman set edilen, gerçek ve gerekli bir değişken — `run_tests.sh` veya
+`scripts/test_gates/*.sh` içinde hiçbir yerde `${SIDAR_ENV}` olarak geçmiyor, çünkü bash
+orkestrasyonu tarafından değil `config.py`/Python runtime tarafından tüketiliyor. Yani kaynak
+dosyalardan otomatik türetilen bir allowlist, bu ve benzeri (aynı önekli ama uygulama
+config'ine ait, orkestrasyon knob'u olmayan) değişkenleri "tanınmayan/olası yazım hatası"
+diye sessizce yanlış işaretler — ilk gerçek CI çalıştırmasında güvenilirliğini kaybedip
+görmezden gelinecek bir araca dönüşür. Doğru bir çözüm ya uygulama config'ini de kapsayan
+daha geniş bir cross-reference (örn. `config.py`'nin kendi `os.getenv` yüzeyiyle birleştirme)
+ya da elle bakımı gereken, ayrı tutulan bir allowlist gerektirir — ikisi de bu notun ötesinde,
+ayrı bir iş kalemi olarak ele alınmalı.
+
 ## Hızlı tekil test / debug
 
 Tek bir test fonksiyonunu veya küçük bir dosya grubunu incelerken doğrudan pytest
@@ -59,14 +104,29 @@ frontend stage'in atlandığını görmek normaldir; bu durumda manuel doğrulam
 
 ### Frontend Playwright kapsamı: smoke / critical / full
 
-`web_ui_react/e2e/` altında 8 spec dosyası var, ama günlük local `./run_tests.sh`
-akışı yalnız `test:e2e:smoke` (`e2e/chat-websocket.spec.js`) çalıştırır — diğer 7
-panel spec'i (`admin-panels`, `agent-manager`, `p2p-dialogue`, `prompt-admin`,
-`swarm-flow`, `tools-panel`, `voice-panel`) yalnız `RUN_FRONTEND_E2E=1` ile tam
-gate'te (`make production-readiness` / `--stage frontend`) tetiklenir. Sık
-değişen panellerde (örn. Agent Manager, Swarm Flow) erken local sinyal için
-opsiyonel bir ara kademe var: `test:e2e:critical`, smoke kapsamına ek olarak bu
-iki paneli de çalıştırır.
+`web_ui_react/e2e/` altında 8 spec dosyası var. `FRONTEND_E2E_NPM_SCRIPT`
+belirtilmediğinde `run_tests.sh`'ın (ve dolayısıyla düz local `./run_tests.sh`
+akışının) varsayılanı hâlâ `test:e2e:smoke` (`e2e/chat-websocket.spec.js`) —
+bu bilinçli, hızlı bir local iterasyon varsayılanıdır.
+
+**Release-blocking `.github/workflows/ci.yml` `test` job'ı ve `make
+base-quality-gates`/`make production-readiness` artık `FRONTEND_E2E_NPM_SCRIPT=test:e2e`
+ile açıkça override ediyor — yani diğer 7 panel spec'i de (`admin-panels`,
+`agent-manager`, `p2p-dialogue`, `prompt-admin`, `swarm-flow`, `tools-panel`,
+`voice-panel`) her PR'da ve her `make production-readiness` çalışmasında
+çalışıyor.** Bu, önceki bir sürümde yalnızca dokümantasyonda vaat edilen ama
+hiçbir otomatik yolda (ne CI'da, ne `make production-readiness`'te, ne başka
+bir workflow'da) gerçekten tetiklenmeyen bir kapsamdı — 7 spec hiçbir zaman
+çalışmamıştı. Bu boşluk kapatılırken iki gerçek, önceden hiç yakalanmamış bug
+ortaya çıktı (bkz. CHANGELOG): `voice-panel.spec.js`'in tarayıcı mock kurulumu
+(`navigator.mediaDevices = {...}`, Chromium'da sessizce no-op olan getter-only
+bir accessor'a düz atama) ve `useVoiceAssistant.ts`'nin `stop()` sonrası
+sunucudan gelen `voice_interruption` ack'ini "SİDAR sesi kesildi" olarak
+göstermesi (mikrofon zaten kapalıyken anlamsız/yanıltıcı bir durum).
+
+Sık değişen panellerde (örn. Agent Manager, Swarm Flow) local iterasyon için
+smoke ile full arası opsiyonel bir ara kademe var: `test:e2e:critical`, smoke
+kapsamına ek olarak bu iki paneli de çalıştırır.
 
 ```bash
 cd web_ui_react && npm run test:e2e:critical
@@ -74,11 +134,13 @@ cd web_ui_react && npm run test:e2e:critical
 FRONTEND_E2E_NPM_SCRIPT=test:e2e:critical RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend
 ```
 
-Bu üçüncü kademe `test:e2e:smoke`'un "hızlı sinyal, full QA değil" sözleşmesini
-değiştirmez — varsayılan hâlâ `test:e2e:smoke`'tur; `test:e2e:critical` yalnız
-isteğe bağlı, daha geniş ama hâlâ hızlı bir local kontrol seçeneğidir. Tüm 8
-spec'in çalıştığı tam kapsam için hâlâ `test:e2e` (`RUN_FRONTEND_E2E=1` gate'i)
-gerekir.
+Bu ara kademe yalnızca local hızlı-iterasyon için bir seçenektir; local
+varsayılan hâlâ `test:e2e:smoke`'tur. Tüm 8 spec'in çalıştığı tam kapsamı
+local'de manuel istemek için:
+
+```bash
+FRONTEND_E2E_NPM_SCRIPT=test:e2e RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend
+```
 
 Coverage yüzdesi yalnız tüm ilgili test fazları geçtiğinde kalite kapısı olarak
 geçerli kabul edilir. `run_tests.sh`, pytest/BATS/security gibi backend fazlarından
@@ -151,8 +213,8 @@ sözleşmeyi kullanır ve hangi kapının production readiness sayıldığını 
 gösterir:
 
 ```bash
-make dev-full              # Geliştirici tam doğrulaması + local frontend bundle budget.
-make ci-parity             # dev-full ile aynı local/CI parite kısayolu.
+make dev-full              # Geliştirici tam doğrulaması + local frontend bundle budget (local profil varsayılanları).
+make ci-parity             # dev-full + TEST_PROFILE=ci + tam (8 spec) frontend e2e: CI'nın "test" job'ının gerçek local provası.
 make benchmark-seed        # Lokal benchmark baseline bootstrap/seed yardımcısı.
 make doctor-production-readiness  # Release gate öncesi ortam doctor/preflight raporu.
 make production-readiness  # CI profili + benchmark + frontend e2e + SIDAR_PRODUCTION_READINESS.
@@ -167,6 +229,34 @@ mutasyonsuz denetler: `uv`, Python 3.11, `portaudio.h`,
 Playwright Chromium cache veya `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` ve `.benchmarks`
 baseline dosyası tek raporda listelenir. Eksik varsa rapor önerilen aksiyonu basar;
 örneğin baseline yoksa `make benchmark-seed && make production-readiness` önerilir.
+
+### Doctor ve test sayıları nasıl yorumlanır?
+
+Doctor sonucu depo sağlığı ile çalıştırılan makinenin hazır olma durumunu ayırır.
+Bir kontrolün kırmızı olması doğrudan ürün kodunda regresyon bulunduğu anlamına
+gelmez; fakat o makinede production-readiness kapısının **henüz kanıtlanmadığı**
+anlamına gelir. Bu nedenle eksik sistem paketi, dev aracı, Chromium veya benchmark
+baseline'ı bulunan bir çıktıyı yalnız geçmiş bir CI koşusuna dayanarak “genel durum
+sağlıklı” diye yeşil sınıflandırmayın. Önce doctor aksiyonlarını tamamlayın, ardından
+`make production-readiness` sonucunu esas alın.
+
+Test adedi (`4364`, `507` gibi), coverage yüzdesi, Bandit bulgu sayısı ve GPU/
+benchmark sonucu kalıcı proje sabitleri değildir. Bunlar yalnız komut, commit SHA,
+profil ve çalışma zamanı ile birlikte anlamlı olan **koşu kanıtlarıdır**. Güncel durum
+raporunda en az aşağıdakileri kaydedin:
+
+- `git rev-parse HEAD` ve koşu zamanı;
+- çalıştırılan tam komut ile `TEST_PROFILE`/GPU/benchmark bayrakları;
+- `artifacts/test-summary.json`, JUnit ve coverage artifact yolları;
+- doctor başarısızlıkları ve uygulanmamış aksiyonlar;
+- frontend için `npm run typecheck:inventory` çıktısı ve
+  `FRONTEND_NPM_AUDIT_ALLOW_NETWORK_FAILURE=0 npm run audit:high` sonucu.
+
+Bu kanıtlar yoksa geçmiş test sayıları “son bilinen örnek” olarak etiketlenmeli;
+mevcut dalın doğrulanmış sonucu veya kabul kriteri gibi sunulmamalıdır. TypeScript
+envanterinin görece kapsamı ve npm audit geçici istisnası sırasıyla
+`development/frontend-typescript-migration.md` ve
+`development/frontend-eslint-10-migration.md` belgelerinde izlenir.
 
 `make production-readiness` hedefi bilinçli olarak şu kanonik komutu çalıştırır:
 
@@ -241,29 +331,97 @@ Bu çıktıyı şu şekilde yorumlayın:
 - `production_ready=false`, `validation_class=development_full` veya
   `release_blocking=true` değerleri `artifacts/test-summary.json` içinde görülürse
   bu, local doğrulamanın başarılı ama release için henüz yeterli olmadığını anlatır.
+- Yerel/base kapıda `production_ready=true` görülse bile aynı özetteki
+  `gpu_inference_evidence.included=false` ve `status=not_run` alanları bu koşunun
+  TTFT/latency kanıtı üretmediğini makine-okunur biçimde belirtir. Bu alan yerelde
+  `true` yapılmaz: GPU sonucu ayrı self-hosted CI job'ında oluşur ve
+  `gpu-inference-policy-gate` ile production-readiness aggregate tarafından doğrulanır.
 
-Local başarıdan release onayına geçmek için tek kanonik komut:
+Local başarıdan sonra PR öncesi aynı base kalite sözleşmesini doğrulamak için kanonik
+yerel komut:
 
 ```bash
 make production-readiness
 ```
+
+Bu komut başarılı olsa bile **asıl release/merge kararı yerel makinede verilmez**.
+PR'ı açın ve GitHub Actions'taki required **Production readiness aggregate**
+(`production-readiness`) check'inin geçmesini bekleyin. Aggregate; base `test`, izole
+`benchmark-compare` ve `gpu-inference-policy-gate` job'larının üçünü birleştirir. Yerel
+koşu bu sabit `[self-hosted, linux, benchmark]` baseline/runner kanıtını ve ayrı self-hosted GPU evidence akışını
+ikame etmez.
 
 ## CI branch protection / required checks
 
 GitHub repository settings dosya içinde doğrulanamaz; ancak merge güvenliği için branch
 protection altında en az şu CI job'ları required check olmalıdır:
 
-- `test` — normal CI yolunda benchmark baseline restore edilir, `make production-readiness`
-  çalışır ve `scripts/ci/validate_test_summary.py --mode release` ile
+- `test` — normal CI yolunda `make production-readiness` çalışır ve
+  `scripts/ci/validate_test_summary.py --mode release` ile
   `artifacts/test-summary.json` release modunda doğrulanır.
 - `Installer manifest and smoke gate` (`installer-smoke` job'ı) — installer manifest/hash
   drift'i, raw installer smoke ve kritik kurulum zinciri kontrollerini merge öncesi zorunlu
   yapar.
+- `GPU Inference Required Evidence Gate` (`gpu-inference-policy-gate`) — GPU kanıtı
+  devre dışıysa veya GPU kalite job'ı başarıyla tamamlanmadıysa fail-closed kapanır.
+- `Production readiness aggregate` (`production-readiness`) — `test`, benchmark compare ve
+  GPU policy sonuçlarını tek merge/release kararı altında birleştirir.
 
-Repo metadata veya ayarlarda auto-merge ileride açılırsa, bu iki required check ve
+Repo metadata veya ayarlarda auto-merge ileride açılırsa, bu required check'ler ve
 production-readiness doğrulaması zorunlu olmadan auto-merge etkinleştirilmemelidir.
 Benchmark baseline missing nedeniyle `test` job'ı kırılırsa PR açıklamasında bu dokümandaki
 bootstrap runbook'una link verin ve seed workflow tamamlanmadan merge onayı vermeyin.
+
+## CI production-readiness dışsal bağımlılıkları
+
+Production-readiness kod içi kapıları geçmenin yanında üç dışsal kanıta bağımlıdır. Bunlar
+bilinçli olarak fail-open yapılmamalıdır; eksik dış altyapı ürünün hazır olduğunu kanıtlamaz.
+
+### 1. Self-hosted GPU runner kullanılabilirliği
+
+`gpu-inference-quality-gate`, yalnız `[self-hosted, linux, gpu]` etiketlerinin tümünü taşıyan
+bir runner üzerinde çalışır. Uygun runner çevrimdışı veya meşgulse GitHub Actions job'ı
+çalışmaya başlamadan kuyrukta kalır; workflow içindeki `timeout-minutes` değeri queued süreyi
+sınırlamaz. Job bir runner tarafından alındıktan sonraki kurulum ve benchmark çalışması
+`timeout-minutes: 45` ile sınırlıdır. Bu durumda `gpu-inference-policy-gate` ve onu bekleyen `production-readiness`
+aggregate job'ı da tamamlanamaz.
+
+Operatör kontrol listesi:
+
+1. Repository/organization **Settings → Actions → Runners** altında runner'ın `Idle`/`Online`
+   olduğunu ve `self-hosted`, `linux`, `gpu` etiketlerini taşıdığını doğrulayın.
+2. Runner servisinin, GPU sürücüsünün ve model servisinin sağlığını kontrol edin; etiketi GPU
+   kanıtı üretemeyen genel amaçlı bir runner'a ekleyerek kapıyı atlatmayın.
+3. Runner hazır olduktan sonra kuyruktaki job'ı yeniden çalıştırın. Geçmiş bir başarılı GPU
+   artefaktı yeni commit SHA için kanıt sayılmaz.
+
+### 2. GPU policy repository değişkeni
+
+Repository variable `ENABLE_GPU_BENCH_GATE` tam olarak `true` olmalıdır. Değer eksik, farklı
+yazılmış veya `false` ise GPU quality job'ının atlanması beklenir; bağımsız
+`gpu-inference-policy-gate` bunu kabul etmez ve merge/release kararını `exit 1` ile durdurur.
+Bu davranış konfigürasyon hatasını yeşil sonuca dönüştürmemek için kasıtlıdır.
+
+Değişkeni **Settings → Secrets and variables → Actions → Variables** altında doğrulayın.
+Değişiklikten sonra workflow'u yeniden çalıştırın ve hem `gpu-inference-quality-gate` hem de
+`gpu-inference-policy-gate` sonuçlarının `success` olduğunu görmeden merge onayı vermeyin.
+
+### 3. Benchmark baseline cache/artifact ömrü
+
+Benchmark compare job'ı gözden geçirilmiş `.benchmarks/*_baseline.json` kanıtını restore
+edemezse yeni baseline üretmez ve fail-closed durur. Cache eviction veya seed artifact'inin
+retention süresinin dolması normal CI'ı bloke edebilir. Çözüm, eşiği gevşetmek değil aşağıdaki
+`CI benchmark baseline cache boşsa ne yapılır?` runbook'uyla `seed_benchmark_baseline=true`
+workflow_dispatch çalıştırmak ve ardından normal CI'ı yeniden koşmaktır.
+
+`.github/workflows/benchmark-baseline-keepalive.yml` Pazartesi ve Perşembe günleri mevcut,
+gözden geçirilmiş default-branch cache'ini restore ederek erişim süresini tazeler. Bu workflow
+**benchmark çalıştırmaz, baseline üretmez ve performans regresyonunu yeni baseline olarak
+kabul etmez**. Cache zaten kayıpsa fail-closed kırılır; operatör aşağıdaki seed/review
+runbook'unu uygulamalıdır.
+
+Bu üç durumun hiçbiri uygulama test regresyonu olmak zorunda değildir; ancak dış kanıt tekrar
+üretilene kadar production-readiness sonucu **kanıtlanmamış** ve release-blocking kalır.
 
 ## CI benchmark baseline cache boşsa ne yapılır?
 
@@ -287,7 +445,7 @@ Baseline'ı tekrar seed etmek için önerilen güvenli prosedür:
    kapısını çalıştırmaz; yalnız `tests/performance` benchmarklarını
    `--benchmark-save=baseline` ile koşar.
 3. Job sonunda iki kaynak oluşur:
-   - Actions cache: `benchmark-baseline-<OS>-py311-<uv.lock SHA256>-<branch>-<run_id>` anahtarıyla
+   - Actions cache: `benchmark-baseline-<runner adı>-<OS>-py311-<uv.lock SHA256>-<branch>-<run_id>` anahtarıyla
      `.benchmarks/` dizini kaydedilir. Normal CI restore adımı branch, `main`,
      `master` ve genel prefix sırasıyla bu cache'i arar.
    - Artifact: `benchmark-baseline-seed`, `.benchmarks/` dizinini ve
@@ -305,6 +463,80 @@ Local `make production-readiness` ilk kez çalışırken `.benchmarks` boşsa ga
 make benchmark-seed
 make production-readiness
 ```
+
+`make benchmark-seed` bilinçli olarak `BENCHMARK_COMPARE_REQUIRED=0` ve
+`BENCHMARK_ENFORCE_COMPARE=0` kullanır: amacı mevcut ölçümü geçer/geçmez diye
+sınıflandırmak değil, bu makineye özgü yerel başlangıç verisini oluşturmaktır. Seed ile
+`make production-readiness` çalıştırmasını aynı yoğun laptop oturumunda arka arkaya
+koşturmak CPU-bound parola hash/verify ölçümlerini scheduler, WSL2/Docker ve diğer arka
+plan yüklerinin gürültüsüne açık bırakır. Arka plan yükü kararlı hale geldikten sonra
+kapıyı ayrı bir koşuda çalıştırın. Parola benchmarkları bu varyansı azaltmak için üç
+ısınma ve on ölçüm turu kullanır; buna rağmen yerel baseline CI baseline kanıtı değildir.
+Merge/release kararı, gözden geçirilmiş baseline'ı cache/artifact'tan restore edip temiz
+bir GitHub-hosted runner'da çalışan required GitHub Actions production-readiness
+kontrolüne dayanmalıdır.
+
+### Yerel benchmark regresyonu ve sistem gürültüsü
+
+Yerel `make production-readiness` koşusunda `Performance has regressed` mesajı görmek,
+özellikle milisaniye ölçeğindeki PostgreSQL concurrency ölçümlerinde, tek başına kod
+regresyonu kanıtı değildir. `TEST_PROFILE=ci` sözleşmesi yerelde de CI'ın `mean:10%`
+eşiğini uygular; normal local profil ise scheduler, WSL2/Docker, termal durum ve aynı
+makinedeki GPU/LLM yüküne tolerans için `mean:15%` kullanır. `tests/performance` dosya
+sırasına güvenmeyin: tüm performans bataryası tek pytest sürecinde çalıştığından önceki
+GPU veya CPU yoğun testlerin sistem durumunu etkilemesi mümkündür.
+
+`run_tests.sh` bu riski azaltmak için CPU/DB karşılaştırmasını önce çalıştırır ve
+`test_gpu_benchmark.py` dosyasını daha sonra ayrı bir pytest process'inde çalıştırır;
+CPU/DB oturumu aynı dosyayı `--ignore` ile dışlar.
+GPU raporu `artifacts/benchmark/gpu-benchmark.json`, karşılaştırmalı CPU/DB raporu ise
+`artifacts/benchmark/benchmark.json` olarak ayrı tutulur. GPU oturumuna baseline
+save/compare verilmez; GPU release kanıtı zaten ayrı self-hosted
+`gpu-inference-policy-gate` tarafından fail-closed doğrulanır.
+
+Önce GPU/LLM işini ve gereksiz arka plan süreçlerini durdurun, makinenin kararlı hale
+gelmesini bekleyin ve **aynı baseline** ile tekrar ölçün. Yerel teşhis için iki bilinçli
+override vardır:
+
+```bash
+# Local profil toleransıyla karşılaştır; regresyon varsa yine başarısız olur.
+BENCHMARK_COMPARE_FAIL=mean:15% make production-readiness
+
+# Karşılaştırmayı göster fakat eşik nedeniyle komutu başarısız etme.
+BENCHMARK_ENFORCE_COMPARE=0 make production-readiness
+```
+
+İkinci komut yalnız rapor/teşhis içindir; başarılı çıkış kodu production-readiness veya
+release kanıtı sayılmamalıdır. İlk komut da yerel gürültünün etkisini sınamak içindir.
+CPU ağırlıklı işler CI'da zorunlu `mean:10%` eşiğini korur. Gerçek SQLite/PostgreSQL
+havuzu, disk ve scheduler kullanan çoklu kullanıcı concurrency iş yükü ise WSL2/Docker
+varyansını yanlış regresyon saymamak için ayrı bir pytest sürecinde
+`BENCHMARK_IO_COMPARE_FAIL` (varsayılan `mean:25%`) ile değerlendirilir. CPU/password
+benchmark oturumu concurrency testini `-k not ...` ile dışlar ve sıkı eşiğini korur;
+I/O raporu `artifacts/benchmark/io-benchmark.json` olarak ayrıca saklanır. Bu eşik
+rapor-only değildir; daha büyük I/O regresyonları yine fail-closed sonuçlanır.
+I/O ölçümü 5 warmup sonrasında 50 tur toplar; 25 tura göre örnekleme belirsizliğini azaltır.
+Tur artışı donanım izolasyonunun yerine geçmez: CI compare ve baseline seed işleri yine
+aynı `[self-hosted, linux, benchmark]` runner kontratında çalışmalıdır.
+`make production-readiness` bilinçli olarak `TEST_PROFILE=ci`
+çalıştırdığı için yerelde de CPU eşiği `%10` olur; `%15` yalnız normal local profil
+varsayılanıdır. Karar verirken ortalamayla birlikte
+min/max dağılımını ve tekil outlier'ları inceleyin; gürültü giderildikten sonra sapma
+tekrarlanıyorsa hedef testi izole koşup kod/SQL/pool değişikliklerini araştırın. Yerel
+`.benchmarks` dosyaları GitHub Actions'ın seed/cache/artifact baseline'ını değiştirmez;
+merge/release kararı required GitHub Actions production-readiness sonucuna dayanır.
+
+CI `benchmark-compare` ve iki manuel baseline seed yolu paylaşımlı
+`ubuntu-latest` üzerinde çalışmaz; üçünün de runner kontratı
+`[self-hosted, linux, benchmark]`dır. Runner adı cache anahtarına dahil edildiğinden bir
+makinede üretilen donanıma özgü baseline başka bir makinede sessizce kullanılamaz.
+Benchmark runner'ında CPU governor, container/VM katmanı ve arka plan yükü sabitlenmeli;
+uygun runner çevrimdışıysa job'ın queued kalması gate'i GitHub-hosted gürültülü bir
+makineye düşürmekten daha güvenli, fail-closed davranıştır.
+GitHub-hosted `test` job'ı performans testlerini `RUN_BENCHMARKS=0` ile bilinçli
+olarak dışlar; bu job'ın özeti tek başına production-ready kanıtı değildir. Nihai
+`production-readiness` aggregate sonucu ancak base test, sabit donanımdaki
+`benchmark-compare` ve GPU evidence kapılarının üçü de geçerse başarılı olur.
 
 Cache restore hâlâ boşsa artifact tabanlı manuel geri yükleme prosedürü:
 

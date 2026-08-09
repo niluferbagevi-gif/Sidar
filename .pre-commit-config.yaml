@@ -46,11 +46,18 @@ repos:
 
       - id: check-install-module-hashes
         name: check install module hash manifest drift
+        entry: uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh --check-manifest-only
+        language: system
+        pass_filenames: false
+        files: ^(install_sidar\.sh|scripts/install_modules/.*\.(sh|ps1)|scripts/sync_install_module_hashes\.sh|scripts/tools/update_install_module_hash_manifest\.py)$
+        stages: [pre-commit]
+      - id: check-install-module-pin
+        name: check install module pinned commit
         entry: uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh --check
         language: system
         pass_filenames: false
         files: ^(install_sidar\.sh|scripts/install_modules/.*\.(sh|ps1)|scripts/sync_install_module_hashes\.sh|scripts/tools/update_install_module_hash_manifest\.py)$
-        stages: [pre-commit, pre-push]
+        stages: [pre-push]
       - id: shellcheck
         name: shellcheck shell scripts
         entry: uv run shellcheck --severity=warning -x

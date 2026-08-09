@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import json
 import os
@@ -24,6 +25,31 @@ def _script() -> str:
     return expanded_bash_source(RUN_TESTS)
 
 
+def _skip_unless_frontend_dependencies_installed(*package_names: str) -> None:
+    """Skip (not fail) a test that shells out to a real `npm run ...`.
+
+    tests/unit must stay runnable standalone: github_upload.py's local
+    pre-push quality gate runs exactly `uv run pytest tests/unit -q --no-cov
+    -x` with no `cd web_ui_react && npm ci` step first -- by design, it's a
+    fast backend/installer-focused gate (see run_pre_push_quality_gate()'s
+    docstring in github_upload.py), not a full CI replica. CI's own
+    dedicated frontend lint/build steps always run `npm ci` first and stay
+    the authoritative gate regardless of this check; this live subprocess
+    call is a bonus for whoever already has web_ui_react/node_modules
+    populated (local frontend dev, or CI's own `pytest tests/unit` step,
+    which runs after `npm ci` within the same job) -- it must not turn into
+    a hard failure for anyone who doesn't.
+    """
+    node_modules = Path("web_ui_react/node_modules")
+    missing = [name for name in package_names if not (node_modules / name).exists()]
+    if missing:
+        pytest.skip(
+            f"web_ui_react/node_modules is missing {missing}; run "
+            "'cd web_ui_react && npm ci' first to exercise this live check "
+            "(CI's frontend lint/build steps always do)."
+        )
+
+
 def _run_tests_block_between(start_marker: str, end_marker: str, *, start_offset: int = 0) -> str:
     """Return a run_tests.sh block for structure-oriented shell assertions."""
     script = _script()
@@ -34,6 +60,12 @@ def _run_tests_block_between(start_marker: str, end_marker: str, *, start_offset
 def installer_contract_sources() -> str:
     """Return the modular installer contract surface as one searchable string."""
     paths = [Path("install_sidar.sh"), *sorted(Path("scripts/install_modules").rglob("*.sh"))]
+    return "\n".join(path.read_text(encoding="utf-8") for path in paths)
+
+
+def project_report_sources() -> str:
+    """Return the project report index and all topic sections as one contract surface."""
+    paths = [Path("docs/PROJE_RAPORU.md"), *sorted(Path("docs/project-report").glob("*.md"))]
     return "\n".join(path.read_text(encoding="utf-8") for path in paths)
 
 
@@ -62,6 +94,26 @@ def _extract_run_tests_function(name: str) -> str:
     return shell_function_body(_script(), name)
 
 
+def test_run_tests_delegates_cross_cutting_gates_to_focused_modules() -> None:
+    """Keep the root runner focused on ordering and aggregate exit status."""
+    root_script = RUN_TESTS.read_text(encoding="utf-8")
+    module_contracts = {
+        "environment_helpers.sh": "ensure_project_venv() {",
+        "production_readiness_helpers.sh": "production_readiness_gate_active() {",
+        "backend_helpers.sh": "run_static_analysis_gates() {",
+        "bats_helpers.sh": "run_bats_shell_tests() {",
+        "service_helpers.sh": "ensure_test_services() {",
+        "summary_helpers.sh": "write_test_summary_json() {",
+    }
+
+    for module_name, representative_function in module_contracts.items():
+        source_line = f'source "${{SCRIPT_DIR}}/scripts/test_gates/{module_name}"'
+        module = Path("scripts/test_gates", module_name).read_text(encoding="utf-8")
+        assert source_line in root_script
+        assert representative_function in module
+        assert representative_function not in root_script
+
+
 def test_run_tests_omits_set_e_but_centralizes_exit_code_checks_via_run_checked() -> None:
     """Regression test: exit codes feeding the aggregate must use run_checked().
 
@@ -83,6 +135,7 @@ def test_run_tests_omits_set_e_but_centralizes_exit_code_checks_via_run_checked(
         'run_checked "${phase1_cmd[@]}"\n    phase1_exit=$?',
         'run_checked "${phase2_cmd[@]}"\n    phase2_exit=$?',
         'run_checked "${benchmark_cmd[@]}"\n    BENCHMARK_EXIT_CODE=$?',
+        'run_checked "${benchmark_gpu_cmd[@]}"\n      benchmark_gpu_exit_code=$?',
         "run_checked npm ci",
         "run_checked npm install",
         "run_checked npm run audit:high",
@@ -181,7 +234,7 @@ def test_coverage_ratchet_state_is_committed_and_guarded() -> None:
 
     coverage_agent_docs = Path("docs/COVERAGE_AGENT_KULLANIMI.md").read_text(encoding="utf-8")
     test_plan_docs = Path("docs/TEST_OPTIMIZATION_PLAN.md").read_text(encoding="utf-8")
-    project_report = Path("docs/PROJE_RAPORU.md").read_text(encoding="utf-8")
+    project_report = project_report_sources()
 
     assert f"güncel repo gate: `%{coverage_fail_under:g}`" in coverage_agent_docs
     assert "Branch coverage ölçümü `[tool.coverage.run] branch = true`" in test_plan_docs
@@ -207,6 +260,33 @@ def test_coverage_ratchet_state_is_committed_and_guarded() -> None:
     assert ".coveragerc" not in testing_docs
     assert ".coveragerc" not in tests_module_notes
     assert "[tool.coverage.report] fail_under" in tests_module_notes
+
+
+def test_test_optimization_plan_omit_examples_match_pyproject_omit_list() -> None:
+    """`docs/TEST_OPTIMIZATION_PLAN.md`'nin `omit` örnek dosyaları güncel kalmalı.
+
+    Belge, `[tool.coverage.run].omit` ile eşleşen (dolayısıyla coverage
+    artırma hedefi konmayan) dosyalara örnek olarak `(örn. ...)` kalıbıyla
+    belirli path'ler gösteriyor. Bir arkadaş kod incelemesi, bu örneklerin
+    `core/vision.py`/`core/voice.py`'yi -- ikisi de omit listesinden
+    kaldırılıp tam `%100` gate'ine dahil edildikten sonra -- hâlâ "kapsam
+    dışı" diye işaret ettiğini buldu. Bu test her `(örn. ...)` çağrısındaki
+    her path'in gerçekten bir `omit` glob'uyla eşleştiğini doğrular.
+    """
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    omit_patterns = pyproject["tool"]["coverage"]["run"]["omit"]
+
+    doc = Path("docs/TEST_OPTIMIZATION_PLAN.md").read_text(encoding="utf-8")
+    example_blocks = re.findall(r"\(örn\. ([^)]+)\)", doc)
+    assert example_blocks, "expected at least one '(örn. ...)' omit callout"
+
+    for block in example_blocks:
+        example_paths = re.findall(r"`([^`]+)`", block)
+        assert example_paths
+        for example_path in example_paths:
+            assert any(fnmatch.fnmatch(example_path, pattern) for pattern in omit_patterns), (
+                f"{example_path!r} cited as omit-covered but matches no pyproject.toml omit pattern"
+            )
 
 
 def test_run_tests_enforces_required_static_security_and_coverage_gates() -> None:
@@ -243,7 +323,9 @@ def test_ci_exposes_security_and_mutation_quality_gates() -> None:
     )
 
     assert "uv run bandit -r . -c pyproject.toml" in ci
-    assert "make production-readiness" in ci
+    assert "Run base quality gates (performance isolated)" in ci
+    assert "RUN_BENCHMARKS=0" in ci
+    assert "needs: [test, benchmark-compare, gpu-inference-policy-gate]" in ci
     assert "uv run python scripts/ci/check_policy_dates.py" in ci
     assert "POSTGRES_PASSWORD: sidar" in ci
     assert "Test-only CI service credentials" in ci
@@ -393,11 +475,19 @@ def test_gpu_defaults_are_cpu_friendly_and_auto_detect_runtime_hardware() -> Non
     assert "USE_GPU=false, REQUIRE_GPU=false, GPU_MIXED_PRECISION=false" in env_utils
     assert "install_sidar.sh` GPU tespit ederse" in readme
     assert "varsayılan `REQUIRE_GPU=false`" in readme
+    # A friend code review noted ENABLE_GPU_TESTS=auto's opt-in-by-detection
+    # design is correct (not a bug) for a GPU-equipped dev machine, but the
+    # ENABLE_GPU_TESTS=0 override to skip GPU tests for a faster default loop
+    # was never documented anywhere.
+    assert "ENABLE_GPU_TESTS=0 bash run_tests.sh" in readme
+    assert "auto` değerini geçersiz kılar" in readme
 
 
 def test_run_tests_syncs_effective_dotenv_postgres_password_without_logging_secret() -> None:
     script = _script()
 
+    assert "sanitize_test_database_url_overrides()" in script
+    assert "remove_explicit_database_urls_from_text" in script
     assert "load_test_database_password_env()" in script
     assert 'DOTENV_FILE="${test_dotenv_file}" uv run python - "${password_file}"' in script
     assert "_effective_postgres_password(discover_env_chain())" in script
@@ -432,9 +522,9 @@ def test_run_tests_syncs_effective_dotenv_postgres_password_without_logging_secr
         in script
     )
     assert "DATABASE_URL test için ayarlandı: ${DATABASE_URL}" not in script
-    assert script.index("load_test_database_password_env && ensure_test_services") < script.index(
-        "&& prepare_test_database; then"
-    )
+    preflight = "sanitize_test_database_url_overrides && load_test_database_password_env"
+    assert preflight in script
+    assert script.index(preflight) < script.index("&& prepare_test_database; then")
 
 
 def test_prepare_test_database_rejects_case_folded_primary_database_collision(
@@ -447,6 +537,17 @@ def test_prepare_test_database_rejects_case_folded_primary_database_collision(
             (
                 "#!/usr/bin/env bash",
                 "set -uo pipefail",
+                # This harness's parent pytest process may itself be running
+                # under a caller (e.g. CI's "Base quality gates" job) that
+                # sets AUTO_PREPARE_TEST_DB/SMOKE_SKIP_EXTERNAL_INFRA at its
+                # own job/shell level to skip run_tests.sh's *outer* DB prep
+                # (it prepares the DB itself in a separate step). subprocess.run
+                # inherits that ambient environment by default, which would
+                # make prepare_test_database's own early-return guards fire
+                # before ever reaching the case-folded-collision check this
+                # test exercises. Reset them so this harness's behavior only
+                # depends on what it explicitly sets below.
+                "unset AUTO_PREPARE_TEST_DB SMOKE_SKIP_EXTERNAL_INFRA AUTO_DOCKER_TEST_SERVICES",
                 "BACKEND_EXIT_CODE=0",
                 "DOCKER_COMPOSE_CMD=()",
                 _extract_run_tests_function("is_safe_postgres_identifier"),
@@ -474,6 +575,13 @@ def test_service_readiness_timeout_fails_without_enabling_smoke_skip(tmp_path: P
             (
                 "#!/usr/bin/env bash",
                 "set -uo pipefail",
+                # See the same reset in test_prepare_test_database_rejects_
+                # case_folded_primary_database_collision above: this test
+                # asserts SMOKE_SKIP_EXTERNAL_INFRA is unset, which only holds
+                # if the ambient caller environment (e.g. CI's "Base quality
+                # gates" job, which sets it to "0" at job level) hasn't leaked
+                # into this subprocess.
+                "unset AUTO_PREPARE_TEST_DB SMOKE_SKIP_EXTERNAL_INFRA AUTO_DOCKER_TEST_SERVICES",
                 "BACKEND_EXIT_CODE=0",
                 "DOCKER_COMPOSE_CMD=(fake-compose)",
                 "fake-compose() { return 1; }",
@@ -550,12 +658,30 @@ def test_run_tests_uses_profile_aware_benchmark_compare_defaults() -> None:
     assert 'BENCHMARK_COMPARE_FILE="${latest_file}"' in script
     assert 'BENCHMARK_COMPARE_SELECTOR="${latest_file}"' in script
     assert "BASH_REMATCH" not in script[script.index("resolve_benchmark_compare_target()") :]
-    assert 'benchmark_cmd+=(--benchmark-compare="${BENCHMARK_COMPARE_SELECTOR}")' in script
+    assert '--benchmark-compare="${BENCHMARK_COMPARE_SELECTOR}"' in script
     assert 'if [ "${BENCHMARK_ENFORCE_COMPARE}" = "1" ]; then' in script
-    assert 'benchmark_cmd+=(--benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}")' in script
+    assert 'BENCHMARK_IO_COMPARE_FAIL="${BENCHMARK_IO_COMPARE_FAIL:-mean:25%}"' in script
+    assert (
+        'BENCHMARK_IO_JSON_OUTPUT="${BENCHMARK_IO_JSON_OUTPUT:-artifacts/benchmark/io-benchmark.json}"'
+        in script
+    )
+    assert '-k "not test_multi_user_session_message_workload_scales_with_concurrency"' in script
+    assert "I/O-bound DB concurrency benchmarkı ayrı pytest oturumunda" in script
+    assert 'benchmark_io_cmd+=(--benchmark-compare-fail="${BENCHMARK_IO_COMPARE_FAIL}")' in script
     assert '--benchmark-warmup="${BENCHMARK_WARMUP}"' in script
     assert '--benchmark-warmup-iterations="${BENCHMARK_WARMUP_ITERATIONS}"' in script
     assert "benchmark_cmd+=(--benchmark-disable-gc)" in script
+    assert (
+        'BENCHMARK_GPU_TEST_FILE="${BENCHMARK_GPU_TEST_FILE:-${PERFORMANCE_TEST_DIR}/test_gpu_benchmark.py}"'
+        in script
+    )
+    assert 'benchmark_cmd+=(--ignore="${BENCHMARK_GPU_TEST_FILE}")' in script
+    assert '--benchmark-json="${BENCHMARK_GPU_JSON_OUTPUT}"' in script
+    assert "GPU benchmarkları izole pytest oturumunda çalıştırılıyor" in script
+    assert "CPU/DB benchmarkları GPU oturumundan önce ve izole çalıştırılıyor" in script
+    assert script.index("CPU/DB benchmarkları GPU oturumundan önce") < script.index(
+        "GPU benchmarkları izole pytest oturumunda çalıştırılıyor"
+    )
     assert "baseline=${BENCHMARK_COMPARE_FILE}" in script
     assert "İlk benchmark koşusu --benchmark-save=${BENCHMARK_BASELINE_NAME}" in script
     assert "BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required ./run_tests.sh" in script
@@ -564,6 +690,9 @@ def test_run_tests_uses_profile_aware_benchmark_compare_defaults() -> None:
         "./run_tests.sh" in script
     )
     assert "GitHub Actions cache/artifact üzerinden seed/restore eder" in script
+    assert "Yerel benchmark karşılaştırma hatası tek başına kod regresyonunu kanıtlamaz" in script
+    assert "BENCHMARK_COMPARE_FAIL=mean:15% make production-readiness" in script
+    assert "BENCHMARK_ENFORCE_COMPARE=0 make production-readiness" in script
     assert "BENCHMARK_COMPARE_REQUIRED=1 iken karşılaştırma için baseline bulunamadı" in script
     assert 'if [ "${IS_CI_ENV}" -eq 1 ]; then' in script
     assert "Local production-readiness için benchmark baseline bulunamadı" in script
@@ -661,10 +790,21 @@ def test_postgresql_multi_user_benchmark_warms_pool_and_uses_stable_pedantic_rou
     assert "async def _warm_postgresql_connection_pool(db: Database) -> None:" in benchmark_test
     assert 'await conn.execute("SELECT 1")' in benchmark_test
     assert "loop.run_until_complete(_warm_postgresql_connection_pool(db))" in benchmark_test
-    assert "warmup_rounds=5" in benchmark_test
-    assert "rounds=25" in benchmark_test
+    assert "_IO_BENCHMARK_WARMUP_ROUNDS = 5" in benchmark_test
+    assert "_IO_BENCHMARK_ROUNDS = 50" in benchmark_test
+    assert "warmup_rounds=_IO_BENCHMARK_WARMUP_ROUNDS" in benchmark_test
+    assert "rounds=_IO_BENCHMARK_ROUNDS" in benchmark_test
     assert "SIDAR_BENCHMARK_POSTGRES_URL=postgresql+asyncpg://" in env_test_example
     assert "yalnız SQLite varyantını koşturur" in env_test_example
+
+
+def test_password_benchmarks_use_noise_resistant_pedantic_rounds() -> None:
+    benchmark_test = Path("tests/performance/test_benchmark.py").read_text(encoding="utf-8")
+
+    assert "_PASSWORD_BENCHMARK_WARMUP_ROUNDS = 3" in benchmark_test
+    assert "_PASSWORD_BENCHMARK_ROUNDS = 10" in benchmark_test
+    assert benchmark_test.count("warmup_rounds=_PASSWORD_BENCHMARK_WARMUP_ROUNDS") == 2
+    assert benchmark_test.count("rounds=_PASSWORD_BENCHMARK_ROUNDS") == 2
 
 
 def test_benchmark_docs_require_uv_and_review_before_promoting_latest_baseline() -> None:
@@ -756,7 +896,7 @@ def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existi
 def test_env_documentation_clarifies_loading_chain_and_api_key_policy() -> None:
     readme = Path("README.md").read_text(encoding="utf-8")
     technical_reference = Path("docs/TEKNIK_REFERANS.md").read_text(encoding="utf-8")
-    project_report = Path("docs/PROJE_RAPORU.md").read_text(encoding="utf-8")
+    project_report = project_report_sources()
     environment_configuration = Path("docs/ENVIRONMENT_CONFIGURATION.md").read_text(
         encoding="utf-8"
     )
@@ -867,7 +1007,7 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
     assert (
         "RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all" in install_script
     )
-    run_tests_script = Path("run_tests.sh").read_text(encoding="utf-8")
+    run_tests_script = _script()
     assert (
         'PRODUCTION_READINESS_COMMAND="TEST_PROFILE=ci RUN_BENCHMARKS=required '
         'RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"'
@@ -928,7 +1068,14 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
     assert "Production readiness gate başarısız" in validation_phase
     assert "Development tam doğrulaması başarısız oldu" in validation_phase
     assert 'local optional_command="make dev-full"' in validation_phase
-    assert "env AUTO_OPEN_ARTIFACTS=0 make dev-full" in validation_phase
+    assert "AUTO_OPEN_ARTIFACTS=0 make dev-full" in validation_phase
+    for checksum_var in (
+        "OLLAMA_INSTALL_SHA256",
+        "UV_INSTALL_SHA256",
+        "VOLTA_INSTALL_SHA256",
+        "NVM_INSTALL_SHA256",
+    ):
+        assert f"-u {checksum_var}" in validation_phase
     assert "make production-readiness" in validation_phase
     assert "SIDAR_TOTAL_JS_BUDGET_KB" in makefile
     assert "SIDAR_TOTAL_GZIP_BUDGET_KB" in makefile
@@ -960,7 +1107,8 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
         "benchmark baseline gerektirebilir" in validation_phase
     )
     assert "Development validation ≠ release/merge onayı" in validation_phase
-    assert "Release/merge için tek zorunlu komut" in validation_phase
+    assert "Yerel ön doğrulama (merge kararı değildir)" in validation_phase
+    assert "Production readiness aggregate" in validation_phase
     assert "DEVELOPMENT VALIDATION ≠ PRODUCTION READINESS" in validation_phase
     assert "AUTO_OPEN_ARTIFACTS=0 make production-readiness" in validation_phase
     assert (
@@ -1023,10 +1171,9 @@ def test_ci_workflow_documents_and_seeds_benchmark_baseline() -> None:
         in ci
     )
     assert "Benchmark baseline missing" in ci
-    assert "Run canonical production-readiness gate" in ci
-    assert "Validate production-readiness test summary" in ci
-    assert "--mode release --summary artifacts/test-summary.json" in ci
-    assert "--mode development --summary artifacts/test-summary.json" not in ci
+    assert "Run base quality gates (performance isolated)" in ci
+    assert "Validate base test summary" in ci
+    assert "--mode development --summary artifacts/test-summary.json" in ci
     assert "CI benchmark baseline cache boşsa ne yapılır?" in testing
     assert "seed_benchmark_baseline" in testing
     assert "benchmark-baseline-seed" in testing
@@ -1044,11 +1191,15 @@ def test_ci_workflow_documents_and_seeds_benchmark_baseline() -> None:
 
 
 def test_run_tests_summary_uses_phase_specific_backend_statuses(tmp_path: Path) -> None:
-    script = _script()
     summary_json = tmp_path / "test-summary.json"
-    summary_block = script[
-        script.index("quality_summary_status() {") : script.index("MIN_UNIT_COVERAGE_FAIL_UNDER=")
-    ]
+    summary_block = "\n".join(
+        _extract_run_tests_function(name)
+        for name in (
+            "quality_summary_status",
+            "backend_stage_summary_status",
+            "write_test_summary_json",
+        )
+    )
     runner = tmp_path / "summary_probe.sh"
     runner.write_text(
         "#!/usr/bin/env bash\nset -Eeuo pipefail\n"
@@ -1074,6 +1225,7 @@ FRONTEND_COVERAGE_RAN=1
 FRONTEND_COVERAGE_EXIT_CODE=0
 FRONTEND_E2E_RAN=1
 FRONTEND_E2E_EXIT_CODE=0
+FRONTEND_E2E_NPM_SCRIPT=test:e2e:smoke
 RUN_BENCHMARKS=required
 BENCHMARK_EXIT_CODE=0
 BENCHMARK_COMPARE_STATUS=seeded_not_compared
@@ -1150,6 +1302,25 @@ def test_run_tests_help_lists_make_and_direct_production_readiness_commands() ->
     )
 
 
+def test_testing_docs_explain_env_var_typo_safety_limitation() -> None:
+    """Guard the documented rationale for skipping an env-var typo checker.
+
+    A friend code review flagged run_tests.sh's large env-var surface (no
+    schema validation rejects unknown/typo'd SIDAR_*/BENCHMARK_*/COVERAGE_*
+    names). Confirmed --help exists (see the test above) but doesn't cover
+    env vars; a warn-only auto-derived allowlist design was tried and
+    rejected because SIDAR_ENV -- a real CI-set variable consumed by
+    config.py, not by run_tests.sh/scripts/test_gates -- would false-positive
+    immediately. This is documented as a known limitation rather than shipped
+    half-correct; pin the documented rationale so it doesn't silently drop.
+    """
+    testing_doc = Path("docs/TESTING.md").read_text(encoding="utf-8")
+
+    assert "run_tests.sh` konfigürasyon yüzeyi ve yazım hatası koruması" in testing_doc
+    assert "Bilinen sınırlama" in testing_doc
+    assert "SIDAR_ENV" in testing_doc and "false-positive" in testing_doc
+
+
 def test_production_readiness_checks_system_deps_before_quality_gates() -> None:
     script = _script()
     body = _extract_run_tests_function("check_production_readiness_system_dependencies")
@@ -1175,11 +1346,18 @@ def test_security_gate_runs_ruff_debt_baseline_before_bandit() -> None:
 
     tooling_check = "ensure_security_tool_dependencies"
     debt_check = "uv run python scripts/ci/check_ruff_debt_baseline.py"
+    marker_check = "uv run python scripts/ci/check_source_debt_markers.py"
     bandit_check = "uv run bandit -r . -c pyproject.toml"
     assert tooling_check in body
     assert debt_check in body
+    assert marker_check in body
     assert bandit_check in body
-    assert body.index(tooling_check) < body.index(debt_check) < body.index(bandit_check)
+    assert (
+        body.index(tooling_check)
+        < body.index(debt_check)
+        < body.index(marker_check)
+        < body.index(bandit_check)
+    )
     assert "Güvenlik analizi önkoşulları hazırlanamadı" in body
     assert "Ruff docstring/E501/ASYNC240 borç baseline kontrolü başarısız" in body
 
@@ -1216,7 +1394,6 @@ def test_linter_docs_route_python_to_ruff_and_shell_to_shellcheck() -> None:
 
 
 def test_run_tests_summary_includes_backend_failed_tests_from_junit(tmp_path: Path) -> None:
-    script = _script()
     summary_json = tmp_path / "test-summary.json"
     junit_dir = tmp_path / "pytest"
     junit_dir.mkdir()
@@ -1240,9 +1417,14 @@ def test_run_tests_summary_includes_backend_failed_tests_from_junit(tmp_path: Pa
         ),
         encoding="utf-8",
     )
-    summary_block = script[
-        script.index("quality_summary_status() {") : script.index("MIN_UNIT_COVERAGE_FAIL_UNDER=")
-    ]
+    summary_block = "\n".join(
+        _extract_run_tests_function(name)
+        for name in (
+            "quality_summary_status",
+            "backend_stage_summary_status",
+            "write_test_summary_json",
+        )
+    )
     runner = tmp_path / "summary_failed_tests_probe.sh"
     runner.write_text(
         "#!/usr/bin/env bash\nset -Eeuo pipefail\n"
@@ -1508,6 +1690,67 @@ printf 'FRONTEND_QUALITY_STATUS=%s\n' "$FRONTEND_QUALITY_STATUS"
     assert "FRONTEND_QUALITY_STATUS=tamamlandi" in result.stdout
 
 
+def test_optional_dev_full_validation_does_not_leak_tofu_checksum_state(
+    tmp_path: Path,
+) -> None:
+    validation_phase = Path("scripts/install_modules/phases/10_validation.sh").resolve()
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    make = bin_dir / "make"
+    make.write_text(
+        "#!/usr/bin/env bash\n"
+        "for name in OLLAMA_INSTALL_SHA256 UV_INSTALL_SHA256 "
+        "VOLTA_INSTALL_SHA256 NVM_INSTALL_SHA256; do\n"
+        "  [[ -z ${!name+x} ]] || exit 42\n"
+        "done\n",
+        encoding="utf-8",
+    )
+    make.chmod(0o755)
+    (tmp_path / "run_tests.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    for checksum_var in (
+        "OLLAMA_INSTALL_SHA256",
+        "UV_INSTALL_SHA256",
+        "VOLTA_INSTALL_SHA256",
+        "NVM_INSTALL_SHA256",
+    ):
+        env[checksum_var] = f"tofu-{checksum_var.lower()}"
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """set -Eeuo pipefail
+source "$1"
+SCRIPT_DIR="$2"
+GPU_AVAILABLE=true
+SMOKE_TEST_STATUS=tamamlandi
+NO_INTERACTION=false
+AUTO_INSTALL=false
+SILENT_MODE=false
+info() { :; }
+warn() { :; }
+ok() { :; }
+prompt_yes_no_with_timeout_default_no() { printf 'e'; }
+run_optional_dev_full_validation_prompt
+printf 'status=%s\n' "$CI_FULL_VALIDATION_STATUS"
+""",
+            "bash",
+            str(validation_phase),
+            str(tmp_path),
+        ],
+        check=False,
+        capture_output=True,
+        env=env,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "status=tamamlandi" in result.stdout
+
+
 def test_finish_frontend_qa_block_refreshes_summary_before_printing(tmp_path: Path) -> None:
     finish_phase = Path("scripts/install_modules/phases/07_finish.sh").resolve()
 
@@ -1597,7 +1840,8 @@ print_install_validation_coverage""",
     assert "Production readiness: ÇALIŞTIRILMADI / TALEP EDİLMEDİ" in result.stdout
     assert "Development full validation geçti = geliştirici ortamı sağlıklı" in result.stdout
     assert "Development validation ≠ release/merge onayı" in result.stdout
-    assert "Release/merge için tek zorunlu komut" in result.stdout
+    assert "Yerel ön doğrulama (merge kararı değildir)" in result.stdout
+    assert "Production readiness aggregate" in result.stdout
     assert "SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all" in result.stdout
     assert result.stdout.count("Production readiness:") == 1
     assert "Production readiness: GEÇMEDİ" not in result.stdout
@@ -1768,6 +2012,51 @@ def test_install_sidar_shares_one_secret_key_list_between_masking_and_api_keys()
     )
 
 
+def test_env_example_secret_keys_are_all_in_the_install_masking_allowlist() -> None:
+    """Every secret-shaped key shipped in .env*.example must be masked.
+
+    A friend code review suggested exactly this check: compare every
+    *_TOKEN/*_KEY/*_SECRET/*_PASSWORD-shaped key in the shipped .env*.example
+    templates against install_sidar.sh's SIDAR_INTERNAL_SECRET_ENV_KEYS/
+    SIDAR_USER_SECRET_ENV_KEYS allowlist (the single source both
+    mask_install_log_stream() and the interactive API-key collector read
+    from -- see test_install_sidar_shares_one_secret_key_list_between_masking_and_api_keys
+    above). Running it found 5 real, live gaps: REDIS_PASSWORD, JIRA_API_TOKEN,
+    and META_GRAPH_API_TOKEN were never masked at all; SIDAR_AUTONOMY_WEBHOOK_SECRET
+    and GOOGLE_API_KEY happened to be masked only by incidental substring overlap
+    with an unrelated allowlist/catch-all pattern entry (AUTONOMY_WEBHOOK_SECRET,
+    the case-insensitive api_key catch-all) rather than by design -- fragile,
+    not something to keep relying on. All five were added to the allowlist
+    explicitly; this test prevents the next one from going unnoticed.
+    """
+    installer_root = Path("install_sidar.sh").read_text(encoding="utf-8")
+
+    def _extract_array(name: str) -> set[str]:
+        marker = f"{name}=("
+        start = installer_root.index(marker) + len(marker)
+        block = installer_root[start : installer_root.index(")", start)]
+        return set(re.findall(r"[A-Z_][A-Z0-9_]*", block))
+
+    allowlist = _extract_array("SIDAR_INTERNAL_SECRET_ENV_KEYS") | _extract_array(
+        "SIDAR_USER_SECRET_ENV_KEYS"
+    )
+
+    secret_key_re = re.compile(
+        r"^([A-Z_][A-Z0-9_]*(?:_TOKEN|_KEY|_SECRET|_PASSWORD))=", re.MULTILINE
+    )
+    missing: dict[str, set[str]] = {}
+    for env_example in sorted(Path().glob(".env*.example")):
+        keys = set(secret_key_re.findall(env_example.read_text(encoding="utf-8")))
+        gap = keys - allowlist
+        if gap:
+            missing[env_example.name] = gap
+
+    assert not missing, (
+        "Secret-shaped keys shipped in .env*.example are missing from install_sidar.sh's "
+        f"SIDAR_INTERNAL_SECRET_ENV_KEYS/SIDAR_USER_SECRET_ENV_KEYS masking allowlist: {missing}"
+    )
+
+
 def test_install_summary_explains_sidarkeys_when_materialization_disabled() -> None:
     finish_phase = Path("scripts/install_modules/phases/07_finish.sh").read_text(encoding="utf-8")
     summary_start = finish_phase.index("print_summary()")
@@ -1779,6 +2068,9 @@ def test_install_summary_explains_sidarkeys_when_materialization_disabled() -> N
     assert "SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV:-0" in finish_phase
     assert "ℹ️  .env dosyasında" in summary_block
     assert "beklenen güvenli kurulum davranışıdır" in summary_block
+    assert "sidar_summary_external_api_key_count" in finish_phase
+    assert "Secret overlay durumu:" in summary_block
+    assert "read_env_value_from_file" in finish_phase
     assert "SIDAR_KEYS_FILE" in summary_block
     assert "Kritik key kaynak özeti" in summary_block
     assert "SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV=1" in summary_block
@@ -1833,12 +2125,23 @@ def test_development_env_derives_database_urls_from_single_postgres_password() -
     assert "USE_GPU=false" in env_development
     assert "REQUIRE_GPU=false" in env_development
     assert "GPU_MEMORY_FRACTION=0.8" in env_development
-    assert "LLM_GPU_MEMORY_FRACTION=0.6" in env_development
-    assert "RAG_GPU_MEMORY_FRACTION=0.3" in env_development
+    assert "LLM_GPU_MEMORY_FRACTION=0.53" in env_development
+    assert "RAG_GPU_MEMORY_FRACTION=0.27" in env_development
+    assert "LLM_GPU_MEMORY_FRACTION=0.6" not in env_development
+    assert "RAG_GPU_MEMORY_FRACTION=0.3" not in env_development
     assert (
         "JWT_SECRET_KEY=replace-with-a-local-development-jwt-secret-32-plus-chars"
         in env_development
     )
+
+
+def test_advanced_env_gpu_defaults_stay_within_safe_vram_budget() -> None:
+    env_advanced = Path(".env.advanced.example").read_text(encoding="utf-8")
+
+    assert "GPU_MEMORY_FRACTION=0.8" in env_advanced
+    assert "LLM_GPU_MEMORY_FRACTION=0.53" in env_advanced
+    assert "RAG_GPU_MEMORY_FRACTION=0.27" in env_advanced
+    assert "Toplamın 0.90 - 0.95 arası olması önerilir" not in env_advanced
 
 
 def test_test_env_uses_stronger_postgres_password_and_runtime_database_url() -> None:
@@ -1854,7 +2157,7 @@ def test_test_env_uses_stronger_postgres_password_and_runtime_database_url() -> 
 
 
 def test_run_tests_renders_generate_sentinel_when_creating_env_test() -> None:
-    script = RUN_TESTS.read_text(encoding="utf-8")
+    script = _script()
 
     assert "render_generated_secret_sentinels" in script
     assert "POSTGRES_PASSWORD=__GENERATE__" in script
@@ -2224,7 +2527,8 @@ def test_makefile_benchmark_seed_is_local_only_and_production_readiness_is_relea
 
     assert "Lokal benchmark baseline bootstrap içindir" in makefile
     assert "seed_benchmark_baseline=true" in makefile
-    assert "BENCHMARK_COMPARE_REQUIRED=$(BENCHMARK_COMPARE_REQUIRED)" in benchmark_seed_block
+    assert "BENCHMARK_COMPARE_REQUIRED=0" in benchmark_seed_block
+    assert "BENCHMARK_ENFORCE_COMPARE=0" in benchmark_seed_block
     assert "RUN_BENCHMARKS=required bash run_tests.sh --stage all" in benchmark_seed_block
     assert "SIDAR_PRODUCTION_READINESS=1" not in benchmark_seed_block
     assert "TEST_PROFILE=ci" not in benchmark_seed_block
@@ -2244,6 +2548,160 @@ def test_makefile_benchmark_seed_is_local_only_and_production_readiness_is_relea
     assert "make production-readiness" in testing
     assert "seed_benchmark_baseline=true" in pr_template
     assert "docs/TESTING.md#ci-benchmark-baseline-cache-boşsa-ne-yapılır" in pr_template
+
+
+def test_ci_parity_actually_sets_the_ci_test_profile() -> None:
+    """`make ci-parity` must not silently run under local-profile defaults.
+
+    Regression test: ci-parity used to just forward FRONTEND_BUNDLE_BUDGET_LOCAL_FULL
+    to dev-full and nothing else -- no TEST_PROFILE=ci, no
+    FRONTEND_E2E_NPM_SCRIPT=test:e2e. That made it functionally identical to
+    plain dev-full while its name promised CI parity: run_tests.sh's
+    TEST_PROFILE branch controls (among other things) the benchmark regression
+    threshold -- mean:15% under the local-profile default ci-parity was
+    actually using vs. mean:10% under TEST_PROFILE=ci -- so `make ci-parity`
+    could pass locally on a change that would then fail real CI.
+    """
+    makefile = Path("Makefile").read_text(encoding="utf-8")
+    # Bounded to ci-parity's own recipe (up to the next blank line), not the
+    # whole gap up to base-quality-gates: -- that gap also contains a comment
+    # above base-quality-gates that happens to mention
+    # "FRONTEND_E2E_NPM_SCRIPT=test:e2e" in prose, which would make that
+    # specific assertion pass even without the fix.
+    ci_parity_start = makefile.index("ci-parity:")
+    ci_parity_block = makefile[ci_parity_start : makefile.index("\n\n", ci_parity_start)]
+
+    assert "TEST_PROFILE=ci" in ci_parity_block
+    assert "FRONTEND_E2E_NPM_SCRIPT=test:e2e" in ci_parity_block
+    assert "$(MAKE) dev-full" in ci_parity_block
+
+
+def test_testing_docs_explain_external_production_readiness_dependencies() -> None:
+    """Operators must have a durable runbook for CI's external fail-closed gates."""
+    testing = Path("docs/TESTING.md").read_text(encoding="utf-8")
+
+    assert "## CI production-readiness dışsal bağımlılıkları" in testing
+    assert "[self-hosted, linux, gpu]" in testing
+    assert "timeout-minutes" in testing
+    assert "queued süreyi" in testing
+    assert "ENABLE_GPU_BENCH_GATE" in testing
+    assert "gpu-inference-policy-gate" in testing
+    assert "seed_benchmark_baseline=true" in testing
+    assert "Cache eviction" in testing
+    assert "production-readiness sonucu **kanıtlanmamış**" in testing
+
+
+def test_pr_checklist_requires_current_gpu_evidence_beyond_local_summary() -> None:
+    """Local production_ready must never substitute for the required GPU policy jobs."""
+    checklist = Path(".github/PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+
+    for required_check in (
+        "GPU Inference Quality Gate (TTFT<=200ms, latency<=250ms)",
+        "GPU Inference Required Evidence Gate",
+        "Production readiness aggregate",
+    ):
+        assert f"- [ ] `{required_check}`" in checklist
+    assert "`production_ready=true` yalnız CPU/standart" in checklist
+    assert "kalite kapılarının kanıtıdır; self-hosted GPU kanıtını içermez" in checklist
+    assert "güncel commit SHA" in checklist
+    assert "skip/queued/failed" in checklist
+    assert "bütün merge/release kararları için zorunludur" in checklist
+    assert "etkilemiyorsa: yukarıdaki madde kasıtlı olarak N/A" not in checklist
+    assert "aksi halde skip edilir ve `production_ready` bayrağına dahil edilmez" not in checklist
+
+
+def test_gpu_gate_timeout_and_benchmark_cache_keepalive_are_fail_closed() -> None:
+    """Bound running GPU work and preserve only reviewed benchmark evidence."""
+    ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    keepalive = Path(".github/workflows/benchmark-baseline-keepalive.yml").read_text(
+        encoding="utf-8"
+    )
+    testing = Path("docs/TESTING.md").read_text(encoding="utf-8")
+
+    gpu_job = ci[
+        ci.index("  gpu-inference-quality-gate:") : ci.index("  gpu-inference-policy-gate:")
+    ]
+    assert "runs-on: [self-hosted, linux, gpu]" in gpu_job
+    assert "timeout-minutes: 45" in gpu_job
+    assert 'cron: "17 5 * * 1,4"' in keepalive
+    assert "uses: actions/cache/restore@v4" in keepalive
+    assert "Require reviewed baseline evidence" in keepalive
+    assert "find .benchmarks -type f -name '*_baseline.json'" in keepalive
+    assert "exit 1" in keepalive
+    assert "benchmark-save" not in keepalive
+    assert "no benchmark was executed and no baseline was regenerated" in keepalive
+    assert "queued süreyi" in testing
+    assert "timeout-minutes: 45" in testing
+    assert "benchmark-baseline-keepalive.yml" in testing
+    assert "benchmark çalıştırmaz, baseline üretmez" in testing
+
+
+def test_benchmark_baseline_cache_key_prefix_is_identical_everywhere() -> None:
+    """Every benchmark-baseline cache key must share one ${{ runner.name }}-scoped prefix.
+
+    Regression test: `.github/workflows/benchmark-baseline-keepalive.yml` used to
+    restore with a key that omitted `${{ runner.name }}` (and ran on
+    `ubuntu-latest`, where `runner.name` wouldn't have matched anyway), so it
+    could never actually hit the cache entry `benchmark-compare`/the seed jobs
+    depend on -- the keepalive workflow "passed" while restoring nothing,
+    silently failing to do the one thing it exists for (both of its real runs
+    on GitHub Actions failed with "Cache not found"). Every
+    `benchmark-baseline-` cache key across ci.yml, benchmark-baseline-seed.yml
+    and benchmark-baseline-keepalive.yml must share the identical
+    `benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-`
+    prefix so a keepalive/seed/compare cache key can never silently drift
+    apart again.
+    """
+    expected_prefix = (
+        "benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-"
+    )
+    workflow_paths = [
+        Path(".github/workflows/ci.yml"),
+        Path(".github/workflows/benchmark-baseline-seed.yml"),
+        Path(".github/workflows/benchmark-baseline-keepalive.yml"),
+    ]
+
+    # Only lines that are actually a cache key value or a restore-keys list
+    # item, plus artifact `name:` values that opt into the same runner-scoped
+    # template (ci.yml's plain `name: benchmark-baseline-seed` artifact is a
+    # fixed display name, not part of this key family, and is deliberately
+    # not matched here) -- not step ids, concurrency group names, or prose
+    # mentioning a workflow filename, all of which also legitimately contain
+    # the literal substring "benchmark-baseline-".
+    cache_key_line = re.compile(
+        r"^\s*key:\s*(benchmark-baseline-.+)$"
+        r"|^\s*name:\s*(benchmark-baseline-\$\{\{.+)$"
+        r"|^\s*(benchmark-baseline-\$\{\{ runner\.name.+)$"
+    )
+
+    mismatches: list[str] = []
+    total_occurrences = 0
+    for workflow_path in workflow_paths:
+        text = workflow_path.read_text(encoding="utf-8")
+        for line_no, line in enumerate(text.splitlines(), start=1):
+            match = cache_key_line.match(line)
+            if not match:
+                continue
+            occurrence = match.group(1) or match.group(2) or match.group(3)
+            total_occurrences += 1
+            if not occurrence.startswith(expected_prefix):
+                mismatches.append(f"{workflow_path}:{line_no}: {occurrence!r}")
+
+    assert not mismatches, (
+        "benchmark-baseline cache key prefix drifted from "
+        f"{expected_prefix!r}:\n" + "\n".join(mismatches)
+    )
+    # Guard against the assertion above vacuously passing if the workflows are
+    # rewritten to not mention the prefix at all.
+    assert total_occurrences >= 8
+
+    keepalive_text = Path(".github/workflows/benchmark-baseline-keepalive.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "runs-on: [self-hosted, linux, benchmark]" in keepalive_text, (
+        "keepalive must run on the same runner pool as benchmark-compare/seed-baseline "
+        "for ${{ runner.name }} to resolve to the same value in its cache key"
+    )
 
 
 def test_make_lint_requires_installer_shellcheck_gate() -> None:
@@ -2329,9 +2787,15 @@ def test_pre_commit_config_runs_uv_managed_static_gates() -> None:
     assert "id: check-install-module-hashes" in config
     assert (
         "entry: uv run python scripts/tools/update_install_module_hash_manifest.py "
+        "--target install_sidar.sh --check-manifest-only"
+    ) in config
+    assert "id: check-install-module-pin" in config
+    assert (
+        "entry: uv run python scripts/tools/update_install_module_hash_manifest.py "
         "--target install_sidar.sh --check"
     ) in config
-    assert "stages: [pre-commit, pre-push]" in config
+    assert "stages: [pre-commit]" in config
+    assert "stages: [pre-push]" in config
     assert ".sidar_manifest" in config
     assert "core/(memory|multimodal)" in config
     assert "scripts/install_modules/.*\\.(sh|ps1)" in config
@@ -2355,7 +2819,8 @@ def test_pre_commit_config_runs_uv_managed_static_gates() -> None:
     )
     assert "check-core-install-manifest" in readme
     assert "check-install-module-hashes" in readme
-    assert "installer manifest drift" in readme
+    assert "check-install-module-pin" in readme
+    assert "manifest drift'ini" in readme
     assert "id: shellcheck" in config
     assert "entry: uv run shellcheck --severity=warning -x" in config
     assert "autonomous_loop" in config
@@ -2539,6 +3004,27 @@ def test_install_sidar_prefers_existing_repo_module_tree_before_download_or_clon
     assert missing_module_flow.index(
         'download_install_modules_to_temp "$REMOTE_MODULE_BASE"'
     ) < missing_module_flow.index("bootstrap_clone_and_reexec")
+
+
+def test_installer_doctor_fix_is_forwarded_and_scope_limited() -> None:
+    """Installer Doctor fix stays DB-scoped while install-time RAG seed is documented."""
+    install_cli = Path("scripts/install_modules/install_cli.sh").read_text(encoding="utf-8")
+    post_install = Path("scripts/install_modules/phases/11_post_install.sh").read_text(
+        encoding="utf-8"
+    )
+    ux = Path("scripts/install_modules/utils/ux.sh").read_text(encoding="utf-8")
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    assert "DOCTOR_FIX=false" in install_cli
+    assert "--fix) DOCTOR_FIX=true" in install_cli
+    assert '"$INSTALL_SUBCOMMAND" != "doctor"' in install_cli
+    assert "doctor_cmd+=(--fix)" in post_install
+    assert "[--fix]" in ux
+    assert "./install_sidar.sh doctor --fix" in readme
+    assert "AUTO_SEED_RAG_METADATA=true" in readme
+    assert "AUTO_SEED_RAG_DOCKER_WARMUP=true" in readme
+    assert "Her iki otomasyon açıkça `false` verilerek kapatılabilir" in readme
+    assert "docs/RAG_ONBOARDING.md" in readme
 
 
 def test_install_sidar_detects_offline_mode_before_bootstrap_downloads() -> None:
@@ -2745,6 +3231,7 @@ def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
     main_body = shell_function_body(script, "sidar_dispatch_install_phases")
 
     expected_modules = (
+        "install_runtime.sh",
         "phases/01_context.sh",
         "phases/02_repo.sh",
         "phases/03_runtime.sh",
@@ -2797,6 +3284,7 @@ def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
 def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     helper = Path("scripts/install_modules/install_helpers.sh").read_text(encoding="utf-8")
     context_phase = Path("scripts/install_modules/phases/01_context.sh").read_text(encoding="utf-8")
+    system_phase = Path("scripts/install_modules/phases/03_system.sh").read_text(encoding="utf-8")
     runtime_phase = Path("scripts/install_modules/phases/03_runtime.sh").read_text(encoding="utf-8")
     workspace_phase = Path("scripts/install_modules/phases/04_workspace.sh").read_text(
         encoding="utf-8"
@@ -2899,6 +3387,12 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
     assert "Ollama API" in preflight_utils
     assert "detect_gpu()" in gpu_utils
     assert "setup_nvidia_docker()" in gpu_utils
+    assert "install_nvidia_container_repository()" in gpu_utils
+    assert "sudo install -m 0644" in gpu_utils
+    assert "sudo install -d -m 0755 /usr/share/keyrings" in gpu_utils
+    assert "--retry-all-errors" in gpu_utils
+    assert "curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey |" not in gpu_utils
+    assert "setup_nvidia_docker()" not in system_phase
     assert "docker_nvidia_runtime_registered()" in gpu_utils
     assert "wait_for_docker_nvidia_runtime()" in gpu_utils
     assert "SIDAR_DOCKER_NVIDIA_RUNTIME_WAIT_SECONDS" in gpu_utils
@@ -3575,6 +4069,7 @@ def test_install_sidar_download_verified_script_fails_after_http_200_when_checks
             set --
             source ./install_sidar.sh
             OFFLINE_MODE=false
+            NO_INTERACTION=true
             unset ALLOW_UNVERIFIED_REMOTE_SCRIPTS
             download_verified_script 'https://example.invalid/install.sh' '' 'uv_install'
             """,
@@ -3861,11 +4356,20 @@ def test_install_sidar_runtime_mode_is_selected_once_before_service_launch() -> 
 def test_install_sidar_loads_remote_checksum_defaults_without_overriding_operator_env(
     tmp_path: Path,
 ) -> None:
+    """Checksum defaults must be tested independently of the invoking shell state."""
     checksum_file = tmp_path / "remote_checksums.env"
     checksum_file.write_text(
         ': "${OLLAMA_INSTALL_SHA256:=file-ollama}"\n: "${UV_INSTALL_SHA256:=file-uv}"\n',
         encoding="utf-8",
     )
+    clean_env = os.environ.copy()
+    for checksum_var in (
+        "OLLAMA_INSTALL_SHA256",
+        "UV_INSTALL_SHA256",
+        "VOLTA_INSTALL_SHA256",
+        "NVM_INSTALL_SHA256",
+    ):
+        clean_env.pop(checksum_var, None)
 
     result = subprocess.run(
         [
@@ -3884,7 +4388,7 @@ def test_install_sidar_loads_remote_checksum_defaults_without_overriding_operato
         ],
         check=False,
         capture_output=True,
-        env=os.environ.copy(),
+        env=clean_env,
         text=True,
     )
 
@@ -3956,6 +4460,26 @@ def test_volta_and_nvm_installs_use_soft_verified_download_not_raw_pipe_to_shell
     assert "download_verified_script_soft()" in remote_script_util
 
 
+def test_node_install_fallbacks_report_failures_and_validate_apt_major() -> None:
+    """Every Node fallback must explain degradation and enforce the .nvmrc major check."""
+    system_phase = Path("scripts/install_modules/phases/03_system.sh").read_text(encoding="utf-8")
+
+    assert "Volta node@${node_target_major} komutu başarısız oldu" in system_phase
+    assert "Volta çalıştırılabilir dosyası bulunamadı" in system_phase
+    assert "NVM install/alias default ${node_target_major} komutu başarısız oldu" in system_phase
+    assert "NVM başlangıç dosyası bulunamadı" in system_phase
+    assert "NodeSource apt deposu hazırlandı ancak apt update başarısız oldu" in system_phase
+    assert "NodeSource apt deposu hazırlandı ancak nodejs paketi kurulamadı" in system_phase
+    assert "ek Debian node-* bağımlılıklarını kurabilir" in system_phase
+    assert (
+        'warn_if_node_major_mismatch "$node_bin" "$node_target_major" "NodeSource"' in system_phase
+    )
+    assert (
+        'warn_if_node_major_mismatch "$node_bin" "$node_target_major" '
+        '"varsayılan apt fallback"' in system_phase
+    )
+
+
 def test_download_verified_script_soft_warns_and_returns_instead_of_exiting(
     tmp_path: Path,
 ) -> None:
@@ -3990,6 +4514,7 @@ def test_download_verified_script_soft_warns_and_returns_instead_of_exiting(
             set --
             source ./install_sidar.sh
             OFFLINE_MODE=false
+            NO_INTERACTION=true
             unset ALLOW_UNVERIFIED_REMOTE_SCRIPTS
             if download_verified_script_soft 'https://example.invalid/install.sh' '' \
               'probe_install'; then
@@ -4567,33 +5092,37 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "id: benchmark-baseline-cache" in ci
     assert "path: .benchmarks" in ci
     assert (
-        "benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-"
+        "benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-"
         "${{ github.ref_name }}-${{ github.run_id }}" in ci
     )
     assert "benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-" not in ci
-    assert "Report benchmark baseline availability" in ci
     assert "Resolve benchmark baseline gate mode" in ci
     assert "mkdir -p .benchmarks" in ci
-    assert 'echo "BENCHMARK_BASELINE_AVAILABLE=1" >> "$GITHUB_ENV"' in ci
     assert 'echo "BENCHMARK_COMPARE_REQUIRED=1" >> "$GITHUB_ENV"' not in ci
     assert 'echo "BENCHMARK_COMPARE_REQUIRED=0" >> "$GITHUB_ENV"' not in ci
-    assert "Base lint/smoke/unit/coverage/frontend gates will still run" in ci
     assert "Benchmark baseline missing" in ci
     assert "exit 1" in ci
     assert "benchmark-compare:" in ci
+    benchmark_job = ci[ci.index("  benchmark-compare:") : ci.index("  production-readiness:")]
+    seed_job = ci[ci.index("  seed-benchmark-baseline:") : ci.index("  test:")]
+    assert "runs-on: [self-hosted, linux, benchmark]" in benchmark_job
+    assert "runs-on: ubuntu-latest" not in benchmark_job
+    assert "runs-on: [self-hosted, linux, benchmark]" in seed_job
+    assert "runner.name" in benchmark_job
     assert "Production readiness aggregate" in ci
     assert "needs: [test, benchmark-compare, gpu-inference-policy-gate]" in ci
-    assert "Run canonical production-readiness gate" in ci
-    assert "make production-readiness 2>&1 | tee artifacts/test_run.log" in ci
-    assert (
-        "TEST_PROFILE=ci RUN_BENCHMARKS=0 RUN_FRONTEND_E2E=1 bash run_tests.sh --stage all"
-        not in ci
-    )
+    assert "Run base quality gates (performance isolated)" in ci
+    assert "TEST_PROFILE=ci RUN_BENCHMARKS=0 RUN_FRONTEND_E2E=1" in ci
+    assert "SIDAR_PRODUCTION_READINESS=0 bash run_tests.sh --stage all" in ci
     assert "GITHUB_STEP_SUMMARY" in ci
     assert "benchmark compare is fail-closed" in ci
     assert "BENCHMARK_BASELINE_FILE: ${{ steps.benchmark-baseline.outputs.compare_file }}" in ci
     assert '--benchmark-compare="${BENCHMARK_BASELINE_FILE}"' in ci
     assert "BENCHMARK_COMPARE_FAIL: mean:10%" in ci
+    assert "BENCHMARK_IO_COMPARE_FAIL: mean:25%" in ci
+    assert "BENCHMARK_IO_JSON_OUTPUT: artifacts/benchmark/io-benchmark.json" in ci
+    assert "io-benchmark-compare.log" in ci
+    assert "--ignore=tests/performance/test_gpu_benchmark.py" in benchmark_job
     assert ".benchmarks/" in gitignore
     assert 'RUN_GPU_BENCHMARKS: "full"' in nightly_gpu
     assert ".benchmarks/` dizinini repoya commit etmek yerine GitHub Actions cache" in notes
@@ -4601,6 +5130,9 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "koşu seed moduna düşmez" in notes
     assert "name: Benchmark baseline seed" in seed_workflow
     assert "workflow_dispatch:" in seed_workflow
+    assert "runs-on: [self-hosted, linux, benchmark]" in seed_workflow
+    assert "runs-on: ubuntu-latest" not in seed_workflow
+    assert "runner.name" in seed_workflow
     assert 'BENCHMARK_COMPARE_REQUIRED: "0"' in seed_workflow
     assert 'BENCHMARK_ENFORCE_COMPARE: "0"' in seed_workflow
     assert "--benchmark-warmup-iterations=100000" in seed_workflow
@@ -4620,7 +5152,7 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "Baseline files:" in ci
     assert "retention-days: 90" in ci
     assert (
-        "benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-"
+        "benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-"
         "${{ github.ref_name }}-${{ github.run_id }}" in seed_workflow
     )
     assert "Benchmark baseline seed" in readme
@@ -4779,7 +5311,10 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
         "Install Playwright Chromium for frontend smoke tests"
     )
     assert "npx playwright install --with-deps chromium" in ci
-    assert 'FRONTEND_E2E_NPM_SCRIPT: "test:e2e:smoke"' in ci
+    # All 8 web_ui_react/e2e/ specs run here (not just the smoke default),
+    # see test_ci_runs_full_frontend_e2e_suite_not_just_smoke below for the
+    # regression this closes.
+    assert 'FRONTEND_E2E_NPM_SCRIPT: "test:e2e"' in ci
     assert "name: Upload Playwright frontend smoke report" in ci
     assert "web_ui_react/playwright-report/" in ci
     assert "web_ui_react/test-results/" in ci
@@ -4798,7 +5333,11 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert "PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium" in testing_doc
     assert "403 Domain forbidden" in readme
     package_json = Path("web_ui_react/package.json").read_text(encoding="utf-8")
-    assert '"typecheck": "tsc --noEmit"' in package_json
+    assert '"typecheck": "tsc --noEmit && npm run typecheck:inventory"' in package_json
+    assert (
+        '"typecheck:inventory": "node ../scripts/check_frontend_typescript_migration.js"'
+        in package_json
+    )
     assert '"test:e2e:smoke": "playwright test e2e/chat-websocket.spec.js"' in package_json
     playwright = Path("web_ui_react/playwright.config.js").read_text(encoding="utf-8")
     assert '["html", { outputFolder: "playwright-report", open: "never" }]' in playwright
@@ -4819,10 +5358,21 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert "port," in vite_server
     assert "strictPort: true" in vite_server
     assert "html.includes('id=\"root\"')" in vite_server
-    assert "`${url}/src/main.jsx`" in vite_server
-    assert "`${url}/src/App.jsx`" in vite_server
-    assert "`${url}/src/components/StatusBar.jsx`" in vite_server
-    assert "`${url}/src/lib/routerShim.jsx`" in vite_server
+    assert "`${url}/src/main.tsx`" in vite_server
+    assert "`${url}/src/App.tsx`" in vite_server
+    assert "`${url}/src/components/StatusBar.tsx`" in vite_server
+    assert "`${url}/src/lib/routerShim.tsx`" in vite_server
+    for migrated_component in (
+        "ChatInput.tsx",
+        "ChatMessage.tsx",
+        "ChatWindow.tsx",
+        "OperationsQaPanel.tsx",
+        "P2PDialoguePanel.tsx",
+        "PanelErrorBoundary.tsx",
+        "TenantAdminPanel.tsx",
+        "VoiceAssistantPanel.tsx",
+    ):
+        assert f'"{migrated_component}"' in vite_server
     assert 'test.describe.configure({ mode: "serial" })' in websocket_spec
     assert (
         "await page.waitForSelector('[data-testid=\"ws-status\"]', { timeout: 30_000 })"
@@ -4854,8 +5404,8 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert "localhost:7860" not in vite
     assert "optimizeDeps:" in vite
     assert '"index.html"' in vite
-    assert '"src/main.jsx"' in vite
-    assert '"src/App.jsx"' in vite
+    assert '"src/main.tsx"' in vite
+    assert '"src/App.tsx"' in vite
     assert '"src/components/*.jsx"' in vite
     assert '"!src/**/*.test.{js,jsx}"' in vite
     assert '"!e2e/**"' in vite
@@ -4882,6 +5432,56 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert ".toBeVisible({ timeout: 15_000 })" not in websocket_spec
 
 
+def test_ci_runs_full_frontend_e2e_suite_not_just_smoke() -> None:
+    """Pin CI to the full Playwright suite, not just the 1-file smoke script.
+
+    A friend code review flagged that only test:e2e:smoke (chat-websocket
+    only) ran anywhere in automation, so a regression in any of the other 7
+    named-panel specs (admin RBAC/plugin-install, agent manager, p2p
+    dialogue, prompt admin, swarm flow HITL rerun, operations tools, voice
+    assistant) could merge to main undetected -- unit tests mock the
+    backend/websocket entirely. This was already fixed (ci.yml's
+    FRONTEND_E2E_NPM_SCRIPT was switched from test:e2e:smoke to the
+    unfiltered test:e2e), but nothing pinned the fact that test:e2e is
+    genuinely unfiltered (playwright test with no path argument, so newly
+    added spec files are swept in automatically) and that all 8 named specs
+    still exist -- the dangling comment above referencing this test name
+    had no test behind it. Close that gap.
+    """
+    package_json = json.loads(Path("web_ui_react/package.json").read_text(encoding="utf-8"))
+    ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    playwright_config = Path("web_ui_react/playwright.config.js").read_text(encoding="utf-8")
+
+    assert package_json["scripts"]["test:e2e"] == "playwright test"
+    assert 'testDir: "./e2e"' in playwright_config
+    assert 'FRONTEND_E2E_NPM_SCRIPT: "test:e2e"' in ci
+    assert 'FRONTEND_E2E_NPM_SCRIPT: "test:e2e:smoke"' not in ci
+
+    e2e_dir = Path("web_ui_react/e2e")
+    spec_files = {path.name for path in e2e_dir.glob("*.spec.js")}
+    expected_specs = {
+        "admin-panels.spec.js",
+        "agent-manager.spec.js",
+        "chat-websocket.spec.js",
+        "p2p-dialogue.spec.js",
+        "prompt-admin.spec.js",
+        "swarm-flow.spec.js",
+        "tools-panel.spec.js",
+        "voice-panel.spec.js",
+    }
+    assert spec_files == expected_specs
+
+    _skip_unless_frontend_dependencies_installed("@playwright/test", "playwright")
+    list_result = subprocess.run(
+        ["npx", "playwright", "test", "--list"],
+        cwd=Path("web_ui_react"),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "Total: 10 tests in 8 files" in list_result.stdout
+
+
 def test_run_tests_tolerates_local_frontend_npm_audit_network_failures() -> None:
     """Frontend audit must not cascade-skip lint/coverage on local registry outages."""
     script = _script()
@@ -4899,14 +5499,17 @@ def test_run_tests_tolerates_local_frontend_npm_audit_network_failures() -> None
     assert "function classifyAuditFailure" in npm_audit_safe
     assert "FRONTEND_NPM_AUDIT_ALLOW_NETWORK_FAILURE" in npm_audit_safe
     assert "FRONTEND_NPM_AUDIT_MAX_RETRIES" in npm_audit_safe
+    assert "FRONTEND_NPM_AUDIT_NPM_BINARY" in npm_audit_safe
     assert (
-        'spawnSync("npm", ["audit", `--audit-level=${options.level}`, "--json"]' in npm_audit_safe
+        'spawnSync(options.npmBinary, ["audit", `--audit-level=${options.level}`, "--json"]'
+        in npm_audit_safe
     )
     assert "npm-audit-report.raw.json" in npm_audit_safe
     assert "npm-audit-stderr.log" in npm_audit_safe
     assert "npm-audit-failure.json" in npm_audit_safe
     assert "audit endpoint returned an error" in npm_audit_safe
     assert "failure_category: category" in npm_audit_safe
+    assert "hasAuditFindingsAtOrAboveLevel(payload, threshold)" in npm_audit_safe
     assert (
         "options.allowNetworkFailure = !process.env.CI && !process.env.GITHUB_ACTIONS"
         in npm_audit_safe
@@ -4919,6 +5522,306 @@ def test_run_tests_tolerates_local_frontend_npm_audit_network_failures() -> None
     )
     assert 'if [ "${FRONTEND_NPM_AUDIT_EXIT_CODE}" -ne 0 ]; then' in frontend_gate_block
     assert 'else\n          echo "🧹 Frontend lint' not in frontend_gate_block
+
+
+def test_npm_audit_safe_fails_on_high_findings_even_when_npm_exits_zero(
+    tmp_path: Path,
+) -> None:
+    """The JSON vulnerability counts must override an unreliable npm exit code."""
+    audit_wrapper = Path("scripts/npm_audit_safe.js").resolve()
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    npm = bin_dir / "npm"
+    npm.write_text(
+        "#!/usr/bin/env bash\n"
+        "cat <<'JSON'\n"
+        '{"metadata":{"vulnerabilities":{"info":0,"low":0,"moderate":0,'
+        '"high":7,"critical":0,"total":7}}}\n'
+        "JSON\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    npm.chmod(0o755)
+    artifact_dir = tmp_path / "artifacts"
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    # Volta gibi Node shim'leri child process başlamadan PATH'i yeniden
+    # sıralayabilir. Wrapper'ın açık binary kontratı testi ortamdan bağımsız tutar.
+    env["FRONTEND_NPM_AUDIT_NPM_BINARY"] = str(npm)
+
+    result = subprocess.run(
+        [
+            "node",
+            str(audit_wrapper),
+            "--level=high",
+            "--retries=1",
+            f"--artifact-dir={artifact_dir}",
+        ],
+        check=False,
+        capture_output=True,
+        env=env,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "gerçek high veya üstü güvenlik bulgusu" in result.stderr
+    failure = json.loads((artifact_dir / "npm-audit-failure.json").read_text(encoding="utf-8"))
+    assert failure["failure_category"] == "vulnerability"
+    assert failure["exit_code"] == 1
+    assert failure["audit_level"] == "high"
+
+    npm.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '%s\\n' "
+        '\'{"metadata":{"vulnerabilities":{"moderate":3,"high":0,"critical":0}}}\'\n',
+        encoding="utf-8",
+    )
+    npm.chmod(0o755)
+    below_threshold = subprocess.run(
+        [
+            "node",
+            str(audit_wrapper),
+            "--level=high",
+            "--retries=1",
+            f"--artifact-dir={artifact_dir}",
+        ],
+        check=False,
+        capture_output=True,
+        env=env,
+        text=True,
+    )
+
+    assert below_threshold.returncode == 0, below_threshold.stderr
+    assert not (artifact_dir / "npm-audit-failure.json").exists()
+
+
+def test_npm_audit_safe_accepts_only_the_verified_brace_expansion_backport(
+    tmp_path: Path,
+) -> None:
+    """The temporary advisory exception must be exact and fail closed."""
+    audit_wrapper = Path("scripts/npm_audit_safe.js").resolve()
+    npm = tmp_path / "npm"
+    npm.write_text(
+        "#!/usr/bin/env bash\nprintf '%s\\n' \"$AUDIT_JSON\"\nexit 1\n",
+        encoding="utf-8",
+    )
+    npm.chmod(0o755)
+    (tmp_path / "package-lock.json").write_text(
+        json.dumps(
+            {
+                "packages": {
+                    "node_modules/minimatch/node_modules/brace-expansion": {"version": "1.1.17"}
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    manifest_path = tmp_path / "package.json"
+    manifest_path.write_text(
+        json.dumps({"overrides": {"brace-expansion": "1.1.17"}}), encoding="utf-8"
+    )
+    vulnerabilities = {
+        "brace-expansion": {
+            "severity": "high",
+            "via": [{"source": 1124334, "severity": "high"}],
+        },
+        "minimatch": {"severity": "high", "via": ["brace-expansion"]},
+        "eslint": {"severity": "high", "via": ["minimatch"]},
+    }
+
+    def run_audit(
+        payload: dict[str, object], *, test_now: str | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        env = {
+            **os.environ,
+            "AUDIT_JSON": json.dumps(payload),
+            "FRONTEND_NPM_AUDIT_NPM_BINARY": str(npm),
+        }
+        if test_now is not None:
+            env["FRONTEND_NPM_AUDIT_TEST_NOW"] = test_now
+        return subprocess.run(
+            [
+                "node",
+                str(audit_wrapper),
+                "--level=high",
+                "--retries=1",
+                f"--artifact-dir={tmp_path / 'artifacts'}",
+            ],
+            cwd=tmp_path,
+            check=False,
+            capture_output=True,
+            env=env,
+            text=True,
+        )
+
+    patched = run_audit(
+        {
+            "vulnerabilities": vulnerabilities,
+            "metadata": {"vulnerabilities": {"high": 3}},
+        }
+    )
+    assert patched.returncode == 0, patched.stderr
+    assert "1.1.17 güvenlik backport'unu" in patched.stderr
+    assert "docs/development/frontend-eslint-10-migration.md" in patched.stderr
+    assert "2026-09-30T00:00:00Z" in patched.stderr
+    assert "Bu tarihte kapı fail-closed kapanır" in patched.stderr
+    exception = json.loads(
+        (tmp_path / "artifacts/npm-audit-exception.json").read_text(encoding="utf-8")
+    )
+    assert exception["advisory"] == "GHSA-mh99-v99m-4gvg"
+    assert exception["backport_version"] == "1.1.17"
+    assert exception["exception_review_at"] == "2026-09-30T00:00:00Z"
+    assert exception["days_remaining"] > 0
+    assert exception["maintenance_plan"] == ("docs/development/frontend-eslint-10-migration.md")
+
+    manifest_path.write_text(json.dumps({"overrides": {}}), encoding="utf-8")
+    missing_durable_pin = run_audit(
+        {
+            "vulnerabilities": vulnerabilities,
+            "metadata": {"vulnerabilities": {"high": 3}},
+        }
+    )
+    assert missing_durable_pin.returncode == 1
+    assert "gerçek high veya üstü güvenlik bulgusu" in missing_durable_pin.stderr
+    assert not (tmp_path / "artifacts/npm-audit-exception.json").exists()
+    manifest_path.write_text(
+        json.dumps({"overrides": {"brace-expansion": "1.1.17"}}), encoding="utf-8"
+    )
+
+    expired = run_audit(
+        {
+            "vulnerabilities": vulnerabilities,
+            "metadata": {"vulnerabilities": {"high": 3}},
+        },
+        test_now="2026-09-30T00:00:00Z",
+    )
+    assert expired.returncode == 1
+    assert "yeniden değerlendirme tarihi doldu" in expired.stderr
+    failure = json.loads(
+        (tmp_path / "artifacts/npm-audit-failure.json").read_text(encoding="utf-8")
+    )
+    assert failure["failure_category"] == "expired_exception"
+    assert failure["exception_review_at"] == "2026-09-30T00:00:00Z"
+    assert not (tmp_path / "artifacts/npm-audit-exception.json").exists()
+
+    vulnerabilities["unrelated-package"] = {
+        "severity": "critical",
+        "via": [{"source": 9999999, "severity": "critical"}],
+    }
+    unrelated = run_audit(
+        {
+            "vulnerabilities": vulnerabilities,
+            "metadata": {"vulnerabilities": {"high": 3, "critical": 1}},
+        }
+    )
+    assert unrelated.returncode == 1
+    assert "gerçek high veya üstü güvenlik bulgusu" in unrelated.stderr
+
+
+def test_frontend_eslint_10_exception_has_a_bounded_migration_plan() -> None:
+    """The temporary npm advisory exception must remain documented and removable."""
+    plan = Path("docs/development/frontend-eslint-10-migration.md").read_text(encoding="utf-8")
+
+    assert "yedi bağımsız güvenlik açığı değildir" in plan
+    assert "`overrides.brace-expansion` kalıcı pini" in plan
+    assert "eslint-plugin-react@7.37.5" in plan
+    assert "eslint-plugin-jsx-a11y@6.10.2" in plan
+    assert "**İlk yeniden değerlendirme:** 2026-09-30" in plan
+    assert "`expired_exception` kategorisiyle fail-closed" in plan
+    assert "FRONTEND_NPM_AUDIT_ALLOW_NETWORK_FAILURE=0 npm run audit:high" in plan
+    assert "`PATCHED_BRACE_EXPANSION_*` istisnasını" in plan
+
+
+def test_frontend_security_exception_has_scheduled_fail_closed_review() -> None:
+    """The dated advisory exception must be checked even without repository activity."""
+    workflow = Path(".github/workflows/frontend-security-review.yml").read_text(encoding="utf-8")
+    plan = Path("docs/development/frontend-eslint-10-migration.md").read_text(encoding="utf-8")
+
+    assert 'cron: "17 6 * * 1"' in workflow
+    assert "workflow_dispatch:" in workflow
+    assert 'FRONTEND_NPM_AUDIT_ALLOW_NETWORK_FAILURE: "0"' in workflow
+    assert "run: npm run audit:high" in workflow
+    assert "if: ${{ always() }}" in workflow
+    assert "path: artifacts/frontend-security/" in workflow
+    assert "if-no-files-found: error" in workflow
+    assert ".github/workflows/frontend-security-review.yml" in plan
+    assert "son tarihe yakın bir PR veya push olmasa bile" in plan
+
+
+def test_frontend_typescript_inventory_ratchet_fails_closed(tmp_path: Path) -> None:
+    """The migration inventory must reject new untyped debt and typed regressions."""
+    checker = Path("scripts/check_frontend_typescript_migration.js").resolve()
+    source = tmp_path / "src"
+    source.mkdir()
+    (source / "legacy.jsx").write_text("export default null;\n", encoding="utf-8")
+    (source / "typed.ts").write_text("export const value: number = 1;\n", encoding="utf-8")
+    baseline = tmp_path / "typescript-migration-baseline.json"
+    baseline.write_text(
+        json.dumps({"maximum_untyped_files": 1, "minimum_typed_files": 1}), encoding="utf-8"
+    )
+
+    def run_inventory() -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["node", str(checker), f"--root={tmp_path}"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+    assert run_inventory().returncode == 0
+
+    (source / "new-debt.js").write_text("export const debt = true;\n", encoding="utf-8")
+    increased = run_inventory()
+    assert increased.returncode == 1
+    assert "untyped source count increased: 2 > 1" in increased.stderr
+
+    (source / "new-debt.js").unlink()
+    (source / "typed.ts").unlink()
+    decreased = run_inventory()
+    assert decreased.returncode == 1
+    assert "typed source count decreased: 0 < 1" in decreased.stderr
+
+
+def test_frontend_typescript_inventory_enforces_dated_milestones(tmp_path: Path) -> None:
+    """Dated migration targets must become fail-closed without a manual baseline edit."""
+    checker = Path("scripts/check_frontend_typescript_migration.js").resolve()
+    source = tmp_path / "src"
+    source.mkdir()
+    (source / "legacy.jsx").write_text("export default null;\n", encoding="utf-8")
+    (source / "typed.ts").write_text("export const value: number = 1;\n", encoding="utf-8")
+    (tmp_path / "typescript-migration-baseline.json").write_text(
+        json.dumps(
+            {
+                "maximum_untyped_files": 1,
+                "minimum_typed_files": 1,
+                "milestones": [
+                    {
+                        "deadline": "2026-09-30",
+                        "maximum_untyped_files": 0,
+                        "minimum_typed_files": 2,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    before = subprocess.run(
+        ["node", str(checker), f"--root={tmp_path}", "--date=2026-09-29"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    after = subprocess.run(
+        ["node", str(checker), f"--root={tmp_path}", "--date=2026-09-30"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert before.returncode == 0
+    assert after.returncode == 1
+    assert "2026-09-30 milestone missed: untyped=1 > 0" in after.stderr
+    assert "2026-09-30 milestone missed: typed=1 < 2" in after.stderr
 
 
 def test_frontend_quality_signals_do_not_fail_fast_after_lint() -> None:
@@ -5001,6 +5904,7 @@ def test_frontend_bundle_budget_warns_when_totals_approach_budget(tmp_path: Path
     assets_dir.mkdir()
     chunk_path = assets_dir / "react-dom-near-budget.js"
     chunk_path.write_text("a" * 950, encoding="utf-8")
+    (assets_dir / "ChatMarkdownRenderer-stub.js").write_text("a", encoding="utf-8")
     report_path = tmp_path / "bundle-budget.json"
 
     env = os.environ.copy()
@@ -5036,6 +5940,9 @@ def test_frontend_bundle_budget_requires_total_budgets_for_ci_gate(tmp_path: Pat
     assets_dir.mkdir()
     chunk_path = assets_dir / "react-dom-test.js"
     chunk_path.write_text("console.log('react-dom');\n", encoding="utf-8")
+    (assets_dir / "ChatMarkdownRenderer-stub.js").write_text(
+        "console.log('markdown');\n", encoding="utf-8"
+    )
     report_path = tmp_path / "bundle-budget.json"
 
     env = os.environ.copy()
@@ -5066,6 +5973,101 @@ def test_frontend_bundle_budget_requires_total_budgets_for_ci_gate(tmp_path: Pat
         "SIDAR_TOTAL_JS_BUDGET_KB",
         "SIDAR_TOTAL_GZIP_BUDGET_KB",
     ]
+
+
+def test_frontend_bundle_budget_gates_the_markdown_vendor_chunk_independently(
+    tmp_path: Path,
+) -> None:
+    """ChatMarkdownRenderer must have its own tripwire, not just the total budget.
+
+    A friend code review flagged that only the react-dom chunk had a
+    dedicated budget -- an accidentally-eager import or a new remark/rehype
+    plugin bloating the lazy markdown vendor graph (react-markdown +
+    remark-gfm + their transitive parser packages, the largest non-vendor
+    chunk) would only trip a gate once the *total* JS/gzip budget was
+    exceeded, by which point it's already grown a lot. Pin that the
+    ChatMarkdownRenderer chunk is now gated the same way react-dom is:
+    independently, regardless of how much total-budget headroom remains.
+    """
+    assets_dir = tmp_path / "assets"
+    assets_dir.mkdir()
+    (assets_dir / "react-dom-test.js").write_text("a" * 100, encoding="utf-8")
+    (assets_dir / "ChatMarkdownRenderer-test.js").write_text("a" * 2048, encoding="utf-8")
+    report_path = tmp_path / "bundle-budget.json"
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "SIDAR_REACT_DOM_CHUNK_BUDGET_KB": "220",
+            "SIDAR_MARKDOWN_CHUNK_BUDGET_KB": "1",
+            "SIDAR_TOTAL_JS_BUDGET_KB": "500",
+            "SIDAR_TOTAL_GZIP_BUDGET_KB": "500",
+            "SIDAR_BUNDLE_BUDGET_REPORT_PATH": str(report_path),
+            "SIDAR_BUNDLE_ASSETS_DIR": str(assets_dir),
+        }
+    )
+
+    result = subprocess.run(
+        ["node", "web_ui_react/scripts/check-bundle-budget.mjs"],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert result.returncode != 0
+    assert "ChatMarkdownRenderer chunk ChatMarkdownRenderer-test.js exceeds budget" in (
+        result.stdout + result.stderr
+    )
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    markdown_budget = next(
+        chunk for chunk in report["namedChunks"] if chunk["label"] == "ChatMarkdownRenderer"
+    )
+    assert markdown_budget["budgetKb"] == 1
+    assert markdown_budget["chunks"][0]["name"] == "ChatMarkdownRenderer-test.js"
+    # A well-within-budget total must not mask the per-chunk failure.
+    assert report["budgetUsage"]["totalJs"]["warning"] is False
+
+
+def test_frontend_rehype_sidar_highlight_has_its_own_manual_chunk() -> None:
+    """Pin the cache-isolation split behind the ChatMarkdownRenderer budget.
+
+    A friend code review pointed out that rehypeSidarHighlight.ts (Sidar's
+    own rehype plugin) was co-bundled with the large, rarely-changing
+    react-markdown/remark-gfm vendor parser graph in one lazy chunk --
+    editing Sidar's own highlight config (e.g. adding a language) busted
+    the cache for the entire vendor bundle too. vite.config.js now gives it
+    a dedicated manual chunk so the vendor graph's cache survives those
+    edits; scripts/check-bundle-budget.mjs gates the (now vendor-only)
+    ChatMarkdownRenderer chunk with its own budget instead of relying on
+    the total JS/gzip budget alone.
+    """
+    vite_config = Path("web_ui_react/vite.config.js").read_text(encoding="utf-8")
+    bundle_budget_script = Path("web_ui_react/scripts/check-bundle-budget.mjs").read_text(
+        encoding="utf-8"
+    )
+    readme = Path("web_ui_react/README.md").read_text(encoding="utf-8")
+
+    assert 'id.endsWith("/src/lib/rehypeSidarHighlight.ts")' in vite_config
+    assert 'return "rehype-sidar-highlight";' in vite_config
+    assert "namedChunkBudgets" in bundle_budget_script
+    assert "SIDAR_MARKDOWN_CHUNK_BUDGET_KB" in bundle_budget_script
+    assert "ChatMarkdownRenderer" in bundle_budget_script
+    assert "SIDAR_MARKDOWN_CHUNK_BUDGET_KB=190" in readme
+    assert "rehype-sidar-highlight-*.js" in readme
+    assert "ChatMarkdownRenderer-*.js" in readme
+
+    _skip_unless_frontend_dependencies_installed("vite", "@vitejs/plugin-react", "react-markdown")
+    build_result = subprocess.run(
+        ["npm", "run", "build"],
+        cwd=Path("web_ui_react"),
+        capture_output=True,
+        text=True,
+    )
+    assert build_result.returncode == 0, build_result.stdout + build_result.stderr
+    emitted = [path.name for path in Path("web_ui_react/dist/assets").glob("*.js")]
+    assert any(name.startswith("rehype-sidar-highlight-") for name in emitted)
+    assert any(name.startswith("ChatMarkdownRenderer-") for name in emitted)
 
 
 def test_frontend_playwright_e2e_retries_once_and_preserves_retry_failure(tmp_path: Path) -> None:
@@ -5166,7 +6168,7 @@ format_backend_failure_reasons() { printf 'none'; }
 
 
 def test_websocket_mount_status_is_resolved_before_first_paint() -> None:
-    websocket_hook = Path("web_ui_react/src/hooks/useWebSocket.js").read_text(encoding="utf-8")
+    websocket_hook = Path("web_ui_react/src/hooks/useWebSocket.ts").read_text(encoding="utf-8")
 
     assert (
         'import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";'
@@ -6129,3 +7131,45 @@ def test_production_secret_rotation_gate_rejects_missing_production_profile(
     )
 
     assert probe.stdout.strip() == "blocked"
+
+
+def test_frontend_eslint_covers_typescript_sources_including_a11y_rules() -> None:
+    """Guard the .ts/.tsx lint-coverage fix so it can't silently regress.
+
+    A friend code review flagged (independently confirmed already fixed by
+    an earlier commit in this same PR) that eslint.config.js's rule block
+    only matched src/**/*.{js,jsx} and the lint script only passed
+    --ext .js,.jsx -- so once the TypeScript migration finished, jsx-a11y/
+    react/react-hooks rules covered zero production components, only test
+    files. A regressed disable comment (e.g. GraphView.tsx's
+    jsx-a11y/no-noninteractive-element-to-interactive-role suppression)
+    would go silently untracked. Pin the fix so the glob/ext can't drift
+    back to js/jsx-only without a test failure.
+    """
+    eslint_config = Path("web_ui_react/eslint.config.js").read_text(encoding="utf-8")
+    package_json = json.loads(Path("web_ui_react/package.json").read_text(encoding="utf-8"))
+    graph_view = Path("web_ui_react/src/components/panels/swarm/GraphView.tsx").read_text(
+        encoding="utf-8"
+    )
+
+    assert package_json["scripts"]["lint"] == (
+        "eslint src --ext .js,.jsx,.ts,.tsx --report-unused-disable-directives"
+    )
+    assert 'files: ["src/**/*.{ts,tsx}"]' in eslint_config
+    assert "typescript-eslint" in eslint_config
+    assert "tseslint.configs.recommended" in eslint_config
+    ts_block_start = eslint_config.index('files: ["src/**/*.{ts,tsx}"]')
+    ts_block_end = eslint_config.index("}),", ts_block_start)
+    ts_block = eslint_config[ts_block_start:ts_block_end]
+    assert "reactAndA11yRules" in ts_block
+    assert "reactAndA11yPlugins" in ts_block
+    assert "jsx-a11y/no-noninteractive-element-to-interactive-role" in graph_view
+
+    _skip_unless_frontend_dependencies_installed("typescript-eslint", "eslint-plugin-jsx-a11y")
+    lint = subprocess.run(
+        ["npm", "run", "lint"],
+        cwd=Path("web_ui_react"),
+        capture_output=True,
+        text=True,
+    )
+    assert lint.returncode == 0, lint.stdout + lint.stderr

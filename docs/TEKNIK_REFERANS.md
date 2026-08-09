@@ -1,8 +1,14 @@
-# Sidar v5.1.0-docs / v5.0.0-alpha runtime — Teknik Referans ve Operasyon Kılavuzu
+# Sidar v5.2.0 — Teknik Referans ve Operasyon Kılavuzu
 
 Bu doküman, Sidar projesinin **uygulama seviyesinde teknik sözleşmelerini** (DB şeması, endpoint envanteri, WebSocket protokolü, agent akışı, operasyon parametreleri) toplar.
 
-> Mimari değerlendirme, üst düzey güvenlik özeti, test kapsamı ve roadmap için `PROJE_RAPORU.md` dosyasını kullanın.
+> **Sürüm sözleşmesi:** Aktif ürün/runtime baseline `v5.2.0`'dır. Dosya adında sürüm
+> taşıyan v5.0 ve v5.1 mimari/audit belgeleri tarihsel vizyon ve faz kayıtlarıdır;
+> çalışma zamanı sürümü için `pyproject.toml` ve `sidar_version.py` esas alınır.
+
+> Aktif v5.2.0 bileşen/sahiplik sınırları için `ARCHITECTURE.md`; üst düzey
+> güvenlik özeti, test kapsamı ve roadmap için bölümlenmiş `PROJE_RAPORU.md`
+> indeksini kullanın.
 > Son doğrulama turu: **2026-03-21** — `main.py`, `cli.py`, `web_server.py`, `config.py`, `github_upload.py` ve `gui_launcher.py` root kontrol düzlemi yeniden satır satır doğrulanmıştır.
 > Bu senkronizasyon turunda `web_server.py`, `core/db.py` ve `config.py` tekrar kontrol edilmiş; REST endpoint envanteri (**62**) ve WebSocket yüzeyi (`/ws/chat`, `/ws/voice`) güncellenmiş, veri tabanı tabloları ile Config tarafından okunan env anahtarları yeni multimodal/browser/autonomy değişkenleri dahil yeniden senkronize edilmiştir. Ayrıca `nightly_memory_loop` davranışı, gece bakım döngüsünün vektör/RAG optimizasyonu açısından teknik alt başlık olarak bu belgeye işlenmiştir.
 

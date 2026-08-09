@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import AsyncGenerator, Generator
+from importlib.util import find_spec
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -13,7 +14,11 @@ import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
-from testcontainers.postgres import PostgresContainer
+
+if find_spec("testcontainers.community") is not None:
+    from testcontainers.community.postgres import PostgresContainer
+else:  # testcontainers < 4.15
+    from testcontainers.postgres import PostgresContainer
 
 from tests.helpers import make_test_config
 

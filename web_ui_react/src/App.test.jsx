@@ -2,13 +2,13 @@ import React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, beforeEach, expect, it, vi } from "vitest";
-import { MemoryRouter } from "./lib/routerShim.jsx";
-import App from "./App.jsx";
+import { MemoryRouter } from "./lib/routerShim.tsx";
+import App from "./App.tsx";
 import * as api from "./lib/api.js";
 
 const { chatPanelMountSpy } = vi.hoisted(() => ({ chatPanelMountSpy: vi.fn() }));
 
-vi.mock("./components/ChatPanel.jsx", () => ({
+vi.mock("./components/ChatPanel.js", () => ({
   ChatPanel: () => {
     React.useEffect(() => {
       chatPanelMountSpy();
@@ -16,12 +16,12 @@ vi.mock("./components/ChatPanel.jsx", () => ({
     return <div data-testid="chat-panel">Chat Panel Mock</div>;
   },
 }));
-vi.mock("./components/P2PDialoguePanel.jsx", () => ({ P2PDialoguePanel: () => <div>P2P Mock</div> }));
-vi.mock("./components/SwarmFlowPanel.jsx", () => ({ SwarmFlowPanel: () => <div>Swarm Mock</div> }));
+vi.mock("./components/P2PDialoguePanel.tsx", () => ({ P2PDialoguePanel: () => <div>P2P Mock</div> }));
+vi.mock("./components/SwarmFlowPanel.js", () => ({ SwarmFlowPanel: () => <div>Swarm Mock</div> }));
 vi.mock("./components/TenantAdminPanel.jsx", () => ({ TenantAdminPanel: () => <div>Tenant Mock</div> }));
-vi.mock("./components/PromptAdminPanel.jsx", () => ({ PromptAdminPanel: () => <div>Prompt Mock</div> }));
-vi.mock("./components/AgentManagerPanel.jsx", () => ({ AgentManagerPanel: () => <div>Agent Manager Mock</div> }));
-vi.mock("./components/PluginMarketplacePanel.jsx", () => ({ PluginMarketplacePanel: () => <div>Plugin Marketplace Mock</div> }));
+vi.mock("./components/PromptAdminPanel.js", () => ({ PromptAdminPanel: () => <div>Prompt Mock</div> }));
+vi.mock("./components/AgentManagerPanel.js", () => ({ AgentManagerPanel: () => <div>Agent Manager Mock</div> }));
+vi.mock("./components/PluginMarketplacePanel.js", () => ({ PluginMarketplacePanel: () => <div>Plugin Marketplace Mock</div> }));
 vi.mock("./components/OperationsQaPanel.jsx", () => ({ OperationsQaPanel: () => <div>Ops QA Mock</div> }));
 
 vi.mock("./lib/api.js", async () => {

@@ -247,10 +247,26 @@ describe("useWebSocket — mesaj işleme", () => {
   it("calls onRoomState for room_state message", () => {
     const onRoomState = vi.fn();
     setup({ onRoomState });
+    const participants = [{ id: "user-1" }];
+    const messages = [{ id: "message-1", content: "Merhaba" }];
+    const telemetry = [{ kind: "status", content: "Hazır" }];
     act(() => {
-      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "room_state", room_id: "ws:demo", messages: [] }) });
+      wsMockInstance.onmessage?.({
+        data: JSON.stringify({
+          type: "room_state",
+          room_id: "ws:demo",
+          participants,
+          messages,
+          telemetry,
+        }),
+      });
     });
-    expect(onRoomState).toHaveBeenCalledTimes(1);
+    expect(onRoomState).toHaveBeenCalledWith(expect.objectContaining({
+      room_id: "ws:demo",
+      participants,
+      messages,
+      telemetry,
+    }));
   });
 
   it("calls onPresence for presence message", () => {
@@ -386,6 +402,42 @@ describe("useWebSocket — mesaj işleme", () => {
 
     expect(onChunk).toHaveBeenCalledWith("legacy chunk");
     expect(onError).toHaveBeenCalledWith("legacy error");
+  });
+
+  it("prefers legacy content fields for generic chunk and error payloads", () => {
+    const onChunk = vi.fn();
+    const onError = vi.fn();
+    setup({ onChunk, onError });
+
+    act(() => {
+      wsMockInstance.onmessage?.({
+        data: JSON.stringify({ type: "chunk", chunk: "fallback", content: "content chunk" }),
+      });
+      wsMockInstance.onmessage?.({
+        data: JSON.stringify({ type: "error", error: "fallback", content: "content error" }),
+      });
+    });
+
+    expect(onChunk).toHaveBeenCalledWith("content chunk");
+    expect(onError).toHaveBeenCalledWith("content error");
+  });
+
+  it("normalizes non-string frames and empty legacy fields", () => {
+    const onChunk = vi.fn();
+    const onError = vi.fn();
+    setup({ onChunk, onError });
+
+    act(() => {
+      wsMockInstance.onmessage?.({ data: { toString: () => JSON.stringify({ chunk: "binary-like" }) } });
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "chunk", chunk: null }) });
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "error", error: null }) });
+      wsMockInstance.onmessage?.({ data: JSON.stringify([]) });
+    });
+
+    expect(onChunk).toHaveBeenCalledWith("binary-like");
+    expect(onChunk).toHaveBeenCalledWith("");
+    expect(onError).toHaveBeenCalledWith("");
+    expect(onChunk).toHaveBeenCalledWith("[]");
   });
 
   it("routes standalone tool_call and thought payloads", () => {

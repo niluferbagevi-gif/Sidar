@@ -19,11 +19,34 @@ run_installer_function() {
     trap "rm -rf \"$test_summary_tmpdir\"" EXIT
     export TEST_SUMMARY_JSON="$test_summary_tmpdir/nonexistent-test-summary.json"
     export SIDAR_INSTALL_TEST_MODE=1
+    # Installer function tests must not inherit quality-gate state from the
+    # run_tests.sh process that invokes BATS (notably production-readiness).
     unset DATABASE_URL TEST_DATABASE_URL POSTGRES_PASSWORD
+    unset SIDAR_PRODUCTION_READINESS PRODUCTION_READINESS TEST_PROFILE
+    unset RUN_BENCHMARKS RUN_FRONTEND_E2E AUTO_OPEN_ARTIFACTS
     set --
     source ./install_sidar.sh
     eval "$test_snippet"
   ' _ "$root" "$snippet"
+}
+
+@test "installer helper isolates tests from inherited quality-gate environment" {
+  export SIDAR_PRODUCTION_READINESS=1
+  export PRODUCTION_READINESS=1
+  export TEST_PROFILE=ci
+  export RUN_BENCHMARKS=required
+  export RUN_FRONTEND_E2E=1
+  export AUTO_OPEN_ARTIFACTS=1
+
+  run_installer_function '
+    [[ -z "${SIDAR_PRODUCTION_READINESS+x}" ]]
+    [[ -z "${PRODUCTION_READINESS+x}" ]]
+    [[ -z "${TEST_PROFILE+x}" ]]
+    [[ -z "${RUN_BENCHMARKS+x}" ]]
+    [[ -z "${RUN_FRONTEND_E2E+x}" ]]
+    [[ -z "${AUTO_OPEN_ARTIFACTS+x}" ]]
+  '
+  [ "$status" -eq 0 ]
 }
 
 @test "normalize_bool maps accepted true/false values and rejects unknown input" {
@@ -734,6 +757,15 @@ POSTGRES_PASSWORD=postgres
 ENV
 
   run_installer_function "
+    # harden_database_credentials is called with only \$env_file (no explicit
+    # variant specs) below, on purpose, to exercise its default variant-sync
+    # fallback. That fallback resolves .env.development/.env.test/.env.advanced
+    # relative to \$SCRIPT_DIR (see sidar_default_db_env_variant_specs), so
+    # SCRIPT_DIR must point at the isolated tmpdir here — otherwise it silently
+    # writes this fixture's generated password into the real repo's dotenv
+    # files, which previously broke unrelated CI steps (PostgreSQL smoke
+    # tests) that run later in the same job/workspace.
+    SCRIPT_DIR='$tmpdir'
     generate_secure_token() { printf '%s\\n' 'GeneratedStrongDbToken_1234567890'; }
     harden_database_credentials '$env_file'
     grep -q '^DATABASE_URL=postgresql+asyncpg://sidar:GeneratedStrongDbToken_1234567890@localhost:5432/sidar?ssl=disable$' '$env_file'
@@ -1039,6 +1071,32 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "ensure_database_url_defaults validates a freshly composed DSN" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    env_file="$tmpdir/.env"
+    existing_password="N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh"
+    cat > "$env_file" <<EOF
+POSTGRES_USER=sidar_user
+POSTGRES_PASSWORD=$existing_password
+POSTGRES_DB=sidar_development
+EOF
+    validation_log="$tmpdir/database-name-validation.log"
+    database_name_from_postgresql_url() {
+      printf "%s\n" "$1" >> "$validation_log"
+      printf "%s\n" "sidar_development"
+    }
+
+    ensure_database_url_defaults "$env_file"
+
+    grep -q "^postgresql+asyncpg://sidar_user:$existing_password@127.0.0.1:5432/sidar_development$" "$validation_log"
+    grep -q "^DATABASE_URL=postgresql+asyncpg://sidar_user:$existing_password@127.0.0.1:5432/sidar_development$" "$env_file"
+    ! grep -q "[?&]ssl=" "$env_file"
+  '
+  [ "$status" -eq 0 ]
+}
+
 @test "ensure_database_url_defaults rotates weak PostgreSQL password when composing missing DSNs" {
   run_installer_function '
     tmpdir="$(mktemp -d)"
@@ -1060,6 +1118,112 @@ EOF
     grep -q "^DATABASE_URL=postgresql+asyncpg://sidar:$generated_password@127.0.0.1:5432/sidar$" "$env_file"
     grep -q "^SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:$generated_password@postgres:5432/sidar$" "$env_file"
     [[ "${DB_PASSWORD_HARDENED:-}" == "true" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "ensure_database_url_defaults replaces asyncpg-incompatible ssl query URLs" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    env_file="$tmpdir/.env"
+    strong_password="N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh"
+    cat > "$env_file" <<EOF
+POSTGRES_USER=sidar
+POSTGRES_PASSWORD=$strong_password
+POSTGRES_DB=sidar_development
+DATABASE_URL=postgresql+asyncpg://sidar:legacy@localhost:5432/sidar?application_name=sidar&ssl=disable
+EOF
+
+    ensure_database_url_defaults "$env_file"
+
+    grep -q "^DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@127.0.0.1:5432/sidar_development$" "$env_file"
+    grep -q "^SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@postgres:5432/sidar_development$" "$env_file"
+    ! grep -q "[?&]ssl=" "$env_file"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "ensure_database_url_defaults identifies the target env variant in ssl repair logs" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    env_file="$tmpdir/.env.development"
+    strong_password="N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh"
+    cat > "$env_file" <<EOF
+POSTGRES_USER=sidar
+POSTGRES_PASSWORD=$strong_password
+POSTGRES_DB=sidar_development
+DATABASE_URL=postgresql+asyncpg://sidar:legacy@localhost:5432/sidar?ssl=disable
+EOF
+
+    ensure_database_url_defaults "$env_file"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *".env.development içinde asyncpg ile uyumsuz ssl query parametresi"* ]]
+  [[ "$output" == *".env.development: Uyumsuz ssl parametresi kaldırıldı"* ]]
+}
+
+@test "ensure_database_url_defaults aligns database name with profile POSTGRES_DB" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    env_file="$tmpdir/.env"
+    strong_password="N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh"
+    cat > "$env_file" <<EOF
+POSTGRES_USER=sidar
+POSTGRES_PASSWORD=$strong_password
+POSTGRES_DB=sidar_development
+DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@localhost:5432/sidar
+EOF
+
+    ensure_database_url_defaults "$env_file"
+
+    grep -q "^POSTGRES_DB=sidar_development$" "$env_file"
+    grep -q "^DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@127.0.0.1:5432/sidar_development$" "$env_file"
+    grep -q "^SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@postgres:5432/sidar_development$" "$env_file"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "database URL defaults repair stale ssl parameters in every existing env variant" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    strong_password="N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh"
+
+    for variant in .env.development .env.test .env.advanced; do
+      cat > "$tmpdir/$variant" <<EOF
+POSTGRES_USER=sidar
+POSTGRES_PASSWORD=$strong_password
+POSTGRES_DB=sidar
+DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@127.0.0.1:5432/sidar?ssl=disable
+EOF
+    done
+
+    ensure_database_url_defaults_for_variants
+
+    for variant in .env.development .env.test .env.advanced; do
+      grep -q "^DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@127.0.0.1:5432/sidar$" "$tmpdir/$variant"
+      grep -q "^SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@postgres:5432/sidar$" "$tmpdir/$variant"
+      ! grep -q "[?&]ssl=" "$tmpdir/$variant"
+    done
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "database URL variant repair skips missing dotenv files" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+
+    ensure_database_url_defaults_for_variants
+
+    [[ ! -e "$tmpdir/.env.development" ]]
+    [[ ! -e "$tmpdir/.env.test" ]]
+    [[ ! -e "$tmpdir/.env.advanced" ]]
   '
   [ "$status" -eq 0 ]
 }
@@ -2053,6 +2217,7 @@ EOF
     prepare_docker_for_migrations() { events+=(prepare_docker_for_migrations); }
     ensure_postgres_databases_exist() { events+=(ensure_postgres_databases_exist); }
     run_migrations() { events+=(run_migrations); }
+    seed_rag_metadata_after_migrations() { events+=(seed_rag_metadata_after_migrations); }
     download_ollama_models() { events+=(download_ollama_models); }
     launch_docker_services() { events+=(launch_docker_services); }
     run_smoke_tests() { events+=(run_smoke_tests); }
@@ -2062,7 +2227,7 @@ EOF
 
     sidar_phase_local_migrations_and_models
     sidar_phase_services_and_validation
-    [[ "${events[*]}" == "source:ollama_models.sh prepare_docker_for_migrations ensure_postgres_databases_exist run_migrations download_ollama_models phase06_docker_daemon_gate_or_fail run_pre_service_installer_smoke_gate launch_docker_services run_smoke_tests run_install_integration_api_tests run_install_frontend_quality_validation run_test_artifact_audit" ]]
+    [[ "${events[*]}" == "source:ollama_models.sh prepare_docker_for_migrations ensure_postgres_databases_exist run_migrations seed_rag_metadata_after_migrations download_ollama_models phase06_docker_daemon_gate_or_fail run_pre_service_installer_smoke_gate launch_docker_services run_smoke_tests run_install_integration_api_tests run_install_frontend_quality_validation run_test_artifact_audit" ]]
   '
   [ "$status" -eq 0 ]
 }
@@ -2131,6 +2296,19 @@ EOF
     [[ "$MIGRATION_STATUS" == "tam_docker_modu_nedeniyle_atlandi" ]]
   '
   [ "$status" -eq 0 ]
+}
+
+@test "finish summary links RAG onboarding and explains automatic metadata seed" {
+  run_installer_function '
+    print_optional_rag_next_step
+  '
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"RAG/GraphRAG hazır oluşunu doğrula"* ]]
+  [[ "$output" == *"metadata seed varsayılan olarak migrasyondan sonra uygulanır"* ]]
+  [[ "$output" == *"uv run python -m scripts.seed_rag"* ]]
+  [[ "$output" == *"uv run python -m core.doctor artifacts/install/doctor.json"* ]]
+  [[ "$output" == *"docs/RAG_ONBOARDING.md"* ]]
 }
 
 @test "WSL GPU preflight supports explicit off and CPU skip modes" {
@@ -2750,6 +2928,23 @@ ENV
   [[ "$output" == *"mode=600"* ]]
   [[ "$output" == *"mode=400"* ]]
   [[ "$output" != *"izinleri güvenli değil"* ]]
+}
+
+@test "summary counts non-empty API keys from external secret overlay" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SIDAR_KEYS_FILE="$tmpdir/.sidar_keys.env"
+    cat > "$SIDAR_KEYS_FILE" <<EOF
+OPENAI_API_KEY=secret-openai
+GEMINI_API_KEY=secret-gemini
+ANTHROPIC_API_KEY=
+EOF
+
+    [[ "$(sidar_summary_external_api_key_count)" == "2" ]]
+  '
+
+  [ "$status" -eq 0 ]
 }
 
 @test "verify_sidar_keys_file_permissions repairs generated env secret file permissions" {

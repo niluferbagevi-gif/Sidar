@@ -644,3 +644,19 @@ async def test_create_pull_request_hitl_rejects_without_approval(manager, monkey
     assert "insan onayı" in message
     manager._repo.create_pull.assert_not_called()
     gate.request_approval.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_create_pull_request_hitl_delegates_after_approval(manager, monkeypatch):
+    gate = SimpleNamespace(request_approval=AsyncMock(return_value=True))
+    monkeypatch.setattr("managers.github_manager.get_hitl_gate", lambda: gate)
+    manager._repo.create_pull = Mock(wraps=manager._repo.create_pull)
+
+    ok, message = await manager.create_pull_request_hitl("Title", "Body", "feat/x", "main")
+
+    assert ok is True
+    assert "Pull Request oluşturuldu" in message
+    manager._repo.create_pull.assert_called_once_with(
+        title="Title", body="Body", head="feat/x", base="main"
+    )
+    gate.request_approval.assert_awaited_once()

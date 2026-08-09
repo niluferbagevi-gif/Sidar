@@ -41,6 +41,28 @@ validate_downloaded_script_file() {
     fi
 }
 
+warn_if_node_major_mismatch() {
+    local node_path="${1:-}"
+    local target_major="${2:-}"
+    local install_source="${3:-Node.js kurulumu}"
+    local installed_version=""
+    local installed_major=""
+
+    if [[ -n "$node_path" ]]; then
+        installed_version="$("$node_path" --version 2>/dev/null || true)"
+    fi
+    installed_major="$(printf '%s' "$installed_version" | grep -oE '[0-9]+' | head -n1 || true)"
+    if [[ -z "$installed_major" ]]; then
+        warn "${install_source} sonrasında aktif Node.js major sürümü doğrulanamadı; hedef ${target_major}.x (.nvmrc)."
+        return 1
+    fi
+    if [[ "$installed_major" != "$target_major" ]]; then
+        warn "Node.js sürüm sapması tespit edildi (${install_source}): hedef ${target_major}.x, aktif ${installed_version}. React build uyumluluğu için Node.js ${target_major}.x önerilir (.nvmrc)."
+        return 1
+    fi
+    return 0
+}
+
 docker_cli_healthy() {
     command -v docker &>/dev/null || return 1
 
@@ -390,8 +412,14 @@ install_system_dependencies() {
                     if [[ -n "$node_bin" ]] && "$node_bin" -v | grep -q "^v${node_target_major}\\."; then
                         isolated_node_ready=true
                         ok "Node.js Volta ile izole şekilde kuruldu: $("$node_bin" -v)"
+                    else
+                        warn "Volta node@${node_target_major} kurulumunu tamamladı ancak aktif Linux Node.js hedef ${node_target_major}.x olarak doğrulanamadı; NVM fallback denenecek."
                     fi
+                else
+                    warn "Volta node@${node_target_major} komutu başarısız oldu; NVM fallback denenecek."
                 fi
+            else
+                warn "Volta çalıştırılabilir dosyası bulunamadı (${volta_home}/bin/volta); NVM fallback denenecek."
             fi
 
             if [[ "$isolated_node_ready" != true ]]; then
@@ -422,8 +450,14 @@ install_system_dependencies() {
                         if [[ -n "$node_bin" ]] && "$node_bin" -v | grep -q "^v${node_target_major}\\."; then
                             isolated_node_ready=true
                             ok "Node.js NVM ile izole şekilde kuruldu: $("$node_bin" -v)"
+                        else
+                            warn "NVM ${node_target_major}.x kurulumunu tamamladı ancak aktif Linux Node.js hedef major olarak doğrulanamadı; NodeSource fallback denenecek."
                         fi
+                    else
+                        warn "NVM install/alias default ${node_target_major} komutu başarısız oldu; NodeSource fallback denenecek."
                     fi
+                else
+                    warn "NVM başlangıç dosyası bulunamadı (${nvm_dir}/nvm.sh); NodeSource fallback denenecek."
                 fi
             fi
 
@@ -462,26 +496,35 @@ EOF
             fi
             rm -f "$ns_key_tmp"
 
-            if [[ "$ns_ready" == true ]] && \
-                sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -y && \
-                sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs; then
+            local ns_node_installed=false
+            if [[ "$ns_ready" == true ]]; then
+                if sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -y; then
+                    if sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs; then
+                        ns_node_installed=true
+                    else
+                        warn "NodeSource apt deposu hazırlandı ancak nodejs paketi kurulamadı; varsayılan apt fallback değerlendirilecek."
+                    fi
+                else
+                    warn "NodeSource apt deposu hazırlandı ancak apt update başarısız oldu; varsayılan apt fallback değerlendirilecek."
+                fi
+            else
+                warn "NodeSource deposu doğrulanıp hazırlanamadı; varsayılan apt fallback değerlendirilecek."
+            fi
+
+            if [[ "$ns_node_installed" == true ]]; then
                 node_bin="$(resolve_native_binary_path node || true)"
                 local installed_node_version=""
-                local installed_node_major=""
                 if [[ -n "$node_bin" ]]; then
                     installed_node_version="$("$node_bin" --version 2>/dev/null || true)"
                 fi
-                installed_node_major="$(echo "$installed_node_version" | grep -oE '[0-9]+' | head -n1 || true)"
-                if sudo apt-cache policy nodejs 2>/dev/null | grep -qi 'nodesource'; then
+                if nodejs_package_is_from_nodesource; then
                     ok "Node.js NodeSource üzerinden kuruldu: ${installed_node_version:-sürüm alınamadı}"
                 else
-                    warn "Node.js kurulumu tamamlandı ancak aktif paket kaynağı NodeSource görünmüyor: ${installed_node_version:-sürüm alınamadı}."
+                    warn "Node.js kurulumu tamamlandı ancak kurulu nodejs paket sürümü NodeSource imzası taşımıyor: ${installed_node_version:-sürüm alınamadı}."
                 fi
-                if [[ -n "$installed_node_major" && "$installed_node_major" != "$node_target_major" ]]; then
-                    warn "Node.js sürüm sapması tespit edildi: hedef ${node_target_major}.x, aktif ${installed_node_version}. React build uyumluluğu için Node.js ${node_target_major}.x önerilir (.nvmrc)."
-                fi
+                warn_if_node_major_mismatch "$node_bin" "$node_target_major" "NodeSource" || true
             else
-                warn "NodeSource üzerinden Node.js kurulamadı, varsayılan apt deposu deneniyor..."
+                warn "NodeSource üzerinden Node.js kurulamadı; varsayılan apt deposu son fallback olarak deneniyor. Bu yol dağıtımın nodejs/npm paketlerini ve ek Debian node-* bağımlılıklarını kurabilir."
                 node_bin="$(resolve_native_binary_path node || true)"
                 if [[ -n "$node_bin" ]]; then
                     warn "Sistemde node bulundu ($("$node_bin" -v 2>/dev/null || echo 'sürüm alınamadı'))."
@@ -494,8 +537,12 @@ EOF
                         warn "npm bulunamadı. NodeSource nodejs paketi npm içerir; PATH/kurulum durumu kontrol edilmeli."
                     fi
                 else
-                    sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs npm
+                    if ! sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs npm; then
+                        warn "Varsayılan apt deposundan nodejs + npm kurulumu başarısız oldu. Node.js ${node_target_major}.x manuel kurulmalıdır."
+                    fi
+                    node_bin="$(resolve_native_binary_path node || true)"
                 fi
+                warn_if_node_major_mismatch "$node_bin" "$node_target_major" "varsayılan apt fallback" || true
             fi
             fi
         fi
@@ -780,94 +827,3 @@ ensure_prerequisites() {
 # içinden yüklenir. Bu faz yalnız NVIDIA Container Toolkit kurulumunu sürdürür.
 
 # ── NVIDIA Container Toolkit Kurulumu ──────────────────────────────────────────
-print_docker_desktop_restart_notice() {
-    warn "╔════════════════════════════════════════════════════════════════════╗"
-    warn "║ Docker Desktop Restart gerekli olabilir                           ║"
-    warn "║ nvidia-container-toolkit Docker runtime ayarını değiştirdi.       ║"
-    warn "║ Windows tarafında Docker Desktop > Quit/Restart uygulayın;        ║"
-    warn "║ ardından bu WSL terminalinde 'docker info' ile nvidia runtime'ı    ║"
-    warn "║ doğrulayın ve install_sidar.sh komutunu tekrar çalıştırın.        ║"
-    warn "╚════════════════════════════════════════════════════════════════════╝"
-}
-
-docker_nvidia_runtime_registered() {
-    docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q 'nvidia'
-}
-
-wait_for_docker_nvidia_runtime() {
-    local timeout_seconds="${SIDAR_DOCKER_NVIDIA_RUNTIME_WAIT_SECONDS:-90}"
-    local interval_seconds="${SIDAR_DOCKER_NVIDIA_RUNTIME_WAIT_INTERVAL_SECONDS:-3}"
-    local elapsed=0
-
-    [[ "$timeout_seconds" =~ ^[0-9]+$ ]] || timeout_seconds=90
-    [[ "$interval_seconds" =~ ^[0-9]+$ && "$interval_seconds" -gt 0 ]] || interval_seconds=3
-
-    if docker_nvidia_runtime_registered; then
-        return 0
-    fi
-
-    info "Docker NVIDIA runtime kaydı bekleniyor (maks. ${timeout_seconds}sn)..."
-    while (( elapsed < timeout_seconds )); do
-        sleep "$interval_seconds"
-        elapsed=$((elapsed + interval_seconds))
-        if docker_nvidia_runtime_registered; then
-            return 0
-        fi
-    done
-    return 1
-}
-
-setup_nvidia_docker() {
-    if [[ "$GPU_AVAILABLE" == true ]] && command -v docker &>/dev/null; then
-        step "Docker GPU Desteği (nvidia-container-toolkit)"
-        if ! command -v nvidia-ctk &>/dev/null; then
-            warn "nvidia-container-toolkit bulunamadı. Kurulum başlatılıyor (sudo şifreniz istenebilir)..."
-
-            # NVIDIA repolarını ekle ve kur
-            curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg --yes
-            curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-              sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
-              sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list > /dev/null
-
-            sudo apt-get update
-            sudo apt-get install -y nvidia-container-toolkit
-
-            # Docker'ı NVIDIA runtime kullanacak şekilde yapılandır
-            sudo nvidia-ctk runtime configure --runtime=docker
-
-            # Docker daemon'ı çalışma tipine duyarlı şekilde yeniden başlat
-            info "Docker servisi yeniden başlatılıyor..."
-            if command -v systemctl &>/dev/null && systemctl cat docker &>/dev/null; then
-                if systemctl is-active --quiet docker; then
-                    sudo systemctl restart docker
-                    ok "Docker servisi systemd üzerinden yeniden başlatıldı."
-                else
-                    warn "Docker systemd ünitesi mevcut ama aktif değil. Docker Desktop/WSL entegrasyonu kullanılıyor olabilir."
-                    print_docker_desktop_restart_notice
-                fi
-            elif command -v service &>/dev/null && service docker status >/dev/null 2>&1; then
-                sudo service docker restart
-                ok "Docker servisi SysV/service üzerinden yeniden başlatıldı."
-            else
-                warn "Docker systemd veya service üzerinden yönetilmiyor (Docker Desktop kullanılıyor olabilir)."
-                print_docker_desktop_restart_notice
-            fi
-            ok "nvidia-container-toolkit kuruldu ve Docker yapılandırıldı."
-        else
-            ok "nvidia-container-toolkit zaten kurulu."
-        fi
-
-        if wait_for_docker_nvidia_runtime; then
-            ok "Docker NVIDIA runtime doğrulandı."
-            SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME="false"
-            SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME_MSG=""
-        elif [[ "$WSL2" == true ]]; then
-            SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME="true"
-            SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME_MSG="Docker NVIDIA runtime henüz kayıtlı görünmüyor; Docker Desktop restart sonrası 'docker info --format {{json .Runtimes}}' çıktısında nvidia görünene kadar bekleyin."
-            warn "$SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME_MSG"
-        elif [[ "${SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME:-false}" == "true" ]]; then
-            warn "${SIDAR_DEFERRED_WARN_DOCKER_NVIDIA_RUNTIME_MSG:-Docker NVIDIA runtime kayıtlı görünmüyor; nvidia-container-toolkit doğrulamasını manuel kontrol edin.}"
-        fi
-    fi
-}
-

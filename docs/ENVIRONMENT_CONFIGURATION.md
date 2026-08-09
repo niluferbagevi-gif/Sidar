@@ -117,6 +117,12 @@ secret overlay from `SIDAR_KEYS_FILE`. Keep that file outside the repository wit
 `600` or stricter, and do not copy personal provider keys into `.env` unless the
 explicit materialization opt-in below is intentional.
 
+The installer summary reports the non-secret counts separately: `.env: 0/18` describes
+repo-local materialization, while `Secret overlay durumu: N/18` counts non-empty provider
+keys in `SIDAR_KEYS_FILE` without printing their values. An overlay count below 18 is also
+valid when those optional integrations are unused; provider availability should be judged
+from the masked key-source table rather than by copying secrets back into `.env`.
+
 Sidar validates this boundary before initial dotenv loading and runtime reloads.
 Relative paths resolve from the repository root, so `SIDAR_KEYS_FILE=.env` and
 `SIDAR_KEYS_FILE=config/keys.env` fail closed. Symlinks that ultimately resolve into

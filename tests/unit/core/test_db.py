@@ -32,7 +32,11 @@ from core.db import (
     _utc_now_iso,
     _verify_password,
 )
-from core.db.dialect import assert_safe_sql_identifier, is_safe_sql_identifier
+from core.db.dialect import (
+    assert_safe_sql_identifier,
+    is_safe_sql_identifier,
+    join_sql_identifiers,
+)
 from core.db.helpers import json_dumps as _json_dumps
 
 
@@ -454,6 +458,18 @@ def test_assert_safe_sql_identifier_raises_when_invalid() -> None:
         assert_safe_sql_identifier("bad-name")
     with pytest.raises(ValueError, match="Invalid SQL identifier: 'events'"):
         assert_safe_sql_identifier("events", allowed={"messages"})
+
+
+def test_join_sql_identifiers_validates_the_joined_values() -> None:
+    assert join_sql_identifiers(("id", "role_name")) == "id, role_name"
+    assert join_sql_identifiers(("id",), allowed={"id"}) == "id"
+
+    with pytest.raises(ValueError, match="SQL identifier list cannot be empty"):
+        join_sql_identifiers(())
+    with pytest.raises(ValueError, match="Invalid SQL identifier"):
+        join_sql_identifiers(("id", "unsafe-name"))
+    with pytest.raises(ValueError, match="Invalid SQL identifier"):
+        join_sql_identifiers(("id", "role_name"), allowed={"id"})
 
 
 @pytest.mark.asyncio
@@ -2517,12 +2533,28 @@ def test_postgres_degraded_sqlite_url_returns_configured_when_set(tmp_path) -> N
     assert db._postgres_degraded_sqlite_url() == "sqlite+aiosqlite:////tmp/configured-degraded.db"
 
 
-def test_postgres_degraded_sqlite_url_falls_back_to_base_dir_default(tmp_path) -> None:
+def test_postgres_degraded_sqlite_url_falls_back_to_base_dir_default(tmp_path, monkeypatch) -> None:
+    # Run outside any xdist worker context: run_tests.sh always executes unit
+    # tests under `-n auto`, which sets PYTEST_XDIST_WORKER and would append a
+    # worker suffix (see test_..._is_xdist_worker_specific below) that this
+    # serial-mode assertion doesn't expect.
+    monkeypatch.delenv("PYTEST_XDIST_WORKER", raising=False)
     cfg = DummyCfg(DATABASE_URL="postgresql://x", BASE_DIR=str(tmp_path))
     db = Database(cfg=cfg)
     fallback_url = db._postgres_degraded_sqlite_url()
     assert fallback_url.startswith("sqlite+aiosqlite:///")
     assert "data/sidar_degraded.db" in fallback_url
+
+
+def test_postgres_degraded_sqlite_url_is_xdist_worker_specific(tmp_path, monkeypatch) -> None:
+    """Concurrent degraded workers must not share SQLite WAL/SHM files."""
+    monkeypatch.setenv("PYTEST_XDIST_WORKER", "gw/1")
+    cfg = DummyCfg(DATABASE_URL="postgresql://x", BASE_DIR=str(tmp_path))
+    db = Database(cfg=cfg)
+
+    fallback_url = db._postgres_degraded_sqlite_url()
+
+    assert fallback_url.endswith("/data/sidar_degraded.gw_1.db")
 
 
 @pytest.mark.asyncio
@@ -2856,6 +2888,23 @@ def test_doctor_database_env_reason_and_remaining_diagnosis_fallbacks(monkeypatc
     assert "yetki/parola hatası" in core_db._postgres_user_action_message(
         "password authentication failed"
     )
+
+
+def test_doctor_database_env_reason_returns_empty_when_env_check_does_not_fail(
+    monkeypatch,
+) -> None:
+    """A failing PostgreSQL connection can coexist with a healthy database_env probe."""
+    import core.doctor as doctor
+
+    monkeypatch.setattr(
+        doctor,
+        "check_database_env",
+        lambda: types.SimpleNamespace(
+            status="pass", details={"failure_reason": "should be ignored"}, message="ignored too"
+        ),
+    )
+
+    assert core_db._doctor_database_env_failure_reason() == ""
 
 
 def test_postgres_user_action_message_handles_missing_database_url(monkeypatch) -> None:

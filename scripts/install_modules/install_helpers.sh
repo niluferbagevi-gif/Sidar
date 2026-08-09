@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+nodejs_package_is_from_nodesource() {
+    local package_version=""
+
+    command -v dpkg-query &>/dev/null || return 1
+    package_version="$(dpkg-query -W -f='${Version}' nodejs 2>/dev/null)" || return 1
+    [[ "${package_version,,}" == *nodesource* ]]
+}
+
 extract_node_major_from_spec() {
     local version_spec="${1:-}"
     local extracted_major=""

@@ -9,7 +9,7 @@ import {
   prettifyReason,
   prettifyRole,
   toDetailEntries,
-} from "./SwarmFlowPanel.jsx";
+} from "./SwarmFlowPanel.js";
 
 const { fetchJson } = vi.hoisted(() => ({ fetchJson: vi.fn() }));
 const { telemetryState } = vi.hoisted(() => ({
@@ -72,6 +72,14 @@ describe("SwarmFlowPanel", () => {
       { id: "evt-1", kind: "status", ts: "2025-01-01T10:00:00Z", content: "supervisor: plan created" },
       { id: "evt-2", kind: "tool_call", ts: "2025-01-01T10:00:01Z", content: "reviewer: code_search" },
     ];
+  });
+
+  it("renders non-Error loader failures", async () => {
+    fetchJson.mockRejectedValue("swarm ham hata");
+
+    render(<SwarmFlowPanel />);
+
+    expect(await screen.findByText("swarm ham hata")).toBeInTheDocument();
   });
 
   it("loads autonomy activity and pending approvals, then refreshes activity on demand", async () => {
@@ -699,6 +707,7 @@ describe("SwarmFlowPanel", () => {
     await user.keyboard("[Enter]");
 
     await user.click(screen.getByRole("button", { name: "Swarm Başlat" }));
+    expect(screen.getByRole("button", { name: "Çalışıyor…" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Run node" })).toBeDisabled();
 
     resolveSwarm({ results: [] });
