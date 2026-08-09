@@ -32,7 +32,9 @@ import asyncio
 import json
 import os
 import shutil
-import subprocess  # nosec B404 -- fixed-argument docker CLI invocations only, mirrors sandbox.py.
+
+# B404 review: fixed-argument docker CLI invocations only, mirrors sandbox.py.
+import subprocess  # nosec B404
 import time
 import uuid
 
@@ -220,7 +222,7 @@ pytestmark = [
 
 def _run_probe(script: str, *, env: dict[str, str] | None = None, timeout: int = 20) -> str:
     backend = _backend()
-    command = backend.container_command("python", "-c", script)
+    command = backend.container_command("-c", script)
     completed = subprocess.run(  # nosec B603
         command,
         capture_output=True,
@@ -292,7 +294,7 @@ def test_container_escape_matrix_rejects_network_fs_env_and_host_process_access(
 def test_container_enforces_pids_limit_against_fork_bomb() -> None:
     """A low, test-scoped pids-limit must bound runaway process creation."""
     backend = _backend(SIDAR_PLUGIN_SANDBOX_PIDS="8")
-    command = backend.container_command("python", "-c", _FORK_BOMB_SCRIPT)
+    command = backend.container_command("-c", _FORK_BOMB_SCRIPT)
     completed = subprocess.run(  # nosec B603
         command,
         capture_output=True,

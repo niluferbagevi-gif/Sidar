@@ -103,21 +103,30 @@ class DockerPluginSandboxBackend:
             f"--cpus={self.cpus}",
             f"--pids-limit={self.pids}",
             "--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=16m",
+            # The image's own ENTRYPOINT is the Sidar launcher (`python main.py`);
+            # without this override, trailing argv (e.g. "-m web.plugins.worker")
+            # is appended as *arguments to main.py* instead of replacing the
+            # command, so the RPC worker never actually runs. Fixing the
+            # entrypoint to the interpreter mirrors the already-correct
+            # `managers/code/docker.py` CLI sandbox fallback.
+            "--entrypoint=python",
         ]
 
     def _command(self) -> list[str]:
-        return [*self._isolation_argv(), self.image, "python", "-m", "web.plugins.worker"]
+        return [*self._isolation_argv(), self.image, "-m", "web.plugins.worker"]
 
-    def container_command(self, *entrypoint: str) -> list[str]:
-        """Build the production isolation argv with a caller-supplied entrypoint.
+    def container_command(self, *args: str) -> list[str]:
+        """Build the production isolation argv (python entrypoint) with caller args.
 
         Exposed for integration tests that need to run arbitrary in-container
         probes (escape attempts) under the exact same isolation flags the RPC
-        worker runs under, rather than re-deriving them.
+        worker runs under, rather than re-deriving them. Callers pass the
+        arguments to ``python`` (e.g. ``"-c", script``), not "python" itself --
+        the entrypoint is already fixed to the interpreter.
         """
-        if not entrypoint:
-            raise ValueError("entrypoint boş olamaz.")
-        return [*self._isolation_argv(), self.image, *entrypoint]
+        if not args:
+            raise ValueError("args boş olamaz.")
+        return [*self._isolation_argv(), self.image, *args]
 
     def request(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         """Send one RPC envelope and validate the worker's bounded response."""

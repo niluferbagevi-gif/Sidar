@@ -51,9 +51,17 @@ test kapısı ve legacy import uyumluluğu ile birlikte ilerlemelidir.
   etmek yerine container tarafında doğrulanan `BaseAgent` proxy'si kaydeder. 2026-08-09'da gerçek
   Docker daemon'ı ve build edilmiş imaj gerektiren container kaçış/integration matrisi eklendi
   (`tests/integration/web/test_plugin_sandbox_container_escape.py`) — kabul kriteri 2, 3 ve 6
-  artık argv-mock unit testlerin ötesinde gerçek container'a karşı doğrulanıyor. Madde, legacy
-  process-içi backend ile `SIDAR_ENABLE_IN_PROCESS_PLUGINS` bayrağının kaldırılmasına kadar açık
-  kalır (bkz. Kalan).
+  artık argv-mock unit testlerin ötesinde gerçek container'a karşı doğrulanıyor. **Bu matrisin CI'da
+  ilk gerçek çalışması, argv-mock testlerin hiç yakalayamadığı kritik bir production bug'ı ortaya
+  çıkardı ve aynı PR'da düzeltildi:** `DockerPluginSandboxBackend._command()` `docker run <imaj>
+  python -m web.plugins.worker` üretiyordu, ama `Dockerfile`'ın `ENTRYPOINT`'i
+  `["/app/.venv/bin/python", "main.py"]` olduğu için bu argv `docker run` tarafından komut
+  değişimi değil, `main.py`'ye **eklenen argüman** olarak yorumlanıyordu — RPC worker hiçbir zaman
+  gerçekten çalışmıyordu. Mock'lanmış `subprocess.run` ile yazılan unit testler yalnızca üretilen
+  argv'yi doğruladığından bu hiç yakalanmamıştı. Düzeltme: `_isolation_argv()`'ye
+  `--entrypoint=python` eklendi (zaten doğru olan `managers/code/docker.py` CLI sandbox
+  fallback'iyle aynı desen). Madde, legacy process-içi backend ile
+  `SIDAR_ENABLE_IN_PROCESS_PLUGINS` bayrağının kaldırılmasına kadar açık kalır (bkz. Kalan).
 - **Sahip:** Backend/Güvenlik bakım ekibi.
 - **Hedef değerlendirme:** 2026-08-15.
 - **Hedef kapanış:** 2026-09-30.

@@ -83,9 +83,27 @@ def test_docker_backend_command_applies_isolation_contract(monkeypatch) -> None:
         "--memory-swap=256m",
         "--cpus=0.5",
         "--pids-limit=64",
+        "--entrypoint=python",
     ):
         assert expected in command
-    assert command[-3:] == ["python", "-m", "web.plugins.worker"]
+    assert command[-2:] == ["-m", "web.plugins.worker"]
+
+
+def test_docker_backend_command_overrides_the_image_entrypoint(monkeypatch) -> None:
+    """The image's own ENTRYPOINT is the Sidar launcher (`python main.py`).
+
+    Without an explicit ``--entrypoint`` override, ``docker run <image> -m
+    web.plugins.worker`` would append ``-m web.plugins.worker`` as *arguments
+    to main.py* instead of replacing the command -- the RPC worker would
+    never actually run. This pins the fix: ``--entrypoint=python`` must
+    appear as a run flag *before* the image argument.
+    """
+    monkeypatch.setattr("web.plugins.sandbox.shutil.which", lambda _name: "/usr/bin/docker")
+    command = DockerPluginSandboxBackend({})._command()
+
+    image_index = command.index("sidar:latest")
+    assert "--entrypoint=python" in command[:image_index]
+    assert command[image_index:] == ["sidar:latest", "-m", "web.plugins.worker"]
 
 
 def test_docker_backend_fails_closed_without_docker(monkeypatch) -> None:
@@ -100,13 +118,13 @@ def test_docker_backend_container_command_reuses_isolation_flags_with_custom_ent
     monkeypatch.setattr("web.plugins.sandbox.shutil.which", lambda _name: "/usr/bin/docker")
     backend = DockerPluginSandboxBackend({})
 
-    command = backend.container_command("python", "-c", "print('probe')")
+    command = backend.container_command("-c", "print('probe')")
 
     assert command[: len(backend._isolation_argv())] == backend._isolation_argv()
-    assert command[-3:] == ["python", "-c", "print('probe')"]
+    assert command[-2:] == ["-c", "print('probe')"]
 
 
-def test_docker_backend_container_command_requires_entrypoint(monkeypatch) -> None:
+def test_docker_backend_container_command_requires_args(monkeypatch) -> None:
     monkeypatch.setattr("web.plugins.sandbox.shutil.which", lambda _name: "/usr/bin/docker")
     backend = DockerPluginSandboxBackend({})
 
