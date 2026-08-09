@@ -88,6 +88,18 @@ tamamı test dosyalarındadır, uygulama kaynağında sıfır hata vardır. Kala
 artık "küçük domain dilimleri" değil, mekanik test dosyası dönüşümüdür; bkz.
 aşağıdaki Nüans notu.
 
+Bileşen/hook/lib ağacı tamamlandıktan sonraki dedup refactorları da (mevcut
+`.js`/`.jsx` dosyalarını taşımak yerine) doğrudan TypeScript'te yeni dosya olarak
+eklenmiştir: `hooks/useAsyncStatus.ts` (4 admin panelindeki tekrarlanan
+load/error boilerplate'i), `lib/errors.ts` (6 dosyaya kopyalanmış
+`errorMessage()`) ve bunun üzerine kurulan `hooks/useAsyncResource.ts`. Bunlar
+birer "taşıma" değildir -- untyped envanteri azaltmazlar -- ama typed tabanı
+büyütüp ratchet'in `minimum_typed_files` tabanının üstünde headroom bırakırlar.
+Güncel envanter 9 `.js`, 20 `.jsx`, 16 `.ts`, 22 `.tsx`; ratchet 29 untyped / 38
+typed'dır (baseline'ın kendisi yalnız sahibin onayıyla sıkılaştırılır, bu yüzden
+`typescript-migration-baseline.json`'daki 29/32 tabanı bilinçli olarak
+değiştirilmedi -- gerçek sayı zaten tabanın üzerinde).
+
 ## Zorunlu ratchet
 
 `typescript-migration-baseline.json`, en fazla 29 untyped (`.js` + `.jsx`) ve en az
