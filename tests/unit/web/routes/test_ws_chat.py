@@ -269,9 +269,11 @@ class _NeverSendsWs(_Ws):
 
 
 class _RepeatedGarbageWs(_Ws):
-    """A websocket that keeps sending unparseable junk fast enough to reset
+    """A websocket that keeps sending unparseable junk to defeat a naive timeout.
 
-    a naive per-message timeout, without ever authenticating."""
+    Sends fast enough to reset a naive per-message timeout, without ever
+    authenticating.
+    """
 
     async def receive_text(self) -> str:
         await asyncio.sleep(0.001)
@@ -280,9 +282,10 @@ class _RepeatedGarbageWs(_Ws):
 
 @pytest.mark.asyncio
 async def test_websocket_chat_closes_idle_unauthenticated_connection_after_timeout() -> None:
-    """Regression test: an unauthenticated client that never sends an auth message
+    """Regression test: an idle unauthenticated client must not stay connected forever.
 
-    must not keep the connection open forever (slow DoS / resource exhaustion).
+    An unauthenticated client that never sends an auth message must not keep
+    the connection open forever (slow DoS / resource exhaustion).
     """
     ws = _NeverSendsWs()
 
@@ -307,9 +310,10 @@ async def test_websocket_chat_closes_idle_unauthenticated_connection_after_timeo
 
 @pytest.mark.asyncio
 async def test_websocket_chat_auth_timeout_is_absolute_not_reset_by_junk_messages() -> None:
-    """Regression test: repeatedly sending unparseable junk must not let an
+    """Regression test: junk messages must not reset the auth timeout.
 
-    unauthenticated client reset the auth timeout and stay connected forever.
+    Repeatedly sending unparseable junk must not let an unauthenticated
+    client reset the auth timeout and stay connected forever.
     """
     ws = _RepeatedGarbageWs()
 
@@ -542,6 +546,26 @@ class _Deps:
 
     def iter_stream_chunks(self, result: str):
         return [result]
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_rejects_connection_flood_before_accept_and_agent_init() -> None:
+    ws = _Ws()
+    deps = _Deps()
+
+    async def _limited(_websocket) -> bool:
+        return True
+
+    async def _unexpected_agent():
+        raise AssertionError("rate-limited socket must not initialize the agent")
+
+    deps.ws_connection_is_rate_limited = _limited
+    deps.resolve_agent_instance = _unexpected_agent
+
+    await ws_chat.websocket_chat(ws, deps)
+
+    assert ws.accepted == []
+    assert ws.closed == [(1013, "WebSocket connection rate limit exceeded")]
 
 
 @pytest.mark.asyncio

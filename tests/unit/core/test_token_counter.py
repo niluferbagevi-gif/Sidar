@@ -37,7 +37,8 @@ def test_estimate_tokens_applies_provider_multiplier(monkeypatch):
 
 def test_estimate_tokens_uses_fallback_and_multiplier_without_tiktoken(monkeypatch):
     token_counter.get_tiktoken_encoding.cache_clear()
-    # monkeypatching builtins import is fragile across modules; directly patch function for deterministic fallback.
+    # monkeypatching builtins import is fragile across modules; directly patch function for
+    # deterministic fallback.
     monkeypatch.setattr(
         token_counter,
         "get_tiktoken_encoding",

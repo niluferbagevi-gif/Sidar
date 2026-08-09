@@ -106,7 +106,6 @@ class DockerLifecycleAdapter:
     @staticmethod
     def docker_exception_types(docker_module: Any) -> tuple[type[BaseException], ...]:
         """Return Docker exception types safe to catch during daemon probes."""
-
         docker_errors = getattr(docker_module, "errors", None)
         docker_exception = getattr(docker_errors, "DockerException", None)
         if isinstance(docker_exception, type) and issubclass(docker_exception, BaseException):
@@ -115,7 +114,6 @@ class DockerLifecycleAdapter:
 
     def init_docker(self) -> None:
         """Connect to Docker daemon, including WSL2 socket fallback."""
-
         owner = self.owner
         owner.docker_available = False
         owner.docker_client = None
@@ -157,7 +155,6 @@ class DockerLifecycleAdapter:
 
     def docker_image_exists(self, image: str) -> bool:
         """Check Docker image existence through SDK first, then CLI."""
-
         owner = self.owner
         safe_image = sanitize_docker_image(image)
         if safe_image != image:
@@ -190,7 +187,6 @@ class DockerLifecycleAdapter:
 
     def gpu_runtime_available(self) -> bool:
         """Probe NVIDIA/CUDA runtime availability once and cache the result on the owner."""
-
         owner = self.owner
         cached = getattr(owner, "_gpu_runtime_available_cached", None)
         if cached is not None:
@@ -215,7 +211,6 @@ class DockerLifecycleAdapter:
 
     def autodetect_project_test_image(self) -> None:
         """Select a local Sidar test image without pulling legacy Docker Hub names."""
-
         owner = self.owner
         if not owner.docker_available:  # pragma: no cover - Docker unavailable branch
             return
@@ -246,7 +241,8 @@ class DockerLifecycleAdapter:
         )
         if bool(getattr(owner.cfg, "USE_GPU", False)) and not prefer_gpu_image:
             logger.warning(
-                "USE_GPU=True ancak CUDA/NVIDIA runtime tespit edilemedi; CPU test imajı tercih edilecek"
+                "USE_GPU=True ancak CUDA/NVIDIA runtime tespit edilemedi; CPU test imajı tercih "
+                "edilecek"
             )
 
         for candidate in PROJECT_TEST_IMAGE_CANDIDATES:
@@ -259,17 +255,22 @@ class DockerLifecycleAdapter:
             if owner._docker_image_exists(candidate):
                 owner.docker_test_image = candidate
                 logger.info(
-                    "DOCKER_TEST_IMAGE verilmedi; Docker daemon'da bulunan proje test imajı kullanılacak: %s",
+                    "DOCKER_TEST_IMAGE verilmedi; Docker daemon'da bulunan proje test imajı "
+                    "kullanılacak: %s",
                     candidate,
                 )
                 owner._warn_gpu_image_runtime_mismatch(candidate)
                 return
 
         logger.warning(
-            "DOCKER_TEST_IMAGE otomatik bulunamadı; varsayılan sandbox imajı (%s) pytest/uv içermeyebilir. "
-            "Önerilen sıra: (1) `docker build -t sidar:latest .` (2) `.env` veya `.env.development` içine "
-            "`DOCKER_TEST_IMAGE=sidar:latest` ekleyin (3) kalite kapısında bilinçli otomatik hazırlık için "
-            "`AUTO_BUILD_DOCKER_TEST_IMAGE=1 DOCKER_TEST_IMAGE=sidar:latest bash run_tests.sh` çalıştırın "
+            "DOCKER_TEST_IMAGE otomatik bulunamadı; varsayılan sandbox imajı (%s) pytest/uv "
+            "içermeyebilir. "
+            "Önerilen sıra: (1) `docker build -t sidar:latest .` (2) `.env` veya "
+            "`.env.development` içine "
+            "`DOCKER_TEST_IMAGE=sidar:latest` ekleyin (3) kalite kapısında bilinçli otomatik "
+            "hazırlık için "
+            "`AUTO_BUILD_DOCKER_TEST_IMAGE=1 DOCKER_TEST_IMAGE=sidar:latest bash run_tests.sh` "
+            "çalıştırın "
             "(4) Docker dışı fallback için `uv sync --frozen --all-extras` çalıştırın.",
             owner.docker_test_image,
         )

@@ -1,5 +1,5 @@
-"""
-Sidar  github_upload.py - Otomatik GitHub Yükleme Aracı
+"""Sidar github_upload.py - Otomatik GitHub Yükleme Aracı.
+
 Sürüm: Sidar ürün sürümüyle senkronize edilir.
 Açıklama: Mevcut projeyi kolayca GitHub'a yedekler/yükler.
 Dış dalları çekme ve hatalı işlemleri Geri Alma (Rollback) özelliklerini içerir.
@@ -15,6 +15,7 @@ import subprocess  # nosec B404
 import sys
 from collections.abc import Sequence
 from datetime import datetime
+from pathlib import Path
 
 from config import Config
 from managers.code.git_validation import is_valid_git_ref_name
@@ -118,6 +119,21 @@ def run_command(
         return False, err_msg
 
 
+def reexec_after_external_branch_merge() -> None:
+    """Reload uploader code after a branch merge updates this running script.
+
+    Python keeps the pre-merge module in memory. Re-exec without the already-merged
+    branch argument so newly merged pin-repair and quality-gate logic is used
+    immediately and the external branch is not pulled a second time.
+    """
+    if os.environ.get("SIDAR_GITHUB_UPLOAD_REEXEC_AFTER_MERGE") == "1":
+        return
+    script = Path(__file__).resolve()
+    env = _build_subprocess_env()
+    env["SIDAR_GITHUB_UPLOAD_REEXEC_AFTER_MERGE"] = "1"
+    os.execve(sys.executable, [sys.executable, str(script)], env)  # nosec B606  # sabit argümanlar, shell yok; B603 ile aynı güvenli desen.
+
+
 def _is_valid_repo_url(url: str) -> bool:
     """GitHub origin URL'ini temel enjeksiyon ve yazım hatalarına karşı doğrular."""
     normalized = str(url or "").strip()
@@ -152,8 +168,7 @@ def _normalize_path(path: str) -> str:
 
 
 def resolve_github_token() -> str:
-    """
-    GITHUB_TOKEN değerini farklı kaynaklardan güvenli biçimde çözer.
+    """GITHUB_TOKEN değerini farklı kaynaklardan güvenli biçimde çözer.
 
     Not:
     - Bazı ortamlarda `GITHUB_TOKEN` değişkeni process içinde boş string olarak
@@ -251,6 +266,11 @@ def print_unmerged_files(prefix: str = "Çakışan dosyalar") -> None:
 
 def abort_in_progress_merge() -> None:
     """Başarısız pull/merge sonrası çalışma ağacını temiz state'e döndürmeye çalışır."""
+    merge_active, _ = run_command(
+        ["git", "rev-parse", "-q", "--verify", "MERGE_HEAD"], show_output=False
+    )
+    if not merge_active:
+        return
     abort_success, abort_err = run_command(["git", "merge", "--abort"], show_output=False)
     if abort_success:
         print(
@@ -394,6 +414,17 @@ def stage_files(file_paths: list[str]) -> tuple[bool, str]:
     return run_command(["git", "add", "--"] + literal_paths, show_output=False)
 
 
+def stage_deleted_files(file_paths: list[str]) -> tuple[bool, str]:
+    """Silinen dosyaları option injection ve pathspec globbing olmadan stage eder."""
+    if not file_paths:
+        return True, ""
+    literal_paths = [f":(literal){path}" for path in file_paths]
+    return run_command(
+        ["git", "rm", "--ignore-unmatch", "--"] + literal_paths,
+        show_output=False,
+    )
+
+
 def sync_install_manifests_before_commit() -> tuple[bool, str]:
     """Commit öncesi install manifestlerini tazeler ve drift düzeltmelerini stage eder."""
     sync_steps = [
@@ -489,13 +520,14 @@ def ensure_full_git_history_for_manifest_checks() -> tuple[bool, str]:
 
 
 def run_pre_push_quality_gate() -> tuple[bool, str]:
-    """Push öncesi format/lint + installer manifest/smoke kapısını fail-closed çalıştırır.
+    """Push öncesi unit/static/installer kapılarını fail-closed çalıştırır.
 
     github_upload.py, PR/branch-protection akışını atlayıp doğrudan main'e push
     eder; bu yüzden CI'daki PR-only zorunlu "Installer manifest and smoke gate"
-    hiçbir zaman devreye girmez. Buradaki adımlar o job'ın (installer-smoke,
-    .github/workflows/ci.yml) pin-drift'i yakalayan kısımlarının bir eşleniğidir,
-    böylece direkt push öncesinde de aynı sınıf hata yerelde yakalanır.
+    hiçbir zaman devreye girmez. Buradaki adımlar unit testleri ve o job'ın
+    (installer-smoke, .github/workflows/ci.yml) pin-drift'i yakalayan
+    kısımlarını kapsar; böylece direkt push öncesinde kod/test sözleşmesi veya
+    installer drift hataları yerelde yakalanır.
     """
     history_success, history_err = ensure_full_git_history_for_manifest_checks()
     if not history_success:
@@ -504,6 +536,7 @@ def run_pre_push_quality_gate() -> tuple[bool, str]:
     quality_steps: list[tuple[list[str], dict[str, str] | None]] = [
         (["uv", "run", "ruff", "format", "--check", "."], None),
         (["uv", "run", "ruff", "check", "."], None),
+        (["uv", "run", "pytest", "tests/unit", "-q", "--no-cov", "-x"], None),
         (["make", "installer-shellcheck"], None),
         (["sha256sum", "-c", ".sidar_manifest.txt"], None),
         (["uv", "run", "python", "scripts/tools/update_core_install_manifest.py", "--check"], None),
@@ -553,7 +586,10 @@ def run_pre_push_quality_gate() -> tuple[bool, str]:
     for cmd, extra_env in quality_steps:
         success, output = run_command(cmd, show_output=False, extra_env=extra_env)
         if not success:
-            return False, f"{' '.join(cmd)}\n{output}".strip()
+            failure = f"{' '.join(cmd)}\n{output}".strip()
+            if cmd == ["uv", "run", "ruff", "format", "--check", "."]:
+                failure += "\n\nDüzeltmek için: uv run ruff format ."
+            return False, failure
 
     return True, ""
 
@@ -573,7 +609,8 @@ def main() -> None:
             rollback_steps = int(arg[1:])
             if rollback_steps < 1 or rollback_steps > 10:
                 print(
-                    f"{Colors.FAIL}❌ Hata: Sadece 1 ile 10 işlem arasına kadar geri alabilirsiniz (Örn: -3).{Colors.ENDC}"
+                    f"{Colors.FAIL}❌ Hata: Sadece 1 ile 10 işlem arasına kadar geri alabilirsiniz "
+                    f"(Örn: -3).{Colors.ENDC}"
                 )
                 sys.exit(1)
         else:
@@ -605,14 +642,16 @@ def main() -> None:
     success, _ = run_command(["git", "--version"], show_output=False)
     if not success:
         print(
-            f"{Colors.FAIL}Sistemde Git kurulu değil. Lütfen terminalden 'sudo apt install git' yazarak kurun.{Colors.ENDC}"
+            f"{Colors.FAIL}Sistemde Git kurulu değil. Lütfen terminalden 'sudo apt install git' "
+            f"yazarak kurun.{Colors.ENDC}"
         )
         sys.exit(1)
 
     _, name_out = run_command(["git", "config", "user.name"], show_output=False)
     if not name_out:
         print(
-            f"{Colors.WARNING}⚠️ Git kimliğiniz tanımlanmamış. Lütfen GitHub bilgilerinizi girin:{Colors.ENDC}"
+            f"{Colors.WARNING}⚠️ Git kimliğiniz tanımlanmamış. Lütfen GitHub bilgilerinizi "
+            f"girin:{Colors.ENDC}"
         )
         git_name = input("Adınız / GitHub Kullanıcı Adınız: ").strip()
         git_email = input("GitHub E-Posta Adresiniz: ").strip()
@@ -652,7 +691,8 @@ def main() -> None:
     if current_branch != "main":
         print(f"\n{Colors.WARNING}⚠️ Şu an '{current_branch}' dalındasınız.{Colors.ENDC}")
         print(
-            f"{Colors.OKBLUE}🔄 İşlemlerin 'main' dalında yapılması için geçiş hazırlanıyor...{Colors.ENDC}"
+            f"{Colors.OKBLUE}🔄 İşlemlerin 'main' dalında yapılması için geçiş "
+            f"hazırlanıyor...{Colors.ENDC}"
         )
 
         _, stash_status = run_command(["git", "status", "--porcelain"], show_output=False)
@@ -664,7 +704,8 @@ def main() -> None:
             )
             if not stash_success:
                 print(
-                    f"{Colors.FAIL}❌ Değişiklikler güvenli olarak stash'e alınamadı:\n{stash_err}{Colors.ENDC}"
+                    f"{Colors.FAIL}❌ Değişiklikler güvenli olarak stash'e "
+                    f"alınamadı:\n{stash_err}{Colors.ENDC}"
                 )
                 sys.exit(1)
             stash_created = True
@@ -677,7 +718,8 @@ def main() -> None:
             if stash_created:
                 run_command(["git", "stash", "pop"], show_output=False)
             print(
-                f"{Colors.WARNING}Lütfen terminalden 'git checkout main' yazarak çakışmaları kontrol edin.{Colors.ENDC}"
+                f"{Colors.WARNING}Lütfen terminalden 'git checkout main' yazarak çakışmaları "
+                f"kontrol edin.{Colors.ENDC}"
             )
             sys.exit(1)
 
@@ -687,10 +729,12 @@ def main() -> None:
             pop_success, pop_err = run_command(["git", "stash", "pop"], show_output=False)
             if not pop_success:
                 print(
-                    f"{Colors.FAIL}❌ Stash geri yüklenirken çakışma oluştu:\n{pop_err}{Colors.ENDC}"
+                    f"{Colors.FAIL}❌ Stash geri yüklenirken çakışma "
+                    f"oluştu:\n{pop_err}{Colors.ENDC}"
                 )
                 print(
-                    f"{Colors.WARNING}Çakışmaları çözüp commit aldıktan sonra aracı tekrar çalıştırabilirsiniz.{Colors.ENDC}"
+                    f"{Colors.WARNING}Çakışmaları çözüp commit aldıktan sonra aracı tekrar "
+                    f"çalıştırabilirsiniz.{Colors.ENDC}"
                 )
                 sys.exit(1)
 
@@ -701,13 +745,16 @@ def main() -> None:
     # ═══════════════════════════════════════════════════════════════
     if rollback_steps > 0:
         print(
-            f"\n{Colors.FAIL}{Colors.BOLD}🚨 KRİTİK UYARI: GERİ ALMA İŞLEMİ BAŞLATILDI 🚨{Colors.ENDC}"
+            f"\n{Colors.FAIL}{Colors.BOLD}🚨 KRİTİK UYARI: GERİ ALMA İŞLEMİ BAŞLATILDI "
+            f"🚨{Colors.ENDC}"
         )
         print(
-            f"{Colors.WARNING}Son {rollback_steps} commit ve yerel bilgisayarınızdaki henüz kaydedilmemiş tüm değişiklikler KALICI OLARAK SİLİNECEK.{Colors.ENDC}"
+            f"{Colors.WARNING}Son {rollback_steps} commit ve yerel bilgisayarınızdaki henüz "
+            f"kaydedilmemiş tüm değişiklikler KALICI OLARAK SİLİNECEK.{Colors.ENDC}"
         )
         print(
-            f"{Colors.WARNING}Projeniz tam {rollback_steps} adım önceki haline hem yerelde hem de GitHub'da (Force Push) zorla eşitlenecek.{Colors.ENDC}"
+            f"{Colors.WARNING}Projeniz tam {rollback_steps} adım önceki haline hem yerelde hem de "
+            f"GitHub'da (Force Push) zorla eşitlenecek.{Colors.ENDC}"
         )
 
         confirm = (
@@ -729,7 +776,8 @@ def main() -> None:
             available_commits = get_commit_count()
             if available_commits <= rollback_steps:
                 print(
-                    f"{Colors.FAIL}❌ Geri alma başarısız: Bu dalda yalnızca {available_commits} commit var, "
+                    f"{Colors.FAIL}❌ Geri alma başarısız: Bu dalda yalnızca {available_commits} "
+                    f"commit var, "
                     f"{rollback_steps} adım geriye gidilemez.{Colors.ENDC}"
                 )
                 sys.exit(1)
@@ -752,21 +800,25 @@ def main() -> None:
             if push_success:
                 print(f"\n{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
                 print(
-                    f"{Colors.BOLD}{Colors.OKGREEN}⏪ BAŞARILI! Proje başarıyla {rollback_steps} adım önceki haline döndürüldü.{Colors.ENDC}"
+                    f"{Colors.BOLD}{Colors.OKGREEN}⏪ BAŞARILI! Proje başarıyla {rollback_steps} "
+                    f"adım önceki haline döndürüldü.{Colors.ENDC}"
                 )
                 print(f"{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
             else:
                 print(
-                    f"{Colors.FAIL}❌ GitHub'a zorla yazma (Force Push) başarısız oldu:\n{push_err}{Colors.ENDC}"
+                    f"{Colors.FAIL}❌ GitHub'a zorla yazma (Force Push) başarısız "
+                    f"oldu:\n{push_err}{Colors.ENDC}"
                 )
                 print(
-                    f"{Colors.WARNING}Not: GitHub deponuzda 'Branch Protection' kuralları force push'u engelliyor olabilir.{Colors.ENDC}"
+                    f"{Colors.WARNING}Not: GitHub deponuzda 'Branch Protection' kuralları force "
+                    f"push'u engelliyor olabilir.{Colors.ENDC}"
                 )
 
             sys.exit(0 if push_success else 1)  # Geri alma bitti, başarı durumuna göre çık
         else:
             print(
-                f"\n{Colors.OKGREEN}🛡️ Geri alma işlemi iptal edildi. Kodlarınız güvende.{Colors.ENDC}"
+                f"\n{Colors.OKGREEN}🛡️ Geri alma işlemi iptal edildi. Kodlarınız "
+                f"güvende.{Colors.ENDC}"
             )
             sys.exit(0)
 
@@ -783,6 +835,7 @@ def main() -> None:
         pull_cmd = [
             "git",
             "pull",
+            "--autostash",
             "origin",
             target_branch,
             "--no-rebase",
@@ -793,11 +846,14 @@ def main() -> None:
 
         if pull_success or "up to date" in pull_err.lower() or "merge made" in pull_err.lower():
             print(
-                f"{Colors.OKGREEN}✅ '{target_branch}' dalı başarıyla çekildi ve birleştirildi.{Colors.ENDC}"
+                f"{Colors.OKGREEN}✅ '{target_branch}' dalı başarıyla çekildi ve "
+                f"birleştirildi.{Colors.ENDC}"
             )
+            reexec_after_external_branch_merge()
         else:
             print(
-                f"{Colors.FAIL}❌ Birleştirme sırasında hata veya çakışma (conflict) oluştu:\n{pull_err}{Colors.ENDC}"
+                f"{Colors.FAIL}❌ Birleştirme sırasında hata veya çakışma (conflict) "
+                f"oluştu:\n{pull_err}{Colors.ENDC}"
             )
             print_unmerged_files()
             abort_in_progress_merge()
@@ -821,21 +877,29 @@ def main() -> None:
     deleted_files = get_deleted_files()
     if deleted_files:
         print(
-            f"\n{Colors.WARNING}🗑️ Aşağıdaki dosyaların yerel sistemden silindiği tespit edildi:{Colors.ENDC}"
+            f"\n{Colors.WARNING}🗑️ Aşağıdaki dosyaların yerel sistemden silindiği tespit "
+            f"edildi:{Colors.ENDC}"
         )
         for deleted_file in deleted_files:
             print(f"  - {deleted_file}")
 
         confirm_del = (
             input(
-                f"{Colors.OKBLUE}Bu dosyaları kalıcı olarak silip GitHub'dan da kaldırmak istiyor musunuz? "
+                f"{Colors.OKBLUE}Bu dosyaları kalıcı olarak silip GitHub'dan da kaldırmak istiyor "
+                f"musunuz? "
                 f"(evet / hayır): {Colors.ENDC}"
             )
             .strip()
             .lower()
         )
         if confirm_del in ["e", "evet", "y", "yes"]:
-            run_command(["git", "rm", "--ignore-unmatch"] + deleted_files, show_output=False)
+            delete_success, delete_err = stage_deleted_files(deleted_files)
+            if not delete_success:
+                print(
+                    f"{Colors.FAIL}❌ Silinen dosyalar Git'e bildirilirken hata oluştu: "
+                    f"{delete_err}{Colors.ENDC}"
+                )
+                sys.exit(1)
             print(
                 f"{Colors.OKGREEN}✅ Silinen dosyalar onaylandı ve Git'e bildirildi.{Colors.ENDC}"
             )
@@ -913,24 +977,39 @@ def main() -> None:
         )
         if not unpushed:
             print(
-                f"{Colors.WARNING}🤷 Yüklenecek yeni bir değişiklik bulunamadı. Projeniz zaten güncel!{Colors.ENDC}"
+                f"{Colors.WARNING}🤷 Yüklenecek yeni bir değişiklik bulunamadı. Projeniz zaten "
+                f"güncel!{Colors.ENDC}"
             )
             sys.exit(0)
         else:
             print(
-                f"\n{Colors.OKBLUE}💾 Yerel dosya değişikliği yok ancak yüklenmeyi bekleyen commit'ler (Birleştirme logları) bulundu.{Colors.ENDC}"
+                f"\n{Colors.OKBLUE}💾 Yerel dosya değişikliği yok ancak yüklenmeyi bekleyen "
+                f"commit'ler (Birleştirme logları) bulundu.{Colors.ENDC}"
             )
+
+    # Dış branch merge'i veya yalnız unpushed commit bulunan akışta yeni bir
+    # çalışma ağacı değişikliği olmayabilir. Bu durumda da pin eski/orphan bir
+    # commit'i gösterebilir; kalite kapısından önce mevcut, erişilebilir HEAD'e
+    # damgala ve gerekiyorsa ayrı fixup commit'i oluştur.
+    pin_success, pin_err = stamp_install_manifest_pin_after_commit()
+    if not pin_success:
+        print(
+            f"{Colors.FAIL}❌ Install manifest pini push öncesi onarılamadı: {pin_err}{Colors.ENDC}"
+        )
+        sys.exit(1)
 
     gate_success, gate_err = run_pre_push_quality_gate()
     if not gate_success:
         print(
-            f"{Colors.FAIL}❌ Push öncesi kalite kapısı başarısız oldu; GitHub'a yükleme durduruldu:\n"
+            f"{Colors.FAIL}❌ Push öncesi kalite kapısı başarısız oldu; GitHub'a yükleme "
+            f"durduruldu:\n"
             f"{gate_err}{Colors.ENDC}"
         )
         sys.exit(1)
 
     print(
-        f"\n{Colors.HEADER}🚀 GitHub'a yükleniyor (Hedef: {current_branch}). Lütfen bekleyin...{Colors.ENDC}"
+        f"\n{Colors.HEADER}🚀 GitHub'a yükleniyor (Hedef: {current_branch}). Lütfen "
+        f"bekleyin...{Colors.ENDC}"
     )
 
     push_success, err_msg = run_command(
@@ -940,14 +1019,16 @@ def main() -> None:
     if push_success:
         print(f"\n{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
         print(
-            f"{Colors.BOLD}{Colors.OKGREEN}🎉 TEBRİKLER! Proje başarıyla GitHub'a yüklendi!{Colors.ENDC}"
+            f"{Colors.BOLD}{Colors.OKGREEN}🎉 TEBRİKLER! Proje başarıyla GitHub'a "
+            f"yüklendi!{Colors.ENDC}"
         )
         print(f"{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
     elif "rejected" in err_msg or "fetch first" in err_msg or "non-fast-forward" in err_msg:
         print(f"{Colors.WARNING}⚠️ GitHub'da bilgisayarınızda olmayan dosyalar var.{Colors.ENDC}")
         confirm = (
             input(
-                f"{Colors.OKBLUE}Uzak sunucu ile otomatik birleştirme yapılsın mı? (y/n): {Colors.ENDC}"
+                f"{Colors.OKBLUE}Uzak sunucu ile otomatik birleştirme yapılsın mı? (y/n): "
+                f"{Colors.ENDC}"
             )
             .strip()
             .lower()
@@ -975,7 +1056,8 @@ def main() -> None:
                 report_ours_strategy_changes()
                 assert_no_unmerged_files()
                 print(
-                    f"{Colors.OKGREEN}✅ Senkronizasyon başarılı. Yeniden yükleniyor...{Colors.ENDC}"
+                    f"{Colors.OKGREEN}✅ Senkronizasyon başarılı. Yeniden "
+                    f"yükleniyor...{Colors.ENDC}"
                 )
 
                 pin_success, pin_err = stamp_install_manifest_pin_after_commit()
@@ -1001,21 +1083,25 @@ def main() -> None:
                 if retry_success:
                     print(f"\n{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
                     print(
-                        f"{Colors.BOLD}{Colors.OKGREEN}🎉 TEBRİKLER! Çakışma otomatik çözüldü ve proje başarıyla GitHub'a yüklendi!{Colors.ENDC}"
+                        f"{Colors.BOLD}{Colors.OKGREEN}🎉 TEBRİKLER! Çakışma otomatik çözüldü ve "
+                        f"proje başarıyla GitHub'a yüklendi!{Colors.ENDC}"
                     )
                     print(f"{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
                 else:
                     if "rule violations" in retry_err:
                         print(
-                            f"\n{Colors.FAIL}❌ GitHub Güvenlik Duvarı (Push Protection) Devreye Girdi!{Colors.ENDC}"
+                            f"\n{Colors.FAIL}❌ GitHub Güvenlik Duvarı (Push Protection) Devreye "
+                            f"Girdi!{Colors.ENDC}"
                         )
                     else:
                         print(
-                            f"{Colors.FAIL}❌ Yeniden yükleme başarısız oldu:\n{retry_err}{Colors.ENDC}"
+                            f"{Colors.FAIL}❌ Yeniden yükleme başarısız "
+                            f"oldu:\n{retry_err}{Colors.ENDC}"
                         )
             else:
                 print(
-                    f"{Colors.FAIL}❌ Birleştirme sırasında hata oluştu. Lütfen komutu terminale manuel yazıp hatayı okuyun:{Colors.ENDC}"
+                    f"{Colors.FAIL}❌ Birleştirme sırasında hata oluştu. Lütfen komutu terminale "
+                    f"manuel yazıp hatayı okuyun:{Colors.ENDC}"
                 )
                 print(f"{Colors.WARNING}{' '.join(pull_cmd)}{Colors.ENDC}")
                 print(f"Hata Çıktısı:\n{pull_err}")

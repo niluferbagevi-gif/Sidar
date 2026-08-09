@@ -17,11 +17,9 @@ class LLMRoutingService:
         self, messages: list[dict[str, str]], provider: str, model: str | None
     ) -> tuple[str, str | None]:
         """Select provider/model for a chat request."""
-
         return self._router.select(messages, provider, model)
 
     @staticmethod
     def record_cost(cost_usd: float) -> None:
         """Record estimated routing cost."""
-
         record_routing_cost(cost_usd)

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from agent.federation.service import build_trigger_prompt, trigger_to_prompt
+from agent.federation.service import (
+    _MAX_TRIGGER_PROMPT_CHARS,
+    build_trigger_prompt,
+    trigger_to_prompt,
+)
 
 
 def test_federation_service_builds_task_prompt() -> None:
@@ -123,3 +127,60 @@ def test_federation_service_build_trigger_prompt_falls_back_to_generic_prompt() 
 
     assert "[EXTERNAL EVENT]" in prompt
     assert "event_name=deploy" in prompt
+
+
+def test_federation_service_caps_oversized_federation_task_prompt() -> None:
+    huge_context = {"blob": "x" * (_MAX_TRIGGER_PROMPT_CHARS * 2)}
+    prompt = build_trigger_prompt(
+        {"trigger_id": "trg-1", "source": "hub", "correlation_id": "corr-1"},
+        {
+            "kind": "federation_task",
+            "task_id": "task-1",
+            "goal": "Sync records",
+            "context": huge_context,
+        },
+        None,
+    )
+
+    assert len(prompt) <= _MAX_TRIGGER_PROMPT_CHARS + len(
+        "\n…[truncated: external trigger payload too large]"
+    )
+    assert prompt.endswith("…[truncated: external trigger payload too large]")
+
+
+def test_federation_service_caps_oversized_action_feedback_prompt() -> None:
+    prompt = build_trigger_prompt(
+        {"trigger_id": "fb-1", "source": "worker"},
+        {
+            "kind": "action_feedback",
+            "action_name": "publish",
+            "details": {"blob": "y" * (_MAX_TRIGGER_PROMPT_CHARS * 2)},
+        },
+        None,
+    )
+
+    assert prompt.endswith("…[truncated: external trigger payload too large]")
+
+
+def test_federation_service_caps_oversized_generic_trigger_prompt() -> None:
+    prompt = build_trigger_prompt(
+        {
+            "event_name": "deploy",
+            "source": "ci",
+            "payload": {"status": "z" * (_MAX_TRIGGER_PROMPT_CHARS * 2)},
+        },
+        {},
+        None,
+    )
+
+    assert prompt.endswith("…[truncated: external trigger payload too large]")
+
+
+def test_federation_service_does_not_truncate_prompts_under_the_cap() -> None:
+    prompt = build_trigger_prompt(
+        {"trigger_id": "trg-1", "source": "hub", "correlation_id": "corr-1"},
+        {"kind": "federation_task", "task_id": "task-1", "goal": "Sync records"},
+        None,
+    )
+
+    assert "…[truncated" not in prompt

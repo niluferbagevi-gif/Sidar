@@ -23,7 +23,6 @@ def _sync_file(source: Path, destination: Path) -> None:
 
 def sync_packaged_migrations() -> list[Path]:
     """Copy source Alembic migration files into ``sidar_assets/migrations``."""
-
     synced: list[Path] = []
     for pattern in SYNC_PATTERNS:
         for source in sorted(SOURCE_DIR.rglob(pattern)):

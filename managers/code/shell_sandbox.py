@@ -16,7 +16,6 @@ class ShellSandboxAdapter:
 
     def select_shell_sandbox_image(self, command: str, image: str | None) -> str:
         """Use the project test image for test/uv commands, otherwise the REPL image."""
-
         if image:
             return image
         if command_requires_uv_tooling(command):
@@ -25,7 +24,6 @@ class ShellSandboxAdapter:
 
     def build_shell_preflight_command(self, command: str) -> str:
         """Build PATH/uv/pytest preflight for sandbox shell commands."""
-
         return test_runner_orchestrator.build_shell_preflight_command(self.owner, command)
 
     def run_shell_in_sandbox(
@@ -35,7 +33,6 @@ class ShellSandboxAdapter:
         image: str | None = None,
     ) -> tuple[bool, str]:
         """Run a shell command in the owner's Docker sandbox."""
-
         owner = self.owner
         if owner.code_execution_backend in {
             "disabled",
@@ -52,5 +49,4 @@ class ShellSandboxAdapter:
     @staticmethod
     def command_invokes_pytest(command: str) -> bool:
         """Return whether the command directly invokes pytest."""
-
         return command_invokes_pytest(command)

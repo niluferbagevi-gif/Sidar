@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import os
 import random
+import re
 import sqlite3
 from collections.abc import AsyncIterator, Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -219,7 +221,12 @@ class DatabaseConnectionMixin:
         if configured:
             return configured
         base_dir = Path(getattr(self.cfg, "BASE_DIR", Path.cwd()))
-        return f"sqlite+aiosqlite:///{(base_dir / 'data' / 'sidar_degraded.db').as_posix()}"
+        worker = os.getenv("PYTEST_XDIST_WORKER", "").strip()
+        # A PostgreSQL failure may send every xdist worker into degraded mode at
+        # once.  Keep their WAL/SHM files separate instead of racing on one DB.
+        worker_suffix = re.sub(r"[^A-Za-z0-9_.-]", "_", worker) if worker else ""
+        filename = f"sidar_degraded.{worker_suffix}.db" if worker_suffix else "sidar_degraded.db"
+        return f"sqlite+aiosqlite:///{(base_dir / 'data' / filename).as_posix()}"
 
     @staticmethod
     def _postgres_user_action_message(reason: str, exc: BaseException | None = None) -> str:

@@ -260,7 +260,8 @@ class AgentEventBus:
                 backend="rabbitmq", package="aio_pika", install_hint="uv pip install aio-pika"
             )
             logger.debug(
-                "AgentEventBus RabbitMQ bootstrap bağımlılığı eksik, local fallback kullanılacak: %s",
+                "AgentEventBus RabbitMQ bootstrap bağımlılığı eksik, local fallback kullanılacak: "
+                "%s",
                 exc,
             )
             await self._cleanup_rabbit()

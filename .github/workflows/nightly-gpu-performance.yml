@@ -13,6 +13,8 @@ jobs:
   gpu-performance-benchmarks:
     name: GPU Benchmark Suite (nightly)
     runs-on: [self-hosted, linux, gpu]
+    # Ortak labels primary arızasında warm-standby'a otomatik yönlendirme sağlar.
+    # Üç aylık failover tatbikatı: docs/runbooks/gpu-runner-continuity.md
     timeout-minutes: 90
 
     env:
@@ -67,7 +69,7 @@ jobs:
             --no-cov \
             --benchmark-json=artifacts/gpu/benchmark.json
 
-      - name: Check 7-run median trend guards (TTFT/TPS/VRAM)
+      - name: Check 7-run median trend guards (TTFT/TPS/VRAM peak/load latency)
         run: |
           python scripts/ci/check_gpu_benchmark_trend.py \
             artifacts/gpu/benchmark.json \

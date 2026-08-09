@@ -5,6 +5,7 @@ from fastapi import HTTPException
 
 from sidar_version import PRODUCT_VERSION
 from web.app_factory import (
+    _expose_api_docs,
     _expose_exception_details,
     _noop_lifespan,
     create_app,
@@ -31,6 +32,54 @@ def test_expose_exception_details_follows_environment(monkeypatch) -> None:
 
     monkeypatch.setenv("SIDAR_ENV", " production ")
     assert _expose_exception_details() is False
+
+
+def test_expose_api_docs_follows_environment(monkeypatch) -> None:
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    assert _expose_api_docs() is True
+
+    monkeypatch.setenv("SIDAR_ENV", "development")
+    assert _expose_api_docs() is True
+
+    monkeypatch.setenv("SIDAR_ENV", " production ")
+    assert _expose_api_docs() is False
+
+
+def test_create_app_disables_api_documentation_routes_in_production(
+    monkeypatch, make_test_client
+) -> None:
+    monkeypatch.setenv("SIDAR_ENV", "production")
+    app = create_app()
+    client = make_test_client(app)
+
+    assert app.docs_url is None
+    assert app.redoc_url is None
+    assert app.openapi_url is None
+    assert client.get("/docs").status_code == 404
+    assert client.get("/redoc").status_code == 404
+    assert client.get("/openapi.json").status_code == 404
+
+
+def test_create_app_keeps_api_documentation_routes_outside_production(
+    monkeypatch, make_test_client
+) -> None:
+    monkeypatch.setenv("SIDAR_ENV", "development")
+    app = create_app()
+    client = make_test_client(app)
+
+    assert client.get("/docs").status_code == 200
+    assert client.get("/redoc").status_code == 200
+    assert client.get("/openapi.json").status_code == 200
+
+
+def test_create_app_allows_explicit_api_documentation_override(monkeypatch) -> None:
+    monkeypatch.setenv("SIDAR_ENV", "production")
+
+    app = create_app(expose_api_docs=True)
+
+    assert app.docs_url == "/docs"
+    assert app.redoc_url == "/redoc"
+    assert app.openapi_url == "/openapi.json"
 
 
 def test_create_app_registers_metadata_and_json_http_exception_handler(make_test_client) -> None:

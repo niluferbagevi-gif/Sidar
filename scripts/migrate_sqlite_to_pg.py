@@ -14,6 +14,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from core.db.dialect import is_safe_sql_identifier, join_sql_identifiers
+
 TABLES_IN_ORDER = [
     "users",
     "auth_tokens",
@@ -25,11 +27,25 @@ TABLES_IN_ORDER = [
 ]
 TABLES_ALLOWLIST = frozenset(TABLES_IN_ORDER)
 
+# Migrasyon yalnızca TABLES_ALLOWLIST'teki bilinen tablolardan okur, ama sütun adları
+# canlı `PRAGMA table_info`/`SELECT *` introspection'ından gelir (bkz. _load_rows).
+# Kaynak sqlite dosyası güvenilmeyen/bozulmuş olabileceğinden, introspection'dan dönen
+# her sütun adını hedef INSERT sorgusuna gömmeden önce is_safe_sql_identifier ile
+# doğrularız (core.db_components.dialect'teki tek merkezi kimlik denetimi); aksi
+# halde kötü niyetli bir sütun adı SQL injection'a yol açabilir.
+
 
 def _safe_table_name(table: str) -> str:
-    if table not in TABLES_ALLOWLIST:
+    if not is_safe_sql_identifier(table, allowed=TABLES_ALLOWLIST):
         raise ValueError(f"Geçersiz tablo adı: {table}")
     return table
+
+
+def _safe_column_names(table: str, columns: list[str]) -> list[str]:
+    for column in columns:
+        if not is_safe_sql_identifier(column):
+            raise ValueError(f"Geçersiz sütun adı ({table}): {column!r}")
+    return columns
 
 
 def _load_rows(sqlite_path: Path, table: str) -> tuple[list[str], list[tuple[Any, ...]]]:
@@ -47,9 +63,9 @@ def _load_rows(sqlite_path: Path, table: str) -> tuple[list[str], list[tuple[Any
                     f"PRAGMA table_info({table})"  # nosec B608  # tablo adı kontrollü TABLES listesinden gelir.
                 ).fetchall()
             ]
-            return cols, []
+            return _safe_column_names(table, cols), []
         cols = list(rows[0].keys())
-        return cols, [tuple(row[col] for col in cols) for row in rows]
+        return _safe_column_names(table, cols), [tuple(row[col] for col in cols) for row in rows]
     finally:
         conn.close()
 
@@ -61,7 +77,9 @@ async def _copy_table(conn: Any, sqlite_path: Path, table: str, dry_run: bool) -
         return 0
 
     placeholders = ", ".join(f"${idx}" for idx in range(1, len(columns) + 1))
-    col_list = ", ".join(columns)
+    # Validate and interpolate the exact same immutable snapshot.  This closes the
+    # validate-then-join gap if introspection handling is changed in the future.
+    col_list = join_sql_identifiers(columns)
     query = f"INSERT INTO {table} ({col_list}) VALUES ({placeholders})"  # nosec B608
 
     if dry_run:
@@ -80,7 +98,7 @@ async def migrate(sqlite_path: Path, postgres_dsn: str, dry_run: bool) -> None:
     except Exception as exc:  # pragma: no cover
         raise RuntimeError("Bu script için 'asyncpg' bağımlılığı gereklidir.") from exc
 
-    if not sqlite_path.exists():
+    if not await asyncio.to_thread(sqlite_path.exists):
         raise FileNotFoundError(f"SQLite dosyası bulunamadı: {sqlite_path}")
 
     conn = await asyncpg.connect(dsn=postgres_dsn)

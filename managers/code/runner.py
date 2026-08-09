@@ -207,7 +207,8 @@ def run_shell_command(
             logger.warning(
                 "[GÜVENLİK] Shell özellikleri etkin; Python subprocess shell=True kapalı, "
                 "sabit yorumlayıcı argv listesi kullanılacak. "
-                "Komut pipe/redirect/subshell içerebilir — yalnızca güvenilir kaynaklardan çalıştırılmalıdır. "
+                "Komut pipe/redirect/subshell içerebilir — yalnızca güvenilir kaynaklardan "
+                "çalıştırılmalıdır. "
                 "Komut (ilk 200 kar): %.200s",
                 command,
             )
@@ -233,7 +234,8 @@ def run_shell_command(
 
         if len(combined) > manager.max_output_chars:
             combined = combined[: manager.max_output_chars] + (
-                f"\n\n... [ÇIKTI KIRPILDI: Maksimum {manager.max_output_chars} karakter sınırı aşıldı] ..."
+                f"\n\n... [ÇIKTI KIRPILDI: Maksimum {manager.max_output_chars} karakter sınırı "
+                f"aşıldı] ..."
             )
 
         if result.returncode != 0:

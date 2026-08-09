@@ -147,16 +147,17 @@ olmadan çalışan tek parçalık Release bundle dosyasını kullanır.
 
 ## Uzak kurulum betikleri ve SHA-256 sözleşmesi
 
-`install_sidar.sh`, eksik `uv` veya `ollama` için resmi uzak kurulum betiklerini
+`install_sidar.sh`, eksik `uv`, `ollama`, `volta` veya `nvm` için resmi uzak kurulum betiklerini
 çalıştırmadan önce `scripts/install_modules/remote_checksums.env` içindeki reviewed
-default checksum değerlerini yükler, ardından `UV_INSTALL_SHA256` ve
-`OLLAMA_INSTALL_SHA256` değişkenlerini kontrol eder. Shell ortamında açıkça verilen
+default checksum değerlerini yükler, ardından `UV_INSTALL_SHA256`,
+`OLLAMA_INSTALL_SHA256`, `VOLTA_INSTALL_SHA256` ve `NVM_INSTALL_SHA256`
+değişkenlerini kontrol eder. Shell ortamında açıkça verilen
 değerler dosyadaki default değerlerden önceliklidir. Uzak betik indirme/doğrulama
 yardımcıları `scripts/install_modules/utils/remote_script.sh` dosyasındadır; Ollama
 kurulum adımı da `scripts/install_modules/phases/03_runtime_ollama.sh` içinde
 `_ollama_install_step` olarak tutulur. Bu değişkenler boşsa ve
 `ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1` açıkça verilmemişse kurulum fail-fast durur.
-Amaç, `https://astral.sh/uv/install.sh` veya `https://ollama.com/install.sh` üzerinde
+Amaç, refresh aracının yönettiği dört uzak kurulum endpoint'inden birinde
 upstream içerik değişimi/supply-chain riski oluştuğunda sessizce doğrulanmamış betik
 çalıştırmamaktır.
 

@@ -23,6 +23,12 @@ class RemoteScriptPin:
 REMOTE_SCRIPT_PINS = (
     RemoteScriptPin("OLLAMA_INSTALL_SHA256", "https://ollama.com/install.sh", "Ollama installer"),
     RemoteScriptPin("UV_INSTALL_SHA256", "https://astral.sh/uv/install.sh", "uv installer"),
+    RemoteScriptPin("VOLTA_INSTALL_SHA256", "https://get.volta.sh", "Volta installer"),
+    RemoteScriptPin(
+        "NVM_INSTALL_SHA256",
+        "https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh",
+        "NVM installer",
+    ),
 )
 
 

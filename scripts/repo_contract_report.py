@@ -194,7 +194,10 @@ def scan_repo_standards(
                             path=_repo_relative(file_path),
                             line=line_no,
                             text=line.strip(),
-                            message="Use `uv pip install` in Sidar docs/scripts instead of direct pip install.",
+                            message=(
+                                "Use `uv pip install` in Sidar docs/scripts instead of direct "
+                                "pip install."
+                            ),
                         )
                     )
                 if LOW_HARDWARE_MODEL_PATTERN.search(line) and DEFAULT_WORD_PATTERN.search(line):
@@ -204,7 +207,10 @@ def scan_repo_standards(
                             path=_repo_relative(file_path),
                             line=line_no,
                             text=line.strip(),
-                            message="Do not document low-hardware qwen2.5-coder fallbacks as Sidar defaults.",
+                            message=(
+                                "Do not document low-hardware qwen2.5-coder fallbacks as Sidar "
+                                "defaults."
+                            ),
                         )
                     )
                 for legacy_name in legacy_names:
@@ -215,7 +221,10 @@ def scan_repo_standards(
                                 path=_repo_relative(file_path),
                                 line=line_no,
                                 text=line.strip(),
-                                message=f"Legacy product name `{legacy_name}` appears in a scanned file.",
+                                message=(
+                                    f"Legacy product name `{legacy_name}` appears in a "
+                                    "scanned file."
+                                ),
                             )
                         )
     return violations
@@ -226,7 +235,6 @@ def check_dependency_profile_plan_sync(
     plan_path: Path = REPO_ROOT / "docs/DEPENDENCY_PROFILE_PLAN.md",
 ) -> DependencyProfilePlanStatus:
     """Verify dependency profile plan docs stay synchronized with pyproject metadata."""
-
     pyproject_text = _read_text(pyproject_path)
     plan_text = _read_text(plan_path)
     pyproject_data = tomllib.loads(pyproject_text)

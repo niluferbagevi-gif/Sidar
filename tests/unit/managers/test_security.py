@@ -90,6 +90,33 @@ def test_is_safe_path_valid_and_invalid_cases(tmp_path: Path) -> None:
     assert not mgr.is_safe_path(str(tmp_path / ".env"))
 
 
+def test_is_safe_path_resolves_relative_paths_from_base_dir_not_process_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base_dir = tmp_path / "project"
+    base_dir.mkdir()
+    safe_file = base_dir / "notes" / "safe.txt"
+    safe_file.parent.mkdir()
+    safe_file.touch()
+    process_cwd = tmp_path / "unrelated-cwd"
+    process_cwd.mkdir()
+    monkeypatch.chdir(process_cwd)
+    mgr = SecurityManager(access_level="full", base_dir=base_dir)
+
+    assert mgr._resolve_safe("notes/safe.txt") == safe_file.resolve()
+    assert mgr.is_safe_path("notes/safe.txt") is True
+    assert mgr.can_read("notes/safe.txt") is True
+
+
+def test_is_safe_path_rejects_when_shared_resolver_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mgr = SecurityManager(access_level="full", base_dir=tmp_path)
+    monkeypatch.setattr(mgr, "_resolve_safe", lambda _path: None)
+
+    assert mgr.is_safe_path("safe.txt") is False
+
+
 def test_can_read_default_and_rejections(tmp_path: Path) -> None:
     mgr = SecurityManager(access_level="sandbox", base_dir=tmp_path)
 
@@ -194,8 +221,26 @@ def test_set_level_changes_and_status_report(tmp_path: Path) -> None:
 
     report = mgr.status_report()
     assert "Erişim Seviyesi: FULL" in report
-    assert "Yazma" in report
+    assert "Yazma   : ✓ (tam — proje kökü)" in report
     assert "Shell" in report
+
+
+@pytest.mark.parametrize(
+    "level,expected_write_status",
+    [
+        ("sandbox", "Yazma   : ✓ (yalnızca /temp)"),
+        ("restricted", "Yazma   : ✗"),
+    ],
+)
+def test_status_report_write_status_by_level(
+    tmp_path: Path, level: str, expected_write_status: str
+) -> None:
+    mgr = SecurityManager(access_level=level, base_dir=tmp_path)
+
+    report = mgr.status_report()
+
+    assert f"Erişim Seviyesi: {level.upper()}" in report
+    assert expected_write_status in report
 
 
 def test_repr_contains_level(tmp_path: Path) -> None:
@@ -247,8 +292,11 @@ def test_validate_user_input_detects_combined_turkish_prompt_injection(tmp_path:
 def test_validate_user_input_flags_single_turkish_prompt_injection_signal(
     tmp_path: Path, text: str
 ) -> None:
-    """A single Turkish injection category is detected but, like the English patterns,
-    doesn't alone cross the block threshold (risk_score < 40 requires 2+ categories)."""
+    """A single Turkish injection category must not alone cross the block threshold.
+
+    It is detected but, like the English patterns, doesn't alone cross the
+    block threshold (risk_score < 40 requires 2+ categories).
+    """
     mgr = SecurityManager(access_level="sandbox", base_dir=tmp_path)
     result = mgr.validate_user_input(text)
 

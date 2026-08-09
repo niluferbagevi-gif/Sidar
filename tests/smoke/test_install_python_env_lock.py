@@ -135,7 +135,8 @@ EOS
             "sync --frozen --extra production-minimal --no-dev",
         ),
         (
-            'export DEPENDENCY_PROFILE="custom"\nexport SIDAR_DEPENDENCY_EXTRAS="dev openai postgres"',
+            'export DEPENDENCY_PROFILE="custom"\nexport SIDAR_DEPENDENCY_EXTRAS="dev openai '
+            'postgres"',
             "sync --frozen --extra dev --extra openai --extra postgres",
         ),
     ],
@@ -211,7 +212,8 @@ def test_install_python_deps_profile_matrix_uses_expected_uv_sync(
         export PYTHON_VERSION="3.11"
         expected_sync_call="$3"
 
-        unset DEPENDENCY_PROFILE SIDAR_DEPENDENCY_PROFILE SIDAR_DEPENDENCY_EXTRAS RUN_CI_FULL_VALIDATION
+        unset DEPENDENCY_PROFILE SIDAR_DEPENDENCY_PROFILE SIDAR_DEPENDENCY_EXTRAS \
+          RUN_CI_FULL_VALIDATION
         eval "$4"
 
         install_python_deps
@@ -322,7 +324,8 @@ def test_pytorch_cuda_sync_uses_gpu_profile_without_all_extras(tmp_path):
             set -euo pipefail
             printf '%s\n' "$*" >> "${UV_STUB_LOG:?}"
             case "$*" in
-              "sync --frozen --extra dev-gpu --index https://download.pytorch.org/whl/cu124 --reinstall-package torch --reinstall-package torchvision") exit 0 ;;
+              "sync --frozen --extra dev-gpu --index https://download.pytorch.org/whl/cu124 \
+--reinstall-package torch --reinstall-package torchvision") exit 0 ;;
             esac
             printf 'unexpected uv call: %s\n' "$*" >&2
             exit 99
@@ -344,7 +347,8 @@ def test_pytorch_cuda_sync_uses_gpu_profile_without_all_extras(tmp_path):
         export DEPENDENCY_PROFILE="dev-light"
         sync_pytorch_cuda_wheels cu124
 
-        grep -q "^sync --frozen --extra dev-gpu --index https://download.pytorch.org/whl/cu124 --reinstall-package torch --reinstall-package torchvision$" "$UV_STUB_LOG"
+        grep -q "^sync --frozen --extra dev-gpu --index https://download.pytorch.org/whl/cu124 \
+--reinstall-package torch --reinstall-package torchvision$" "$UV_STUB_LOG"
         ! grep -q -- "--all-extras" "$UV_STUB_LOG"
         ! grep -q -- "torchaudio" "$UV_STUB_LOG"
         """

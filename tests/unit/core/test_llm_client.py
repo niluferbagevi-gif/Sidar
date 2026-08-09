@@ -3791,7 +3791,10 @@ async def test_ollama_do_request_json_parse_error_with_text(respx_mock_router) -
 
 @pytest.mark.asyncio
 async def test_ollama_do_request_json_parse_error_empty_text_fallthrough(respx_mock_router) -> None:
-    """Branch 527->536: resp.json() raises, resp.text is empty → detail="" → raise_for_status() called."""
+    """Branch 527->536: empty resp.text with a json() error still calls raise_for_status().
+
+    resp.json() raises, resp.text is empty → detail="" → raise_for_status() called.
+    """
     client = llm_client.OllamaClient(
         _make_config(OLLAMA_URL="http://localhost:11434", CODING_MODEL="m")
     )
@@ -3807,7 +3810,10 @@ async def test_ollama_do_request_json_parse_error_empty_text_fallthrough(respx_m
 async def test_ollama_chat_generic_exception_model_not_found_guidance(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Lines 561-562: non-LLMAPIError with model-not-found text → warning logged + LLMAPIError with guidance."""
+    """Lines 561-562: a model-not-found exception must be logged and re-raised with guidance.
+
+    non-LLMAPIError with model-not-found text → warning logged + LLMAPIError with guidance.
+    """
     client = llm_client.OllamaClient(_make_config(CODING_MODEL="xyz"))
 
     async def _raise_model_not_found(*_a, **_kw):
@@ -3822,7 +3828,10 @@ async def test_ollama_chat_generic_exception_model_not_found_guidance(
 
 @pytest.mark.asyncio
 async def test_ollama_stream_inline_error_guidance_none_branch(respx_mock_router) -> None:
-    """Branch 609->618: stream line has error but guidance is None → falls through to chunk parsing."""
+    """Branch 609->618: a None guidance value must fall through to normal chunk parsing.
+
+    stream line has error but guidance is None → falls through to chunk parsing.
+    """
     client = llm_client.OllamaClient(
         _make_config(OLLAMA_URL="http://localhost:11434", CODING_MODEL="m")
     )
@@ -3843,7 +3852,10 @@ async def test_ollama_stream_inline_error_guidance_none_branch(respx_mock_router
 async def test_ollama_stream_trailing_newline_error_with_guidance(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Lines 636-645: trailing decoded bytes contain a newline-terminated model-not-found error → guidance yielded."""
+    """Lines 636-645: a newline-terminated model-not-found error in trailing bytes yields guidance.
+
+    Trailing decoded bytes contain a newline-terminated model-not-found error → guidance yielded.
+    """
 
     class _Decoder:
         def decode(self, _raw, final=False):
@@ -3873,7 +3885,10 @@ async def test_ollama_stream_trailing_newline_error_with_guidance(
 async def test_ollama_stream_remaining_buffer_error_with_guidance(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Lines 657-666: remaining buffer without newline has model-not-found error → guidance yielded."""
+    """Lines 657-666: a model-not-found error in the remaining buffer must yield guidance.
+
+    Remaining buffer without newline has model-not-found error → guidance yielded.
+    """
 
     class _Decoder:
         def decode(self, _raw, final=False):
@@ -3903,7 +3918,10 @@ async def test_ollama_stream_remaining_buffer_error_with_guidance(
 async def test_ollama_stream_trailing_newline_error_no_guidance_branch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Branch 637->646: trailing line has error but guidance is None → falls through to chunk parsing."""
+    """Branch 637->646: a None guidance value on the trailing line falls through to chunk parsing.
+
+    Trailing line has error but guidance is None → falls through to chunk parsing.
+    """
 
     class _Decoder:
         def decode(self, _raw, final=False):
@@ -3932,7 +3950,10 @@ async def test_ollama_stream_trailing_newline_error_no_guidance_branch(
 async def test_ollama_stream_remaining_buffer_error_no_guidance_branch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Branch 658->667: remaining buffer has error but guidance is None → falls through to chunk parsing."""
+    """Branch 658->667: a None guidance value in the remaining buffer falls through to parsing.
+
+    Remaining buffer has error but guidance is None → falls through to chunk parsing.
+    """
 
     class _Decoder:
         def decode(self, _raw, final=False):

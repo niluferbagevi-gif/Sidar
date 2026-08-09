@@ -1,5 +1,5 @@
-"""
-Sidar Project - GitHub Yöneticisi
+"""Sidar Project - GitHub Yöneticisi.
+
 Depo analizi, commit geçmişi ve uzak dosya okuma (Binary Korumalı).
 Sürüm: 2.7.0
 """
@@ -10,6 +10,8 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from tenacity import RetryError, retry, retry_if_exception, stop_after_attempt, wait_exponential
+
+from core.hitl import get_hitl_gate
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +47,8 @@ def _is_retryable_github_error(exc: BaseException) -> bool:
 
 
 class GitHubManager:
-    """
-    GitHub API üzerinden depo analizi yapar.
+    """GitHub API üzerinden depo analizi yapar.
+
     PyGithub kütüphanesi kullanır.
     """
 
@@ -201,8 +203,8 @@ class GitHubManager:
         return False, f"Depo bulunamadı veya erişim reddedildi: {repo_name}"
 
     def list_repos(self, owner: str = "", limit: int = 100) -> tuple[bool, list[dict[str, str]]]:
-        """
-        Erişilebilen depoları listeler.
+        """Erişilebilen depoları listeler.
+
         owner verilirse ilgili kullanıcı/organizasyon hesabının depolarını döner.
         """
         if not self._ensure_client():
@@ -435,8 +437,7 @@ class GitHubManager:
             return False, f"GitHub dosya yazma hatası: {exc}"
 
     def create_branch(self, branch_name: str, from_branch: str | None = None) -> tuple[bool, str]:
-        """
-        Yeni git dalı oluştur.
+        """Yeni git dalı oluştur.
 
         Args:
             branch_name: Oluşturulacak dal adı (yalnızca harf/rakam//_/./- izinli).
@@ -491,12 +492,31 @@ class GitHubManager:
         except Exception as exc:
             return False, f"Pull Request oluşturma hatası: {exc}"
 
+    async def create_pull_request_hitl(
+        self,
+        title: str,
+        body: str,
+        head: str,
+        base: str | None = None,
+    ) -> tuple[bool, str]:
+        """Require human approval before creating a pull request."""
+        base_branch = base or (self._repo.default_branch if self._repo else "")
+        approved = await get_hitl_gate().request_approval(
+            action="github_pr_create",
+            description=f"Pull Request oluşturulacak: {head} → {base_branch}",
+            payload={"title": title, "head": head, "base": base_branch},
+            requested_by="GitHubManager",
+        )
+        if not approved:
+            return False, "Pull Request oluşturma işlemi insan onayı olmadan reddedildi."
+        return self.create_pull_request(title, body, head, base)
+
     def list_pull_requests(
         self,
         state: str = "open",
         limit: int = 30,
     ) -> tuple[bool, str]:
-        """Pull Request listesi döndür. state: open / closed / all"""
+        """Pull Request listesi döndür. state: open / closed / all."""
         if not self._repo:
             return False, "Aktif depo yok."
         try:
@@ -586,7 +606,8 @@ class GitHubManager:
                 )
             return (
                 True,
-                f"✓ PR #{number} merge edildi ({safe_method}): {message or getattr(pr, 'html_url', '')}",
+                f"✓ PR #{number} merge edildi ({safe_method}): "
+                f"{message or getattr(pr, 'html_url', '')}",
             )
         except Exception as exc:
             status = getattr(exc, "status", None)
@@ -757,8 +778,7 @@ class GitHubManager:
         state: str = "open",
         limit: int = 50,
     ) -> tuple[bool, list[dict[str, Any]], str]:
-        """
-        PR listesini yapısal dict listesi olarak döndürür.
+        """PR listesini yapısal dict listesi olarak döndürür.
 
         web_server.py gibi dış modüllerin _repo'ya doğrudan erişmesini önler.
         """

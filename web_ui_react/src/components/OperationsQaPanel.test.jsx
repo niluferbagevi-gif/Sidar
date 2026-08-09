@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { OperationsQaPanel } from "./OperationsQaPanel.jsx";
 
@@ -55,6 +55,16 @@ describe("OperationsQaPanel — başlangıç render", () => {
     expect(screen.getByText("WS: disconnected")).toBeInTheDocument();
   });
 
+  it("Poyraz formlarında okunabilir Türkçe alan etiketleri gösterir", async () => {
+    await renderOperationsQaPanel();
+
+    for (const label of ["Marka adı", "Kampanya adı", "Amaç", "Hedef kitle", "Kanallar", "Eylem çağrısı", "Ton"]) {
+      expect(screen.getAllByRole("textbox", { name: label }).length).toBeGreaterThan(0);
+    }
+    expect(screen.queryByRole("textbox", { name: "brand_name" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "call_to_action" })).not.toBeInTheDocument();
+  });
+
   it("oda değiştirme butonu aktif odayı değiştirir", async () => {
     const user = userEvent.setup();
     await renderOperationsQaPanel();
@@ -67,6 +77,33 @@ describe("OperationsQaPanel — başlangıç render", () => {
 });
 
 describe("OperationsQaPanel — REST tetiklemeleri", () => {
+  it("çift submit'i tek isteğe indirger ve işlem sırasında aksiyonları kilitler", async () => {
+    let resolveLanding;
+    apiMocks.generateLandingPage.mockImplementation(() => new Promise((resolve) => {
+      resolveLanding = resolve;
+    }));
+    await renderOperationsQaPanel();
+
+    const landingButton = screen.getByRole("button", { name: "Landing üret" });
+    const landingForm = landingButton.closest("form");
+    expect(landingForm).not.toBeNull();
+    act(() => {
+      // Submit the form twice in the same React batch. The disabled-button state
+      // cannot protect this path yet, so the synchronous ref guard must do so.
+      fireEvent.submit(landingForm);
+      fireEvent.submit(landingForm);
+    });
+
+    expect(apiMocks.generateLandingPage).toHaveBeenCalledTimes(1);
+    for (const name of ["Landing üret", "Kopya üret", "Analiz et", "Batch çalıştır"]) {
+      expect(screen.getByRole("button", { name })).toBeDisabled();
+    }
+
+    resolveLanding({ ok: true });
+    expect(await screen.findByText("Landing page tamamlandı.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Landing üret" })).not.toBeDisabled();
+  });
+
   it("Landing page formu generateLandingPage çağırır", async () => {
     const user = userEvent.setup();
     apiMocks.generateLandingPage.mockResolvedValue({ ok: true, page: "<html/>" });
@@ -132,6 +169,16 @@ describe("OperationsQaPanel — REST tetiklemeleri", () => {
     expect(await screen.findByText("Landing patladı")).toBeInTheDocument();
     expect(await screen.findByText("Landing page başarısız.")).toBeInTheDocument();
   });
+
+  it("Error olmayan REST redlerini okunabilir banner'a dönüştürür", async () => {
+    const user = userEvent.setup();
+    apiMocks.generateLandingPage.mockRejectedValue("ham hata");
+    await renderOperationsQaPanel();
+
+    await user.click(screen.getByRole("button", { name: "Landing üret" }));
+
+    expect(await screen.findByText("ham hata")).toBeInTheDocument();
+  });
 });
 
 describe("OperationsQaPanel — form girdileri", () => {
@@ -139,7 +186,7 @@ describe("OperationsQaPanel — form girdileri", () => {
     const user = userEvent.setup();
     apiMocks.generateLandingPage.mockResolvedValue({ ok: true });
     await renderOperationsQaPanel();
-    const offerInputs = screen.getAllByRole("textbox", { name: "offer" });
+    const offerInputs = screen.getAllByRole("textbox", { name: "Teklif" });
     const landingOffer = offerInputs[0];
     await user.clear(landingOffer);
     await user.type(landingOffer, "Yeni teklif");
@@ -153,8 +200,8 @@ describe("OperationsQaPanel — form girdileri", () => {
     const user = userEvent.setup();
     apiMocks.generateCampaignCopy.mockResolvedValue({ ok: true });
     await renderOperationsQaPanel();
-    const campaignName = screen.getByRole("textbox", { name: "campaign_name" });
-    const campaignOffer = screen.getAllByRole("textbox", { name: "offer" })[1];
+    const campaignName = screen.getByRole("textbox", { name: "Kampanya adı" });
+    const campaignOffer = screen.getAllByRole("textbox", { name: "Teklif" })[1];
 
     await user.clear(campaignName);
     await user.type(campaignName, "Yeni kampanya");
@@ -246,6 +293,19 @@ describe("OperationsQaPanel — HITL kuyruğu", () => {
     expect(await screen.findByText("HITL alınamadı")).toBeInTheDocument();
   });
 
+  it("başarılı HITL yenilemesinde önceki hata banner'ını temizler", async () => {
+    const user = userEvent.setup();
+    apiMocks.listHitlPending
+      .mockRejectedValueOnce(new Error("Geçici HITL hatası"))
+      .mockResolvedValueOnce({ pending: [] });
+    await renderOperationsQaPanel();
+    expect(await screen.findByText("Geçici HITL hatası")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Yenile" }));
+
+    await waitFor(() => expect(screen.queryByText("Geçici HITL hatası")).not.toBeInTheDocument());
+  });
+
   it("pending alanı eksik HITL yanıtını boş liste olarak işler", async () => {
     apiMocks.listHitlPending.mockResolvedValueOnce({});
     await renderOperationsQaPanel();
@@ -290,6 +350,16 @@ describe("OperationsQaPanel — WebSocket olay akışı", () => {
 
     expect(await screen.findByText("api · status")).toBeInTheDocument();
     expect(screen.getByText("2026-05-11T09:00:00Z")).toBeInTheDocument();
+  });
+
+  it("id, timestamp ve content olmadan gelen WS olayı için kararlı fallback id üretir", async () => {
+    await renderOperationsQaPanel();
+
+    act(() => {
+      webSocketOptions.onRoomEvent({ source: "ops" });
+    });
+
+    expect(await screen.findByText("ops · status")).toBeInTheDocument();
   });
 
   it("zaman damgası eksik WS olaylarını boş ts ile render eder", async () => {

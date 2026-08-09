@@ -1,5 +1,5 @@
-"""
-Sidar Project - Otomatik Komut İşleyici
+"""Sidar Project - Otomatik Komut İşleyici.
+
 Kullanıcı girdisindeki ortak kalıpları otomatik olarak tanır ve işler (Asenkron Uyumlu).
 """
 
@@ -24,9 +24,9 @@ logger = logging.getLogger(__name__)
 
 
 class AutoHandle:
-    """
-    Kullanıcı mesajlarını anahtar kelime örüntülerine göre analiz eder
-    ve uygun manager metodunu çağırır.
+    """Kullanıcı mesajlarını anahtar kelime örüntülerine göre analiz eder.
+
+    Uygun manager metodunu çağırır.
 
     Dönen değer: (işlendi_mi: bool, yanıt: str)
     """
@@ -68,8 +68,7 @@ class AutoHandle:
     _DOT_CMD_RE = re.compile(r"^\s*\.(status|health|clear|audit|gpu|heal)\b", re.IGNORECASE)
 
     async def handle(self, text: str) -> tuple[bool, str]:
-        """
-        text: kullanıcı mesajı
+        """text: kullanıcı mesajı.
 
         Returns:
             (True, yanıt)  — otomatik işlendiyse
@@ -218,7 +217,7 @@ class AutoHandle:
             return True, "⚠ Kullanım: .heal <log_dosyası>"
         log_path = m.group(1).strip().strip("'\"")
         candidate = Path(log_path)
-        if not candidate.exists():
+        if not await asyncio.to_thread(candidate.exists):
             return True, f"⚠ Log dosyası bulunamadı: {log_path}"
         try:
             log_text = await asyncio.to_thread(candidate.read_text, encoding="utf-8")
@@ -553,7 +552,7 @@ class AutoHandle:
         return False, ""
 
     async def _try_npm(self, t: str, raw: str) -> tuple[bool, str]:
-        """npm paket sorgusu — 'npm react', 'node paketi axios' vb."""
+        """Npm paket sorgusu — 'npm react', 'node paketi axios' vb."""
         m = re.search(
             r"(?:npm|node\s+paketi?|js\s+paketi?)\s*[:\-]?\s*([@\w\-_./]+)",
             t,
@@ -654,6 +653,7 @@ class AutoHandle:
 
     def _extract_dir_path(self, text: str) -> str | None:
         """Metinden dizin yolu çıkar (dosya adı içermeyen yollar için).
+
         Uzantılı dosya adlarını dizin olarak döndürmez; yalnızca açık dizin yolları alınır.
         """
         # Tırnak içindeki yol varsa ve uzantı içermiyorsa dizin say

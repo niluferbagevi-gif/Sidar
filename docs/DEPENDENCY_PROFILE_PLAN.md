@@ -211,14 +211,14 @@ kaldığında terfi edebilir:
 
 ## Ruff docstring / ASYNC borç kapatma takibi
 
-> **Aktif takip durumu (2026-07-16):** kapanış hedefi `2026-09-30` olarak
-> değişmeden kalır. Bu hedef, yeni veya anlamlı şekilde değişen public API'lerde
-> docstring ekleme varsayımını ve `ASYNC240` debt ratchet'ini genişletmeme
-> kuralını takip eder.
+> **Aktif takip durumu (2026-08-02):** E501, seçili D200-D417 ve ASYNC240
+> baseline'ları sıfıra ulaştığı için global ignore'lar hedef tarihten önce
+> kaldırılmıştır. `2026-09-30`, kalan D100-D107 envanteri ve kapanış metadata'sı
+> için son gözden geçirme tarihi olarak korunur.
 
-`pyproject.toml` içindeki `[tool.sidar.ruff_debt]` bloğu docstring (`D*`) ve
-`ASYNC240` ignore'larının kapanış tarihini `2026-09-30` olarak taşır. Bu tarihe kadar
-planlanan doğrulama komutları:
+`pyproject.toml` içindeki `[tool.sidar.ruff_debt]` bloğu sıfır ratchet'i ve
+`2026-09-30` kapanış incelemesini taşır. Kurallar normal Ruff çalıştırmasında artık
+doğrudan etkindir; bu tarihe kadar savunma amaçlı doğrulama komutları:
 
 ```bash
 uv run ruff check . --select D,ASYNC
@@ -228,8 +228,8 @@ uv run ruff check .
 
 Yeni veya anlamlı şekilde değişen public API'lerde Google-style docstring eklemek,
 yeni async I/O yollarında blocking pathlib metadata çağrılarını büyütmemek ve yeni kodda
-100 karakter satır sınırına uymak zorunludur; ignore listesi yeni borç eklemek için
-genişletilmemelidir. CI, mevcut E501 toplamını `e501_debt_baseline`, D200-D417 ve
+100 karakter satır sınırına uymak zorunludur; kaldırılan ignore'lar yeniden
+eklenmemelidir. CI, mevcut E501 toplamını `e501_debt_baseline`, D200-D417 ve
 ASYNC240 sayımlarını ise `docstring_async_debt_baseline` ratchet sınırıyla
 karşılaştırır. Yeni veya anlamlı düzenlenen kod bu baseline'ları artırırsa
 `scripts/ci/check_ruff_debt_baseline.py` fail-closed davranır. Ölçülen sayı

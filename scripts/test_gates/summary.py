@@ -59,7 +59,6 @@ def _failed_backend_tests(report_dir: str) -> list[str]:
 
 def build_summary(args: list[str]) -> dict[str, object]:
     """Build the test-summary payload from run_tests.sh positional values."""
-
     (
         _output_path,
         smoke,
@@ -123,16 +122,32 @@ def build_summary(args: list[str]) -> dict[str, object]:
             "file": benchmark_baseline_file or None,
             "selector": benchmark_compare_selector or None,
             "json_output": benchmark_json_output,
-            "local_seed_command": "BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required bash run_tests.sh --stage all",
+            "local_seed_command": (
+                "BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required bash run_tests.sh --stage all"
+            ),
             "ci_seed_workflow": "GitHub Actions → CI → Run workflow → seed_benchmark_baseline=true",
             "ci_fail_closed": True,
         },
         "production_ready": production_ready == "true",
+        "gpu_inference_evidence": {
+            "included": False,
+            "status": "not_run",
+            "scope": "external_ci_required_check",
+            "quality_gate": "GPU Inference Quality Gate (TTFT<=200ms, latency<=250ms)",
+            "policy_gate": "GPU Inference Required Evidence Gate",
+            "required_variable": "ENABLE_GPU_BENCH_GATE=true",
+            "required_runner_labels": ["self-hosted", "linux", "gpu"],
+            "ttft_budget_ms": 200,
+            "latency_budget_ms": 250,
+        },
         "production_readiness_detail": {
             "status": production_readiness_status,
             "reason": production_readiness_reason,
             "required_command": "make production-readiness",
-            "equivalent_direct_command": "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all",
+            "equivalent_direct_command": (
+                "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 "
+                "SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
+            ),
             "validation_class": validation_class,
             "release_blocking": release_blocking == "true",
             "release_gate_exit_code": _safe_int(release_gate_exit_code),
@@ -154,7 +169,6 @@ def build_summary(args: list[str]) -> dict[str, object]:
 
 def main(argv: list[str] | None = None) -> int:
     """Write a summary JSON file and return a process status code."""
-
     args = list(sys.argv[1:] if argv is None else argv)
     expected_arg_count = 37
     if len(args) != expected_arg_count:

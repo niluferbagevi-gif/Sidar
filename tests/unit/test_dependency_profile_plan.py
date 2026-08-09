@@ -217,19 +217,32 @@ def test_torch_upgrade_reminder_has_calendar_artifact_and_validation_plan() -> N
         assert required in runbook_text
 
 
-def test_ruff_line_length_debt_is_tracked_until_docstring_campaign_close() -> None:
+def test_zero_ruff_debt_is_enforced_after_global_ignores_are_removed() -> None:
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     ruff = pyproject["tool"]["ruff"]
     lint = pyproject["tool"]["ruff"]["lint"]
     debt = pyproject["tool"]["sidar"]["ruff_debt"]
 
     assert ruff["line-length"] == 100
-    assert "E501" in lint["ignore"]
-    assert "ASYNC240" in lint["ignore"]
+    directly_enforced = {
+        "E501",
+        "D200",
+        "D202",
+        "D205",
+        "D209",
+        "D212",
+        "D403",
+        "D415",
+        "D417",
+        "ASYNC240",
+    }
+    assert directly_enforced.isdisjoint(lint["ignore"])
     assert debt["line_length"] == 100
     assert debt["e501_global_ignore_review_by"] == "2026-09-30"
-    assert debt["e501_debt_baseline"] == 475
+    assert isinstance(debt["e501_debt_baseline"], int)
+    assert debt["e501_debt_baseline"] >= 0
     assert debt["async240_global_ignore_review_by"] == "2026-09-30"
+    assert debt["global_ignores_removed_on"] == "2026-08-02"
     assert {"web_server.py", "main.py"} <= set(debt["legacy_hotspots"])
     assert (
         "uv run python scripts/ci/check_ruff_debt_baseline.py"
@@ -237,15 +250,15 @@ def test_ruff_line_length_debt_is_tracked_until_docstring_campaign_close() -> No
     )
     assert "--update" in Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")
     assert debt["docstring_async_debt_baseline"] == {
-        "D200": 6,
-        "D202": 147,
-        "D205": 81,
-        "D209": 10,
-        "D212": 114,
-        "D403": 10,
-        "D415": 55,
-        "D417": 1,
-        "ASYNC240": 23,
+        "D200": 0,
+        "D202": 0,
+        "D205": 0,
+        "D209": 0,
+        "D212": 0,
+        "D403": 0,
+        "D415": 0,
+        "D417": 0,
+        "ASYNC240": 0,
     }
 
 

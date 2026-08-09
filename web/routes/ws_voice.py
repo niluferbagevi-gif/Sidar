@@ -12,7 +12,7 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from web.routes.ws_chat import send_json_if_connected, websocket_is_connected
-from web.routes.ws_lifecycle import WebSocketLifecycle
+from web.routes.ws_lifecycle import WebSocketLifecycle, reject_rate_limited_connection
 from web.security import (
     SIDAR_WS_VOICE_PROTOCOL,
 )
@@ -32,14 +32,16 @@ def build_ws_voice_router(deps_factory: Callable[[], Any]) -> APIRouter:
 
 
 async def websocket_voice(websocket: WebSocket, deps: Any) -> Any:
-    """
-    Gerçek zamanlı ses oturumu için websocket.
+    """Gerçek zamanlı ses oturumu için websocket.
 
     MVP davranışı:
     - İstemci binary ses chunk'larını gönderir.
     - `commit` / `end` aksiyonu ile biriken ses STT'den geçirilir.
     - Transkript çıkarıldıktan sonra ajan metin yanıtı stream edilir.
     """
+    if await reject_rate_limited_connection(websocket, deps):
+        return
+
     proto_header = websocket.headers.get("sec-websocket-protocol", "").strip()
     extract_ws_header_token = getattr(
         deps, "extract_ws_header_token", default_extract_ws_header_token
@@ -168,7 +170,7 @@ async def websocket_voice(websocket: WebSocket, deps: Any) -> Any:
     ) -> None:
         if not websocket_is_connected(websocket):
             return  # pragma: no cover - disconnect race before background turn starts
-        if not audio_bytes:  # pragma: no cover - _process_audio_commit boş buffer'ı filtrelediği için savunmacı koruma
+        if not audio_bytes:  # pragma: no cover - defensive, empty buffers filtered upstream
             await send_json_if_connected(
                 websocket, {"error": "İşlenecek ses verisi bulunamadı.", "done": True}
             )

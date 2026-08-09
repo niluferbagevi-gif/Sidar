@@ -117,17 +117,53 @@ if [[ -z "${UV_LINK_MODE:-}" && ( "${CODESPACES:-}" == "true" || "${GITHUB_CODES
     export UV_LINK_MODE=copy
 fi
 
+# Sidar'ın kendi ürettiği/yönettiği dahili secret'lar (kullanıcının interaktif
+# API key toplama akışının parçası değildir, bu yüzden aşağıdaki kullanıcı
+# secret listesinden ayrı tutulur).
+SIDAR_INTERNAL_SECRET_ENV_KEYS=(
+    DATABASE_URL SIDAR_CONTAINER_DATABASE_URL SELF_HEAL_DATABASE_URL
+    TEST_DATABASE_URL LOCAL_DEV_FALLBACK_DATABASE_URL POSTGRES_PASSWORD
+    REDIS_PASSWORD
+    API_KEY JWT_SECRET_KEY MEMORY_ENCRYPTION_KEY AUTONOMY_WEBHOOK_SECRET
+    SIDAR_AUTONOMY_WEBHOOK_SECRET
+    SWARM_FEDERATION_SHARED_SECRET GITHUB_WEBHOOK_SECRET GRAFANA_ADMIN_PASSWORD
+    METRICS_TOKEN SIDAR_REDIS_URL REDIS_URL RABBITMQ_URL SIDAR_RABBITMQ_URL
+)
+
+# Kullanıcının interaktif olarak sağladığı API key/secret adlarının TEK
+# doğruluk kaynağı. scripts/install_modules/phases/08_env.sh içindeki
+# sidar_user_api_key_names() bu diziyi olduğu gibi döndürür; aşağıdaki log
+# maskeleme deseni de aynı diziyi kullanır. Yeni bir kullanıcı API
+# key'i/secret'ı eklerken SADECE bu diziyi güncelleyin — iki ayrı allowlist'i
+# elle senkron tutmaya çalışmayın (bu, önceden GITHUB_TOKEN, SLACK_TOKEN,
+# TAVILY_API_KEY, HF_TOKEN, JIRA_TOKEN gibi değerlerin log maskelemesinden
+# sessizce dışarıda kalmasına yol açan tam da bu sınıf bir bug'dı).
+SIDAR_USER_SECRET_ENV_KEYS=(
+    OPENAI_API_KEY GEMINI_API_KEY GOOGLE_API_KEY ANTHROPIC_API_KEY LITELLM_API_KEY HF_TOKEN
+    GITHUB_TOKEN
+    TAVILY_API_KEY GOOGLE_SEARCH_API_KEY GOOGLE_SEARCH_CX
+    SLACK_TOKEN SLACK_APP_LEVEL_TOKEN SLACK_WEBHOOK_URL SLACK_DEFAULT_CHANNEL
+    JIRA_URL JIRA_EMAIL JIRA_TOKEN JIRA_API_TOKEN JIRA_DEFAULT_PROJECT
+    TEAMS_WEBHOOK_URL
+    META_GRAPH_API_TOKEN
+)
+
 # Kurulum loglarını eşzamanlı olarak terminale ve dosyaya yaz.
 # Filtre önce terminal/log fan-out'una girer; böylece set -x, sed hata çıktısı
 # veya beklenmeyen tool çıktıları DATABASE_URL/parola/token değerlerini hem
 # terminalden hem de kalıcı log dosyasından maskeler.
 mask_install_log_stream() {
+    local masked_keys_pattern
+    masked_keys_pattern="$(
+        IFS='|'
+        printf '%s' "${SIDAR_INTERNAL_SECRET_ENV_KEYS[*]}|${SIDAR_USER_SECRET_ENV_KEYS[*]}"
+    )"
     sed -u -E \
         -e 's#((postgresql|postgres|mysql|mariadb)(\+[^:/@[:space:]]+)?://[^:/@[:space:]]+:)[^@[:space:]]+@#\1****@#g' \
         -e 's#((redis|rediss|amqp|amqps|mongodb|mongodb\+srv)://[^:/@[:space:]]+:)[^@[:space:]]+@#\1****@#g' \
-        -e 's#((DATABASE_URL|SIDAR_CONTAINER_DATABASE_URL|SELF_HEAL_DATABASE_URL|TEST_DATABASE_URL|LOCAL_DEV_FALLBACK_DATABASE_URL|POSTGRES_PASSWORD|API_KEY|JWT_SECRET_KEY|MEMORY_ENCRYPTION_KEY|AUTONOMY_WEBHOOK_SECRET|SWARM_FEDERATION_SHARED_SECRET|GITHUB_WEBHOOK_SECRET|GRAFANA_ADMIN_PASSWORD|METRICS_TOKEN|OPENAI_API_KEY|GEMINI_API_KEY|ANTHROPIC_API_KEY|LITELLM_API_KEY|SIDAR_REDIS_URL|REDIS_URL|RABBITMQ_URL|SIDAR_RABBITMQ_URL)=)[^[:space:]";]+#\1****#g' \
+        -e "s#((${masked_keys_pattern})=)[^[:space:]\";]+#\1****#g" \
         -e 's#((generated_password|safe_db_url|container_db_url|db_password|db_url|api_key|memory_key|grafana_password|pg_password)=)[^[:space:]";]+#\1****#gi' \
-        -e 's#("(DATABASE_URL|SIDAR_CONTAINER_DATABASE_URL|SELF_HEAL_DATABASE_URL|TEST_DATABASE_URL|LOCAL_DEV_FALLBACK_DATABASE_URL|POSTGRES_PASSWORD|API_KEY|JWT_SECRET_KEY|MEMORY_ENCRYPTION_KEY|AUTONOMY_WEBHOOK_SECRET|SWARM_FEDERATION_SHARED_SECRET|GITHUB_WEBHOOK_SECRET|GRAFANA_ADMIN_PASSWORD|METRICS_TOKEN|OPENAI_API_KEY|GEMINI_API_KEY|ANTHROPIC_API_KEY|LITELLM_API_KEY|SIDAR_REDIS_URL|REDIS_URL|RABBITMQ_URL|SIDAR_RABBITMQ_URL)"[[:space:]]*:[[:space:]]*")[^"]*"#\1****"#g' \
+        -e "s#(\"(${masked_keys_pattern})\"[[:space:]]*:[[:space:]]*\")[^\"]*\"#\1****\"#g" \
         -e 's#((Authorization|X-API-Key|X-Auth-Token):[[:space:]]*)(Bearer[[:space:]]+)?[^[:space:]]+#\1\3****#gi'
 }
 
@@ -146,7 +182,7 @@ load_remote_script_checksums() {
 load_remote_script_checksums
 
 SIDAR_INSTALLER_EMBEDDED_SOURCE_REF="main"
-SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="3fe138ea5ffe2eebf5bd5290fa369cdc17b6c01f"
+SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="4a4def8d0b4c410bcb86be17a6e3cbb659ae0a20"
 
 sidar_truthy_early_bool() {
     local raw="${1:-}"
@@ -214,8 +250,8 @@ verify_core_install_manifest() {
     done
 
     cat <<'SIDAR_INSTALL_MANIFEST_EOF' > "$manifest_path"
-656bc57f6b036d10d7d436af6819725a1ba2a2913367184a4517e309c3eec6f5  core/memory.py
-1fb2f74bbca1546c225f6c7c6831b66f131806c668575acb4c852c03b32fccd2  core/multimodal.py
+32bb465e8344f235b5d50b76498466415dda43b03d7e40fa7014aa3d38847e63  core/memory.py
+8da261301210fbeba7d5d55cff37200342d1661cf6aaa52b43c79295ce56ee46  core/multimodal.py
 SIDAR_INSTALL_MANIFEST_EOF
 
     if (cd "$SCRIPT_DIR" && sha256sum -c "$manifest_path" --status); then
@@ -521,9 +557,9 @@ INSTALL_UTILITY_MODULES=(
     "utils/remote_script.sh"
     "utils/python_env.sh"
     "utils/database_url.sh"
+    "utils/env_secrets.sh"
     "utils/db_credentials.sh"
     "utils/env_utils.sh"
-    "utils/env_secrets.sh"
     "utils/services_docker.sh"
     "utils/ollama_models.sh"
     "utils/playwright_ubuntu_override.sh"
@@ -550,6 +586,7 @@ INSTALL_PHASE_MODULES=(
 
 INSTALL_REMOTE_MODULES=(
     "install_helpers.sh"
+    "install_runtime.sh"
     "install_cli.sh"
     "install_dispatcher.sh"
     "${INSTALL_UTILITY_MODULES[@]}"
@@ -560,39 +597,40 @@ INSTALL_REMOTE_MODULES=(
 # Bundle üretiminde scripts/tools/bundle_install_sidar.sh bu bloğu doldurur.
 # Repo çalışma ağacında varsayılan olarak boş bırakılır.
 read -r -d '' EMBEDDED_MODULE_HASHES_MANIFEST <<'SIDAR_MODULE_HASHES_EOF' || true
-776d8636ceaaac819415f73939f8e55fe101f8940c2500d731700a6b83c92a64  scripts/install_modules/install_cli.sh
-da28d54a68a4d2d30ff539cd8d0435265fe87000e24727505b312fee79e33603  scripts/install_modules/install_dispatcher.sh
-1b2321633b1385cee8640917c3f2bed925d8626f49dce8b3fe9c7b9d484c331b  scripts/install_modules/install_helpers.sh
+434bc6ea5f92c4a3b37df4df1b7b22036ee477e5f47d88dc2e5001f46e17a416  scripts/install_modules/install_cli.sh
+4a668ed1f4e9563352bf2f3bf5a58a5c88d27423cacf07c578e578dfe8a9d2ba  scripts/install_modules/install_dispatcher.sh
+a25095932f256989c1a517bd157c808a548d15cc08a96b56e0a7a312d5aac4e2  scripts/install_modules/install_helpers.sh
+054b069b8b5656b60204a40d72f30f6bdcb81cbb94473ed1cc407369814d34c1  scripts/install_modules/install_runtime.sh
 2e70edd087a296d4175c429cc12f1d961e4fece46c6c83bcc80a94e4e6db359b  scripts/install_modules/phases/01_context.sh
-07a95b338f6b2a6f304811ed9442ce04a65936742cecd92560577450f8997289  scripts/install_modules/phases/02_repo.sh
+d5fc907be5f085db23189cc349c01072f34d36fd6313db6ca745edea3e10071b  scripts/install_modules/phases/02_repo.sh
 41d198205629671a12d3d9de44e3ca0a597447c00eb2b93feab40c7a0add98df  scripts/install_modules/phases/03_runtime.sh
 36d89771aece3334013906d55be48ee2d7a357490688e4562fd76684a7523702  scripts/install_modules/phases/03_runtime_ollama.sh
-e7f820d4b649b87dca61f4fab70177917e65ba41c0f78d6ee7d82c185d82fafb  scripts/install_modules/phases/03_system.sh
+3a1b4ac1325e35dac6f5017e40ff1cf5eae783fe2155f8c8c88f75a9274c8be1  scripts/install_modules/phases/03_system.sh
 4ef61725d2c0cf92088b4002e03f36e15354477a37c88fac5f8771a79a5f3e97  scripts/install_modules/phases/04_workspace.sh
 6beadb2761652016b9d7c4de0d35b53b11837ceb16164c9b31ecd84e5f67f816  scripts/install_modules/phases/05_frontend.sh
-bd6ffb9a3dc8cab2e31e99c9926bd7c3949f27d2a2e5f2a073708a4c1548d7ee  scripts/install_modules/phases/06_services.sh
-1d15811d323818d868d273f719178a04e37ad953c76e4ab62b08dd7bac59645c  scripts/install_modules/phases/07_finish.sh
-516fd22f6abfa399c7943ec26943960e7cb8a209defa44f686a46fde329aba1a  scripts/install_modules/phases/08_env.sh
-feae8a5f52700a2470deccf74a02c26203b402c5f0790fa97268fa2e3b2f58e7  scripts/install_modules/phases/09_ollama_models.sh
-77935cc75e0fef39a6b74df09ae045822cf849c556bb4fe17d35a0902eae8c94  scripts/install_modules/phases/10_validation.sh
-d75380e5a3cf44b35f6fc894a41c774a1e3afd2b0eb0735aa8b75a754d5d58db  scripts/install_modules/phases/11_post_install.sh
-76c9804fd20dd7dd070df758b019f7560b044981b4224c9d8e3b8e8d4f3be7fa  scripts/install_modules/phases/12_alembic.sh
-d1b9b686a11ce94cb9131924c8175a82377f15fa309d42a1963419ab45090768  scripts/install_modules/phases/13_playwright.sh
-d154b3e6b9f3ec882f9563538f6c5283708c2ed3c5dfa3cebfbf3c308b685431  scripts/install_modules/phases/14_react.sh
-7069d4012443aa6986d2ef6d56fa5c7e13cd2b1edb0bd226792cba8f2085aa14  scripts/install_modules/utils/database_url.sh
+ff40d0e69bd2aff31b92e0c07ce2638a239f08d506914170e66727139a38d66b  scripts/install_modules/phases/06_services.sh
+62f1b5a589a9e8e800d6b9e984b25ea9db4efd1de91bc7cd80115755af632c55  scripts/install_modules/phases/07_finish.sh
+ae7549a7b5d2114741c6d89580096bef32c2b8c1591a448cb74096ee7e0ec80a  scripts/install_modules/phases/08_env.sh
+3c5dbf7687703bcef6e0af4a2acd172b0634fe1ae68718e8894bc9781fd23672  scripts/install_modules/phases/09_ollama_models.sh
+2dab17af61cdbe98b09a42a1fc7d48a69905b3886e4a1be281de022cbf8e2bb8  scripts/install_modules/phases/10_validation.sh
+276ee64ef086bda1a1441db9fcc1c5bcb5c9a7ea7467527ff171522809cf0e14  scripts/install_modules/phases/11_post_install.sh
+a243dbc96b31e697451b507014d234127eb3fcc2ffe183aa9164027a343aee58  scripts/install_modules/phases/12_alembic.sh
+9d612775f0ae694f228a075fd73d0ae547cc619f280ff5d2760ac69aebadb82a  scripts/install_modules/phases/13_playwright.sh
+ee0bf7637e8b5d303ccfe9c58d50e7e059bcdfcf255946c1cf7e984b5a3340ec  scripts/install_modules/phases/14_react.sh
+8c142eb04f13e86e67a5cc673af9fc79ef8be2f61dd35c3451edc4ddc407fcbb  scripts/install_modules/utils/database_url.sh
 642067cac2e051e2e2abcebee3968bb702569d2de4f3261dcc4f62f07227f5c6  scripts/install_modules/utils/db_credentials.sh
-ed07067c6dc62bebf8af21fdd6c3682d1caf805b35ebaf51a0a4e9438defa6d0  scripts/install_modules/utils/env_secrets.sh
-831b5aa53053588259b7825f7f6391e37281d04f76baf5be842d5d255b1538c5  scripts/install_modules/utils/env_utils.sh
-2e0cb7e3618a2312b26042f59fd035852436caef0c60ea56b82c14969e86426f  scripts/install_modules/utils/gpu_utils.sh
+785acd2ba53b282b0232bcc721d793f04bc894035a8c7142c13a276301bc5e52  scripts/install_modules/utils/env_secrets.sh
+2455508c980e8a0a6311fe6e016524aa280d54f1bbe3f06535dde92844467ff5  scripts/install_modules/utils/env_utils.sh
+f0ad30e94055baffa17b519ea30c2ad0c1eba355a6ef03a72f3cd1fd8373cebe  scripts/install_modules/utils/gpu_utils.sh
 9e1534740edec9c8abfca8bff06ca0e7d48ec6cfa16ba4ac2165f8d12ba72872  scripts/install_modules/utils/install_remediation.sh
 95d2664491bc38ff01d7f3951cde14832dc542965aea5e0cdeffef01f0d31b2a  scripts/install_modules/utils/installer_hash_guard.sh
 2b4934ce22b5814a6bfc800e149392def0ebbf7b12a951fcfc443a0431aba585  scripts/install_modules/utils/ollama_models.sh
-18fb66c105a9bfded9dc20c16e9c15aba37b31512833f744ce005b98e1cf3dbb  scripts/install_modules/utils/playwright_ubuntu_override.sh
+04d67e8a412448bb38bd94ab525f8d5d95856d20fa7bb10a098ad3e893676ea2  scripts/install_modules/utils/playwright_ubuntu_override.sh
 a8997d9ab218f5879e140fbfa784754898a353c2c9b77dc3801093f1960d8bc7  scripts/install_modules/utils/python_env.sh
-ae01c4d07589332e304f189928e78555514aa5d1b85b2178e0a35fb40e60ed11  scripts/install_modules/utils/remote_script.sh
+8e006705540afec95fdf002ad5ab253b1be67c54b582229fb4a667813ec57a9e  scripts/install_modules/utils/remote_script.sh
 efec83c69fa618e4274f4936bb1156128f3dc6e9f605270ebfe3b8fc58afde77  scripts/install_modules/utils/services_docker.sh
-4effdccc94e05adaf27362aef74593b64bf34acab8930baba7b147289c640587  scripts/install_modules/utils/ux.sh
-19edb98405a5255322d247fdbe2a9691b2ea21cfa33de942c529280c83639357  scripts/install_modules/utils/wsl_gpu_preflight.sh
+dfaeaa3d8a14c56d3b6cea8142cea0859252efa6321ce962dec9035440c5b868  scripts/install_modules/utils/ux.sh
+7340b3b24a8d0d563f0054a6b507c8dbd262d047dfb82aa7e76f7c020524eb83  scripts/install_modules/utils/wsl_gpu_preflight.sh
 22898858fffb46b0bf522f91ddd9bde6e78ed70c06245f8cb966de2918446e48  scripts/install_modules/utils/wsl_host.sh
 1e6cb5e5c4d571987986b100694c50e5f043bbe1741bb9f824cbe5807d710c09  scripts/install_modules/utils/wsl_integration_autofix.ps1
 53ebf2c5d772a2cdbe27dbef5286dfcbdb76dea5c7c67b1584589ec9c47c7d7d  scripts/install_modules/utils/wsl_integration_autofix.sh
@@ -679,22 +717,48 @@ resolve_github_ref_commit_sha() {
     local ref="${2:-main}"
     local owner_repo=""
     local api_url=""
+    local github_token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
     local response=""
     local resolved_sha=""
 
     sidar_ref_is_commit_sha "$ref" && { printf '%s' "$ref"; return 0; }
     owner_repo="$(sidar_github_repo_slug_from_url "$repo_url")"
     [[ -n "$owner_repo" ]] || return 1
-    api_url="https://api.github.com/repos/${owner_repo}/commits/${ref}"
 
-    if command -v curl >/dev/null 2>&1; then
-        response="$(curl -fsSL --connect-timeout 10 --max-time 20 "$api_url" 2>/dev/null || true)"
-    elif command -v wget >/dev/null 2>&1; then
-        response="$(wget -qO- --timeout=20 "$api_url" 2>/dev/null || true)"
-    else
-        return 1
+    # Public Git transport does not consume the low, shared unauthenticated GitHub
+    # REST API quota used by NAT/hosted CI runners. Prefer it whenever git exists.
+    if command -v git >/dev/null 2>&1; then
+        response="$(
+            GIT_TERMINAL_PROMPT=0 git \
+                -c http.lowSpeedLimit=1 -c http.lowSpeedTime=20 \
+                ls-remote "$repo_url" \
+                "refs/heads/${ref}" "refs/tags/${ref}^{}" "refs/tags/${ref}" \
+                2>/dev/null || true
+        )"
+        resolved_sha="$(
+            printf '%s\n' "$response" \
+                | sed -nE 's/^([0-9a-fA-F]{40})[[:space:]]+refs\/tags\/.*\^\{\}$/\1/p' \
+                | head -n 1
+        )"
+        if ! sidar_ref_is_commit_sha "$resolved_sha"; then
+            resolved_sha="$(printf '%s\n' "$response" | sed -nE 's/^([0-9a-fA-F]{40})[[:space:]]+.*/\1/p' | head -n 1)"
+        fi
+        if sidar_ref_is_commit_sha "$resolved_sha"; then
+            printf '%s' "$resolved_sha"
+            return 0
+        fi
     fi
 
+    # Never spend the anonymous REST quota as a fallback. An authenticated API
+    # lookup remains useful during minimal bootstrap environments without git.
+    [[ "$github_token" =~ ^[A-Za-z0-9_]+$ ]] || return 1
+    command -v curl >/dev/null 2>&1 || return 1
+    api_url="https://api.github.com/repos/${owner_repo}/commits/${ref}"
+    response="$(
+        printf 'header = "Authorization: Bearer %s"\n' "$github_token" \
+            | curl -fsSL --connect-timeout 10 --max-time 20 --config - "$api_url" 2>/dev/null \
+            || true
+    )"
     resolved_sha="$(printf '%s\n' "$response" | sed -nE 's/.*"sha"[[:space:]]*:[[:space:]]*"([0-9a-fA-F]{40})".*/\1/p' | head -n 1)"
     if sidar_ref_is_commit_sha "$resolved_sha"; then
         printf '%s' "$resolved_sha"
@@ -716,7 +780,7 @@ resolve_remote_module_ref() {
         return 0
     fi
     if resolved_ref="$(resolve_github_ref_commit_sha "${SIDAR_REPO_URL:-https://github.com/niluferbagevi-gif/Sidar.git}" "$mutable_ref")"; then
-        warn "Embedded installer commit pin bulunamadı; ${mutable_ref} GitHub API üzerinden ${resolved_ref} commit SHA'sına çözüldü. Kalıcı çözüm için SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT damgalanmalı."
+        warn "Embedded installer commit pin bulunamadı; ${mutable_ref} GitHub üzerinden ${resolved_ref} commit SHA'sına çözüldü. Kalıcı çözüm için SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT damgalanmalı."
         printf '%s' "$resolved_ref"
         return 0
     fi
@@ -1630,10 +1694,10 @@ sidar_source_install_utils \
     "installer_hash_guard.sh" \
     "remote_script.sh" \
     "python_env.sh" \
+    "env_secrets.sh" \
     "database_url.sh" \
     "db_credentials.sh" \
     "env_utils.sh" \
-    "env_secrets.sh" \
     "services_docker.sh" \
     "ollama_models.sh" \
     "playwright_ubuntu_override.sh"
@@ -1653,113 +1717,10 @@ unset SIDAR_INSTALL_REQUESTED_VERSION
 load_install_phase_modules
 # END_BUNDLE_MODULES
 
-run_with_progress_hint() {
-    local label="$1"
-    shift
-    local -a cmd=("$@")
-
-    "${cmd[@]}" &
-    local cmd_pid=$!
-    local pct=5
-
-    while kill -0 "$cmd_pid" 2>/dev/null; do
-        local filled=$((pct / 4))
-        local empty=$((25 - filled))
-        local bar_filled
-        local bar_empty
-        printf -v bar_filled '%*s' "$filled" ''
-        printf -v bar_empty '%*s' "$empty" ''
-        bar_filled="${bar_filled// /█}"
-        bar_empty="${bar_empty// /░}"
-        echo -e "${BLUE}[${bar_filled}${bar_empty}] ${pct}% ${label}${NC}" >&2
-
-        pct=$((pct + 5))
-        if (( pct > 95 )); then
-            pct=95
-        fi
-        sleep 4
-    done
-
-    wait "$cmd_pid"
-    local cmd_rc=$?
-    if [[ "$cmd_rc" -eq 0 ]]; then
-        echo -e "${GREEN}[█████████████████████████] 100% ${label}${NC}" >&2
-    fi
-    return "$cmd_rc"
-}
-
-SIDAR_PROMPT_TIMEOUT="${SIDAR_PROMPT_TIMEOUT:-180}"
-
-prompt_yes_no_with_timeout_default_yes() {
-    local prompt="$1"
-    local timeout_seconds="${2:-$SIDAR_PROMPT_TIMEOUT}"
-    local reply=""
-
-    clear_stdin_buffer
-    if read -r -t "$timeout_seconds" -p "$prompt" reply 2>/dev/tty; then
-        :
-    else
-        warn "$(sidar_t timeout_yes "$timeout_seconds")"
-        reply="E"
-    fi
-
-    echo "$reply"
-}
-
-prompt_yes_no_with_timeout_default_no() {
-    local prompt="$1"
-    local timeout_seconds="${2:-$SIDAR_PROMPT_TIMEOUT}"
-    local reply=""
-
-    clear_stdin_buffer
-    if read -r -t "$timeout_seconds" -p "$prompt" reply 2>/dev/tty; then
-        :
-    else
-        warn "$(sidar_t timeout_no "$timeout_seconds")"
-        reply="H"
-    fi
-
-    echo "$reply"
-}
-
-cleanup_temp_install_modules_if_needed() {
-    local exit_code="${1:-0}"
-    local keep_temp_raw="${SIDAR_KEEP_TEMP_MODULES:-0}"
-    keep_temp_raw="$(echo "$keep_temp_raw" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
-    if [[ "${KEEP_TEMP_MODULES:-false}" == "true" || "$keep_temp_raw" == "1" || "$keep_temp_raw" == "true" || "$keep_temp_raw" == "yes" ]]; then
-        [[ -n "${INSTALL_HELPERS_TEMP_DIR:-}" && -d "$INSTALL_HELPERS_TEMP_DIR" ]] && info "Geçici modül dizini korunuyor (debug): $INSTALL_HELPERS_TEMP_DIR"
-        return 0
-    fi
-
-    if [[ "$exit_code" -ne 0 ]]; then
-        [[ -n "${INSTALL_HELPERS_TEMP_DIR:-}" && -d "$INSTALL_HELPERS_TEMP_DIR" ]] && warn "Kurulum hata ile sonlandı (exit=${exit_code}); debug için geçici modül dizini korunuyor: $INSTALL_HELPERS_TEMP_DIR"
-        warn "İsterseniz sonraki çalıştırmada --keep-temp-modules veya SIDAR_KEEP_TEMP_MODULES=1 kullanabilirsiniz."
-        return 0
-    fi
-
-    if [[ -n "${INSTALL_HELPERS_TEMP_DIR:-}" && -d "$INSTALL_HELPERS_TEMP_DIR" ]]; then
-        rm -rf "$INSTALL_HELPERS_TEMP_DIR"
-        info "Geçici modül dizini temizlendi: $INSTALL_HELPERS_TEMP_DIR"
-    fi
-}
-
-relocate_log_file_if_needed() {
-    [[ -n "${TARGET_DIR:-}" ]] || return 0
-    local target_log_dir="${TARGET_DIR}/logs"
-    local source_log_dir="$LOG_DIR"
-
-    if [[ -f "$LOG_FILE" && "$LOG_DIR" != "$target_log_dir" ]]; then
-        mkdir -p "$target_log_dir"
-        mv "$LOG_FILE" "$target_log_dir/"
-        LOG_DIR="$target_log_dir"
-        LOG_FILE="$target_log_dir/$(basename "$LOG_FILE")"
-        info "Kurulum log dosyası ${LOG_FILE} konumuna taşındı."
-
-        if [[ -d "$source_log_dir" ]]; then
-            rmdir "$source_log_dir" 2>/dev/null || true
-        fi
-    fi
-}
+# Post-bootstrap progress, prompt, cleanup, and log relocation helpers live in
+# scripts/install_modules/install_runtime.sh.
+# shellcheck source=scripts/install_modules/install_runtime.sh
+source "${INSTALL_MODULE_DIR}/install_runtime.sh"
 
 # shellcheck disable=SC2154
 trap 'sidar_exit_code=$?; relocate_log_file_if_needed || true; if declare -F sidar_phase06_cleanup_pre_service_smoke_log >/dev/null 2>&1; then sidar_phase06_cleanup_pre_service_smoke_log || true; fi; cleanup_temp_install_modules_if_needed "$sidar_exit_code" || true' EXIT

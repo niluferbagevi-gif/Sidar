@@ -83,52 +83,22 @@ def _normalize_bash_function(function_text: str) -> str:
     return "\n".join(line.lstrip() for line in function_text.splitlines()) + "\n"
 
 
-def test_dark_mode_assets_exist(tmp_path: Path) -> None:
+def test_coverage_dark_mode_is_owned_by_test_pipeline_not_installer() -> None:
     repo_root = Path(os.getcwd())
     source_dark_css = repo_root / "assets" / "dark_mode.css"
     assert source_dark_css.exists()
-
-    script_dir = tmp_path / "sidar"
-    (script_dir / "assets").mkdir(parents=True)
-    (script_dir / "assets" / "dark_mode.css").write_text(
-        source_dark_css.read_text(encoding="utf-8"), encoding="utf-8"
+    repo_phase = (repo_root / "scripts/install_modules/phases/02_repo.sh").read_text(
+        encoding="utf-8"
     )
-    html_report = script_dir / "htmlcov" / "index.html"
-    html_report.parent.mkdir(parents=True)
-    html_report.write_text(
-        '<html><body class="light-mode"><a href="/light-mode/help">light-mode text</a></body></html>',
-        encoding="utf-8",
+    coverage_helpers = (repo_root / "scripts/test_gates/coverage_helpers.sh").read_text(
+        encoding="utf-8"
     )
+    pyproject = (repo_root / "pyproject.toml").read_text(encoding="utf-8")
 
-    repo_phase_script = textwrap.dedent(
-        """
-        set -euo pipefail
-        source scripts/install_modules/phases/02_repo.sh
-
-        warn(){ :; }
-        ok(){ :; }
-
-        export SCRIPT_DIR="$1"
-        sidar_phase_apply_coverage_dark_mode_assets
-        """
-    )
-
-    subprocess.run(
-        ["bash", "--noprofile", "--norc", "-c", repo_phase_script, "sidar-smoke", str(script_dir)],
-        cwd=repo_root,
-        env=_installer_test_env(tmp_path),
-        check=True,
-    )
-
-    coverage_css = script_dir / "htmlcov" / "assets" / "dark_mode.css"
-    artifact_coverage_css = script_dir / "artifacts" / "htmlcov" / "assets" / "dark_mode.css"
-    assert coverage_css.exists()
-    assert artifact_coverage_css.exists()
-    assert "background-color" in coverage_css.read_text(encoding="utf-8")
-    html = html_report.read_text(encoding="utf-8")
-    assert 'class="dark-mode"' in html
-    assert "/light-mode/help" in html
-    assert ">light-mode text<" in html
+    assert "sidar_phase_apply_coverage_dark_mode_assets" not in repo_phase
+    assert "htmlcov" not in repo_phase
+    assert "coverage html -d htmlcov" in coverage_helpers
+    assert 'extra_css = "assets/dark_mode.css"' in pyproject
 
 
 def test_python_version() -> None:
@@ -169,6 +139,100 @@ def test_repo_sync_uses_configured_branch_for_update_and_recovery() -> None:
     assert "git reset --hard origin/main" not in phase
 
 
+@pytest.mark.parametrize(
+    ("doctor_exit", "write_report", "expected_status", "expected_message"),
+    [
+        (0, True, 0, "OK:Doctor raporu üretildi"),
+        (
+            1,
+            True,
+            1,
+            "WARN:Doctor raporu üretildi ancak bir veya daha fazla kontrol fail durumunda",
+        ),
+        (1, False, 1, "WARN:Doctor çalıştırılamadı ve rapor üretilemedi"),
+        (0, False, 1, "WARN:Doctor tamamlandı ancak rapor üretilemedi"),
+    ],
+)
+def test_doctor_phase_uses_strict_boolean_and_classifies_missing_report(
+    tmp_path: Path,
+    doctor_exit: int,
+    write_report: bool,
+    expected_status: int,
+    expected_message: str,
+) -> None:
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            textwrap.dedent(
+                """\
+                set -u
+                step() { :; }
+                ok() { printf 'OK:%s\n' "$*"; }
+                warn() { printf 'WARN:%s\n' "$*"; }
+                fail() { printf 'FAIL:%s\n' "$*" >&2; return 1; }
+                uv() {
+                    [[ "${SIDAR_CONFIG_QUIET:-}" == "true" ]] || return 90
+                    if [[ "$WRITE_REPORT" == "true" ]]; then
+                        printf '{"status":"test"}\n' > "${@: -1}"
+                    fi
+                    return "$DOCTOR_EXIT"
+                }
+                source scripts/install_modules/phases/11_post_install.sh
+                export SCRIPT_DIR="$1"
+                run_doctor_phase
+                """
+            ),
+            "doctor-phase-smoke",
+            str(tmp_path),
+        ],
+        cwd=Path(os.getcwd()),
+        env={
+            **_installer_test_env(tmp_path),
+            "DOCTOR_EXIT": str(doctor_exit),
+            "WRITE_REPORT": str(write_report).lower(),
+        },
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == expected_status, result.stderr + result.stdout
+    assert expected_message in result.stdout
+    assert "SIDAR_CONFIG_QUIET" not in result.stderr
+
+
+def test_default_install_runs_doctor_before_finish_and_preserves_diagnostics() -> None:
+    """Run Doctor before the success summary without making findings fatal."""
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            textwrap.dedent(
+                """\
+                set -Eeuo pipefail
+                events=()
+                sidar_run_install_phase() { events+=("$1"); }
+                sidar_fail_if_wsl_integration_autofix_applied_current_session_main() { :; }
+                sidar_phase_handle_early_exit() { return 1; }
+                cleanup_bootstrap_script_copy() { :; }
+                run_doctor_phase() { events+=("doctor"); return 1; }
+                source scripts/install_modules/install_dispatcher.sh
+                sidar_dispatch_install_phases
+                printf '%s\n' "${events[@]}"
+                """
+            ),
+            "default-install-doctor-smoke",
+        ],
+        cwd=Path(os.getcwd()),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    events = result.stdout.splitlines()
+    assert events[-3:] == ["06_services", "doctor", "07_finish"]
+
+
 def test_auto_heal_resume_uses_repo_installer_after_bootstrap_cleanup(tmp_path: Path) -> None:
     home_dir = tmp_path / "home"
     repo_dir = tmp_path / "Sidar"
@@ -186,7 +250,8 @@ def test_auto_heal_resume_uses_repo_installer_after_bootstrap_cleanup(tmp_path: 
             f"""\
             #!/usr/bin/env bash
             set -euo pipefail
-            printf '%s|%s|%s\n' "$0" "${{SIDAR_INSTALL_RESUME_FROM_PHASE:-}}" "${{SIDAR_INSTALL_REMEDIATION_ATTEMPT:-}}" > {shlex.quote(str(marker))}
+            printf '%s|%s|%s\n' "$0" "${{SIDAR_INSTALL_RESUME_FROM_PHASE:-}}" \
+              "${{SIDAR_INSTALL_REMEDIATION_ATTEMPT:-}}" > {shlex.quote(str(marker))}
             """
         ),
         encoding="utf-8",
@@ -579,9 +644,11 @@ def test_install_sidar_wget_raw_direct_module_download_smoke(tmp_path: Path) -> 
 
 
 def test_install_sidar_direct_module_hash_drift_blocks_install(tmp_path: Path) -> None:
-    """Drift case: clone origin carries a tampered module but standalone
-    install_sidar.sh's embedded manifest still pins the original hash. The
-    installer must refuse to continue without ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1.
+    """Drift case: a tampered module hash must block the install.
+
+    Clone origin carries a tampered module but standalone install_sidar.sh's
+    embedded manifest still pins the original hash. The installer must refuse
+    to continue without ALLOW_UNVERIFIED_REMOTE_SCRIPTS=1.
     """
     repo_root = Path(os.getcwd())
     origin = tmp_path / "origin"
@@ -776,9 +843,29 @@ def test_raw_single_file_installer_resolves_unknown_embedded_commit_via_github_a
     )
     fake_curl.chmod(0o755)
 
+    # resolve_github_ref_commit_sha() prefers `git ls-remote` over the GitHub
+    # REST API to avoid burning the shared anonymous API quota. This test
+    # targets the API fallback specifically, so `git` must be made to fail
+    # here (a real git binary would otherwise reach the real GitHub repo over
+    # the network and resolve the ref itself, short-circuiting the fake curl
+    # mock below). The fallback also requires a token-shaped GITHUB_TOKEN
+    # before it will shell out to curl at all.
+    fake_git = bin_dir / "git"
+    fake_git.write_text(
+        textwrap.dedent(
+            """\
+            #!/usr/bin/env bash
+            exit 1
+            """
+        ),
+        encoding="utf-8",
+    )
+    fake_git.chmod(0o755)
+
     env = _installer_test_env(tmp_path) | {
         "HOME": str(host),
         "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+        "GITHUB_TOKEN": "testtoken0123456789",
     }
     quoted_standalone = shlex.quote(str(standalone))
     result = subprocess.run(
@@ -1060,6 +1147,13 @@ def _fake_python3_fails_snippet() -> str:
     """
 
 
+_VERSION_PROBE_INNER_CMD = (
+    "set -euo pipefail; export SIDAR_INSTALL_TEST_MODE=1 SIDAR_INSTALL_VERSION_PROBE_ONLY=1; "
+    'source ./install_sidar.sh >/dev/null; printf "INSTALL_SIDAR_VERSION=%s\\n" '
+    '"${INSTALL_SIDAR_VERSION:-EMPTY}"'
+)
+
+
 def _diagnose_sourced_install_version(tmp_path: Path) -> str:
     diagnose_timeout = int(os.environ.get("SIDAR_INSTALL_SMOKE_BASH_TIMEOUT", "60"))
     diagnosis_env = _installer_test_env(tmp_path)
@@ -1081,12 +1175,12 @@ def _diagnose_sourced_install_version(tmp_path: Path) -> str:
     echo '--- timed probe ---'
     {_fake_python3_fails_snippet()}
     TIMEFORMAT='probe real=%3R user=%3U sys=%3S'
-    time bash -c 'set -euo pipefail; export SIDAR_INSTALL_TEST_MODE=1 SIDAR_INSTALL_VERSION_PROBE_ONLY=1; source ./install_sidar.sh >/dev/null; printf "INSTALL_SIDAR_VERSION=%s\\n" "${{INSTALL_SIDAR_VERSION:-EMPTY}}"'
+    time bash -c '{_VERSION_PROBE_INNER_CMD}'
     printf 'timed_probe_status=%s\n' "$?"
     echo '--- xtrace probe ---'
     trace_file="$TMPDIR/install-sidar-source-xtrace.log"
     PS4='+${{BASH_SOURCE}}:${{LINENO}}:${{FUNCNAME[0]:-main}}: '
-    BASH_XTRACEFD=2 bash -x -c 'set -euo pipefail; export SIDAR_INSTALL_TEST_MODE=1 SIDAR_INSTALL_VERSION_PROBE_ONLY=1; source ./install_sidar.sh >/dev/null; printf "INSTALL_SIDAR_VERSION=%s\\n" "${{INSTALL_SIDAR_VERSION:-EMPTY}}"' 2>"$trace_file"
+    BASH_XTRACEFD=2 bash -x -c '{_VERSION_PROBE_INNER_CMD}' 2>"$trace_file"
     printf 'xtrace_probe_status=%s\n' "$?"
     tail -n 80 "$trace_file" 2>/dev/null || true
     """
@@ -1322,7 +1416,8 @@ def test_install_sidar_test_mode_source_resolves_pyproject_version_without_pytho
         {_fake_python3_fails_snippet()}
         source ./install_sidar.sh >/dev/null
         if [[ "${{INSTALL_SIDAR_VERSION:-}}" != {shlex.quote(pyproject_version)} ]]; then
-          echo "INSTALL_SIDAR_VERSION=${{INSTALL_SIDAR_VERSION:-<boş>}}; expected={pyproject_version}" >&2
+          echo "INSTALL_SIDAR_VERSION=${{INSTALL_SIDAR_VERSION:-<boş>}}; \
+expected={pyproject_version}" >&2
           exit 1
         fi
         """,
@@ -1349,7 +1444,8 @@ def test_install_sidar_source_exports_pyproject_version_without_python(tmp_path:
         {_fake_python3_fails_snippet()}
         source ./install_sidar.sh >/dev/null
         if [[ "${{INSTALL_SIDAR_VERSION:-}}" != {shlex.quote(pyproject_version)} ]]; then
-          echo "INSTALL_SIDAR_VERSION=${{INSTALL_SIDAR_VERSION:-<boş>}}; expected={pyproject_version}" >&2
+          echo "INSTALL_SIDAR_VERSION=${{INSTALL_SIDAR_VERSION:-<boş>}}; \
+expected={pyproject_version}" >&2
           exit 1
         fi
         """,
@@ -1423,7 +1519,8 @@ def test_install_remediation_explains_legacy_conda_non_retryable_signature() -> 
             warn() { printf 'WARN:%s\\n' "$*"; }
             sidar_write_remediation_report() { printf 'REPORT:%s|%s|%s\\n' "$1" "$2" "$3"; }
             export SIDAR_CURRENT_INSTALL_PHASE=06_services
-            sidar_handle_install_failure 1 42 'conda env create' 'EnvironmentFileNotFound: environment.yml'
+            sidar_handle_install_failure 1 42 'conda env create' \
+              'EnvironmentFileNotFound: environment.yml'
             """,
         ],
         cwd=Path(os.getcwd()),
@@ -1457,7 +1554,8 @@ def test_install_remediation_fail_fast_for_test_gate_failures() -> None:
               1 \
               42 \
               fail \
-              'Smoke testlerde hata var. FAILED tests/smoke/test_install_python_env_lock.py::test_profile_matrix - AssertionError' || true
+              'Smoke testlerde hata var. FAILED '\
+'tests/smoke/test_install_python_env_lock.py::test_profile_matrix - AssertionError' || true
             """,
         ],
         cwd=Path(os.getcwd()),
@@ -1474,7 +1572,8 @@ def test_install_remediation_fail_fast_for_test_gate_failures() -> None:
         in result.stdout
     )
     assert (
-        "Tekrar komutu: uv run pytest tests/smoke/test_install_python_env_lock.py::test_profile_matrix -v --no-cov"
+        "Tekrar komutu: uv run pytest "
+        "tests/smoke/test_install_python_env_lock.py::test_profile_matrix -v --no-cov"
         in result.stdout
     )
     assert "REPORT:06_services|test-gate-failure|fail-fast;no-retry;no-resume;" in result.stdout
@@ -1486,8 +1585,8 @@ def test_install_sidar_fail_records_last_fail_message_for_err_trap() -> None:
     assert 'SIDAR_LAST_FAIL_MESSAGE="$fail_reason"' in installer
     assert 'local remediation_reason="${SIDAR_LAST_FAIL_MESSAGE:-ERR trap}"' in installer
     assert (
-        'sidar_handle_install_failure "$exit_code" "$failed_line" "$failed_cmd" "$remediation_reason"'
-        in installer
+        'sidar_handle_install_failure "$exit_code" "$failed_line" "$failed_cmd" '
+        '"$remediation_reason"' in installer
     )
 
 
@@ -1501,8 +1600,10 @@ def test_install_remediation_explains_installer_hash_drift_next_step() -> None:
             source scripts/install_modules/utils/install_remediation.sh
             warn() { printf 'WARN:%s\\n' "$*"; }
             sidar_write_remediation_report() { printf 'REPORT:%s|%s|%s\\n' "$1" "$2" "$3"; }
-            sidar_phase_remediation_strategy 02_repo fail 'Mevcut /home/user/Sidar re-exec install_sidar.sh SHA256 farklı' || true
-            sidar_emit_remediation_guidance 02_repo fail 'Mevcut /home/user/Sidar re-exec install_sidar.sh SHA256 farklı'
+            sidar_phase_remediation_strategy 02_repo fail \
+              'Mevcut /home/user/Sidar re-exec install_sidar.sh SHA256 farklı' || true
+            sidar_emit_remediation_guidance 02_repo fail \
+              'Mevcut /home/user/Sidar re-exec install_sidar.sh SHA256 farklı'
             """,
         ],
         cwd=Path(os.getcwd()),
@@ -1606,7 +1707,8 @@ def test_install_remediation_prefers_last_failed_test_from_smoke_log() -> None:
             """
             set -euo pipefail
             source scripts/install_modules/utils/install_remediation.sh
-            export SIDAR_LAST_FAILED_TEST=tests/smoke/test_install_verification.py::test_dark_mode_assets_exist
+            export SIDAR_LAST_FAILED_TEST=tests/smoke/test_install_verification.py::test_dark\
+_mode_assets_exist
             sidar_test_gate_failure_guidance fail 'Servis öncesi installer smoke gate başarısız'
             """,
         ],
@@ -1790,7 +1892,8 @@ def test_install_alembic_head_check_after_migration(
         f"""
         set -euo pipefail
         source ./install_sidar.sh > "$TMPDIR/source-install.out" 2>&1
-        if grep -Eq "Ön Koşullar Kontrol Ediliyor|Kurulum yöneticisi|Sidar AI.*Kurulum" "$TMPDIR/source-install.out"; then
+        if grep -Eq "Ön Koşullar Kontrol Ediliyor|Kurulum yöneticisi|Sidar AI.*Kurulum" \
+          "$TMPDIR/source-install.out"; then
           echo "install_sidar.sh source işlemi main() kurulum akışını tetikledi" >&2
           cat "$TMPDIR/source-install.out" >&2
           exit 1
@@ -1888,7 +1991,8 @@ def test_install_alembic_head_check_derives_url_from_postgres_parts(tmp_path: Pa
         export SCRIPT_DIR
         unset DATABASE_URL
         is_alembic_at_head
-        grep -q '^postgresql+asyncpg://sidar:secret@localhost:5432/sidar|-m alembic current$' "$SCRIPT_DIR/dburl.log"
+        grep -q '^postgresql+asyncpg://sidar:secret@localhost:5432/sidar|-m alembic current$' \
+          "$SCRIPT_DIR/dburl.log"
         """,
         tmp_path,
     )
@@ -1908,10 +2012,12 @@ def test_playwright_ubuntu26_override_used(tmp_path: Path) -> None:
         set -euo pipefail
         source scripts/install_modules/utils/playwright_ubuntu_override.sh
         is_playwright_ubuntu_override_recommended {shlex.quote(str(os_release))}
-        supported=$(playwright_latest_supported_ubuntu_version {shlex.quote(str(os_release))} {shlex.quote(str(fake_python))})
+        supported=$(playwright_latest_supported_ubuntu_version {shlex.quote(str(os_release))} \
+          {shlex.quote(str(fake_python))})
         test "$supported" = "26.04"
         test "$(playwright_ubuntu_override_platform "$supported")" = "ubuntu26.04-x64"
-        prepare_playwright_ubuntu_override_file {shlex.quote(str(os_release))} {shlex.quote(str(override_file))} "$supported"
+        prepare_playwright_ubuntu_override_file {shlex.quote(str(os_release))} \
+          {shlex.quote(str(override_file))} "$supported"
         grep -q 'VERSION_ID="26.04"' {shlex.quote(str(override_file))}
         """,
         tmp_path,
@@ -1977,7 +2083,8 @@ def test_repo_sync_repoints_install_modules_to_cloned_repo(tmp_path: Path) -> No
             if [[ "$1" == "clone" ]]; then
                 local clone_target="${{@: -1}}"
                 mkdir -p "$clone_target/.git" "$clone_target/scripts/install_modules"
-                printf '# cloned helper\\n' > "$clone_target/scripts/install_modules/install_helpers.sh"
+                printf '# cloned helper\\n' \
+                  > "$clone_target/scripts/install_modules/install_helpers.sh"
                 return 0
             fi
             command git "$@"

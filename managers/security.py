@@ -1,5 +1,5 @@
-"""
-Sidar Project - Güvenlik Yöneticisi
+"""Sidar Project - Güvenlik Yöneticisi.
+
 OpenClaw erişim kontrol sistemi.
 Sürüm: 2.7.0
 """
@@ -106,8 +106,8 @@ class ValidationResult:
 
 
 class SecurityManager:
-    """
-    OpenClaw erişim kontrol sistemi.
+    """OpenClaw erişim kontrol sistemi.
+
     Sidar'ın dosya/sistem işlemlerine yetki verir veya reddeder.
 
     Güvenlik katmanları:
@@ -188,11 +188,13 @@ class SecurityManager:
         SecurityManager._guardrails_import_log_keys.add(log_key)
         if reason == "missing-dependency":
             logger.info(
-                "NeMo Guardrails yüklü değil; regex tabanlı prompt koruması degraded mode'da çalışıyor."
+                "NeMo Guardrails yüklü değil; regex tabanlı prompt koruması degraded mode'da"
+                " çalışıyor."
             )
         else:
             logger.warning(
-                "NeMo Guardrails başlatılamadı; regex tabanlı prompt koruması degraded mode'da çalışıyor: %s",
+                "NeMo Guardrails başlatılamadı; regex tabanlı prompt koruması degraded"
+                " mode'da çalışıyor: %s",
                 exc,
             )
 
@@ -214,8 +216,7 @@ class SecurityManager:
 
     @staticmethod
     def _has_dangerous_pattern(path_str: str) -> bool:
-        """
-        Ham yol dizesinde path traversal veya kritik sistem yolu kalıplarını arar.
+        """Ham yol dizesinde path traversal veya kritik sistem yolu kalıplarını arar.
 
         Returns:
             True → tehlikeli kalıp bulundu (yol reddedilmeli)
@@ -223,8 +224,7 @@ class SecurityManager:
         return bool(_DANGEROUS_PATH_RE.search(path_str))
 
     def _resolve_safe(self, path_str: str) -> Path | None:
-        """
-        Yolu güvenle çözümler. Hata durumunda None döndürür.
+        """Yolu güvenle çözümler. Hata durumunda None döndürür.
 
         Sembolik bağlantılar resolve() ile takip edilir; gerçek hedef döner.
         Bu sayede symlink traversal saldırıları da yakalanır.
@@ -241,8 +241,8 @@ class SecurityManager:
             return None
 
     def is_path_under(self, path_str: str, base: Path) -> bool:
-        """
-        Verilen yolun base dizini altında olup olmadığını doğrular.
+        """Verilen yolun base dizini altında olup olmadığını doğrular.
+
         Sembolik bağlantılar takip edilerek gerçek hedef kontrol edilir.
 
         Args:
@@ -330,17 +330,16 @@ class SecurityManager:
         return self.validate_prompt_text(text, source="agent_output")
 
     def is_safe_path(self, path_str: str) -> bool:
-        """Path traversal + base_dir + hassas yol desenleri doğrulaması."""
+        """Resolve from ``base_dir`` and apply the shared traversal/path safety policy."""
+        if self._has_dangerous_pattern(path_str):
+            return False
+        resolved = self._resolve_safe(path_str)
+        if resolved is None or self._is_blocked_path(str(resolved)):
+            return False
         try:
-            if self._has_dangerous_pattern(path_str):
-                return False
-            resolved = Path(path_str).resolve()
-            resolved_str = str(resolved)
-            if self._is_blocked_path(resolved_str):
-                return False
             resolved.relative_to(self.base_dir)
             return True
-        except Exception:
+        except ValueError:
             return False
 
     # ─────────────────────────────────────────────
@@ -375,8 +374,8 @@ class SecurityManager:
     # ─────────────────────────────────────────────
 
     def can_write(self, path: str) -> bool:
-        """
-        Yazma iznini kontrol et.
+        """Yazma iznini kontrol et.
+
         - RESTRICTED: hiçbir zaman
         - SANDBOX: yalnızca temp/ dizini (symlink korumalı)
         - FULL: base_dir altındaki her yere (symlink + traversal korumalı)
@@ -426,8 +425,8 @@ class SecurityManager:
     # ─────────────────────────────────────────────
 
     def can_execute(self) -> bool:
-        """
-        Kod/REPL çalıştırma izni.
+        """Kod/REPL çalıştırma izni.
+
         - RESTRICTED : yasak
         - SANDBOX    : izinli (yalnızca /temp üzerinde çalışır)
         - FULL       : izinli (tam erişim)
@@ -435,8 +434,8 @@ class SecurityManager:
         return self.level >= SANDBOX
 
     def can_run_shell(self) -> bool:
-        """
-        Terminal/Shell komut çalıştırma izni.
+        """Terminal/Shell komut çalıştırma izni.
+
         - RESTRICTED : yasak
         - SANDBOX    : yasak (yalnızca Docker izole Python REPL izinli)
         - FULL       : izinli (git, npm, pip vb. tüm kabuk komutları)
@@ -467,9 +466,13 @@ class SecurityManager:
         """Erişim seviyesi ve izin özetini döndürür."""
         perms = []
         perms.append("Okuma   : ✓ (tehlikeli yol koruması aktif)")
-        perms.append(
-            f"Yazma   : {'✓ (tam — proje kökü)' if self.level == FULL else ('✓ (yalnızca /temp)' if self.level == SANDBOX else '✗')}"
-        )
+        if self.level == FULL:
+            write_status = "✓ (tam — proje kökü)"
+        elif self.level == SANDBOX:
+            write_status = "✓ (yalnızca /temp)"
+        else:
+            write_status = "✗"
+        perms.append(f"Yazma   : {write_status}")
         perms.append(f"Terminal: {'✓' if self.level >= SANDBOX else '✗'}")
         perms.append(f"Shell   : {'✓ (git, npm, pip vb.)' if self.level == FULL else '✗'}")
         perms.append("Symlink : ✓ korumalı (resolve() ile doğrulama)")

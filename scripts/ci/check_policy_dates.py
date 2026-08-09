@@ -53,7 +53,6 @@ def check_policy_date_warnings(
     pyproject_path: Path, *, today: date | None = None, warn_within_days: int | None = None
 ) -> list[str]:
     """Return active dated policy/debt markers that are approaching review/expiry."""
-
     effective_today = today or date.today()
     data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
     sidar = data.get("tool", {}).get("sidar", {})
@@ -110,7 +109,6 @@ def check_policy_date_warnings(
 
 def check_policy_dates(pyproject_path: Path, *, today: date | None = None) -> list[str]:
     """Return expired dated policy/debt markers from pyproject.toml."""
-
     effective_today = today or date.today()
     data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
     sidar = data.get("tool", {}).get("sidar", {})

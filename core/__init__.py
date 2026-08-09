@@ -1,5 +1,4 @@
-"""
-Sidar Project — Core Modülleri.
+"""Sidar Project — Core Modülleri.
 
 Bu paket ajan altyapısının temel bileşenlerini lazy olarak dışa aktarır. Ağır
 ve opsiyonel alt modüller paket import'u sırasında yüklenmez; böylece provider

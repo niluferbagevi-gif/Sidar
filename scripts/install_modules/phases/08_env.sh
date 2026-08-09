@@ -4,7 +4,8 @@ set -Eeuo pipefail
 
 # ── 10. .env dosyası ──────────────────────────────────────────────────────────
 
-# Secret generation and DB credential hardening helpers live in scripts/install_modules/utils/env_secrets.sh.
+# Secret generation helpers live in scripts/install_modules/utils/env_secrets.sh;
+# database credential hardening has a single implementation in utils/db_credentials.sh.
 
 # DATABASE_URL defaults and PostgreSQL dotenv sync helpers live in scripts/install_modules/utils/database_url.sh.
 
@@ -33,14 +34,14 @@ ensure_rag_vector_backend_pgvector() {
 # anahtarları tek merkezden yönetilir. Bu liste .env, raporlama ve .env.*
 # varyant senkronizasyonunda ortak kullanılarak .env.advanced gibi şablondan
 # üretilen dosyalarda boş placeholder kalması engellenir.
+#
+# SIDAR_USER_SECRET_ENV_KEYS dizisi (tek doğruluk kaynağı) install_sidar.sh
+# içinde, mask_install_log_stream()'in de kullandığı log maskeleme deseninin
+# hemen yanında tanımlıdır. Burada ayrı bir liste tutmayın: iki allowlist'in
+# elle senkron kalması gerektiği bir tasarım, yeni bir key eklendiğinde
+# birinin unutulup secret'ın loglara sızmasına yol açar.
 sidar_user_api_key_names() {
-    printf '%s\n' \
-        OPENAI_API_KEY GEMINI_API_KEY ANTHROPIC_API_KEY LITELLM_API_KEY HF_TOKEN \
-        GITHUB_TOKEN \
-        TAVILY_API_KEY GOOGLE_SEARCH_API_KEY GOOGLE_SEARCH_CX \
-        SLACK_TOKEN SLACK_APP_LEVEL_TOKEN SLACK_WEBHOOK_URL SLACK_DEFAULT_CHANNEL \
-        JIRA_URL JIRA_EMAIL JIRA_TOKEN JIRA_DEFAULT_PROJECT \
-        TEAMS_WEBHOOK_URL
+    printf '%s\n' "${SIDAR_USER_SECRET_ENV_KEYS[@]}"
 }
 
 # ── İnteraktif API Anahtarı Toplama ──────────────────────────────────────────
@@ -843,6 +844,20 @@ PY
         fi
     fi
 
+    # ── REDIS_PASSWORD ───────────────────────────────────────────────────────
+    # docker-compose Redis'i --requirepass ile başlatır ve portu yalnızca host
+    # loopback arayüzüne publish eder; bu değer boş/zayıfsa `docker compose up` REDIS_PASSWORD'ün
+    # zorunlu ${VAR:?...} kontrolünde başarısız olur.
+    if _is_missing_or_insecure "REDIS_PASSWORD"; then
+        local _v; _v=$(_gen_urlsafe 24)
+        if [[ -n "$_v" ]]; then
+            _write_secret "REDIS_PASSWORD" "$_v"
+            ok ".env: REDIS_PASSWORD otomatik ve güvenli bir değerle oluşturuldu."
+        else
+            warn "REDIS_PASSWORD otomatik üretilemedi. Lütfen .env içinde güçlü bir değer tanımlayın."
+        fi
+    fi
+
     # ── API_KEY ──────────────────────────────────────────────────────────────
     if _is_missing_or_insecure "API_KEY"; then
         local _v; _v=$(_gen_urlsafe 32)
@@ -934,11 +949,20 @@ sidar_production_secret_rotation_keys() {
 
 emit_production_secret_rotation_notice() {
     local src="$1"
-    local production_env="$SCRIPT_DIR/.env.production"
-    local key=""
-    local src_val=""
-    local prod_val=""
     local -a shared_matches=()
+    mapfile -t shared_matches < <(sidar_shared_production_secret_keys "$src")
+
+    if (( ${#shared_matches[@]} == 0 )); then
+        return 0
+    fi
+
+    warn ".env.production ${#shared_matches[@]} ortak secret değerini local/dev/test zinciriyle paylaşıyor: ${shared_matches[*]}. Gerçek production rollout öncesi bu 8 secret'ı rotate edin; komut: uv run python -m scripts.rotate_production_secrets --env-file .env.production --apply --ack-memory-key-impact; runbook: docs/runbooks/production-secret-rotation.md"
+}
+
+sidar_shared_production_secret_keys() {
+    local src="$1"
+    local production_env="$SCRIPT_DIR/.env.production"
+    local key="" src_val="" prod_val=""
 
     [[ -f "$src" && -f "$production_env" ]] || return 0
 
@@ -947,15 +971,29 @@ emit_production_secret_rotation_notice() {
         src_val=$(read_env_value_from_file "$key" "$src" | tr -d '\n')
         prod_val=$(read_env_value_from_file "$key" "$production_env" | tr -d '\n')
         if [[ -n "${src_val//[[:space:]]/}" && "$src_val" == "$prod_val" ]]; then
-            shared_matches+=("$key")
+            printf '%s\n' "$key"
         fi
     done < <(sidar_production_secret_rotation_keys)
+}
 
-    if (( ${#shared_matches[@]} == 0 )); then
+production_secret_rotation_gate_passes() {
+    local src="$1"
+    local production_env="$SCRIPT_DIR/.env.production"
+    local key="" src_val="" prod_val=""
+    local -a unsafe_matches=()
+    while IFS= read -r key; do
+        [[ -n "$key" ]] || continue
+        src_val=$(read_env_value_from_file "$key" "$src" | tr -d '\n')
+        prod_val=$(read_env_value_from_file "$key" "$production_env" | tr -d '\n')
+        if [[ -z "${prod_val//[[:space:]]/}" || ( -n "${src_val//[[:space:]]/}" && "$src_val" == "$prod_val" ) ]]; then
+            unsafe_matches+=("$key")
+        fi
+    done < <(sidar_production_secret_rotation_keys)
+    if (( ${#unsafe_matches[@]} == 0 )); then
         return 0
     fi
-
-    warn ".env.production ${#shared_matches[@]} ortak secret değerini local/dev/test zinciriyle paylaşıyor: ${shared_matches[*]}. Gerçek production rollout öncesi bu 8 secret'ı rotate edin; runbook: docs/runbooks/production-secret-rotation.md"
+    warn "SIDAR_ENV=production kalıcılaştırması engellendi: .env.production içinde eksik veya local/dev/test ile ortak secret bulundu: ${unsafe_matches[*]}. Önce production secret rotasyonunu tamamlayın."
+    return 1
 }
 
 propagate_shared_secrets_to_env_variants() {
@@ -965,9 +1003,11 @@ propagate_shared_secrets_to_env_variants() {
     local -a variants=(
         ".env.development:.env.development.example"
         ".env.test:.env.test.example"
-        ".env.production:.env.production.example"
         ".env.advanced:.env.advanced.example"  # Sürüm kontrollü şablondan üretilen advanced runtime env.
     )
+
+    # .env.production bilinçli olarak oluşturulmaz veya doldurulmaz. Production
+    # secret'ları yalnız rotasyon aracı/secret manager üzerinden sağlanmalıdır.
 
     [[ -f "$src" ]] || return 0
 
@@ -1250,6 +1290,11 @@ prompt_post_install_sidar_env_mode() {
             return 0
         fi
 
+        if ! production_secret_rotation_gate_passes "$env_file"; then
+            info "Production seçimi kaydedildi; secret rotasyon kapısı geçmeden SIDAR_ENV=production kalıcılaştırılmayacak."
+            return 0
+        fi
+
         if is_alembic_at_head; then
             info "Production seçimi için Alembic current=head doğrulandı."
         else
@@ -1265,7 +1310,7 @@ prompt_post_install_sidar_env_mode() {
     fi
 
     if [[ "$selected_env" == "production" ]]; then
-        ok "🚀 Ortam değişkenleri 'Production' (Canlı Kullanım) olarak güncellendi; production-readiness gate ve migration doğrulaması tamamlandı."
+        ok "🚀 Ortam değişkenleri 'Production' (Canlı Kullanım) olarak güncellendi; production-readiness, secret rotasyon ve migration doğrulamaları tamamlandı."
     else
         ok "🛠️ Ortam değişkenleri 'Development' (Geliştirme) olarak güncellendi."
         if is_alembic_at_head; then
@@ -1377,13 +1422,14 @@ is_env_example_secret_value() {
 
 validate_required_security_profile() {
     local env_file="$1"
-    local api_key memory_key access_level db_password database_url pg_password grafana_password
+    local api_key memory_key access_level db_password database_url pg_password grafana_password redis_password
     api_key="$(get_env_value "$env_file" API_KEY)"
     memory_key="$(get_env_value "$env_file" MEMORY_ENCRYPTION_KEY)"
     access_level="$(get_env_value "$env_file" ACCESS_LEVEL)"
     database_url="$(get_env_value "$env_file" DATABASE_URL)"
     pg_password="$(get_env_value "$env_file" POSTGRES_PASSWORD)"
     grafana_password="$(get_env_value "$env_file" GRAFANA_ADMIN_PASSWORD)"
+    redis_password="$(get_env_value "$env_file" REDIS_PASSWORD)"
 
     if is_weak_secret_value "$api_key"; then
         fail ".env güvenlik doğrulaması başarısız: API_KEY boş veya zayıf. Güçlü bir token tanımlayın."
@@ -1422,9 +1468,16 @@ PYDB
     if is_weak_secret_value "$grafana_password"; then
         fail ".env güvenlik doğrulaması başarısız: GRAFANA_ADMIN_PASSWORD boş veya zayıf."
     fi
+    if is_weak_secret_value "$redis_password"; then
+        fail ".env güvenlik doğrulaması başarısız: REDIS_PASSWORD boş veya zayıf."
+    fi
 }
 
 sync_database_env_chain_after_setup() {
+    # Eski installer turlarından kalmış açık URL'leri uv/Python helper'ına
+    # bağımlı olmadan tüm mevcut runtime dotenv varyantlarında da onar.
+    ensure_database_url_defaults_for_variants
+
     if ! command -v uv &>/dev/null; then
         warn "uv bulunamadı; PostgreSQL dotenv zinciri Python senkronizasyonu atlandı."
         return 0

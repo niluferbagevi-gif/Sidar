@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sqlite3
+import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
@@ -19,6 +20,7 @@ import jwt
 
 from config import Config
 from core.db import audit as db_audit
+from core.db import coverage as db_coverage
 from core.db import marketing as db_marketing
 from core.db import metrics as db_metrics
 from core.db import prompt_registry as db_prompt_registry
@@ -106,9 +108,6 @@ from core.db.dialect import (
 )
 from core.db.dialect import (
     quote_sql_identifier as _quote_sql_identifier_impl,
-)
-from core.db.helpers import (
-    json_dumps as _json_dumps,
 )
 from core.db.helpers import (
     new_entity_id as _new_entity_id,
@@ -375,7 +374,8 @@ class Database(DatabaseConnectionMixin):
                 """
             )
             self._sqlite_conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant ON access_policies(user_id, tenant_id, resource_type, action)"
+                "CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant ON "
+                "access_policies(user_id, tenant_id, resource_type, action)"
             )
             self._sqlite_conn.commit()
 
@@ -385,7 +385,8 @@ class Database(DatabaseConnectionMixin):
         assert self._pg_pool is not None
         async with self._pg_pool.acquire() as conn:
             await conn.execute(
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default'"
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT "
+                "'default'"
             )
             await conn.execute(
                 """
@@ -404,7 +405,8 @@ class Database(DatabaseConnectionMixin):
                 """
             )
             await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant ON access_policies(user_id, tenant_id, resource_type, action)"
+                "CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant ON "
+                "access_policies(user_id, tenant_id, resource_type, action)"
             )
 
     async def _ensure_audit_log_schema_sqlite(self) -> None:
@@ -427,7 +429,8 @@ class Database(DatabaseConnectionMixin):
                 """
             )
             self._sqlite_conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_audit_logs_user_timestamp ON audit_logs(user_id, timestamp)"
+                "CREATE INDEX IF NOT EXISTS idx_audit_logs_user_timestamp ON audit_logs(user_id, "
+                "timestamp)"
             )
             self._sqlite_conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)"
@@ -454,7 +457,8 @@ class Database(DatabaseConnectionMixin):
                 """
             )
             await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_audit_logs_user_timestamp ON audit_logs(user_id, timestamp)"
+                "CREATE INDEX IF NOT EXISTS idx_audit_logs_user_timestamp ON audit_logs(user_id, "
+                "timestamp)"
             )
             await conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)"
@@ -463,9 +467,21 @@ class Database(DatabaseConnectionMixin):
     async def _init_schema_sqlite(self) -> None:
         assert self._sqlite_conn is not None
 
+        # NOT NULL, added explicitly on every PRIMARY KEY column below (both TEXT
+        # and INTEGER AUTOINCREMENT ones): SQLite's PRIMARY KEY alone does not
+        # imply NOT NULL the way SQL:1999/Alembic's Column(primary_key=True)
+        # does — a bare `id TEXT PRIMARY KEY` still accepts NULL, and since
+        # SQLite's UNIQUE/PRIMARY KEY index never treats two NULLs as
+        # conflicting, that silently allowed multiple NULL-id rows. This also
+        # keeps this hand-written bootstrap DDL structurally comparable to the
+        # Alembic-managed PostgreSQL schema (see
+        # test_sqlite_bootstrap_schema_matches_alembic_head_schema in
+        # tests/integration/db/test_db_migrations_integration.py, which
+        # reflects both schemas and previously had to special-case this
+        # divergence).
         schema_sql = """
         CREATE TABLE IF NOT EXISTS users (
-            id TEXT PRIMARY KEY,
+            id TEXT PRIMARY KEY NOT NULL,
             username TEXT NOT NULL UNIQUE,
             password_hash TEXT,
             role TEXT NOT NULL DEFAULT 'user',
@@ -474,7 +490,7 @@ class Database(DatabaseConnectionMixin):
         );
 
         CREATE TABLE IF NOT EXISTS auth_tokens (
-            token TEXT PRIMARY KEY,
+            token TEXT PRIMARY KEY NOT NULL,
             user_id TEXT NOT NULL,
             expires_at TEXT NOT NULL,
             created_at TEXT NOT NULL,
@@ -482,14 +498,14 @@ class Database(DatabaseConnectionMixin):
         );
 
         CREATE TABLE IF NOT EXISTS user_quotas (
-            user_id TEXT PRIMARY KEY,
+            user_id TEXT PRIMARY KEY NOT NULL,
             daily_token_limit INTEGER NOT NULL DEFAULT 0,
             daily_request_limit INTEGER NOT NULL DEFAULT 0,
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
         );
 
         CREATE TABLE IF NOT EXISTS provider_usage_daily (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             user_id TEXT NOT NULL,
             provider TEXT NOT NULL,
             usage_date TEXT NOT NULL,
@@ -500,7 +516,7 @@ class Database(DatabaseConnectionMixin):
         );
 
         CREATE TABLE IF NOT EXISTS sessions (
-            id TEXT PRIMARY KEY,
+            id TEXT PRIMARY KEY NOT NULL,
             user_id TEXT NOT NULL,
             title TEXT NOT NULL,
             created_at TEXT NOT NULL,
@@ -509,7 +525,7 @@ class Database(DatabaseConnectionMixin):
         );
 
         CREATE TABLE IF NOT EXISTS messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             session_id TEXT NOT NULL,
             role TEXT NOT NULL,
             content TEXT NOT NULL,
@@ -521,9 +537,10 @@ class Database(DatabaseConnectionMixin):
         CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
         CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
         CREATE INDEX IF NOT EXISTS idx_auth_tokens_user_id ON auth_tokens(user_id);
-        CREATE INDEX IF NOT EXISTS idx_provider_usage_daily_user_id ON provider_usage_daily(user_id);
+        CREATE INDEX IF NOT EXISTS idx_provider_usage_daily_user_id ON
+        provider_usage_daily(user_id);
         CREATE TABLE IF NOT EXISTS access_policies (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             user_id TEXT NOT NULL,
             tenant_id TEXT NOT NULL DEFAULT 'default',
             resource_type TEXT NOT NULL,
@@ -540,7 +557,7 @@ class Database(DatabaseConnectionMixin):
             ON access_policies(user_id, tenant_id, resource_type, action);
 
         CREATE TABLE IF NOT EXISTS audit_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             user_id TEXT NOT NULL DEFAULT '',
             tenant_id TEXT NOT NULL DEFAULT 'default',
             action TEXT NOT NULL,
@@ -553,7 +570,7 @@ class Database(DatabaseConnectionMixin):
         CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp);
 
         CREATE TABLE IF NOT EXISTS prompt_registry (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             role_name TEXT NOT NULL,
             prompt_text TEXT NOT NULL,
             version INTEGER NOT NULL DEFAULT 1,
@@ -561,11 +578,13 @@ class Database(DatabaseConnectionMixin):
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_prompt_registry_role_version ON prompt_registry(role_name, version);
-        CREATE INDEX IF NOT EXISTS idx_prompt_registry_role_active ON prompt_registry(role_name, is_active);
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_prompt_registry_role_version ON
+        prompt_registry(role_name, version);
+        CREATE INDEX IF NOT EXISTS idx_prompt_registry_role_active ON prompt_registry(role_name,
+        is_active);
 
         CREATE TABLE IF NOT EXISTS marketing_campaigns (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             tenant_id TEXT NOT NULL DEFAULT 'default',
             name TEXT NOT NULL,
             channel TEXT NOT NULL DEFAULT '',
@@ -581,7 +600,7 @@ class Database(DatabaseConnectionMixin):
             ON marketing_campaigns(tenant_id, status, updated_at);
 
         CREATE TABLE IF NOT EXISTS content_assets (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             campaign_id INTEGER NOT NULL,
             tenant_id TEXT NOT NULL DEFAULT 'default',
             asset_type TEXT NOT NULL,
@@ -597,7 +616,7 @@ class Database(DatabaseConnectionMixin):
             ON content_assets(campaign_id, tenant_id, asset_type);
 
         CREATE TABLE IF NOT EXISTS operation_checklists (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             campaign_id INTEGER,
             tenant_id TEXT NOT NULL DEFAULT 'default',
             title TEXT NOT NULL,
@@ -612,7 +631,7 @@ class Database(DatabaseConnectionMixin):
             ON operation_checklists(campaign_id, tenant_id, status);
 
         CREATE TABLE IF NOT EXISTS coverage_tasks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             tenant_id TEXT NOT NULL DEFAULT 'default',
             requester_role TEXT NOT NULL DEFAULT 'coverage',
             command TEXT NOT NULL,
@@ -628,7 +647,7 @@ class Database(DatabaseConnectionMixin):
             ON coverage_tasks(tenant_id, status, updated_at);
 
         CREATE TABLE IF NOT EXISTS coverage_findings (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             task_id INTEGER NOT NULL,
             finding_type TEXT NOT NULL,
             target_path TEXT NOT NULL DEFAULT '',
@@ -740,7 +759,8 @@ class Database(DatabaseConnectionMixin):
             assert self._sqlite_conn is not None
             tbl = self._schema_version_table_quoted
             self._sqlite_conn.execute(
-                f"CREATE TABLE IF NOT EXISTS {tbl} (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL, description TEXT NOT NULL)"
+                f"CREATE TABLE IF NOT EXISTS {tbl} (version INTEGER PRIMARY KEY NOT NULL, "
+                "applied_at TEXT NOT NULL, description TEXT NOT NULL)"
             )
             cur = self._sqlite_conn.execute(
                 f"SELECT MAX(version) AS v FROM {tbl}"  # nosec B608  # tablo adı sistem içi sabittir.
@@ -763,7 +783,8 @@ class Database(DatabaseConnectionMixin):
         tbl = self._schema_version_table_quoted
         async with self._pg_pool.acquire() as conn:
             await conn.execute(
-                f"CREATE TABLE IF NOT EXISTS {tbl} (version INTEGER PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL, description TEXT NOT NULL)"
+                f"CREATE TABLE IF NOT EXISTS {tbl} (version INTEGER PRIMARY KEY NOT NULL, "
+                f"applied_at TIMESTAMPTZ NOT NULL, description TEXT NOT NULL)"
             )
             current = await conn.fetchval(
                 f"SELECT COALESCE(MAX(version), 0) FROM {tbl}"  # nosec B608  # tablo adı sistem içi sabittir.
@@ -879,6 +900,13 @@ class Database(DatabaseConnectionMixin):
         tenant_id = str(payload.get("tenant_id", "default") or "default").strip() or "default"
         if not user_id or not role:
             return None
+        try:
+            uuid.UUID(user_id)
+        except (ValueError, AttributeError, TypeError):
+            # users.id is a UUID column in PostgreSQL; an unvalidated sub claim
+            # here would otherwise reach asyncpg as a non-UUID string and raise
+            # DataError deep inside _get_user_by_id instead of failing auth.
+            return None
 
         return UserRecord(
             id=user_id,
@@ -904,7 +932,8 @@ class Database(DatabaseConnectionMixin):
         if self._backend == "postgresql":
             assert self._pg_pool is not None
             query = (
-                "SELECT id, user_id, tenant_id, resource_type, resource_id, action, effect, created_at, updated_at "
+                "SELECT id, user_id, tenant_id, resource_type, resource_id, action, effect, "
+                "created_at, updated_at "
                 "FROM access_policies WHERE user_id=$1"
             )
             args: list[Any] = [user_id]
@@ -936,7 +965,8 @@ class Database(DatabaseConnectionMixin):
             if effective_tenant:
                 cur = self._sqlite_conn.execute(
                     """
-                    SELECT id, user_id, tenant_id, resource_type, resource_id, action, effect, created_at, updated_at
+                    SELECT id, user_id, tenant_id, resource_type, resource_id, action, effect,
+                    created_at, updated_at
                     FROM access_policies
                     WHERE user_id=? AND tenant_id=?
                     ORDER BY resource_type, action, resource_id
@@ -946,7 +976,8 @@ class Database(DatabaseConnectionMixin):
             else:
                 cur = self._sqlite_conn.execute(
                     """
-                    SELECT id, user_id, tenant_id, resource_type, resource_id, action, effect, created_at, updated_at
+                    SELECT id, user_id, tenant_id, resource_type, resource_id, action, effect,
+                    created_at, updated_at
                     FROM access_policies
                     WHERE user_id=?
                     ORDER BY resource_type, action, resource_id
@@ -997,7 +1028,8 @@ class Database(DatabaseConnectionMixin):
             async with self._pg_pool.acquire() as conn:
                 await conn.execute(
                     """
-                    INSERT INTO access_policies (user_id, tenant_id, resource_type, resource_id, action, effect, created_at, updated_at)
+                    INSERT INTO access_policies (user_id, tenant_id, resource_type, resource_id,
+                    action, effect, created_at, updated_at)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
                     ON CONFLICT (user_id, tenant_id, resource_type, resource_id, action)
                     DO UPDATE SET effect=EXCLUDED.effect, updated_at=EXCLUDED.updated_at
@@ -1018,7 +1050,8 @@ class Database(DatabaseConnectionMixin):
             assert self._sqlite_conn is not None
             self._sqlite_conn.execute(
                 """
-                INSERT INTO access_policies (user_id, tenant_id, resource_type, resource_id, action, effect, created_at, updated_at)
+                INSERT INTO access_policies (user_id, tenant_id, resource_type, resource_id, action,
+                effect, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(user_id, tenant_id, resource_type, resource_id, action)
                 DO UPDATE SET effect=excluded.effect, updated_at=excluded.updated_at
@@ -1117,145 +1150,17 @@ class Database(DatabaseConnectionMixin):
         metadata: dict[str, Any] | None = None,
         campaign_id: int | None = None,
     ) -> MarketingCampaignRecord:
-        tenant = (tenant_id or "default").strip() or "default"
-        campaign_name = (name or "").strip()
-        if not campaign_name:
-            raise ValueError("campaign name is required")
-        now_dt, now = _utc_now_pair()
-        normalized_status = (status or "draft").strip().lower() or "draft"
-        metadata_json = _json_dumps(metadata or {})
-        if self._backend == "postgresql":
-            assert self._pg_pool is not None
-            async with self._pg_pool.acquire() as conn:
-                if campaign_id:
-                    row = await conn.fetchrow(
-                        """
-                        UPDATE marketing_campaigns
-                        SET tenant_id=$2, name=$3, channel=$4, objective=$5, status=$6,
-                            owner_user_id=$7, budget=$8, metadata_json=$9::jsonb, updated_at=$10
-                        WHERE id=$1
-                        RETURNING id, tenant_id, name, channel, objective, status, owner_user_id, budget, metadata_json, created_at, updated_at
-                        """,
-                        int(campaign_id),
-                        tenant,
-                        campaign_name,
-                        (channel or "").strip(),
-                        (objective or "").strip(),
-                        normalized_status,
-                        (owner_user_id or "").strip(),
-                        float(budget or 0.0),
-                        metadata_json,
-                        now_dt,
-                    )
-                else:
-                    row = await conn.fetchrow(
-                        """
-                        INSERT INTO marketing_campaigns (tenant_id, name, channel, objective, status, owner_user_id, budget, metadata_json, created_at, updated_at)
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $9)
-                        RETURNING id, tenant_id, name, channel, objective, status, owner_user_id, budget, metadata_json, created_at, updated_at
-                        """,
-                        tenant,
-                        campaign_name,
-                        (channel or "").strip(),
-                        (objective or "").strip(),
-                        normalized_status,
-                        (owner_user_id or "").strip(),
-                        float(budget or 0.0),
-                        metadata_json,
-                        now_dt,
-                    )
-            if row is None:
-                raise ValueError("campaign not found")
-            return MarketingCampaignRecord(
-                id=int(row["id"]),
-                tenant_id=str(row["tenant_id"]),
-                name=str(row["name"]),
-                channel=str(row["channel"]),
-                objective=str(row["objective"]),
-                status=str(row["status"]),
-                owner_user_id=str(row["owner_user_id"]),
-                budget=float(row["budget"] or 0.0),
-                metadata_json=str(row["metadata_json"]),
-                created_at=str(row["created_at"]),
-                updated_at=str(row["updated_at"]),
-            )
-
-        assert self._sqlite_conn is not None
-
-        def _run() -> sqlite3.Row:
-            assert self._sqlite_conn is not None
-            if campaign_id:
-                self._sqlite_conn.execute(
-                    """
-                    UPDATE marketing_campaigns
-                    SET tenant_id=?, name=?, channel=?, objective=?, status=?, owner_user_id=?, budget=?, metadata_json=?, updated_at=?
-                    WHERE id=?
-                    """,
-                    (
-                        tenant,
-                        campaign_name,
-                        (channel or "").strip(),
-                        (objective or "").strip(),
-                        normalized_status,
-                        (owner_user_id or "").strip(),
-                        float(budget or 0.0),
-                        metadata_json,
-                        now,
-                        int(campaign_id),
-                    ),
-                )
-                cur = self._sqlite_conn.execute(
-                    """
-                    SELECT id, tenant_id, name, channel, objective, status, owner_user_id, budget, metadata_json, created_at, updated_at
-                    FROM marketing_campaigns WHERE id=?
-                    """,
-                    (int(campaign_id),),
-                )
-            else:
-                cur = self._sqlite_conn.execute(
-                    """
-                    INSERT INTO marketing_campaigns (tenant_id, name, channel, objective, status, owner_user_id, budget, metadata_json, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        tenant,
-                        campaign_name,
-                        (channel or "").strip(),
-                        (objective or "").strip(),
-                        normalized_status,
-                        (owner_user_id or "").strip(),
-                        float(budget or 0.0),
-                        metadata_json,
-                        now,
-                        now,
-                    ),
-                )
-                cur = self._sqlite_conn.execute(
-                    """
-                    SELECT id, tenant_id, name, channel, objective, status, owner_user_id, budget, metadata_json, created_at, updated_at
-                    FROM marketing_campaigns WHERE id=?
-                    """,
-                    (int(cur.lastrowid) if cur.lastrowid is not None else 0,),
-                )
-            row = _sqlite_fetchone(cur)
-            self._sqlite_conn.commit()
-            if row is None:
-                raise ValueError("campaign not found")
-            return row
-
-        row = await self._run_sqlite_op(_run)
-        return MarketingCampaignRecord(
-            id=int(row["id"]),
-            tenant_id=str(row["tenant_id"]),
-            name=str(row["name"]),
-            channel=str(row["channel"]),
-            objective=str(row["objective"]),
-            status=str(row["status"]),
-            owner_user_id=str(row["owner_user_id"]),
-            budget=float(row["budget"] or 0.0),
-            metadata_json=str(row["metadata_json"]),
-            created_at=str(row["created_at"]),
-            updated_at=str(row["updated_at"]),
+        return await db_marketing.upsert_marketing_campaign(
+            self,
+            tenant_id=tenant_id,
+            name=name,
+            channel=channel,
+            objective=objective,
+            status=status,
+            owner_user_id=owner_user_id,
+            budget=budget,
+            metadata=metadata,
+            campaign_id=campaign_id,
         )
 
     async def list_marketing_campaigns(
@@ -1280,91 +1185,15 @@ class Database(DatabaseConnectionMixin):
         channel: str = "",
         metadata: dict[str, Any] | None = None,
     ) -> ContentAssetRecord:
-        now_dt, now = _utc_now_pair()
-        tenant = (tenant_id or "default").strip() or "default"
-        asset_kind = (asset_type or "").strip().lower()
-        asset_title = (title or "").strip()
-        asset_content = str(content or "").strip()
-        if not asset_kind or not asset_title or not asset_content:
-            raise ValueError("asset_type, title and content are required")
-        metadata_json = _json_dumps(metadata or {})
-        if self._backend == "postgresql":
-            assert self._pg_pool is not None
-            async with self._pg_pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """
-                    INSERT INTO content_assets (campaign_id, tenant_id, asset_type, title, content, channel, metadata_json, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $8)
-                    RETURNING id, campaign_id, tenant_id, asset_type, title, content, channel, metadata_json, created_at, updated_at
-                    """,
-                    int(campaign_id),
-                    tenant,
-                    asset_kind,
-                    asset_title,
-                    asset_content,
-                    (channel or "").strip(),
-                    metadata_json,
-                    now_dt,
-                )
-            return ContentAssetRecord(
-                id=int(row["id"]),
-                campaign_id=int(row["campaign_id"]),
-                tenant_id=str(row["tenant_id"]),
-                asset_type=str(row["asset_type"]),
-                title=str(row["title"]),
-                content=str(row["content"]),
-                channel=str(row["channel"]),
-                metadata_json=str(row["metadata_json"]),
-                created_at=str(row["created_at"]),
-                updated_at=str(row["updated_at"]),
-            )
-
-        assert self._sqlite_conn is not None
-
-        def _run() -> sqlite3.Row:
-            assert self._sqlite_conn is not None
-            cur = self._sqlite_conn.execute(
-                """
-                INSERT INTO content_assets (campaign_id, tenant_id, asset_type, title, content, channel, metadata_json, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    int(campaign_id),
-                    tenant,
-                    asset_kind,
-                    asset_title,
-                    asset_content,
-                    (channel or "").strip(),
-                    metadata_json,
-                    now,
-                    now,
-                ),
-            )
-            row = _sqlite_fetchone(
-                self._sqlite_conn.execute(
-                    """
-                    SELECT id, campaign_id, tenant_id, asset_type, title, content, channel, metadata_json, created_at, updated_at
-                    FROM content_assets WHERE id=?
-                    """,
-                    (int(cur.lastrowid) if cur.lastrowid is not None else 0,),
-                )
-            )
-            self._sqlite_conn.commit()
-            assert row is not None
-            return row
-
-        row = await self._run_sqlite_op(_run)
-        return ContentAssetRecord(
-            id=int(row["id"]),
-            campaign_id=int(row["campaign_id"]),
-            tenant_id=str(row["tenant_id"]),
-            asset_type=str(row["asset_type"]),
-            title=str(row["title"]),
-            content=str(row["content"]),
-            channel=str(row["channel"]),
-            metadata_json=str(row["metadata_json"]),
-            created_at=str(row["created_at"]),
-            updated_at=str(row["updated_at"]),
+        return await db_marketing.add_content_asset(
+            self,
+            campaign_id=campaign_id,
+            tenant_id=tenant_id,
+            asset_type=asset_type,
+            title=title,
+            content=content,
+            channel=channel,
+            metadata=metadata,
         )
 
     async def list_content_assets(
@@ -1388,97 +1217,14 @@ class Database(DatabaseConnectionMixin):
         owner_user_id: str = "",
         campaign_id: int | None = None,
     ) -> OperationChecklistRecord:
-        tenant = (tenant_id or "default").strip() or "default"
-        checklist_title = (title or "").strip()
-        if not checklist_title:
-            raise ValueError("title is required")
-        normalized_items: list[Any] = []
-        for item in list(items or []):
-            if isinstance(item, dict):
-                normalized_dict = {
-                    str(key).strip(): value for key, value in item.items() if str(key).strip()
-                }
-                if normalized_dict:
-                    normalized_items.append(normalized_dict)
-                continue
-            text = str(item).strip()
-            if text:
-                normalized_items.append(text)
-        now_dt, now = _utc_now_pair()
-        items_json = _json_dumps(normalized_items)
-        if self._backend == "postgresql":
-            assert self._pg_pool is not None
-            async with self._pg_pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """
-                    INSERT INTO operation_checklists (campaign_id, tenant_id, title, items_json, status, owner_user_id, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $7)
-                    RETURNING id, campaign_id, tenant_id, title, items_json, status, owner_user_id, created_at, updated_at
-                    """,
-                    int(campaign_id) if campaign_id is not None else None,
-                    tenant,
-                    checklist_title,
-                    items_json,
-                    (status or "pending").strip().lower() or "pending",
-                    (owner_user_id or "").strip(),
-                    now_dt,
-                )
-            return OperationChecklistRecord(
-                id=int(row["id"]),
-                campaign_id=None if row["campaign_id"] is None else int(row["campaign_id"]),
-                tenant_id=str(row["tenant_id"]),
-                title=str(row["title"]),
-                items_json=str(row["items_json"]),
-                status=str(row["status"]),
-                owner_user_id=str(row["owner_user_id"]),
-                created_at=str(row["created_at"]),
-                updated_at=str(row["updated_at"]),
-            )
-
-        assert self._sqlite_conn is not None
-
-        def _run() -> sqlite3.Row:
-            assert self._sqlite_conn is not None
-            cur = self._sqlite_conn.execute(
-                """
-                INSERT INTO operation_checklists (campaign_id, tenant_id, title, items_json, status, owner_user_id, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    int(campaign_id) if campaign_id is not None else None,
-                    tenant,
-                    checklist_title,
-                    items_json,
-                    (status or "pending").strip().lower() or "pending",
-                    (owner_user_id or "").strip(),
-                    now,
-                    now,
-                ),
-            )
-            row = _sqlite_fetchone(
-                self._sqlite_conn.execute(
-                    """
-                    SELECT id, campaign_id, tenant_id, title, items_json, status, owner_user_id, created_at, updated_at
-                    FROM operation_checklists WHERE id=?
-                    """,
-                    (int(cur.lastrowid) if cur.lastrowid is not None else 0,),
-                )
-            )
-            self._sqlite_conn.commit()
-            assert row is not None
-            return row
-
-        row = await self._run_sqlite_op(_run)
-        return OperationChecklistRecord(
-            id=int(row["id"]),
-            campaign_id=None if row["campaign_id"] is None else int(row["campaign_id"]),
-            tenant_id=str(row["tenant_id"]),
-            title=str(row["title"]),
-            items_json=str(row["items_json"]),
-            status=str(row["status"]),
-            owner_user_id=str(row["owner_user_id"]),
-            created_at=str(row["created_at"]),
-            updated_at=str(row["updated_at"]),
+        return await db_marketing.add_operation_checklist(
+            self,
+            tenant_id=tenant_id,
+            title=title,
+            items=items,
+            status=status,
+            owner_user_id=owner_user_id,
+            campaign_id=campaign_id,
         )
 
     async def list_operation_checklists(
@@ -1504,99 +1250,16 @@ class Database(DatabaseConnectionMixin):
         suggested_test_path: str = "",
         review_payload_json: str = "{}",
     ) -> CoverageTaskRecord:
-        tenant = (tenant_id or "default").strip() or "default"
-        now_dt, now = _utc_now_pair()
-        if not str(command or "").strip():
-            raise ValueError("command is required")
-        if self._backend == "postgresql":
-            assert self._pg_pool is not None
-            async with self._pg_pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """
-                    INSERT INTO coverage_tasks (
-                        tenant_id, requester_role, command, pytest_output, status,
-                        target_path, suggested_test_path, review_payload_json, created_at, updated_at
-                    )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $9)
-                    RETURNING id, tenant_id, requester_role, command, pytest_output, status,
-                              target_path, suggested_test_path, review_payload_json, created_at, updated_at
-                    """,
-                    tenant,
-                    str(requester_role or "coverage"),
-                    str(command),
-                    str(pytest_output or ""),
-                    str(status or "pending_review"),
-                    str(target_path or ""),
-                    str(suggested_test_path or ""),
-                    str(review_payload_json or "{}"),
-                    now_dt,
-                )
-            return CoverageTaskRecord(
-                id=int(row["id"]),
-                tenant_id=str(row["tenant_id"]),
-                requester_role=str(row["requester_role"]),
-                command=str(row["command"]),
-                pytest_output=str(row["pytest_output"]),
-                status=str(row["status"]),
-                target_path=str(row["target_path"]),
-                suggested_test_path=str(row["suggested_test_path"]),
-                review_payload_json=str(row["review_payload_json"]),
-                created_at=str(row["created_at"]),
-                updated_at=str(row["updated_at"]),
-            )
-
-        assert self._sqlite_conn is not None
-
-        def _run() -> sqlite3.Row:
-            assert self._sqlite_conn is not None
-            cur = self._sqlite_conn.execute(
-                """
-                INSERT INTO coverage_tasks (
-                    tenant_id, requester_role, command, pytest_output, status,
-                    target_path, suggested_test_path, review_payload_json, created_at, updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    tenant,
-                    str(requester_role or "coverage"),
-                    str(command),
-                    str(pytest_output or ""),
-                    str(status or "pending_review"),
-                    str(target_path or ""),
-                    str(suggested_test_path or ""),
-                    str(review_payload_json or "{}"),
-                    now,
-                    now,
-                ),
-            )
-            row = _sqlite_fetchone(
-                self._sqlite_conn.execute(
-                    """
-                    SELECT id, tenant_id, requester_role, command, pytest_output, status,
-                           target_path, suggested_test_path, review_payload_json, created_at, updated_at
-                    FROM coverage_tasks WHERE id=?
-                    """,
-                    (int(cur.lastrowid) if cur.lastrowid is not None else 0,),
-                )
-            )
-            self._sqlite_conn.commit()
-            assert row is not None
-            return row
-
-        row = await self._run_sqlite_op(_run)
-        return CoverageTaskRecord(
-            id=int(row["id"]),
-            tenant_id=str(row["tenant_id"]),
-            requester_role=str(row["requester_role"]),
-            command=str(row["command"]),
-            pytest_output=str(row["pytest_output"]),
-            status=str(row["status"]),
-            target_path=str(row["target_path"]),
-            suggested_test_path=str(row["suggested_test_path"]),
-            review_payload_json=str(row["review_payload_json"]),
-            created_at=str(row["created_at"]),
-            updated_at=str(row["updated_at"]),
+        return await db_coverage.create_coverage_task(
+            self,
+            tenant_id=tenant_id,
+            requester_role=requester_role,
+            command=command,
+            pytest_output=pytest_output,
+            status=status,
+            target_path=target_path,
+            suggested_test_path=suggested_test_path,
+            review_payload_json=review_payload_json,
         )
 
     async def add_coverage_finding(
@@ -1609,80 +1272,14 @@ class Database(DatabaseConnectionMixin):
         severity: str = "medium",
         details: dict[str, Any] | None = None,
     ) -> CoverageFindingRecord:
-        now_dt, now = _utc_now_pair()
-        if not str(finding_type or "").strip() or not str(summary or "").strip():
-            raise ValueError("finding_type and summary are required")
-        details_json = _json_dumps(details or {})
-        if self._backend == "postgresql":
-            assert self._pg_pool is not None
-            async with self._pg_pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """
-                    INSERT INTO coverage_findings (task_id, finding_type, target_path, summary, severity, details_json, created_at)
-                    VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
-                    RETURNING id, task_id, finding_type, target_path, summary, severity, details_json, created_at
-                    """,
-                    int(task_id),
-                    str(finding_type),
-                    str(target_path or ""),
-                    str(summary),
-                    str(severity or "medium"),
-                    details_json,
-                    now_dt,
-                )
-            return CoverageFindingRecord(
-                id=int(row["id"]),
-                task_id=int(row["task_id"]),
-                finding_type=str(row["finding_type"]),
-                target_path=str(row["target_path"]),
-                summary=str(row["summary"]),
-                severity=str(row["severity"]),
-                details_json=str(row["details_json"]),
-                created_at=str(row["created_at"]),
-            )
-
-        assert self._sqlite_conn is not None
-
-        def _run() -> sqlite3.Row:
-            assert self._sqlite_conn is not None
-            cur = self._sqlite_conn.execute(
-                """
-                INSERT INTO coverage_findings (task_id, finding_type, target_path, summary, severity, details_json, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    int(task_id),
-                    str(finding_type),
-                    str(target_path or ""),
-                    str(summary),
-                    str(severity or "medium"),
-                    details_json,
-                    now,
-                ),
-            )
-            row = _sqlite_fetchone(
-                self._sqlite_conn.execute(
-                    """
-                    SELECT id, task_id, finding_type, target_path, summary, severity, details_json, created_at
-                    FROM coverage_findings WHERE id=?
-                    """,
-                    (int(cur.lastrowid) if cur.lastrowid is not None else 0,),
-                )
-            )
-            self._sqlite_conn.commit()
-            assert row is not None
-            return row
-
-        row = await self._run_sqlite_op(_run)
-        return CoverageFindingRecord(
-            id=int(row["id"]),
-            task_id=int(row["task_id"]),
-            finding_type=str(row["finding_type"]),
-            target_path=str(row["target_path"]),
-            summary=str(row["summary"]),
-            severity=str(row["severity"]),
-            details_json=str(row["details_json"]),
-            created_at=str(row["created_at"]),
+        return await db_coverage.add_coverage_finding(
+            self,
+            task_id=task_id,
+            finding_type=finding_type,
+            target_path=target_path,
+            summary=summary,
+            severity=severity,
+            details=details,
         )
 
     async def list_coverage_tasks(
@@ -1692,112 +1289,14 @@ class Database(DatabaseConnectionMixin):
         status: str | None = None,
         limit: int = 100,
     ) -> list[CoverageTaskRecord]:
-        tenant = (tenant_id or "default").strip() or "default"
-        normalized_status = (status or "").strip() or None
-        max_items = max(1, min(int(limit or 100), 500))
-        if self._backend == "postgresql":
-            assert self._pg_pool is not None
-            query = (
-                "SELECT id, tenant_id, requester_role, command, pytest_output, status, "
-                "target_path, suggested_test_path, review_payload_json, created_at, updated_at "
-                "FROM coverage_tasks WHERE tenant_id=$1"
-            )
-            args: list[Any] = [tenant]
-            if normalized_status:
-                query += " AND status=$2"
-                args.append(normalized_status)
-            query += f" ORDER BY updated_at DESC LIMIT ${len(args) + 1}"
-            args.append(max_items)
-            async with self._pg_pool.acquire() as conn:
-                rows = await conn.fetch(query, *args)
-        else:
-            assert self._sqlite_conn is not None
-
-            def _run() -> list[sqlite3.Row]:
-                assert self._sqlite_conn is not None
-                if normalized_status:
-                    cur = self._sqlite_conn.execute(
-                        """
-                        SELECT id, tenant_id, requester_role, command, pytest_output, status,
-                               target_path, suggested_test_path, review_payload_json, created_at, updated_at
-                        FROM coverage_tasks
-                        WHERE tenant_id=? AND status=?
-                        ORDER BY updated_at DESC
-                        LIMIT ?
-                        """,
-                        (tenant, normalized_status, max_items),
-                    )
-                else:
-                    cur = self._sqlite_conn.execute(
-                        """
-                        SELECT id, tenant_id, requester_role, command, pytest_output, status,
-                               target_path, suggested_test_path, review_payload_json, created_at, updated_at
-                        FROM coverage_tasks
-                        WHERE tenant_id=?
-                        ORDER BY updated_at DESC
-                        LIMIT ?
-                        """,
-                        (tenant, max_items),
-                    )
-                return cur.fetchall()
-
-            rows = await self._run_sqlite_op(_run, write=False)
-        return [
-            CoverageTaskRecord(
-                id=int(row["id"]),
-                tenant_id=str(row["tenant_id"]),
-                requester_role=str(row["requester_role"]),
-                command=str(row["command"]),
-                pytest_output=str(row["pytest_output"]),
-                status=str(row["status"]),
-                target_path=str(row["target_path"]),
-                suggested_test_path=str(row["suggested_test_path"]),
-                review_payload_json=str(row["review_payload_json"]),
-                created_at=str(row["created_at"]),
-                updated_at=str(row["updated_at"]),
-            )
-            for row in rows
-        ]
+        return await db_coverage.list_coverage_tasks(
+            self, tenant_id=tenant_id, status=status, limit=limit
+        )
 
     async def upsert_user_quota(
         self, user_id: str, daily_token_limit: int = 0, daily_request_limit: int = 0
     ) -> None:
-        tokens = max(0, int(daily_token_limit or 0))
-        requests = max(0, int(daily_request_limit or 0))
-        if self._backend == "postgresql":
-            assert self._pg_pool is not None
-            async with self._pg_pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    INSERT INTO user_quotas (user_id, daily_token_limit, daily_request_limit)
-                    VALUES ($1, $2, $3)
-                    ON CONFLICT (user_id)
-                    DO UPDATE SET daily_token_limit=EXCLUDED.daily_token_limit,
-                                  daily_request_limit=EXCLUDED.daily_request_limit
-                    """,
-                    user_id,
-                    tokens,
-                    requests,
-                )
-            return
-
-        assert self._sqlite_conn is not None
-
-        def _run() -> None:
-            assert self._sqlite_conn is not None
-            self._sqlite_conn.execute(
-                """
-                INSERT INTO user_quotas (user_id, daily_token_limit, daily_request_limit)
-                VALUES (?, ?, ?)
-                ON CONFLICT(user_id) DO UPDATE SET
-                    daily_token_limit=excluded.daily_token_limit,
-                    daily_request_limit=excluded.daily_request_limit
-                """,
-                (user_id, tokens, requests),
-            )
-            self._sqlite_conn.commit()
-
-        await self._run_sqlite_op(_run)
+        await db_metrics.upsert_user_quota(self, user_id, daily_token_limit, daily_request_limit)
 
     async def record_provider_usage_daily(
         self, user_id: str, provider: str, tokens_used: int, requests_inc: int = 1

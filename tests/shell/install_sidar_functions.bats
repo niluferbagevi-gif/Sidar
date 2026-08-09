@@ -19,11 +19,34 @@ run_installer_function() {
     trap "rm -rf \"$test_summary_tmpdir\"" EXIT
     export TEST_SUMMARY_JSON="$test_summary_tmpdir/nonexistent-test-summary.json"
     export SIDAR_INSTALL_TEST_MODE=1
+    # Installer function tests must not inherit quality-gate state from the
+    # run_tests.sh process that invokes BATS (notably production-readiness).
     unset DATABASE_URL TEST_DATABASE_URL POSTGRES_PASSWORD
+    unset SIDAR_PRODUCTION_READINESS PRODUCTION_READINESS TEST_PROFILE
+    unset RUN_BENCHMARKS RUN_FRONTEND_E2E AUTO_OPEN_ARTIFACTS
     set --
     source ./install_sidar.sh
     eval "$test_snippet"
   ' _ "$root" "$snippet"
+}
+
+@test "installer helper isolates tests from inherited quality-gate environment" {
+  export SIDAR_PRODUCTION_READINESS=1
+  export PRODUCTION_READINESS=1
+  export TEST_PROFILE=ci
+  export RUN_BENCHMARKS=required
+  export RUN_FRONTEND_E2E=1
+  export AUTO_OPEN_ARTIFACTS=1
+
+  run_installer_function '
+    [[ -z "${SIDAR_PRODUCTION_READINESS+x}" ]]
+    [[ -z "${PRODUCTION_READINESS+x}" ]]
+    [[ -z "${TEST_PROFILE+x}" ]]
+    [[ -z "${RUN_BENCHMARKS+x}" ]]
+    [[ -z "${RUN_FRONTEND_E2E+x}" ]]
+    [[ -z "${AUTO_OPEN_ARTIFACTS+x}" ]]
+  '
+  [ "$status" -eq 0 ]
 }
 
 @test "normalize_bool maps accepted true/false values and rejects unknown input" {
@@ -33,6 +56,191 @@ run_installer_function() {
     [[ "$(normalize_bool 0)" == "false" ]]
     [[ "$(normalize_bool hayır)" == "false" ]]
     [[ -z "$(normalize_bool maybe)" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "Redis smoke readiness prefers SIDAR_REDIS_URL and honors its custom port" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/.env" <<EOF
+SIDAR_REDIS_URL=redis://sidar-primary.example:6387/0
+REDIS_URL=redis://legacy-fallback.example:6399/0
+EOF
+    cat > "$tmpdir/bin/python3" <<EOF
+#!/usr/bin/env bash
+if [[ "\$#" -eq 2 ]]; then
+  printf "%s\\n" "\$2" > "$tmpdir/parsed-url"
+  printf "sidar-primary.example\\n6387\\n"
+  exit 0
+fi
+[[ "\$2" == sidar-primary.example && "\$3" == 6387 ]]
+EOF
+    chmod +x "$tmpdir/bin/python3"
+    PATH="$tmpdir/bin:$PATH"
+    SCRIPT_DIR="$tmpdir"
+    DOCKER_DB_SERVICES_STARTED=false
+
+    wait_for_redis_before_smoke_tests
+    [[ "$(cat "$tmpdir/parsed-url")" == "redis://sidar-primary.example:6387/0" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"sidar-primary.example:6387"* ]]
+}
+
+@test "Redis smoke readiness falls back to legacy REDIS_URL" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    printf "REDIS_URL=redis://legacy-only.example:6388/0\\n" > "$tmpdir/.env"
+    cat > "$tmpdir/bin/python3" <<EOF
+#!/usr/bin/env bash
+if [[ "\$#" -eq 2 ]]; then
+  printf "%s\\n" "\$2" > "$tmpdir/parsed-url"
+  printf "legacy-only.example\\n6388\\n"
+  exit 0
+fi
+[[ "\$2" == legacy-only.example && "\$3" == 6388 ]]
+EOF
+    chmod +x "$tmpdir/bin/python3"
+    PATH="$tmpdir/bin:$PATH"
+    SCRIPT_DIR="$tmpdir"
+    DOCKER_DB_SERVICES_STARTED=false
+
+    wait_for_redis_before_smoke_tests
+    [[ "$(cat "$tmpdir/parsed-url")" == "redis://legacy-only.example:6388/0" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "post-Compose Redis readiness authenticates PONG with REDISCLI_AUTH" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/.env" <<EOF
+SIDAR_REDIS_URL=redis://127.0.0.1:6391/0
+REDIS_PORT=6392
+REDIS_PASSWORD=correct-horse-battery-staple
+EOF
+    cat > "$tmpdir/bin/redis-cli" <<EOF
+#!/usr/bin/env bash
+printf "%s|%s\\n" "\${REDISCLI_AUTH:-}" "\$*" > "$tmpdir/redis-cli.log"
+[[ "\${REDISCLI_AUTH:-}" == correct-horse-battery-staple ]]
+[[ "\$*" == "-h 127.0.0.1 -p 6392 ping" ]]
+printf "PONG\\n"
+EOF
+    chmod +x "$tmpdir/bin/redis-cli"
+    PATH="$tmpdir/bin:$PATH"
+    SCRIPT_DIR="$tmpdir"
+
+    wait_for_redis_ready_after_docker_start
+    grep -q "correct-horse-battery-staple|-h 127.0.0.1 -p 6392 ping" "$tmpdir/redis-cli.log"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"correct-horse-battery-staple"* ]]
+}
+
+@test "healthy Redis container with closed host port fails fast with mapping diagnosis" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    printf "SIDAR_REDIS_URL=redis://127.0.0.1:6379/0\\n" > "$tmpdir/.env"
+    cat > "$tmpdir/bin/python3" <<EOF
+#!/usr/bin/env bash
+if [[ "\$#" -eq 2 ]]; then printf "127.0.0.1\\n6379\\n"; exit 0; fi
+exit 1
+EOF
+    cat > "$tmpdir/bin/docker" <<EOF
+#!/usr/bin/env bash
+case "\$*" in
+  "compose version") exit 0 ;;
+  "compose ps -q redis") printf "redis-container-id\\n" ;;
+  "inspect --format "*) printf "healthy\\n" ;;
+  "compose port redis 6379") exit 0 ;;
+  *) exit 0 ;;
+esac
+EOF
+    chmod +x "$tmpdir/bin/python3" "$tmpdir/bin/docker"
+    PATH="$tmpdir/bin:$PATH"
+    SCRIPT_DIR="$tmpdir"
+    DOCKER_DB_SERVICES_STARTED=false
+    sleep() { touch "$tmpdir/unexpected-sleep"; }
+    ensure_docker_daemon_running() { return 0; }
+    start_docker_services_or_fail() { printf "%s\\n" "$*" > "$tmpdir/docker-start.log"; }
+
+    ! wait_for_redis_before_smoke_tests
+    [[ ! -e "$tmpdir/docker-start.log" ]]
+    [[ ! -e "$tmpdir/unexpected-sleep" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Redis container healthy ancak beklenen host port mapping bulunamadı"* ]]
+  [[ "$output" == *"--force-recreate redis"* ]]
+}
+
+@test "post-Compose Redis PONG wait also fails fast for healthy stale mapping" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/.env" <<EOF
+SIDAR_REDIS_URL=redis://127.0.0.1:6379/0
+REDIS_PASSWORD=local-password
+EOF
+    cat > "$tmpdir/bin/redis-cli" <<EOF
+#!/usr/bin/env bash
+exit 1
+EOF
+    cat > "$tmpdir/bin/docker" <<EOF
+#!/usr/bin/env bash
+case "\$*" in
+  "compose version") exit 0 ;;
+  "compose ps -q redis") printf "redis-container-id\\n" ;;
+  "inspect --format "*) printf "healthy\\n" ;;
+  "compose port redis 6379") printf "127.0.0.1:6399\\n" ;;
+  *) exit 0 ;;
+esac
+EOF
+    chmod +x "$tmpdir/bin/redis-cli" "$tmpdir/bin/docker"
+    PATH="$tmpdir/bin:$PATH"
+    SCRIPT_DIR="$tmpdir"
+    sleep() { touch "$tmpdir/unexpected-sleep"; }
+
+    ! wait_for_redis_ready_after_docker_start
+    [[ ! -e "$tmpdir/unexpected-sleep" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"beklenen=127.0.0.1:6379, görülen=127.0.0.1:6399"* ]]
+}
+
+@test "remote Redis URL is checked as-is and never triggers local Compose remediation" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    printf "SIDAR_REDIS_URL=rediss://user:explicit@cache.example.com:7443/5\\n" > "$tmpdir/.env"
+    cat > "$tmpdir/bin/python3" <<EOF
+#!/usr/bin/env bash
+if [[ "\$#" -eq 2 ]]; then
+  printf "%s\\n" "\$2" > "$tmpdir/parsed-url"
+  printf "cache.example.com\\n7443\\n"
+  exit 0
+fi
+[[ "\$2" == cache.example.com && "\$3" == 7443 ]]
+EOF
+    chmod +x "$tmpdir/bin/python3"
+    PATH="$tmpdir/bin:$PATH"
+    SCRIPT_DIR="$tmpdir"
+    DOCKER_DB_SERVICES_STARTED=false
+    start_docker_services_or_fail() { touch "$tmpdir/unexpected-compose"; return 1; }
+
+    wait_for_redis_before_smoke_tests
+    [[ "$(cat "$tmpdir/parsed-url")" == "rediss://user:explicit@cache.example.com:7443/5" ]]
+    [[ ! -e "$tmpdir/unexpected-compose" ]]
   '
   [ "$status" -eq 0 ]
 }
@@ -81,7 +289,7 @@ EOF
   [ "$status" -eq 0 ]
 }
 
-@test "install_playwright_browsers skips uv add when installed Playwright satisfies the repo spec" {
+@test "install_playwright_browsers skips uv add and reports manual fallback when installed Playwright already satisfies the spec on a non-Ubuntu host" {
   run_installer_function '
     tmpdir="$(mktemp -d)"
     trap "rm -rf \"$tmpdir\"" EXIT
@@ -96,14 +304,7 @@ printf "%s|%s\\n" "\$*" "\${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-}" >> "$tmpdir/py
 case "\$*" in
   "-c import playwright") exit 0 ;;
   "-m playwright install --with-deps chromium") echo "ERROR: Playwright does not support chromium on debian13-x64" >&2; exit 1 ;;
-  "-m playwright install chromium")
-    if [[ "\${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-}" == "ubuntu24.04-x64" ]]; then
-      echo "BEWARE: your OS is not officially supported by Playwright; downloading fallback build for ubuntu24.04-x64." >&2
-      exit 0
-    fi
-    echo "ERROR: Playwright does not support chromium on debian13-x64" >&2
-    exit 1
-    ;;
+  "-m playwright install chromium") echo "ERROR: Playwright does not support chromium on debian13-x64" >&2; exit 1 ;;
   "-m playwright install-deps chromium") exit 0 ;;
   "- playwright>=1.60,<1.62") exit 1 ;;
 esac
@@ -122,13 +323,19 @@ EOF
 
     install_playwright_browsers
 
+    # Debian is not an is_playwright_ubuntu_override_recommended host, so the
+    # already-satisfies-spec case has no override fallback to fall through to
+    # (unlike Ubuntu 25+) -- it must skip the needless uv add and surface
+    # manual instructions instead, without ever depending on the exact CLI
+    # error text (see test_playwright_install_fallback_does_not_depend_on_cli_error_text).
     [[ ! -e "$tmpdir/uv-called" ]]
     grep -q "^- playwright>=1.60,<1.62|$" "$tmpdir/python.log"
   '
   [ "$status" -eq 0 ]
-  [[ "$output" == *"gereksiz uv add upgrade fallback atlanıyor"* ]]
-  [[ "$output" == *"OS override fallback ile tamamlandı"* ]]
-  [[ "$output" != *"BEWARE: your OS is not officially supported"* ]]
+  [[ "$output" == *"Çıktı metninden bağımsız fallback: yalnızca Chromium binary kurulumu deneniyor"* ]]
+  [[ "$output" == *"Playwright binary fallback kurulumu başarısız oldu. Manuel deneyin"* ]]
+  [[ "$output" != *"gereksiz uv add upgrade fallback atlanıyor"* ]]
+  [[ "$output" != *"OS override fallback ile tamamlandı"* ]]
 }
 
 @test "install_playwright_browsers upgrades outdated Playwright with the repo spec" {
@@ -509,6 +716,36 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "mask_install_log_stream masks every user API key/secret collected by sidar_user_api_key_names" {
+  run_installer_function '
+    mapfile -t collected_keys < <(sidar_user_api_key_names)
+    [ "${#collected_keys[@]}" -gt 0 ]
+
+    lines=()
+    for key in "${collected_keys[@]}"; do
+      lines+=("${key}=super-secret-value-${key}")
+    done
+    lines+=("random_line=not_a_secret")
+
+    masked_output="$(printf "%s\n" "${lines[@]}" | mask_install_log_stream)"
+
+    for key in "${collected_keys[@]}"; do
+      if ! printf "%s\n" "$masked_output" | grep -qF "${key}=****"; then
+        echo "FAIL: ${key} was not masked" >&2
+        printf "%s\n" "$masked_output" >&2
+        exit 1
+      fi
+      if printf "%s\n" "$masked_output" | grep -qF "super-secret-value-${key}"; then
+        echo "FAIL: ${key} value leaked unmasked" >&2
+        exit 1
+      fi
+    done
+
+    printf "%s\n" "$masked_output" | grep -qF "random_line=not_a_secret"
+  '
+  [ "$status" -eq 0 ]
+}
+
 @test "harden_database_credentials rewrites weak DATABASE_URL and syncs postgres env values" {
   local tmpdir env_file
   tmpdir="$(mktemp -d)"
@@ -520,6 +757,15 @@ POSTGRES_PASSWORD=postgres
 ENV
 
   run_installer_function "
+    # harden_database_credentials is called with only \$env_file (no explicit
+    # variant specs) below, on purpose, to exercise its default variant-sync
+    # fallback. That fallback resolves .env.development/.env.test/.env.advanced
+    # relative to \$SCRIPT_DIR (see sidar_default_db_env_variant_specs), so
+    # SCRIPT_DIR must point at the isolated tmpdir here — otherwise it silently
+    # writes this fixture's generated password into the real repo's dotenv
+    # files, which previously broke unrelated CI steps (PostgreSQL smoke
+    # tests) that run later in the same job/workspace.
+    SCRIPT_DIR='$tmpdir'
     generate_secure_token() { printf '%s\\n' 'GeneratedStrongDbToken_1234567890'; }
     harden_database_credentials '$env_file'
     grep -q '^DATABASE_URL=postgresql+asyncpg://sidar:GeneratedStrongDbToken_1234567890@localhost:5432/sidar?ssl=disable$' '$env_file'
@@ -825,6 +1071,32 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "ensure_database_url_defaults validates a freshly composed DSN" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    env_file="$tmpdir/.env"
+    existing_password="N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh"
+    cat > "$env_file" <<EOF
+POSTGRES_USER=sidar_user
+POSTGRES_PASSWORD=$existing_password
+POSTGRES_DB=sidar_development
+EOF
+    validation_log="$tmpdir/database-name-validation.log"
+    database_name_from_postgresql_url() {
+      printf "%s\n" "$1" >> "$validation_log"
+      printf "%s\n" "sidar_development"
+    }
+
+    ensure_database_url_defaults "$env_file"
+
+    grep -q "^postgresql+asyncpg://sidar_user:$existing_password@127.0.0.1:5432/sidar_development$" "$validation_log"
+    grep -q "^DATABASE_URL=postgresql+asyncpg://sidar_user:$existing_password@127.0.0.1:5432/sidar_development$" "$env_file"
+    ! grep -q "[?&]ssl=" "$env_file"
+  '
+  [ "$status" -eq 0 ]
+}
+
 @test "ensure_database_url_defaults rotates weak PostgreSQL password when composing missing DSNs" {
   run_installer_function '
     tmpdir="$(mktemp -d)"
@@ -846,6 +1118,112 @@ EOF
     grep -q "^DATABASE_URL=postgresql+asyncpg://sidar:$generated_password@127.0.0.1:5432/sidar$" "$env_file"
     grep -q "^SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:$generated_password@postgres:5432/sidar$" "$env_file"
     [[ "${DB_PASSWORD_HARDENED:-}" == "true" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "ensure_database_url_defaults replaces asyncpg-incompatible ssl query URLs" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    env_file="$tmpdir/.env"
+    strong_password="N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh"
+    cat > "$env_file" <<EOF
+POSTGRES_USER=sidar
+POSTGRES_PASSWORD=$strong_password
+POSTGRES_DB=sidar_development
+DATABASE_URL=postgresql+asyncpg://sidar:legacy@localhost:5432/sidar?application_name=sidar&ssl=disable
+EOF
+
+    ensure_database_url_defaults "$env_file"
+
+    grep -q "^DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@127.0.0.1:5432/sidar_development$" "$env_file"
+    grep -q "^SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@postgres:5432/sidar_development$" "$env_file"
+    ! grep -q "[?&]ssl=" "$env_file"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "ensure_database_url_defaults identifies the target env variant in ssl repair logs" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    env_file="$tmpdir/.env.development"
+    strong_password="N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh"
+    cat > "$env_file" <<EOF
+POSTGRES_USER=sidar
+POSTGRES_PASSWORD=$strong_password
+POSTGRES_DB=sidar_development
+DATABASE_URL=postgresql+asyncpg://sidar:legacy@localhost:5432/sidar?ssl=disable
+EOF
+
+    ensure_database_url_defaults "$env_file"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *".env.development içinde asyncpg ile uyumsuz ssl query parametresi"* ]]
+  [[ "$output" == *".env.development: Uyumsuz ssl parametresi kaldırıldı"* ]]
+}
+
+@test "ensure_database_url_defaults aligns database name with profile POSTGRES_DB" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    env_file="$tmpdir/.env"
+    strong_password="N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh"
+    cat > "$env_file" <<EOF
+POSTGRES_USER=sidar
+POSTGRES_PASSWORD=$strong_password
+POSTGRES_DB=sidar_development
+DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@localhost:5432/sidar
+EOF
+
+    ensure_database_url_defaults "$env_file"
+
+    grep -q "^POSTGRES_DB=sidar_development$" "$env_file"
+    grep -q "^DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@127.0.0.1:5432/sidar_development$" "$env_file"
+    grep -q "^SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@postgres:5432/sidar_development$" "$env_file"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "database URL defaults repair stale ssl parameters in every existing env variant" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    strong_password="N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh"
+
+    for variant in .env.development .env.test .env.advanced; do
+      cat > "$tmpdir/$variant" <<EOF
+POSTGRES_USER=sidar
+POSTGRES_PASSWORD=$strong_password
+POSTGRES_DB=sidar
+DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@127.0.0.1:5432/sidar?ssl=disable
+EOF
+    done
+
+    ensure_database_url_defaults_for_variants
+
+    for variant in .env.development .env.test .env.advanced; do
+      grep -q "^DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@127.0.0.1:5432/sidar$" "$tmpdir/$variant"
+      grep -q "^SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:$strong_password@postgres:5432/sidar$" "$tmpdir/$variant"
+      ! grep -q "[?&]ssl=" "$tmpdir/$variant"
+    done
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "database URL variant repair skips missing dotenv files" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+
+    ensure_database_url_defaults_for_variants
+
+    [[ ! -e "$tmpdir/.env.development" ]]
+    [[ ! -e "$tmpdir/.env.test" ]]
+    [[ ! -e "$tmpdir/.env.advanced" ]]
   '
   [ "$status" -eq 0 ]
 }
@@ -1130,11 +1508,13 @@ EOF
 DATABASE_URL=postgresql+asyncpg://sidar:secret@127.0.0.1:5432/sidar
 POSTGRES_PASSWORD=secret
 SIDAR_REDIS_URL=redis://127.0.0.1:6379/0
+REDIS_URL=redis://legacy.example:6379/0
+REDIS_PASSWORD=redis-secret
 EOF
     cat > "$tmpdir/bin/bash" <<EOF
 #!/bin/bash
 printf "%s\n" "\$*" > "$tmpdir/bash.args"
-printf "AUTO_OPEN_ARTIFACTS=%s\nDATABASE_URL=%s\nPOSTGRES_PASSWORD=%s\nREDIS_URL=%s\n" "\${AUTO_OPEN_ARTIFACTS:-}" "\${DATABASE_URL:-}" "\${POSTGRES_PASSWORD:-}" "\${REDIS_URL:-}" > "$tmpdir/bash.env"
+printf "AUTO_OPEN_ARTIFACTS=%s\nDATABASE_URL=%s\nPOSTGRES_PASSWORD=%s\nSIDAR_REDIS_URL=%s\nREDIS_URL=%s\nREDIS_PASSWORD=%s\n" "\${AUTO_OPEN_ARTIFACTS:-}" "\${DATABASE_URL:-}" "\${POSTGRES_PASSWORD:-}" "\${SIDAR_REDIS_URL:-}" "\${REDIS_URL:-}" "\${REDIS_PASSWORD:-}" > "$tmpdir/bash.env"
 exit 0
 EOF
     chmod +x "$tmpdir/bin/bash"
@@ -1157,7 +1537,9 @@ EOF
     grep -q "AUTO_OPEN_ARTIFACTS=0" "$tmpdir/bash.env"
     grep -q "DATABASE_URL=postgresql+asyncpg://sidar:secret@127.0.0.1:5432/sidar" "$tmpdir/bash.env"
     grep -q "POSTGRES_PASSWORD=secret" "$tmpdir/bash.env"
+    grep -q "SIDAR_REDIS_URL=redis://127.0.0.1:6379/0" "$tmpdir/bash.env"
     grep -q "REDIS_URL=redis://127.0.0.1:6379/0" "$tmpdir/bash.env"
+    grep -q "REDIS_PASSWORD=redis-secret" "$tmpdir/bash.env"
   '
   [ "$status" -eq 0 ]
 }
@@ -1699,6 +2081,18 @@ EOF
     cat > "$tmpdir/.env" <<EOF
 SIDAR_ENV=development
 EOF
+    # production_secret_rotation_gate_passes requires every rotation key to have
+    # a non-empty .env.production value that differs from the (unset) .env value.
+    cat > "$tmpdir/.env.production" <<EOF
+API_KEY=prod-only-api-key-value-1
+JWT_SECRET_KEY=prod-only-jwt-key-value-1
+MEMORY_ENCRYPTION_KEY=prod-only-mem-key-value-1
+AUTONOMY_WEBHOOK_SECRET=prod-only-autonomy-value-1
+SWARM_FEDERATION_SHARED_SECRET=prod-only-swarm-value-1
+GITHUB_WEBHOOK_SECRET=prod-only-github-value-1
+GRAFANA_ADMIN_PASSWORD=prod-only-grafana-value-1
+METRICS_TOKEN=prod-only-metrics-value-1
+EOF
     AUTO_ENV_TYPE=production
     NO_INTERACTION=true
     summary_production_ready=false
@@ -1728,7 +2122,7 @@ EOF
   '
   [ "$status" -eq 0 ]
   [[ "$output" == *"Production seçimi kaydedildi; production-readiness gate geçmeden SIDAR_ENV=production kalıcılaştırılmayacak."* ]]
-  [[ "$output" == *"production-readiness gate ve migration doğrulaması tamamlandı"* ]]
+  [[ "$output" == *"production-readiness, secret rotasyon ve migration doğrulamaları tamamlandı"* ]]
 }
 
 @test "production gate failure does not leave .env in production mode" {
@@ -1823,6 +2217,7 @@ EOF
     prepare_docker_for_migrations() { events+=(prepare_docker_for_migrations); }
     ensure_postgres_databases_exist() { events+=(ensure_postgres_databases_exist); }
     run_migrations() { events+=(run_migrations); }
+    seed_rag_metadata_after_migrations() { events+=(seed_rag_metadata_after_migrations); }
     download_ollama_models() { events+=(download_ollama_models); }
     launch_docker_services() { events+=(launch_docker_services); }
     run_smoke_tests() { events+=(run_smoke_tests); }
@@ -1832,7 +2227,7 @@ EOF
 
     sidar_phase_local_migrations_and_models
     sidar_phase_services_and_validation
-    [[ "${events[*]}" == "source:ollama_models.sh prepare_docker_for_migrations ensure_postgres_databases_exist run_migrations download_ollama_models phase06_docker_daemon_gate_or_fail run_pre_service_installer_smoke_gate launch_docker_services run_smoke_tests run_install_integration_api_tests run_install_frontend_quality_validation run_test_artifact_audit" ]]
+    [[ "${events[*]}" == "source:ollama_models.sh prepare_docker_for_migrations ensure_postgres_databases_exist run_migrations seed_rag_metadata_after_migrations download_ollama_models phase06_docker_daemon_gate_or_fail run_pre_service_installer_smoke_gate launch_docker_services run_smoke_tests run_install_integration_api_tests run_install_frontend_quality_validation run_test_artifact_audit" ]]
   '
   [ "$status" -eq 0 ]
 }
@@ -1901,6 +2296,19 @@ EOF
     [[ "$MIGRATION_STATUS" == "tam_docker_modu_nedeniyle_atlandi" ]]
   '
   [ "$status" -eq 0 ]
+}
+
+@test "finish summary links RAG onboarding and explains automatic metadata seed" {
+  run_installer_function '
+    print_optional_rag_next_step
+  '
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"RAG/GraphRAG hazır oluşunu doğrula"* ]]
+  [[ "$output" == *"metadata seed varsayılan olarak migrasyondan sonra uygulanır"* ]]
+  [[ "$output" == *"uv run python -m scripts.seed_rag"* ]]
+  [[ "$output" == *"uv run python -m core.doctor artifacts/install/doctor.json"* ]]
+  [[ "$output" == *"docs/RAG_ONBOARDING.md"* ]]
 }
 
 @test "WSL GPU preflight supports explicit off and CPU skip modes" {
@@ -2520,6 +2928,23 @@ ENV
   [[ "$output" == *"mode=600"* ]]
   [[ "$output" == *"mode=400"* ]]
   [[ "$output" != *"izinleri güvenli değil"* ]]
+}
+
+@test "summary counts non-empty API keys from external secret overlay" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SIDAR_KEYS_FILE="$tmpdir/.sidar_keys.env"
+    cat > "$SIDAR_KEYS_FILE" <<EOF
+OPENAI_API_KEY=secret-openai
+GEMINI_API_KEY=secret-gemini
+ANTHROPIC_API_KEY=
+EOF
+
+    [[ "$(sidar_summary_external_api_key_count)" == "2" ]]
+  '
+
+  [ "$status" -eq 0 ]
 }
 
 @test "verify_sidar_keys_file_permissions repairs generated env secret file permissions" {

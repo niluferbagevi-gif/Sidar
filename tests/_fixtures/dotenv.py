@@ -14,7 +14,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 def load_pytest_dotenv_chain() -> None:
     """Load the runtime dotenv chain before pytest collection imports app modules."""
-
     base_env_path = PROJECT_ROOT / ".env"
     advanced_env_path = PROJECT_ROOT / ".env.advanced"
     profile_env_path = PROJECT_ROOT / f".env.{os.getenv('SIDAR_ENV', '').strip()}"
@@ -71,7 +70,6 @@ def _postgres_url_password(raw_url: str) -> str:
 
 def assert_test_dotenv_postgres_parity() -> None:
     """Fail early when .env.test would override runtime DB credentials."""
-
     base_env_path = PROJECT_ROOT / ".env"
     test_env_path = PROJECT_ROOT / ".env.test"
     if not base_env_path.is_file() or not test_env_path.is_file():

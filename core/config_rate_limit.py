@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
+from urllib.parse import quote, urlsplit, urlunsplit
 
 from core.config_env_helpers import (
     get_bool_env,
@@ -22,6 +24,7 @@ class RateLimitSettings:
     sidar_rate_limit_chat: int
     sidar_rate_limit_mutations: int
     sidar_rate_limit_get_io: int
+    sidar_rate_limit_ws_connections: int
     sidar_redis_url: str
     sidar_redis_max_connections: int
     sidar_redis_connect_timeout: float
@@ -34,6 +37,28 @@ class RateLimitSettings:
     healthcheck_connect_timeout_ms: int
     trusted_proxies: frozenset[str]
     max_rag_upload_bytes: int
+
+
+def resolve_redis_url() -> str:
+    """Resolve the Redis URL and add local Compose authentication when needed."""
+    redis_url = get_prefixed_env("SIDAR_REDIS_URL", "REDIS_URL", "redis://localhost:6379/0")
+    redis_password = os.getenv("REDIS_PASSWORD", "").strip()
+    if not redis_password:
+        return redis_url
+
+    parsed = urlsplit(redis_url)
+    if parsed.password is not None or parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
+        return redis_url
+
+    host = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
+    configured_port = os.getenv("REDIS_PORT", "").strip()
+    effective_port = int(configured_port) if configured_port.isdigit() else parsed.port
+    port = f":{effective_port}" if effective_port is not None else ""
+    username = quote(parsed.username or "", safe="")
+    credentials = f"{username}:{quote(redis_password, safe='')}@"
+    return urlunsplit(
+        (parsed.scheme, f"{credentials}{host}{port}", parsed.path, parsed.query, parsed.fragment)
+    )
 
 
 # mypy/pyright-friendly alias for the small LLM settings surface this loader needs.
@@ -50,9 +75,10 @@ def load_rate_limit_settings(*, redis_max_connections_default: int) -> RateLimit
         sidar_rate_limit_get_io=get_int_prefixed_env(
             "SIDAR_RATE_LIMIT_GET_IO", "RATE_LIMIT_GET_IO", 30
         ),
-        sidar_redis_url=get_prefixed_env(
-            "SIDAR_REDIS_URL", "REDIS_URL", "redis://localhost:6379/0"
+        sidar_rate_limit_ws_connections=get_int_prefixed_env(
+            "SIDAR_RATE_LIMIT_WS_CONNECTIONS", "RATE_LIMIT_WS_CONNECTIONS", 30
         ),
+        sidar_redis_url=resolve_redis_url(),
         sidar_redis_max_connections=get_int_prefixed_env(
             "SIDAR_REDIS_MAX_CONNECTIONS",
             "REDIS_MAX_CONNECTIONS",

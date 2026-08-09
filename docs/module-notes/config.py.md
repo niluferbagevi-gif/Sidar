@@ -21,6 +21,12 @@ modüllerden beslenir:
 - `core/config_dirs.py`, `core/config_secrets.py`, `core/config_validators.py`,
   `core/config_observability.py`, `core/config_postgres.py`: dizin, secret,
   validasyon, telemetry ve PostgreSQL yardımcıları.
+- `core/config_scoped_settings.py`: `config_llm.py` ve `config_quality.py`'nin
+  paylaştığı, dotenv'e scoped `BaseSettings` alt sınıfı üreten `build_scoped_settings_type()`
+  helper'ı — mypy `--strict` altında pydantic-settings'in `_env_file=...` dinamik
+  init kwarg'ından kaçınmak için `type(...)` ile throwaway subclass üretir; bir
+  arkadaş kod incelemesinde bu ~15 satırlık blok iki dosyada birebir kopyalanmış
+  hâlde bulundu ve tek yere indirildi.
 
 > Not (Doğrulama): Eski tek dosya satır sayısı notları artık mimari kalite ölçütü
 > değildir. `config.py` facade yüzeyi büyük kalabilir; refactor başarısı eski import
@@ -107,7 +113,8 @@ Yeni split modül eklendiğinde iki güvence birlikte sağlanmalıdır:
 - **Observability:** `ENABLE_TRACING`, `OTEL_EXPORTER_ENDPOINT`, Prometheus/Grafana
   bağlantıları.
 - **Rate Limiting:** `SIDAR_RATE_LIMIT_CHAT`, `SIDAR_RATE_LIMIT_MUTATIONS`,
-  `SIDAR_RATE_LIMIT_GET_IO`, `SIDAR_REDIS_URL` ve legacy alias'lar.
+  `SIDAR_RATE_LIMIT_GET_IO`, `SIDAR_RATE_LIMIT_WS_CONNECTIONS`, `SIDAR_REDIS_URL`
+  ve legacy alias'lar.
 - **RAG:** `RAG_DIR`, `RAG_TOP_K`, `RAG_CHUNK_SIZE`, `RAG_CHUNK_OVERLAP`,
   `RAG_FILE_THRESHOLD`.
 - **Mimari:** `ENABLE_MULTI_AGENT`, `REVIEWER_TEST_COMMAND`, swarm/supervisor ve

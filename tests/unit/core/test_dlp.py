@@ -165,7 +165,10 @@ def test_mask_messages_masks_only_string_contents_and_preserves_original_list():
 
 def test_mask_sk_key_supports_proj_and_ant_prefixes() -> None:
     engine = DLPEngine(mask_sk_keys=True)
-    text = "openai=sk-proj-abcdefghijklmnopqrstuvwxyz1234 anthropic=sk-ant-abcdefghijklmnopqrstuvwxyz1234"
+    text = (
+        "openai=sk-proj-abcdefghijklmnopqrstuvwxyz1234 "
+        "anthropic=sk-ant-abcdefghijklmnopqrstuvwxyz1234"
+    )
 
     masked, detections = engine.mask(text)
 

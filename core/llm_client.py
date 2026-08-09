@@ -1,5 +1,5 @@
-"""
-Sidar Project - LLM İstemcisi
+"""Sidar Project - LLM İstemcisi.
+
 Ollama, Google Gemini, OpenAI ve Anthropic API entegrasyonu (Asenkron, OOP tabanlı).
 """
 
@@ -215,7 +215,6 @@ async def _acquire_ollama_gpu_limiter(limiter: asyncio.Semaphore, config: Any) -
     Returns the queue wait in milliseconds. A zero timeout keeps the historical
     behavior: wait until a GPU slot is available.
     """
-
     timeout_s = _ollama_gpu_backpressure_timeout_s(config)
     started_at = time.monotonic()
     if timeout_s <= 0:
@@ -601,7 +600,10 @@ class BaseLLMClient(ABC):
 
     @staticmethod
     def _inject_json_instruction(messages: list[dict[str, str]]) -> list[dict[str, str]]:
-        """Mesaj listesindeki system mesajına JSON şema talimatını ekler (system yoksa başa ekler)."""
+        """Mesaj listesindeki system mesajına JSON şema talimatını ekler.
+
+        System mesajı yoksa listenin başına yeni bir tane eklenir.
+        """
         result = list(messages)
         for i, msg in enumerate(result):
             if msg.get("role") == "system":
@@ -696,7 +698,6 @@ def _provider_class(provider: str) -> type[BaseLLMClient]:
 
 def __getattr__(name: str) -> Any:
     """Expose provider classes lazily for backward-compatible imports."""
-
     provider = _PROVIDER_CLASS_NAMES.get(name)
     if provider is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

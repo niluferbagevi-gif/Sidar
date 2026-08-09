@@ -54,7 +54,6 @@ def extract_json_entities(
     entity_id: EntityIdFactory,
 ) -> list[ExtractedKnowledgeEntity]:
     """Extract known marketing entities from JSON-like payloads."""
-
     entities: list[ExtractedKnowledgeEntity] = []
     if isinstance(payload, dict):
         for raw_key, raw_value in payload.items():
@@ -110,7 +109,6 @@ def extract_document_entities(
     llm_payload: dict[str, Any] | None = None,
 ) -> tuple[list[ExtractedKnowledgeEntity], list[ExtractedKnowledgeRelation]]:
     """Extract deterministic marketing/corporate entities and relations from a RAG document."""
-
     text = f"{title}\n{content}"
     tag_values = tags or []
     by_id: dict[str, ExtractedKnowledgeEntity] = {}

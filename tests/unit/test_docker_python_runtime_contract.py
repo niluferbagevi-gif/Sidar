@@ -170,7 +170,12 @@ def test_observability_compose_pins_tracing_and_exports_infra_metrics():
     assert ":latest" not in services["jaeger"]["image"]
 
     assert services["redis-exporter"]["image"] == "oliver006/redis_exporter:v1.67.0"
-    assert services["redis-exporter"]["environment"] == ["REDIS_ADDR=redis://redis:6379"]
+    redis_exporter_env = services["redis-exporter"]["environment"]
+    assert "REDIS_ADDR=redis://redis:6379" in redis_exporter_env
+    assert any(str(item).startswith("REDIS_PASSWORD=") for item in redis_exporter_env)
+
+    assert services["redis"]["ports"] == ["127.0.0.1:${REDIS_PORT:-6379}:6379"]
+    assert "--requirepass" in services["redis"]["command"]
 
     postgres_exporter = services["postgres-exporter"]
     assert postgres_exporter["image"] == "prometheuscommunity/postgres-exporter:v0.15.0"
@@ -196,7 +201,9 @@ def test_observability_compose_pins_tracing_and_exports_infra_metrics():
 
 
 def test_cli_sandbox_services_use_docker_socket_proxy_not_raw_host_socket():
-    """Fail-closed regression: sidar-ai/sidar-gpu must never mount the raw host
+    """Ensure sandbox services never mount the raw host Docker socket.
+
+    Fail-closed regression: sidar-ai/sidar-gpu must never mount the raw host
     Docker socket directly. Doing so grants host-root-equivalent access
     (container escape via `docker run --privileged -v /:/host`), contradicting
     their `ACCESS_LEVEL=sandbox` label. They must instead reach the daemon

@@ -1,5 +1,5 @@
-"""
-Sidar Project - Belge Deposu ve Arama (RAG)
+"""Sidar Project - Belge Deposu ve Arama (RAG).
+
 ChromaDB tabanlı Vektör Arama + BM25 Hibrit Sistemi.
 Sürüm: 2.7.0 (GPU Hızlandırmalı Embedding + Motor Bağımsız Sorgu)
 
@@ -40,6 +40,7 @@ from core.embeddings import (
 )
 
 from . import backends as _rag_backends
+from . import facade as _rag_facade
 from .backends import bm25 as bm25_backend
 from .backends import chroma as chroma_backend
 from .backends import keyword as keyword_backend
@@ -83,9 +84,6 @@ from .facade import (
 )
 from .facade import (
     _build_embedding_function_cached as _build_embedding_function_cached,
-)
-from .facade import (
-    _resolve_sentence_transformer_embedding_function as _resolve_sentence_transformer_embedding_function,
 )
 from .facade import (
     embed_texts_for_semantic_cache as embed_texts_for_semantic_cache,
@@ -167,6 +165,12 @@ from .session_documents import (
 )
 from .strategies import BM25OnlyStrategy, HybridStrategy, VectorOnlyStrategy
 
+# Re-exported via assignment (not `import ... as`) because the combined
+# `name as name` idiom for explicit mypy reexport would exceed line-length=100.
+_resolve_sentence_transformer_embedding_function = (
+    _rag_facade._resolve_sentence_transformer_embedding_function
+)
+
 _BLEACH_AVAILABLE = True
 
 logger = logging.getLogger(__name__)
@@ -183,7 +187,6 @@ def build_embedding_function(
     cfg: Any | None = None,
 ) -> Any:
     """Compatibility wrapper that delegates through the patchable module global."""
-
     return _build_embedding_function(
         use_gpu=use_gpu,
         gpu_device=gpu_device,
@@ -203,8 +206,7 @@ def _pgvector_failure_action_message(exc: BaseException) -> str:
 
 
 class DocumentStore:
-    """
-    Yerel belge deposu — ChromaDB ile semantik arama.
+    """Yerel belge deposu — ChromaDB ile semantik arama.
 
     Güncellemeler (v2.6.0):
     - Recursive Character Chunking ile büyük belgeleri mantıksal parçalara ayırır.
@@ -370,7 +372,9 @@ class DocumentStore:
 
         self._log_backend_init_status_once(
             "vector_preference_bm25_hint",
-            "RAG_VECTOR_BACKEND=bm25 olduğu için aktif bellek BM25 olarak kalacak; hazır vektör backend(ler): %s. GPU/vektör kullanmak için RAG_VECTOR_BACKEND=chroma (veya pgvector), hibrit için RAG_LOCAL_ENABLE_HYBRID=true ayarlayın.",
+            "RAG_VECTOR_BACKEND=bm25 olduğu için aktif bellek BM25 olarak kalacak; hazır vektör "
+            "backend(ler): %s. GPU/vektör kullanmak için RAG_VECTOR_BACKEND=chroma (veya "
+            "pgvector), hibrit için RAG_LOCAL_ENABLE_HYBRID=true ayarlayın.",
             ",".join(available_vector),
         )
 
@@ -807,7 +811,6 @@ class DocumentStore:
     @staticmethod
     def _is_public_ip_address(address: str) -> bool:
         """Return whether an IP address is globally routable for URL ingestion."""
-
         try:
             return ipaddress.ip_address(address).is_global
         except ValueError:
@@ -816,7 +819,6 @@ class DocumentStore:
     @classmethod
     def _validate_url_safe(cls, url: str, *, resolve_dns: bool = False) -> None:
         """SSRF koruması: yalnızca public HTTP/HTTPS URL'lerine izin verir."""
-
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme not in ("http", "https"):
             raise ValueError(
@@ -904,7 +906,8 @@ class DocumentStore:
         tags: builtins.list[str] | None = None,
         session_id: str = "global",
     ) -> tuple[bool, str]:
-        # Boş uzantı ("") kaldırıldı — uzantısız dosyalar ikili olabilir ve path traversal riski taşır
+        # Boş uzantı ("") kaldırıldı — uzantısız dosyalar ikili olabilir ve path traversal
+        # riski taşır
         _TEXT_EXTS = {
             ".py",
             ".txt",
@@ -935,8 +938,8 @@ class DocumentStore:
                 return False, f"✗ Dosya bulunamadı: {path}"
             if not file.is_file():
                 return False, f"✗ Belirtilen yol bir dosya değil: {path}"
-            # Base directory sınırı: proje kökü veya sistem geçici dizini altındaki dosyalara izin ver
-            # (upload endpoint geçici dosyaları /tmp/ altında oluşturur)
+            # Base directory sınırı: proje kökü veya sistem geçici dizini altındaki dosyalara
+            # izin ver (upload endpoint geçici dosyaları /tmp/ altında oluşturur)
             _allowed_roots = (Config.BASE_DIR, Path(tempfile.gettempdir()).resolve())
             if not any(file.is_relative_to(root) for root in _allowed_roots):
                 return False, f"✗ Erişim engellendi: dosya proje dizini dışında: {path}"
@@ -1208,7 +1211,9 @@ class DocumentStore:
         graph_edges = list(projection["edges"])
 
         def _broker_topic(receiver: str, intent: str, namespace: str = "sidar.swarm") -> str:
-            return f"{namespace}.{str(receiver or 'unknown').strip().lower() or 'unknown'}.{str(intent or 'mixed').strip().lower() or 'mixed'}"
+            receiver_part = str(receiver or "unknown").strip().lower() or "unknown"
+            intent_part = str(intent or "mixed").strip().lower() or "mixed"
+            return f"{namespace}.{receiver_part}.{intent_part}"
 
         broker_topics = [
             _broker_topic(receiver="researcher", intent="rag_search"),
@@ -1236,7 +1241,8 @@ class DocumentStore:
         if mode != "graph" and not session_docs:
             return (
                 False,
-                "⚠ Bu oturum için belge deposu boş. Belge eklemek için: TOOL:docs_add:<başlık>|<url>",
+                "⚠ Bu oturum için belge deposu boş. Belge eklemek için: "
+                "TOOL:docs_add:<başlık>|<url>",
             )
 
         if mode == "graph":

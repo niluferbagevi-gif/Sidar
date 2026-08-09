@@ -303,17 +303,53 @@ wait_for_docker_nvidia_runtime() {
     return 1
 }
 
+install_nvidia_container_repository() {
+    local key_url="https://nvidia.github.io/libnvidia-container/gpgkey"
+    local list_url="https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list"
+    local keyring="/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg"
+    local repo_file="/etc/apt/sources.list.d/nvidia-container-toolkit.list"
+    local temp_dir=""
+
+    temp_dir="$(mktemp -d)"
+    if ! curl -fsSL --retry 3 --retry-all-errors "$key_url" -o "${temp_dir}/nvidia.asc" \
+        || ! curl -fsSL --retry 3 --retry-all-errors "$list_url" -o "${temp_dir}/nvidia.list"; then
+        rm -rf "$temp_dir"
+        fail "NVIDIA container-toolkit imza anahtarı veya depo listesi indirilemedi."
+    fi
+    if ! gpg --batch --yes --dearmor --output "${temp_dir}/nvidia.gpg" "${temp_dir}/nvidia.asc"; then
+        rm -rf "$temp_dir"
+        fail "NVIDIA container-toolkit GPG anahtarı keyring biçimine dönüştürülemedi."
+    fi
+    if [[ ! -s "${temp_dir}/nvidia.gpg" ]] \
+        || ! grep -Eq '^deb([[:space:]]|\[).*https://nvidia\.github\.io/libnvidia-container/' "${temp_dir}/nvidia.list"; then
+        rm -rf "$temp_dir"
+        fail "NVIDIA keyring/depo içeriği beklenen biçimde değil; APT yapılandırması değiştirilmedi."
+    fi
+
+    sed "s#deb https://#deb [signed-by=${keyring}] https://#g" \
+        "${temp_dir}/nvidia.list" > "${temp_dir}/nvidia.signed.list"
+    # gpg'yi sudo altında doğrudan hedef dosyaya yazdırmak, yarım dosya ve
+    # root-owned geçici çıktı sorunlarına yol açabiliyordu. Doğrulanan dosyaları
+    # install(1) ile atomik olarak ve APT'nin okuyabileceği açık izinlerle yerleştir.
+    sudo install -d -m 0755 /usr/share/keyrings /etc/apt/sources.list.d
+    sudo install -m 0644 "${temp_dir}/nvidia.gpg" "$keyring"
+    sudo install -m 0644 "${temp_dir}/nvidia.signed.list" "$repo_file"
+    rm -rf "$temp_dir"
+
+    if [[ ! -r "$keyring" || ! -r "$repo_file" ]]; then
+        fail "NVIDIA keyring/depo dosyaları APT kullanıcısı tarafından okunamıyor (${keyring}, ${repo_file})."
+    fi
+    ok "NVIDIA container-toolkit keyring ve depo izinleri doğrulandı (0644)."
+}
+
 setup_nvidia_docker() {
     if [[ "$GPU_AVAILABLE" == true ]] && command -v docker &>/dev/null; then
         step "Docker GPU Desteği (nvidia-container-toolkit)"
         if ! command -v nvidia-ctk &>/dev/null; then
             warn "nvidia-container-toolkit bulunamadı. Kurulum başlatılıyor (sudo şifreniz istenebilir)..."
 
-            # NVIDIA repolarını ekle ve kur
-            curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg --yes
-            curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-              sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
-              sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list > /dev/null
+            # NVIDIA repolarını doğrulanmış geçici dosyalardan, açık izinlerle kur.
+            install_nvidia_container_repository
 
             sudo apt-get update
             sudo apt-get install -y nvidia-container-toolkit

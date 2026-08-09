@@ -23,7 +23,6 @@ import core.rag as rag
 @pytest.fixture(autouse=True)
 def _clear_embedding_function_cache() -> Iterator[None]:
     """Keep monkeypatched embedding factories isolated between RAG tests."""
-
     rag._build_embedding_function_cached.cache_clear()
     rag._DOCUMENT_STORE_SINGLETONS.clear()
     yield
@@ -267,7 +266,8 @@ async def test_graph_index_rebuild_resolve_search_and_impact(tmp_path: Path) -> 
     root = tmp_path
     (root / "dep.py").write_text("", encoding="utf-8")
     (root / "api.py").write_text(
-        "import dep\n@app.get('/health')\ndef health():\n    return 'ok'\nrequests.get('/health')\n",
+        "import dep\n@app.get('/health')\ndef health():\n    return "
+        "'ok'\nrequests.get('/health')\n",
         encoding="utf-8",
     )
     (root / "caller.js").write_text("fetch('/health')", encoding="utf-8")
@@ -1607,6 +1607,41 @@ async def test_init_pgvector_rejects_invalid_table_without_sql(tmp_path: Path) -
     assert store._pgvector_available is False
 
 
+async def test_pgvector_call_sites_reject_table_name_mutated_after_init(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Every SQL-building call site must re-validate _pg_table, not just init.
+
+    init_pgvector validates _pg_table once; every SQL-building call site must
+    re-validate too, in case something mutates the attribute afterwards (e.g. a
+    future config hot-reload path) — regression test for that defense-in-depth
+    gap: no SQL should ever reach the fake connection below.
+    """
+    store = _make_store_stub(tmp_path)
+    store._pgvector_available = True
+    store._pg_table = "rag_embeddings; DROP TABLE docs;"
+    store._is_local_llm_provider = False
+    store._pgvector_embed_texts = lambda *_a: [[0.1, 0.2, 0.3]]  # type: ignore[method-assign]
+
+    class _Conn:
+        def execute(self, *_a, **_k):
+            raise AssertionError("SQL must not be built/executed for an invalid table name")
+
+    store.pg_engine = SimpleNamespace(begin=lambda: contextlib.nullcontext(_Conn()))
+    monkeypatch.setitem(sys.modules, "sqlalchemy", SimpleNamespace(text=lambda s: s))
+
+    assert store._fetch_pgvector("q", 2, "s1") == []
+    assert store._pgvector_available is False
+
+    store._pgvector_available = True
+    store._delete_pgvector_parent("p1", "s1")
+    assert store._pgvector_available is False
+
+    store._pgvector_available = True
+    store._upsert_pgvector_chunks("d1", "p1", "s1", "title", "src", ["content"])
+    assert store._pgvector_available is False
+
+
 async def test_pgvector_failure_action_message_is_actionable_without_raw_auth_error() -> None:
     msg = rag._pgvector_failure_action_message(
         RuntimeError('password authentication failed for user "sidar"; DETAIL: raw driver text')
@@ -2454,7 +2489,8 @@ obj.session.post("/y")
     assert {item["path"] for item in calls} == {"/x", "/y"}
 
     calls = gi._extract_script_endpoint_calls(
-        'fetch("http://remote.example.com/x"); new WebSocket("http://remote.example.com/ws"); new WebSocket("/ws"); new WebSocket("/ws")'
+        'fetch("http://remote.example.com/x"); new WebSocket("http://remote.example.com/ws"); new '
+        'WebSocket("/ws"); new WebSocket("/ws")'
     )
     assert len(calls) == 1
 
@@ -3507,7 +3543,10 @@ async def test_analyze_graph_impact_returns_format_error_when_analysis_not_dict(
 
 
 async def test_rrf_search_skips_duplicate_doc_id_in_bm25(tmp_path: Path) -> None:
-    """Branch 1873->1875: bm25 sonucu zaten docs_map'te varsa skoru güncellenmeli ama tekrar eklenmemeli."""
+    """Branch 1873->1875: docs_map'te olan bm25 sonucu tekrar eklenmemeli.
+
+    Skoru güncellenmeli ama tekrar eklenmemeli.
+    """
     store = _make_store_stub(tmp_path)
     store._index = {"d-shared": {"session_id": "s1", "title": "Shared", "source": "src://shared"}}
     store._pgvector_available = True

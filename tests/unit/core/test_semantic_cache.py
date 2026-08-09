@@ -147,10 +147,11 @@ async def test_semantic_cache_get_batches_reads_into_single_pipeline(
     fake_redis,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Regression test: get() must not issue one sequential hgetall await per
+    """Regression test: get() must batch its Redis reads instead of looping.
 
-    cached item (N Redis round-trips for N items); it should batch all reads
-    for the candidate keys into a single pipelined round-trip instead.
+    It must not issue one sequential hgetall await per cached item (N Redis
+    round-trips for N items); it should batch all reads for the candidate
+    keys into a single pipelined round-trip instead.
     """
     manager = SemanticCacheManager(_cfg())
     manager._get_redis = AsyncMock(return_value=fake_redis)
@@ -288,11 +289,12 @@ class _MinimalFakeRedis:
 async def test_semantic_cache_get_and_set_offload_embed_prompt_to_a_thread(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Regression test: _embed_prompt (which may run a real, CPU-bound
+    """Regression test: _embed_prompt must be offloaded off the event loop.
 
-    sentence-transformers model) must be offloaded via asyncio.to_thread in
-    both get() and set(), matching how core/rag/__init__.py already offloads
-    its own embedding/search work, instead of blocking the event loop.
+    _embed_prompt (which may run a real, CPU-bound sentence-transformers
+    model) must be offloaded via asyncio.to_thread in both get() and set(),
+    matching how core/rag/__init__.py already offloads its own
+    embedding/search work, instead of blocking the event loop.
     """
     manager = SemanticCacheManager(_cfg())
     fake_redis = _MinimalFakeRedis()

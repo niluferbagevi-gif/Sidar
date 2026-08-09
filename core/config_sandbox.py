@@ -87,7 +87,7 @@ def load_sandbox_settings(
             "SIDAR_DOCKER_NANO_CPUS", "DOCKER_NANO_CPUS", 1_000_000_000
         ),
         docker_exec_timeout=get_int_env("DOCKER_EXEC_TIMEOUT", 10),
-        docker_required=get_bool_prefixed_env("SIDAR_DOCKER_REQUIRED", "DOCKER_REQUIRED", False),
+        docker_required=get_bool_prefixed_env("SIDAR_DOCKER_REQUIRED", "DOCKER_REQUIRED", True),
         prompt_guard_enabled=get_external_bool_prefixed_env(
             "SIDAR_PROMPT_GUARD_ENABLED", "PROMPT_GUARD_ENABLED", True
         ),

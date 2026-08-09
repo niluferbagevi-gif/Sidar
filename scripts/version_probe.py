@@ -94,7 +94,6 @@ def _read_dynamic_version(project_root: Path, dynamic_spec: Any) -> str:
 
 def resolve_pyproject_version(pyproject_path: str | Path) -> str:
     """Resolve `[project].version` or supported setuptools dynamic version metadata."""
-
     pyproject = Path(pyproject_path)
     try:
         with pyproject.open("rb") as file_obj:

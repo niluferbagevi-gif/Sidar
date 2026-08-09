@@ -9,13 +9,25 @@
 ## Production readiness / merge gate
 
 > `make dev-full` veya development `bash run_tests.sh --stage all` geçse bile release onayı değildir.
-> Merge/release öncesinde `artifacts/test-summary.json` içindeki `production_ready` alanı
-> `true` olmalı veya production-readiness CI job sonucu açıkça geçmelidir.
+> Yerel `artifacts/test-summary.json` içindeki `production_ready=true` yalnız CPU/standart
+> kalite kapılarının kanıtıdır; self-hosted GPU kanıtını içermez. Merge/release kararı için
+> aşağıdaki yerel/base kanıtın **yanında** üç CI sonucu da mevcut commit SHA üzerinde geçmelidir.
 
 - [ ] `artifacts/test-summary.json` içinde `production_ready=true` doğrulandı.
 - [ ] `production_readiness_detail.required_command` kanonik komutla eşleşiyor:
   `TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all`.
 - [ ] `production_ready=false`, `summary-code=10` veya `summary-code=20` görüldüyse bu PR merge/release için bloke edildi.
+
+> ⚠️ **`production_ready=true`, GPU Inference Quality Gate'in (TTFT≤200ms, latency≤250ms)
+> geçtiği anlamına gelmez.** GPU kanıtı yalnız `ENABLE_GPU_BENCH_GATE=true` iken güncel commit
+> için `[self-hosted, linux, gpu]` runner'da üretilir. Job'ın skip/queued/failed olması veya
+> nightly geçmiş sonucu merge kanıtı değildir; `GPU Inference Required Evidence Gate` bu
+> durumları fail-closed bloke etmelidir. Bu kontrol PR'ın GPU koduna dokunup dokunmamasından
+> bağımsız olarak bütün merge/release kararları için zorunludur.
+
+- [ ] `GPU Inference Quality Gate (TTFT<=200ms, latency<=250ms)` güncel commit SHA için çalıştı ve geçti.
+- [ ] `GPU Inference Required Evidence Gate` çalıştı ve geçti; GPU job sonucu skip/queued/failed değil.
+- [ ] `Production readiness aggregate` çalıştı ve geçti; yalnız yerel `production_ready=true` sonucuna dayanılmıyor.
 
 
 ## Benchmark baseline bootstrap
@@ -44,6 +56,7 @@ If this PR touches `core/memory.py`, `core/multimodal.py`, `install_sidar.sh`,
 
 - [ ] I ran `scripts/sync_install_manifest.sh` when core installer files changed.
 - [ ] I ran `scripts/sync_install_module_hashes.sh` after core installer or installer module changes.
+- [ ] I committed the synced hashes, then ran `make finalize-install-module-pin` to create the verified pin fixup commit.
 - [ ] I ran `make check-install-manifests`.
 - [ ] I ran `make installer-shellcheck`.
 - [ ] I ran `uv run python scripts/tools/update_core_install_manifest.py --check`.

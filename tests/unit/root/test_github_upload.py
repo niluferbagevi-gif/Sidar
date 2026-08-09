@@ -16,6 +16,7 @@ ORIGINAL_ENSURE_FULL_GIT_HISTORY_FOR_MANIFEST_CHECKS = (
     gu.ensure_full_git_history_for_manifest_checks
 )
 ORIGINAL_ASSERT_NO_UNMERGED_FILES = gu.assert_no_unmerged_files
+ORIGINAL_REEXEC_AFTER_EXTERNAL_BRANCH_MERGE = gu.reexec_after_external_branch_merge
 
 
 @pytest.fixture(autouse=True)
@@ -24,6 +25,34 @@ def _stub_upload_guards(monkeypatch):
     monkeypatch.setattr(gu, "run_pre_push_quality_gate", lambda: (True, ""))
     monkeypatch.setattr(gu, "stamp_install_manifest_pin_after_commit", lambda: (True, ""))
     monkeypatch.setattr(gu, "assert_no_unmerged_files", lambda: None)
+    monkeypatch.setattr(gu, "reexec_after_external_branch_merge", lambda: None)
+
+
+def test_reexec_after_external_branch_merge_loads_new_code_without_repull(monkeypatch, tmp_path):
+    """The running pre-merge module is replaced before manifest validation."""
+    calls = []
+    monkeypatch.setattr(gu, "__file__", str(tmp_path / "github_upload.py"))
+    monkeypatch.setattr(gu.sys, "executable", "/venv/bin/python")
+    monkeypatch.delenv("SIDAR_GITHUB_UPLOAD_REEXEC_AFTER_MERGE", raising=False)
+    monkeypatch.setattr(gu.os, "execve", lambda *args: calls.append(args))
+
+    ORIGINAL_REEXEC_AFTER_EXTERNAL_BRANCH_MERGE()
+
+    assert len(calls) == 1
+    executable, argv, env = calls[0]
+    assert executable == "/venv/bin/python"
+    assert argv == ["/venv/bin/python", str((tmp_path / "github_upload.py").resolve())]
+    assert env["SIDAR_GITHUB_UPLOAD_REEXEC_AFTER_MERGE"] == "1"
+
+
+def test_reexec_after_external_branch_merge_is_single_shot(monkeypatch):
+    calls = []
+    monkeypatch.setenv("SIDAR_GITHUB_UPLOAD_REEXEC_AFTER_MERGE", "1")
+    monkeypatch.setattr(gu.os, "execve", lambda *args: calls.append(args))
+
+    ORIGINAL_REEXEC_AFTER_EXTERNAL_BRANCH_MERGE()
+
+    assert calls == []
 
 
 def test_run_command_success_and_error(monkeypatch, capsys):
@@ -274,6 +303,32 @@ def test_stage_files(monkeypatch):
     assert calls[-1] == ["git", "add", "--", ":(literal)a.txt", ":(literal)b.py"]
 
 
+def test_stage_deleted_files_uses_option_separator_and_literal_pathspecs(monkeypatch):
+    calls = []
+
+    def fake_run(cmd, show_output=True):
+        calls.append((cmd, show_output))
+        return True, "ok"
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+
+    assert gu.stage_deleted_files([]) == (True, "")
+    assert gu.stage_deleted_files(["-danger.txt", "folder/[draft].md"]) == (True, "ok")
+    assert calls == [
+        (
+            [
+                "git",
+                "rm",
+                "--ignore-unmatch",
+                "--",
+                ":(literal)-danger.txt",
+                ":(literal)folder/[draft].md",
+            ],
+            False,
+        )
+    ]
+
+
 def test_stage_files_rejects_unmerged_paths(monkeypatch):
     monkeypatch.setattr(
         gu,
@@ -317,10 +372,26 @@ def test_abort_in_progress_merge_and_rollback_tag_helpers(monkeypatch, capsys):
     gu.abort_in_progress_merge()
     tag = gu.create_rollback_backup_tag()
 
-    assert calls[0] == ["git", "merge", "--abort"]
-    assert calls[1][:2] == ["git", "tag"]
+    assert calls[0] == ["git", "rev-parse", "-q", "--verify", "MERGE_HEAD"]
+    assert calls[1] == ["git", "merge", "--abort"]
+    assert calls[2][:2] == ["git", "tag"]
     assert tag.startswith("backup/pre-rollback-")
     assert "Başarısız merge otomatik" in capsys.readouterr().out
+
+
+def test_abort_in_progress_merge_is_silent_without_merge_head(monkeypatch, capsys):
+    calls = []
+
+    def fake_run(cmd, show_output=True):
+        calls.append(cmd)
+        return False, "MERGE_HEAD bulunamadı"
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+
+    gu.abort_in_progress_merge()
+
+    assert calls == [["git", "rev-parse", "-q", "--verify", "MERGE_HEAD"]]
+    assert capsys.readouterr().out == ""
 
 
 def test_report_ours_strategy_changes_prints_changed_files(monkeypatch, capsys):
@@ -459,6 +530,11 @@ def test_run_pre_push_quality_gate_runs_format_then_lint(monkeypatch):
         (["git", "rev-parse", "--is-shallow-repository"], False, None),
         (["uv", "run", "ruff", "format", "--check", "."], False, None),
         (["uv", "run", "ruff", "check", "."], False, None),
+        (
+            ["uv", "run", "pytest", "tests/unit", "-q", "--no-cov", "-x"],
+            False,
+            None,
+        ),
         (["make", "installer-shellcheck"], False, None),
         (["sha256sum", "-c", ".sidar_manifest.txt"], False, None),
         (
@@ -530,10 +606,32 @@ def test_run_pre_push_quality_gate_stops_on_first_failure(monkeypatch):
     assert ok is False
     assert "uv run ruff format --check ." in err
     assert "Would reformat: bad.py" in err
+    assert "Düzeltmek için: uv run ruff format ." in err
     assert calls == [
         ["git", "rev-parse", "--is-shallow-repository"],
         ["uv", "run", "ruff", "format", "--check", "."],
     ]
+
+
+def test_run_pre_push_quality_gate_stops_when_unit_tests_fail(monkeypatch):
+    calls = []
+    unit_command = ["uv", "run", "pytest", "tests/unit", "-q", "--no-cov", "-x"]
+
+    def fake_run(cmd, show_output=True, extra_env=None):
+        calls.append(cmd)
+        if cmd == unit_command:
+            return False, "1 failed"
+        return True, ""
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+
+    ok, err = ORIGINAL_RUN_PRE_PUSH_QUALITY_GATE()
+
+    assert ok is False
+    assert "uv run pytest tests/unit -q --no-cov -x" in err
+    assert "1 failed" in err
+    assert calls[-1] == unit_command
+    assert ["make", "installer-shellcheck"] not in calls
 
 
 def test_run_pre_push_quality_gate_stops_on_installer_abort_smoke_failure(monkeypatch):
@@ -859,6 +957,25 @@ def test_main_add_failure(monkeypatch):
             (True, ""),
         ],
     )
+    assert run_main_and_exit_code() == 1
+
+
+def test_main_aborts_when_deleted_files_cannot_be_staged(monkeypatch):
+    monkeypatch.setattr(gu, "get_deleted_files", lambda: ["-danger.txt"])
+    monkeypatch.setattr(gu, "stage_deleted_files", lambda _paths: (False, "git rm rejected path"))
+    MainHarness(
+        monkeypatch,
+        [],
+        outputs=[
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "main"),
+            (True, ""),
+        ],
+        inputs=["yes"],
+    )
+
     assert run_main_and_exit_code() == 1
 
 
@@ -1188,6 +1305,17 @@ def test_main_target_branch_merge_made_commit_default_message(monkeypatch):
         inputs=[""],
     )
     gu.main()
+    pull_cmd = [c for c in h.calls if c[:3] == ["git", "pull", "--autostash"]][0]
+    assert pull_cmd == [
+        "git",
+        "pull",
+        "--autostash",
+        "origin",
+        "feature-x",
+        "--no-rebase",
+        "--allow-unrelated-histories",
+        "--no-edit",
+    ]
     commit_cmd = [c for c in h.calls if c[:3] == ["git", "commit", "-m"]][0]
     assert "Merged branch: feature-x" in commit_cmd[3]
 
@@ -1285,6 +1413,17 @@ def test_main_switch_to_main_with_stash_pop_success(monkeypatch):
 def test_main_no_staged_status_and_clean_worktree_but_unpushed(monkeypatch):
     monkeypatch.setattr(gu, "get_deleted_files", lambda: [])
     monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: ([], []))
+    guard_order = []
+    monkeypatch.setattr(
+        gu,
+        "stamp_install_manifest_pin_after_commit",
+        lambda: (guard_order.append("stamp"), (True, ""))[1],
+    )
+    monkeypatch.setattr(
+        gu,
+        "run_pre_push_quality_gate",
+        lambda: (guard_order.append("gate"), (True, ""))[1],
+    )
     MainHarness(
         monkeypatch,
         [],
@@ -1301,6 +1440,36 @@ def test_main_no_staged_status_and_clean_worktree_but_unpushed(monkeypatch):
         ],
     )
     gu.main()
+    assert guard_order == ["stamp", "gate"]
+
+
+def test_main_aborts_before_gate_when_unpushed_pin_repair_fails(monkeypatch):
+    monkeypatch.setattr(gu, "get_deleted_files", lambda: [])
+    monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: ([], []))
+    monkeypatch.setattr(
+        gu, "stamp_install_manifest_pin_after_commit", lambda: (False, "unreachable pin")
+    )
+    gate_calls = []
+    monkeypatch.setattr(
+        gu, "run_pre_push_quality_gate", lambda: (gate_calls.append(True), (True, ""))[1]
+    )
+    MainHarness(
+        monkeypatch,
+        [],
+        outputs=[
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "main"),
+            (True, ""),
+            (True, ""),
+            (True, ""),
+            (True, "commit1"),
+        ],
+    )
+
+    assert run_main_and_exit_code() == 1
+    assert gate_calls == []
 
 
 def test_main_rollback_push_success(monkeypatch):

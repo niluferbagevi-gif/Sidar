@@ -1,4 +1,16 @@
 {
+  // checkJs is intentionally false. As of 2026-08-06 application/component
+  // migration is complete: every remaining .js/.jsx file under src/ is a
+  // test file (*.test.jsx, *.test.js) or test setup (src/test/setup.js) --
+  // zero untyped application source remains. `npm run typecheck` therefore
+  // type-checks the full component/hook/lib tree; it is a real regression
+  // gate for application logic, not just the migrated subset. Do not read a
+  // passing `npm run typecheck` as type safety for the test tree, though --
+  // flipping checkJs=true still surfaces ~2500 pre-existing errors (verified
+  // 2026-08-06), all of them inside test files, none in application source.
+  // Tracking: the Frontend bakım ekibi owns converting the remaining test
+  // files through 2027-03-31; see
+  // docs/development/frontend-typescript-migration.md.
   "compilerOptions": {
     "target": "ES2022",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],

@@ -1,9 +1,10 @@
-"""
-Sidar Project - Kod Yöneticisi
+"""Sidar Project - Kod Yöneticisi.
+
 Dosya okuma, yazma, sözdizimi doğrulama ve DOCKER İZOLELİ kod analizi (REPL).
 Sürüm: 2.7.0
 """
 
+import asyncio
 import contextlib
 import logging
 import os
@@ -18,6 +19,7 @@ from enum import Enum
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
+from core.hitl import get_hitl_gate
 from managers.code import docker as docker_helpers
 from managers.code import file_io_security, linter_runners, runner, test_runner_orchestrator
 from managers.code.docker import (
@@ -126,8 +128,8 @@ def _is_gpu_project_image(image: str) -> bool:
 
 
 class CodeManager:
-    """
-    PEP 8 uyumlu dosya işlemleri ve sözdizimi doğrulama.
+    """PEP 8 uyumlu dosya işlemleri ve sözdizimi doğrulama.
+
     Thread-safe RLock ile korunur.
     Kod çalıştırma (execute_code) işlemleri Docker ile izole edilir.
     """
@@ -253,7 +255,8 @@ class CodeManager:
                 return
             if self._docker_init_attempts >= self._docker_init_max_attempts:
                 logger.warning(
-                    "Docker initialization retry limit reached (%s attempts); leaving backend degraded.",
+                    "Docker initialization retry limit reached (%s attempts);"
+                    " leaving backend degraded.",
                     self._docker_init_attempts,
                 )
                 self._docker_state = DockerState.FAILED
@@ -344,6 +347,22 @@ class CodeManager:
         """Dosyaya güvenli biçimde içerik yazar."""
         return file_io_security.write_file(self, path, content, validate=validate)
 
+    async def write_file_hitl(
+        self, path: str, content: str, validate: bool = True
+    ) -> tuple[bool, str]:
+        """Require human approval before overwriting an existing file."""
+        target = Path(path)
+        if await asyncio.to_thread(target.exists):
+            approved = await get_hitl_gate().request_approval(
+                action="file_overwrite",
+                description=f"Dosyanın üzerine yazılacak: {target}",
+                payload={"path": str(target)},
+                requested_by="CodeManager",
+            )
+            if not approved:
+                return False, "Dosya üzerine yazma işlemi insan onayı olmadan reddedildi."
+        return file_io_security.write_file(self, path, content, validate=validate)
+
     @staticmethod
     def _strip_markdown_code_fences(content: str) -> str:
         return file_io_security.strip_markdown_code_fences(content)
@@ -368,9 +387,23 @@ class CodeManager:
         """Dosyada hedef bloğu güvenli biçimde değiştirir."""
         return file_io_security.patch_file(self, path, target_block, replacement_block)
 
+    async def patch_file_hitl(
+        self, path: str, target_block: str, replacement_block: str
+    ) -> tuple[bool, str]:
+        """Require human approval before patching an existing file."""
+        ok, content = self.read_file(path, line_numbers=False)
+        if not ok:
+            return False, content
+        ok, patched_or_error = file_io_security.apply_exact_block_patch(
+            content, target_block, replacement_block
+        )
+        if not ok:
+            return False, patched_or_error
+        return await self.write_file_hitl(path, patched_or_error, validate=True)
+
     def execute_code(self, code: str) -> tuple[bool, str]:
-        """
-        Kodu tamamen İZOLE ve geçici bir Docker konteynerinde çalıştırır.
+        """Kodu tamamen İZOLE ve geçici bir Docker konteynerinde çalıştırır.
+
         - Ağ erişimi kapalı (network_disabled=True)
         - Dosya sistemi okunaksız/geçici
         - Bellek/CPU/PID kotaları (cgroups)
@@ -388,18 +421,10 @@ class CodeManager:
         self.ensure_docker_initialized()
 
         if not self.docker_available:
-            if self.security.level == SANDBOX:
-                return False, (
-                    "HATA: Docker Sandbox erişilemedi ve güvenlik politikası gereği "
-                    "yerel (unsafe) çalıştırma engellendi."
-                )
-            if Config.DOCKER_REQUIRED:
-                return False, (
-                    "[GÜVENLİK] DOCKER_REQUIRED=true — yerel subprocess fallback devre dışı. "
-                    "Docker daemon'ı başlatın veya DOCKER_REQUIRED=false olarak ayarlayın."
-                )
-            logger.warning("Docker yok — FULL modda yerel subprocess fallback kullanılacak.")
-            return self.execute_code_local(code)
+            return False, (
+                "[GÜVENLİK] Docker sandbox erişilemedi; access level'dan bağımsız olarak "
+                "host üzerinde izolasyonsuz kod çalıştırma reddedildi."
+            )
 
         try:
             import docker  # noqa: F401
@@ -469,7 +494,8 @@ class CodeManager:
             # Çıktı Boyutu Limiti (Güvenlik)
             if len(logs) > self.max_output_chars:
                 logs = logs[: self.max_output_chars] + (
-                    f"\n\n... [ÇIKTI KIRPILDI: Maksimum {self.max_output_chars} karakter sınırı aşıldı] ..."
+                    "\n\n... [ÇIKTI KIRPILDI: Maksimum"
+                    f" {self.max_output_chars} karakter sınırı aşıldı] ..."
                 )
 
             if logs:
@@ -498,17 +524,24 @@ class CodeManager:
                     "zorla durduruldu (sonsuz döngü koruması)."
                 )
             except Exception as cli_exc:
-                logger.warning(
-                    "Docker çalıştırma hatası — FULL modda yerel subprocess fallback: %s", cli_exc
+                logger.error(
+                    "Docker SDK ve CLI sandbox çalıştırması başarısız; "
+                    "host fallback reddedildi: %s",
+                    cli_exc,
                 )
-                return self.execute_code_local(code)
+                return False, (
+                    "[GÜVENLİK] Docker sandbox çalıştırılamadı; host üzerinde izolasyonsuz "
+                    f"kod çalıştırma reddedildi. Detay: {cli_exc}"
+                )
 
     def execute_code_local(self, code: str) -> tuple[bool, str]:
-        """
-        Docker kullanılamadığında Python kodu güvenli subprocess ile çalıştırır.
+        """Python kodunu açıkça istenen, izolasyonsuz yerel subprocess ile çalıştırır.
+
         - sys.executable kullanır (aktif Conda/venv ortamı korunur)
         - Geçici dosyaya yazar, 10 sn timeout ile çalıştırır
         - Ağ erişimi açıktır (yalnızca Docker izolasyonundan farklı)
+
+        Bu düşük seviye yardımcı ``execute_code`` tarafından fallback olarak çağrılmaz.
         """
         # Güvenlik uyarısı: Docker sandbox yok, kod izole edilmeden çalışıyor
         logger.warning(
@@ -543,7 +576,8 @@ class CodeManager:
             # Çıktı Boyutu Limiti (Güvenlik)
             if len(output) > self.max_output_chars:
                 output = output[: self.max_output_chars] + (
-                    f"\n\n... [ÇIKTI KIRPILDI: Maksimum {self.max_output_chars} karakter sınırı aşıldı] ..."
+                    "\n\n... [ÇIKTI KIRPILDI: Maksimum"
+                    f" {self.max_output_chars} karakter sınırı aşıldı] ..."
                 )
 
             if result.returncode != 0:
@@ -632,8 +666,7 @@ class CodeManager:
     # ─────────────────────────────────────────────
 
     def glob_search(self, pattern: str, base_path: str = ".") -> tuple[bool, str]:
-        """
-        Glob deseni ile dosya ara. Claude Code'daki Glob aracına eşdeğer.
+        """Glob deseni ile dosya ara. Claude Code'daki Glob aracına eşdeğer.
 
         Örnek desenler:
           **/*.py          → tüm .py dosyaları
@@ -663,8 +696,7 @@ class CodeManager:
         context_lines: int = 0,
         max_results: int = 100,
     ) -> tuple[bool, str]:
-        """
-        Regex ile dosya içeriği ara. Claude Code'daki Grep aracına eşdeğer.
+        """Regex ile dosya içeriği ara. Claude Code'daki Grep aracına eşdeğer.
 
         Args:
             pattern: Aranacak regex kalıbı
@@ -810,7 +842,10 @@ class CodeManager:
 
     @staticmethod
     def _lsp_stderr_indicates_missing_binary(stderr_text: str) -> bool:
-        """uv/uvx benzeri sarmalayıcıların 'binary bulunamadı' hatasını sezgisel olarak tespit et."""
+        """Sezgisel olarak 'binary bulunamadı' hatasını tespit et.
+
+        uv/uvx benzeri sarmalayıcıların stderr çıktısını kontrol eder.
+        """
         if not stderr_text:
             return False
         lowered = stderr_text.lower()
@@ -990,9 +1025,9 @@ class CodeManager:
             rng = entry.get("range", {})
             start = rng.get("start", {})
             path = _file_uri_to_path(uri)
-            lines.append(
-                f"- {path}: satır {int(start.get('line', 0)) + 1}, sütun {int(start.get('character', 0)) + 1}"
-            )
+            line_no = int(start.get("line", 0)) + 1
+            column_no = int(start.get("character", 0)) + 1
+            lines.append(f"- {path}: satır {line_no}, sütun {column_no}")
         if len(normalized) > limit:
             lines.append(f"... ve {len(normalized) - limit} ek sonuç daha.")
         return "\n".join(lines)
@@ -1179,7 +1214,10 @@ class CodeManager:
         summary = (
             "LSP diagnostics temiz."
             if total == 0
-            else f"LSP semantik denetimi {total} bulgu üretti (error={errors}, warning={warnings}, info={infos})."
+            else (
+                f"LSP semantik denetimi {total} bulgu üretti"
+                f" (error={errors}, warning={warnings}, info={infos})."
+            )
         )
         return {
             "status": status,
@@ -1378,7 +1416,10 @@ class CodeManager:
         lsp_status = "LSP on" if self.enable_lsp else "LSP off"
         if self.docker_available:
             return f"CodeManager: Docker Sandbox Aktif (imaj: {self.docker_image}) | {lsp_status}"
-        return f"CodeManager: Subprocess Modu (Docker erişilemez — kod yerel Python ile çalışır) | {lsp_status}"
+        return (
+            "CodeManager: Subprocess Modu (Docker erişilemez — kod yerel Python ile çalışır)"
+            f" | {lsp_status}"
+        )
 
     def __repr__(self) -> str:
         m = self.get_metrics()

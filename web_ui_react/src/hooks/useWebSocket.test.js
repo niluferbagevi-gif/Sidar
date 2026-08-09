@@ -247,10 +247,26 @@ describe("useWebSocket — mesaj işleme", () => {
   it("calls onRoomState for room_state message", () => {
     const onRoomState = vi.fn();
     setup({ onRoomState });
+    const participants = [{ id: "user-1" }];
+    const messages = [{ id: "message-1", content: "Merhaba" }];
+    const telemetry = [{ kind: "status", content: "Hazır" }];
     act(() => {
-      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "room_state", room_id: "ws:demo", messages: [] }) });
+      wsMockInstance.onmessage?.({
+        data: JSON.stringify({
+          type: "room_state",
+          room_id: "ws:demo",
+          participants,
+          messages,
+          telemetry,
+        }),
+      });
     });
-    expect(onRoomState).toHaveBeenCalledTimes(1);
+    expect(onRoomState).toHaveBeenCalledWith(expect.objectContaining({
+      room_id: "ws:demo",
+      participants,
+      messages,
+      telemetry,
+    }));
   });
 
   it("calls onPresence for presence message", () => {
@@ -388,6 +404,42 @@ describe("useWebSocket — mesaj işleme", () => {
     expect(onError).toHaveBeenCalledWith("legacy error");
   });
 
+  it("prefers legacy content fields for generic chunk and error payloads", () => {
+    const onChunk = vi.fn();
+    const onError = vi.fn();
+    setup({ onChunk, onError });
+
+    act(() => {
+      wsMockInstance.onmessage?.({
+        data: JSON.stringify({ type: "chunk", chunk: "fallback", content: "content chunk" }),
+      });
+      wsMockInstance.onmessage?.({
+        data: JSON.stringify({ type: "error", error: "fallback", content: "content error" }),
+      });
+    });
+
+    expect(onChunk).toHaveBeenCalledWith("content chunk");
+    expect(onError).toHaveBeenCalledWith("content error");
+  });
+
+  it("normalizes non-string frames and empty legacy fields", () => {
+    const onChunk = vi.fn();
+    const onError = vi.fn();
+    setup({ onChunk, onError });
+
+    act(() => {
+      wsMockInstance.onmessage?.({ data: { toString: () => JSON.stringify({ chunk: "binary-like" }) } });
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "chunk", chunk: null }) });
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "error", error: null }) });
+      wsMockInstance.onmessage?.({ data: JSON.stringify([]) });
+    });
+
+    expect(onChunk).toHaveBeenCalledWith("binary-like");
+    expect(onChunk).toHaveBeenCalledWith("");
+    expect(onError).toHaveBeenCalledWith("");
+    expect(onChunk).toHaveBeenCalledWith("[]");
+  });
+
   it("routes standalone tool_call and thought payloads", () => {
     const onToolCall = vi.fn();
     const onThought = vi.fn();
@@ -465,6 +517,27 @@ describe("useWebSocket — onerror / onclose", () => {
     });
 
     expect(result.current.status).toBe("reconnecting");
+  });
+
+  it("sets status to unauthenticated on auth-policy close (1008) instead of reconnecting", () => {
+    vi.useFakeTimers();
+    localStorage.setItem("sidar_access_token", "tok");
+    const { result } = renderHook(() => useWebSocket("s1", {}));
+
+    expect(globalThis.WebSocket).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      wsMockInstance.onclose?.({ code: 1008, reason: "Invalid or expired token" });
+    });
+
+    expect(result.current.status).toBe("unauthenticated");
+
+    act(() => {
+      vi.advanceTimersByTime(20_000);
+    });
+
+    expect(globalThis.WebSocket).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
   });
 
   it("triggers reconnect timer callback and calls connectRef.current (Satır 56)", () => {

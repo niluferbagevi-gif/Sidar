@@ -59,10 +59,10 @@ def test_ruff_enables_pydocstyle_incrementally():
         "D105",
         "D106",
         "D107",
-        "D200",
-        "D417",
     ):
         assert transitional_ignore in lint_config["ignore"]
+    for enforced_rule in ("E501", "D200", "D417", "ASYNC240"):
+        assert enforced_rule not in lint_config["ignore"]
     assert "AGENTS.md §2.5.6" in pyproject_text
     assert "Kademeli dokümantasyon kampanyası" in agents
     for milestone in ("2026-07-15", "2026-08-15", "2026-09-30"):

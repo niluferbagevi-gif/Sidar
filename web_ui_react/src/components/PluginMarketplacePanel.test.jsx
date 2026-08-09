@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { PluginMarketplacePanel } from "./PluginMarketplacePanel.jsx";
+import { PluginMarketplacePanel } from "./PluginMarketplacePanel.js";
 
 const { fetchJson } = vi.hoisted(() => ({ fetchJson: vi.fn() }));
 
@@ -139,6 +139,26 @@ describe("PluginMarketplacePanel", () => {
     fetchJson.mockResolvedValueOnce({});
     render(<PluginMarketplacePanel />);
     expect(await screen.findByText("Henüz marketplace girdisi bulunamadı.")).toBeInTheDocument();
+  });
+
+  it("filters malformed catalog entries and normalizes non-Error failures", async () => {
+    const user = userEvent.setup();
+    fetchJson
+      .mockResolvedValueOnce({
+        items: [
+          null,
+          { plugin_id: 42, name: "Invalid" },
+          { plugin_id: "missing-name" },
+          { plugin_id: "invalid-name", name: 42 },
+        ],
+      })
+      .mockRejectedValueOnce("network failure");
+
+    render(<PluginMarketplacePanel />);
+    expect(await screen.findByText("Henüz marketplace girdisi bulunamadı.")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Yenile" }));
+    expect(await screen.findByText("Plugin kataloğu yüklenemedi.")).toBeInTheDocument();
   });
 
   it("handles missing capabilities and mixed boolean states for installed/live_registered", async () => {

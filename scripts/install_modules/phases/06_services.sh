@@ -566,15 +566,50 @@ wait_for_postgres_ready_after_docker_start() {
     return 1
 }
 
+diagnose_healthy_redis_host_mapping() {
+    local expected_host="$1"
+    local expected_port="$2"
+    local mapping_host="$expected_host"
+    local -a compose_cmd=()
+    local container_id=""
+    local health_status=""
+    local published_mapping=""
+
+    if command -v docker &>/dev/null && docker compose version &>/dev/null; then
+        compose_cmd=(docker compose)
+    elif command -v docker-compose &>/dev/null; then
+        compose_cmd=(docker-compose)
+    else
+        return 1
+    fi
+
+    container_id=$("${compose_cmd[@]}" ps -q redis 2>/dev/null | head -n1 || true)
+    [[ -n "$container_id" ]] || return 1
+    health_status=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id" 2>/dev/null || true)
+    [[ "$health_status" == "healthy" ]] || return 1
+
+    published_mapping=$("${compose_cmd[@]}" port redis 6379 2>/dev/null | head -n1 || true)
+    [[ "$mapping_host" == "localhost" || "$mapping_host" == "::1" ]] && mapping_host="127.0.0.1"
+    if [[ "$published_mapping" != "${mapping_host}:${expected_port}" ]]; then
+        warn "Redis container healthy ancak beklenen host port mapping bulunamadı (beklenen=${mapping_host}:${expected_port}, görülen=${published_mapping:-yok}). 60 saniye beklemek yerine kurulum erken durduruldu. Düzeltme: docker compose up -d --force-recreate redis"
+    else
+        warn "Redis container healthy ve ${published_mapping} yayınlanmış görünüyor; buna rağmen host bağlantısı başarısız. Port çakışması/firewall/proxy veya stale container mapping kontrol edilmeli. 60 saniye beklemek yerine kurulum erken durduruldu."
+    fi
+    return 2
+}
+
+
 wait_for_redis_ready_after_docker_start() {
     local env_file="$SCRIPT_DIR/.env"
     local redis_url=""
     local redis_host="localhost"
     local redis_port="6379"
+    local configured_redis_port=""
     local -a python_cmd=()
 
     if [[ -f "$env_file" ]]; then
-        redis_url=$(read_env_value_from_file "REDIS_URL" "$env_file")
+        redis_url=$(read_env_value_from_file "SIDAR_REDIS_URL" "$env_file")
+        [[ -n "$redis_url" ]] || redis_url=$(read_env_value_from_file "REDIS_URL" "$env_file")
     fi
     if [[ -z "$redis_url" ]]; then
         redis_url="redis://localhost:6379/0"
@@ -602,10 +637,17 @@ PY
         fi
     fi
 
+    configured_redis_port=$(read_env_value_from_file "REDIS_PORT" "$env_file")
+    if [[ "$redis_host" =~ ^(localhost|127\.0\.0\.1|::1)$ && "$configured_redis_port" =~ ^[0-9]+$ ]]; then
+        redis_port="$configured_redis_port"
+    fi
+
     info "Redis hazır olana kadar bekleniyor (${redis_host}:${redis_port})..."
     for _ in {1..30}; do
         if command -v redis-cli &>/dev/null; then
-            if redis-cli -h "$redis_host" -p "$redis_port" ping 2>/dev/null | grep -q "PONG"; then
+            local redis_password=""
+            redis_password=$(read_env_value_from_file "REDIS_PASSWORD" "$env_file")
+            if REDISCLI_AUTH="$redis_password" redis-cli -h "$redis_host" -p "$redis_port" ping 2>/dev/null | grep -q "PONG"; then
                 ok "Redis erişilebilir hale geldi."
                 return 0
             fi
@@ -632,6 +674,11 @@ PY
         else
             warn "redis-cli veya python bulunamadı; Redis hazır kontrolü atlanıyor."
             return 0
+        fi
+        if diagnose_healthy_redis_host_mapping "$redis_host" "$redis_port"; then
+            :
+        elif [[ $? -eq 2 ]]; then
+            return 1
         fi
         sleep 2
     done
@@ -924,6 +971,10 @@ PY
         fi
         # Önce DB migrasyonu: olası bağlantı/şema hataları sonraki adımlara geçmeden görülsün.
         run_migrations
+        # Geliştirici modu da tam Docker ve smoke akışlarıyla aynı başlangıç
+        # bilgi tabanına sahip olmalı. Yardımcı, migrasyon tamamlanmadıysa veya
+        # AUTO_SEED_RAG_METADATA=false ise güvenli biçimde no-op olur.
+        seed_rag_metadata_after_migrations
         # Model indirme: fonksiyon sonunda cleanup_temp_ollama trap'i geçici 'ollama serve'
         # sürecini otomatik sonlandırır; hemen ardından gelen launch_docker_services'in
         # Docker Ollama servisiyle 11434 port çakışması bu şekilde önlenir.

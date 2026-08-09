@@ -20,7 +20,10 @@ async def test_sidar_agent_workflow_runs_research_pipeline_with_real_supervisor(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
-    """Gerçek supervisor + researcher akışını, yalnızca dış web bağımlılığını izole ederek doğrular."""
+    """Gerçek supervisor + researcher akışını doğrular.
+
+    Yalnızca dış web bağımlılığını izole eder.
+    """
     cfg = types.SimpleNamespace(BASE_DIR=str(tmp_path), ENABLE_TRACING=False)
     agent = sidar_agent_factory(cfg=cfg)
 
@@ -95,8 +98,10 @@ async def test_sidar_agent_workflow_executes_tool_sequence(
     agent.llm = types.SimpleNamespace(
         chat=fake_llm_tool_sequence(
             [
-                '{"thought": "Önce web araması yapmalıyım.", "tool": "web_search", "argument": "pytest integration"}',
-                '{"thought": "Artık nihai yanıtı verebilirim.", "tool": "final_answer", "argument": "Araştırma tamamlandı."}',
+                '{"thought": "Önce web araması yapmalıyım.", "tool": "web_search", "argument": '
+                '"pytest integration"}',
+                '{"thought": "Artık nihai yanıtı verebilirim.", "tool": "final_answer", '
+                '"argument": "Araştırma tamamlandı."}',
             ]
         )
     )
@@ -136,8 +141,10 @@ async def test_sidar_agent_workflow_handles_docs_search_vector_failure(
     agent.llm = types.SimpleNamespace(
         chat=fake_llm_tool_sequence(
             [
-                '{"thought":"Önce depoda arama yap.", "tool":"docs_search", "argument":"vektör araması"}',
-                '{"thought":"Hata durumunu kullanıcıya açıkla.", "tool":"final_answer", "argument":"Doküman araması şu anda kullanılamıyor."}',
+                '{"thought":"Önce depoda arama yap.", "tool":"docs_search", "argument":"vektör '
+                'araması"}',
+                '{"thought":"Hata durumunu kullanıcıya açıkla.", "tool":"final_answer", '
+                '"argument":"Doküman araması şu anda kullanılamıyor."}',
             ]
         )
     )
@@ -167,7 +174,6 @@ async def test_swarm_pipeline_coordinates_roles_and_passes_success_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Coder -> reviewer -> QA pipeline'ında başarılı özetler sonraki role aktarılır."""
-
     cfg = SimpleNamespace(SWARM_TASK_MAX_RETRIES=0, SWARM_TASK_TIMEOUT_SECONDS=1)
     orchestrator = SwarmOrchestrator(cfg=cfg)
 
@@ -222,7 +228,6 @@ async def test_swarm_graphrag_reviewer_handoff_stops_at_max_hops(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """GraphRAG/reviewer P2P döngüsü hop limitini aşınca fail-closed sonlanmalıdır."""
-
     cfg = SimpleNamespace(SWARM_MAX_HANDOFF_HOPS=1, SWARM_TASK_MAX_RETRIES=0)
     orchestrator = SwarmOrchestrator(cfg=cfg)
     researcher = AgentSpec(role_name="researcher", capabilities=["rag_search"])

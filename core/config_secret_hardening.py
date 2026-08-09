@@ -5,11 +5,60 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Callable, Iterable, Mapping
+from pathlib import Path
 from typing import Any
 
 from config_security import get_missing_security_runtime_keys, has_weak_postgres_runtime_secret
-from core.config_secrets import is_nonempty_secret
+from core.config_secrets import is_nonempty_secret, is_weak_secret
 from core.config_validators import is_valid_http_url, normalize_ai_provider
+
+PRODUCTION_SECRET_KEYS: tuple[str, ...] = (
+    "API_KEY",
+    "JWT_SECRET_KEY",
+    "MEMORY_ENCRYPTION_KEY",
+    "AUTONOMY_WEBHOOK_SECRET",
+    "SWARM_FEDERATION_SHARED_SECRET",
+    "GITHUB_WEBHOOK_SECRET",
+    "GRAFANA_ADMIN_PASSWORD",
+    "METRICS_TOKEN",
+)
+
+
+def _read_dotenv_secret_values(path: Path) -> dict[str, str]:
+    """Read only production-secret keys from a dotenv file without mutating the environment."""
+    if not path.is_file():
+        return {}
+    values: dict[str, str] = {}
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        normalized_key = key.strip()
+        if normalized_key in PRODUCTION_SECRET_KEYS:
+            values[normalized_key] = value.strip().strip('"').strip("'")
+    return values
+
+
+def collect_unsafe_production_secret_keys(config_cls: Any) -> list[str]:
+    """Return missing, weak, known-shared, or non-production-shared production secrets."""
+    effective = {
+        key: str(getattr(config_cls, key, os.getenv(key, "")) or "").strip()
+        for key in PRODUCTION_SECRET_KEYS
+    }
+    base_dir = Path(getattr(config_cls, "BASE_DIR", Path.cwd()))
+    known_weak = _read_dotenv_secret_values(base_dir / "scripts" / "known_weak_secrets.txt")
+    reference_values = [
+        _read_dotenv_secret_values(base_dir / filename)
+        for filename in (".env", ".env.development", ".env.test", ".env.advanced")
+    ]
+    return [
+        key
+        for key, value in effective.items()
+        if is_weak_secret(value)
+        or (value and known_weak.get(key) == value)
+        or (value and any(reference.get(key) == value for reference in reference_values))
+    ]
 
 
 def collect_missing_critical_runtime_keys(
@@ -46,7 +95,10 @@ def collect_missing_critical_runtime_keys(
     if is_production and not str(config_cls.MEMORY_ENCRYPTION_KEY or "").strip():
         missing.append("MEMORY_ENCRYPTION_KEY")
 
-    return missing
+    if is_production:
+        missing.extend(collect_unsafe_production_secret_keys(config_cls))
+
+    return list(dict.fromkeys(missing))
 
 
 def warn_on_silent_security_fallbacks(config_cls: Any, *, logger: logging.Logger) -> None:

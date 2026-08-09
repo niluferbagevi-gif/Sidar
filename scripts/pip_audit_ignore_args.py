@@ -30,7 +30,6 @@ def _parse_iso_date(raw: str, *, line_number: int) -> date:
 
 def parse_policy(path: Path, *, today: date | None = None) -> list[PipAuditIgnore]:
     """Parse a tab-separated pip-audit ignore policy and reject expired entries."""
-
     if not path.exists():
         return []
 
@@ -66,7 +65,6 @@ def parse_policy(path: Path, *, today: date | None = None) -> list[PipAuditIgnor
 
 def build_ignore_args(ignores: list[PipAuditIgnore]) -> list[str]:
     """Return pip-audit CLI arguments for active policy entries."""
-
     args: list[str] = []
     seen: set[str] = set()
     for ignore in ignores:

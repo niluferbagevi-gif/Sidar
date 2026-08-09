@@ -1,6 +1,4 @@
-"""
-Yerel statik analiz log'larını Sidar self-healing döngüsüne bağlayan CLI köprüsü.
-"""
+"""Yerel statik analiz log'larını Sidar self-healing döngüsüne bağlayan CLI köprüsü."""
 
 from __future__ import annotations
 
@@ -15,11 +13,14 @@ from typing import Any, cast
 
 MYPY_SELF_HEAL_REFERENCE = """\
 Mypy quick-fix referansı:
-- [import-untyped]: 3rd-party paket için tip stubları yoksa önce stubs/paket kurulumu dene; geçici olarak dar kapsamlı
+- [import-untyped]: 3rd-party paket için tip stubları yoksa önce stubs/paket kurulumu dene; geçici
+olarak dar kapsamlı
   `# type: ignore[import-untyped]` kullan ve mümkünse satıra kısa gerekçe ekle.
-- [misc]: Genel kural; gerçek kök nedeni logdan teyit et. Sadece deterministic false-positive durumlarında
+- [misc]: Genel kural; gerçek kök nedeni logdan teyit et. Sadece deterministic false-positive
+durumlarında
   dar kapsamlı `# type: ignore[misc]` uygula.
-- [valid-type]: Geçersiz type ifadesi; import edilen sembolün gerçekten type olduğundan emin ol. Gerekirse
+- [valid-type]: Geçersiz type ifadesi; import edilen sembolün gerçekten type olduğundan emin ol.
+Gerekirse
   `typing.TypeAlias`, `from __future__ import annotations` veya doğru jenerik formu kullan.
 Kurallar:
 1) `type: ignore` her zaman spesifik kodla kullanılmalı (`ignore[...]`), çıplak ignore yasak.
@@ -74,7 +75,8 @@ def _parse_args() -> argparse.Namespace:
         "--database-url",
         help=(
             "Self-heal çalışma belleği için DB URL override değeri. "
-            "Verilmezse SELF_HEAL_DATABASE_URL okunur; o da yoksa log dizininde izole SQLite kullanılır."
+            "Verilmezse SELF_HEAL_DATABASE_URL okunur; o da yoksa log dizininde izole SQLite "
+            "kullanılır."
         ),
     )
     parser.add_argument(
@@ -89,7 +91,6 @@ def _parse_args() -> argparse.Namespace:
 
 def _emit_result(payload: dict[str, Any], args: argparse.Namespace) -> None:
     """Print the final self-heal result and optionally persist it for truncated logs."""
-
     rendered = json.dumps(payload, ensure_ascii=False, indent=2)
     print(rendered)
     output_path_text = str(getattr(args, "output", "") or "").strip()
@@ -116,7 +117,6 @@ def _resolve_auto_heal_database_url(log_path: Path, requested_database_url: str 
 
 def _configure_auto_heal_memory_backend(cfg: Any, database_url: str) -> str:
     """Prefer lightweight BM25 memory when self-heal runs on its isolated SQLite DB."""
-
     vector_backend = str(getattr(cfg, "RAG_VECTOR_BACKEND", "") or "").strip().lower()
     if vector_backend == "pgvector" and not str(database_url or "").startswith("postgresql"):
         cfg.RAG_VECTOR_BACKEND = "bm25"
@@ -225,7 +225,6 @@ def _build_scope_queue(remediation_loop: dict[str, Any], *, batch_size: int) -> 
 
 def _extract_mypy_targets_from_log(log_text: str, *, limit: int = 200) -> list[str]:
     """Fallback parser: derive candidate files from mypy's `path:line: error:` format."""
-
     if not log_text.strip():
         return []
 
@@ -302,8 +301,10 @@ def _build_attempt_diagnosis(
             f"Hedef kapsam için yerel kalite kapısı hataları düzeltilecek: {scope_display}"
         ]
     guidance = (
-        f"Batch retry {attempt}/{total_attempts}: Yalnızca şu dosyalarda minimal patch üret: {scope_display}. "
-        "JSON şemasına birebir uy, sadece patch action kullan, target metni dosyada birebir geçen satırlardan seç."
+        f"Batch retry {attempt}/{total_attempts}: Yalnızca şu dosyalarda minimal patch üret: "
+        f"{scope_display}. "
+        "JSON şemasına birebir uy, sadece patch action kullan, target metni dosyada birebir geçen "
+        "satırlardan seç."
     )
     diagnosis_lines.append(guidance)
     if scope_error_lines:
@@ -362,7 +363,7 @@ async def _run(args: argparse.Namespace) -> int:
     from core.ci_remediation import build_ci_remediation_payload, build_local_failure_context
 
     log_path = Path(args.log)
-    if not log_path.exists():
+    if not await asyncio.to_thread(log_path.exists):
         _emit_result(
             {
                 "status": "failed",
@@ -375,7 +376,7 @@ async def _run(args: argparse.Namespace) -> int:
         )
         return 1
 
-    log_text = log_path.read_text(encoding="utf-8", errors="replace")
+    log_text = await asyncio.to_thread(log_path.read_text, encoding="utf-8", errors="replace")
     context = build_local_failure_context(log_text, source=args.source, log_path=str(log_path))
     suspected_targets = list(context.get("suspected_targets") or [])
     if not suspected_targets:

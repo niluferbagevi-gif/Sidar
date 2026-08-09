@@ -11,6 +11,7 @@ import threading
 import time
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -293,17 +294,11 @@ def test_execute_code_without_docker_branches(manager, monkeypatch):
     manager.security.exec_ok = True
     manager.security.level = SANDBOX
     ok, msg = manager.execute_code("print(1)")
-    assert not ok and "güvenlik politikası" in msg
+    assert not ok and "izolasyonsuz kod çalıştırma reddedildi" in msg
 
     manager.security.level = FULL
-    monkeypatch.setattr(cm.Config, "DOCKER_REQUIRED", True, raising=False)
     ok, msg = manager.execute_code("print(1)")
-    assert not ok and "DOCKER_REQUIRED=true" in msg
-
-    monkeypatch.setattr(cm.Config, "DOCKER_REQUIRED", False, raising=False)
-    monkeypatch.setattr(manager, "execute_code_local", lambda _c: (True, "local"))
-    ok, msg = manager.execute_code("print(1)")
-    assert ok and msg == "local"
+    assert not ok and "izolasyonsuz kod çalıştırma reddedildi" in msg
 
 
 def test_execute_code_with_mocked_docker_success(manager, monkeypatch):
@@ -682,11 +677,12 @@ def test_run_shell_paths(manager, monkeypatch, tmp_path):
     ],
 )
 def test_run_shell_blocks_destructive_pattern_bypass_variants(manager, command):
-    """Regression test: the destructive-pattern check must not be defeated by
+    """Regression test: the destructive-pattern check must resist bypass attempts.
 
-    whitespace/flag-order variations or by hiding the target behind shell
-    variable/command substitution (see managers/code/runner.py's
-    find_destructive_shell_pattern for the documented limits of this check).
+    It must not be defeated by whitespace/flag-order variations or by hiding
+    the target behind shell variable/command substitution (see
+    managers/code/runner.py's find_destructive_shell_pattern for the
+    documented limits of this check).
     """
     ok, msg = manager.run_shell(command, allow_shell_features=True)
     assert not ok and "Engellendi" in msg, (command, msg)
@@ -850,7 +846,7 @@ def test_lsp_semantic_audit_returns_unavailable_when_binary_missing(manager, tmp
 
 
 def test_run_lsp_sequence_maps_uv_failed_to_spawn_to_file_not_found(manager, tmp_path, monkeypatch):
-    """uv `Failed to spawn` stderr'i FileNotFoundError'a yükseltilmeli."""
+    """Uv `Failed to spawn` stderr'i FileNotFoundError'a yükseltilmeli."""
     py_file = tmp_path / "sample.py"
     py_file.write_text("value = 1\n", encoding="utf-8")
     manager.base_dir = tmp_path
@@ -1453,9 +1449,8 @@ def test_execute_code_docker_error_paths(manager, monkeypatch):
         "_execute_code_with_docker_cli",
         lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("cli failed")),
     )
-    monkeypatch.setattr(manager, "execute_code_local", lambda _c: (True, "local-fallback"))
     ok, msg = manager.execute_code("print(1)")
-    assert ok and msg == "local-fallback"
+    assert not ok and "host üzerinde izolasyonsuz" in msg
 
 
 def test_execute_code_sets_runtime_and_non_dict_wait(manager, monkeypatch):
@@ -2455,8 +2450,11 @@ def test_targeted_lsp_and_workspace_branch_paths(manager, monkeypatch, tmp_path)
 
 
 def test_init_docker_importerror_cached_module_wsl_fallback_returns(manager, monkeypatch):
-    """Satır 334: except ImportError bloğunda docker_module None değil ve
-    _try_wsl_socket_fallback True döndürünce erken return yapılır."""
+    """Satır 334: except ImportError bloğunda erken dönüş kapsamını test eder.
+
+    docker_module None değil ve _try_wsl_socket_fallback True döndürünce erken
+    return yapılır.
+    """
 
     class _ImportErrDocker(ModuleType):
         @staticmethod
@@ -2487,9 +2485,11 @@ def test_init_docker_importerror_cached_module_wsl_fallback_returns(manager, mon
 
 
 def test_init_docker_exception_fallback_module_none_import_error(manager, monkeypatch):
-    """Satırlar 343-346: except Exception bloğunda docker_module None (ilk import non-ImportError
-    fırlattı), ikinci import ImportError fırlatır → fallback_module = None dalı kapsamı."""
+    """Satırlar 343-346: except Exception bloğunda fallback_module = None dalını test eder.
 
+    docker_module None (ilk import non-ImportError fırlattı), ikinci import
+    ImportError fırlatır → fallback_module = None dalı kapsamı.
+    """
     import builtins as _builtins
 
     # Fixture _init_docker'ı lambda self: None olarak patchiyor; gerçek implementasyonu
@@ -3049,3 +3049,101 @@ def test_init_docker_imports_docker_module_when_not_cached(manager, monkeypatch)
     assert manager.docker_client is client
     assert manager.docker_available is True
     assert client.ping_called is True
+
+
+@pytest.mark.asyncio
+async def test_write_file_hitl_requires_approval_for_overwrite(manager, tmp_path, monkeypatch):
+    target = tmp_path / "protected.txt"
+    target.write_text("old", encoding="utf-8")
+    gate = SimpleNamespace(request_approval=AsyncMock(return_value=False))
+    monkeypatch.setattr("managers.code_manager.get_hitl_gate", lambda: gate)
+
+    ok, message = await manager.write_file_hitl(str(target), "new", validate=False)
+
+    assert ok is False
+    assert "insan onayı" in message
+    assert target.read_text(encoding="utf-8") == "old"
+    gate.request_approval.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_write_file_hitl_writes_directly_when_file_does_not_exist(
+    manager, tmp_path, monkeypatch
+):
+    target = tmp_path / "brand_new.txt"
+    gate = SimpleNamespace(request_approval=AsyncMock(return_value=False))
+    monkeypatch.setattr("managers.code_manager.get_hitl_gate", lambda: gate)
+
+    ok, message = await manager.write_file_hitl(str(target), "fresh content", validate=False)
+
+    assert ok is True
+    assert "başarıyla kaydedildi" in message
+    assert target.read_text(encoding="utf-8") == "fresh content"
+    gate.request_approval.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_write_file_hitl_writes_after_approval(manager, tmp_path, monkeypatch):
+    target = tmp_path / "protected.txt"
+    target.write_text("old", encoding="utf-8")
+    gate = SimpleNamespace(request_approval=AsyncMock(return_value=True))
+    monkeypatch.setattr("managers.code_manager.get_hitl_gate", lambda: gate)
+
+    ok, message = await manager.write_file_hitl(str(target), "new", validate=False)
+
+    assert ok is True
+    assert "başarıyla kaydedildi" in message
+    assert target.read_text(encoding="utf-8") == "new"
+    gate.request_approval.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_patch_file_hitl_applies_patch_after_approval(manager, tmp_path, monkeypatch):
+    target = tmp_path / "patchable.txt"
+    target.write_text("hello world", encoding="utf-8")
+    gate = SimpleNamespace(request_approval=AsyncMock(return_value=True))
+    monkeypatch.setattr("managers.code_manager.get_hitl_gate", lambda: gate)
+
+    ok, message = await manager.patch_file_hitl(str(target), "hello", "bye")
+
+    assert ok is True
+    assert "başarıyla kaydedildi" in message
+    assert target.read_text(encoding="utf-8") == "bye world"
+    gate.request_approval.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_patch_file_hitl_blocks_when_approval_rejected(manager, tmp_path, monkeypatch):
+    target = tmp_path / "patchable.txt"
+    target.write_text("hello world", encoding="utf-8")
+    gate = SimpleNamespace(request_approval=AsyncMock(return_value=False))
+    monkeypatch.setattr("managers.code_manager.get_hitl_gate", lambda: gate)
+
+    ok, message = await manager.patch_file_hitl(str(target), "hello", "bye")
+
+    assert ok is False
+    assert "insan onayı" in message
+    assert target.read_text(encoding="utf-8") == "hello world"
+    gate.request_approval.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_patch_file_hitl_returns_error_when_file_missing(manager, tmp_path):
+    missing = tmp_path / "does_not_exist.txt"
+
+    ok, message = await manager.patch_file_hitl(str(missing), "hello", "bye")
+
+    assert ok is False
+    assert "bulunamadı" in message
+
+
+@pytest.mark.asyncio
+async def test_patch_file_hitl_returns_error_when_target_block_not_found(manager, tmp_path):
+    target = tmp_path / "patchable.txt"
+    target.write_text("hello world", encoding="utf-8")
+
+    ok, message = await manager.patch_file_hitl(str(target), "not-in-file", "bye")
+
+    assert ok is False
+    assert "bulunamadı" in message
+    assert target.read_text(encoding="utf-8") == "hello world"

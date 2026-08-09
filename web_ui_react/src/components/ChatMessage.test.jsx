@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { ChatMessage } from "./ChatMessage.jsx";
+import { ChatMessage } from "./ChatMessage.tsx";
 
 // ReactMarkdown ve eklentilerini stub'la — jsdom ortamında sorunsuz çalışsın
 vi.mock("react-markdown", () => ({
@@ -85,6 +85,14 @@ describe("ChatMessage — asistan mesajı", () => {
     const { container } = render(<ChatMessage message={msg} />);
     await screen.findByTestId("markdown");
     expect(container.querySelector(".code-block-wrapper")).toBeInTheDocument();
+  });
+
+  it("normalizes sparse messages to safe assistant defaults", async () => {
+    const { container } = render(<ChatMessage message={{ id: "sparse" }} />);
+
+    expect(container.querySelector(".message--assistant")).toBeInTheDocument();
+    expect(container.querySelector("time")?.dateTime).toBeTruthy();
+    expect(await screen.findByTestId("markdown")).toHaveTextContent("");
   });
 });
 

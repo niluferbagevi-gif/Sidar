@@ -17,7 +17,6 @@ CostRecorder = Callable[[float], None]
 
 async def fallback_stream(msg: str) -> AsyncGenerator[str, None]:
     """Return a single-element async stream for error/fallback paths."""
-
     yield msg
 
 
@@ -30,7 +29,6 @@ async def track_stream_completion(
     record_metric: MetricRecorder,
 ) -> AsyncIterator[str]:
     """Track stream success/failure metrics while preserving streamed chunks."""
-
     partial_parts: list[str] = []
     partial_chars = 0
     partial_cap = 2_000
@@ -78,7 +76,6 @@ async def track_stream_routing_cost(
     record_cost: CostRecorder,
 ) -> AsyncIterator[str]:
     """Record estimated routing cost after a streamed response completes or closes."""
-
     response_parts: list[str] = []
     try:
         async for chunk in stream_iter:
@@ -98,7 +95,6 @@ async def trace_stream_metrics(
     stream_iter: AsyncIterator[str], span: Any, started_at: float
 ) -> AsyncGenerator[str, None]:
     """Set TTFT/total latency span attributes for a streamed response."""
-
     first_token_at = None
     try:
         async for chunk in stream_iter:

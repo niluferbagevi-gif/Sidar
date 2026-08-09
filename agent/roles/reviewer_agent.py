@@ -42,15 +42,18 @@ class ReviewerAgent(BaseAgent):
 
     SYSTEM_PROMPT = (
         "Sen bir reviewer ajansın. Coder'dan gelen kod değişikliklerini QA gözlüğüyle inceler, "
-        "gerekirse dinamik unit test üretir, hedefe yönelik + regresyon testlerini birlikte çalıştırır ve "
+        "gerekirse dinamik unit test üretir, hedefe yönelik + regresyon testlerini birlikte "
+        "çalıştırır ve "
         "sonuçlara göre onay/red kararı verirsin. "
         "Kararını P2P geri bildirim olarak coder ajanına iletebilirsin."
     )
 
     TEST_GENERATION_PROMPT = (
-        "Sen kıdemli bir Python QA mühendisisin. Verilen değişiklik özetini analiz et ve yalnızca ham pytest "
+        "Sen kıdemli bir Python QA mühendisisin. Verilen değişiklik özetini analiz et ve yalnızca "
+        "ham pytest "
         "test kodu üret. Yanıtında açıklama, markdown çiti veya ek anlatım olmasın. "
-        "Testler deterministik olmalı, ağ erişimi kullanmamalı ve yalnızca proje içi modüllere odaklanmalıdır. "
+        "Testler deterministik olmalı, ağ erişimi kullanmamalı ve yalnızca proje içi modüllere "
+        "odaklanmalıdır. "
         f"{SHARED_TEST_FIXTURE_GUIDANCE} "
         "Dinamik import gerekiyorsa standart kütüphane ile güvenli yaklaşım kullan."
     )
@@ -122,7 +125,10 @@ class ReviewerAgent(BaseAgent):
 
     @classmethod
     def _normalize_test_candidate_verdict(cls, verdict: object) -> dict[str, object]:
-        """Reviewer LLM çıktısını doğrudan veya tool/argument sarmalından karar JSON'una indirger."""
+        """Reviewer LLM çıktısını karar JSON'una indirger.
+
+        Doğrudan veya tool/argument sarmalından gelen çıktıyı kabul eder.
+        """
         return normalize_test_candidate_verdict(verdict)
 
     @staticmethod
@@ -184,7 +190,8 @@ class ReviewerAgent(BaseAgent):
                 reason = f"ReviewerAgent semantik değerlendirme hatası: {exc}"
                 logger.warning(
                     "ReviewerAgent semantic review failed candidate_path=%s target_path=%s "
-                    "suggested_test_path=%s finding_index=%s attempt=%s candidate_preview=%s reason=%s",
+                    "suggested_test_path=%s finding_index=%s attempt=%s candidate_preview=%s "
+                    "reason=%s",
                     visible_candidate_path,
                     target_path or "<unknown>",
                     suggested_test_path or "<unknown>",
@@ -265,7 +272,7 @@ class ReviewerAgent(BaseAgent):
                 "weaknesses_missing": weaknesses_missing,
             }
 
-        return {  # pragma: no cover - defensive fallback; for-loop iki denemede de return ile çıkar.
+        return {  # pragma: no cover - defensive fallback; for-loop iki denemede de return ile çıkar
             "approved": False,
             "reason": "Geçersiz reviewer çıktısı: reason doğrulanamadı.",
             "weaknesses": last_weaknesses,
@@ -756,7 +763,8 @@ class ReviewerAgent(BaseAgent):
                                 "path": normalized,
                                 "reason": "graph",
                                 "action": (
-                                    "GraphRAG yüksek riskli genişleme sinyali verdi; bu dosyada import/sözleşme "
+                                    "GraphRAG yüksek riskli genişleme sinyali verdi; bu dosyada "
+                                    "import/sözleşme "
                                     "uyumunu ve etkilenen çağrı zincirini doğrula."
                                 ),
                                 "lsp_messages": [],
@@ -880,8 +888,8 @@ class ReviewerAgent(BaseAgent):
                 "path": str(browser_summary.get("current_url", "") or "browser:session"),
                 "reason": "browser-signal",
                 "action": (
-                    "Dinamik browser akışındaki başarısız veya onay bekleyen adımları yeniden üret; "
-                    "selector/DOM drift, izin akışı ve UI mutasyon yan etkilerini düzelt."
+                    "Dinamik browser akışındaki başarısız veya onay bekleyen adımları yeniden "
+                    "üret; selector/DOM drift, izin akışı ve UI mutasyon yan etkilerini düzelt."
                 ),
                 "failed_actions": failed_actions[:4],
                 "pending_actions": pending_actions[:4],
@@ -969,7 +977,8 @@ class ReviewerAgent(BaseAgent):
                     "name": "handoff",
                     "status": "pending" if is_blocked else "ready",
                     "detail": (
-                        "Riskli remediation için HITL onayı sonrası coder ajanına uygulanabilir plan devredilecek."
+                        "Riskli remediation için HITL onayı sonrası coder ajanına uygulanabilir "
+                        "plan devredilecek."
                         if needs_human_approval
                         else "Plan coder ajanına doğrudan uygulanabilir şekilde devredilecek."
                     ),
@@ -1243,7 +1252,8 @@ class ReviewerAgent(BaseAgent):
                     "decision": decision,
                     "risk": risk,
                     "summary": (
-                        f"[REVIEW:{status}] Dinamik + regresyon + LSP semantik denetimleri değerlendirildi. "
+                        f"[REVIEW:{status}] Dinamik + regresyon + LSP semantik denetimleri "
+                        f"değerlendirildi. "
                         f"{semantic_report['summary']} {graph_summary['summary']} "
                         f"{browser_summary['summary']} {combined_impact['summary']}"
                     ),

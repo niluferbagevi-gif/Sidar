@@ -44,9 +44,11 @@ class ConversationMemory:
         file_path: Path | None = None,
         max_turns: int = 20,
         encryption_key: str = "",
+        previous_encryption_keys: Sequence[str] | str = (),
         keep_last: int = 4,
     ) -> None:
-        # Geriye dönük uyumluluk: file_path hâlâ desteklenir, ancak yeni API base_dir/database_url'dur.
+        # Geriye dönük uyumluluk: file_path hâlâ desteklenir, ancak yeni API
+        # base_dir/database_url'dur.
         resolved_base_dir = Path(base_dir) if base_dir is not None else None
         if resolved_base_dir is None and file_path is not None:
             resolved_base_dir = Path(file_path).parent
@@ -60,6 +62,17 @@ class ConversationMemory:
         self.keep_last = keep_last
         self._lock = threading.RLock()
         self._fernet: Any | None = self._build_fernet(encryption_key)
+        raw_previous_keys = (
+            previous_encryption_keys.split(",")
+            if isinstance(previous_encryption_keys, str)
+            else previous_encryption_keys
+        )
+        current_key = str(encryption_key or "").strip()
+        self._previous_fernets = [
+            self._build_fernet(key)
+            for key in dict.fromkeys(str(item or "").strip() for item in raw_previous_keys)
+            if key and key != current_key
+        ]
 
         # Bulgu D: Config() her seferinde yeni nesne oluşturuyordu; varsa singleton kullanılıyor.
         self.cfg = get_config()
@@ -107,7 +120,6 @@ class ConversationMemory:
     @staticmethod
     def _build_fernet(encryption_key: str) -> Any | None:
         """Build a Fernet instance from the configured memory encryption key."""
-
         key = str(encryption_key or "").strip()
         if not key:
             return None
@@ -123,12 +135,10 @@ class ConversationMemory:
     @property
     def encryption_enabled(self) -> bool:
         """Return whether conversation message content is encrypted at rest."""
-
         return self._fernet is not None
 
     def _encrypt_content(self, content: str | None) -> str:
         """Encrypt message content for storage when Fernet encryption is enabled."""
-
         plaintext = content if content is not None else ""
         if self._fernet is None or plaintext.startswith(_ENCRYPTED_CONTENT_PREFIX):
             return plaintext
@@ -137,26 +147,35 @@ class ConversationMemory:
 
     def _decrypt_content(self, content: str | None) -> str:
         """Decrypt stored message content, leaving legacy plaintext untouched."""
-
         value = content if content is not None else ""
         if not value.startswith(_ENCRYPTED_CONTENT_PREFIX):
             return value
         if self._fernet is None:
             raise MemoryAuthError("Encrypted memory content requires MEMORY_ENCRYPTION_KEY.")
         token = value.removeprefix(_ENCRYPTED_CONTENT_PREFIX).encode("utf-8")
-        decrypted: bytes = self._fernet.decrypt(token)
-        return decrypted.decode("utf-8")
+        from cryptography.fernet import InvalidToken
+
+        for decryptor in (self._fernet, *self._previous_fernets):
+            try:
+                decrypted: bytes = decryptor.decrypt(token)
+                return decrypted.decode("utf-8")
+            except InvalidToken:
+                continue
+            except UnicodeDecodeError as exc:
+                raise MemoryAuthError("Encrypted memory content is not valid UTF-8.") from exc
+        raise MemoryAuthError(
+            "Encrypted memory content cannot be decrypted with the configured current or "
+            "previous MEMORY_ENCRYPTION_KEY values."
+        )
 
     def _message_plain_content(self, message: MessageRecord) -> str:
         """Return decrypted message content for DB-backed memory rows."""
-
         return self._decrypt_content(str(getattr(message, "content", "") or ""))
 
     def _encrypt_turns_for_storage(
         self, turns: Sequence[dict[str, object]]
     ) -> list[dict[str, object]]:
         """Return DB-writeable turn dictionaries with encrypted content fields."""
-
         encrypted_turns: list[dict[str, object]] = []
         for turn in turns:
             item = dict(turn)
