@@ -42,6 +42,29 @@ def test_required_workflows_pin_setup_python_to_311():
         assert versions == [PYTHON_MAJOR_MINOR] * len(versions)
 
 
+def test_codeql_covers_both_languages_with_security_extended_queries() -> None:
+    """Guard the CodeQL semantic SAST workflow's coverage/cadence.
+
+    A friend code review flagged that no semantic/dataflow SAST (CodeQL,
+    Semgrep, ...) existed for either Python or JS/TS -- Bandit is
+    pattern/AST-based and Python-only, npm audit is dependency-only. This
+    was already closed by adding .github/workflows/codeql.yml; this test
+    pins its language/query/cadence contract so it can't silently regress
+    (e.g. someone drops the javascript-typescript matrix entry or narrows
+    the query suite back to the low-recall default).
+    """
+    workflow = (WORKFLOW_DIR / "codeql.yml").read_text(encoding="utf-8")
+
+    assert "language: python" in workflow
+    assert "language: javascript-typescript" in workflow
+    assert "queries: security-extended" in workflow
+    assert "push:" in workflow
+    assert "pull_request:" in workflow
+    assert "schedule:" in workflow
+    assert "github/codeql-action/init@v3" in workflow
+    assert "github/codeql-action/analyze@v3" in workflow
+
+
 def test_workflows_do_not_reintroduce_python_312_or_multi_version_matrix():
     for workflow_path in WORKFLOW_DIR.glob("*.yml"):
         text = workflow_path.read_text()
@@ -78,6 +101,33 @@ def test_nightly_auth_benchmark_requires_cached_baseline_compare():
     assert '--benchmark-compare="${compare_file}"' in workflow
     assert '--benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}"' in workflow
     assert "BENCHMARK_COMPARE_REQUIRED=1 ancak .benchmarks" in workflow
+
+
+def test_ci_required_checks_docs_track_benchmark_seed_duplication_and_reactive_keepalive() -> None:
+    """Guard the benchmark-baseline follow-up notes in the required-checks doc.
+
+    docs/CI_REQUIRED_CHECKS.md must keep the follow-up notes a friend code
+    review raised for the benchmark baseline pipeline: keepalive is
+    restore-only (no proactive re-seed/alerting), and
+    benchmark-baseline-seed.yml/ci.yml's seed-benchmark-baseline job carry
+    real (not just cosmetic) drift that a workflow_call merge would need to
+    resolve deliberately.
+    """
+    seed_workflow = (WORKFLOW_DIR / "benchmark-baseline-seed.yml").read_text(encoding="utf-8")
+    ci_workflow = (WORKFLOW_DIR / "ci.yml").read_text(encoding="utf-8")
+    docs = Path("docs/CI_REQUIRED_CHECKS.md").read_text(encoding="utf-8")
+
+    assert "Known follow-up improvements" in docs
+    assert "Keepalive is still purely reactive" in docs
+    assert "workflow_call` reusable workflow is the right fix" in docs
+
+    # The enumerated drift must still be real, not a stale claim.
+    assert "actions/checkout@v5" in seed_workflow
+    assert "actions/checkout@v4" in ci_workflow
+    assert "retention-days: 30" in seed_workflow
+    assert "retention-days: 90" in ci_workflow
+    assert "compare_name" in seed_workflow
+    assert "seed_benchmark_baseline:" in ci_workflow
 
 
 def test_ci_has_required_installer_manifest_smoke_gate() -> None:

@@ -2,9 +2,9 @@
 
 ==================================
 
-Bu modül, proje için terminal tabanlı etkileşimli arayüzün giriş noktasıdır.
-Önceden `main.py` olarak adlandırılıyordu. İsim değişikliği yapılarak
-`cli.py` olarak taşınmıştır. Dosyanın geri kalanı, önceki sürümdeki
+Bu modül, proje için terminal tabanlı etkileşimli arayüzün (ajan REPL'i) gerçek
+giriş noktasıdır. Önceden `main.py` olarak adlandırılıyordu; isim değişikliği
+yapılarak `cli.py` olarak taşınmıştır. Dosyanın geri kalanı, önceki sürümdeki
 komut satırı argüman işleme, yapılandırma override etme ve `SidarAgent`
 oluşturma mantığını korur.
 
@@ -18,6 +18,12 @@ Kullanım:
 
 Dosyanın içeriği orijinal `main.py` dosyasından taşınmıştır. CLI giriş
 noktasının tüm yetenekleri aynı şekilde çalışmaya devam eder.
+
+Not (isimlendirme): Bu tarihsel taşıma, kökteki GÜNCEL `main.py`'den bahsetmiyor
+-- o dosya sonradan eklenen, tamamen farklı bir modül: etkileşimli sihirbaz/
+preflight başlatıcısı ("Ultimate Launcher"), ajan REPL mantığı içermez ve
+sonunda bu dosyayı (`cli.py`) veya `web_server.py`'yi alt süreçte başlatır.
+Yani `python main.py` sihirbazdan geçer, `python cli.py` doğrudan bu REPL'e girer.
 """
 
 import argparse

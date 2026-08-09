@@ -155,6 +155,42 @@ describe("ChatPanel", () => {
     webSocketOptions.onRoomState({ room_id: "ws:test", messages: [] });
     expect(store.hydrateRoom).toHaveBeenCalledWith({ room_id: "ws:test", messages: [] });
 
+    webSocketOptions.onRoomState({
+      room_id: "ws:telemetry",
+      messages: [],
+      participants: [{ id: "participant-1" }],
+      telemetry: [
+        {},
+        {
+          id: "event-2",
+          kind: "tool_call",
+          content: "Araç çağrısı",
+          ts: "2026-08-04T12:00:00Z",
+          source: "worker",
+        },
+      ],
+    });
+    expect(store.hydrateRoom).toHaveBeenLastCalledWith({
+      room_id: "ws:telemetry",
+      messages: [],
+      participants: [{ id: "participant-1" }],
+      telemetry: [
+        expect.objectContaining({
+          id: "ws:telemetry-0",
+          kind: "status",
+          content: "",
+          source: "room_state",
+        }),
+        {
+          id: "event-2",
+          kind: "tool_call",
+          content: "Araç çağrısı",
+          ts: "2026-08-04T12:00:00Z",
+          source: "worker",
+        },
+      ],
+    });
+
     webSocketOptions.onRoomMessage({ id: "m1", role: "user", content: "test" });
     expect(store.pushRoomMessage).toHaveBeenCalledWith({ id: "m1", role: "user", content: "test" });
 

@@ -18,6 +18,19 @@ function createBundleAnalysisPlugins() {
 
 export function createSidarManualChunks(id) {
   if (!id.includes("node_modules")) {
+    // rehypeSidarHighlight.ts is Sidar's own rehype plugin, not a vendor
+    // dependency, but it's only ever imported from the lazy
+    // ChatMarkdownRenderer entry alongside react-markdown/remark-gfm and
+    // their (large, rarely-changing) transitive parser graph. Without its
+    // own chunk, Rollup co-locates it with that vendor graph by default --
+    // so touching Sidar's own highlight config (e.g. adding a language)
+    // busts the cache for the entire vendor markdown bundle too. Giving it
+    // a dedicated chunk keeps the vendor graph's cache stable across those
+    // edits; see scripts/check-bundle-budget.mjs's dedicated chunk budget
+    // for the remaining (vendor-heavy) ChatMarkdownRenderer chunk.
+    if (id.endsWith("/src/lib/rehypeSidarHighlight.ts")) {
+      return "rehype-sidar-highlight";
+    }
     return undefined;
   }
 
@@ -42,12 +55,13 @@ export function createSidarManualChunks(id) {
     return "highlight-js-core";
   }
 
-  const parts = modulePath.split("/");
-  if (parts[0]?.startsWith("@") && parts.length > 1) {
-    return `${parts[0]}/${parts[1]}`;
-  }
-
-  return parts[0] || "vendor";
+  // Do not force every transitive package into its own chunk. In particular the
+  // lazy Markdown graph contains many tiny unified/micromark packages; splitting
+  // each one adds module wrappers and a separate gzip stream, inflating the total
+  // budget without improving the initial route. Rollup can co-locate that graph
+  // with its lazy entry while the deliberately high-signal React/highlight chunks
+  // above remain independently observable and cacheable.
+  return undefined;
 }
 
 export function createSidarProxyConfig(
@@ -122,10 +136,10 @@ export default defineConfig(() => {
           "src/lib/routerShim.tsx", // shim behavior is covered by dedicated router tests
         ],
         thresholds: {
-          lines: 90,
-          functions: 90,
-          branches: 90,
-          statements: 90,
+          lines: 98,
+          functions: 98,
+          branches: 98,
+          statements: 98,
         },
       },
     },

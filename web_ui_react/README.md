@@ -93,17 +93,28 @@ güncelleme sözleşmesi `docs/development/frontend-typescript-migration.md` iç
 - Bundle budget kapısı CI profilinde varsayılan olarak `FRONTEND_BUNDLE_BUDGET=1` ile
   `npm run build:budget` çalıştırır; yerel hızlı frontend stage'inde opt-in kullanmak için
   `FRONTEND_BUNDLE_BUDGET=1 bash run_tests.sh --stage frontend` çalıştırın. Bu kapı
-  Vite build sonrası React DOM chunk büyümesini, toplam JS boyutunu ve toplam gzip JS
-  boyutunu izler. React DOM varsayılan limiti `SIDAR_REACT_DOM_CHUNK_BUDGET_KB=220` değeridir;
-  opsiyonel toplam limitler için `SIDAR_TOTAL_JS_BUDGET_KB` ve `SIDAR_TOTAL_GZIP_BUDGET_KB`
-  verilebilir. `SIDAR_BUNDLE_BUDGET_WARN_RATIO` varsayılan `0.9` ile toplam JS/gzip
+  Vite build sonrası **iki adet isimli chunk bütçesini** (React DOM ve ChatMarkdownRenderer),
+  toplam JS boyutunu ve toplam gzip JS boyutunu izler — her isimli chunk kendi tavanına karşı
+  bağımsız olarak geçit koyar, yalnızca toplam bütçeye güvenmez (aksi halde yanlışlıkla eklenen
+  bir remark/rehype plugin'i veya lazy-olmaktan çıkan bir import, toplam bütçe aşılana kadar
+  fark edilmeden büyüyebilir). React DOM varsayılan limiti `SIDAR_REACT_DOM_CHUNK_BUDGET_KB=220`,
+  ChatMarkdownRenderer varsayılan limiti `SIDAR_MARKDOWN_CHUNK_BUDGET_KB=190` değeridir; opsiyonel
+  toplam limitler için `SIDAR_TOTAL_JS_BUDGET_KB` ve `SIDAR_TOTAL_GZIP_BUDGET_KB` verilebilir.
+  `SIDAR_BUNDLE_BUDGET_WARN_RATIO` varsayılan `0.9` ile toplam JS/gzip
   budget kullanımını %90 seviyesinde uyarı olarak raporlar. `SIDAR_BUNDLE_GZIP_TREND_WARN_KB`
   varsayılan `5` KB artış eşiğiyle önceki
   bundle raporuna göre toplam gzip büyümesini uyarı olarak raporlar; önceki rapor yolu
   `SIDAR_BUNDLE_BUDGET_PREVIOUS_REPORT_PATH` ile verilebilir. Her koşu en büyük 5 JS chunk'ı
   terminalde listeler ve makinece okunabilir raporu `artifacts/frontend-bundle-budget.json`
-  dosyasına yazar. Chat markdown renderer ana chat mesajından lazy import edilir;
-  `highlight.js/lib/core` ve sınırlı dil modülleri yalnız bu markdown chunk'ına dahildir.
+  dosyasına yazar. Chat markdown renderer ana chat mesajından lazy import edilir. Markdown'ın
+  çok sayıdaki küçük `unified`/`micromark` bağımlılığı Rollup tarafından aynı lazy feature
+  chunk'ında (`ChatMarkdownRenderer-*.js`) birleştirilir; böylece ayrı gzip stream ve
+  module-wrapper maliyeti toplam bütçeyi şişirmez. Sidar'ın kendi `rehypeSidarHighlight.ts`
+  rehype plugin'i bu vendor chunk'ından ayrı, kendi (`rehype-sidar-highlight-*.js`) manual
+  chunk'ında taşınır — highlight config'ine (örn. yeni bir dil eklemek) yapılan bir değişiklik
+  büyük, nadiren değişen `react-markdown`/`remark-gfm` vendor grafiğinin cache'ini bozmaz.
+  `highlight.js/lib/core` yalnız bash, JavaScript, JSON ve Python dil modülleriyle
+  sınırlandırılmış ayrı bir gözlemlenebilir lazy chunk olarak korunur.
 - CI, backend `htmlcov/` artefaktıyla aynı görünürlük seviyesinde `frontend-coverage-report` artefaktını
   uyarı modunda yükler; `web_ui_react/coverage/`, HTML `lcov-report/`, `lcov.info` ve
   `coverage-final.json` dosyaları tek artefakt altında saklanır.

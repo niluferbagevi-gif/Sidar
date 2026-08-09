@@ -21,6 +21,12 @@ modüllerden beslenir:
 - `core/config_dirs.py`, `core/config_secrets.py`, `core/config_validators.py`,
   `core/config_observability.py`, `core/config_postgres.py`: dizin, secret,
   validasyon, telemetry ve PostgreSQL yardımcıları.
+- `core/config_scoped_settings.py`: `config_llm.py` ve `config_quality.py`'nin
+  paylaştığı, dotenv'e scoped `BaseSettings` alt sınıfı üreten `build_scoped_settings_type()`
+  helper'ı — mypy `--strict` altında pydantic-settings'in `_env_file=...` dinamik
+  init kwarg'ından kaçınmak için `type(...)` ile throwaway subclass üretir; bir
+  arkadaş kod incelemesinde bu ~15 satırlık blok iki dosyada birebir kopyalanmış
+  hâlde bulundu ve tek yere indirildi.
 
 > Not (Doğrulama): Eski tek dosya satır sayısı notları artık mimari kalite ölçütü
 > değildir. `config.py` facade yüzeyi büyük kalabilir; refactor başarısı eski import

@@ -2507,6 +2507,43 @@ describe("useVoiceAssistant — kalan branch boşlukları için testler", () => 
     expect(result.current.state.diagnostics.some((d) => d.value.includes("#0"))).toBe(true);
   });
 
+  it("stop() sonrası gelen voice_interruption ack'i idle durumunu 'interrupted'a ezmez", async () => {
+    // stop() {action:"cancel"} gönderir ve sunucu her cancel'ı bir
+    // voice_interruption mesajıyla ack'ler -- mikrofon zaten kapalıyken bile.
+    // Bu ack asenkron geldiğinden, stop()'un senkron olarak set ettiği "idle"
+    // durumunun üzerine "interrupted" yazmamalı (mikrofon aktifken gelen gerçek
+    // bir kesinti hâlâ "interrupted" göstermeli; bkz. bir önceki test).
+    const { getStoredToken } = await import("../lib/api.js");
+    getStoredToken.mockReturnValue("token");
+    const ws = makeWsMock(WebSocket.OPEN);
+    globalThis.WebSocket = withOpenSocketCtor(() => ws);
+    const stream = { getTracks: vi.fn(() => [{ stop: vi.fn() }]) };
+    globalThis.MediaRecorder = class { static isTypeSupported() { return true; } start() {} stop() {} };
+    globalThis.AudioContext = class {
+      createMediaStreamSource() { return { connect: vi.fn() }; }
+      createAnalyser() { return { fftSize: 2048, getByteTimeDomainData: vi.fn((f) => f.fill(128)) }; }
+      close() { return Promise.resolve(); }
+    };
+    Object.defineProperty(globalThis.navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+      configurable: true,
+    });
+
+    const { result } = renderHook(() => useVoiceAssistant());
+    await act(async () => { await result.current.start(); });
+    act(() => { result.current.stop(); });
+    expect(result.current.state.status).toBe("idle");
+    expect(result.current.state.isMicActive).toBe(false);
+
+    act(() => {
+      ws.onmessage?.({ data: JSON.stringify({ voice_interruption: "manual_interrupt" }) });
+    });
+
+    expect(result.current.state.status).toBe("idle");
+    expect(result.current.state.summary).not.toContain("SİDAR sesi kesildi");
+    expect(result.current.state.summary).toBe("Mikrofon beklemede. Duplex konuşma için hazır.");
+  });
+
   it("speech_start ikinci kez gelirse erken return eder ve stop sonrası eski RAF callback'i güvenli döner", async () => {
     const { getStoredToken } = await import("../lib/api.js");
     getStoredToken.mockReturnValue("token");

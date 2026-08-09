@@ -34,8 +34,14 @@ metriği yerine yazılmamalıdır.
   gibi kullanılmamalıdır. Unit ağırlığı yüksek olduğu için refactor PR'larında yalnız unit coverage'a güvenilmez; `web_server.py`
   ve `core/db/__init__.py` gibi facade taşımalarında en az bir integration sahnesi de eklenir.
 - `run_tests.sh` Aşama 1 unit fazı artık pytest-xdist mevcutsa `PYTEST_WORKERS` ve
-  `PYTEST_DIST_MODE=loadgroup` ile yüksek paralellikte çalışır. Aşama 2 integration/smoke/e2e fazı
-  ise `INTEGRATION_PYTEST_WORKERS` varsayılanı ile sınırlı paralellik kullanır; bu nedenle "Faz 1
+  `PYTEST_DIST_MODE=loadgroup` ile yüksek paralellikte (varsayılan `auto`, CI runner'da
+  çekirdek sayısı kadar) çalışır. Aşama 2 integration/smoke/e2e fazı ise
+  `INTEGRATION_PYTEST_WORKERS` varsayılan **2** ile kasıtlı olarak sınırlı paralellik
+  kullanır: bu fazdaki testler CI'da tek, paylaşılan bir PostgreSQL servisine
+  (`DATABASE_URL=.../sidar_test`, worker başına izole değil) bağlanır — unit fazının
+  mock/izole state'inin aksine, yüksek paralellik aynı tabloları/satırları paylaşan
+  testler arasında sahte-flaky race condition riski taşır (bkz.
+  `scripts/test_gates/coverage_helpers.sh`'daki gerekçe yorumu). Bu nedenle "Faz 1
   paralel değil" tespiti güncel script için geçerli değildir.
 - Backend pytest fazları artık CI/test özeti için faz bazlı JUnit çıktıları üretir:
   - `artifacts/pytest/backend-unit.xml`

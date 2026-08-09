@@ -453,7 +453,10 @@ Not: `migrations/env.py`, sırasıyla `-x database_url=...` ve `DATABASE_URL` en
 > **Not:** GPU desteği için `torch` ve `torchvision` kurulumunda CUDA wheel kullanacaksanız kurulumdan önce
 > `PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu124` değişkenini tanımlayın. CPU-only kurulumlarda
 > varsayılan `REQUIRE_GPU=false` kalır; `ENABLE_GPU_TESTS` değeri verilmezse `run_tests.sh` GPU donanımını
-> otomatik algılar ve yalnız `nvidia-smi`/`nvidia-smi.exe` bulunduğunda GPU testlerini etkinleştirir.
+> otomatik algılar ve yalnız `nvidia-smi`/`nvidia-smi.exe` bulunduğunda GPU testlerini etkinleştirir. **GPU'lu geliştirme
+> makinesinde hızlı bir varsayılan döngü isteyen geliştiriciler** için bu otomatik algılama bilinçli bir tasarım
+> kararıdır (GPU testleri sessizce atlanmasın diye), fakat `ENABLE_GPU_TESTS=0 bash run_tests.sh` ile açıkça
+> devre dışı bırakılabilir — `auto` değerini geçersiz kılar ve `nvidia-smi` bulunsa bile GPU testlerini atlar.
 
 ### Çevre Değişkenleri
 
@@ -711,6 +714,10 @@ ekler ve bunları merge öncesi sinyal olarak kullanır:
 - frontend `npm run lint`, `npm run typecheck`, `npm audit --audit-level=high` ve
   Playwright Chromium smoke hazırlığı/raporu;
 - Bandit ve `pip-audit` SAST/bağımlılık güvenlik kapıları;
+- ayrı `.github/workflows/codeql.yml`: Python ve JS/TS için CodeQL semantic/dataflow
+  SAST taraması (push/PR/haftalık zamanlanmış), bulgular Security sekmesinde alert
+  olarak raporlanır — Bandit'in aksine fonksiyon/modül sınırları arası taint-tracking
+  yapar ve tek gerçek JS/TS güvenlik taramasıdır;
 - izole PostgreSQL test DB hazırlığı, Alembic upgrade, kritik smoke import gates ve
   installer/runtime smoke testleri;
 - `run_tests.sh` tam kalite kapısı: coverage ratchet, frontend E2E, benchmark JSON/trend
@@ -1093,11 +1100,13 @@ Sidar/
 ├── web_server.py           # 86 REST endpoint + `/ws/chat` + `/ws/voice`
 ├── docker-compose.yml      # redis, postgres, sidar-web, sidar-web-gpu, sidar-ai, sidar-gpu, docker-socket-proxy, jaeger, prometheus, grafana
 ├── README.md               # Ürün ve kurulum rehberi
-├── ARCHITECTURE.md         # Aktif v5.2.0 mimari doğruluk kaynağı
-├── PROJE_RAPORU.md         # Bölümlenmiş kapsamlı rapor indeksi
-├── project-report/         # Konu bazlı proje raporu bölümleri
-├── AUDIT_REPORT_v5.0.md    # Güvenlik, coverage ve denetim raporu
-└── TEKNIK_REFERANS.md      # Operasyonel/uygulama seviyesi sözleşmeler
+└── docs/                   # Mimari, denetim, runbook ve modül notu belgeleri (115 md dosyası)
+    ├── ARCHITECTURE.md      # Aktif v5.2.0 mimari doğruluk kaynağı
+    ├── PROJE_RAPORU.md      # Bölümlenmiş kapsamlı rapor indeksi
+    ├── project-report/      # Konu bazlı proje raporu bölümleri (6 dosya)
+    ├── AUDIT_REPORT_v5.0.md # Güvenlik/coverage denetim raporu (tarihsel snapshot, ARŞİV NOTU ile işaretli)
+    ├── module-notes/        # Modül bazlı geliştirici notları (77 dosya)
+    └── TEKNIK_REFERANS.md   # Operasyonel/uygulama seviyesi sözleşmeler
 ```
 
 ---
@@ -1371,7 +1380,7 @@ Bu proje Sidar ekosisteminin bir parçasıdır.
 ## 🧹 Depo Hijyeni
 
 - Kök dizindeki geçici Ar-Ge not dosyası (`.note`) kaldırıldı; güncel mimari kararları
-  için `ARCHITECTURE.md` ve `RFC-MultiAgent.md`, ayrıntılı tarihsel bağlam için
-  bölümlenmiş `PROJE_RAPORU.md` indeksi kullanılmalıdır.
+  için `docs/ARCHITECTURE.md` ve `docs/RFC-MultiAgent.md`, ayrıntılı tarihsel bağlam için
+  bölümlenmiş `docs/PROJE_RAPORU.md` indeksi kullanılmalıdır.
 - CI pipeline artık boş test artifact dosyalarını otomatik tespit eder (`find tests -type f -size 0`).
 - Proje satır/dosya metrikleri tek komutla `scripts/audit_metrics.sh` üzerinden (JSON/Markdown) standart olarak üretilir.

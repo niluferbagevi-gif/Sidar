@@ -33,6 +33,62 @@ def test_v52_architecture_is_canonical_and_versioned_reports_are_historical() ->
     assert "Tarihsel Faz C–E evrim kaydıdır" in v51
 
 
+def test_readme_repo_tree_docs_entries_are_nested_under_docs() -> None:
+    """README's top-level repo-tree diagram must point at real paths.
+
+    A friend code review of docs/ bloat found `ARCHITECTURE.md`,
+    `PROJE_RAPORU.md`, `project-report/`, `AUDIT_REPORT_v5.0.md` and
+    `TEKNIK_REFERANS.md` listed as repo-root entries in README.md's tree
+    diagram, even though all five live under `docs/` and none exist at
+    repo root -- `docs/` itself never even appeared in the tree.
+    """
+    readme = Path("README.md").read_text(encoding="utf-8")
+    tree_start = readme.index("```\nSidar/\n")
+    tree_end = readme.index("```", tree_start + 4)
+    tree_lines = readme[tree_start:tree_end].splitlines()
+
+    top_level_names = {line.split()[1] for line in tree_lines if line.startswith(("├── ", "└── "))}
+
+    assert "docs/" in top_level_names
+
+    docs_only_entries = (
+        "ARCHITECTURE.md",
+        "PROJE_RAPORU.md",
+        "project-report/",
+        "AUDIT_REPORT_v5.0.md",
+        "module-notes/",
+        "TEKNIK_REFERANS.md",
+    )
+    for entry in docs_only_entries:
+        assert entry not in top_level_names, (
+            f"{entry!r} listed as a repo-root entry but actually lives under docs/"
+        )
+        bare_name = entry.rstrip("/")
+        assert (Path("docs") / bare_name).exists()
+        assert not Path(bare_name).exists()
+
+
+def test_main_and_cli_docstrings_cross_reference_the_naming_split() -> None:
+    """`main.py`/`cli.py` naming is confusing without an explicit pointer.
+
+    A friend code review flagged that `main.py` is actually the launcher/
+    setup wizard while `cli.py` -- whose own docstring says it was
+    "previously named main.py" -- is the real agent REPL entry point.
+    Both files' module docstrings, and their docs/module-notes/*.md
+    companions, must say so explicitly so a reader of either file
+    understands the split without outside context.
+    """
+    main_py = Path("main.py").read_text(encoding="utf-8")
+    cli_py = Path("cli.py").read_text(encoding="utf-8")
+    main_notes = Path("docs/module-notes/main.py.md").read_text(encoding="utf-8")
+    cli_notes = Path("docs/module-notes/cli.py.md").read_text(encoding="utf-8")
+
+    assert "ajan REPL'i değildir" in main_py
+    assert "tamamen farklı bir modül" in cli_py
+    assert "docs/module-notes/cli.py.md" in main_notes
+    assert "docs/module-notes/main.py.md" in cli_notes
+
+
 def test_project_report_distinguishes_debt_from_future_product_phases() -> None:
     """The report must not hide tracked campaigns behind an absolute zero-debt claim."""
     debt = Path("docs/project-report/04-teknik-borc-ve-yapilandirma.md").read_text(encoding="utf-8")
@@ -62,3 +118,46 @@ def test_project_report_distinguishes_debt_from_future_product_phases() -> None:
     assert "RLHF/DPO orkestrasyonu" in roadmap
     assert "fail_under = 100" in roadmap
     assert "%90" not in roadmap
+
+
+def test_frontend_typescript_migration_narrative_reflects_component_completion() -> None:
+    """The migration narrative must not lag reality once app code is fully typed.
+
+    A friend code review flagged that the install-log inventory (js=9, jsx=20,
+    ts=10, tsx=22) was correct but tsconfig.json's comment and the migration
+    doc still described "most of the app remains .jsx/.js" / a "component
+    tree" needing type coverage -- even though every remaining untyped file
+    under web_ui_react/src is a test file, not application source. This test
+    pins both the corrected narrative and the underlying fact it depends on,
+    so the two can't drift apart again.
+    """
+    src_dir = Path("web_ui_react/src")
+    untyped_files = sorted(
+        [*src_dir.rglob("*.js"), *src_dir.rglob("*.jsx")], key=lambda p: p.as_posix()
+    )
+    assert untyped_files, "expected at least one untyped file to exist"
+    non_test_app_files = [
+        path
+        for path in untyped_files
+        if ".test." not in path.name and path != src_dir / "test" / "setup.js"
+    ]
+    assert non_test_app_files == [], (
+        "found untyped application source outside the test tree -- update the "
+        "migration narrative back to describing real remaining component work: "
+        f"{non_test_app_files}"
+    )
+
+    tsconfig = Path("web_ui_react/tsconfig.json").read_text(encoding="utf-8")
+    assert "application/component" in tsconfig
+    assert "migration is complete" in tsconfig
+    assert "zero untyped application source remains" in tsconfig
+    assert "most of the app remains .jsx/.js" not in tsconfig
+
+    migration_doc = Path("docs/development/frontend-typescript-migration.md").read_text(
+        encoding="utf-8"
+    )
+    assert "bileşen/hook/lib ağacının" in migration_doc
+    assert "migrasyonu tamamlanmıştır" in migration_doc
+    assert "sıfır hata vardır" in migration_doc
+    assert "Leaf React bileşenleri ve prop/event/ref tipleri" not in migration_doc
+    assert "kalan test dosyalarının bir kısmının" in migration_doc.lower()

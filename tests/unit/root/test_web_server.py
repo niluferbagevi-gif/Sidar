@@ -4203,19 +4203,25 @@ def test_reap_child_processes_nonblocking_handles_generic_exception(monkeypatch)
 
 def test_list_child_ollama_pids_ps_fallback_handles_malformed_and_failures(monkeypatch):
     monkeypatch.setattr(web_server, "os", SimpleNamespace(name="posix", getpid=lambda: 77))
-    original_import = __import__
 
     class _Psutil:
         class Process:
             def __init__(self, _pid):
                 raise RuntimeError("psutil broken")
 
-    def _fake_import(name, *args, **kwargs):
-        if name == "psutil":
-            return _Psutil
-        return original_import(name, *args, **kwargs)
-
-    monkeypatch.setattr("builtins.__import__", _fake_import)
+    # _resolve_psutil_module() resolves psutil via importlib.import_module(),
+    # which checks sys.modules directly and only falls through to
+    # builtins.__import__ when the name isn't already cached there. psutil is
+    # a real transitive dependency of several heavy libraries in this repo
+    # (transformers, accelerate, onnxruntime, ...), so once some other test in
+    # the same pytest-xdist worker has imported it for real, patching
+    # builtins.__import__ silently stops intercepting "psutil" and this test
+    # exercises the real library instead of the mocked failure path — flaky
+    # depending on worker/test ordering. Patching sys.modules["psutil"]
+    # directly (matching test_list_child_ollama_pids_windows_and_psutil_failure
+    # and test_list_child_ollama_pids_psutil_success_path above) is robust
+    # regardless of prior import state.
+    monkeypatch.setitem(sys.modules, "psutil", _Psutil)
     monkeypatch.setattr(
         web_server.process_lifecycle,
         "subprocess",
