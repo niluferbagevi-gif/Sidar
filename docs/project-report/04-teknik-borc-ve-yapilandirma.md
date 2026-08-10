@@ -47,7 +47,7 @@
 #### 11.1.2 Frontend TypeScript ratchet durumu
 
 `web_ui_react/typescript-migration-baseline.json`, `web_ui_react/src` için güncel
-geriye-gitmeme sınırını **en fazla 29 untyped (`.js` + `.jsx`)** ve **en az 32 typed
+geriye-gitmeme sınırını **en fazla 28 untyped (`.js` + `.jsx`)** ve **en az 39 typed
 (`.ts` + `.tsx`)** dosya olarak tanımlar. `npm run typecheck:inventory`, untyped
 sayısındaki artışı veya typed sayısındaki düşüşü fail-closed reddeder. Mevcut baseline,
 2026-09-30 tarihli 45/15 ve 2026-12-15 tarihli 30/30 ara hedeflerinden daha sıkıdır;

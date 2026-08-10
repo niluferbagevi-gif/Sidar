@@ -32,6 +32,14 @@ class WeirdAgent(BaseAgent):
 """
 
 
+@pytest.fixture(autouse=True)
+def _enable_worker_internal_execution(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Model the worker container's intentional internal execution boundary."""
+    monkeypatch.setenv("SIDAR_ENV", "test")
+    monkeypatch.setenv("SIDAR_PLUGIN_SANDBOX_BACKEND", "in_process")
+    monkeypatch.setenv("SIDAR_ENABLE_IN_PROCESS_PLUGINS", "1")
+
+
 def test_worker_describes_and_runs_versioned_agent_rpc() -> None:
     base = {
         "rpc_version": PLUGIN_RPC_VERSION,
