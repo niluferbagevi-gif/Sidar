@@ -63,10 +63,21 @@ class DockerPluginSandboxBackend:
             environ.get("SIDAR_PLUGIN_SANDBOX_IMAGE", "sidar:latest")
         )
         self.timeout = max(1, int(environ.get("SIDAR_PLUGIN_SANDBOX_TIMEOUT", "10")))
+        # 256m (this project's default elsewhere for lighter CLI/SDK code-exec
+        # sandboxes -- managers/code/docker.py, managers/code_manager.py) was
+        # never actually enough here: describe() (imports the full
+        # agent.base_agent chain -- config/LLM client/RAG deps -- but never
+        # instantiates BaseAgent) fits, but run_task() additionally
+        # constructs a real BaseAgent (Config() + LLMClient(...)) inside the
+        # container and the process died with a non-zero exit -- no timeout,
+        # no malformed JSON, the signature of an OOM kill -- once this test
+        # group's first real end-to-end run finally exercised that path.
+        # 512m gives that construction headroom without loosening any other
+        # isolation flag.
         self.memory = sanitize_docker_token(
-            environ.get("SIDAR_PLUGIN_SANDBOX_MEMORY", "256m"),
+            environ.get("SIDAR_PLUGIN_SANDBOX_MEMORY", "512m"),
             pattern=DOCKER_MEMORY_RE,
-            default="256m",
+            default="512m",
             kind="plugin memory",
         )
         self.cpus = sanitize_docker_token(
@@ -75,7 +86,11 @@ class DockerPluginSandboxBackend:
             default="0.5",
             kind="plugin cpu",
         )
-        self.pids = max(1, int(environ.get("SIDAR_PLUGIN_SANDBOX_PIDS", "64")))
+        # Widened alongside the memory bump: the same real BaseAgent
+        # construction may spin up thread pools (BLAS/OpenMP workers in the
+        # ML dependency stack) that a lightweight describe()-only call never
+        # touches; 64 was sized for the latter.
+        self.pids = max(1, int(environ.get("SIDAR_PLUGIN_SANDBOX_PIDS", "128")))
 
     def _isolation_argv(self) -> list[str]:
         """Return the ``docker run`` isolation flags shared by every invocation.
