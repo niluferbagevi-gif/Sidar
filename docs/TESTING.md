@@ -232,14 +232,31 @@ eksikliğinin skip olarak gizlenmesini engeller.
 
 `tests/integration/web/test_plugin_sandbox_integration.py` yukarıdaki gerçek-container
 matrisinden farklıdır: plugin sandbox backend'i her ortamda varsayılan olarak Docker
-kullandığı için (`web/plugins/sandbox.py:plugin_sandbox_backend`) bu test *skip olmadan*
-gerçek Docker + `sidar:latest` imajını gerektirir. `make dev-full` ve
-`make base-quality-gates` (dolayısıyla `make production-readiness` ve `make ci-parity`)
-bu yüzden `AUTO_BUILD_DOCKER_TEST_IMAGE=1 DOCKER_TEST_IMAGE=sidar:latest` ile çalışır;
+kullandığı için (`web/plugins/sandbox.py:plugin_sandbox_backend`) bu test de gerçek
+Docker + `sidar:latest` imajını gerektirir. Asıl güvence `make dev-full` ve
+`make base-quality-gates`'in (dolayısıyla `make production-readiness` ve `make ci-parity`'nin)
+`AUTO_BUILD_DOCKER_TEST_IMAGE=1 DOCKER_TEST_IMAGE=sidar:latest` ile çalışması — bu iki
+yolda imaj koleksiyon anından önce build edildiği için modül asla skip olmaz.
 `prepare_docker_test_image()` (`scripts/test_gates/backend_helpers.sh`) imaj zaten
-mevcutsa no-op olduğundan bu yalnızca ilk çalıştırmada build maliyeti getirir. Docker
-daemonsuz bir ortamda bu testin geçmesi zaten mümkün değildir — `install_sidar.sh`
-kurulumu Docker daemon erişimini önkoşul olarak fail-closed doğrular.
+mevcutsa no-op olduğundan bu yalnızca ilk çalıştırmada build maliyeti getirir.
+
+Modül ayrıca `tests/_helpers/docker_sandbox.py`'deki paylaşılan probe'u (container-escape
+matrisiyle aynı) kullanan ikincil bir güvenlik ağı taşır: Docker/imaj hazır değilse temiz bir
+skip üretir, `make`/`run_tests.sh` akışını atlayıp dosyayı tek başına çalıştıran (örn.
+`pytest tests/integration/web/test_plugin_sandbox_integration.py`) bir geliştiricinin
+opak bir `PluginSandboxError`/`HTTPException(503)` yerine anlaşılır bir mesaj görmesini
+sağlar. Bu guard **tek başına yeterli bir önlem değildir** — yalnızca yukarıdaki Makefile
+düzeltmesiyle birlikte ikincil bir katman olarak düşünülmelidir; tek başına eklenmiş olsaydı
+Docker'ı olmayan herhangi bir makinede bu P0 güvenlik testinin sessizce kapsam dışı kalmasına
+yol açardı. `test_plugin_sandbox_container_escape.py`'nin aksine bu modül `make
+plugin-sandbox-security`'ye veya CI'nın ayrı container-escape enforcement adımına
+kablolanmadı: o dosyanın tersine bu modül `web_server`'ı import eder ve yalnızca
+`run_tests.sh`'in kurduğu tam yapılandırma/secret ortamına bağımlıdır — onu Docker'a
+özgü, hafif hedefe zorlamak bir Docker-erişilebilirlik hatasını ilgisiz bir ortam-yapılandırma
+hatasıyla değiştirmiş olurdu. `SIDAR_REQUIRE_PLUGIN_SANDBOX_CONTAINER_TESTS=1` yine de
+elle opt-in için kullanılabilir. Docker daemonsuz bir ortamda `make dev-full`/`make
+base-quality-gates`'in geçmesi zaten mümkün değildir — `install_sidar.sh` kurulumu Docker
+daemon erişimini önkoşul olarak fail-closed doğrular.
 
 `make doctor-production-readiness` hedefi production-readiness kapısından önce ortamı
 mutasyonsuz denetler: `uv`, Python 3.11, `portaudio.h`,

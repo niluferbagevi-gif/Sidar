@@ -33,7 +33,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import shutil
 
 # B404 review: fixed-argument docker CLI invocations only, mirrors sandbox.py.
 import subprocess  # nosec B404
@@ -42,6 +41,7 @@ import uuid
 
 import pytest
 
+from tests._helpers.docker_sandbox import docker_bin, require_or_skip_reason
 from web.plugins.sandbox import (
     DockerPluginSandboxBackend,
     PluginSandboxError,
@@ -157,44 +157,6 @@ print(json.dumps({"outcome": outcome, "spawned": spawned}))
 _SECRET_TOKEN = f"host-secret-{uuid.uuid4().hex}"
 
 
-def _docker_bin() -> str | None:
-    return shutil.which("docker")
-
-
-def _docker_daemon_available() -> bool:
-    docker_bin = _docker_bin()
-    if not docker_bin:
-        return False
-    try:
-        completed = subprocess.run(  # nosec B603
-            [docker_bin, "info", "--format", "{{.ServerVersion}}"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    return completed.returncode == 0
-
-
-def _image_available(image: str) -> bool:
-    docker_bin = _docker_bin()
-    if not docker_bin:
-        return False
-    try:
-        completed = subprocess.run(  # nosec B603
-            [docker_bin, "image", "inspect", image],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    return completed.returncode == 0
-
-
 def _backend(**env_overrides: str) -> DockerPluginSandboxBackend:
     """Build a backend that resolves the real target image from the environment."""
     merged = dict(os.environ)
@@ -203,32 +165,13 @@ def _backend(**env_overrides: str) -> DockerPluginSandboxBackend:
 
 
 _TARGET_IMAGE = _backend().image
-_DOCKER_READY = _docker_daemon_available()
-_IMAGE_READY = _DOCKER_READY and _image_available(_TARGET_IMAGE)
-_CONTAINER_TESTS_REQUIRED = os.getenv(
-    "SIDAR_REQUIRE_PLUGIN_SANDBOX_CONTAINER_TESTS", "0"
-).strip().lower() in {"1", "true", "yes", "on"}
-
-if _CONTAINER_TESTS_REQUIRED and not _IMAGE_READY:
-    raise RuntimeError(
-        "SIDAR_REQUIRE_PLUGIN_SANDBOX_CONTAINER_TESTS=1 ancak gerçek Docker daemon'ı "
-        f"ve plugin sandbox imajı ({_TARGET_IMAGE}) hazır değil."
-    )
+_IMAGE_READY, _SKIP_REASON = require_or_skip_reason(_TARGET_IMAGE)
 
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.slow,
     pytest.mark.docker,
-    pytest.mark.skipif(
-        not _IMAGE_READY,
-        reason=(
-            "Gerçek Docker daemon'ı ve build edilmiş plugin sandbox imajı "
-            f"({_TARGET_IMAGE}) gerektirir; imaj/daemon yoksa bu modül atlanır. "
-            "ci.yml AUTO_BUILD_DOCKER_TEST_IMAGE=1 ile ve release-quality.yml "
-            "docker-smoke job'u SIDAR_PLUGIN_SANDBOX_IMAGE ile gerçek imajı sağlar; "
-            "yerelde make plugin-sandbox-security kullanın."
-        ),
-    ),
+    pytest.mark.skipif(not _IMAGE_READY, reason=_SKIP_REASON),
 ]
 
 
@@ -247,10 +190,10 @@ def _run_probe(script: str, *, env: dict[str, str] | None = None, timeout: int =
 
 
 def _running_containers_for_image(image: str) -> list[str]:
-    docker_bin = _docker_bin()
-    assert docker_bin is not None
+    docker = docker_bin()
+    assert docker is not None
     completed = subprocess.run(  # nosec B603
-        [docker_bin, "ps", "-a", "-q", "--filter", f"ancestor={image}"],
+        [docker, "ps", "-a", "-q", "--filter", f"ancestor={image}"],
         capture_output=True,
         text=True,
         timeout=10,
