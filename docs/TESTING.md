@@ -223,6 +223,16 @@ make frontend-gate         # Frontend lint/typecheck/coverage/e2e kalite kapıs�
 make backend-integration   # Backend integration stage'i; global coverage gate uygulanmaz.
 ```
 
+> `DOCKER_TEST_IMAGE`/`sidar:latest`'in **iki bağımsız tüketicisi** var, kolayca karıştırılabilir:
+> `managers/code_manager.py`'nin `CodeManager` Docker REPL/code-exec sandbox'ı (README.md'nin
+> "Coverage/QA ajanları için önerilen kalıcı ayar" bölümü, ~satır 1144-1157) ve buradaki plugin
+> marketplace sandbox'ı (`web/plugins/sandbox.py`, `SEC-PLUGIN-001`). İkisi de aynı ortam
+> değişkenlerini (`DOCKER_TEST_IMAGE`, `AUTO_BUILD_DOCKER_TEST_IMAGE`) ve varsayılan olarak aynı
+> imajı (`sidar:latest`) paylaşır, ama farklı test dosyalarını besler:
+> `tests/unit/managers/test_code_manager.py` (Docker REPL) ile
+> `tests/integration/web/test_plugin_sandbox_*.py` (plugin sandbox). Aşağıdaki paragraflar
+> yalnızca ikinci tüketiciyi (plugin sandbox) kapsar.
+
 Plugin sandbox güvenlik matrisi için genel integration komutunu tek başına çalıştırmak,
 Docker daemon'ı veya imaj yoksa altı testi bilinçli olarak skip eder. Release kanıtı
 üretirken `make plugin-sandbox-security` kullanılmalıdır: hedef Docker erişimini fail-closed

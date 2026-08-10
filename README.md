@@ -1155,7 +1155,18 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > ortamında eksik proje imajını kalite kapısından önce otomatik hazırlamak için
 > `AUTO_BUILD_DOCKER_TEST_IMAGE=1 DOCKER_TEST_IMAGE=sidar:latest bash run_tests.sh` kullanın.
 > Farklı context gerekiyorsa `DOCKER_TEST_IMAGE_BUILD_CONTEXT` değerini açıkça verin.
+> `make dev-full`/`make base-quality-gates` (dolayısıyla `make production-readiness`/`make
+> ci-parity`) bunu zaten kendi tarifinde otomatik yapar; yukarıdaki elle env-var kombinasyonu
+> yalnızca `bash run_tests.sh`'i `make` olmadan doğrudan çalıştıranlar için gereklidir.
 >
+> ⚠️ **Bu aynı `DOCKER_TEST_IMAGE`/`sidar:latest`'in iki bağımsız tüketicisi var.** Yukarıdaki
+> `CodeManager` Docker REPL/code-exec sandbox'ının (`managers/code_manager.py`) yanı sıra,
+> plugin marketplace sandbox'ı (`web/plugins/sandbox.py`, `SEC-PLUGIN-001`) da her ortamda
+> varsayılan olarak aynı imajı kullanır — `tests/integration/web/test_plugin_sandbox_*.py`
+> bu ikinci yolu doğrular. İkisi aynı env değişkenlerini paylaştığı için bu imajı elle
+> build etmek her iki alt sistemi de kapsar; ayrıntı ve `make plugin-sandbox-security`/
+> `SIDAR_REQUIRE_PLUGIN_SANDBOX_CONTAINER_TESTS` için bkz.
+> [`docs/TESTING.md`](docs/TESTING.md#make-hedefleriyle-cilocal-komut-paritesi).
 >
 > Image vs Container (kısa açıklama):
 > - **Image** (`sidar:latest`): read-only şablondur; uv/pytest ve proje bağımlılıklarını bunun içine kurarsınız.
