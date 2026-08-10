@@ -97,10 +97,30 @@ def test_docker_backend_command_applies_isolation_contract(monkeypatch) -> None:
         "--memory-swap=256m",
         "--cpus=0.5",
         "--pids-limit=64",
+        "--sysctl=net.ipv4.ip_unprivileged_port_start=1024",
         "--entrypoint=python",
     ):
         assert expected in command
     assert command[-2:] == ["-m", "web.plugins.worker"]
+
+
+def test_docker_backend_pins_the_unprivileged_port_sysctl(monkeypatch) -> None:
+    """Regression test for the container-escape matrix's CI-only finding.
+
+    ``--cap-drop=ALL``/``--user=65534:65534`` alone cannot block a privileged
+    port bind if the host's (or CI runner's) ambient
+    ``net.ipv4.ip_unprivileged_port_start`` is lowered -- that sysctl is
+    namespaced per network namespace, but a *new* namespace inherits whatever
+    value the host currently has, not a fixed 1024
+    (tests/integration/web/test_plugin_sandbox_container_escape.py's
+    ``privileged_port_bind`` check caught exactly this against a real
+    container). An explicit ``--sysctl`` pin makes the boundary independent
+    of host/runner drift.
+    """
+    monkeypatch.setattr("web.plugins.sandbox.shutil.which", lambda _name: "/usr/bin/docker")
+    argv = DockerPluginSandboxBackend({})._isolation_argv()
+
+    assert "--sysctl=net.ipv4.ip_unprivileged_port_start=1024" in argv
 
 
 def test_docker_backend_command_overrides_the_image_entrypoint(monkeypatch) -> None:

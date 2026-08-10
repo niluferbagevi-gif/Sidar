@@ -108,6 +108,21 @@ class DockerPluginSandboxBackend:
             f"--cpus={self.cpus}",
             f"--pids-limit={self.pids}",
             "--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=16m",
+            # Pin the unprivileged-port floor explicitly instead of trusting the
+            # host's ambient net.ipv4.ip_unprivileged_port_start default. This
+            # sysctl is namespaced per network namespace but a *new* namespace
+            # (which --network=none still creates -- only its interfaces are
+            # empty) inherits whatever value the host currently has, not a
+            # fixed 1024. SEC-PLUGIN-001's container-escape matrix
+            # (test_plugin_sandbox_container_escape.py) caught this in CI:
+            # some hosts/runner images lower this sysctl (e.g. to 0) for their
+            # own service needs, which silently lets --user=65534:65534 +
+            # --cap-drop=ALL bind privileged ports (<1024) with no capability
+            # required -- --cap-drop/--security-opt cannot affect this sysctl,
+            # only an explicit --sysctl can. Reproduced and verified with
+            # `unshare --net` + `setpriv` at ip_unprivileged_port_start=0
+            # (bind succeeds) vs. the standard 1024 (bind is rejected).
+            "--sysctl=net.ipv4.ip_unprivileged_port_start=1024",
             # The image's own ENTRYPOINT is the Sidar launcher (`python main.py`);
             # without this override, trailing argv (e.g. "-m web.plugins.worker")
             # is appended as *arguments to main.py* instead of replacing the
