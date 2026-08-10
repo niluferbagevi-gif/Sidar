@@ -95,7 +95,8 @@ silent checklist-only bypass.
 
 Bu donanım kapısı tek-host bağımlılığı olarak işletilmez. Primary ve farklı arıza alanındaki
 warm-standby runner aynı `[self-hosted, linux, gpu]` etiketlerini taşır; saatlik
-`GPU Runner Capacity Watchdog` en az iki online runner arar. Watchdog için repository runner
+`GPU Runner Capacity Watchdog` hem `ENABLE_GPU_BENCH_GATE=true` repository variable sözleşmesini
+hem de en az iki online runner kapasitesini arar. Watchdog için repository runner
 metadata okuma yetkili `GPU_RUNNER_MONITOR_TOKEN` secret'ı gerekir. Failover, RTO ve üç aylık
 tatbikat adımları [`docs/runbooks/gpu-runner-continuity.md`](runbooks/gpu-runner-continuity.md)
 içinde tanımlıdır. Watchdog erken uyarıdır; required GPU benchmark kanıtının yerine geçmez.

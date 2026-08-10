@@ -3,8 +3,20 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from scripts.ci import check_gpu_runner_capacity as capacity
+
+
+def test_watchdog_workflow_guards_gate_variable_and_runner_capacity() -> None:
+    """The hourly control plane must monitor both halves of GPU readiness."""
+    workflow = Path(".github/workflows/gpu-runner-capacity-watchdog.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "GPU_BENCH_GATE_ENABLED: ${{ vars.ENABLE_GPU_BENCH_GATE }}" in workflow
+    assert '[[ "${GPU_BENCH_GATE_ENABLED}" != "true" ]]' in workflow
+    assert "--minimum-online 2" in workflow
 
 
 def _runner(name: str, *, status: str = "online", labels: tuple[str, ...] = ()) -> dict:

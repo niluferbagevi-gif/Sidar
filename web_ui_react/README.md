@@ -93,12 +93,14 @@ güncelleme sözleşmesi `docs/development/frontend-typescript-migration.md` iç
 - Bundle budget kapısı CI profilinde varsayılan olarak `FRONTEND_BUNDLE_BUDGET=1` ile
   `npm run build:budget` çalıştırır; yerel hızlı frontend stage'inde opt-in kullanmak için
   `FRONTEND_BUNDLE_BUDGET=1 bash run_tests.sh --stage frontend` çalıştırın. Bu kapı
-  Vite build sonrası **iki adet isimli chunk bütçesini** (React DOM ve ChatMarkdownRenderer),
+  Vite build sonrası **üç adet isimli chunk bütçesini** (React DOM,
+  ChatMarkdownRenderer ve highlight.js core),
   toplam JS boyutunu ve toplam gzip JS boyutunu izler — her isimli chunk kendi tavanına karşı
   bağımsız olarak geçit koyar, yalnızca toplam bütçeye güvenmez (aksi halde yanlışlıkla eklenen
   bir remark/rehype plugin'i veya lazy-olmaktan çıkan bir import, toplam bütçe aşılana kadar
   fark edilmeden büyüyebilir). React DOM varsayılan limiti `SIDAR_REACT_DOM_CHUNK_BUDGET_KB=220`,
-  ChatMarkdownRenderer varsayılan limiti `SIDAR_MARKDOWN_CHUNK_BUDGET_KB=190` değeridir; opsiyonel
+  ChatMarkdownRenderer varsayılan limiti `SIDAR_MARKDOWN_CHUNK_BUDGET_KB=190`,
+  highlight.js core limiti `SIDAR_HIGHLIGHT_CHUNK_BUDGET_KB=40` değeridir; opsiyonel
   toplam limitler için `SIDAR_TOTAL_JS_BUDGET_KB` ve `SIDAR_TOTAL_GZIP_BUDGET_KB` verilebilir.
   `SIDAR_BUNDLE_BUDGET_WARN_RATIO` varsayılan `0.9` ile toplam JS/gzip
   budget kullanımını %90 seviyesinde uyarı olarak raporlar. `SIDAR_BUNDLE_GZIP_TREND_WARN_KB`

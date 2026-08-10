@@ -30,7 +30,7 @@ Stage examples:
 Stage scopes:
   all          Full quality gate: static/security + backend unit/integration/smoke/e2e + frontend + benchmark + BATS (profile-dependent).
   integration  Backend integration main path: tests/integration/{api,cli,db,managers,web,workflow}.
-  frontend     Frontend quality gate: npm audit:high, lint, typecheck, coverage and Playwright smoke.
+  frontend     Frontend quality gate: npm audit:high, lint, typecheck, coverage and configured Playwright E2E (default: smoke).
   bats         Installer/shell quality gate: tests/shell via BATS.
 
 Production readiness gate:
@@ -160,6 +160,11 @@ check_python_version
 # elle hazırlık gerektirmeden çalışabilir.
 
 ensure_test_dotenv
+
+if ! validate_test_gate_environment_schema; then
+  echo "❌ Test environment schema doğrulaması başarısız." >&2
+  exit 2
+fi
 
 
 cleanup_zone_identifier_artifacts || exit 1
@@ -409,12 +414,22 @@ floor = float(sys.argv[2])
 print(f"{max(resolved, floor):g}")
 PY_COVERAGE_FLOOR
 )"
-
-
-
 echo "ℹ️ Coverage quality gate eşiği: ${COVERAGE_FAIL_UNDER} (profile=${COVERAGE_FAIL_UNDER_SOURCE}, pyproject.toml baseline=${DEFAULT_COVERAGE_FAIL_UNDER}, minimum unit floor=${MIN_UNIT_COVERAGE_FAIL_UNDER}, ratchet cap=${COVERAGE_RATCHET_MAX_GATE}); açık COVERAGE_FAIL_UNDER verilirse final coverage report --fail-under ile override edilir."
+if ! ensure_uv_available; then
+  echo "❌ Test environment preflight doğrulaması başarısız." >&2
+  exit 2
+fi
 configure_local_bats_shell_tests
 echo "ℹ️ Test profili: ${TEST_PROFILE} (CI=${IS_CI_ENV}, AUTO_OPEN_ARTIFACTS=${AUTO_OPEN_ARTIFACTS}, RUN_BENCHMARKS=${RUN_BENCHMARKS}, RUN_STATIC_ANALYSIS=${RUN_STATIC_ANALYSIS}, RUN_BATS_TESTS=${RUN_BATS_TESTS}, RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E})"
+if production_readiness_gate_active; then
+  echo "🚦 Doğrulama sınıfı: production-readiness = release gate ($(frontend_e2e_scope_label))."
+elif [ "${TEST_PROFILE}" = "ci" ] && stage_all_selected; then
+  echo "🔁 Doğrulama sınıfı: ci-parity = CI profil paritesi ($(frontend_e2e_scope_label)); release gate değildir."
+elif stage_all_selected; then
+  echo "🧪 Doğrulama sınıfı: dev-full = local full validation ($(frontend_e2e_scope_label)); CI paritesi veya release gate değildir."
+else
+  echo "🧩 Doğrulama sınıfı: seçili stage; dev-full, ci-parity veya production-readiness değildir."
+fi
 
 # 0) Önceki test artefaktlarını temizle (idempotent başlangıç)
 rm -rf .pytest_cache .coverage .coverage.* coverage.xml htmlcov tests/pytest.log web_ui_react/coverage web_ui_react/playwright-report web_ui_react/test-results "${BATS_REPORT_DIR}" sidar.egg-info build/
@@ -573,7 +588,7 @@ if [ -d "web_ui_react" ] && [ -f "web_ui_react/package.json" ]; then
           run_checked run_frontend_e2e_with_retry
           FRONTEND_E2E_EXIT_CODE=$?
         elif [ "${RUN_FRONTEND_E2E}" != "1" ]; then
-          echo "ℹ️ Frontend Playwright smoke testleri atlandı (RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E})."
+          echo "ℹ️ $(frontend_e2e_scope_label) testleri atlandı (RUN_FRONTEND_E2E=${RUN_FRONTEND_E2E})."
         else
           echo "❌ Frontend Playwright ortam hazırlığı başarısız; lint/typecheck/coverage/build sinyalleri yine de çalıştırıldı."
         fi

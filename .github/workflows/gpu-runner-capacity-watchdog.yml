@@ -18,6 +18,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Verify required GPU evidence gate stays enabled
+        env:
+          GPU_BENCH_GATE_ENABLED: ${{ vars.ENABLE_GPU_BENCH_GATE }}
+        run: |
+          if [[ "${GPU_BENCH_GATE_ENABLED}" != "true" ]]; then
+            echo "::error title=GPU evidence gate disabled::Repository variable ENABLE_GPU_BENCH_GATE must remain exactly true; production readiness cannot rely on local GPU evidence."
+            exit 1
+          fi
       - name: Check primary and warm-standby capacity
         env:
           GPU_RUNNER_MONITOR_TOKEN: ${{ secrets.GPU_RUNNER_MONITOR_TOKEN }}

@@ -141,11 +141,10 @@ telemetry = [
 rag = [
   "chromadb~=0.5.5",
   "posthog<6.0.0",
-  # Keep torch below 2.12 while CVE-2025-3000 is tracked by security/pip-audit-ignores.tsv.
-  # Current lock target is torch 2.11.0; re-check upstream patches by 2026-08-15
-  # before the dated policy exception expires.
-  "torch>=2.4.1,<2.12",
-  "torchvision>=0.19,<0.27",
+  # Torch 2.13.0 is the first GHSA-rrmf-rvhw-rf47 / CVE-2025-3000 patched release.
+  # Keep torch/torchvision on the compatible 2.13/0.28 release family.
+  "torch>=2.13,<2.14",
+  "torchvision>=0.28,<0.29",
   "sentence-transformers>=3.0.1,<6.0.0",
 ]
 lora = [
@@ -371,15 +370,13 @@ status = "visible-opt-in"
 summary = "Installer now prompts/selects a dependency profile after runtime mode: dev-full is the normal recommended default via uv sync --all-extras, dev-light remains an opt-in fast local profile, dev-gpu/gpu-runtime cover narrow CUDA/RAG remediation, production-minimal/production cover runtime installs, and custom supports explicit provider extras."
 
 [tool.sidar.dependency_profile_plan.torch_upgrade_reminder]
-current_lock = "torch 2.11.0"
+status = "resolved"
+current_lock = "torch 2.13.0"
 tracked_policy_exception = "CVE-2025-3000"
-advisory_checked_on = "2026-07-16"
-upstream_last_affected = "2.12.0"
-upstream_patched_versions = "none"
-review_by = "2026-08-15"
-expires = "2026-09-15"
-warning_window_days = 45
-calendar_file = "docs/reminders/torch-cve-review-2026-08-15.ics"
+advisory_checked_on = "2026-08-09"
+upstream_last_affected = "2.12.1"
+upstream_patched_versions = "2.13.0"
+resolved_on = "2026-08-09"
 runbook_file = "docs/runbooks/torch-cve-upgrade.md"
 tracked_files = [
   "pyproject.toml",

@@ -1,7 +1,8 @@
-"""Plugin source validation and in-process sandbox policy helpers.
+"""Plugin source validation and isolated sandbox policy helpers.
 
-The validator is defense-in-depth only. Production deployments should avoid
-in-process plugin source execution unless explicitly enabled by an operator.
+The validator is defense-in-depth only. Docker is the default in every
+environment; the legacy in-process backend requires an explicit, non-production
+operator opt-in.
 """
 
 from __future__ import annotations
@@ -38,15 +39,19 @@ class PluginSandboxError(RuntimeError):
 
 
 def plugin_sandbox_backend(env: Mapping[str, str] | None = None) -> str:
-    """Resolve the plugin backend, defaulting production to the isolated worker."""
+    """Resolve the plugin backend, defaulting every environment to Docker."""
     environ = os.environ if env is None else env
     configured = str(environ.get("SIDAR_PLUGIN_SANDBOX_BACKEND", "")).strip().lower()
     if configured:
         if configured not in {"docker", "in_process"}:
             raise PluginSandboxError("Desteklenmeyen plugin sandbox backend'i.")
+        if configured == "in_process" and not in_process_plugin_execution_allowed(environ):
+            raise PluginSandboxError(
+                "Legacy process-içi plugin backend'i yalnız açık "
+                "SIDAR_ENABLE_IN_PROCESS_PLUGINS=1 opt-in'i ile kullanılabilir."
+            )
         return configured
-    sidar_env = str(environ.get("SIDAR_ENV", "development")).strip().lower()
-    return "docker" if sidar_env in {"prod", "production"} else "in_process"
+    return "docker"
 
 
 class DockerPluginSandboxBackend:
@@ -263,20 +268,16 @@ def plugin_source_filename(module_label: str) -> str:
 def in_process_plugin_execution_allowed(env: Mapping[str, str] | None = None) -> bool:
     """Return whether in-process plugin source execution is allowed.
 
-    Development/test deployments keep the legacy behavior. Production deployments
-    always fail closed: an environment variable must not turn a known lack of OS-level
-    isolation into a runtime security-boundary bypass.
+    Development/test deployments require an explicit legacy opt-in. Production
+    deployments always fail closed: an environment variable must not turn a known
+    lack of OS-level isolation into a runtime security-boundary bypass.
     """
     environ = os.environ if env is None else env
     sidar_env = str(environ.get("SIDAR_ENV", "development")).strip().lower()
     if sidar_env in {"prod", "production"}:
         return False
     explicit = str(environ.get("SIDAR_ENABLE_IN_PROCESS_PLUGINS", "")).strip().lower()
-    if explicit in {"1", "true", "yes", "on"}:
-        return True
-    if explicit in {"0", "false", "no", "off"}:
-        return False
-    return True
+    return explicit in {"1", "true", "yes", "on"}
 
 
 def validate_plugin_source(source_code: str) -> None:
@@ -468,7 +469,8 @@ def assert_in_process_plugin_execution_allowed() -> None:
             status_code=403,
             detail=(
                 "Plugin kaynak kodunun process-içi çalıştırılması deployment politikası "
-                "tarafından kapalı. Production koruması ortam değişkeniyle aşılamaz; izole "
-                "container/process sandbox entegrasyonu kullanılmalıdır."
+                "tarafından kapalı. Legacy geliştirme/test kullanımı açık opt-in gerektirir; "
+                "production koruması ortam değişkeniyle aşılamaz. İzole container/process "
+                "sandbox entegrasyonu kullanılmalıdır."
             ),
         )

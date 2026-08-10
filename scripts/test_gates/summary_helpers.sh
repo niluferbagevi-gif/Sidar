@@ -310,7 +310,7 @@ print_release_scope_warning_once() {
    ${PRODUCTION_READINESS_COMMAND}
 RELEASE_SCOPE_WARNING
     if [ "${TEST_PROFILE:-local}" = "local" ] && [ "${FRONTEND_BUNDLE_BUDGET}" != "1" ]; then
-      echo "⚠️ Frontend bundle budget local/dev-full akışında kapalı. CI paritesi için: FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=1 bash run_tests.sh --stage all"
+      echo "⚠️ Frontend bundle budget local/dev-full akışında kapalı. Gerçek CI paritesi için: make ci-parity"
     fi
   else
     cat <<RELEASE_SCOPE_WARNING

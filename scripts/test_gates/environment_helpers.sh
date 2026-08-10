@@ -3,6 +3,11 @@
 # Helper functions sourced by run_tests.sh; do not execute directly.
 # shellcheck disable=SC2034,SC2153  # Helpers consume/update orchestrator globals.
 
+validate_test_gate_environment_schema() {
+  echo "🔤 Test kalite-gate environment schema doğrulanıyor..."
+  uv run --frozen python -m scripts.test_gates.env_schema
+}
+
 read_preferred_python_version() {
   if [ -n "${SIDAR_PYTHON_VERSION:-}" ]; then
     printf '%s' "${SIDAR_PYTHON_VERSION}"

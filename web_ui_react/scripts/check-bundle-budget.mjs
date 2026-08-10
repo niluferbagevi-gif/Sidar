@@ -40,6 +40,12 @@ const namedChunkBudgets = [
     defaultKb: "190",
     pattern: /^ChatMarkdownRenderer-[\w-]+\.js$/,
   },
+  {
+    label: "highlight.js core",
+    envVar: "SIDAR_HIGHLIGHT_CHUNK_BUDGET_KB",
+    defaultKb: "40",
+    pattern: /^highlight-js-core-[\w-]+\.js$/,
+  },
 ];
 for (const budget of namedChunkBudgets) {
   budget.budgetKb = Number(process.env[budget.envVar] || budget.defaultKb);

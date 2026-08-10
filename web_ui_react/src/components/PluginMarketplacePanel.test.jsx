@@ -175,7 +175,6 @@ describe("PluginMarketplacePanel", () => {
         {
           plugin_id: "partial-2",
           name: "Partial Install 2",
-          category: "test",
           installed: false,
           live_registered: true, // Sadece live_registered true
           capabilities: null,    // 121. Satır (item.capabilities || [])
@@ -188,6 +187,7 @@ describe("PluginMarketplacePanel", () => {
 
     expect(await screen.findByText("Partial Install 1")).toBeInTheDocument();
     expect(await screen.findByText("Partial Install 2")).toBeInTheDocument();
+    expect(screen.getByText("Partial Install 2").previousElementSibling).toBeEmptyDOMElement();
     
     // "installed || live_registered" şartı sağlandığı için ikisi de "Canlı" pill'ine sahip olmalı
     expect(screen.getAllByText("Canlı")).toHaveLength(2);

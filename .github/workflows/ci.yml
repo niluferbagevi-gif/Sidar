@@ -422,6 +422,12 @@ jobs:
             SIDAR_PRODUCTION_READINESS=0 bash run_tests.sh --stage all \
             2>&1 | tee artifacts/test_run.log
 
+      - name: Enforce real-container plugin sandbox security matrix
+        env:
+          SIDAR_PLUGIN_SANDBOX_IMAGE: sidar:latest
+          SIDAR_REQUIRE_PLUGIN_SANDBOX_CONTAINER_TESTS: "1"
+        run: uv run pytest -q -rs tests/integration/web/test_plugin_sandbox_container_escape.py
+
       - name: Validate base test summary
         run: uv run python scripts/ci/validate_test_summary.py --mode development --summary artifacts/test-summary.json
 

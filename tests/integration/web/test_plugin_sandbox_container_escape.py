@@ -23,7 +23,9 @@ does not build the image. ``ci.yml`` already builds ``sidar:latest`` via
 ``release-quality.yml``'s ``docker-smoke`` job points
 ``SIDAR_PLUGIN_SANDBOX_IMAGE`` at the freshly built release candidate image, so
 this matrix runs against a real image on every PR and again at the release
-gate.
+gate. ``make plugin-sandbox-security`` builds the current checkout locally and
+sets ``SIDAR_REQUIRE_PLUGIN_SANDBOX_CONTAINER_TESTS=1`` so unavailable
+prerequisites fail instead of producing six misleading skips.
 """
 
 from __future__ import annotations
@@ -203,6 +205,15 @@ def _backend(**env_overrides: str) -> DockerPluginSandboxBackend:
 _TARGET_IMAGE = _backend().image
 _DOCKER_READY = _docker_daemon_available()
 _IMAGE_READY = _DOCKER_READY and _image_available(_TARGET_IMAGE)
+_CONTAINER_TESTS_REQUIRED = os.getenv(
+    "SIDAR_REQUIRE_PLUGIN_SANDBOX_CONTAINER_TESTS", "0"
+).strip().lower() in {"1", "true", "yes", "on"}
+
+if _CONTAINER_TESTS_REQUIRED and not _IMAGE_READY:
+    raise RuntimeError(
+        "SIDAR_REQUIRE_PLUGIN_SANDBOX_CONTAINER_TESTS=1 ancak gerçek Docker daemon'ı "
+        f"ve plugin sandbox imajı ({_TARGET_IMAGE}) hazır değil."
+    )
 
 pytestmark = [
     pytest.mark.integration,
@@ -214,7 +225,8 @@ pytestmark = [
             "Gerçek Docker daemon'ı ve build edilmiş plugin sandbox imajı "
             f"({_TARGET_IMAGE}) gerektirir; imaj/daemon yoksa bu modül atlanır. "
             "ci.yml AUTO_BUILD_DOCKER_TEST_IMAGE=1 ile ve release-quality.yml "
-            "docker-smoke job'u SIDAR_PLUGIN_SANDBOX_IMAGE ile gerçek imajı sağlar."
+            "docker-smoke job'u SIDAR_PLUGIN_SANDBOX_IMAGE ile gerçek imajı sağlar; "
+            "yerelde make plugin-sandbox-security kullanın."
         ),
     ),
 ]

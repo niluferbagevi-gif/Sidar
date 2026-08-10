@@ -111,6 +111,11 @@ describe("SwarmFlowPanel", () => {
     expect(screen.getAllByText("nightly_scan").length).toBeGreaterThan(0);
     expect(screen.getByText(/İnceleme bekliyor/)).toBeInTheDocument();
 
+    await user.selectOptions(screen.getByRole("combobox"), "pipeline");
+    expect(screen.getByRole("combobox")).toHaveValue("pipeline");
+    await user.selectOptions(screen.getByRole("combobox"), "parallel");
+    expect(screen.getByRole("combobox")).toHaveValue("parallel");
+
     await user.click(screen.getByRole("button", { name: "Aktiviteyi Yenile" }));
 
     await waitFor(() => expect(screen.getAllByText("manual_run").length).toBeGreaterThan(0));

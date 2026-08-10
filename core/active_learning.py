@@ -29,6 +29,7 @@ from typing import Any  # Model/API çıktılarında heterojen tip desteği
 logger = logging.getLogger(__name__)
 
 try:
+    from sqlalchemy import bindparam
     from sqlalchemy import text as sql_text
     from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -231,18 +232,12 @@ class FeedbackStore:
         now = time.time()
         async with self._engine.begin() as conn:
             for chunk in _chunked(ids, 500):
-                params = {"now": now}
-                placeholders = []
-                for idx, feedback_id in enumerate(chunk):
-                    param_name = f"id_{idx}"
-                    placeholders.append(f":{param_name}")
-                    params[param_name] = int(feedback_id)
+                statement = sql_text(
+                    "UPDATE finetune_feedback SET exported_at = :now WHERE id IN :ids"
+                ).bindparams(bindparam("ids", expanding=True))
                 await conn.execute(
-                    sql_text(
-                        "UPDATE finetune_feedback"
-                        f" SET exported_at = :now WHERE id IN ({', '.join(placeholders)})"  # nosec B608
-                    ),
-                    params,
+                    statement,
+                    {"now": now, "ids": [int(feedback_id) for feedback_id in chunk]},
                 )
 
     async def stats(self) -> dict[str, int]:

@@ -215,12 +215,20 @@ gösterir:
 ```bash
 make dev-full              # Geliştirici tam doğrulaması + local frontend bundle budget (local profil varsayılanları).
 make ci-parity             # dev-full + TEST_PROFILE=ci + tam (8 spec) frontend e2e: CI'nın "test" job'ının gerçek local provası.
+make plugin-sandbox-security # Güncel checkout'tan sidar:latest build eder; 6 gerçek-container escape testinde skip'i hata sayar.
 make benchmark-seed        # Lokal benchmark baseline bootstrap/seed yardımcısı.
 make doctor-production-readiness  # Release gate öncesi ortam doctor/preflight raporu.
 make production-readiness  # CI profili + benchmark + frontend e2e + SIDAR_PRODUCTION_READINESS.
 make frontend-gate         # Frontend lint/typecheck/coverage/e2e kalite kapısı.
 make backend-integration   # Backend integration stage'i; global coverage gate uygulanmaz.
 ```
+
+Plugin sandbox güvenlik matrisi için genel integration komutunu tek başına çalıştırmak,
+Docker daemon'ı veya imaj yoksa altı testi bilinçli olarak skip eder. Release kanıtı
+üretirken `make plugin-sandbox-security` kullanılmalıdır: hedef Docker erişimini fail-closed
+doğrular, mevcut olabilecek eski `sidar:latest` tag'ine güvenmeyip güncel checkout'u yeniden
+build eder ve `SIDAR_REQUIRE_PLUGIN_SANDBOX_CONTAINER_TESTS=1` ile herhangi bir altyapı
+eksikliğinin skip olarak gizlenmesini engeller.
 
 `make doctor-production-readiness` hedefi production-readiness kapısından önce ortamı
 mutasyonsuz denetler: `uv`, Python 3.11, `portaudio.h`,

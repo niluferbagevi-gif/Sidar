@@ -170,6 +170,12 @@ def test_web_server_route_table_has_no_duplicate_method_path_pairs():
 
 @pytest.fixture(autouse=True)
 def _reset_collaboration_state(monkeypatch, tmp_path):
+    # This legacy-heavy module exercises the host-process implementation
+    # directly. Production/default-backend contracts live in
+    # tests/unit/web/plugins/test_sandbox.py; opt in explicitly here so the
+    # suite cannot accidentally depend on the runtime default.
+    monkeypatch.setenv("SIDAR_PLUGIN_SANDBOX_BACKEND", "in_process")
+    monkeypatch.setenv("SIDAR_ENABLE_IN_PROCESS_PLUGINS", "1")
     web_server._collaboration_rooms.clear()
     web_server._hitl_ws_clients.clear()
     monkeypatch.setattr(web_server.cfg, "BASE_DIR", str(tmp_path))

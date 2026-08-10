@@ -7,6 +7,9 @@
 - **Dev optimizasyonu:** `dev` grubunda `ruff` standart lint/format aracı olarak bırakılmış, `black` ve `flake8` kaldırılmıştır.
 - **Lock üretimi:** `requirements*.txt` dosyaları bu dosyadan `uv pip compile` ile üretilir.
 - **Durum:** UV tabanlı modern paket mimarisiyle uyumlu.
-- **2026-08-15 torch reminder:** `torch 2.11.0` lock/policy penceresi için takip metadata'sı `pyproject.toml` içindeki `[tool.sidar.dependency_profile_plan.torch_upgrade_reminder]` bloğunda ve takvim girdisi `docs/reminders/torch-cve-review-2026-08-15.ics` dosyasında tutulur.
+- **Torch CVE çözüm kaydı:** 2026-08-15 hedefli inceleme 2026-08-09'da tamamlandı;
+  `torch 2.13.0` patched lock kanıtı ve kaldırılan policy istisnası
+  `[tool.sidar.dependency_profile_plan.torch_upgrade_reminder]` bloğunda `status=resolved`
+  olarak tutulur.
 - **Production-minimal doğrulama:** CI `production-profile-dry-run` job'ı artık release-blocking runtime validation kapısıdır; installer sync, FastAPI web boot smoke, Alembic DB migration smoke ve `production-minimal-runtime-evidence` artifact'ini doğrular.
 - **Ruff E501 / docstring / ASYNC borcu:** `line-length=100` korunur; sıfıra ulaşan E501, D200-D417 ve ASYNC240 global ignore'ları 2026-08-02'de kaldırılmıştır. Kurallar artık normal Ruff kapısında doğrudan uygulanır; `[tool.sidar.ruff_debt]` içindeki sıfır baseline ve `scripts/ci/check_ruff_debt_baseline.py` kapanış incelemesine kadar savunma katmanı olarak korunur.

@@ -53,7 +53,8 @@ def test_in_process_plugin_execution_env_matrix() -> None:
         assert not in_process_plugin_execution_allowed(
             {"SIDAR_ENABLE_IN_PROCESS_PLUGINS": explicit, "SIDAR_ENV": "development"}
         )
-    assert in_process_plugin_execution_allowed({"SIDAR_ENV": "development"})
+    assert not in_process_plugin_execution_allowed({"SIDAR_ENV": "development"})
+    assert not in_process_plugin_execution_allowed({"SIDAR_ENV": "test"})
     assert not in_process_plugin_execution_allowed({"SIDAR_ENV": "production"})
     for explicit in ("1", "true", "yes", "on"):
         assert not in_process_plugin_execution_allowed(
@@ -61,10 +62,23 @@ def test_in_process_plugin_execution_env_matrix() -> None:
         )
 
 
-def test_plugin_backend_defaults_production_to_docker_and_rejects_unknown() -> None:
+def test_plugin_backend_defaults_all_environments_to_docker_and_rejects_unknown() -> None:
     assert plugin_sandbox_backend({"SIDAR_ENV": "production"}) == "docker"
-    assert plugin_sandbox_backend({"SIDAR_ENV": "development"}) == "in_process"
+    assert plugin_sandbox_backend({"SIDAR_ENV": "development"}) == "docker"
+    assert plugin_sandbox_backend({"SIDAR_ENV": "test"}) == "docker"
+    assert plugin_sandbox_backend({}) == "docker"
     assert plugin_sandbox_backend({"SIDAR_PLUGIN_SANDBOX_BACKEND": "docker"}) == "docker"
+    assert (
+        plugin_sandbox_backend(
+            {
+                "SIDAR_PLUGIN_SANDBOX_BACKEND": "in_process",
+                "SIDAR_ENABLE_IN_PROCESS_PLUGINS": "1",
+            }
+        )
+        == "in_process"
+    )
+    with pytest.raises(PluginSandboxError, match="açık.*opt-in"):
+        plugin_sandbox_backend({"SIDAR_PLUGIN_SANDBOX_BACKEND": "in_process"})
     with pytest.raises(PluginSandboxError, match="Desteklenmeyen"):
         plugin_sandbox_backend({"SIDAR_PLUGIN_SANDBOX_BACKEND": "subprocess"})
 
@@ -225,6 +239,7 @@ def test_execute_validated_plugin_source_uses_sanitized_filename() -> None:
 
 def test_in_process_backend_executes_only_outside_production(monkeypatch) -> None:
     monkeypatch.setenv("SIDAR_ENV", "development")
+    monkeypatch.setenv("SIDAR_ENABLE_IN_PROCESS_PLUGINS", "1")
     namespace = run_plugin_source_in_process("RESULT = 42", "safe_plugin")
     assert namespace["RESULT"] == 42
 

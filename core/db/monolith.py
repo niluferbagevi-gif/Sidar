@@ -7,6 +7,7 @@ Bağlantı yaşam döngüsü ve transaction yardımcıları ``core.db.connection
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import sqlite3
 import uuid
@@ -294,7 +295,6 @@ class Database(DatabaseConnectionMixin):
         if not normalized_ids:
             return []
 
-        columns = self._message_columns_sql()
         if self._backend == "postgresql":
             assert self._pg_pool is not None
             # session_id sütunu PostgreSQL'de UUID tipindedir; doğrudan text[] ile
@@ -303,29 +303,28 @@ class Database(DatabaseConnectionMixin):
             # çevirerek SQLite şemasıyla uyumlu bir karşılaştırma sağlıyoruz.
             async with self._pg_pool.acquire() as conn:
                 rows = await conn.fetch(
-                    f"""
-                    SELECT {columns}
+                    """
+                    SELECT id, session_id, role, content, tokens_used, created_at
                     FROM messages
                     WHERE session_id::text = ANY($1::text[])
                     ORDER BY session_id ASC, created_at ASC, id ASC
-                    """,  # nosec B608  # columns sabit whitelist'ten üretilir.
+                    """,
                     normalized_ids,
                 )
             return list(rows)
 
         assert self._sqlite_conn is not None
-        placeholders = ",".join(["?"] * len(normalized_ids))
 
         def _run() -> list[sqlite3.Row]:
             assert self._sqlite_conn is not None
             cur = self._sqlite_conn.execute(
-                f"""
-                SELECT {columns}
+                """
+                SELECT id, session_id, role, content, tokens_used, created_at
                 FROM messages
-                WHERE session_id IN ({placeholders})
+                WHERE session_id IN (SELECT value FROM json_each(?))
                 ORDER BY session_id ASC, created_at ASC, id ASC
-                """,  # nosec B608  # columns/placeholders iç kaynaklıdır.
-                normalized_ids,
+                """,
+                (json.dumps(normalized_ids),),
             )
             return cur.fetchall()
 

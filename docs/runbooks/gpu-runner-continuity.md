@@ -16,8 +16,9 @@ değildir.
 
 ## Otomatik gözetim
 
-`GPU Runner Capacity Watchdog` workflow'u saatlik olarak GitHub runner API'sini sorgular ve
-iki uygun online runner bulunmadığında kırmızı olur. Repository secret olarak runner metadata
+`GPU Runner Capacity Watchdog` workflow'u saatlik olarak önce repository variable
+`ENABLE_GPU_BENCH_GATE` değerinin tam olarak `true` kaldığını doğrular, ardından GitHub runner
+API'sini sorgular ve iki uygun online runner bulunmadığında kırmızı olur. Repository secret olarak runner metadata
 okuma yetkili, dar kapsamlı `GPU_RUNNER_MONITOR_TOKEN` tanımlanmalıdır. Yerel/fixture kontrolü:
 
 ```bash
@@ -27,6 +28,11 @@ uv run python scripts/ci/check_gpu_runner_capacity.py \
 
 Bu watchdog merge kanıtının yerine geçmez; arızayı GPU işi kuyrukta süresiz beklemeden önce
 görünür kılan erken uyarıdır.
+
+> Repository variable ve self-hosted runner kapasitesi Git içinde oluşturulamaz veya sürekli
+> açık tutulamaz; bunlar GitHub repository/runner yönetim düzlemine aittir. Bu nedenle workflow
+> herhangi birinin eksikliğini saatlik fail-closed sinyale dönüştürür. Gerçek release kanıtı yine
+> her CI çalışmasındaki `GPU Inference Quality Gate` sonucudur; yerel benchmark kabul edilmez.
 
 ## Failover prosedürü
 

@@ -3,6 +3,14 @@
 # shellcheck disable=SC2034  # Helpers update run_tests.sh globals after being sourced.
 # Helper functions sourced by run_tests.sh; do not execute directly.
 
+frontend_e2e_scope_label() {
+  case "${FRONTEND_E2E_NPM_SCRIPT:-test:e2e:smoke}" in
+    test:e2e) printf '%s' "tam Playwright E2E" ;;
+    test:e2e:smoke) printf '%s' "Playwright E2E smoke" ;;
+    *) printf 'Playwright E2E (%s)' "${FRONTEND_E2E_NPM_SCRIPT}" ;;
+  esac
+}
+
 print_frontend_quality_summary() {
   echo ""
   echo "🧭 Frontend kalite kapısı özeti"
@@ -13,7 +21,7 @@ print_frontend_quality_summary() {
   echo "   Dependency audit (npm run audit:high): $(format_quality_status "${FRONTEND_NPM_AUDIT_EXIT_CODE}" "${FRONTEND_NPM_AUDIT_RAN}")"
   echo "   Playwright (${FRONTEND_E2E_NPM_SCRIPT}): $(format_quality_status "${FRONTEND_E2E_EXIT_CODE}" "${FRONTEND_E2E_RAN}" "atlanmış") (enforce=${FRONTEND_E2E_ENFORCE_RESULT})"
   if [ "${TEST_PROFILE:-local}" = "local" ] && stage_all_selected && [ "${FRONTEND_BUNDLE_BUDGET}" != "1" ]; then
-    echo "   ⚠️ Local full bundle budget kapısı kapalı. CI paritesi için: FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=1 bash run_tests.sh --stage all"
+    echo "   ⚠️ Local full bundle budget kapısı kapalı. Gerçek CI paritesi için: make ci-parity"
   fi
   if [ -f "${FRONTEND_COVERAGE_REPORT_PATH}" ]; then
     echo "   Frontend coverage artefaktı: ${FRONTEND_COVERAGE_REPORT_PATH}"
@@ -34,7 +42,7 @@ print_frontend_quality_summary() {
       echo "| Coverage | \`npm run test:coverage\` | $(format_quality_status "${FRONTEND_COVERAGE_EXIT_CODE}" "${FRONTEND_COVERAGE_RAN}" "skipped") |"
       echo "| Bundle budget | \`npm run build:budget\` | $(format_quality_status "${FRONTEND_BUNDLE_BUDGET_EXIT_CODE}" "${FRONTEND_BUNDLE_BUDGET_RAN}" "skipped") |"
       echo "| Dependency audit | \`npm run audit:high\` | $(format_quality_status "${FRONTEND_NPM_AUDIT_EXIT_CODE}" "${FRONTEND_NPM_AUDIT_RAN}" "skipped") |"
-      echo "| Playwright smoke | \`npm run ${FRONTEND_E2E_NPM_SCRIPT}\` | $(format_quality_status "${FRONTEND_E2E_EXIT_CODE}" "${FRONTEND_E2E_RAN}" "skipped") |"
+      echo "| $(frontend_e2e_scope_label) | \`npm run ${FRONTEND_E2E_NPM_SCRIPT}\` | $(format_quality_status "${FRONTEND_E2E_EXIT_CODE}" "${FRONTEND_E2E_RAN}" "skipped") |"
       echo ""
       echo "- Coverage artifact: \`${FRONTEND_COVERAGE_REPORT_PATH}\`"
       echo "- Playwright artifact: \`${FRONTEND_PLAYWRIGHT_REPORT_PATH}\`"
@@ -199,7 +207,7 @@ install_local_frontend_playwright_chromium_cache() {
     return 1
   fi
 
-  echo "📦 Node Playwright Chromium cache'i bulunamadı; yerel frontend smoke testleri için otomatik kuruluyor..."
+  echo "📦 Node Playwright Chromium cache'i bulunamadı; yerel $(frontend_e2e_scope_label) testleri için otomatik kuruluyor..."
   local playwright_install_log
   playwright_install_log="$(mktemp)"
   (
@@ -238,7 +246,7 @@ run_frontend_e2e_with_retry() {
   local e2e_exit_code=0
   local frontend_e2e_script="${FRONTEND_E2E_NPM_SCRIPT:-test:e2e:smoke}"
 
-  echo "🎭 Frontend Playwright smoke testleri çalıştırılıyor (${frontend_e2e_script})..."
+  echo "🎭 $(frontend_e2e_scope_label) testleri çalıştırılıyor (${frontend_e2e_script})..."
   if npm run "${frontend_e2e_script}"; then
     return 0
   else
@@ -249,16 +257,16 @@ run_frontend_e2e_with_retry() {
     return "${e2e_exit_code}"
   fi
 
-  echo "⚠️ Frontend Playwright smoke testleri başarısız oldu (çıkış=${e2e_exit_code}); flake elemek için bir kez yeniden deneniyor..."
+  echo "⚠️ $(frontend_e2e_scope_label) testleri başarısız oldu (çıkış=${e2e_exit_code}); flake elemek için bir kez yeniden deneniyor..."
   if npm run "${frontend_e2e_script}"; then
-    echo "✅ Frontend Playwright smoke testleri ikinci denemede geçti. İlk hata flake olarak raporlandı."
+    echo "✅ $(frontend_e2e_scope_label) testleri ikinci denemede geçti. İlk hata flake olarak raporlandı."
     return 0
   else
     e2e_exit_code=$?
   fi
 
-  echo "❌ Frontend Playwright smoke testleri retry sonrasında da başarısız (çıkış=${e2e_exit_code})."
-  echo "ℹ️ Aynı smoke testi ikinci denemede de kaldığı için sonuç flake yerine deterministik kabul edilir."
+  echo "❌ $(frontend_e2e_scope_label) testleri retry sonrasında da başarısız (çıkış=${e2e_exit_code})."
+  echo "ℹ️ Aynı E2E kapsamı ikinci denemede de kaldığı için sonuç flake yerine deterministik kabul edilir."
   echo "   Chat WebSocket smoke için öncelikli kontroller: Vite /ws proxy upgrade, mock backend subprotocol negotiation ve StatusBar data-state."
   return "${e2e_exit_code}"
 }
@@ -272,24 +280,24 @@ resolve_local_frontend_e2e_mode() {
 
   if frontend_playwright_sentinel_cache_ready; then
     RUN_FRONTEND_E2E=1
-    echo "✅ Node Playwright Chromium sentinel cache'i hazır; yerel frontend smoke testleri otomatik etkinleştirildi."
+    echo "✅ Node Playwright Chromium sentinel cache'i hazır; yerel $(frontend_e2e_scope_label) testleri otomatik etkinleştirildi."
     return 0
   fi
 
   if frontend_playwright_chromium_cache_ready; then
     RUN_FRONTEND_E2E=1
-    echo "✅ Node Playwright Chromium cache'i hazır; sentinel güncellendi ve yerel frontend smoke testleri otomatik etkinleştirildi."
+    echo "✅ Node Playwright Chromium cache'i hazır; sentinel güncellendi ve yerel $(frontend_e2e_scope_label) testleri otomatik etkinleştirildi."
     return 0
   fi
 
   if install_local_frontend_playwright_chromium_cache && frontend_playwright_chromium_cache_ready; then
     RUN_FRONTEND_E2E=1
-    echo "✅ Node Playwright Chromium cache'i otomatik kuruldu; yerel frontend smoke testleri etkinleştirildi."
+    echo "✅ Node Playwright Chromium cache'i otomatik kuruldu; yerel $(frontend_e2e_scope_label) testleri etkinleştirildi."
     return 0
   fi
 
   if [ "${requested_frontend_e2e}" = "1" ]; then
-    echo "❌ Frontend Playwright smoke testleri zorunlu ancak Node Playwright Chromium cache'i hazırlanamadı (RUN_FRONTEND_E2E=1)."
+    echo "❌ $(frontend_e2e_scope_label) testleri zorunlu ancak Node Playwright Chromium cache'i hazırlanamadı (RUN_FRONTEND_E2E=1)."
     if [ "${RUN_FRONTEND_E2E_AUTO_INSTALL}" != "1" ]; then
       echo "   Otomatik cache kurulumu RUN_FRONTEND_E2E_AUTO_INSTALL=${RUN_FRONTEND_E2E_AUTO_INSTALL} ile kapalı."
     fi
@@ -299,7 +307,7 @@ resolve_local_frontend_e2e_mode() {
   fi
 
   RUN_FRONTEND_E2E=0
-  echo "⚠️ Frontend Playwright smoke testleri atlandı: Node Playwright Chromium cache'i hazırlanamadı (RUN_FRONTEND_E2E=auto)."
+  echo "⚠️ $(frontend_e2e_scope_label) testleri atlandı: Node Playwright Chromium cache'i hazırlanamadı (RUN_FRONTEND_E2E=auto)."
   if [ "${RUN_FRONTEND_E2E_AUTO_INSTALL}" != "1" ]; then
     echo "   Otomatik cache kurulumu RUN_FRONTEND_E2E_AUTO_INSTALL=${RUN_FRONTEND_E2E_AUTO_INSTALL} ile kapalı."
   fi

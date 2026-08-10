@@ -107,7 +107,25 @@ sidar_install_summary_any_failed() {
     return 1
 }
 
+sidar_install_frontend_e2e_label() {
+    local scope=""
+    local script=""
+    scope="$(sidar_install_summary_field_or_empty frontend_e2e_scope)"
+    script="$(sidar_install_summary_field_or_empty frontend_e2e_script)"
+
+    case "${scope}:${script}" in
+        full:test:e2e|full:*) printf '%s' "tam Playwright E2E (npm run test:e2e)" ;;
+        smoke:test:e2e:smoke|smoke:*) printf '%s' "Playwright smoke (npm run test:e2e:smoke)" ;;
+        skipped:*) printf '%s' "Playwright E2E çalıştırılmadı" ;;
+        *:test:e2e) printf '%s' "tam Playwright E2E (npm run test:e2e)" ;;
+        *:test:e2e:smoke) printf '%s' "Playwright smoke (npm run test:e2e:smoke)" ;;
+        *) printf '%s' "Playwright E2E kapsamı bilinmiyor" ;;
+    esac
+}
+
 print_install_summary_extended_test_statuses() {
+    local frontend_e2e_label=""
+    frontend_e2e_label="$(sidar_install_frontend_e2e_label)"
     local summary_integration=""
     summary_integration="$(sidar_install_summary_field_or_empty integration)"
     if [[ "$summary_integration" == "passed" ]]; then
@@ -137,7 +155,7 @@ print_install_summary_extended_test_statuses() {
     fi
 
     if sidar_install_summary_all_passed frontend_lint frontend_typecheck frontend_coverage frontend_e2e; then
-        echo "  Frontend kalite kapısı: başarılı (run_tests.sh --stage all içinde lint/typecheck/coverage/e2e doğrulandı)."
+        echo "  Frontend kalite kapısı: başarılı (lint/typecheck/coverage/${frontend_e2e_label} doğrulandı)."
     elif sidar_install_summary_any_failed frontend_lint frontend_typecheck frontend_coverage frontend_e2e; then
         echo "  Frontend kalite kapısı: hata var (artifacts/test-summary.json). Tekrar için: RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend"
     elif [[ "$FRONTEND_QUALITY_STATUS" == "tamamlandi" ]]; then
@@ -173,10 +191,12 @@ print_react_frontend_qa_status_block() {
     fi
 
     local frontend_status="${FRONTEND_QUALITY_STATUS:-atlandi_bayrak}"
+    local frontend_e2e_label=""
+    frontend_e2e_label="$(sidar_install_frontend_e2e_label)"
     local frontend_quality_command="cd web_ui_react && npm run lint && npm run typecheck && npm run test:coverage && npm run test:e2e:smoke"
 
     if [[ "$frontend_status" == "tamamlandi" ]]; then
-        echo -e "       ${GREEN}✅ Frontend QA: lint/typecheck/coverage/e2e smoke tamamlandı.${NC}"
+        echo -e "       ${GREEN}✅ Frontend QA: lint/typecheck/coverage/${frontend_e2e_label} tamamlandı.${NC}"
         return
     fi
 
@@ -188,7 +208,7 @@ print_react_frontend_qa_status_block() {
     else
         echo -e "       ${YELLOW}${BOLD}⚠️  FRONTEND QA ÇALIŞTIRILMADI${NC}"
         echo -e "       ${YELLOW}React build geçti ≠ frontend QA geçti.${NC}"
-        echo -e "       ${YELLOW}Lint, typecheck, coverage ve e2e smoke henüz doğrulanmadı.${NC}"
+        echo -e "       ${YELLOW}Lint, typecheck, coverage ve ${frontend_e2e_label} henüz doğrulanmadı.${NC}"
         echo -e "       ${YELLOW}Ayrı frontend kalite kapısını çalıştırın:${NC}"
     fi
     echo "       ${frontend_quality_command}"
@@ -213,7 +233,7 @@ print_release_readiness_next_action() {
         echo -e "       ${YELLOW}${BOLD}⚠️  Bu sonuç yalnız yerel geliştirme ortamının sağlıklı olduğunu gösterir.${NC}"
         echo -e "       ${YELLOW}Profil farkı:${NC}"
         echo -e "       ${YELLOW}• dev-light: hızlı lokal geliştirme; voice/browser/GPU gibi sistem-header bağımlılıklarını kapsamaz.${NC}"
-        echo -e "       ${YELLOW}• dev-full / uv sync --frozen --all-extras: tam geliştirici/CI paritesi ve tüm extras yüzeyi.${NC}"
+        echo -e "       ${YELLOW}• dev-full / uv sync --frozen --all-extras: tam geliştirici bağımlılık ve local doğrulama yüzeyi (CI paritesi için make ci-parity).${NC}"
         echo -e "       ${YELLOW}• production-readiness: release/merge kapısı; sistem bağımlılıkları + Playwright browser + benchmark baseline gerektirebilir.${NC}"
     elif [[ "$ci_status" == "hata" ]]; then
         echo -e "       ${RED}❌ Development validation hata verdi; önce run_tests.sh çıktısını düzeltin.${NC}"

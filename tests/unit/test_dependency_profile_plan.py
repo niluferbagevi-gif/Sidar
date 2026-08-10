@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import tomllib
-from datetime import date
 from pathlib import Path
 
 from packaging.requirements import Requirement
@@ -180,34 +179,28 @@ def test_ci_has_blocking_production_profile_runtime_validation() -> None:
     assert "runtime-evidence.json" in docs
 
 
-def test_torch_upgrade_reminder_has_calendar_artifact_and_validation_plan() -> None:
+def test_torch_upgrade_reminder_records_resolved_advisory_and_validation_plan() -> None:
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     reminder = pyproject["tool"]["sidar"]["dependency_profile_plan"]["torch_upgrade_reminder"]
-    calendar = Path(reminder["calendar_file"])
-    calendar_text = calendar.read_text(encoding="utf-8")
     runbook = Path(reminder["runbook_file"])
     runbook_text = runbook.read_text(encoding="utf-8")
     docs = Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")
 
-    assert reminder["current_lock"] == "torch 2.11.0"
+    assert reminder["status"] == "resolved"
+    assert reminder["current_lock"] == "torch 2.13.0"
     assert reminder["tracked_policy_exception"] == "CVE-2025-3000"
-    assert reminder["review_by"] == "2026-08-15"
-    assert reminder["expires"] == "2026-09-15"
-    assert reminder["warning_window_days"] == 45
+    assert reminder["advisory_checked_on"] == "2026-08-09"
+    assert reminder["upstream_patched_versions"] == "2.13.0"
     assert reminder["upgrade_command"] == (
         "uv lock --upgrade-package torch --upgrade-package torchvision"
     )
     assert "uv sync --all-extras" in reminder["validation_commands"]
-    assert calendar.exists()
     assert runbook.exists()
-    assert "DTSTART;VALUE=DATE:20260815" in calendar_text
-    assert "Review Sidar torch 2.11.0 pin" in calendar_text
-    assert str(calendar) in docs
     assert str(runbook) in docs
     for required in (
-        "Review by:** 2026-08-15",
-        "inside the 45-day warning window",
-        "Exception expires:** 2026-09-15",
+        "Review completed:** 2026-08-09",
+        "first patched version `2.13.0`",
+        "Exception status:** removed",
         "uv lock --upgrade-package torch --upgrade-package torchvision",
         "uv run python scripts/ci/check_policy_dates.py --warn-within-days 45",
         "uv run --with pip-audit pip-audit --skip-editable --timeout 30",
@@ -320,38 +313,30 @@ def test_production_minimal_excludes_heavy_optional_extras() -> None:
     assert "test_dependency_profile_plan.py" in docs
 
 
-def test_rag_torch_dependency_is_bounded_below_current_audit_failure() -> None:
+def test_rag_torch_dependency_uses_patched_release_without_audit_exception() -> None:
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     rag_deps = pyproject["project"]["optional-dependencies"]["rag"]
     docs = Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")
     policy = Path("security/pip-audit-ignores.tsv").read_text(encoding="utf-8")
 
-    assert "torch>=2.4.1,<2.12" in rag_deps
-    assert "torchvision>=0.19,<0.27" in rag_deps
+    assert "torch>=2.13,<2.14" in rag_deps
+    assert "torchvision>=0.28,<0.29" in rag_deps
     assert "uv lock --upgrade-package torch --upgrade-package torchvision" in docs
     assert "CVE-2025-3000" in docs
-    assert "Mevcut `uv.lock` çözümü `torch 2.11.0`" in docs
-    assert "sys_platform == 'linux'" in docs
+    assert "Mevcut `uv.lock` çözümü `torch 2.13.0`" in docs
     assert "security/pip-audit-ignores.tsv" in Path("pyproject.toml").read_text(encoding="utf-8")
     assert "scripts/pip_audit_ignore_args.py" in docs
-    assert "2026-09-15" in docs
-    assert "2026-08-15" in docs
     reminder = pyproject["tool"]["sidar"]["dependency_profile_plan"]["torch_upgrade_reminder"]
-    assert reminder["advisory_checked_on"] == "2026-07-16"
-    assert reminder["upstream_last_affected"] == "2.12.0"
-    assert reminder["upstream_patched_versions"] == "none"
-    assert "last_affected=2.12.0" in docs
-    assert "patched_versions=none" in docs
-    assert "status=watch" in docs
+    assert reminder["status"] == "resolved"
+    assert reminder["advisory_checked_on"] == "2026-08-09"
+    assert reminder["upstream_last_affected"] == "2.12.1"
+    assert reminder["upstream_patched_versions"] == "2.13.0"
+    assert "Çözüldü (2026-08-09)" in docs
     assert "fail-closed" in docs
-    assert "CVE-2025-3000" in policy
-    assert "GHSA-rrmf-rvhw-rf47" in policy
-    assert "torch" in policy
-    assert "status=watch" in policy
-    assert "installed=torch 2.11.0" in policy
-    assert "next_review=2026-08-15" in policy
-    assert "upstream fix unavailable" in policy
-    assert date.fromisoformat("2026-09-15") > date(2026, 6, 17)
+    active_policy_lines = [
+        line for line in policy.splitlines() if line and not line.startswith("#")
+    ]
+    assert not any("GHSA-rrmf-rvhw-rf47" in line for line in active_policy_lines)
 
 
 def test_production_profile_excludes_dev_quality_tools() -> None:

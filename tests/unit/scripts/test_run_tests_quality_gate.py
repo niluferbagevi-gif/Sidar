@@ -1091,7 +1091,8 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
     assert "Development full validation geçti = geliştirici ortamı sağlıklı" in validation_phase
     assert "Profil farkı:" in finish_phase
     assert "dev-light: hızlı lokal geliştirme" in finish_phase
-    assert "dev-full / uv sync --frozen --all-extras: tam geliştirici/CI paritesi" in finish_phase
+    assert "dev-full / uv sync --frozen --all-extras: tam geliştirici bağımlılık" in finish_phase
+    assert "CI paritesi için make ci-parity" in finish_phase
     assert (
         "production-readiness: release/merge kapısı; sistem bağımlılıkları + Playwright browser + "
         "benchmark baseline gerektirebilir" in finish_phase
@@ -1100,8 +1101,9 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
     assert "Profil farkı:" in validation_phase
     assert "dev-light: hızlı lokal geliştirme" in validation_phase
     assert (
-        "dev-full / uv sync --frozen --all-extras: tam geliştirici/CI paritesi" in validation_phase
+        "dev-full / uv sync --frozen --all-extras: tam geliştirici bağımlılık" in validation_phase
     )
+    assert "CI paritesi için make ci-parity" in validation_phase
     assert (
         "production-readiness: release/merge kapısı; sistem bağımlılıkları + Playwright browser + "
         "benchmark baseline gerektirebilir" in validation_phase
@@ -4698,6 +4700,7 @@ def test_install_sidar_selects_pytorch_cuda_wheel_dynamically() -> None:
 def test_run_tests_builds_missing_docker_test_image_only_with_explicit_opt_in() -> None:
     script = _script()
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    makefile = Path("Makefile").read_text(encoding="utf-8")
     compose = Path("docker-compose.yml").read_text(encoding="utf-8")
     preflight = script[
         script.index("prepare_docker_test_image()") : script.index("run_bats_shell_tests()")
@@ -4707,6 +4710,11 @@ def test_run_tests_builds_missing_docker_test_image_only_with_explicit_opt_in() 
     assert 'AUTO_BUILD_DOCKER_TEST_IMAGE: "1"' in ci
     assert 'DOCKER_TEST_IMAGE: "sidar:latest"' in ci
     assert 'DOCKER_TEST_IMAGE_BUILD_CONTEXT: "."' in ci
+    assert "Enforce real-container plugin sandbox security matrix" in ci
+    assert 'SIDAR_REQUIRE_PLUGIN_SANDBOX_CONTAINER_TESTS: "1"' in ci
+    assert "plugin-sandbox-security:" in makefile
+    assert "docker build --tag $(PLUGIN_SANDBOX_IMAGE) ." in makefile
+    assert "SIDAR_REQUIRE_PLUGIN_SANDBOX_CONTAINER_TESTS=1" in makefile
     assert "image: ${SIDAR_DOCKER_IMAGE:-sidar:latest}" in compose
     assert "build:" in compose and "context: ." in compose
     assert 'if [ "${AUTO_BUILD_DOCKER_TEST_IMAGE}" != "1" ]; then' in preflight
@@ -4716,6 +4724,23 @@ def test_run_tests_builds_missing_docker_test_image_only_with_explicit_opt_in() 
     assert (
         "ensure_uv_available && prepare_docker_test_image && ensure_runtime_dependencies" in script
     )
+
+
+def test_validation_class_and_frontend_e2e_messages_distinguish_all_profiles() -> None:
+    run_tests = _script()
+    frontend_helpers = Path("scripts/test_gates/frontend_helpers.sh").read_text(encoding="utf-8")
+    summary_helpers = Path("scripts/test_gates/summary_helpers.sh").read_text(encoding="utf-8")
+
+    assert "dev-full = local full validation" in run_tests
+    assert "CI paritesi veya release gate değildir" in run_tests
+    assert "ci-parity = CI profil paritesi" in run_tests
+    assert "release gate değildir" in run_tests
+    assert "production-readiness = release gate" in run_tests
+    assert "test:e2e) printf '%s' \"tam Playwright E2E\"" in frontend_helpers
+    assert "test:e2e:smoke) printf '%s' \"Playwright E2E smoke\"" in frontend_helpers
+    assert "| $(frontend_e2e_scope_label) |" in frontend_helpers
+    assert "Gerçek CI paritesi için: make ci-parity" in frontend_helpers
+    assert "Gerçek CI paritesi için: make ci-parity" in summary_helpers
 
 
 def test_run_tests_defaults_bats_to_required_in_ci_and_auto_detects_locally() -> None:
@@ -4959,9 +4984,10 @@ def test_pip_audit_skips_only_local_editable_package_and_uses_dated_policy() -> 
     )
     assert "name: security-audit-artifacts" in ci_workflow
     assert "artifacts/security/" in ci_workflow
-    assert "GHSA-rrmf-rvhw-rf47" in policy
-    assert "CVE-2025-3000" in policy
-    assert "2026-09-15" in policy
+    active_policy_lines = [
+        line for line in policy.splitlines() if line and not line.startswith("#")
+    ]
+    assert not any("GHSA-rrmf-rvhw-rf47" in line for line in active_policy_lines)
     assert "security policy data" in security_readme
     assert "not the runtime" in security_readme
     assert "web/security.py" in security_readme
@@ -5905,6 +5931,7 @@ def test_frontend_bundle_budget_warns_when_totals_approach_budget(tmp_path: Path
     chunk_path = assets_dir / "react-dom-near-budget.js"
     chunk_path.write_text("a" * 950, encoding="utf-8")
     (assets_dir / "ChatMarkdownRenderer-stub.js").write_text("a", encoding="utf-8")
+    (assets_dir / "highlight-js-core-stub.js").write_text("a", encoding="utf-8")
     report_path = tmp_path / "bundle-budget.json"
 
     env = os.environ.copy()
@@ -5942,6 +5969,9 @@ def test_frontend_bundle_budget_requires_total_budgets_for_ci_gate(tmp_path: Pat
     chunk_path.write_text("console.log('react-dom');\n", encoding="utf-8")
     (assets_dir / "ChatMarkdownRenderer-stub.js").write_text(
         "console.log('markdown');\n", encoding="utf-8"
+    )
+    (assets_dir / "highlight-js-core-stub.js").write_text(
+        "console.log('highlight');\n", encoding="utf-8"
     )
     report_path = tmp_path / "bundle-budget.json"
 
@@ -5993,6 +6023,7 @@ def test_frontend_bundle_budget_gates_the_markdown_vendor_chunk_independently(
     assets_dir.mkdir()
     (assets_dir / "react-dom-test.js").write_text("a" * 100, encoding="utf-8")
     (assets_dir / "ChatMarkdownRenderer-test.js").write_text("a" * 2048, encoding="utf-8")
+    (assets_dir / "highlight-js-core-stub.js").write_text("a", encoding="utf-8")
     report_path = tmp_path / "bundle-budget.json"
 
     env = os.environ.copy()
@@ -6029,6 +6060,46 @@ def test_frontend_bundle_budget_gates_the_markdown_vendor_chunk_independently(
     assert report["budgetUsage"]["totalJs"]["warning"] is False
 
 
+def test_frontend_bundle_budget_gates_highlight_core_independently(tmp_path: Path) -> None:
+    """The selected highlight.js language graph must retain its own size tripwire."""
+    assets_dir = tmp_path / "assets"
+    assets_dir.mkdir()
+    (assets_dir / "react-dom-test.js").write_text("a", encoding="utf-8")
+    (assets_dir / "ChatMarkdownRenderer-test.js").write_text("a", encoding="utf-8")
+    (assets_dir / "highlight-js-core-test.js").write_text("a" * 2048, encoding="utf-8")
+    report_path = tmp_path / "bundle-budget.json"
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "SIDAR_HIGHLIGHT_CHUNK_BUDGET_KB": "1",
+            "SIDAR_TOTAL_JS_BUDGET_KB": "500",
+            "SIDAR_TOTAL_GZIP_BUDGET_KB": "500",
+            "SIDAR_BUNDLE_BUDGET_REPORT_PATH": str(report_path),
+            "SIDAR_BUNDLE_ASSETS_DIR": str(assets_dir),
+        }
+    )
+
+    result = subprocess.run(
+        ["node", "web_ui_react/scripts/check-bundle-budget.mjs"],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert result.returncode != 0
+    assert "highlight.js core chunk highlight-js-core-test.js exceeds budget" in (
+        result.stdout + result.stderr
+    )
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    highlight_budget = next(
+        chunk for chunk in report["namedChunks"] if chunk["label"] == "highlight.js core"
+    )
+    assert highlight_budget["budgetKb"] == 1
+    assert highlight_budget["chunks"][0]["name"] == "highlight-js-core-test.js"
+
+
 def test_frontend_rehype_sidar_highlight_has_its_own_manual_chunk() -> None:
     """Pin the cache-isolation split behind the ChatMarkdownRenderer budget.
 
@@ -6052,8 +6123,10 @@ def test_frontend_rehype_sidar_highlight_has_its_own_manual_chunk() -> None:
     assert 'return "rehype-sidar-highlight";' in vite_config
     assert "namedChunkBudgets" in bundle_budget_script
     assert "SIDAR_MARKDOWN_CHUNK_BUDGET_KB" in bundle_budget_script
+    assert "SIDAR_HIGHLIGHT_CHUNK_BUDGET_KB" in bundle_budget_script
     assert "ChatMarkdownRenderer" in bundle_budget_script
     assert "SIDAR_MARKDOWN_CHUNK_BUDGET_KB=190" in readme
+    assert "SIDAR_HIGHLIGHT_CHUNK_BUDGET_KB=40" in readme
     assert "rehype-sidar-highlight-*.js" in readme
     assert "ChatMarkdownRenderer-*.js" in readme
 

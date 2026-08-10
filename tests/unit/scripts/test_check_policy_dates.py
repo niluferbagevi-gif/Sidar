@@ -36,16 +36,10 @@ def test_check_policy_dates_accepts_active_repository_dates() -> None:
     assert failures == []
 
 
-def test_check_policy_dates_warns_for_torch_review_window() -> None:
+def test_resolved_repository_torch_review_has_no_date_warning() -> None:
     warnings = check_policy_date_warnings(Path("pyproject.toml"), today=date(2026, 7, 16))
 
-    assert warnings == [
-        (
-            "Torch CVE policy review "
-            "(tool.sidar.dependency_profile_plan.torch_upgrade_reminder.review_by) "
-            "is due on 2026-08-15 (30 days remaining)"
-        )
-    ]
+    assert not any("Torch CVE" in warning for warning in warnings)
 
 
 def test_check_policy_dates_warns_for_ruff_debt_campaign_windows(tmp_path: Path) -> None:
@@ -144,12 +138,11 @@ def test_check_policy_dates_flags_docstring_and_async240_campaign_expiry_indepen
     ]
 
 
-def test_check_policy_dates_cli_warns_without_failing_before_review_date(capsys) -> None:
+def test_check_policy_dates_cli_does_not_warn_for_resolved_torch_review(capsys) -> None:
     assert main(["--today", "2026-07-16", "--warn-within-days", "45"]) == 0
 
     captured = capsys.readouterr()
-    assert "Upcoming Sidar policy/debt dates" in captured.err
-    assert "30 days remaining" in captured.err
+    assert "Torch CVE policy" not in captured.err
 
 
 def test_check_policy_dates_cli_returns_nonzero_for_expired_policy(tmp_path: Path) -> None:

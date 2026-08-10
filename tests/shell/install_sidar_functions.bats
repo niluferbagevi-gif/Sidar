@@ -3121,7 +3121,7 @@ EOF
     trap "rm -rf \"$tmpdir\"" EXIT
     TEST_SUMMARY_JSON="$tmpdir/test-summary.json"
     cat > "$TEST_SUMMARY_JSON" <<JSON
-{"integration":"passed","e2e":"passed","frontend_lint":"passed","frontend_typecheck":"passed","frontend_coverage":"passed","frontend_e2e":"passed"}
+{"integration":"passed","e2e":"passed","frontend_lint":"passed","frontend_typecheck":"passed","frontend_coverage":"passed","frontend_e2e":"passed","frontend_e2e_scope":"full","frontend_e2e_script":"test:e2e"}
 JSON
     INTEGRATION_TEST_STATUS="atlandi_bayrak"
     FRONTEND_QUALITY_STATUS="atlandi_bayrak"
@@ -3130,6 +3130,22 @@ JSON
   [ "$status" -eq 0 ]
   [[ "$output" == *"Entegrasyon testleri: başarılı (run_tests.sh --stage all içinde doğrulandı)."* ]]
   [[ "$output" == *"E2E testleri: başarılı (run_tests.sh --stage all içinde doğrulandı)."* ]]
-  [[ "$output" == *"Frontend kalite kapısı: başarılı (run_tests.sh --stage all içinde lint/typecheck/coverage/e2e doğrulandı)."* ]]
+  [[ "$output" == *"Frontend kalite kapısı: başarılı (lint/typecheck/coverage/tam Playwright E2E (npm run test:e2e) doğrulandı)."* ]]
+  [[ "$output" != *"e2e smoke"* ]]
   [[ "$output" != *"Entegrasyon testleri: atlandı"* ]]
+}
+
+@test "finish summary reports frontend e2e scope and script from test summary" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    TEST_SUMMARY_JSON="$tmpdir/test-summary.json"
+
+    printf "%s\n" '\''{"frontend_e2e_scope":"smoke","frontend_e2e_script":"test:e2e:smoke"}'\'' > "$TEST_SUMMARY_JSON"
+    [[ "$(sidar_install_frontend_e2e_label)" == "Playwright smoke (npm run test:e2e:smoke)" ]]
+
+    printf "%s\n" '\''{"frontend_e2e_scope":"full","frontend_e2e_script":"test:e2e"}'\'' > "$TEST_SUMMARY_JSON"
+    [[ "$(sidar_install_frontend_e2e_label)" == "tam Playwright E2E (npm run test:e2e)" ]]
+  '
+  [ "$status" -eq 0 ]
 }

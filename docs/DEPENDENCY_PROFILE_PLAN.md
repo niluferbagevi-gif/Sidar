@@ -114,26 +114,17 @@ sınıflandırılmalı ve production-minimal profil etkisi ayrı PR'da değerlen
 
 ## Güvenlik odaklı çözümleme sınırları
 
-> **Aktif takip durumu (2026-07-16):** `GHSA-rrmf-rvhw-rf47` / `CVE-2025-3000`
-> torch istisnası hâlâ `status=watch` durumundadır; review tarihi `2026-08-15`,
-> sert bitiş tarihi `2026-09-15` olarak korunur. 2026-07-16 kontrolünde upstream
-> advisory verisi hâlâ `last_affected=2.12.0` ve `patched_versions=none` gösterdiği
-> için bu PR yeni bir lock yenilemesi yapmaz; yapılacak iş, hatırlatıcı/runbook ile
-> upgrade denemesini zamanında çalıştırmak ve istisna süresi dolmadan sonucu kayıt
-> altına almaktır.
+> **Çözüldü (2026-08-09):** `GHSA-rrmf-rvhw-rf47` / `CVE-2025-3000` incelemesi
+> 2026-08-15 hedefinden önce tekrarlandı. Güncel advisory `torch<=2.12.1` sürümlerini
+> etkilenmiş, `2.13.0` sürümünü ilk patched release olarak gösterir. Lock
+> `torch 2.13.0` / `torchvision 0.28.0` seviyesine yükseltildi ve audit istisnası kaldırıldı.
+> İnceleme ve yeniden doğrulama adımları `docs/runbooks/torch-cve-upgrade.md` içinde kayıtlıdır.
 
-- `rag` extra içindeki PyTorch çözümlemesi geçici olarak `torch>=2.4.1,<2.12` ve
-  `torchvision>=0.19,<0.27` aralığıyla sınırlandırılmıştır. Bu sınır, daha önce
-  `pip-audit` tarafından raporlanan `torch 2.12.0 / CVE-2025-3000` bulgusu için
-  açık uçlu resolver davranışını durdurur.
-- Mevcut `uv.lock` çözümü `torch 2.11.0` ve `torchvision 0.26.0` seviyesindedir;
-  `security/pip-audit-ignores.tsv` içindeki aktif `GHSA-rrmf-rvhw-rf47` / `CVE-2025-3000`
-  istisnası bu lock penceresi için `status=watch` olarak tarihlidir. `2026-08-15` hedefli ara
-  kontrolde upstream patch durumu yeniden denenmeli; yeni bir lock yenilemesi farklı torch/torchvision
-  çözümü üretirse istisnayı uzatmadan önce `<2.12` sınırı ve upstream fix durumu tekrar doğrulanmalıdır.
-  Calendar reminder: `docs/reminders/torch-cve-review-2026-08-15.ics`; makine-okunur takip metadata
-  `pyproject.toml` içindeki `[tool.sidar.dependency_profile_plan.torch_upgrade_reminder]` bloğundadır.
-  Operasyonel upgrade/runbook adımları `docs/runbooks/torch-cve-upgrade.md` altında tutulur.
+- `rag` extra içindeki PyTorch çözümlemesi patched ve uyumlu release ailelerine,
+  `torch>=2.13,<2.14` ve `torchvision>=0.28,<0.29`, sabitlenmiştir.
+- Mevcut `uv.lock` çözümü `torch 2.13.0` ve `torchvision 0.28.0` seviyesindedir.
+  `security/pip-audit-ignores.tsv` artık bu advisory için aktif istisna içermez;
+  makine-okunur metadata `status=resolved` ve 2026-08-09 advisory kanıtını korur.
 - `uv.lock` yenilemesi ağ/proxy erişimi olan CI veya geliştirici ortamında
   `uv lock --upgrade-package torch --upgrade-package torchvision` ile yapılmalı, ardından
   `uv sync --all-extras` ve `uv run --with pip-audit pip-audit --skip-editable --timeout 30`
@@ -145,9 +136,8 @@ sınıflandırılmalı ve production-minimal profil etkisi ayrı PR'da değerlen
 - `security/pip-audit-ignores.tsv` içindeki her istisna `expires` alanı taşır ve
   `scripts/pip_audit_ignore_args.py` tarafından `run_tests.sh` ile GitHub Actions security audit
   adımında okunur. Süresi dolan istisnalar `pip-audit` komutuna aktarılmaz; script fail-closed
-  döner ve kalite kapısını kırar. Mevcut `GHSA-rrmf-rvhw-rf47` / `CVE-2025-3000` torch istisnası
-  `2026-09-15` tarihinde sona erer; `tests/unit/scripts/test_pip_audit_ignore_args.py` bu tarihten
-  sonraki günün fail ettiğini doğrulayarak expiry takibini korur.
+  döner ve kalite kapısını kırar. Torch istisnası patched lock sonrasında kaldırılmıştır;
+  gelecekteki istisnalar aynı fail-closed expiry sözleşmesini korumalıdır.
 - Yeni suppress/ignore listeleri aynı standardı izlemelidir: her kayıt makine-okunur
   `expires` veya `next_review` tarihi, paket/bulgu kimliği, owner/runbook referansı ve dar kapsamlı
   gerekçe taşımalı; süresi dolan kayıtlar fail-closed davranışla kalite kapısından düşmelidir.

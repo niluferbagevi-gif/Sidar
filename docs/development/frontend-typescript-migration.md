@@ -95,15 +95,17 @@ load/error boilerplate'i), `lib/errors.ts` (6 dosyaya kopyalanmış
 `errorMessage()`) ve bunun üzerine kurulan `hooks/useAsyncResource.ts`. Bunlar
 birer "taşıma" değildir -- untyped envanteri azaltmazlar -- ama typed tabanı
 büyütüp ratchet'in `minimum_typed_files` tabanının üstünde headroom bırakırlar.
-Güncel envanter 9 `.js`, 20 `.jsx`, 16 `.ts`, 22 `.tsx`; ratchet 29 untyped / 38
-typed'dır (baseline'ın kendisi yalnız sahibin onayıyla sıkılaştırılır, bu yüzden
-`typescript-migration-baseline.json`'daki 29/32 tabanı bilinçli olarak
-değiştirilmedi -- gerçek sayı zaten tabanın üzerinde).
+2026-08-09'daki ilk mekanik test migrasyonundan sonra güncel envanter 8 `.js`,
+20 `.jsx`, 17 `.ts`, 22 `.tsx`; ratchet 28 untyped / 39 typed'dır. Ölçülen
+ilerleme `typescript-migration-baseline.json` içinde hemen sıkılaştırılarak
+kampanyanın geriye gitmesi engellenmiştir.
 
 ## Zorunlu ratchet
 
-`typescript-migration-baseline.json`, en fazla 29 untyped (`.js` + `.jsx`) ve en az
-32 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. `npm run typecheck:inventory`:
+`typescript-migration-baseline.json`, en fazla 28 untyped (`.js` + `.jsx`) ve en az
+39 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. İlk test dilimi olarak
+`hooks/useFormState.test.js`, davranış ve assertion'ları değiştirilmeden
+`hooks/useFormState.test.ts` dosyasına taşınmıştır. `npm run typecheck:inventory`:
 
 - `.js`/`.jsx` toplamındaki net artışı fail-closed reddeder;
 - mevcut `.ts`/`.tsx` dosyalarının silinmesi veya untyped biçime döndürülmesini reddeder;
@@ -166,9 +168,12 @@ geçişi coverage düşüşünü meşrulaştırmaz. 2026-08-04 baseline ölçüm
 yaklaşık on puanlık sessiz regresyona izin veriyordu. `ChatPanel`, `AgentManagerPanel`,
 `SwarmFlowPanel` ve `PluginMarketplacePanel` edge-case testleri tamamlandıktan sonra ölçüm
 `%100` statement/function/line ve `%99.77` branch'e yükseldi; global Vitest kapısı ilk
-kademede dört metrik için `%98` olarak sıkılaştırıldı.
+kademede dört metrik için `%98` olarak sıkılaştırıldı. 2026-08-09'da kalan üç
+branch null registration payload, eksik marketplace category ve swarm `parallel`
+seçimi testleriyle kapatıldı. Tam branch kapsamı yeniden üretildikten sonra branch
+ratchet'i `%100`'e yükseltildi; statement/function/line kapıları mevcut `%98`
+seviyesinde kaldı.
 
-Eşik yalnız ölçülen coverage korundukça yukarı taşınmalı; özellikle V8 branch haritalamasında
-tek satırlık JSX ternary/logical expression'ların oynaklığı nedeniyle doğrudan `%100` branch
-kapısı ilan edilmemelidir. Sıradaki ratchet artışı, stabil tam branch kapsamı veya açıkça
-belgelenmiş deterministik baseline görüldüğünde değerlendirilir.
+Branch eşiği artık yeni bir V8 branch mapping veya gerçek davranış dalının testsiz
+eklenmesini fail-closed reddeder. Coverage istisnası gerekiyorsa eşiği gevşetmek yerine
+eksik davranış testi veya dar, gerekçeli instrumentation istisnası incelenmelidir.

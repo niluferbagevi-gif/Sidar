@@ -9,6 +9,14 @@ _INLINE_NOSEC_PROSE = re.compile(r"#\s*nosec\s+B\d{3}\s+[-–—]")
 _NOSEC_B608_RE = re.compile(r"#\s*nosec\s+B608\b")
 _SQL_IDENTIFIER_VALIDATOR_MODULES = {"core.db.dialect", "core.db_components.dialect"}
 _SQL_IDENTIFIER_VALIDATOR_NAMES = {"assert_safe_sql_identifier", "is_safe_sql_identifier"}
+_REVIEWED_B608_FILES = (
+    "core/db/monolith.py",
+    "core/active_learning.py",
+    "core/db/prompt_registry.py",
+    "core/rag/backends/pgvector.py",
+    "core/router.py",
+)
+_B608_RATCHET_MAX = 20
 
 
 def test_nosec_comments_keep_explanatory_prose_outside_bandit_directive() -> None:
@@ -39,6 +47,17 @@ def test_bandit_does_not_globally_skip_dynamic_sql_check() -> None:
     pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
 
     assert "B608" not in pyproject["tool"]["bandit"]["skips"]
+
+
+def test_reviewed_core_b608_suppressions_do_not_exceed_ratchet() -> None:
+    """Prevent dynamic-SQL suppressions from returning after expression migration."""
+    root = Path(__file__).resolve().parents[2]
+    occurrences = sum(
+        len(_NOSEC_B608_RE.findall((root / relative_path).read_text(encoding="utf-8")))
+        for relative_path in _REVIEWED_B608_FILES
+    )
+
+    assert occurrences <= _B608_RATCHET_MAX
 
 
 def _imports_sql_identifier_validator(source: str) -> bool:

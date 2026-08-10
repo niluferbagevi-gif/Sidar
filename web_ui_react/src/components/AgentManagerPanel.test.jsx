@@ -149,6 +149,23 @@ describe("AgentManagerPanel", () => {
     expect(await screen.findByText("Ajan yüklenemedi")).toBeInTheDocument();
   });
 
+  it("uses default error message when the backend error payload is null", async () => {
+    const user = userEvent.setup();
+    global.fetch.mockResolvedValue({
+      ok: false,
+      json: async () => null,
+    });
+
+    render(<AgentManagerPanel />);
+    await user.upload(
+      screen.getByLabelText(/Python dosyası/),
+      new File(["print('ok')"], "test.py", { type: "text/x-python" }),
+    );
+    fireEvent.submit(screen.getByRole("button", { name: "Ajanı Kaydet" }).closest("form"));
+
+    expect(await screen.findByText("Ajan yüklenemedi")).toBeInTheDocument();
+  });
+
   it("rejects malformed successful registration responses", async () => {
     const user = userEvent.setup();
     global.fetch.mockResolvedValue({ ok: true, json: async () => ({ agent: { version: 1 } }) });

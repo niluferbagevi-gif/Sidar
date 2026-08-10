@@ -8,6 +8,7 @@ CI_PRODUCTION_READINESS ?= 0
 FRONTEND_BUNDLE_BUDGET_LOCAL_FULL ?= 1
 SIDAR_TOTAL_JS_BUDGET_KB ?= 550
 SIDAR_TOTAL_GZIP_BUDGET_KB ?= 170
+PLUGIN_SANDBOX_IMAGE ?= sidar:latest
 
 SHELLCHECK_FILES := $(shell git ls-files \
 	'install_sidar.sh' \
@@ -22,7 +23,7 @@ INSTALLER_SHELLCHECK_FILES := $(shell git ls-files \
 	'scripts/install_modules/*.sh' \
 	'scripts/install_modules/**/*.sh')
 
-.PHONY: lint lint-shell installer-shellcheck test test-shell check-install-manifests finalize-install-module-pin deps-full deps-dev-light dev-full dev-full-gpu ci-parity base-quality-gates production-readiness doctor-production-readiness benchmark-seed frontend-gate backend-integration format format-check python-quality
+.PHONY: lint lint-shell installer-shellcheck test test-shell check-install-manifests finalize-install-module-pin deps-full deps-dev-light sync-ci-parity-deps dev-full dev-full-gpu ci-parity plugin-sandbox-security base-quality-gates production-readiness doctor-production-readiness benchmark-seed frontend-gate backend-integration format format-check python-quality
 
 lint: lint-shell check-install-manifests
 
@@ -46,6 +47,13 @@ deps-full:
 
 deps-dev-light:
 	uv sync --frozen --extra dev-light
+
+# Refresh both lockfile-backed environments before claiming local CI parity.
+# This prevents a previously populated .venv or node_modules tree from hiding
+# dependency changes that landed after the checkout being validated.
+sync-ci-parity-deps:
+	uv sync --frozen --all-extras
+	npm --prefix web_ui_react ci
 
 test-shell:
 	$(BATS) tests/shell
@@ -84,11 +92,21 @@ dev-full-gpu:
 # FRONTEND_E2E_NPM_SCRIPT=test:e2e mirrors ci.yml's "test" job exactly: all 8
 # web_ui_react/e2e/ specs, not just the smoke default (see base-quality-gates
 # below for the same override on the release-gate path).
-ci-parity:
+ci-parity: sync-ci-parity-deps
 	TEST_PROFILE=ci FRONTEND_E2E_NPM_SCRIPT=test:e2e \
 	$(MAKE) dev-full FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=1 \
 		SIDAR_TOTAL_JS_BUDGET_KB=$(SIDAR_TOTAL_JS_BUDGET_KB) \
 		SIDAR_TOTAL_GZIP_BUDGET_KB=$(SIDAR_TOTAL_GZIP_BUDGET_KB)
+
+# Build the current checkout instead of trusting a potentially stale local tag,
+# then make skipped real-container security tests a hard failure.
+plugin-sandbox-security:
+	@command -v docker >/dev/null || { echo "Docker CLI bulunamadı." >&2; exit 1; }
+	@docker info >/dev/null 2>&1 || { echo "Docker daemon erişilebilir değil." >&2; exit 1; }
+	docker build --tag $(PLUGIN_SANDBOX_IMAGE) .
+	SIDAR_PLUGIN_SANDBOX_IMAGE=$(PLUGIN_SANDBOX_IMAGE) \
+	SIDAR_REQUIRE_PLUGIN_SANDBOX_CONTAINER_TESTS=1 \
+	uv run pytest -q -rs tests/integration/web/test_plugin_sandbox_container_escape.py
 
 # FRONTEND_E2E_NPM_SCRIPT=test:e2e mirrors ci.yml's "test" job exactly: all 8
 # web_ui_react/e2e/ specs, not just the smoke default. Without this override
