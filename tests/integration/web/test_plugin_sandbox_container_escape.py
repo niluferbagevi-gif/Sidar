@@ -205,13 +205,18 @@ def _running_containers_for_image(image: str) -> list[str]:
 def _assert_no_orphan_containers(image: str) -> None:
     """Poll for --rm cleanup; Docker removes the container asynchronously.
 
-    15s (not the original 5s) headroom: a CI runner building the target
-    image, running Postgres/Redis service containers, and this module's own
-    xdist workers concurrently can genuinely make async ``--rm`` teardown
-    slower than on an idle developer machine -- this widened after a real CI
-    run needed close to 5s under that exact contention.
+    30s (not the original 5s, nor the 5s->15s first widening) headroom: a CI
+    runner building the target image, running Postgres/Redis service
+    containers, and this module's own xdist workers concurrently can
+    genuinely make async ``--rm`` teardown slower than on an idle developer
+    machine. This has now needed widening twice under real CI contention --
+    once for a client-triggered kill (subprocess timeout), once for a cgroup
+    OOM-kill (SIGKILL from the kernel, which plausibly takes Docker longer to
+    notice and reap than a client-side kill) -- so this round doubles the
+    budget again rather than nudging it, instead of re-learning the same
+    lesson a third time one test at a time.
     """
-    deadline = time.monotonic() + 15
+    deadline = time.monotonic() + 30
     remaining: list[str] = []
     while time.monotonic() < deadline:
         remaining = _running_containers_for_image(image)
