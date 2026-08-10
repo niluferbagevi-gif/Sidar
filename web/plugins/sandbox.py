@@ -88,7 +88,10 @@ class DockerPluginSandboxBackend:
         docker = shutil.which("docker")
         if not docker:
             raise PluginSandboxError("Docker bulunamadı; plugin sandbox fail-closed reddedildi.")
-        # No source, prompt, host path or environment value is placed on the command line.
+        # No source, prompt, host path, secret or other host-derived value is
+        # placed on the command line -- the two -e flags below are fixed,
+        # non-secret isolation-contract constants (see their own comment),
+        # not host environment values being forwarded.
         return [
             docker,
             "run",
@@ -123,6 +126,27 @@ class DockerPluginSandboxBackend:
             # `unshare --net` + `setpriv` at ip_unprivileged_port_start=0
             # (bind succeeds) vs. the standard 1024 (bind is rejected).
             "--sysctl=net.ipv4.ip_unprivileged_port_start=1024",
+            # web/plugins/worker.py (running inside this container) executes
+            # plugin source via run_plugin_source_in_process(), which is the
+            # same helper the *host's* legacy in-process backend uses and is
+            # gated by assert_in_process_plugin_execution_allowed() -- fail
+            # closed unless SIDAR_ENABLE_IN_PROCESS_PLUGINS=1 is set (and
+            # SIDAR_ENV isn't production). That gate exists to stop the
+            # *unsandboxed host process* from ever falling back to running
+            # untrusted plugin code directly; it was never meant to also
+            # block the worker executing inside this already-isolated,
+            # network-none/cap-dropped/non-root container -- the container
+            # boundary itself is what makes running "in-process" here safe.
+            # Without these, every real Docker-backed RPC call fails closed
+            # with a generic "rejected by security policy" (SEC-PLUGIN-001's
+            # container-integration test caught this: the plugin sandbox had
+            # never actually executed a single real request end-to-end
+            # before this test finally ran against a real image). Scoped to
+            # only this container's environment via -e, never the host's.
+            "-e",
+            "SIDAR_ENABLE_IN_PROCESS_PLUGINS=1",
+            "-e",
+            "SIDAR_ENV=development",
             # The image's own ENTRYPOINT is the Sidar launcher (`python main.py`);
             # without this override, trailing argv (e.g. "-m web.plugins.worker")
             # is appended as *arguments to main.py* instead of replacing the

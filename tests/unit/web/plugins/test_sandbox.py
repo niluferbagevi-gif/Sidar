@@ -98,6 +98,9 @@ def test_docker_backend_command_applies_isolation_contract(monkeypatch) -> None:
         "--cpus=0.5",
         "--pids-limit=64",
         "--sysctl=net.ipv4.ip_unprivileged_port_start=1024",
+        "-e",
+        "SIDAR_ENABLE_IN_PROCESS_PLUGINS=1",
+        "SIDAR_ENV=development",
         "--entrypoint=python",
     ):
         assert expected in command
@@ -121,6 +124,40 @@ def test_docker_backend_pins_the_unprivileged_port_sysctl(monkeypatch) -> None:
     argv = DockerPluginSandboxBackend({})._isolation_argv()
 
     assert "--sysctl=net.ipv4.ip_unprivileged_port_start=1024" in argv
+
+
+def test_docker_backend_grants_the_worker_its_own_in_process_execution_opt_in(
+    monkeypatch,
+) -> None:
+    """Regression test: the worker could never actually execute any plugin.
+
+    ``web/plugins/worker.py`` runs plugin source via
+    ``run_plugin_source_in_process()`` -- the same helper gated by
+    ``assert_in_process_plugin_execution_allowed()`` for the *host's* legacy
+    in-process backend, which fails closed unless
+    ``SIDAR_ENABLE_IN_PROCESS_PLUGINS=1`` is set in ``os.environ``. Docker
+    containers don't inherit the host's environment unless explicitly passed
+    with ``-e``, and nothing did -- so every real ``describe()``/``run_task()``
+    call failed closed with a generic "rejected by security policy" before a
+    single plugin ever actually ran inside the sandbox
+    (tests/integration/web/test_plugin_sandbox_container_escape.py's
+    marketplace-proxy smoke test caught this against a real container).
+    Verified live: a real ``python -m web.plugins.worker`` subprocess returns
+    ``{"ok": false, "error": "403: ..."}`` without these two ``-e`` flags and
+    ``{"ok": true, ...}`` with them. The host process's own environment is
+    untouched -- these are fixed values scoped to the container via ``-e``,
+    not values forwarded from ``os.environ``.
+    """
+    monkeypatch.setattr("web.plugins.sandbox.shutil.which", lambda _name: "/usr/bin/docker")
+    argv = DockerPluginSandboxBackend({})._isolation_argv()
+
+    env_index = argv.index("-e")
+    assert argv[env_index : env_index + 4] == [
+        "-e",
+        "SIDAR_ENABLE_IN_PROCESS_PLUGINS=1",
+        "-e",
+        "SIDAR_ENV=development",
+    ]
 
 
 def test_docker_backend_command_overrides_the_image_entrypoint(monkeypatch) -> None:
