@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import sys
 
 import pytest
 
@@ -140,7 +141,7 @@ def test_main_reads_one_envelope_from_stdin_and_writes_ok_response(
     }
     monkeypatch.setattr(worker.sys, "stdin", io.StringIO(json.dumps(request)))
     out = io.StringIO()
-    monkeypatch.setattr(worker.sys, "stdout", out)
+    monkeypatch.setattr(worker, "_RPC_STDOUT", out)
 
     assert worker.main() == 0
 
@@ -154,7 +155,7 @@ def test_main_serializes_any_failure_into_a_bounded_ok_false_response(
 ) -> None:
     monkeypatch.setattr(worker.sys, "stdin", io.StringIO("not-json"))
     out = io.StringIO()
-    monkeypatch.setattr(worker.sys, "stdout", out)
+    monkeypatch.setattr(worker, "_RPC_STDOUT", out)
 
     assert worker.main() == 0
 
@@ -170,10 +171,49 @@ def test_main_serializes_any_failure_into_a_bounded_ok_false_response(
 def test_main_rejects_non_dict_envelope(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(worker.sys, "stdin", io.StringIO(json.dumps(["not", "a", "dict"])))
     out = io.StringIO()
-    monkeypatch.setattr(worker.sys, "stdout", out)
+    monkeypatch.setattr(worker, "_RPC_STDOUT", out)
 
     assert worker.main() == 0
 
     response = json.loads(out.getvalue())
     assert response["ok"] is False
     assert "zarfı nesne olmalıdır" in response["error"]
+
+
+def test_main_response_is_not_corrupted_by_stray_stdout_writes_during_handling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stray print()/logging call during handling must not corrupt the RPC output.
+
+    Reproduces the exact failure shape (extra text before the JSON breaking
+    json.loads()) without needing a real container: something writes to
+    ``sys.stdout`` while a request is being handled, and the response
+    ``main()`` writes to ``_RPC_STDOUT`` must still be clean, parseable JSON.
+    """
+    request = {
+        "rpc_version": PLUGIN_RPC_VERSION,
+        "action": "describe",
+        "source": SOURCE,
+        "class_name": "EchoAgent",
+        "module_label": "echo",
+    }
+    monkeypatch.setattr(worker.sys, "stdin", io.StringIO(json.dumps(request)))
+    out = io.StringIO()
+    monkeypatch.setattr(worker, "_RPC_STDOUT", out)
+
+    original_handle_request = worker.handle_request
+
+    def _noisy_handle_request(req: dict) -> dict:
+        # sys.stdout is the module-level swap target (stderr) here, exactly
+        # as it would be for config.py's logging handler or a plugin's own
+        # print() call -- neither should ever reach the RPC channel.
+        print("unexpected worker noise", file=sys.stdout)
+        return original_handle_request(req)
+
+    monkeypatch.setattr(worker, "handle_request", _noisy_handle_request)
+
+    assert worker.main() == 0
+
+    response = json.loads(out.getvalue())
+    assert response["ok"] is True
+    assert response["class_name"] == "EchoAgent"

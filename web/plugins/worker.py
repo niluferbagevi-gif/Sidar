@@ -2,14 +2,31 @@
 
 from __future__ import annotations
 
-import asyncio
-import inspect
 import json
 import sys
-from typing import Any, cast
 
-from agent.base_agent import BaseAgent
-from web.plugins.sandbox import PLUGIN_RPC_VERSION, run_plugin_source_in_process
+# Reserve the process's real stdout exclusively for the one JSON RPC response
+# main() writes at the very end. Anything else that writes to sys.stdout
+# during import or request handling would land *before* that JSON and break
+# json.loads() on the host side (web/plugins/sandbox.py's request()) --
+# discovered via SEC-PLUGIN-001's real-container integration test: config.py's
+# root logging handler targets stdout by default (console visibility for the
+# normal launcher use case) and fires a warning whenever this worker's
+# --read-only container filesystem blocks its log-file handler, which
+# corrupted the RPC channel with a log line before the response. Swap
+# sys.stdout to stderr immediately, before any import that might log (the
+# host never reads the subprocess's stderr, so nothing here is relayed), and
+# keep the untouched original stream aside for main() to write the response
+# on -- this also protects against a future/plugin-side stray print().
+_RPC_STDOUT = sys.stdout
+sys.stdout = sys.stderr
+
+import asyncio  # noqa: E402
+import inspect  # noqa: E402
+from typing import Any, cast  # noqa: E402
+
+from agent.base_agent import BaseAgent  # noqa: E402
+from web.plugins.sandbox import PLUGIN_RPC_VERSION, run_plugin_source_in_process  # noqa: E402
 
 
 def _agent_class(namespace: dict[str, Any], requested: str | None) -> type[BaseAgent]:
@@ -66,7 +83,7 @@ def main() -> int:
         response = handle_request(request)
     except Exception as exc:  # Worker boundary must serialize all failures.
         response = {"rpc_version": PLUGIN_RPC_VERSION, "ok": False, "error": str(exc)[:500]}
-    json.dump(response, sys.stdout, ensure_ascii=False)
+    json.dump(response, _RPC_STDOUT, ensure_ascii=False)
     return 0
 
 
