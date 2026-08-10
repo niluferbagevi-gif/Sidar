@@ -71,11 +71,22 @@ python-quality:
 	uv run ruff format --check .
 	uv run mypy --strict core/ agent/ web/ managers/ launcher/
 
+# AUTO_BUILD_DOCKER_TEST_IMAGE=1 mirrors ci.yml's integration-test job: the
+# plugin sandbox backend defaults to Docker in every environment (SEC-PLUGIN-001,
+# web/plugins/sandbox.py:plugin_sandbox_backend), and
+# tests/integration/web/test_plugin_sandbox_integration.py exercises that real
+# Docker path with no skip guard (unlike test_plugin_sandbox_container_escape.py,
+# which module-skips without a pre-built image). Without this, `make dev-full`
+# deterministically fails that test on any checkout where `sidar:latest` has not
+# been built by hand, even though install_sidar.sh already requires a working
+# Docker daemon. prepare_docker_test_image() (scripts/test_gates/backend_helpers.sh)
+# no-ops if the image already exists, so this only costs a build on first run.
 dev-full:
 	SIDAR_TOTAL_JS_BUDGET_KB=$(SIDAR_TOTAL_JS_BUDGET_KB) \
 	SIDAR_TOTAL_GZIP_BUDGET_KB=$(SIDAR_TOTAL_GZIP_BUDGET_KB) \
 	RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 \
 	FRONTEND_BUNDLE_BUDGET_LOCAL_FULL=$(FRONTEND_BUNDLE_BUDGET_LOCAL_FULL) \
+	AUTO_BUILD_DOCKER_TEST_IMAGE=1 DOCKER_TEST_IMAGE=$(PLUGIN_SANDBOX_IMAGE) \
 	bash run_tests.sh --stage all
 
 dev-full-gpu:
@@ -112,12 +123,17 @@ plugin-sandbox-security:
 # web_ui_react/e2e/ specs, not just the smoke default. Without this override
 # `make production-readiness` silently ran a narrower e2e suite than CI itself
 # despite claiming full-gate parity.
+# AUTO_BUILD_DOCKER_TEST_IMAGE=1: see the comment on `dev-full` above -- the
+# release/production-readiness gate must build (or reuse) `sidar:latest` for
+# the same reason, otherwise a release-readiness run fails on the identical
+# Docker-sandbox gap it exists to catch.
 base-quality-gates:
 	TEST_PROFILE=ci RUN_BENCHMARKS=$(CI_RUN_BENCHMARKS) RUN_FRONTEND_E2E=1 \
 	FRONTEND_E2E_NPM_SCRIPT=test:e2e \
 	SIDAR_PRODUCTION_READINESS=$(CI_PRODUCTION_READINESS) \
 	SIDAR_TOTAL_JS_BUDGET_KB=$(SIDAR_TOTAL_JS_BUDGET_KB) \
 	SIDAR_TOTAL_GZIP_BUDGET_KB=$(SIDAR_TOTAL_GZIP_BUDGET_KB) \
+	AUTO_BUILD_DOCKER_TEST_IMAGE=1 DOCKER_TEST_IMAGE=$(PLUGIN_SANDBOX_IMAGE) \
 	bash run_tests.sh --stage all
 
 production-readiness:

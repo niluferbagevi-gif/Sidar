@@ -2587,6 +2587,37 @@ def test_ci_parity_actually_sets_the_ci_test_profile() -> None:
     assert "$(MAKE) dev-full" in ci_parity_block
 
 
+def test_dev_full_and_base_quality_gates_auto_build_the_plugin_sandbox_image() -> None:
+    """`make dev-full`/`base-quality-gates` must not skip the Docker plugin sandbox test.
+
+    Regression test: the plugin sandbox backend defaults to Docker in every
+    environment (SEC-PLUGIN-001, web/plugins/sandbox.py:plugin_sandbox_backend),
+    and tests/integration/web/test_plugin_sandbox_integration.py exercises that
+    real Docker path with no skip guard -- unlike
+    test_plugin_sandbox_container_escape.py, which module-skips without a
+    pre-built image. Previously neither `dev-full` nor `base-quality-gates` set
+    AUTO_BUILD_DOCKER_TEST_IMAGE, so prepare_docker_test_image()
+    (scripts/test_gates/backend_helpers.sh) never built `sidar:latest` and the
+    integration test failed deterministically on any checkout without a
+    hand-built image, even though ci.yml's integration-test job always builds
+    it first. Bounded to each target's own recipe (up to the next blank line)
+    so this can't pass on an unrelated mention elsewhere in the file.
+    """
+    makefile = Path("Makefile").read_text(encoding="utf-8")
+
+    dev_full_start = makefile.index("dev-full:")
+    dev_full_block = makefile[dev_full_start : makefile.index("\n\n", dev_full_start)]
+    assert "AUTO_BUILD_DOCKER_TEST_IMAGE=1" in dev_full_block
+    assert "DOCKER_TEST_IMAGE=$(PLUGIN_SANDBOX_IMAGE)" in dev_full_block
+
+    base_quality_gates_start = makefile.index("base-quality-gates:")
+    base_quality_gates_block = makefile[
+        base_quality_gates_start : makefile.index("\n\n", base_quality_gates_start)
+    ]
+    assert "AUTO_BUILD_DOCKER_TEST_IMAGE=1" in base_quality_gates_block
+    assert "DOCKER_TEST_IMAGE=$(PLUGIN_SANDBOX_IMAGE)" in base_quality_gates_block
+
+
 def test_testing_docs_explain_external_production_readiness_dependencies() -> None:
     """Operators must have a durable runbook for CI's external fail-closed gates."""
     testing = Path("docs/TESTING.md").read_text(encoding="utf-8")

@@ -230,6 +230,17 @@ doğrular, mevcut olabilecek eski `sidar:latest` tag'ine güvenmeyip güncel che
 build eder ve `SIDAR_REQUIRE_PLUGIN_SANDBOX_CONTAINER_TESTS=1` ile herhangi bir altyapı
 eksikliğinin skip olarak gizlenmesini engeller.
 
+`tests/integration/web/test_plugin_sandbox_integration.py` yukarıdaki gerçek-container
+matrisinden farklıdır: plugin sandbox backend'i her ortamda varsayılan olarak Docker
+kullandığı için (`web/plugins/sandbox.py:plugin_sandbox_backend`) bu test *skip olmadan*
+gerçek Docker + `sidar:latest` imajını gerektirir. `make dev-full` ve
+`make base-quality-gates` (dolayısıyla `make production-readiness` ve `make ci-parity`)
+bu yüzden `AUTO_BUILD_DOCKER_TEST_IMAGE=1 DOCKER_TEST_IMAGE=sidar:latest` ile çalışır;
+`prepare_docker_test_image()` (`scripts/test_gates/backend_helpers.sh`) imaj zaten
+mevcutsa no-op olduğundan bu yalnızca ilk çalıştırmada build maliyeti getirir. Docker
+daemonsuz bir ortamda bu testin geçmesi zaten mümkün değildir — `install_sidar.sh`
+kurulumu Docker daemon erişimini önkoşul olarak fail-closed doğrular.
+
 `make doctor-production-readiness` hedefi production-readiness kapısından önce ortamı
 mutasyonsuz denetler: `uv`, Python 3.11, `portaudio.h`,
 `scripts/install_ci_system_deps.sh --check`, `uv sync --frozen --all-extras --dry-run`,
