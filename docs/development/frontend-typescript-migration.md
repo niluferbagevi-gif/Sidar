@@ -77,7 +77,8 @@ envanter 10 `.js`, 23 `.jsx`, 8 `.ts`, 19 `.tsx`; ratchet 33 untyped / 27 typed'
 `lib/rehypeSidarHighlight.ts` geçişi chat/voice/WebSocket callback sınırlarını, markdown
 component prop'unu, DOM root bootstrap kontrolünü ve tolerant HAST traversal tiplerini
 kapıya dahil etmiştir. Vite CSS side-effect tipi için `vite-env.d.ts` eklenmiştir.
-Güncel envanter 9 `.js`, 20 `.jsx`, 10 `.ts`, 22 `.tsx`; ratchet 29 untyped / 32 typed'dır.
+Bu uygulama-kodu diliminin sonundaki envanter 9 `.js`, 20 `.jsx`, 10 `.ts`, 22 `.tsx`;
+ratchet 29 untyped / 32 typed'dır.
 `checkJs: false` olduğu için `npm run typecheck`, kalan `.js`/`.jsx` dosyalarına
 tam tip güvencesi sağlamaz. **2026-08-06 itibarıyla bileşen/hook/lib ağacının
 migrasyonu tamamlanmıştır** -- `src/` altında kalan 29 `.js`/`.jsx` dosyasının

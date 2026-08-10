@@ -1769,6 +1769,12 @@ BOLD=
 NC=
 FRONTEND_QUALITY_STATUS=atlandi_bayrak
 sync_frontend_quality_status_from_test_summary() { FRONTEND_QUALITY_STATUS=tamamlandi; }
+read_install_test_summary_field() {
+    case "$1" in
+        frontend_e2e_scope) printf '%s' smoke ;;
+        frontend_e2e_script) printf '%s' test:e2e:smoke ;;
+    esac
+}
 print_react_frontend_qa_status_block""",
             "bash",
             str(finish_phase),
@@ -1778,7 +1784,10 @@ print_react_frontend_qa_status_block""",
         text=True,
     )
 
-    assert "✅ Frontend QA: lint/typecheck/coverage/e2e smoke tamamlandı." in result.stdout
+    assert (
+        "✅ Frontend QA: lint/typecheck/coverage/"
+        "Playwright smoke (npm run test:e2e:smoke) tamamlandı."
+    ) in result.stdout
     assert "FRONTEND QA ÇALIŞTIRILMADI" not in result.stdout
 
 
