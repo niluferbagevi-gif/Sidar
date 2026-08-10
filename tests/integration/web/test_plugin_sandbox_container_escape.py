@@ -205,18 +205,22 @@ def _running_containers_for_image(image: str) -> list[str]:
 def _assert_no_orphan_containers(image: str) -> None:
     """Poll for --rm cleanup; Docker removes the container asynchronously.
 
-    30s (not the original 5s, nor the 5s->15s first widening) headroom: a CI
-    runner building the target image, running Postgres/Redis service
-    containers, and this module's own xdist workers concurrently can
-    genuinely make async ``--rm`` teardown slower than on an idle developer
-    machine. This has now needed widening twice under real CI contention --
-    once for a client-triggered kill (subprocess timeout), once for a cgroup
-    OOM-kill (SIGKILL from the kernel, which plausibly takes Docker longer to
-    notice and reap than a client-side kill) -- so this round doubles the
-    budget again rather than nudging it, instead of re-learning the same
-    lesson a third time one test at a time.
+    60s (5s -> 15s -> 30s -> 60s) headroom: a CI runner building the target
+    image, running Postgres/Redis service containers, and this module's own
+    xdist workers concurrently can genuinely make async ``--rm`` teardown
+    slower than on an idle developer machine -- three consecutive real CI
+    runs each needed more than the previous budget (client-triggered kill,
+    then a cgroup OOM-kill, then this same hanging-process scenario again
+    still exceeding 30s). A companion real-CI capture in this same run
+    showed a *different* symptom of the identical root cause: the worker
+    produced a correct, complete JSON response but the surrounding `docker
+    run` client process still didn't return before
+    DockerPluginSandboxBackend's own (now-widened, see web/plugins/sandbox.py)
+    request timeout -- i.e. this CI environment's container-teardown latency
+    under load is a real, repeatedly-confirmed, double-digit-second
+    phenomenon, not a one-off flake to nudge past with a small increment.
     """
-    deadline = time.monotonic() + 30
+    deadline = time.monotonic() + 60
     remaining: list[str] = []
     while time.monotonic() < deadline:
         remaining = _running_containers_for_image(image)

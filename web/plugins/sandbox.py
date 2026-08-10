@@ -62,7 +62,18 @@ class DockerPluginSandboxBackend:
         self.image = sanitize_docker_image(
             environ.get("SIDAR_PLUGIN_SANDBOX_IMAGE", "sidar:latest")
         )
-        self.timeout = max(1, int(environ.get("SIDAR_PLUGIN_SANDBOX_TIMEOUT", "10")))
+        # 10s covers the worker's own processing time but not necessarily the
+        # full `docker run --rm --interactive` client-process lifetime under
+        # CI contention: a real CI failure captured the worker producing a
+        # correct, complete JSON response (visible in the killed Popen's own
+        # buffered stdout) while `subprocess.run(..., timeout=10)` still
+        # SIGKILLed the *docker run* process before it returned -- the
+        # container's async --rm teardown (already observed elsewhere in this
+        # module needing up to ~30s under this CI's contention -- see
+        # _assert_no_orphan_containers) can outlast the worker's own work by
+        # more than the old 10s budget. 30s gives that teardown the same
+        # headroom already established for it.
+        self.timeout = max(1, int(environ.get("SIDAR_PLUGIN_SANDBOX_TIMEOUT", "30")))
         # 256m (this project's default elsewhere for lighter CLI/SDK code-exec
         # sandboxes -- managers/code/docker.py, managers/code_manager.py) was
         # never actually enough here: describe() (imports the full
