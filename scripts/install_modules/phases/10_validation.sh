@@ -996,6 +996,8 @@ print_install_validation_coverage() {
         else
             print_install_final_readiness_block "Evet — development full validation geçti" "Hayır" "Production-readiness gate çalıştırılmadı; release/merge için ./install_sidar.sh --production-readiness zorunlu."
         fi
+    elif [[ "$ci_status" == "hata" ]]; then
+        print_install_final_readiness_block "Hayır — development full validation başarısız oldu" "Hayır" "Development full validation çalıştırıldı fakat başarısız oldu. Hata nedenleri için artifacts/test-summary.json ve run_tests.sh çıktısını inceleyin. Production-readiness bu nedenle çalıştırılmadı veya onaylanmadı."
     elif [[ "$smoke_status" == "tamamlandi" ]]; then
         print_install_final_readiness_block "Kısmi — smoke doğrulaması geçti" "Hayır" "Development full validation ve production-readiness gate çalıştırılmadı."
     else
