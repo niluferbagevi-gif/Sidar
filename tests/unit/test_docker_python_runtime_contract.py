@@ -43,6 +43,26 @@ def test_main_dockerfile_validates_pyright_lsp_binary_for_reviewer_semantics():
     assert "shutil.which('pyright')" in dockerfile
 
 
+def test_dockerfiles_only_grant_runtime_user_ownership_to_writable_directories():
+    """Keep application sources and the virtualenv root-owned in runtime images."""
+    writable_directories = (
+        "/app/logs",
+        "/app/data",
+        "/app/temp",
+        "/app/sessions",
+        "/app/chroma_db",
+    )
+
+    for relative_path in ("Dockerfile", "Dockerfile.production"):
+        dockerfile = _read(relative_path)
+        ownership_instruction = dockerfile.split(
+            "&& chown -R sidaruser:sidaruser", maxsplit=1
+        )[1].split("USER sidaruser", maxsplit=1)[0]
+
+        assert ownership_instruction.replace("\\\n", " ").split() == [*writable_directories]
+        assert "/app/.venv" not in ownership_instruction
+
+
 def test_compose_cpu_builds_use_python_311_base_image():
     compose = _read("docker-compose.yml")
 

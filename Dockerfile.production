@@ -61,7 +61,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 RUN useradd -m -u 10001 sidaruser \
     && mkdir -p /app/logs /app/data /app/temp /app/sessions /app/chroma_db \
-    && chown -R sidaruser:sidaruser /app
+    && chown -R sidaruser:sidaruser \
+      /app/logs /app/data /app/temp /app/sessions /app/chroma_db
 
 USER sidaruser
 
