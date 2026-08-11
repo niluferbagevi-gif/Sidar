@@ -90,6 +90,12 @@ test kapısı ve legacy import uyumluluğu ile birlikte ilerlemelidir.
   `SIDAR_PLUGIN_SANDBOX_IMAGE=sidar:${{ github.sha }}` ile gerçek release aday imajına karşı
   çalıştırır (Docker/imaj yoksa modül fail-closed değil skip olur — bu bilinçli bir tercih, zira
   matris yalnızca gerçek altyapı olan ortamlarda anlam taşır).
+  RPC yolu artık tek bir `docker run --rm` process deadline'ına bağlı değildir:
+  `docker create` → `docker start --attach --interactive` → zorunlu `docker rm --force`
+  yaşam döngüsü kullanılır. `SIDAR_PLUGIN_SANDBOX_TIMEOUT` (varsayılan 15 saniye) yalnız
+  worker/RPC çalışmasını, `SIDAR_PLUGIN_SANDBOX_CLEANUP_TIMEOUT` (varsayılan 60 saniye)
+  ise create/remove daemon işlemlerini sınırlar; geç tamamlanan teardown başarılı bir worker
+  yanıtını yanlış biçimde plugin timeout olarak raporlamaz.
   Legacy process-içi backend geriye dönük geliştirme/test uyumluluğu için korunur, ancak artık
   hiçbir ortamın varsayılanı değildir ve iki ayrı açık opt-in gerektirir. Tam kaldırılması ayrı
   bir breaking-change sürümünde değerlendirilecektir.

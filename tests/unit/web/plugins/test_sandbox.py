@@ -310,8 +310,12 @@ def test_in_process_backend_executes_only_outside_production(monkeypatch) -> Non
 def test_docker_backend_request_maps_timeout_to_sandbox_error(monkeypatch) -> None:
     backend = _docker_backend(monkeypatch)
 
-    def _raise_timeout(*_args, **_kwargs):
-        raise subprocess.TimeoutExpired(cmd="docker", timeout=1)
+    def _raise_timeout(command, **_kwargs):
+        if command[1] == "create":
+            return _FakeCompletedProcess(stdout="container-id")
+        if command[1] == "rm":
+            return _FakeCompletedProcess()
+        raise subprocess.TimeoutExpired(cmd="docker", timeout=backend.timeout)
 
     monkeypatch.setattr("web.plugins.sandbox.subprocess.run", _raise_timeout)
 
@@ -319,12 +323,60 @@ def test_docker_backend_request_maps_timeout_to_sandbox_error(monkeypatch) -> No
         backend.request({"action": "describe"})
 
 
+def test_docker_backend_keeps_rpc_and_cleanup_deadlines_separate(monkeypatch) -> None:
+    backend = DockerPluginSandboxBackend(
+        {
+            "SIDAR_PLUGIN_SANDBOX_TIMEOUT": "11",
+            "SIDAR_PLUGIN_SANDBOX_CLEANUP_TIMEOUT": "47",
+        }
+    )
+    monkeypatch.setattr("web.plugins.sandbox.shutil.which", lambda _name: "/usr/bin/docker")
+    observed_timeouts: dict[str, int] = {}
+    response = json.dumps({"rpc_version": PLUGIN_RPC_VERSION, "ok": True})
+
+    def _run(command, **kwargs):
+        observed_timeouts[command[1]] = kwargs["timeout"]
+        if command[1] == "create":
+            return _FakeCompletedProcess(stdout="container-id")
+        if command[1] == "start":
+            return _FakeCompletedProcess(stdout=response)
+        return _FakeCompletedProcess()
+
+    monkeypatch.setattr("web.plugins.sandbox.subprocess.run", _run)
+
+    assert backend.request({"action": "describe"})["ok"] is True
+    assert observed_timeouts == {"create": 47, "start": 11, "rm": 47}
+
+
+def test_docker_backend_reports_cleanup_timeout_separately_from_rpc_timeout(monkeypatch) -> None:
+    backend = _docker_backend(monkeypatch)
+    response = json.dumps({"rpc_version": PLUGIN_RPC_VERSION, "ok": True})
+
+    def _run(command, **kwargs):
+        if command[1] == "create":
+            return _FakeCompletedProcess(stdout="container-id")
+        if command[1] == "start":
+            return _FakeCompletedProcess(stdout=response)
+        raise subprocess.TimeoutExpired(cmd=command, timeout=kwargs["timeout"])
+
+    monkeypatch.setattr("web.plugins.sandbox.subprocess.run", _run)
+
+    with pytest.raises(PluginSandboxError, match="container'ı temizlenemedi") as exc:
+        backend.request({"action": "describe"})
+    assert "worker zaman aşımına" not in str(exc.value)
+
+
 def test_docker_backend_request_rejects_nonzero_returncode(monkeypatch) -> None:
     backend = _docker_backend(monkeypatch)
-    monkeypatch.setattr(
-        "web.plugins.sandbox.subprocess.run",
-        lambda *_a, **_k: _FakeCompletedProcess(returncode=1, stdout=""),
-    )
+
+    def _run(command, **_kwargs):
+        if command[1] == "create":
+            return _FakeCompletedProcess(stdout="container-id")
+        if command[1] == "start":
+            return _FakeCompletedProcess(returncode=1)
+        return _FakeCompletedProcess()
+
+    monkeypatch.setattr("web.plugins.sandbox.subprocess.run", _run)
 
     with pytest.raises(PluginSandboxError, match="güvenli biçimde tamamlanamadı"):
         backend.request({"action": "describe"})
@@ -425,10 +477,14 @@ def test_build_isolated_plugin_proxy_creates_baseagent_subclass_that_delegates(
             json.dumps({"rpc_version": PLUGIN_RPC_VERSION, "ok": True, "result": "isolated:hi"}),
         ]
     )
-    monkeypatch.setattr(
-        "web.plugins.sandbox.subprocess.run",
-        lambda *_a, **_k: _FakeCompletedProcess(returncode=0, stdout=next(responses)),
-    )
+    def _run(command, **_kwargs):
+        if command[1] == "create":
+            return _FakeCompletedProcess(returncode=0, stdout="container-id")
+        if command[1] == "start":
+            return _FakeCompletedProcess(returncode=0, stdout=next(responses))
+        return _FakeCompletedProcess(returncode=0)
+
+    monkeypatch.setattr("web.plugins.sandbox.subprocess.run", _run)
 
     proxy_cls = build_isolated_plugin_proxy("SOURCE", "EchoAgent", "echo")
 
