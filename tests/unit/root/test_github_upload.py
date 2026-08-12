@@ -99,6 +99,35 @@ def test_run_command_filters_oversized_environment(monkeypatch):
     assert captured["env"]["SIDAR_SMALL_FLAG"] == "1"
 
 
+def test_upload_policy_defaults_to_pr_and_requires_explicit_direct_main_opt_in():
+    assert gu.direct_main_upload_allowed({}) is False
+    assert gu.direct_main_upload_allowed({"SIDAR_GITHUB_UPLOAD_DIRECT_MAIN": "1"}) is True
+    assert gu.direct_main_upload_allowed({"SIDAR_GITHUB_UPLOAD_DIRECT_MAIN": "yes"}) is True
+    assert gu.direct_main_upload_allowed({"SIDAR_GITHUB_UPLOAD_DIRECT_MAIN": "0"}) is False
+
+
+def test_create_upload_branch_and_open_pr_use_safe_explicit_argv(monkeypatch):
+    calls = []
+
+    def fake_run(command, show_output=True, extra_env=None):
+        calls.append((command, show_output, extra_env))
+        return True, "https://github.com/example/sidar/pull/1"
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+
+    branch = gu.create_upload_branch()
+    assert branch.startswith("sidar/upload-")
+    assert gu.open_upload_pull_request(branch, "secret-token")[0] is True
+    assert calls == [
+        (["git", "switch", "-c", branch], False, None),
+        (
+            ["gh", "pr", "create", "--base", "main", "--head", branch, "--fill"],
+            False,
+            {"GH_TOKEN": "secret-token"},
+        ),
+    ]
+
+
 def test_run_command_merges_extra_env_on_top_of_bounded_env(monkeypatch):
     captured = {}
 
@@ -169,6 +198,8 @@ def test_url_and_path_helpers(tmp_path):
     assert gu._normalize_path("/root/x") == "root/x"
 
     assert gu.is_forbidden_path(".env")
+    assert gu.is_forbidden_path(".sidar_keys.env")
+    assert gu.is_forbidden_path(".sidar_keys.env.backup")
     assert gu.is_forbidden_path("sessions/a.json")
     assert gu.is_forbidden_path(".git/config")
     assert gu.is_forbidden_path("coverage.json")
@@ -780,6 +811,9 @@ class MainHarness:
         monkeypatch.setattr(
             gu, "cfg", types.SimpleNamespace(GITHUB_TOKEN=cfg_token, VERSION=cfg_version)
         )
+        # Existing main-flow tests exercise the explicit legacy/direct mode;
+        # PR-first behavior has dedicated tests below.
+        monkeypatch.setattr(gu, "direct_main_upload_allowed", lambda: True)
         self._outputs = list(outputs)
 
         def fake_run(cmd, show_output=True):
@@ -816,6 +850,19 @@ def test_main_missing_token(monkeypatch):
     monkeypatch.delenv("GITHUB_PAT", raising=False)
     MainHarness(monkeypatch, [], outputs=[], cfg_token="")
     assert run_main_and_exit_code() == 1
+
+
+def test_main_missing_token_points_to_secret_overlay(monkeypatch, capsys):
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_PAT", raising=False)
+    MainHarness(monkeypatch, [], outputs=[], cfg_token="")
+
+    assert run_main_and_exit_code() == 1
+    output = capsys.readouterr().out
+    assert "SIDAR_KEYS_FILE" in output
+    assert "~/.sidar_keys.env" in output
+    assert ".env içinde GITHUB_TOKEN" not in output
 
 
 def test_main_no_git_installed(monkeypatch):
@@ -909,6 +956,28 @@ def test_main_rollback_yes_push_fail(monkeypatch):
         inputs=["evet"],
     )
     assert run_main_and_exit_code() == 1
+
+
+def test_main_rollback_uses_force_with_lease(monkeypatch):
+    monkeypatch.setattr(gu, "create_rollback_backup_tag", lambda: "backup/test")
+    harness = MainHarness(
+        monkeypatch,
+        ["-1"],
+        outputs=[
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "main"),
+            (True, "5"),
+            (True, "reset ok"),
+            (True, "push ok"),
+        ],
+        inputs=["evet"],
+    )
+
+    assert run_main_and_exit_code() == 0
+    assert ["git", "push", "--force-with-lease", "origin", "main"] in harness.calls
+    assert ["git", "push", "--force", "origin", "main"] not in harness.calls
 
 
 def test_main_rollback_cancel(monkeypatch):
@@ -1186,6 +1255,41 @@ def test_main_happy_path_with_new_repo_and_deleted_decline(monkeypatch):
         inputs=["https://github.com/test/repo", "hayır", "manual commit"],
     )
     gu.main()
+
+
+def test_main_default_upload_pushes_timestamped_branch_and_opens_pr(monkeypatch):
+    monkeypatch.setattr(gu, "get_deleted_files", lambda: [])
+    monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: (["x.py"], []))
+    monkeypatch.setattr(gu, "stage_files", lambda paths: (True, ""))
+    harness = MainHarness(
+        monkeypatch,
+        [],
+        outputs=[
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "main"),
+            (True, "reset"),
+            (True, "A x.py"),
+            (True, "commit ok"),
+            (True, "push ok"),
+        ],
+        inputs=["upload commit"],
+    )
+    monkeypatch.setattr(gu, "direct_main_upload_allowed", lambda: False)
+    monkeypatch.setattr(gu, "create_upload_branch", lambda: "sidar/upload-test")
+    opened = []
+    monkeypatch.setattr(
+        gu,
+        "open_upload_pull_request",
+        lambda branch, token: (opened.append((branch, token)), (True, "pr-url"))[1],
+    )
+
+    gu.main()
+
+    assert ["git", "push", "-u", "origin", "sidar/upload-test"] in harness.calls
+    assert ["git", "push", "-u", "origin", "main"] not in harness.calls
+    assert opened == [("sidar/upload-test", "tok")]
 
 
 def test_run_command_silent_branches(monkeypatch):

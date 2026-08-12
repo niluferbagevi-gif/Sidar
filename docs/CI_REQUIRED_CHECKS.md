@@ -129,8 +129,9 @@ GitHub API cannot be reached/authorized during the scheduled audit.
 ## Autonomous/direct push guardrails
 
 Branch protection remains the authoritative control for keeping red CI off
-`main`, but local automation must also fail closed before it attempts a direct
-push. The bundled `github_upload.py` flow therefore runs this synchronous
+`main`. The bundled `github_upload.py` now pushes a timestamped `sidar/upload-*`
+branch and opens a PR by default; direct `main` push requires the explicit
+`SIDAR_GITHUB_UPLOAD_DIRECT_MAIN=1` opt-in. Both flows run this synchronous
 pre-push gate after creating any local commit and again before a retry push
 following an automatic pull/merge:
 
@@ -142,7 +143,7 @@ uv run pytest tests/unit -q --no-cov -x
 
 If any command fails, the upload tool exits without calling `git push`. The full
 unit package catches code/test contract drift before autonomous backup/deployment
-loops can write directly to `main`; the broader GitHub required checks still cover
+loops can publish a branch; the broader GitHub required checks still cover
 production-readiness, installer smoke, dependency-profile, PostgreSQL stress, and
 benchmark compare behavior. Repository administrators should still periodically
 inspect GitHub branch protection/rulesets and confirm the required contexts in the
@@ -269,8 +270,8 @@ küçük pin fixup commit'ini otomatik oluşturur. Yalnız diff üretmek için
 
 The `pytest-meta-contracts` hook also runs at `pre-push` and covers the script,
 quality-gate, and dependency-profile contracts most likely to detect configuration
-drift quickly. The direct-main `github_upload.py` path deliberately runs the full
-`tests/unit` package rather than relying on this faster subset.
+drift quickly. `github_upload.py` deliberately runs the full `tests/unit` package
+before publishing either a PR branch or the explicitly opted-in direct-main path.
 
 ## PR visibility for core installer files
 
