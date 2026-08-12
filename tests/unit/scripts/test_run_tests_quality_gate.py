@@ -5890,6 +5890,61 @@ def test_frontend_typescript_inventory_enforces_dated_milestones(tmp_path: Path)
     assert "2026-09-30 milestone missed: typed=1 < 2" in after.stderr
 
 
+def test_frontend_typescript_inventory_separates_production_and_test_debt(
+    tmp_path: Path,
+) -> None:
+    """Production JS must not be hidden by the remaining test migration inventory."""
+    checker = Path("scripts/check_frontend_typescript_migration.js").resolve()
+    source = tmp_path / "src"
+    (source / "test").mkdir(parents=True)
+    (source / "App.test.jsx").write_text("export default null;\n", encoding="utf-8")
+    (source / "test" / "setup.js").write_text("export {};\n", encoding="utf-8")
+    (source / "App.tsx").write_text("export default null;\n", encoding="utf-8")
+    baseline = {
+        "maximum_untyped_files": 2,
+        "maximum_production_untyped_files": 0,
+        "maximum_test_untyped_files": 2,
+        "minimum_typed_files": 1,
+    }
+    (tmp_path / "typescript-migration-baseline.json").write_text(
+        json.dumps(baseline), encoding="utf-8"
+    )
+
+    clean = subprocess.run(
+        ["node", str(checker), f"--root={tmp_path}"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert clean.returncode == 0
+    assert "production_untyped=0, test_untyped=2" in clean.stdout
+
+    (source / "legacy.jsx").write_text("export default null;\n", encoding="utf-8")
+    regressed = subprocess.run(
+        ["node", str(checker), f"--root={tmp_path}"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert regressed.returncode == 1
+    assert "production untyped source count increased: 1 > 0" in regressed.stderr
+
+    (source / "legacy.jsx").unlink()
+    baseline["maximum_untyped_files"] = 3
+    baseline["maximum_test_untyped_files"] = 1
+    (tmp_path / "typescript-migration-baseline.json").write_text(
+        json.dumps(baseline), encoding="utf-8"
+    )
+    test_regressed = subprocess.run(
+        ["node", str(checker), f"--root={tmp_path}"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert test_regressed.returncode == 1
+    assert "test untyped source count increased: 2 > 1" in test_regressed.stderr
+
+
 def test_frontend_quality_signals_do_not_fail_fast_after_lint() -> None:
     """Lint, typecheck, coverage, build and E2E must retain separate results."""
     frontend_gate_block = _script()[
