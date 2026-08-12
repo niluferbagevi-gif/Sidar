@@ -292,6 +292,10 @@ class DocumentStore:
         # Arama motorlarını başlat
         self._chroma_available = self._check_import("chromadb")
         self._pgvector_available = False
+        self._pgvector_degraded = False
+        self._pgvector_degraded_operation = ""
+        self._pgvector_degraded_reason = ""
+        self._pgvector_failure_count = 0
 
         self.chroma_client: Any | None = None
         self.collection: Any | None = None
@@ -1521,6 +1525,10 @@ class DocumentStore:
             engines.append("GraphRAG (hazır)")
 
         return f"RAG: {len(self._index)} belge | Motorlar: {', '.join(engines)}"
+
+    def pgvector_runtime_status(self) -> dict[str, Any]:
+        """Expose degraded pgvector state for health and metrics consumers."""
+        return pgvector_backend.pgvector_runtime_status(self)
 
 
 # Backend compatibility mixins historically subclassed DocumentStore. Keep that

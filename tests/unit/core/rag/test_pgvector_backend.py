@@ -50,3 +50,20 @@ def test_reject_if_invalid_pg_table_blocks_sql_injection_identifier(monkeypatch)
     assert store._pgvector_available is False
     assert len(diagnostics) == 1
     assert "pgvector pasif, BM25 fallback aktif" in diagnostics[0]
+    assert pgvector.pgvector_runtime_status(store) == {
+        "backend": "pgvector",
+        "available": False,
+        "degraded": True,
+        "operation": "identifier_validation",
+        "reason": "ValueError",
+        "failure_count": 1,
+    }
+
+
+def test_pgvector_sql_builder_centralizes_validated_identifier_interpolation():
+    pgvector = importlib.reload(pgvector_module)
+
+    queries = pgvector._pgvector_sql("rag_embeddings")
+
+    assert set(queries) == {"delete", "upsert", "select"}
+    assert all("rag_embeddings" in query for query in queries.values())
