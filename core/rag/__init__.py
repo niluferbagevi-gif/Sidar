@@ -339,11 +339,13 @@ class DocumentStore:
             else:
                 self._chroma_available = False
                 self._log_backend_init_status_once(
-                    "vector_disabled_notice",
-                    "DocumentStore vektör başlatması devre dışı (initialize_vector=False).",
+                    "metadata_only_seed_notice",
+                    "RAG metadata-only seed mode: vector runtime initialization intentionally "
+                    "skipped (initialize_vector=False); bu pgvector/ChromaDB arızası değildir.",
                 )
                 self._log_backend_init_status_once(
-                    "vector_disabled_status", "RAG backend init (1/2): vector=disabled"
+                    "vector_disabled_status",
+                    "RAG backend init (1/2): vector=disabled (intentional metadata-only mode)",
                 )
 
             # BM25 (SQLite FTS5) Başlatma

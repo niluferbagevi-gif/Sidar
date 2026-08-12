@@ -470,6 +470,12 @@ def run(
     if dry_run:
         store: SeedDocumentStore = DryRunStore()
     else:
+        if metadata_only:
+            print(
+                "RAG metadata-only seed mode: vector runtime initialization intentionally "
+                "skipped; BM25/metadata/GraphRAG seed devam ediyor.",
+                file=sys.stderr,
+            )
         if not metadata_only:
             _wait_for_pgvector_readiness()
         store = _build_store(resolved_rag_dir, initialize_vector=not metadata_only)
