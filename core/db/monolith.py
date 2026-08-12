@@ -266,10 +266,6 @@ class Database(DatabaseConnectionMixin):
         self._configure_backend()
 
     @staticmethod
-    def _message_columns_sql() -> str:
-        return "id, session_id, role, content, tokens_used, created_at"
-
-    @staticmethod
     def _sqlite_fetchone(cursor: sqlite3.Cursor) -> sqlite3.Row | None:
         return _sqlite_fetchone(cursor)
 

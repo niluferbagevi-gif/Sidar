@@ -118,8 +118,11 @@ COPY . .
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --all-extras
 
-# Kalıcı veri dizinleri + güvenlik için non-root kullanıcı (katman optimizasyonu)
-RUN useradd -m -u 10001 sidaruser && mkdir -p /app/logs /app/data /app/temp /app/sessions /app/chroma_db && chown -R sidaruser:sidaruser /app
+# Uygulama kodu ve .venv root-owned kalır; yalnız kalıcı çalışma dizinleri yazılabilirdir.
+RUN useradd -m -u 10001 sidaruser \
+    && mkdir -p /app/logs /app/data /app/temp /app/sessions /app/chroma_db \
+    && chown -R sidaruser:sidaruser \
+      /app/logs /app/data /app/temp /app/sessions /app/chroma_db
 USER sidaruser
 
 # Web arayüzü portu
