@@ -80,6 +80,21 @@ def test_readme_gpu_runtime_guidance_tracks_lock_instead_of_stale_cuda_channel()
     assert "PyTorch CUDA 12.4 desteği" not in readme
 
 
+def test_project_report_uses_live_gates_instead_of_static_zero_blocker_claim() -> None:
+    """The dated report must not masquerade as the current release decision."""
+    report = Path("docs/project-report/04-teknik-borc-ve-yapilandirma.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Snapshot (2026-08-12" in report
+    assert "web/plugins/sandbox.py" in report
+    assert "production_ready=false" in report
+    assert "artifacts/test-summary.json" in report
+    assert "GPU Inference Required Evidence Gate" in report
+    assert "Production readiness aggregate" in report
+    assert "0 — release-blocking güvenlik/coverage/mimari borç yok" not in report
+
+
 def test_main_and_cli_docstrings_cross_reference_the_naming_split() -> None:
     """`main.py`/`cli.py` naming is confusing without an explicit pointer.
 
@@ -111,9 +126,10 @@ def test_project_report_distinguishes_debt_from_future_product_phases() -> None:
         Path("web_ui_react/typescript-migration-baseline.json").read_text(encoding="utf-8")
     )
 
-    assert "Açık Kritik Teknik Borç | **0" in debt
+    assert "Anlık release kararı" in debt
+    assert "Statik Markdown'dan verilmez" in debt
     assert "İzlenen Mühendislik Kampanyaları | **Var" in debt
-    assert "mutlak “zero debt” iddiası kullanılmıyor" in debt
+    assert "tarihli snapshot başarı garantisi değildir" in debt
     assert "TypeScript migrasyonu" in debt
     assert "D100-D107" in debt
     assert f"en fazla {ts_baseline['maximum_untyped_files']} untyped" in debt

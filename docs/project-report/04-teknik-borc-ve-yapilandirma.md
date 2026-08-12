@@ -12,30 +12,50 @@
 
 ## 11. Mevcut Sorunlar ve Teknik Borç
 
-> **Güncel Durum (2026-08-02 — v5.2.0):** Açık kritik/bloklayıcı ürün kusuru
-> bulunmamaktadır. Bununla birlikte “kritik borç yok” ifadesi, tarihli ve ratchet ile
-> yönetilen mühendislik kampanyalarının tamamlandığı anlamına gelmez.
+> **Snapshot (2026-08-12 — v5.2.0):** Bu bölüm kalıcı bir “0 blocker” beyanı değildir.
+> 12 Ağustos yerel doğrulamasında `web/plugins/sandbox.py` create-error yolları ve
+> erişilemez cleanup branch'i nedeniyle backend coverage `%99,98` kalmış,
+> `production_ready=false` üretilmiş ve merge/release bloke edilmiştir. İlgili branch
+> kaldırılıp create timeout, non-zero return code ve boş container-id regresyon testleri
+> eklenmiştir; ancak güncel karar her zaman aşağıda tarif edilen artifact ve CI kapılarından
+> yeniden okunmalıdır. GitHub GPU evidence tarafında da `ENABLE_GPU_BENCH_GATE=true`,
+> `GPU_RUNNER_MONITOR_TOKEN`, iki online `[self-hosted, linux, gpu]` runner ve başarılı
+> GPU inference artifact'ı doğrulanmadan production-ready kabulü yapılamaz.
 
 ### 11.1 Durum Özeti Paneli
 
 | Gösterge | Durum |
 |---|---|
-| Aktif Kritik Bulgu | **0** |
-| Aktif Sorun | **0 — açık ürün/bloklayıcı kusur yok** |
-| Açık Kritik Teknik Borç | **0 — release-blocking güvenlik/coverage/mimari borç yok** |
+| Son gözlenen yerel blocker | **2026-08-12: sandbox coverage `%99,98`; bu dalda test/kod düzeltmesi uygulandı, tam gate yeniden doğrulanmalı** |
+| Harici evidence durumu | **GitHub GPU watchdog + inference gate + production aggregate sonucu repository ayarları ve runner kapasitesiyle doğrulanmalı** |
+| Anlık release kararı | **Statik Markdown'dan verilmez; `artifacts/test-summary.json` ve güncel CI required check'leri kanoniktir** |
 | İzlenen Mühendislik Kampanyaları | **Var — TypeScript migrasyonu, D100-D107 docstring envanteri ve modülerleştirme ratchet/planlarla yönetiliyor** |
-| Denetim Durumu | **Production-ready kalite kapıları aktif; mutlak “zero debt” iddiası kullanılmıyor** |
+| Denetim Durumu | **Production-ready kalite kapıları fail-closed; tarihli snapshot başarı garantisi değildir** |
 | Son Arşivleme Notu | **Kapanan bulgular `docs/archive/` altında; aktif kampanyalar kendi plan ve baseline dosyalarında tutuluyor** |
 
 - **Stratejik özet:** Ana rapor aktif riskleri izlemek için kullanılır; kapanmış bulgular operasyonel hafıza olarak arşivde tutulur.
-- **Versiyon durumu:** `v5.2.0` itibarıyla kritik güvenlik/mimari borç bulunmamaktadır;
-  coverage tabanı `pyproject.toml` içinde `%100`, frontend TypeScript ilerlemesi ise
-  `web_ui_react/typescript-migration-baseline.json` ile fail-closed izlenir.
+- **Versiyon durumu:** Coverage tabanı `pyproject.toml` içinde `%100`, frontend TypeScript
+  ilerlemesi ise `web_ui_react/typescript-migration-baseline.json` ile fail-closed izlenir.
+  Bir tarihli koşunun geçmesi veya düzeltilmiş bir blocker, sonraki commit için otomatik
+  production-ready sonucu oluşturmaz.
 
-#### 11.1.1 Borç ve yol haritası ayrımı
+#### 11.1.1 Anlık doğruluk kaynağı
+
+Bu rapor bağlam ve tarihli bulgu kaydıdır. Anlık merge/release durumu:
+
+1. yerel doğrulamada `artifacts/test-summary.json` içindeki `production_ready` ve
+   `release_blocking` alanlarından;
+2. backend coverage artifact'ı ve `%100` ratchet sonucundan;
+3. GitHub'daki `GPU Inference Required Evidence Gate` ile
+   `Production readiness aggregate` required check'lerinden
+
+okunur. Artifact yoksa, eskiyse veya güncel commit SHA'sına ait değilse durum “bilinmiyor”
+sayılır; bu Markdown tablosundaki snapshot release onayı olarak kullanılamaz.
+
+#### 11.1.2 Borç ve yol haritası ayrımı
 
 - **Açık kritik teknik borç:** Merge/release kararını engelleyen, kabul edilmiş fakat
-  çözülmemiş kusurdur. Güncel sayı sıfırdır.
+  çözülmemiş kusurdur. Sayısı yalnız güncel artifact/CI sonucundan türetilir.
 - **İzlenen mühendislik borcu:** Ürünü bugün bloklamayan fakat tarihli kapanış ve
   geriye gitmeme kapısı bulunan işlerdir. TypeScript migrasyonu, kalan D100-D107
   docstring envanteri ve `docs/REFACTOR_PLAN.md` içindeki modülerleştirme dilimleri bu
@@ -44,7 +64,7 @@
   backend'i, bağımsız worker/pod tabanlı dağıtık swarm, tam RLHF/DPO eğitim
   orkestrasyonu ve canlı video/ekran WebRTC genişletmeleri Bölüm 14 yol haritasıdır.
 
-#### 11.1.2 Frontend TypeScript ratchet durumu
+#### 11.1.3 Frontend TypeScript ratchet durumu
 
 `web_ui_react/typescript-migration-baseline.json`, `web_ui_react/src` için güncel
 geriye-gitmeme sınırını **en fazla 28 untyped (`.js` + `.jsx`)** ve **en az 39 typed
@@ -74,7 +94,7 @@ Geçmişte çözülen teknik borçlar ve denetim bulgularının detaylı listesi
 
 ### 11.4 Operasyonel İzleme Başlıkları
 
-Aktif yazılım kusuru bulunmamakla birlikte aşağıdaki başlıklar operasyonel olarak düzenli izlenmelidir:
+Snapshot'ta kapatılmış kusurlar bulunsa da aşağıdaki başlıklar operasyonel olarak düzenli izlenmelidir:
 
 - **LLM kota ve hız limitleri:** Paralel multi-agent çağrıları dış sağlayıcı RPM/TPM sınırlarını etkileyebilir.
 - **Gateway / dış ağ erişimi:** LiteLLM gateway veya sağlayıcı erişim sorunları toplam yanıt süresini uzatabilir.
@@ -84,7 +104,8 @@ Aktif yazılım kusuru bulunmamakla birlikte aşağıdaki başlıklar operasyone
 
 ### 11.5 Gelecek İyileştirmeler (Continuous Improvement)
 
-Kritik teknik borç kapalıdır. İzlenen mühendislik kampanyalarına ek olarak aşağıdaki
+Kritik teknik borcun anlık durumu kalite artifact'larından okunur. İzlenen mühendislik
+kampanyalarına ek olarak aşağıdaki
 iyileştirme alanları kapasite ve görünürlük eksenindedir:
 
 - **Gelişmiş telemetri görselleştirmesi:** Ajanlar arası delegasyon sürelerinin Grafana panellerinde daha ayrıntılı kırılımlarla izlenmesi.
