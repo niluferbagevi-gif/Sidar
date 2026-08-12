@@ -22,8 +22,8 @@
 # ═══════════════════════════════════════════════════════════════
 
 # ── Build-time argümanlar ──────────────────────────────────────
-# GPU (varsayılan): nvidia/cuda:12.6.0-cudnn-runtime-ubuntu22.04
-# CPU fallback:     python:${PYTHON_VERSION}-slim
+# GPU örneği:       nvidia/cuda:13.0.0-runtime-ubuntu22.04
+# CPU varsayılanı:  python:${PYTHON_VERSION}-slim
 ARG PYTHON_VERSION=3.11
 ARG BASE_IMAGE=python:${PYTHON_VERSION}-slim
 ARG GPU_ENABLED=false
@@ -93,7 +93,7 @@ ENV UV_INDEX_STRATEGY=first-index \
 # Bağımlılık Yönetimi — uv lock dosyasından deterministik kurulum
 # Sandbox testleri `run_tests.sh` gibi betikleri doğrudan container içinde
 # çalıştırdığı için uv binary'si imajda önceden bulunmalıdır.
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.8.13@sha256:4de5495181a281bc744845b9579acf7b221d6791f99bcc211b9ec13f417c2853 /uv /uvx /bin/
 RUN uv --version && uvx --version
 COPY pyproject.toml uv.lock README.md ./
 RUN test -f uv.lock || (echo "uv.lock is required for deterministic builds" >&2; exit 1)

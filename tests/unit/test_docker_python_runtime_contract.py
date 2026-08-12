@@ -5,6 +5,14 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 PYTHON_MAJOR_MINOR = "3.11"
 PYTHON_BASE_IMAGE = f"python:{PYTHON_MAJOR_MINOR}-slim"
+UV_IMAGE = (
+    "ghcr.io/astral-sh/uv:0.8.13@"
+    "sha256:4de5495181a281bc744845b9579acf7b221d6791f99bcc211b9ec13f417c2853"
+)
+PRODUCTION_PYTHON_IMAGE = (
+    "python:3.11.13-slim-bookworm@"
+    "sha256:86adf8dbadc3d6e82ee5dd2c74bec2e1c2467cdad47886280501df722372d2e1"
+)
 
 
 def _read(relative_path: str) -> str:
@@ -32,8 +40,24 @@ def test_main_dockerfile_installs_shellcheck_os_package():
 def test_main_dockerfile_preinstalls_uv_for_sandbox_regression_tests():
     dockerfile = _read("Dockerfile")
 
-    assert "COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/" in dockerfile
+    assert f"COPY --from={UV_IMAGE} /uv /uvx /bin/" in dockerfile
+    assert "ghcr.io/astral-sh/uv:latest" not in dockerfile
     assert "RUN uv --version && uvx --version" in dockerfile
+
+
+def test_production_dockerfile_pins_build_inputs_by_version_and_digest():
+    dockerfile = _read("Dockerfile.production")
+
+    assert f"ARG BASE_IMAGE={PRODUCTION_PYTHON_IMAGE}" in dockerfile
+    assert f"COPY --from={UV_IMAGE} /uv /uvx /bin/" in dockerfile
+    assert "ghcr.io/astral-sh/uv:latest" not in dockerfile
+
+
+def test_main_dockerfile_documents_current_cuda_13_example_consistently():
+    dockerfile = _read("Dockerfile")
+
+    assert "nvidia/cuda:13.0.0-runtime-ubuntu22.04" in dockerfile
+    assert "nvidia/cuda:12.6" not in dockerfile
 
 
 def test_main_dockerfile_validates_pyright_lsp_binary_for_reviewer_semantics():
