@@ -307,6 +307,47 @@ def test_in_process_backend_executes_only_outside_production(monkeypatch) -> Non
     assert exc.value.status_code == 403
 
 
+def test_in_process_backend_maps_validator_failure_to_http_400(monkeypatch) -> None:
+    monkeypatch.setenv("SIDAR_ENV", "development")
+    monkeypatch.setenv("SIDAR_ENABLE_IN_PROCESS_PLUGINS", "1")
+
+    def _reject(_source: str) -> None:
+        raise ValueError("validator detail")
+
+    with pytest.raises(HTTPException) as exc:
+        run_plugin_source_in_process("VALUE = 1", "invalid_plugin", validator=_reject)
+
+    assert exc.value.status_code == 400
+    assert exc.value.detail == "Plugin kaynağı doğrulanamadı: validator detail"
+
+
+def test_in_process_backend_maps_runtime_failure_to_http_400(monkeypatch) -> None:
+    monkeypatch.setenv("SIDAR_ENV", "development")
+    monkeypatch.setenv("SIDAR_ENABLE_IN_PROCESS_PLUGINS", "1")
+
+    with pytest.raises(HTTPException) as exc:
+        run_plugin_source_in_process("raise ValueError('runtime detail')", "broken_plugin")
+
+    assert exc.value.status_code == 400
+    assert exc.value.detail == "Plugin kodu derlenemedi/çalıştırılamadı: runtime detail"
+
+
+def test_in_process_backend_preserves_runtime_http_exception(monkeypatch) -> None:
+    monkeypatch.setenv("SIDAR_ENV", "development")
+    monkeypatch.setenv("SIDAR_ENABLE_IN_PROCESS_PLUGINS", "1")
+
+    def _raise_http(*_args) -> None:
+        raise HTTPException(status_code=409, detail="runtime policy")
+
+    monkeypatch.setattr("web.plugins.sandbox.execute_validated_plugin_source", _raise_http)
+
+    with pytest.raises(HTTPException) as exc:
+        run_plugin_source_in_process("VALUE = 1", "policy_plugin")
+
+    assert exc.value.status_code == 409
+    assert exc.value.detail == "runtime policy"
+
+
 def test_docker_backend_request_maps_timeout_to_sandbox_error(monkeypatch) -> None:
     backend = _docker_backend(monkeypatch)
 
