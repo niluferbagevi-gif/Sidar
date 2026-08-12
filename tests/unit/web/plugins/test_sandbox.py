@@ -477,6 +477,7 @@ def test_build_isolated_plugin_proxy_creates_baseagent_subclass_that_delegates(
             json.dumps({"rpc_version": PLUGIN_RPC_VERSION, "ok": True, "result": "isolated:hi"}),
         ]
     )
+
     def _run(command, **_kwargs):
         if command[1] == "create":
             return _FakeCompletedProcess(returncode=0, stdout="container-id")

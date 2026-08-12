@@ -55,9 +55,9 @@ def test_dockerfiles_only_grant_runtime_user_ownership_to_writable_directories()
 
     for relative_path in ("Dockerfile", "Dockerfile.production"):
         dockerfile = _read(relative_path)
-        ownership_instruction = dockerfile.split(
-            "&& chown -R sidaruser:sidaruser", maxsplit=1
-        )[1].split("USER sidaruser", maxsplit=1)[0]
+        ownership_instruction = dockerfile.split("&& chown -R sidaruser:sidaruser", maxsplit=1)[
+            1
+        ].split("USER sidaruser", maxsplit=1)[0]
 
         assert ownership_instruction.replace("\\\n", " ").split() == [*writable_directories]
         assert "/app/.venv" not in ownership_instruction
