@@ -277,7 +277,7 @@ class _SqliteDailyBudgetTracker:
                 )
             elif increment > 0.0:
                 conn.execute(
-                    f"UPDATE {self._TABLE_NAME} SET daily_cost = daily_cost + ? WHERE id = 1",  # nosec B608
+                    f"UPDATE {self._TABLE_NAME} SET daily_cost = daily_cost + ? WHERE id = 1",  # nosec B608  # _TABLE_NAME assert_safe_sql_identifier ile doğrulanmıştır.
                     (increment,),
                 )
             conn.execute("COMMIT")

@@ -12,6 +12,7 @@ from scripts.ci import check_bandit_suppression_baseline as suppression_baseline
 
 _INLINE_NOSEC_PROSE = re.compile(r"#\s*nosec\s+B\d{3}\s+[-–—]")
 _NOSEC_B608_RE = re.compile(r"#\s*nosec\s+B608\b")
+_NOSEC_B608_WITH_RATIONALE_RE = re.compile(r"#\s*nosec\s+B608\b\s+#\s*\S")
 _SQL_IDENTIFIER_VALIDATOR_MODULES = {"core.db.dialect", "core.db_components.dialect"}
 _SQL_IDENTIFIER_VALIDATOR_NAMES = {"assert_safe_sql_identifier", "is_safe_sql_identifier"}
 _REVIEWED_B608_FILES = (
@@ -32,6 +33,13 @@ def test_bandit_suppression_baseline_matches_current_scan_and_quality_gates() ->
     ci = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
     assert baseline["maximum_skipped_tests"] == 72
+    assert [target["maximum_skipped_tests"] for target in baseline["reduction_targets"]] == [
+        60,
+        40,
+        20,
+        0,
+    ]
+    assert suppression_baseline._reduction_targets(root / "bandit-suppression-baseline.json")
     command = "uv run python scripts/ci/check_bandit_suppression_baseline.py"
     assert command in local_gate
     assert command in ci
@@ -87,6 +95,41 @@ def test_reviewed_core_b608_suppressions_do_not_exceed_ratchet() -> None:
     )
 
     assert occurrences <= _B608_RATCHET_MAX
+
+
+def test_all_b608_suppressions_include_reviewable_rationale() -> None:
+    """Require every dynamic-SQL exception to state why interpolation is safe."""
+    root = Path(__file__).resolve().parents[2]
+    offenders: list[str] = []
+    for path in root.rglob("*.py"):
+        if any(part in {".git", ".venv", "node_modules"} for part in path.parts):
+            continue
+        if path == Path(__file__).resolve():
+            continue
+        for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if _NOSEC_B608_RE.search(line) and not _NOSEC_B608_WITH_RATIONALE_RE.search(line):
+                offenders.append(f"{path.relative_to(root)}:{line_number}")
+
+    assert offenders == []
+
+
+def test_reduction_targets_must_strictly_decrease(tmp_path: Path) -> None:
+    """Reject roadmaps that merely preserve or increase the current debt ceiling."""
+    baseline = tmp_path / "baseline.json"
+    baseline.write_text(
+        json.dumps(
+            {
+                "maximum_skipped_tests": 72,
+                "reduction_targets": [
+                    {"due_date": "2026-10-31", "maximum_skipped_tests": 72}
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="kesin azalmalıdır"):
+        suppression_baseline._reduction_targets(baseline)
 
 
 def _imports_sql_identifier_validator(source: str) -> bool:

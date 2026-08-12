@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import subprocess
 import sys
@@ -19,6 +20,32 @@ def _baseline_limit(path: Path) -> int:
     if not isinstance(limit, int) or isinstance(limit, bool) or limit < 0:
         raise ValueError("maximum_skipped_tests negatif olmayan integer olmalıdır")
     return limit
+
+
+def _reduction_targets(path: Path) -> list[tuple[dt.date, int]]:
+    """Read and validate the dated, strictly decreasing suppression roadmap."""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    initial = payload.get("maximum_skipped_tests")
+    raw_targets = payload.get("reduction_targets")
+    if not isinstance(initial, int) or not isinstance(raw_targets, list) or not raw_targets:
+        raise ValueError("reduction_targets boş olmayan bir liste olmalıdır")
+    targets: list[tuple[dt.date, int]] = []
+    previous_limit = initial
+    for item in raw_targets:
+        if not isinstance(item, dict):
+            raise ValueError("reduction_targets girdileri object olmalıdır")
+        try:
+            due_date = dt.date.fromisoformat(item["due_date"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("reduction target due_date YYYY-MM-DD olmalıdır") from exc
+        limit = item.get("maximum_skipped_tests")
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 0 <= limit < previous_limit:
+            raise ValueError("reduction target limitleri negatif olmadan kesin azalmalıdır")
+        if targets and due_date <= targets[-1][0]:
+            raise ValueError("reduction target tarihleri kesin artmalıdır")
+        targets.append((due_date, limit))
+        previous_limit = limit
+    return targets
 
 
 def _skipped_tests(path: Path) -> int:
@@ -38,6 +65,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         limit = _baseline_limit(args.baseline)
+        targets = _reduction_targets(args.baseline)
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         print(f"Bandit suppression baseline geçersiz: {exc}", file=sys.stderr)
         return 2
@@ -70,6 +98,22 @@ def main(argv: list[str] | None = None) -> int:
             return completed.returncode or 2
 
     print(f"Bandit suppression ratchet: skipped_tests={skipped}, maximum={limit}")
+    today = dt.date.today()
+    effective_target = next(((date, value) for date, value in targets if date >= today), None)
+    if effective_target:
+        print(
+            "Bandit suppression azaltma hedefi: "
+            f"due_date={effective_target[0].isoformat()}, maximum={effective_target[1]}"
+        )
+    overdue = [(date, value) for date, value in targets if date < today and skipped > value]
+    if overdue:
+        due_date, target = overdue[-1]
+        print(
+            f"Bandit suppression azaltma hedefi gecikti: {skipped} > {target} "
+            f"(due_date={due_date.isoformat()}). Baseline ratchet gevşetilmedi.",
+            file=sys.stderr,
+        )
+        return 1
     if skipped > limit:
         print(
             f"Bandit suppression sayısı arttı: {skipped} > {limit}. "

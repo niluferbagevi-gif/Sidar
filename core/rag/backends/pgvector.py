@@ -103,7 +103,7 @@ def init_pgvector(store: Any) -> None:
                     PRIMARY KEY (doc_id, chunk_index)
                 )
             """
-            conn.execute(text(create_table_sql))  # nosec B608
+            conn.execute(text(create_table_sql))  # nosec B608  # tablo adı safe identifier üreticisinden gelir; veri değerleri bind edilir.
             conn.execute(
                 text(f"CREATE INDEX IF NOT EXISTS idx_{pg_table}_session ON {pg_table}(session_id)")
             )
@@ -217,7 +217,7 @@ def upsert_pgvector_chunks(
                         source = EXCLUDED.source,
                         chunk_content = EXCLUDED.chunk_content,
                         embedding = EXCLUDED.embedding
-                """.replace("__TABLE__", pg_table)  # nosec B608
+                """.replace("__TABLE__", pg_table)  # nosec B608  # pg_table çağrı öncesinde safe identifier doğrulamasından geçer.
             conn.execute(text(upsert_sql), rows)
     except Exception as exc:
         logger.error("pgvector belge ekleme hatası: %s", exc)
@@ -268,7 +268,7 @@ def fetch_pgvector(store: Any, query: str, top_k: int, session_id: str) -> list[
                     WHERE session_id = :session_id
                     ORDER BY embedding <=> CAST(:qvec AS vector) ASC
                     LIMIT :lim
-                """.replace("__TABLE__", pg_table)  # nosec B608
+                """.replace("__TABLE__", pg_table)  # nosec B608  # pg_table çağrı öncesinde safe identifier doğrulamasından geçer.
             rows = conn.execute(
                 text(select_sql),
                 {
