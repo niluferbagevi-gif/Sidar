@@ -32,7 +32,7 @@ def test_bandit_suppression_baseline_matches_current_scan_and_quality_gates() ->
     local_gate = (root / "scripts/test_gates/backend_helpers.sh").read_text(encoding="utf-8")
     ci = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
-    assert baseline["maximum_skipped_tests"] == 72
+    assert baseline["maximum_skipped_tests"] == 68
     assert [target["maximum_skipped_tests"] for target in baseline["reduction_targets"]] == [
         60,
         40,
@@ -150,24 +150,24 @@ def _imports_sql_identifier_validator(source: str) -> bool:
     return False
 
 
-def test_router_and_pgvector_nosec_b608_usage_keeps_the_identifier_validator_import() -> None:
-    """Guard the safe-identifier import backing router.py/pgvector.py's nosec.
+def test_pgvector_nosec_b608_usage_keeps_the_identifier_validator_import() -> None:
+    """Guard the safe-identifier import backing pgvector.py's nosec.
 
-    core/router.py and core/rag/backends/pgvector.py's `# nosec B608` f-string
-    SQL is safe specifically because every interpolated table/column identifier
+    core/rag/backends/pgvector.py's `# nosec B608` f-string SQL is safe because every
+    interpolated table/column identifier
     is validated at the call site via `core.db.dialect`'s
     `assert_safe_sql_identifier`/`is_safe_sql_identifier` (canonical
     implementation: `core/db_components/dialect.py`) before it reaches the
     query string; real data values always go through bind parameters. A
     friend code review confirmed this and suggested a lightweight guard
     against the validator import silently disappearing while the `# nosec`
-    markers stay behind -- this AST-based check pins it for exactly the two
-    files reviewed (the other `# nosec B608` sites use different, individually
+    markers stay behind -- this AST-based check pins the remaining pgvector
+    file (the other `# nosec B608` sites use different, individually
     reviewed safe patterns -- module-level constants, a hardcoded table
     allowlist, enumerated bind-parameter names -- not this validator, so they
     are intentionally out of scope here).
     """
-    for relative_path in ("core/router.py", "core/rag/backends/pgvector.py"):
+    for relative_path in ("core/rag/backends/pgvector.py",):
         root = Path(__file__).resolve().parents[2]
         source = (root / relative_path).read_text(encoding="utf-8")
 
