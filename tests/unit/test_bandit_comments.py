@@ -27,9 +27,7 @@ _B608_RATCHET_MAX = 20
 def test_bandit_suppression_baseline_matches_current_scan_and_quality_gates() -> None:
     """Keep the global nosec ratchet in both local and CI security gates."""
     root = Path(__file__).resolve().parents[2]
-    baseline = json.loads(
-        (root / "bandit-suppression-baseline.json").read_text(encoding="utf-8")
-    )
+    baseline = json.loads((root / "bandit-suppression-baseline.json").read_text(encoding="utf-8"))
     local_gate = (root / "scripts/test_gates/backend_helpers.sh").read_text(encoding="utf-8")
     ci = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
