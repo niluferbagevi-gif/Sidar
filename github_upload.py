@@ -1141,6 +1141,7 @@ def main() -> None:
     )
 
     if push_success:
+        pr_url = ""
         if not direct_main:
             pr_success, pr_err = open_upload_pull_request(current_branch, github_token)
             if not pr_success:
@@ -1149,11 +1150,24 @@ def main() -> None:
                     f"{pr_err}{Colors.ENDC}"
                 )
                 sys.exit(1)
+            pr_url = pr_err
         print(f"\n{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
-        print(
-            f"{Colors.BOLD}{Colors.OKGREEN}🎉 TEBRİKLER! Proje başarıyla GitHub'a "
-            f"yüklendi!{Colors.ENDC}"
-        )
+        if direct_main:
+            print(
+                f"{Colors.BOLD}{Colors.OKGREEN}🎉 TEBRİKLER! Değişiklikler doğrudan "
+                f"main dalına yüklendi.{Colors.ENDC}"
+            )
+        else:
+            print(
+                f"{Colors.BOLD}{Colors.OKGREEN}✅ Upload dalı gönderildi ve pull request "
+                f"oluşturuldu.{Colors.ENDC}"
+            )
+            print(f"{Colors.OKBLUE}🔗 Pull request: {pr_url}{Colors.ENDC}")
+            print(
+                f"{Colors.WARNING}ℹ️ Değişiklikler henüz main dalında değil. GitHub'da "
+                f"pull request kontrolleri geçtikten sonra Merge pull request işlemini "
+                f"tamamlayın.{Colors.ENDC}"
+            )
         print(f"{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
     elif "rejected" in err_msg or "fetch first" in err_msg or "non-fast-forward" in err_msg:
         print(f"{Colors.WARNING}⚠️ GitHub'da bilgisayarınızda olmayan dosyalar var.{Colors.ENDC}")

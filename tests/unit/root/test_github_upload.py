@@ -1349,7 +1349,7 @@ def test_main_happy_path_with_new_repo_and_deleted_decline(monkeypatch):
     gu.main()
 
 
-def test_main_default_upload_pushes_timestamped_branch_and_opens_pr(monkeypatch):
+def test_main_default_upload_pushes_timestamped_branch_and_opens_pr(monkeypatch, capsys):
     monkeypatch.setattr(gu, "get_deleted_files", lambda: [])
     monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: (["x.py"], []))
     monkeypatch.setattr(gu, "stage_files", lambda paths: (True, ""))
@@ -1382,6 +1382,10 @@ def test_main_default_upload_pushes_timestamped_branch_and_opens_pr(monkeypatch)
     assert ["git", "push", "-u", "origin", "sidar/upload-test"] in harness.calls
     assert ["git", "push", "-u", "origin", "main"] not in harness.calls
     assert opened == [("sidar/upload-test", "tok")]
+    output = capsys.readouterr().out
+    assert "Pull request: pr-url" in output
+    assert "henüz main dalında değil" in output
+    assert "Merge pull request" in output
 
 
 def test_run_command_silent_branches(monkeypatch):

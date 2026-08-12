@@ -8,6 +8,7 @@
 ## [Unreleased]
 
 ### Düzeltmeler
+- **PR-first upload başarı çıktısı dal push'u ile `main` güncellemesini ayırt etmiyordu:** Başarılı akış artık oluşturulan pull request URL'sini gösterir ve değişikliklerin ancak GitHub kontrollerinden sonra PR merge edilince `main` dalına geçeceğini açıkça bildirir; açık direct-main opt-in'i için ayrı başarı mesajı kullanılır.
 - **PR-first uploader `gh` CLI kurulu olmadığında dalı push ettikten sonra duruyordu:** PR oluşturma yolu artık `gh` mevcutsa CLI'ı kullanır; mevcut değilse doğrulanmış GitHub `origin` slug'ı ve mevcut secret-overlay token'ıyla GitHub HTTPS API'ye fail-closed geçer. Açık process `GITHUB_TOKEN`/`GH_TOKEN`/`GITHUB_PAT` değerleri import sırasında alınmış olabilecek eski Config snapshot'ından önce gelir. GitHub'ın `401 Bad credentials` yanıtı tokenı sızdırmadan secret-overlay rotasyonu ve gerekli fine-grained `Pull requests: Read and write` izniyle açıklanır.
 
 ### Refactor
