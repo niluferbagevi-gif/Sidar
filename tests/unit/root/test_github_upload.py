@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 
@@ -114,6 +115,7 @@ def test_create_upload_branch_and_open_pr_use_safe_explicit_argv(monkeypatch):
         return True, "https://github.com/example/sidar/pull/1"
 
     monkeypatch.setattr(gu, "run_command", fake_run)
+    monkeypatch.setattr(gu.shutil, "which", lambda command: "/usr/bin/gh")
 
     branch = gu.create_upload_branch()
     assert branch.startswith("sidar/upload-")
@@ -126,6 +128,61 @@ def test_create_upload_branch_and_open_pr_use_safe_explicit_argv(monkeypatch):
             {"GH_TOKEN": "secret-token"},
         ),
     ]
+
+
+def test_open_upload_pull_request_uses_github_api_when_gh_is_missing(monkeypatch):
+    class ApiResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self):
+            return b'{"html_url":"https://github.com/example/sidar/pull/7"}'
+
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["request"] = request
+        captured["timeout"] = timeout
+        return ApiResponse()
+
+    monkeypatch.setattr(gu.shutil, "which", lambda command: None)
+    monkeypatch.setattr(
+        gu,
+        "run_command",
+        lambda command, show_output=False: (True, "git@github.com:example/sidar.git"),
+    )
+    monkeypatch.setattr(gu.urllib.request, "urlopen", fake_urlopen)
+
+    success, pr_url = gu.open_upload_pull_request("sidar/upload-test", "secret-token")
+
+    assert success is True
+    assert pr_url == "https://github.com/example/sidar/pull/7"
+    assert captured["timeout"] == 30
+    assert captured["request"].full_url == "https://api.github.com/repos/example/sidar/pulls"
+    assert captured["request"].get_header("Authorization") == "Bearer secret-token"
+    assert json.loads(captured["request"].data) == {
+        "title": f"Sidar {gu.resolve_upload_version()} otomatik yükleme",
+        "head": "sidar/upload-test",
+        "base": "main",
+        "body": "Sidar github_upload.py tarafından PR-first yükleme akışıyla oluşturuldu.",
+    }
+
+
+def test_open_upload_pull_request_api_fails_closed_for_invalid_origin(monkeypatch):
+    monkeypatch.setattr(gu.shutil, "which", lambda command: None)
+    monkeypatch.setattr(
+        gu,
+        "run_command",
+        lambda command, show_output=False: (True, "https://example.com/not-github/repo.git"),
+    )
+
+    success, error = gu.open_upload_pull_request("sidar/upload-test", "secret-token")
+
+    assert success is False
+    assert "owner/repository" in error
 
 
 def test_run_command_merges_extra_env_on_top_of_bounded_env(monkeypatch):

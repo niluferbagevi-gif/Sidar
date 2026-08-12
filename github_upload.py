@@ -12,10 +12,14 @@ Normal yükleme varsayılan olarak ``sidar/upload-*`` dalı açıp PR oluşturur
 Doğrudan main push yalnız ``SIDAR_GITHUB_UPLOAD_DIRECT_MAIN=1`` ile açılır.
 """
 
+import json
 import os
 import re
+import shutil
 import subprocess  # nosec B404
 import sys
+import urllib.error
+import urllib.request
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
@@ -220,8 +224,61 @@ def create_upload_branch() -> str:
     return branch
 
 
+def _github_repo_slug(remote_url: str) -> str:
+    """Extract an ``owner/repository`` slug from a validated GitHub remote URL."""
+    normalized = str(remote_url or "").strip().removesuffix("/").removesuffix(".git")
+    if not _is_valid_repo_url(remote_url):
+        return ""
+    if normalized.startswith("git@github.com:"):
+        return normalized.removeprefix("git@github.com:")
+    return normalized.removeprefix("https://github.com/")
+
+
+def _open_upload_pull_request_via_api(branch: str, github_token: str) -> tuple[bool, str]:
+    """Create the upload PR through GitHub's API when the optional ``gh`` CLI is absent."""
+    remote_ok, remote_url = run_command(["git", "remote", "get-url", "origin"], show_output=False)
+    repo_slug = _github_repo_slug(remote_url) if remote_ok else ""
+    if not repo_slug:
+        return False, "GitHub origin adresinden owner/repository bilgisi çözülemedi."
+
+    payload = json.dumps(
+        {
+            "title": f"Sidar {resolve_upload_version()} otomatik yükleme",
+            "head": branch,
+            "base": "main",
+            "body": "Sidar github_upload.py tarafından PR-first yükleme akışıyla oluşturuldu.",
+        }
+    ).encode("utf-8")
+    request = urllib.request.Request(  # nosec B310  # Sabit HTTPS GitHub API origin'i.
+        f"https://api.github.com/repos/{repo_slug}/pulls",
+        data=payload,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {github_token}",
+            "Content-Type": "application/json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:  # nosec B310
+            result = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace").strip()
+        return False, f"GitHub API PR isteği HTTP {exc.code} ile reddedildi: {detail}"
+    except (urllib.error.URLError, OSError, json.JSONDecodeError) as exc:
+        return False, f"GitHub API üzerinden PR oluşturulamadı: {exc}"
+
+    pr_url = str(result.get("html_url", "")).strip()
+    if not pr_url:
+        return False, "GitHub API PR yanıtında html_url bulunamadı."
+    return True, pr_url
+
+
 def open_upload_pull_request(branch: str, github_token: str) -> tuple[bool, str]:
-    """Open a GitHub PR for a successfully pushed upload branch."""
+    """Open a GitHub PR, using ``gh`` when installed and the API otherwise."""
+    if shutil.which("gh") is None:
+        return _open_upload_pull_request_via_api(branch, github_token)
     return run_command(
         ["gh", "pr", "create", "--base", "main", "--head", branch, "--fill"],
         show_output=False,

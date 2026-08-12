@@ -11,7 +11,7 @@
 **Otomasyon ve Dayanıklılık Özellikleri:**
 - **Repo/remote doğrulama:** Çalıştırma başında `.git` varlığı ve `origin` remote kontrol edilir; eksikse yönlendirici/otomatik kurulum adımları uygulanır.
 - **Zaman damgalı commit mesajı:** Kullanıcı mesaj vermezse `datetime.now().strftime(...)` ile otomatik commit başlığı üretilir.
-- **PR-first yayın:** Normal yükleme `sidar/upload-*` dalını push edip `gh pr create` ile `main` hedefli PR açar; doğrudan `main` push yalnız `SIDAR_GITHUB_UPLOAD_DIRECT_MAIN=1` açık opt-in'iyle mümkündür.
+- **PR-first yayın:** Normal yükleme `sidar/upload-*` dalını push edip `main` hedefli PR açar. Kuruluysa `gh pr create`, `gh` bulunmuyorsa doğrulanmış `origin` adresi ve secret overlay'den gelen token ile GitHub HTTPS API kullanılır; doğrudan `main` push yalnız `SIDAR_GITHUB_UPLOAD_DIRECT_MAIN=1` açık opt-in'iyle mümkündür.
 - **Lease kontrollü rollback:** Geri alma yolu başka bir kullanıcının yeni remote commit'ini sessizce ezmemek için `--force-with-lease` kullanır.
 - **Push-rejected kurtarma akışı:** `git push` reddedildiğinde (`rejected`/`fetch first`/`non-fast-forward`) güvenli `pull` + merge stratejisi (`--rebase=false --allow-unrelated-histories --no-edit -X ours`) ile senkronizasyon denenir ve push tekrar edilir.
 - **GitHub Push Protection farkındalığı:** secret scanning/push protection hataları algılanır ve kullanıcıya düzeltme yönlendirmesi verilir.
