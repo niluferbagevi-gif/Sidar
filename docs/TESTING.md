@@ -449,6 +449,13 @@ yazılmış veya `false` ise GPU quality job'ının atlanması beklenir; bağım
 Bu davranış konfigürasyon hatasını yeşil sonuca dönüştürmemek için kasıtlıdır.
 
 Değişkeni **Settings → Secrets and variables → Actions → Variables** altında doğrulayın.
+GitHub CLI ile aynı ayar repository yönetim yetkisine sahip bir oturumda şu komutla
+fail-closed kapıyı gevşetmeden tanımlanabilir:
+
+```bash
+gh variable set ENABLE_GPU_BENCH_GATE --body true --repo OWNER/Sidar
+```
+
 Değişiklikten sonra workflow'u yeniden çalıştırın ve hem `gpu-inference-quality-gate` hem de
 `gpu-inference-policy-gate` sonuçlarının `success` olduğunu görmeden merge onayı vermeyin.
 

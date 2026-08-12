@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from scripts.test_gates import env_schema
 
 
@@ -38,3 +40,10 @@ def test_main_fails_fast_by_default_and_supports_explicit_warning_mode(monkeypat
     monkeypatch.setenv("TEST_ENV_SCHEMA_MODE", "warn")
     assert env_schema.main() == 0
     assert "Bilinmeyen" in capsys.readouterr().err
+
+
+def test_schema_mode_is_declared_in_test_environment_template() -> None:
+    """Operators must be able to discover the schema gate's fail-closed default."""
+    template = Path(".env.test.example").read_text(encoding="utf-8")
+
+    assert "TEST_ENV_SCHEMA_MODE=error" in template
