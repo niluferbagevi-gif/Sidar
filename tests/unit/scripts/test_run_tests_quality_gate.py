@@ -293,7 +293,7 @@ def test_run_tests_enforces_required_static_security_and_coverage_gates() -> Non
     script = _script()
 
     assert "uv run mypy --strict core/ agent/ web/ managers/" in script
-    assert "uv run bandit -r . -c pyproject.toml" in script
+    assert "uv run python scripts/ci/check_bandit_suppression_baseline.py" in script
     assert 'MIN_UNIT_COVERAGE_FAIL_UNDER="${MIN_UNIT_COVERAGE_FAIL_UNDER:-5}"' in script
     assert "minimum unit floor=${MIN_UNIT_COVERAGE_FAIL_UNDER}" in script
     assert 'coverage report --fail-under="${COVERAGE_FAIL_UNDER}"' in script
@@ -322,7 +322,7 @@ def test_ci_exposes_security_and_mutation_quality_gates() -> None:
         encoding="utf-8"
     )
 
-    assert "uv run bandit -r . -c pyproject.toml" in ci
+    assert "uv run python scripts/ci/check_bandit_suppression_baseline.py" in ci
     assert "Run base quality gates (performance isolated)" in ci
     assert "RUN_BENCHMARKS=0" in ci
     assert "needs: [test, benchmark-compare, gpu-inference-policy-gate]" in ci
@@ -1349,7 +1349,7 @@ def test_security_gate_runs_ruff_debt_baseline_before_bandit() -> None:
     tooling_check = "ensure_security_tool_dependencies"
     debt_check = "uv run python scripts/ci/check_ruff_debt_baseline.py"
     marker_check = "uv run python scripts/ci/check_source_debt_markers.py"
-    bandit_check = "uv run bandit -r . -c pyproject.toml"
+    bandit_check = "uv run python scripts/ci/check_bandit_suppression_baseline.py"
     assert tooling_check in body
     assert debt_check in body
     assert marker_check in body
