@@ -85,7 +85,8 @@
 - **Otonom Cron Tetikleyiciler:** `web_server.py` içindeki `_autonomous_cron_loop`, sistemin belirli aralıklarla kendi kendini uyandırıp bekleyen iş/sinyal fırsatlarını taramasını sağlar.
 
 ### GPU Hızlandırma (v2.6.0+)
-- PyTorch CUDA 12.4 desteği (RTX / Ampere serisi)
+- Kilitli PyTorch sürümünün desteklediği CUDA runtime ile RTX/Ampere hızlandırma
+  (v5.2.0 `uv.lock` ortamında PyTorch CUDA 13.0)
 - FP16 mixed precision embedding (`GPU_MIXED_PRECISION=true`)
 - VRAM fraksiyonu kontrolü (`GPU_MEMORY_FRACTION`)
 - Çoklu GPU desteği (`MULTI_GPU=true`)
@@ -450,8 +451,12 @@ SQLite → PostgreSQL geçiş adımları için: `runbooks/production-cutover-pla
 
 Not: `migrations/env.py`, sırasıyla `-x database_url=...` ve `DATABASE_URL` environment variable değerlerini `alembic.ini` içindeki lokal geliştirme varsayılan URL'sinin önüne geçirir. `SIDAR_ENV=production` iken bu lokal fallback bilinçli olarak reddedilir; üretim/CI/container migration çalıştırmalarında güçlü kimlik bilgileriyle `DATABASE_URL` veya `-x database_url=...` verilmelidir.
 
-> **Not:** GPU desteği için `torch` ve `torchvision` kurulumunda CUDA wheel kullanacaksanız kurulumdan önce
-> `PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu124` değişkenini tanımlayın. CPU-only kurulumlarda
+> **Not:** GPU desteği için `torch` ve `torchvision` CUDA wheel seçimini `install_sidar.sh`
+> algılanan driver CUDA capability ve compute capability değerlerine göre yapar; tek bir eski
+> CUDA wheel kanalını kalıcı olarak sabitlemeyin. Gerektiğinde desteklenen bir kanalı
+> `PYTORCH_CUDA_WHEEL_TAG` veya tam index'i `PYTORCH_CUDA_INDEX_URL` ile bilinçli olarak
+> override edebilirsiniz. v5.2.0 lock ortamının doğrulanan PyTorch runtime'ı CUDA 13.0'dır.
+> CPU-only kurulumlarda
 > varsayılan `REQUIRE_GPU=false` kalır; `ENABLE_GPU_TESTS` değeri verilmezse `run_tests.sh` GPU donanımını
 > otomatik algılar ve yalnız `nvidia-smi`/`nvidia-smi.exe` bulunduğunda GPU testlerini etkinleştirir. **GPU'lu geliştirme
 > makinesinde hızlı bir varsayılan döngü isteyen geliştiriciler** için bu otomatik algılama bilinçli bir tasarım

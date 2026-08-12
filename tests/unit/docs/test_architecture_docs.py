@@ -68,6 +68,18 @@ def test_readme_repo_tree_docs_entries_are_nested_under_docs() -> None:
         assert not Path(bare_name).exists()
 
 
+def test_readme_gpu_runtime_guidance_tracks_lock_instead_of_stale_cuda_channel() -> None:
+    """GPU documentation must not freeze users onto the historical cu124 channel."""
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    assert "Kilitli PyTorch sürümünün desteklediği CUDA runtime" in readme
+    assert "PyTorch CUDA 13.0" in readme
+    assert "PYTORCH_CUDA_WHEEL_TAG" in readme
+    assert "PYTORCH_CUDA_INDEX_URL" in readme
+    assert "PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu124" not in readme
+    assert "PyTorch CUDA 12.4 desteği" not in readme
+
+
 def test_main_and_cli_docstrings_cross_reference_the_naming_split() -> None:
     """`main.py`/`cli.py` naming is confusing without an explicit pointer.
 
