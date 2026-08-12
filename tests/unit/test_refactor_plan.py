@@ -32,7 +32,9 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
         "web/routes/webhooks.py",
         "web/app_factory.py",
         "web/plugins/sandbox.py",
-        "scripts/test_gates/benchmark.sh",
+        "scripts/test_gates/benchmark_helpers.sh",
+        "scripts/test_gates/coverage_helpers.sh",
+        "scripts/test_gates/frontend_helpers.sh",
         "scripts/test_gates/summary.py",
         "scripts/install_modules/validation.sh",
         "scripts/install_modules/install_cli.sh",
@@ -96,7 +98,8 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
     assert "loopback CORS middleware bootstrap'ı `web/middleware/cors.py`" in plan
     assert "access policy middleware orchestration'ı `web/middleware/access_policy.py`" in plan
     assert "Güncel bakım hotspot snapshot" in plan
-    assert "Quality gate orchestration büyüdü" in plan
+    assert "run_tests.sh` 678 satıra indi" in plan
+    assert "yeni modül icat etmek değil" in plan
     assert "ana script bootstrap facade" in plan
     assert "Launcher Doctor preflight" in plan
     assert "core/doctor/launcher_preflight.py" in plan
