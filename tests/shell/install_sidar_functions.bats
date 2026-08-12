@@ -1288,6 +1288,28 @@ EOF
   [[ "$output" == *"bash run_tests.sh --stage all"* ]]
 }
 
+@test "installer final summary reports a failed dev-full run as executed" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    cat > "$tmpdir/pyproject.toml" <<EOF
+[tool.coverage.report]
+fail_under = 100
+EOF
+
+    SMOKE_TEST_STATUS="tamamlandi"
+    INTEGRATION_TEST_STATUS="tamamlandi"
+    CI_FULL_VALIDATION_STATUS="hata"
+    print_install_validation_coverage
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Development full validation çalıştırıldı fakat başarısız oldu."* ]]
+  [[ "$output" == *"artifacts/test-summary.json ve run_tests.sh çıktısını inceleyin."* ]]
+  [[ "$output" == *"Production-readiness bu nedenle çalıştırılmadı veya onaylanmadı."* ]]
+  [[ "$output" != *"Development full validation ve production-readiness gate çalıştırılmadı."* ]]
+}
+
 
 @test "installer source exposes validation and GPU functions from modular files" {
   run_installer_function '

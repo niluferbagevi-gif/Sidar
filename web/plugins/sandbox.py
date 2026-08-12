@@ -62,18 +62,13 @@ class DockerPluginSandboxBackend:
         self.image = sanitize_docker_image(
             environ.get("SIDAR_PLUGIN_SANDBOX_IMAGE", "sidar:latest")
         )
-        # 10s covers the worker's own processing time but not necessarily the
-        # full `docker run --rm --interactive` client-process lifetime under
-        # CI contention: a real CI failure captured the worker producing a
-        # correct, complete JSON response (visible in the killed Popen's own
-        # buffered stdout) while `subprocess.run(..., timeout=10)` still
-        # SIGKILLed the *docker run* process before it returned -- the
-        # container's async --rm teardown (already observed elsewhere in this
-        # module needing up to ~30s under this CI's contention -- see
-        # _assert_no_orphan_containers) can outlast the worker's own work by
-        # more than the old 10s budget. 30s gives that teardown the same
-        # headroom already established for it.
-        self.timeout = max(1, int(environ.get("SIDAR_PLUGIN_SANDBOX_TIMEOUT", "30")))
+        # The RPC deadline is deliberately independent from Docker lifecycle
+        # cleanup. A completed worker response must not become a plugin timeout
+        # merely because container removal is slow on a contended daemon.
+        self.timeout = max(1, int(environ.get("SIDAR_PLUGIN_SANDBOX_TIMEOUT", "15")))
+        self.cleanup_timeout = max(
+            1, int(environ.get("SIDAR_PLUGIN_SANDBOX_CLEANUP_TIMEOUT", "60"))
+        )
         # 256m (this project's default elsewhere for lighter CLI/SDK code-exec
         # sandboxes -- managers/code/docker.py, managers/code_manager.py) was
         # never actually enough here: describe() (imports the full
@@ -103,8 +98,8 @@ class DockerPluginSandboxBackend:
         # touches; 64 was sized for the latter.
         self.pids = max(1, int(environ.get("SIDAR_PLUGIN_SANDBOX_PIDS", "128")))
 
-    def _isolation_argv(self) -> list[str]:
-        """Return the ``docker run`` isolation flags shared by every invocation.
+    def _isolation_argv(self, *, command: str = "run", auto_remove: bool = True) -> list[str]:
+        """Return the Docker container isolation flags shared by every invocation.
 
         Kept separate from the worker entrypoint so tests can reuse the exact
         production isolation contract (network/fs/user/resource limits) against
@@ -118,10 +113,9 @@ class DockerPluginSandboxBackend:
         # placed on the command line -- the two -e flags below are fixed,
         # non-secret isolation-contract constants (see their own comment),
         # not host environment values being forwarded.
-        return [
+        argv = [
             docker,
-            "run",
-            "--rm",
+            command,
             "--interactive",
             "--network=none",
             "--read-only",
@@ -181,9 +175,21 @@ class DockerPluginSandboxBackend:
             # `managers/code/docker.py` CLI sandbox fallback.
             "--entrypoint=python",
         ]
+        if auto_remove:
+            argv.insert(2, "--rm")
+        return argv
 
     def _command(self) -> list[str]:
         return [*self._isolation_argv(), self.image, "-m", "web.plugins.worker"]
+
+    def _create_command(self) -> list[str]:
+        """Build an explicit create command whose cleanup has its own deadline."""
+        return [
+            *self._isolation_argv(command="create", auto_remove=False),
+            self.image,
+            "-m",
+            "web.plugins.worker",
+        ]
 
     def container_command(self, *args: str) -> list[str]:
         """Build the production isolation argv (python entrypoint) with caller args.
@@ -201,9 +207,30 @@ class DockerPluginSandboxBackend:
     def request(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         """Send one RPC envelope and validate the worker's bounded response."""
         envelope = {"rpc_version": PLUGIN_RPC_VERSION, **dict(payload)}
+        docker = self._create_command()[0]
+        container_id = ""
+        cleanup_failed = False
+        try:
+            created = subprocess.run(  # nosec B603
+                self._create_command(),
+                capture_output=True,
+                text=True,
+                timeout=self.cleanup_timeout,
+                check=False,
+                env={"PATH": os.environ.get("PATH", "")},
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise PluginSandboxError(
+                "Plugin sandbox container oluşturma zaman aşımına uğradı."
+            ) from exc
+        if created.returncode != 0:
+            raise PluginSandboxError("Plugin sandbox container'ı oluşturulamadı.")
+        container_id = created.stdout.strip()
+        if not container_id:
+            raise PluginSandboxError("Plugin sandbox container kimliği doğrulanamadı.")
         try:
             completed = subprocess.run(  # nosec B603
-                self._command(),
+                [docker, "start", "--attach", "--interactive", container_id],
                 input=json.dumps(envelope),
                 capture_output=True,
                 text=True,
@@ -213,6 +240,25 @@ class DockerPluginSandboxBackend:
             )
         except subprocess.TimeoutExpired as exc:
             raise PluginSandboxError("Plugin worker zaman aşımına uğradı.") from exc
+        finally:
+            if container_id:
+                try:
+                    removed = subprocess.run(  # nosec B603
+                        [docker, "rm", "--force", container_id],
+                        capture_output=True,
+                        text=True,
+                        timeout=self.cleanup_timeout,
+                        check=False,
+                        env={"PATH": os.environ.get("PATH", "")},
+                    )
+                    cleanup_failed = removed.returncode != 0
+                except subprocess.TimeoutExpired:
+                    # Do not misreport a completed/expired RPC as an execution
+                    # timeout. The explicit lifecycle leaves cleanup diagnosis
+                    # distinct while the daemon continues the forced removal.
+                    cleanup_failed = True
+        if cleanup_failed:
+            raise PluginSandboxError("Plugin sandbox container'ı temizlenemedi.")
         if completed.returncode != 0:
             raise PluginSandboxError("Plugin worker güvenli biçimde tamamlanamadı.")
         encoded = completed.stdout.encode("utf-8", errors="replace")

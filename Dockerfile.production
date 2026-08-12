@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-# Sidar production-minimal image.
+# Sidar production image.
 # Build:
 #   docker build -f Dockerfile.production -t sidar:production .
 #
@@ -16,7 +16,7 @@ FROM ${BASE_IMAGE}
 ARG PYTHON_VERSION=3.11
 
 LABEL maintainer="Sidar AI Project"
-LABEL description="Sidar production-minimal Web/API image"
+LABEL description="Sidar production Web/API image"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -61,7 +61,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 RUN useradd -m -u 10001 sidaruser \
     && mkdir -p /app/logs /app/data /app/temp /app/sessions /app/chroma_db \
-    && chown -R sidaruser:sidaruser /app
+    && chown -R sidaruser:sidaruser \
+      /app/logs /app/data /app/temp /app/sessions /app/chroma_db
 
 USER sidaruser
 
