@@ -241,22 +241,21 @@ class DockerPluginSandboxBackend:
         except subprocess.TimeoutExpired as exc:
             raise PluginSandboxError("Plugin worker zaman aşımına uğradı.") from exc
         finally:
-            if container_id:
-                try:
-                    removed = subprocess.run(  # nosec B603
-                        [docker, "rm", "--force", container_id],
-                        capture_output=True,
-                        text=True,
-                        timeout=self.cleanup_timeout,
-                        check=False,
-                        env={"PATH": os.environ.get("PATH", "")},
-                    )
-                    cleanup_failed = removed.returncode != 0
-                except subprocess.TimeoutExpired:
-                    # Do not misreport a completed/expired RPC as an execution
-                    # timeout. The explicit lifecycle leaves cleanup diagnosis
-                    # distinct while the daemon continues the forced removal.
-                    cleanup_failed = True
+            try:
+                removed = subprocess.run(  # nosec B603
+                    [docker, "rm", "--force", container_id],
+                    capture_output=True,
+                    text=True,
+                    timeout=self.cleanup_timeout,
+                    check=False,
+                    env={"PATH": os.environ.get("PATH", "")},
+                )
+                cleanup_failed = removed.returncode != 0
+            except subprocess.TimeoutExpired:
+                # Do not misreport a completed/expired RPC as an execution
+                # timeout. The explicit lifecycle leaves cleanup diagnosis
+                # distinct while the daemon continues the forced removal.
+                cleanup_failed = True
         if cleanup_failed:
             raise PluginSandboxError("Plugin sandbox container'ı temizlenemedi.")
         if completed.returncode != 0:

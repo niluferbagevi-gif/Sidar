@@ -323,6 +323,40 @@ def test_docker_backend_request_maps_timeout_to_sandbox_error(monkeypatch) -> No
         backend.request({"action": "describe"})
 
 
+def test_docker_backend_request_rejects_create_timeout(monkeypatch) -> None:
+    backend = _docker_backend(monkeypatch)
+
+    def _raise_timeout(command, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=command, timeout=kwargs["timeout"])
+
+    monkeypatch.setattr("web.plugins.sandbox.subprocess.run", _raise_timeout)
+
+    with pytest.raises(PluginSandboxError, match="container oluşturma zaman aşımına uğradı"):
+        backend.request({"action": "describe"})
+
+
+def test_docker_backend_request_rejects_failed_create(monkeypatch) -> None:
+    backend = _docker_backend(monkeypatch)
+    monkeypatch.setattr(
+        "web.plugins.sandbox.subprocess.run",
+        lambda *_args, **_kwargs: _FakeCompletedProcess(returncode=1),
+    )
+
+    with pytest.raises(PluginSandboxError, match="container'ı oluşturulamadı"):
+        backend.request({"action": "describe"})
+
+
+def test_docker_backend_request_rejects_empty_container_id(monkeypatch) -> None:
+    backend = _docker_backend(monkeypatch)
+    monkeypatch.setattr(
+        "web.plugins.sandbox.subprocess.run",
+        lambda *_args, **_kwargs: _FakeCompletedProcess(stdout="  \n"),
+    )
+
+    with pytest.raises(PluginSandboxError, match="container kimliği doğrulanamadı"):
+        backend.request({"action": "describe"})
+
+
 def test_docker_backend_keeps_rpc_and_cleanup_deadlines_separate(monkeypatch) -> None:
     backend = DockerPluginSandboxBackend(
         {
