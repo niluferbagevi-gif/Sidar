@@ -9,7 +9,7 @@
 # dependency profile.
 
 ARG PYTHON_VERSION=3.11
-ARG BASE_IMAGE=python:${PYTHON_VERSION}-slim
+ARG BASE_IMAGE=python:3.11.13-slim-bookworm@sha256:86adf8dbadc3d6e82ee5dd2c74bec2e1c2467cdad47886280501df722372d2e1
 
 FROM ${BASE_IMAGE}
 
@@ -47,7 +47,7 @@ RUN set -eux; \
     ; \
     rm -rf /var/lib/apt/lists/*
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.8.13@sha256:4de5495181a281bc744845b9579acf7b221d6791f99bcc211b9ec13f417c2853 /uv /uvx /bin/
 RUN uv --version
 
 COPY pyproject.toml uv.lock README.md ./

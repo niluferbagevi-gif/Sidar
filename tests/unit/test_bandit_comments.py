@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import ast
+import json
 import re
 import tomllib
 from pathlib import Path
+
+import pytest
+
+from scripts.ci import check_bandit_suppression_baseline as suppression_baseline
 
 _INLINE_NOSEC_PROSE = re.compile(r"#\s*nosec\s+B\d{3}\s+[-–—]")
 _NOSEC_B608_RE = re.compile(r"#\s*nosec\s+B608\b")
@@ -17,6 +22,30 @@ _REVIEWED_B608_FILES = (
     "core/router.py",
 )
 _B608_RATCHET_MAX = 20
+
+
+def test_bandit_suppression_baseline_matches_current_scan_and_quality_gates() -> None:
+    """Keep the global nosec ratchet in both local and CI security gates."""
+    root = Path(__file__).resolve().parents[2]
+    baseline = json.loads((root / "bandit-suppression-baseline.json").read_text(encoding="utf-8"))
+    local_gate = (root / "scripts/test_gates/backend_helpers.sh").read_text(encoding="utf-8")
+    ci = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert baseline["maximum_skipped_tests"] == 72
+    command = "uv run python scripts/ci/check_bandit_suppression_baseline.py"
+    assert command in local_gate
+    assert command in ci
+
+
+def test_bandit_suppression_report_parser_fails_closed(tmp_path: Path) -> None:
+    """Malformed or missing Bandit suppression metrics must never pass the ratchet."""
+    report = tmp_path / "bandit.json"
+    report.write_text('{"metrics":{"_totals":{"skipped_tests":72}}}', encoding="utf-8")
+    assert suppression_baseline._skipped_tests(report) == 72
+
+    report.write_text('{"metrics":{"_totals":{}}}', encoding="utf-8")
+    with pytest.raises(ValueError, match="skipped_tests"):
+        suppression_baseline._skipped_tests(report)
 
 
 def test_nosec_comments_keep_explanatory_prose_outside_bandit_directive() -> None:

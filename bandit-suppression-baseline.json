@@ -1,0 +1,5 @@
+{
+  "captured_at": "2026-08-12",
+  "maximum_skipped_tests": 72,
+  "policy": "Bandit metrics._totals.skipped_tests may only stay level or decrease."
+}

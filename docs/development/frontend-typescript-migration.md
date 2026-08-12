@@ -104,11 +104,16 @@ kampanyanın geriye gitmesi engellenmiştir.
 ## Zorunlu ratchet
 
 `typescript-migration-baseline.json`, en fazla 28 untyped (`.js` + `.jsx`) ve en az
-39 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. İlk test dilimi olarak
+39 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. Envanter ayrıca bu borcu
+`production_untyped=0` ve `test_untyped=28` olarak ayırır; böylece test migrasyonu devam
+ederken production ağacına yeni JavaScript eklenmesi toplam ratchet içinde gizlenemez.
+`test`, `tests`, `__tests__` dizinleri ile `*.test.*`/`*.spec.*` dosyaları test kaynağı
+sayılır. İlk test dilimi olarak
 `hooks/useFormState.test.js`, davranış ve assertion'ları değiştirilmeden
 `hooks/useFormState.test.ts` dosyasına taşınmıştır. `npm run typecheck:inventory`:
 
 - `.js`/`.jsx` toplamındaki net artışı fail-closed reddeder;
+- production ve test untyped tabanlarındaki artışı birbirinden bağımsız reddeder;
 - mevcut `.ts`/`.tsx` dosyalarının silinmesi veya untyped biçime döndürülmesini reddeder;
 - `.jsx` → `.tsx` dönüşümlerinde doğal olarak geçer.
 

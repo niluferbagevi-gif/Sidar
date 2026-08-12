@@ -307,6 +307,47 @@ def test_in_process_backend_executes_only_outside_production(monkeypatch) -> Non
     assert exc.value.status_code == 403
 
 
+def test_in_process_backend_maps_validator_failure_to_http_400(monkeypatch) -> None:
+    monkeypatch.setenv("SIDAR_ENV", "development")
+    monkeypatch.setenv("SIDAR_ENABLE_IN_PROCESS_PLUGINS", "1")
+
+    def _reject(_source: str) -> None:
+        raise ValueError("validator detail")
+
+    with pytest.raises(HTTPException) as exc:
+        run_plugin_source_in_process("VALUE = 1", "invalid_plugin", validator=_reject)
+
+    assert exc.value.status_code == 400
+    assert exc.value.detail == "Plugin kaynağı doğrulanamadı: validator detail"
+
+
+def test_in_process_backend_maps_runtime_failure_to_http_400(monkeypatch) -> None:
+    monkeypatch.setenv("SIDAR_ENV", "development")
+    monkeypatch.setenv("SIDAR_ENABLE_IN_PROCESS_PLUGINS", "1")
+
+    with pytest.raises(HTTPException) as exc:
+        run_plugin_source_in_process("raise ValueError('runtime detail')", "broken_plugin")
+
+    assert exc.value.status_code == 400
+    assert exc.value.detail == "Plugin kodu derlenemedi/çalıştırılamadı: runtime detail"
+
+
+def test_in_process_backend_preserves_runtime_http_exception(monkeypatch) -> None:
+    monkeypatch.setenv("SIDAR_ENV", "development")
+    monkeypatch.setenv("SIDAR_ENABLE_IN_PROCESS_PLUGINS", "1")
+
+    def _raise_http(*_args) -> None:
+        raise HTTPException(status_code=409, detail="runtime policy")
+
+    monkeypatch.setattr("web.plugins.sandbox.execute_validated_plugin_source", _raise_http)
+
+    with pytest.raises(HTTPException) as exc:
+        run_plugin_source_in_process("VALUE = 1", "policy_plugin")
+
+    assert exc.value.status_code == 409
+    assert exc.value.detail == "runtime policy"
+
+
 def test_docker_backend_request_maps_timeout_to_sandbox_error(monkeypatch) -> None:
     backend = _docker_backend(monkeypatch)
 
@@ -320,6 +361,40 @@ def test_docker_backend_request_maps_timeout_to_sandbox_error(monkeypatch) -> No
     monkeypatch.setattr("web.plugins.sandbox.subprocess.run", _raise_timeout)
 
     with pytest.raises(PluginSandboxError, match="zaman aşımına uğradı"):
+        backend.request({"action": "describe"})
+
+
+def test_docker_backend_request_rejects_create_timeout(monkeypatch) -> None:
+    backend = _docker_backend(monkeypatch)
+
+    def _raise_timeout(command, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=command, timeout=kwargs["timeout"])
+
+    monkeypatch.setattr("web.plugins.sandbox.subprocess.run", _raise_timeout)
+
+    with pytest.raises(PluginSandboxError, match="container oluşturma zaman aşımına uğradı"):
+        backend.request({"action": "describe"})
+
+
+def test_docker_backend_request_rejects_failed_create(monkeypatch) -> None:
+    backend = _docker_backend(monkeypatch)
+    monkeypatch.setattr(
+        "web.plugins.sandbox.subprocess.run",
+        lambda *_args, **_kwargs: _FakeCompletedProcess(returncode=1),
+    )
+
+    with pytest.raises(PluginSandboxError, match="container'ı oluşturulamadı"):
+        backend.request({"action": "describe"})
+
+
+def test_docker_backend_request_rejects_empty_container_id(monkeypatch) -> None:
+    backend = _docker_backend(monkeypatch)
+    monkeypatch.setattr(
+        "web.plugins.sandbox.subprocess.run",
+        lambda *_args, **_kwargs: _FakeCompletedProcess(stdout="  \n"),
+    )
+
+    with pytest.raises(PluginSandboxError, match="container kimliği doğrulanamadı"):
         backend.request({"action": "describe"})
 
 
