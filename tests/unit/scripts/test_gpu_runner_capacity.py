@@ -16,7 +16,6 @@ def test_watchdog_workflow_guards_gate_variable_and_runner_capacity() -> None:
 
     assert "GPU_BENCH_GATE_ENABLED: ${{ vars.ENABLE_GPU_BENCH_GATE }}" in workflow
     assert '[[ "${GPU_BENCH_GATE_ENABLED}" != "true" ]]' in workflow
-    assert "gh variable set ENABLE_GPU_BENCH_GATE --body true" in workflow
     assert "--minimum-online 2" in workflow
 
 

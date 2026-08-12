@@ -24,7 +24,6 @@ jobs:
         run: |
           if [[ "${GPU_BENCH_GATE_ENABLED}" != "true" ]]; then
             echo "::error title=GPU evidence gate disabled::Repository variable ENABLE_GPU_BENCH_GATE must remain exactly true; production readiness cannot rely on local GPU evidence."
-            echo "Remediation: gh variable set ENABLE_GPU_BENCH_GATE --body true --repo ${GITHUB_REPOSITORY}"
             exit 1
           fi
       - name: Check primary and warm-standby capacity
