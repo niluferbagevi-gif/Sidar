@@ -1,3 +1,4 @@
+import io
 import json
 import sys
 from pathlib import Path
@@ -183,6 +184,40 @@ def test_open_upload_pull_request_api_fails_closed_for_invalid_origin(monkeypatc
 
     assert success is False
     assert "owner/repository" in error
+
+
+def test_resolve_github_token_prefers_explicit_environment_over_config(monkeypatch):
+    monkeypatch.setattr(gu, "cfg", types.SimpleNamespace(GITHUB_TOKEN="stale-config-token"))
+    monkeypatch.setenv("GITHUB_TOKEN", "rotated-environment-token")
+
+    assert gu.resolve_github_token() == "rotated-environment-token"
+
+
+def test_open_upload_pull_request_api_explains_bad_credentials(monkeypatch):
+    def reject_request(*_args, **_kwargs):
+        raise gu.urllib.error.HTTPError(
+            "https://api.github.com/repos/example/sidar/pulls",
+            401,
+            "Unauthorized",
+            {},
+            io.BytesIO(b'{"message":"Bad credentials"}'),
+        )
+
+    monkeypatch.setattr(gu.shutil, "which", lambda command: None)
+    monkeypatch.setattr(
+        gu,
+        "run_command",
+        lambda command, show_output=False: (True, "https://github.com/example/sidar.git"),
+    )
+    monkeypatch.setattr(gu.urllib.request, "urlopen", reject_request)
+
+    success, error = gu.open_upload_pull_request("sidar/upload-test", "expired-token")
+
+    assert success is False
+    assert "Bad credentials" in error
+    assert "SIDAR_KEYS_FILE" in error
+    assert "Pull requests: Read and write" in error
+    assert "expired-token" not in error
 
 
 def test_run_command_merges_extra_env_on_top_of_bounded_env(monkeypatch):

@@ -184,11 +184,14 @@ def resolve_github_token() -> str:
       tanımlı olabilir ve bu durum `.env` içindeki gerçek değeri gölgeleyebilir.
     - Bu nedenle alternatif anahtar adlarını da (GH_TOKEN/GITHUB_PAT) deneriz.
     """
+    # Explicit process values must win over the Config snapshot. This matters when
+    # an operator rotates a token after Config was imported or deliberately
+    # overrides the secret-overlay value for one invocation.
     candidates = [
-        getattr(cfg, "GITHUB_TOKEN", ""),
         os.getenv("GITHUB_TOKEN", ""),
         os.getenv("GH_TOKEN", ""),
         os.getenv("GITHUB_PAT", ""),
+        getattr(cfg, "GITHUB_TOKEN", ""),
     ]
 
     for value in candidates:
@@ -265,6 +268,15 @@ def _open_upload_pull_request_via_api(branch: str, github_token: str) -> tuple[b
             result = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace").strip()
+        if exc.code == 401:
+            return (
+                False,
+                "GitHub token reddedildi (HTTP 401 / Bad credentials). "
+                "Tokenı GitHub'da yenileyip GITHUB_TOKEN (veya GH_TOKEN/GITHUB_PAT) "
+                "değerini SIDAR_KEYS_FILE ya da ~/.sidar_keys.env içinde güncelleyin. "
+                "Fine-grained token kullanıyorsanız ilgili repository için Pull requests: "
+                "Read and write izni verin.",
+            )
         return False, f"GitHub API PR isteği HTTP {exc.code} ile reddedildi: {detail}"
     except (urllib.error.URLError, OSError, json.JSONDecodeError) as exc:
         return False, f"GitHub API üzerinden PR oluşturulamadı: {exc}"
