@@ -4,16 +4,23 @@ Sürüm: Sidar ürün sürümüyle senkronize edilir.
 Açıklama: Mevcut projeyi kolayca GitHub'a yedekler/yükler.
 Dış dalları çekme ve hatalı işlemleri Geri Alma (Rollback) özelliklerini içerir.
 Kullanım:
-  python github_upload.py                 -> Normal yükleme
-  python github_upload.py <branch_adi>    -> Dış dalı çekip birleştirme
-  python github_upload.py -<sayi>         -> Son <sayi> işlemi geri alma (Örn: -3)
+  uv run python github_upload.py                 -> Normal yükleme
+  uv run python github_upload.py <branch_adi>    -> Dış dalı çekip birleştirme
+  uv run python github_upload.py -<sayi>         -> Son <sayi> işlemi geri alma (Örn: -3)
+
+Normal yükleme varsayılan olarak ``sidar/upload-*`` dalı açıp PR oluşturur.
+Doğrudan main push yalnız ``SIDAR_GITHUB_UPLOAD_DIRECT_MAIN=1`` ile açılır.
 """
 
+import json
 import os
 import re
+import shutil
 import subprocess  # nosec B404
 import sys
-from collections.abc import Sequence
+import urllib.error
+import urllib.request
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
 
@@ -26,6 +33,8 @@ cfg = Config()
 # ASLA YÜKLENMEMESİ GEREKENLER (kritik güvenlik katmanı)
 FORBIDDEN_PATHS = [
     ".env",
+    ".sidar_keys.env",
+    ".sidar_keys.env.",
     "sessions/",
     "chroma_db/",
     "__pycache__/",
@@ -175,11 +184,14 @@ def resolve_github_token() -> str:
       tanımlı olabilir ve bu durum `.env` içindeki gerçek değeri gölgeleyebilir.
     - Bu nedenle alternatif anahtar adlarını da (GH_TOKEN/GITHUB_PAT) deneriz.
     """
+    # Explicit process values must win over the Config snapshot. This matters when
+    # an operator rotates a token after Config was imported or deliberately
+    # overrides the secret-overlay value for one invocation.
     candidates = [
-        getattr(cfg, "GITHUB_TOKEN", ""),
         os.getenv("GITHUB_TOKEN", ""),
         os.getenv("GH_TOKEN", ""),
         os.getenv("GITHUB_PAT", ""),
+        getattr(cfg, "GITHUB_TOKEN", ""),
     ]
 
     for value in candidates:
@@ -193,6 +205,97 @@ def resolve_upload_version() -> str:
     """Commit mesajı ve başlık için merkezi Sidar sürümünü çöz."""
     configured_version = str(getattr(cfg, "VERSION", "") or "").strip()
     return configured_version or PRODUCT_VERSION
+
+
+def direct_main_upload_allowed(env: Mapping[str, str] | None = None) -> bool:
+    """Return whether the operator explicitly opted into direct main pushes."""
+    environ = os.environ if env is None else env
+    return str(environ.get("SIDAR_GITHUB_UPLOAD_DIRECT_MAIN", "")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def create_upload_branch() -> str:
+    """Create the timestamped branch used by the default PR-first upload flow."""
+    branch = f"sidar/upload-{datetime.now():%Y%m%d-%H%M%S}"
+    success, error = run_command(["git", "switch", "-c", branch], show_output=False)
+    if not success:
+        raise RuntimeError(error or "Upload dalı oluşturulamadı.")
+    return branch
+
+
+def _github_repo_slug(remote_url: str) -> str:
+    """Extract an ``owner/repository`` slug from a validated GitHub remote URL."""
+    normalized = str(remote_url or "").strip().removesuffix("/").removesuffix(".git")
+    if not _is_valid_repo_url(remote_url):
+        return ""
+    if normalized.startswith("git@github.com:"):
+        return normalized.removeprefix("git@github.com:")
+    return normalized.removeprefix("https://github.com/")
+
+
+def _open_upload_pull_request_via_api(branch: str, github_token: str) -> tuple[bool, str]:
+    """Create the upload PR through GitHub's API when the optional ``gh`` CLI is absent."""
+    remote_ok, remote_url = run_command(["git", "remote", "get-url", "origin"], show_output=False)
+    repo_slug = _github_repo_slug(remote_url) if remote_ok else ""
+    if not repo_slug:
+        return False, "GitHub origin adresinden owner/repository bilgisi çözülemedi."
+
+    payload = json.dumps(
+        {
+            "title": f"Sidar {resolve_upload_version()} otomatik yükleme",
+            "head": branch,
+            "base": "main",
+            "body": "Sidar github_upload.py tarafından PR-first yükleme akışıyla oluşturuldu.",
+        }
+    ).encode("utf-8")
+    request = urllib.request.Request(  # nosec B310  # Sabit HTTPS GitHub API origin'i.
+        f"https://api.github.com/repos/{repo_slug}/pulls",
+        data=payload,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {github_token}",
+            "Content-Type": "application/json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:  # nosec B310
+            result = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace").strip()
+        if exc.code == 401:
+            return (
+                False,
+                "GitHub token reddedildi (HTTP 401 / Bad credentials). "
+                "Tokenı GitHub'da yenileyip GITHUB_TOKEN (veya GH_TOKEN/GITHUB_PAT) "
+                "değerini SIDAR_KEYS_FILE ya da ~/.sidar_keys.env içinde güncelleyin. "
+                "Fine-grained token kullanıyorsanız ilgili repository için Pull requests: "
+                "Read and write izni verin.",
+            )
+        return False, f"GitHub API PR isteği HTTP {exc.code} ile reddedildi: {detail}"
+    except (urllib.error.URLError, OSError, json.JSONDecodeError) as exc:
+        return False, f"GitHub API üzerinden PR oluşturulamadı: {exc}"
+
+    pr_url = str(result.get("html_url", "")).strip()
+    if not pr_url:
+        return False, "GitHub API PR yanıtında html_url bulunamadı."
+    return True, pr_url
+
+
+def open_upload_pull_request(branch: str, github_token: str) -> tuple[bool, str]:
+    """Open a GitHub PR, using ``gh`` when installed and the API otherwise."""
+    if shutil.which("gh") is None:
+        return _open_upload_pull_request_via_api(branch, github_token)
+    return run_command(
+        ["gh", "pr", "create", "--base", "main", "--head", branch, "--fill"],
+        show_output=False,
+        extra_env={"GH_TOKEN": github_token},
+    )
 
 
 def is_forbidden_path(path: str) -> bool:
@@ -522,9 +625,10 @@ def ensure_full_git_history_for_manifest_checks() -> tuple[bool, str]:
 def run_pre_push_quality_gate() -> tuple[bool, str]:
     """Push öncesi unit/static/installer kapılarını fail-closed çalıştırır.
 
-    github_upload.py, PR/branch-protection akışını atlayıp doğrudan main'e push
-    eder; bu yüzden CI'daki PR-only zorunlu "Installer manifest and smoke gate"
-    hiçbir zaman devreye girmez. Buradaki adımlar unit testleri ve o job'ın
+    Bu yerel kapı, varsayılan PR-first akışta uzak CI başlamadan hızlı geri
+    bildirim verir; açık opt-in direct-main akışında ise PR-only kapıların
+    yokluğuna karşı fail-closed koruma sağlar. Buradaki adımlar unit testleri ve
+    "Installer manifest and smoke gate" job'ının
     (installer-smoke, .github/workflows/ci.yml) pin-drift'i yakalayan
     kısımlarını kapsar; böylece direkt push öncesinde kod/test sözleşmesi veya
     installer drift hataları yerelde yakalanır.
@@ -600,6 +704,7 @@ def run_pre_push_quality_gate() -> tuple[bool, str]:
 def main() -> None:
     target_branch = None
     rollback_steps = 0
+    upload_base_branch = "main"
 
     # Argüman kontrolü: Dal adı mı yoksa -X (Geri alma) komutu mu?
     if len(sys.argv) > 1:
@@ -635,7 +740,8 @@ def main() -> None:
     if not github_token:
         print(
             f"{Colors.FAIL}GITHUB_TOKEN bulunamadı. "
-            f"Lütfen .env içinde GITHUB_TOKEN (veya GH_TOKEN/GITHUB_PAT) tanımlayın.{Colors.ENDC}"
+            "GITHUB_TOKEN (veya GH_TOKEN/GITHUB_PAT) değerini SIDAR_KEYS_FILE "
+            f"ya da varsayılan ~/.sidar_keys.env secret overlay'inde tanımlayın.{Colors.ENDC}"
         )
         sys.exit(1)
 
@@ -754,7 +860,7 @@ def main() -> None:
         )
         print(
             f"{Colors.WARNING}Projeniz tam {rollback_steps} adım önceki haline hem yerelde hem de "
-            f"GitHub'da (Force Push) zorla eşitlenecek.{Colors.ENDC}"
+            f"GitHub'da (force-with-lease) eşitlenecek.{Colors.ENDC}"
         )
 
         confirm = (
@@ -791,10 +897,14 @@ def main() -> None:
                 print(f"{Colors.FAIL}❌ Geri alma başarısız oldu:\n{reset_err}{Colors.ENDC}")
                 sys.exit(1)
 
-            # 2. GitHub'ı zorla (force) güncelle
-            print(f"{Colors.WARNING}⏳ GitHub deposu zorla (force) güncelleniyor...{Colors.ENDC}")
+            # 2. GitHub'ı başka birinin yeni commit'ini ezmeden lease kontrollü güncelle.
+            print(
+                f"{Colors.WARNING}⏳ GitHub deposu force-with-lease ile "
+                f"güncelleniyor...{Colors.ENDC}"
+            )
             push_success, push_err = run_command(
-                ["git", "push", "--force", "origin", current_branch], show_output=False
+                ["git", "push", "--force-with-lease", "origin", current_branch],
+                show_output=False,
             )
 
             if push_success:
@@ -806,7 +916,7 @@ def main() -> None:
                 print(f"{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
             else:
                 print(
-                    f"{Colors.FAIL}❌ GitHub'a zorla yazma (Force Push) başarısız "
+                    f"{Colors.FAIL}❌ GitHub'a force-with-lease yazma başarısız "
                     f"oldu:\n{push_err}{Colors.ENDC}"
                 )
                 print(
@@ -869,6 +979,20 @@ def main() -> None:
     # STANDART YÜKLEME İŞLEMİ
     # ═══════════════════════════════════════════════════════════════
     assert_no_unmerged_files()
+
+    direct_main = direct_main_upload_allowed()
+    if direct_main:
+        print(
+            f"{Colors.WARNING}⚠️ SIDAR_GITHUB_UPLOAD_DIRECT_MAIN açık; "
+            f"PR akışı bilinçli olarak atlanacak.{Colors.ENDC}"
+        )
+    else:
+        try:
+            current_branch = create_upload_branch()
+        except RuntimeError as exc:
+            print(f"{Colors.FAIL}❌ Güvenli upload dalı oluşturulamadı: {exc}{Colors.ENDC}")
+            sys.exit(1)
+        print(f"{Colors.OKGREEN}✅ PR-first upload dalı oluşturuldu: {current_branch}{Colors.ENDC}")
 
     print(f"\n{Colors.OKBLUE}📦 Yerel dosyalar taranıyor ve paketleniyor...{Colors.ENDC}")
     run_command(["git", "reset"], show_output=False)
@@ -973,7 +1097,7 @@ def main() -> None:
                 f"(atlanan/boş klasör veya desteklenmeyen girdiler olabilir).{Colors.ENDC}"
             )
         _, unpushed = run_command(
-            ["git", "log", f"origin/{current_branch}..HEAD"], show_output=False
+            ["git", "log", f"origin/{upload_base_branch}..HEAD"], show_output=False
         )
         if not unpushed:
             print(
@@ -1017,6 +1141,14 @@ def main() -> None:
     )
 
     if push_success:
+        if not direct_main:
+            pr_success, pr_err = open_upload_pull_request(current_branch, github_token)
+            if not pr_success:
+                print(
+                    f"{Colors.FAIL}❌ Upload dalı gönderildi ancak PR açılamadı:\n"
+                    f"{pr_err}{Colors.ENDC}"
+                )
+                sys.exit(1)
         print(f"\n{Colors.HEADER}{'=' * 65}{Colors.ENDC}")
         print(
             f"{Colors.BOLD}{Colors.OKGREEN}🎉 TEBRİKLER! Proje başarıyla GitHub'a "

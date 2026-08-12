@@ -38,6 +38,9 @@ def test_production_dockerfile_uses_no_dev_profile() -> None:
     """Production image should not inherit the all-extras developer install surface."""
     dockerfile = (REPO_ROOT / "Dockerfile.production").read_text(encoding="utf-8")
 
+    assert "# Sidar production image." in dockerfile
+    assert 'LABEL description="Sidar production Web/API image"' in dockerfile
+    assert "production-minimal image" not in dockerfile
     assert "uv sync --frozen --extra production --no-dev --no-install-project" in dockerfile
     assert "uv sync --frozen --extra production --no-dev" in dockerfile
     assert "--all-extras" not in dockerfile

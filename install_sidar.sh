@@ -182,7 +182,7 @@ load_remote_script_checksums() {
 load_remote_script_checksums
 
 SIDAR_INSTALLER_EMBEDDED_SOURCE_REF="main"
-SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="b20d818728a4152a120c70b04409f2f1ae4adc1c"
+SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="70551e7a36c962530ed0980ce61c0829037ae1ed"
 
 sidar_truthy_early_bool() {
     local raw="${1:-}"
@@ -612,7 +612,7 @@ ff40d0e69bd2aff31b92e0c07ce2638a239f08d506914170e66727139a38d66b  scripts/instal
 b6362779c9cabbd4e39c3dc80535ec5138ec1a6ea18311e1e78d4c2f8ba2c2c2  scripts/install_modules/phases/07_finish.sh
 ae7549a7b5d2114741c6d89580096bef32c2b8c1591a448cb74096ee7e0ec80a  scripts/install_modules/phases/08_env.sh
 3c5dbf7687703bcef6e0af4a2acd172b0634fe1ae68718e8894bc9781fd23672  scripts/install_modules/phases/09_ollama_models.sh
-3d4454e9e7ecf7a66565c6dd7ce96dbb2812cc0f37784d4e4a0f15fab697376a  scripts/install_modules/phases/10_validation.sh
+bd912b379a02c7e451c05e1fb41cb67cc843a96a91f4354ebfa5e8af60558401  scripts/install_modules/phases/10_validation.sh
 276ee64ef086bda1a1441db9fcc1c5bcb5c9a7ea7467527ff171522809cf0e14  scripts/install_modules/phases/11_post_install.sh
 a243dbc96b31e697451b507014d234127eb3fcc2ffe183aa9164027a343aee58  scripts/install_modules/phases/12_alembic.sh
 9d612775f0ae694f228a075fd73d0ae547cc619f280ff5d2760ac69aebadb82a  scripts/install_modules/phases/13_playwright.sh
