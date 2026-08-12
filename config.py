@@ -513,6 +513,7 @@ class Config:
     self_heal_settings = _SELF_HEAL_SETTINGS
 
     # ─── Genel ───────────────────────────────────────────────
+    SIDAR_ENV: str = os.getenv("SIDAR_ENV", "").strip().lower()
     PROJECT_NAME: str = _APP_SETTINGS.project_name
     VERSION: str = _APP_SETTINGS.version
     DEBUG_MODE: bool = _APP_SETTINGS.debug_mode
@@ -707,6 +708,9 @@ class Config:
 
     # ─── Veritabanı (v3.0 çoklu kullanıcı hazırlığı) ────────
     DATABASE_URL: str = get_database_url()
+    SIDAR_ALLOW_INSECURE_LOCAL_DB_DEFAULT: bool = get_bool_env(
+        "SIDAR_ALLOW_INSECURE_LOCAL_DB_DEFAULT", False
+    )
     CONTAINER_DATABASE_URL: str | None = None
     SIDAR_CONTAINER_DATABASE_URL: str = get_container_database_url()
     DB_POOL_SIZE: int = get_int_env("DB_POOL_SIZE", get_db_pool_size_default())
