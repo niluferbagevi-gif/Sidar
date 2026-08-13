@@ -167,6 +167,28 @@ def test_run_checked_propagates_exit_code_and_passes_through_stdio(tmp_path) -> 
     assert result.stdout == "before\nmid\ncaptured=7\nafter\n"
 
 
+def test_ruff_failure_is_aggregated_without_short_circuiting_independent_phases() -> None:
+    """Ruff failures must fail the final gate without suppressing later diagnostics."""
+    script = RUN_TESTS.read_text(encoding="utf-8")
+
+    assert "run_precommit_autofix || exit 1" not in script
+    assert "run_checked run_precommit_autofix\nRUFF_EXIT_CODE=$?" in script
+    assert 'if [ "${RUFF_EXIT_CODE}" -ne 0 ]; then' in script
+    assert 'echo "   Ruff Çıkış Kodu: ${RUFF_EXIT_CODE}"' in script
+
+    backend_block = _run_tests_block_between(
+        'if [ "${SIDAR_RUN_BACKEND_PYTEST}" = "1" ]; then',
+        "elif stage_selected static; then",
+    )
+    assert "if ! run_static_analysis_gates; then" in backend_block
+    assert "sync_ollama_models && run_static_analysis_gates &&" not in backend_block
+    assert "ensure_runtime_dependencies && run_static_analysis_gates" not in backend_block
+    assert "run_pytest_coverage_report" in backend_block
+
+    final_block = script[script.index("FINAL_EXIT_CODE=0") :]
+    assert '[ "${RUFF_EXIT_CODE}" -ne 0 ]' in final_block
+
+
 def test_frontend_coverage_dark_mode_links_are_injected_without_late_css_imports(tmp_path) -> None:
     coverage_dir = tmp_path / "coverage"
     nested_dir = coverage_dir / "components" / "button"

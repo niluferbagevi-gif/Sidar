@@ -169,7 +169,15 @@ fi
 
 cleanup_zone_identifier_artifacts || exit 1
 
-run_precommit_autofix || exit 1
+# Ruff bir kalite kapısıdır, çalışma ortamı preflight'ı değildir. Lint/format
+# ihlallerini final sonuca dahil et, ancak bağımsız backend/frontend/benchmark
+# fazlarının tanı üretmesini engelleme.
+RUFF_EXIT_CODE=0
+run_checked run_precommit_autofix
+RUFF_EXIT_CODE=$?
+if [ "${RUFF_EXIT_CODE}" -ne 0 ]; then
+  echo "⚠️ Ruff kalite kapısı başarısız; bağımsız kalite fazları çalıştırılmaya devam edecek."
+fi
 
 COVERAGE_RATCHET_STATE_FILE="${COVERAGE_RATCHET_STATE_FILE:-pyproject.toml}"
 COVERAGE_RATCHET_MIN_EXISTING_GATE="${COVERAGE_RATCHET_MIN_EXISTING_GATE:-5}"
@@ -460,8 +468,14 @@ trap cleanup_test_services EXIT
 #    Faz-2: Statik analiz + otonom iyileştirme
 #    Faz-3: Ağır altyapı (Redis/PostgreSQL) + DB hazırlık + pytest coverage
 if [ "${SIDAR_RUN_BACKEND_PYTEST}" = "1" ]; then
+  # Statik analiz de bağımsız bir kalite sinyalidir. Başarısızlığı backend final
+  # sonucuna yansır, fakat çalışabilir pytest fazlarını 'skipped' yapmaz.
+  if ! run_static_analysis_gates; then
+    echo "⚠️ Statik analiz başarısız; backend test fazları çalıştırılmaya devam edecek."
+    BACKEND_EXIT_CODE=1
+  fi
   if backend_infra_required_for_stage; then
-    if ensure_uv_available && prepare_docker_test_image && ensure_runtime_dependencies && sync_ollama_models && run_static_analysis_gates && sanitize_test_database_url_overrides && load_test_database_password_env && ensure_test_services && prepare_test_database; then
+    if ensure_uv_available && prepare_docker_test_image && ensure_runtime_dependencies && sync_ollama_models && sanitize_test_database_url_overrides && load_test_database_password_env && ensure_test_services && prepare_test_database; then
       run_pytest_coverage_report
       run_bats_shell_tests
       update_progressive_coverage_gate
@@ -469,7 +483,7 @@ if [ "${SIDAR_RUN_BACKEND_PYTEST}" = "1" ]; then
       echo "❌ Backend testleri atlandı: önkoşul adımlarından biri başarısız."
       BACKEND_EXIT_CODE=1
     fi
-  elif ensure_uv_available && ensure_runtime_dependencies && run_static_analysis_gates; then
+  elif ensure_uv_available && ensure_runtime_dependencies; then
     echo "ℹ️ Unit-only stage: Docker/DB/Ollama önkoşulları atlandı."
     run_pytest_coverage_report
     update_progressive_coverage_gate
@@ -621,7 +635,7 @@ echo "======================================================"
 
 # 4) Final Durum Değerlendirmesi
 FINAL_EXIT_CODE=0
-if [ "${BACKEND_EXIT_CODE}" -ne 0 ] || [ "${FRONTEND_EXIT_CODE}" -ne 0 ]; then
+if [ "${RUFF_EXIT_CODE}" -ne 0 ] || [ "${BACKEND_EXIT_CODE}" -ne 0 ] || [ "${FRONTEND_EXIT_CODE}" -ne 0 ]; then
   FINAL_EXIT_CODE=1
 fi
 if [ "${BENCHMARK_EXIT_CODE}" -ne 0 ]; then
@@ -661,6 +675,7 @@ print_release_scope_warning_once
 
 if [ "${FINAL_EXIT_CODE}" -ne 0 ]; then
   echo "❌ Bazı testler veya kalite kapıları (coverage) başarısız oldu!"
+  echo "   Ruff Çıkış Kodu: ${RUFF_EXIT_CODE}"
   echo "   Backend Çıkış Kodu: ${BACKEND_EXIT_CODE}"
   if [ "${BACKEND_EXIT_CODE}" -ne 0 ]; then
     echo "   Backend Hata Nedenleri: $(format_backend_failure_reasons)"
