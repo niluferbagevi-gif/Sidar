@@ -19,7 +19,7 @@ class SandboxRunner(Protocol):
 
     def __call__(self, command: str, *, cwd: str | None = None) -> tuple[bool, str]:
         """Execute ``command`` in the sandbox and return status plus output."""
-        ...
+        ...  # pragma: no cover - declarative Protocol contract
 
 
 def requires_container_shell(manager: Any) -> bool:
