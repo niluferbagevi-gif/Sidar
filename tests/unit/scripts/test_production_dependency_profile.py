@@ -12,8 +12,8 @@ def test_production_minimal_profile_and_artifacts_are_declared() -> None:
     optional_deps = pyproject["project"]["optional-dependencies"]
     plan = pyproject["tool"]["sidar"]["dependency_profile_plan"]
 
-    assert optional_deps["production"] == ["sidar[postgres,telemetry]"]
-    assert optional_deps["production-minimal"] == ["sidar[postgres]"]
+    assert optional_deps["production"] == ["sidar[runtime-postgres,telemetry]"]
+    assert optional_deps["production-minimal"] == ["sidar[runtime-postgres]"]
     assert optional_deps["production-minimal"] != optional_deps["production"]
     assert plan["requirements_exporter"] == "scripts/export_production_requirements.sh"
     assert plan["production_dockerfile"] == "Dockerfile.production"
@@ -21,6 +21,20 @@ def test_production_minimal_profile_and_artifacts_are_declared() -> None:
         "production",
         "production-minimal",
     }
+
+
+def test_canonical_dependency_profiles_are_explicit_and_composable() -> None:
+    pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    optional_deps = pyproject["project"]["optional-dependencies"]
+
+    assert optional_deps["runtime-core"] == []
+    assert optional_deps["runtime-postgres"] == ["sidar[postgres]"]
+    assert optional_deps["runtime-gpu"] == ["sidar[rag,gpu]"]
+    assert optional_deps["provider-ollama"] == []
+    assert optional_deps["provider-openai"] == ["sidar[openai]"]
+    assert optional_deps["provider-gemini"] == ["sidar[gemini]"]
+    assert optional_deps["ci-cpu"] == ["sidar[dev,browser,sandbox]"]
+    assert optional_deps["ci-gpu"] == ["sidar[ci-cpu,runtime-gpu]"]
 
 
 def test_requirements_exporter_uses_uv_production_no_dev() -> None:

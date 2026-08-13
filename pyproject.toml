@@ -109,6 +109,30 @@ sidar-gui = "gui_launcher:main"
 sidar-web = "web_server:main"
 
 [project.optional-dependencies]
+# ── Canonical composable dependency profiles ─────────────────────────────
+# The project dependencies above are the runtime-core contract. The empty
+# extra gives Docker/CI/install scripts an explicit, stable profile name.
+runtime-core = []
+runtime-postgres = [
+  "sidar[postgres]",
+]
+runtime-gpu = [
+  "sidar[rag,gpu]",
+]
+provider-ollama = []
+provider-openai = [
+  "sidar[openai]",
+]
+provider-gemini = [
+  "sidar[gemini]",
+]
+ci-cpu = [
+  "sidar[dev,browser,sandbox]",
+]
+ci-gpu = [
+  "sidar[ci-cpu,runtime-gpu]",
+]
+
 # ── LLM sağlayıcıları (istenilen sağlayıcı için ilgili extras ekleyin) ──
 gemini = [
   "google-genai>=1.0.0,<2.0.0",
@@ -210,10 +234,10 @@ gpu-runtime = [
   "sidar[rag,gpu]",
 ]
 production = [
-  "sidar[postgres,telemetry]",
+  "sidar[runtime-postgres,telemetry]",
 ]
 production-minimal = [
-  "sidar[postgres]",
+  "sidar[runtime-postgres]",
 ]
 dev = [
   "sidar[postgres]",

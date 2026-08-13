@@ -22,8 +22,8 @@ def test_dependency_profile_plan_preserves_current_install_standard() -> None:
     assert plan["production_minimal_profile"] == "production-minimal"
     assert plan["status"] == "phase-1-dev-split"
     assert {"dev-light", "production", "production-minimal"} <= set(optional_dependencies)
-    assert optional_dependencies["production"] == ["sidar[postgres,telemetry]"]
-    assert optional_dependencies["production-minimal"] == ["sidar[postgres]"]
+    assert optional_dependencies["production"] == ["sidar[runtime-postgres,telemetry]"]
+    assert optional_dependencies["production-minimal"] == ["sidar[runtime-postgres]"]
     assert "uv sync --all-extras" in docs
     assert "Docker/installer" in docs
     for tool_name in ("pytest", "ruff", "mypy", "bandit", "safety"):
@@ -291,7 +291,7 @@ def test_production_minimal_excludes_heavy_optional_extras() -> None:
     production_minimal = optional_dependencies["production-minimal"]
     docs = Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")
 
-    assert production_minimal == ["sidar[postgres]"]
+    assert production_minimal == ["sidar[runtime-postgres]"]
     heavy_extras = {"rag", "gpu", "voice", "browser"}
     for dependency in production_minimal:
         requirement = Requirement(dependency)
@@ -344,10 +344,11 @@ def test_production_profile_excludes_dev_quality_tools() -> None:
     production_dependencies = set(pyproject["project"]["optional-dependencies"]["production"])
     docs = Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")
 
-    assert production_dependencies == {"sidar[postgres,telemetry]"}
+    assert production_dependencies == {"sidar[runtime-postgres,telemetry]"}
     assert (
-        "production profili `sidar[postgres,telemetry]`, production-minimal profili ise "
-        "`sidar[postgres]` ile dev araçlarını ve Pyright LSP yükünü dışarıda tutar" in docs
+        "production profili `sidar[runtime-postgres,telemetry]`, production-minimal profili ise "
+        "`sidar[runtime-postgres]` ile dev araçlarını ve Pyright LSP yükünü dışarıda tutar"
+        in docs
     )
     assert "P2 structural hardening" in docs
     for package_prefix in ("pytest", "ruff", "mypy", "pyright", "bandit", "safety"):
