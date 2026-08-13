@@ -2996,13 +2996,19 @@ def test_web_framework_dependencies_exclude_vulnerable_starlette_release() -> No
         if (requirement := Requirement(dependency)).name in {"fastapi", "starlette"}
     }
 
-    assert "0.136.1" in dependency_specifiers["fastapi"]
-    assert "0.129.2" not in dependency_specifiers["fastapi"]
-    assert "1.3.1" in dependency_specifiers["starlette"]
-    assert "1.1.0" not in dependency_specifiers["starlette"]
+    validated_fastapi = Version("0.141.1")
+    validated_starlette = Version("1.6.0")
+    vulnerable_fastapi = Version("0.129.2")
+    vulnerable_starlette = Version("1.1.0")
+
+    assert validated_fastapi in dependency_specifiers["fastapi"]
+    assert validated_starlette in dependency_specifiers["starlette"]
+    assert vulnerable_fastapi not in dependency_specifiers["fastapi"]
+    assert vulnerable_starlette not in dependency_specifiers["starlette"]
     assert Version(locked_packages["fastapi"]) in dependency_specifiers["fastapi"]
     assert Version(locked_packages["starlette"]) in dependency_specifiers["starlette"]
-    assert Version("1.1.0") not in dependency_specifiers["starlette"]
+    assert Version(locked_packages["fastapi"]) >= validated_fastapi
+    assert Version(locked_packages["starlette"]) >= validated_starlette
 
 
 def test_pytest_shellcheck_quality_gate_is_registered() -> None:
