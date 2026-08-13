@@ -2618,6 +2618,21 @@ def test_dev_full_and_base_quality_gates_auto_build_the_plugin_sandbox_image() -
     assert "DOCKER_TEST_IMAGE=$(PLUGIN_SANDBOX_IMAGE)" in base_quality_gates_block
 
 
+def test_make_validation_aliases_distinguish_development_from_release() -> None:
+    """Make aliases must not imply that development validation is release evidence."""
+    makefile = Path("Makefile").read_text(encoding="utf-8")
+
+    assert "validate-dev: dev-full" in makefile
+    assert "validate:\n" in makefile
+    assert "Release/merge kanıtı için: make release-readiness" in makefile
+    assert "$(MAKE) validate-dev" in makefile
+    assert "release-readiness: production-readiness" in makefile
+
+    testing = Path("docs/TESTING.md").read_text(encoding="utf-8")
+    assert "make validate" in testing
+    assert "yalnız development doğrulamasıdır, release kanıtı değildir" in testing
+
+
 def test_testing_docs_explain_external_production_readiness_dependencies() -> None:
     """Operators must have a durable runbook for CI's external fail-closed gates."""
     testing = Path("docs/TESTING.md").read_text(encoding="utf-8")

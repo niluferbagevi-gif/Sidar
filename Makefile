@@ -23,7 +23,7 @@ INSTALLER_SHELLCHECK_FILES := $(shell git ls-files \
 	'scripts/install_modules/*.sh' \
 	'scripts/install_modules/**/*.sh')
 
-.PHONY: lint lint-shell installer-shellcheck test test-shell check-install-manifests finalize-install-module-pin deps-full deps-dev-light sync-ci-parity-deps dev-full dev-full-gpu ci-parity plugin-sandbox-security base-quality-gates production-readiness doctor-production-readiness benchmark-seed frontend-gate backend-integration format format-check python-quality
+.PHONY: lint lint-shell installer-shellcheck test test-shell check-install-manifests finalize-install-module-pin deps-full deps-dev-light sync-ci-parity-deps validate validate-dev dev-full dev-full-gpu ci-parity plugin-sandbox-security base-quality-gates release-readiness production-readiness doctor-production-readiness benchmark-seed frontend-gate backend-integration format format-check python-quality
 
 lint: lint-shell check-install-manifests
 
@@ -81,6 +81,13 @@ python-quality:
 # been built by hand, even though install_sidar.sh already requires a working
 # Docker daemon. prepare_docker_test_image() (scripts/test_gates/backend_helpers.sh)
 # no-ops if the image already exists, so this only costs a build on first run.
+validate:
+	@echo "ℹ️ 'make validate' geriye dönük alias'tır; development doğrulaması çalıştırılıyor."
+	@echo "   Release/merge kanıtı için: make release-readiness"
+	$(MAKE) validate-dev
+
+validate-dev: dev-full
+
 dev-full:
 	SIDAR_TOTAL_JS_BUDGET_KB=$(SIDAR_TOTAL_JS_BUDGET_KB) \
 	SIDAR_TOTAL_GZIP_BUDGET_KB=$(SIDAR_TOTAL_GZIP_BUDGET_KB) \
@@ -138,6 +145,8 @@ base-quality-gates:
 
 production-readiness:
 	$(MAKE) base-quality-gates CI_RUN_BENCHMARKS=required CI_PRODUCTION_READINESS=1
+
+release-readiness: production-readiness
 
 doctor-production-readiness:
 	uv run python scripts/doctor_production_readiness.py

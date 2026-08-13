@@ -213,12 +213,15 @@ sözleşmeyi kullanır ve hangi kapının production readiness sayıldığını 
 gösterir:
 
 ```bash
+make validate-dev          # Açık isimli geliştirici tam doğrulaması; dev-full hedefini çalıştırır.
+make validate              # Geriye dönük alias; yalnız development doğrulamasıdır, release kanıtı değildir.
 make dev-full              # Geliştirici tam doğrulaması + local frontend bundle budget (local profil varsayılanları).
 make ci-parity             # dev-full + TEST_PROFILE=ci + tam (8 spec) frontend e2e: CI'nın "test" job'ının gerçek local provası.
 make plugin-sandbox-security # Güncel checkout'tan sidar:latest build eder; 6 gerçek-container escape testinde skip'i hata sayar.
 make benchmark-seed        # Lokal benchmark baseline bootstrap/seed yardımcısı.
 make doctor-production-readiness  # Release gate öncesi ortam doctor/preflight raporu.
 make production-readiness  # CI profili + benchmark + frontend e2e + SIDAR_PRODUCTION_READINESS.
+make release-readiness     # production-readiness için açık isimli release/merge alias'ı.
 make frontend-gate         # Frontend lint/typecheck/coverage/e2e kalite kapısı.
 make backend-integration   # Backend integration stage'i; global coverage gate uygulanmaz.
 ```
