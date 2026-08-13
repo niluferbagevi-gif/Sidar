@@ -45,7 +45,7 @@ PY
     --cov-report=xml
   )
   local base_pytest_cmd=(
-    env "DOTENV_FILE=${test_dotenv_file}" uv run pytest -c pyproject.toml
+    env "SIDAR_ENV=test" "DOTENV_FILE=${test_dotenv_file}" uv run pytest -c pyproject.toml
     "${coverage_pytest_opts[@]}"
     --cov-fail-under=0
   )

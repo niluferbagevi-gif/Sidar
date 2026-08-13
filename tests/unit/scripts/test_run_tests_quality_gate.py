@@ -411,9 +411,14 @@ def test_run_tests_verifies_alembic_downgrade_upgrade_chain() -> None:
 
 def test_run_tests_uses_loadgroup_distribution_for_xdist_state_isolation() -> None:
     script = _script()
+    coverage_helper = Path("scripts/test_gates/coverage_helpers.sh").read_text(encoding="utf-8")
     notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
 
     assert 'PYTEST_DIST_MODE="${PYTEST_DIST_MODE:-loadgroup}"' in script
+    assert (
+        'env "SIDAR_ENV=test" "DOTENV_FILE=${test_dotenv_file}" uv run pytest'
+        in coverage_helper
+    )
     assert 'base_pytest_cmd+=(-n "${PYTEST_WORKERS}" --dist "${PYTEST_DIST_MODE}")' in script
     assert 'TEST_SUMMARY_JUNIT_DIR="${TEST_SUMMARY_JUNIT_DIR:-artifacts/pytest}"' in script
 
