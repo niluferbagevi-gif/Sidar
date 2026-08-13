@@ -642,8 +642,16 @@ if [ "${FRONTEND_E2E_EXIT_CODE}" -ne 0 ]; then
 fi
 
 PRODUCTION_READY=false
-if production_readiness_gate_active && [ "${FINAL_EXIT_CODE}" -eq 0 ]; then
+if production_readiness_gate_active \
+  && [ "${FINAL_EXIT_CODE}" -eq 0 ] \
+  && [ "${BENCHMARK_COMPARE_STATUS}" = "compared_enforced" ] \
+  && [ -n "${BENCHMARK_COMPARE_FILE:-}" ] \
+  && [ -f "${BENCHMARK_COMPARE_FILE}" ]; then
   PRODUCTION_READY=true
+elif production_readiness_gate_active && [ "${FINAL_EXIT_CODE}" -eq 0 ]; then
+  echo "❌ Production readiness benchmark kanıtı eksik: mevcut bir baseline ile enforced strict karşılaştırma tamamlanmadı."
+  echo "   Durum: ${BENCHMARK_COMPARE_STATUS}; baseline: ${BENCHMARK_COMPARE_FILE:-<yok>}"
+  FINAL_EXIT_CODE=1
 fi
 write_test_summary_json "${PRODUCTION_READY}"
 

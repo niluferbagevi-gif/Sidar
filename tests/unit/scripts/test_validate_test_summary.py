@@ -15,6 +15,12 @@ def _summary(
     exit_code: int,
 ) -> dict[str, object]:
     return {
+        "benchmark_compare": "compared_enforced" if production_ready else "not_run",
+        "benchmark_baseline": {
+            "file": ".benchmarks/Linux-CPython-3.11/baseline.json" if production_ready else None,
+            "compare_required": production_ready,
+            "compare_enforced": production_ready,
+        },
         "production_ready": production_ready,
         "production_readiness": "passed" if production_ready else "not_run",
         "production_readiness_detail": {
@@ -60,6 +66,21 @@ def test_release_mode_rejects_development_summary() -> None:
     assert "release mode release_gate_exit_code=0 bekler" in errors
     assert "release/merge öncesi zorunlu komut: make production-readiness" in errors
     assert any("SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all" in e for e in errors)
+
+
+def test_release_mode_rejects_seeded_but_not_compared_benchmark() -> None:
+    summary = _summary(
+        production_ready=True,
+        status="passed",
+        validation_class="production_readiness",
+        release_blocking=False,
+        exit_code=0,
+    )
+    summary["benchmark_compare"] = "seeded_not_compared"
+
+    errors = validate_summary(summary, "release")
+
+    assert "release mode benchmark_compare=compared_enforced bekler" in errors
 
 
 def test_development_mode_validates_schema_without_requiring_release() -> None:
