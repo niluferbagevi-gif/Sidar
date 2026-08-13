@@ -53,6 +53,22 @@ def test_production_dockerfile_pins_build_inputs_by_version_and_digest():
     assert "ghcr.io/astral-sh/uv:latest" not in dockerfile
 
 
+def test_production_dockerfile_keeps_build_toolchain_out_of_runtime_stage():
+    """The deploy image must copy artifacts, not compilers or package managers."""
+    dockerfile = _read("Dockerfile.production")
+    builder, runtime = dockerfile.split("FROM ${BASE_IMAGE} AS runtime", maxsplit=1)
+
+    assert "FROM ${BASE_IMAGE} AS builder" in builder
+    assert "build-essential git" in builder
+    assert "COPY --from=builder /app /app" in runtime
+    runtime_apt = runtime.split("apt-get install -y --no-install-recommends", maxsplit=1)[1].split(
+        "rm -rf /var/lib/apt/lists/*", maxsplit=1
+    )[0]
+    for build_only in ("build-essential", " git", "/uv /uvx", "python3-pip", "python3-venv"):
+        assert build_only not in runtime_apt
+    assert "ca-certificates curl ffmpeg" in runtime_apt
+
+
 def test_main_dockerfile_documents_current_cuda_13_example_consistently():
     dockerfile = _read("Dockerfile")
 

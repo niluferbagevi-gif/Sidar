@@ -45,3 +45,6 @@ def test_production_dockerfile_uses_no_dev_profile() -> None:
     assert "uv sync --frozen --extra production --no-dev" in dockerfile
     assert "--all-extras" not in dockerfile
     assert "--extra dev" not in dockerfile
+    assert "FROM ${BASE_IMAGE} AS builder" in dockerfile
+    assert "FROM ${BASE_IMAGE} AS runtime" in dockerfile
+    assert "COPY --from=builder /app /app" in dockerfile
