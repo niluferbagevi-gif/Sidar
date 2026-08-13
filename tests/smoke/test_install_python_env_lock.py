@@ -123,9 +123,7 @@ def test_create_uv_venv_preserves_full_patch_version_from_pyvenv_fallback(tmp_pa
     script_dir = tmp_path / "sidar"
     venv_dir = script_dir / ".venv"
     (venv_dir / "bin").mkdir(parents=True)
-    (venv_dir / "bin" / "python").write_text(
-        "#!/usr/bin/env bash\nexit 1\n", encoding="utf-8"
-    )
+    (venv_dir / "bin" / "python").write_text("#!/usr/bin/env bash\nexit 1\n", encoding="utf-8")
     (venv_dir / "bin" / "python").chmod(0o755)
     (venv_dir / "bin" / "activate").write_text("true\n", encoding="utf-8")
     (venv_dir / "pyvenv.cfg").write_text("version = 3.11.15\n", encoding="utf-8")

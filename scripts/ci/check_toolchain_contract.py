@@ -68,14 +68,13 @@ def contract_errors(root: Path, pins: dict[str, str]) -> list[str]:
             errors.append(f"{path.relative_to(root)}: Node pin drift")
     pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
     python_playwright = (
-        f'playwright>={pins["PLAYWRIGHT_PYTHON_MIN"]},<{pins["PLAYWRIGHT_PYTHON_MAX"]}'
+        f"playwright>={pins['PLAYWRIGHT_PYTHON_MIN']},<{pins['PLAYWRIGHT_PYTHON_MAX']}"
     )
     if f'"{python_playwright}"' not in pyproject:
         errors.append("pyproject.toml: Python Playwright range drift")
     package_json = (root / "web_ui_react/package.json").read_text(encoding="utf-8")
     node_playwright = (
-        f'"@playwright/test": ">={pins["PLAYWRIGHT_NODE_MIN"]} '
-        f'<{pins["PLAYWRIGHT_NODE_MAX"]}"'
+        f'"@playwright/test": ">={pins["PLAYWRIGHT_NODE_MIN"]} <{pins["PLAYWRIGHT_NODE_MAX"]}"'
     )
     if node_playwright not in package_json:
         errors.append("web_ui_react/package.json: Node Playwright range drift")

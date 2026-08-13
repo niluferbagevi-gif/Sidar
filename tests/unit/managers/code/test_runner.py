@@ -27,17 +27,13 @@ class _Manager:
         self.max_output_chars = 1000
         self.sandbox_calls: list[tuple[str, str | None]] = []
 
-    def run_shell_in_sandbox(
-        self, command: str, *, cwd: str | None = None
-    ) -> tuple[bool, str]:
+    def run_shell_in_sandbox(self, command: str, *, cwd: str | None = None) -> tuple[bool, str]:
         self.sandbox_calls.append((command, cwd))
         return True, "sandboxed"
 
 
 class _FailingSandboxManager(_Manager):
-    def run_shell_in_sandbox(
-        self, command: str, *, cwd: str | None = None
-    ) -> tuple[bool, str]:
+    def run_shell_in_sandbox(self, command: str, *, cwd: str | None = None) -> tuple[bool, str]:
         self.sandbox_calls.append((command, cwd))
         return False, "sandbox rejected command"
 

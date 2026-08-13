@@ -122,10 +122,7 @@ def main(argv: list[str] | None = None) -> int:
             return completed.returncode or 2
 
     print(f"Bandit suppression ratchet: skipped_tests={skipped}, maximum={limit}")
-    print(
-        f"Bandit suppression debt plan: owner={owner}, "
-        f"review_order={','.join(review_order)}"
-    )
+    print(f"Bandit suppression debt plan: owner={owner}, review_order={','.join(review_order)}")
     today = dt.date.today()
     effective_target = next(((date, value) for date, value in targets if date >= today), None)
     if effective_target:
