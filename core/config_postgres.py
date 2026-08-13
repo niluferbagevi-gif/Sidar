@@ -9,10 +9,32 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
+from dataclasses import dataclass
 from urllib.parse import quote, unquote, urlsplit
 
 GetEnv = Callable[[str, str | None], str | None]
 GetIntEnv = Callable[[str, int], int]
+GetBoolEnv = Callable[[str, bool], bool]
+GetFloatEnv = Callable[[str, float], float]
+
+
+@dataclass(frozen=True, slots=True)
+class DatabaseSettings:
+    """Typed database configuration consumed by the legacy Config facade."""
+
+    database_url: str
+    allow_insecure_local_default: bool
+    container_database_url: str | None
+    sidar_container_database_url: str
+    pool_size: int
+    pool_min_size: int
+    statement_cache_size: int
+    max_cached_statement_lifetime: float
+    degraded_mode_on_postgres_failure: bool
+    degraded_sqlite_url: str
+    schema_version_table: str
+    schema_target_version: int
+    auto_migrate: bool
 
 
 def _read_env(getenv: GetEnv, key: str, default: str = "") -> str:
@@ -130,3 +152,32 @@ def get_db_pool_size_default(
 
     max_by_postgres = max(1, postgres_max_connections - reserve)
     return max(2, min(resolved_cpu_count * per_core, max_by_postgres, hard_cap))
+
+
+def load_database_settings(
+    *,
+    getenv: GetEnv = os.getenv,
+    get_bool_env: GetBoolEnv,
+    get_int_env: GetIntEnv,
+    get_float_env: GetFloatEnv,
+    default_pool_size: int,
+) -> DatabaseSettings:
+    """Load the complete database domain without coupling it to ``Config``."""
+    environment = _read_env(getenv, "SIDAR_ENV", "").strip().lower()
+    return DatabaseSettings(
+        database_url=get_database_url(getenv=getenv),
+        allow_insecure_local_default=get_bool_env("SIDAR_ALLOW_INSECURE_LOCAL_DB_DEFAULT", False),
+        container_database_url=None,
+        sidar_container_database_url=get_container_database_url(getenv=getenv),
+        pool_size=get_int_env("DB_POOL_SIZE", default_pool_size),
+        pool_min_size=get_int_env("DB_POOL_MIN_SIZE", 1),
+        statement_cache_size=get_int_env("DB_STATEMENT_CACHE_SIZE", 256),
+        max_cached_statement_lifetime=get_float_env("DB_MAX_CACHED_STATEMENT_LIFETIME", 300.0),
+        degraded_mode_on_postgres_failure=get_bool_env(
+            "DB_DEGRADED_MODE_ON_POSTGRES_FAILURE", True
+        ),
+        degraded_sqlite_url=_read_env(getenv, "DB_DEGRADED_SQLITE_URL", ""),
+        schema_version_table=_read_env(getenv, "DB_SCHEMA_VERSION_TABLE", "schema_versions"),
+        schema_target_version=get_int_env("DB_SCHEMA_TARGET_VERSION", 1),
+        auto_migrate=get_bool_env("SIDAR_AUTO_MIGRATE", environment != "production"),
+    )

@@ -338,16 +338,19 @@ get_database_url = config_postgres.get_database_url
 get_container_database_url = config_postgres.get_container_database_url
 
 
-def _default_auto_migrate_enabled() -> bool:
-    """Enable runtime Alembic auto-migrate outside production by default."""
-    return os.getenv("SIDAR_ENV", "").strip().lower() != "production"
-
-
 def get_db_pool_size_default() -> int:
     """Return the profile-aware default PostgreSQL pool size."""
     return config_postgres.get_db_pool_size_default(
         get_int_env=get_int_env, cpu_count=os.cpu_count()
     )
+
+
+_DATABASE_SETTINGS = config_postgres.load_database_settings(
+    get_bool_env=get_bool_env,
+    get_int_env=get_int_env,
+    get_float_env=get_float_env,
+    default_pool_size=get_db_pool_size_default(),
+)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -511,6 +514,7 @@ class Config:
     observability_settings = _OBSERVABILITY_SETTINGS
     orchestrator_settings = _ORCHESTRATOR_SETTINGS
     self_heal_settings = _SELF_HEAL_SETTINGS
+    database_settings = _DATABASE_SETTINGS
 
     # ─── Genel ───────────────────────────────────────────────
     SIDAR_ENV: str = os.getenv("SIDAR_ENV", "").strip().lower()
@@ -707,25 +711,21 @@ class Config:
     METRICS_TOKEN: str = _OBSERVABILITY_SETTINGS.metrics_token
 
     # ─── Veritabanı (v3.0 çoklu kullanıcı hazırlığı) ────────
-    DATABASE_URL: str = get_database_url()
-    SIDAR_ALLOW_INSECURE_LOCAL_DB_DEFAULT: bool = get_bool_env(
-        "SIDAR_ALLOW_INSECURE_LOCAL_DB_DEFAULT", False
+    DATABASE_URL: str = _DATABASE_SETTINGS.database_url
+    SIDAR_ALLOW_INSECURE_LOCAL_DB_DEFAULT: bool = _DATABASE_SETTINGS.allow_insecure_local_default
+    CONTAINER_DATABASE_URL: str | None = _DATABASE_SETTINGS.container_database_url
+    SIDAR_CONTAINER_DATABASE_URL: str = _DATABASE_SETTINGS.sidar_container_database_url
+    DB_POOL_SIZE: int = _DATABASE_SETTINGS.pool_size
+    DB_POOL_MIN_SIZE: int = _DATABASE_SETTINGS.pool_min_size
+    DB_STATEMENT_CACHE_SIZE: int = _DATABASE_SETTINGS.statement_cache_size
+    DB_MAX_CACHED_STATEMENT_LIFETIME: float = _DATABASE_SETTINGS.max_cached_statement_lifetime
+    DB_DEGRADED_MODE_ON_POSTGRES_FAILURE: bool = (
+        _DATABASE_SETTINGS.degraded_mode_on_postgres_failure
     )
-    CONTAINER_DATABASE_URL: str | None = None
-    SIDAR_CONTAINER_DATABASE_URL: str = get_container_database_url()
-    DB_POOL_SIZE: int = get_int_env("DB_POOL_SIZE", get_db_pool_size_default())
-    DB_POOL_MIN_SIZE: int = get_int_env("DB_POOL_MIN_SIZE", 1)
-    DB_STATEMENT_CACHE_SIZE: int = get_int_env("DB_STATEMENT_CACHE_SIZE", 256)
-    DB_MAX_CACHED_STATEMENT_LIFETIME: float = get_float_env(
-        "DB_MAX_CACHED_STATEMENT_LIFETIME", 300.0
-    )
-    DB_DEGRADED_MODE_ON_POSTGRES_FAILURE: bool = get_bool_env(
-        "DB_DEGRADED_MODE_ON_POSTGRES_FAILURE", True
-    )
-    DB_DEGRADED_SQLITE_URL: str = os.getenv("DB_DEGRADED_SQLITE_URL", "")
-    DB_SCHEMA_VERSION_TABLE: str = os.getenv("DB_SCHEMA_VERSION_TABLE", "schema_versions")
-    DB_SCHEMA_TARGET_VERSION: int = get_int_env("DB_SCHEMA_TARGET_VERSION", 1)
-    SIDAR_AUTO_MIGRATE: bool = get_bool_env("SIDAR_AUTO_MIGRATE", _default_auto_migrate_enabled())
+    DB_DEGRADED_SQLITE_URL: str = _DATABASE_SETTINGS.degraded_sqlite_url
+    DB_SCHEMA_VERSION_TABLE: str = _DATABASE_SETTINGS.schema_version_table
+    DB_SCHEMA_TARGET_VERSION: int = _DATABASE_SETTINGS.schema_target_version
+    SIDAR_AUTO_MIGRATE: bool = _DATABASE_SETTINGS.auto_migrate
 
     # ─── Gözlemlenebilirlik (OpenTelemetry) ───────────────────
     ENABLE_TRACING: bool = _OBSERVABILITY_SETTINGS.enable_tracing
