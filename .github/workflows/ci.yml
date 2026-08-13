@@ -206,12 +206,16 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v4
         with:
+          version: "0.12.0"
           # Cache uv's wheel/download store so large wheels like pyarrow do not
           # have to be refetched on every run; a missed cache turns a
           # network/tunnel blip into a CI red. The cache key is derived from
           # uv.lock so a lockfile change naturally invalidates it.
           enable-cache: true
           cache-dependency-glob: '**/uv.lock'
+
+      - name: Verify canonical toolchain contract
+        run: python scripts/ci/check_toolchain_contract.py
 
       - name: Install system dependencies
         run: bash scripts/install_ci_system_deps.sh

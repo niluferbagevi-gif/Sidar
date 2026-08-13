@@ -5183,15 +5183,17 @@ def test_ci_enables_uv_dependency_cache_for_main_test_job() -> None:
     """Large wheels (pyarrow, etc.) must come from the uv cache on retries."""
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 
-    # Find the first setup-uv block in the workflow (the main test job).
+    test_job = ci_workflow[ci_workflow.index("  test:\n") :]
     setup_uv_marker = "uses: astral-sh/setup-uv@v4"
-    first_idx = ci_workflow.find(setup_uv_marker)
+    first_idx = test_job.find(setup_uv_marker)
     assert first_idx != -1
-    block = ci_workflow[first_idx : first_idx + 400]
+    block = test_job[first_idx : first_idx + 500]
 
+    assert 'version: "0.12.0"' in block
     assert "enable-cache: true" in block
     assert "cache-dependency-glob" in block
     assert "uv.lock" in block
+    assert test_job.index("Verify canonical toolchain contract") > first_idx
 
 
 def test_ci_uses_shared_system_dependency_installer_without_duplicate_apt_step() -> None:
