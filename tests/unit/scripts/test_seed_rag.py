@@ -194,6 +194,22 @@ def test_seed_rag_summary_only_outputs_counts_without_verbose_lists(
     assert output["skipped_count"] == 1
 
 
+def test_metadata_only_seed_explains_intentional_vector_skip(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    doc = tmp_path / "README.md"
+    doc.write_text("Sidar", encoding="utf-8")
+    monkeypatch.setattr(seed_rag, "discover_seed_files", lambda *_args, **_kwargs: [doc])
+    monkeypatch.setattr(seed_rag, "_resolve_rag_dir", lambda _raw: tmp_path / "rag")
+    monkeypatch.setattr(seed_rag, "_build_store", lambda *_args, **_kwargs: seed_rag.DryRunStore())
+
+    assert seed_rag.run(metadata_only=True, summary_only=True) == 0
+
+    captured = capsys.readouterr()
+    assert "metadata-only seed mode" in captured.err
+    assert "intentionally skipped" in captured.err
+
+
 def test_wait_for_pgvector_readiness_retries_until_extension_visible(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

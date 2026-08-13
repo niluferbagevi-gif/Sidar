@@ -2,7 +2,59 @@ from __future__ import annotations
 
 import pytest
 
-from managers.code.runner import build_sanitized_shell_args, find_destructive_shell_pattern
+from managers.code.runner import (
+    build_sanitized_shell_args,
+    find_destructive_shell_pattern,
+    requires_container_shell,
+    run_shell_command,
+)
+
+
+class _Security:
+    @staticmethod
+    def can_run_shell() -> bool:
+        return True
+
+
+class _Manager:
+    def __init__(self, environment: str) -> None:
+        self.cfg = type("Config", (), {"SIDAR_ENV": environment})()
+        self.security = _Security()
+        self.base_dir = "/workspace"
+        self.max_output_chars = 1000
+        self.sandbox_calls: list[tuple[str, str | None]] = []
+
+    def run_shell_in_sandbox(self, command: str, cwd: str | None = None):
+        self.sandbox_calls.append((command, cwd))
+        return True, "sandboxed"
+
+
+def test_production_full_access_routes_shell_to_container_without_host_execution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager = _Manager("production")
+    monkeypatch.setattr(
+        "managers.code.runner.subprocess.run",
+        lambda *_args, **_kwargs: pytest.fail("production must not execute on host"),
+    )
+
+    assert requires_container_shell(manager) is True
+    assert run_shell_command(manager, "echo safe", cwd="/workspace") == (True, "sandboxed")
+    assert manager.sandbox_calls == [("echo safe", "/workspace")]
+
+
+def test_non_production_shell_does_not_require_container() -> None:
+    assert requires_container_shell(_Manager("development")) is False
+
+
+def test_production_fails_closed_without_sandbox_runner() -> None:
+    manager = _Manager("production")
+    manager.run_shell_in_sandbox = None  # type: ignore[method-assign]
+
+    ok, message = run_shell_command(manager, "echo safe")
+
+    assert ok is False
+    assert "host komut yürütme kapalıdır" in message
 
 
 def test_build_sanitized_shell_args_rejects_unclosed_quotes_without_shell_features() -> None:

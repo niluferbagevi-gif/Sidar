@@ -22,8 +22,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import Mock
 
-from core.db.dialect import assert_safe_sql_identifier
-
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
@@ -227,9 +225,24 @@ def _configure_budget_tracker(config: object) -> None:
 class _SqliteDailyBudgetTracker:
     """Günlük maliyeti SQLite üzerinde processler arası paylaşarak takip eder."""
 
-    # Validated once at class-definition time via the shared identifier helper (see
-    # core/db_components/dialect.py) instead of a bare "trust me" nosec comment.
-    _TABLE_NAME = assert_safe_sql_identifier("cost_routing_daily_budget")
+    _TABLE_NAME = "cost_routing_daily_budget"
+    _CREATE_TABLE_SQL = """
+        CREATE TABLE IF NOT EXISTS cost_routing_daily_budget (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            day_epoch INTEGER NOT NULL,
+            daily_cost REAL NOT NULL
+        )
+    """
+    _SELECT_USAGE_SQL = "SELECT day_epoch, daily_cost FROM cost_routing_daily_budget WHERE id = 1"
+    _UPSERT_USAGE_SQL = (
+        "INSERT INTO cost_routing_daily_budget (id, day_epoch, daily_cost) VALUES (1, ?, ?)"
+        " ON CONFLICT(id) DO UPDATE SET"
+        " day_epoch=excluded.day_epoch, daily_cost=excluded.daily_cost"
+    )
+    _INCREMENT_USAGE_SQL = (
+        "UPDATE cost_routing_daily_budget SET daily_cost = daily_cost + ? WHERE id = 1"
+    )
+    _SELECT_DAILY_COST_SQL = "SELECT daily_cost FROM cost_routing_daily_budget WHERE id = 1"
 
     def __init__(self, db_path: str) -> None:
         self._db_path = str(db_path).strip()
@@ -245,15 +258,7 @@ class _SqliteDailyBudgetTracker:
 
     def _initialize(self) -> None:
         with self._connect() as conn:
-            conn.execute(
-                f"""
-                CREATE TABLE IF NOT EXISTS {self._TABLE_NAME} (
-                    id INTEGER PRIMARY KEY CHECK (id = 1),
-                    day_epoch INTEGER NOT NULL,
-                    daily_cost REAL NOT NULL
-                )
-                """
-            )
+            conn.execute(self._CREATE_TABLE_SQL)
 
     @staticmethod
     def _current_day_epoch(now: float | None = None) -> int:
@@ -265,21 +270,14 @@ class _SqliteDailyBudgetTracker:
         increment = max(0.0, float(delta or 0.0))
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            row = conn.execute(
-                f"SELECT day_epoch, daily_cost FROM {self._TABLE_NAME} WHERE id = 1"  # nosec B608  # _TABLE_NAME assert_safe_sql_identifier ile doğrulanmıştır.
-            ).fetchone()
+            row = conn.execute(self._SELECT_USAGE_SQL).fetchone()
             if row is None or int(row[0]) != day_epoch:
                 conn.execute(
-                    f"INSERT INTO {self._TABLE_NAME} (id, day_epoch, daily_cost) VALUES (1, ?, ?)"  # nosec B608  # _TABLE_NAME assert_safe_sql_identifier ile doğrulanmıştır.
-                    " ON CONFLICT(id) DO UPDATE SET"
-                    " day_epoch=excluded.day_epoch, daily_cost=excluded.daily_cost",
+                    self._UPSERT_USAGE_SQL,
                     (day_epoch, increment),
                 )
             elif increment > 0.0:
-                conn.execute(
-                    f"UPDATE {self._TABLE_NAME} SET daily_cost = daily_cost + ? WHERE id = 1",  # nosec B608
-                    (increment,),
-                )
+                conn.execute(self._INCREMENT_USAGE_SQL, (increment,))
             conn.execute("COMMIT")
 
     def add(self, cost_usd: float) -> None:
@@ -288,9 +286,7 @@ class _SqliteDailyBudgetTracker:
     def daily_usage(self) -> float:
         self._upsert_usage(delta=0.0)
         with self._connect() as conn:
-            row = conn.execute(
-                f"SELECT daily_cost FROM {self._TABLE_NAME} WHERE id = 1"  # nosec B608  # _TABLE_NAME assert_safe_sql_identifier ile doğrulanmıştır.
-            ).fetchone()
+            row = conn.execute(self._SELECT_DAILY_COST_SQL).fetchone()
             return float(row[0]) if row else 0.0
 
     def exceeded(self, limit_usd: float) -> bool:

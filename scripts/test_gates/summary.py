@@ -97,7 +97,14 @@ def build_summary(args: list[str]) -> dict[str, object]:
         benchmark_json_output,
         frontend_e2e_scope,
         frontend_e2e_script,
+        local_readiness_passed,
     ) = args
+
+    local_ready = _flag_enabled(local_readiness_passed)
+    base_production_ready = production_ready == "true"
+    # This local summary deliberately excludes the external self-hosted GPU evidence.
+    # The CI aggregate is the only authority that may declare release evidence complete.
+    release_evidence_complete = False
 
     return {
         "smoke": smoke,
@@ -128,7 +135,10 @@ def build_summary(args: list[str]) -> dict[str, object]:
             "ci_seed_workflow": "GitHub Actions → CI → Run workflow → seed_benchmark_baseline=true",
             "ci_fail_closed": True,
         },
-        "production_ready": production_ready == "true",
+        "local_readiness_passed": local_ready,
+        "release_evidence_complete": release_evidence_complete,
+        "release_ready": base_production_ready and release_evidence_complete,
+        "production_ready": base_production_ready,
         "gpu_inference_evidence": {
             "included": False,
             "status": "not_run",
@@ -170,7 +180,7 @@ def build_summary(args: list[str]) -> dict[str, object]:
 def main(argv: list[str] | None = None) -> int:
     """Write a summary JSON file and return a process status code."""
     args = list(sys.argv[1:] if argv is None else argv)
-    expected_arg_count = 37
+    expected_arg_count = 38
     if len(args) != expected_arg_count:
         print(
             f"expected {expected_arg_count} arguments, got {len(args)}",

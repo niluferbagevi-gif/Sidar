@@ -10,6 +10,11 @@ from pathlib import Path
 from typing import Any
 
 REQUIRED_TOP_LEVEL_FIELDS = {
+    "benchmark_compare",
+    "benchmark_baseline",
+    "local_readiness_passed",
+    "release_evidence_complete",
+    "release_ready",
     "production_ready",
     "production_readiness",
     "production_readiness_detail",
@@ -53,6 +58,14 @@ def _validate_shape(summary: dict[str, Any]) -> list[str]:
 
     if "production_ready" in summary and not isinstance(summary["production_ready"], bool):
         errors.append("production_ready boolean olmalıdır")
+    for field in ("local_readiness_passed", "release_evidence_complete", "release_ready"):
+        if field in summary and not isinstance(summary[field], bool):
+            errors.append(f"{field} boolean olmalıdır")
+    if (
+        summary.get("release_ready") is True
+        and summary.get("release_evidence_complete") is not True
+    ):
+        errors.append("release_ready=true için release_evidence_complete=true olmalıdır")
     if "release_blocking" in detail and not isinstance(detail["release_blocking"], bool):
         errors.append("production_readiness_detail.release_blocking boolean olmalıdır")
     if "release_gate_exit_code" in detail and not isinstance(detail["release_gate_exit_code"], int):
@@ -77,6 +90,19 @@ def _validate_release(summary: dict[str, Any]) -> list[str]:
         errors.append("release mode release_blocking=false bekler")
     if detail.get("release_gate_exit_code") != 0:
         errors.append("release mode release_gate_exit_code=0 bekler")
+
+    benchmark_baseline = summary.get("benchmark_baseline")
+    if summary.get("benchmark_compare") != "compared_enforced":
+        errors.append("release mode benchmark_compare=compared_enforced bekler")
+    if not isinstance(benchmark_baseline, dict):
+        errors.append("release mode benchmark_baseline object bekler")
+    else:
+        if not benchmark_baseline.get("file"):
+            errors.append("release mode doğrulanmış benchmark baseline dosyası bekler")
+        if benchmark_baseline.get("compare_required") is not True:
+            errors.append("release mode benchmark compare_required=true bekler")
+        if benchmark_baseline.get("compare_enforced") is not True:
+            errors.append("release mode benchmark compare_enforced=true bekler")
 
     if errors:
         required_command = str(detail.get("required_command") or "make production-readiness")

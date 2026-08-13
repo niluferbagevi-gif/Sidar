@@ -145,6 +145,7 @@ from .projection import (
 )
 from .query import GraphRAGSearchPlan
 from .query import build_query_candidates as build_query_candidates
+from .retrieval.store_registry import SharedStoreRegistry, build_store_cache_key
 from .session_documents import (
     build_session_summary_lines as _build_session_summary_lines_impl,
 )
@@ -177,6 +178,9 @@ logger = logging.getLogger(__name__)
 list = builtins.list
 _DOCUMENT_STORE_SINGLETONS: dict[tuple[str, bool, str, str], "DocumentStore"] = {}
 _DOCUMENT_STORE_SINGLETONS_LOCK = threading.Lock()
+_DOCUMENT_STORE_REGISTRY = SharedStoreRegistry(
+    _DOCUMENT_STORE_SINGLETONS, _DOCUMENT_STORE_SINGLETONS_LOCK
+)
 EmbeddingFunctionBuilder = Callable[..., Any]
 
 
@@ -292,6 +296,10 @@ class DocumentStore:
         # Arama motorlarını başlat
         self._chroma_available = self._check_import("chromadb")
         self._pgvector_available = False
+        self._pgvector_degraded = False
+        self._pgvector_degraded_operation = ""
+        self._pgvector_degraded_reason = ""
+        self._pgvector_failure_count = 0
 
         self.chroma_client: Any | None = None
         self.collection: Any | None = None
@@ -334,12 +342,16 @@ class DocumentStore:
                     )
             else:
                 self._chroma_available = False
-                self._log_backend_init_status_once(
-                    "vector_disabled_notice",
-                    "DocumentStore vektör başlatması devre dışı (initialize_vector=False).",
+                # This is invocation-specific operator context, not a backend capability
+                # status. Always emit it at INFO so a previous DocumentStore in the same
+                # long-lived process cannot suppress the explanation for a later seed run.
+                logger.info(
+                    "RAG metadata-only seed mode: vector runtime initialization intentionally "
+                    "skipped (initialize_vector=False); bu pgvector/ChromaDB arızası değildir.",
                 )
                 self._log_backend_init_status_once(
-                    "vector_disabled_status", "RAG backend init (1/2): vector=disabled"
+                    "vector_disabled_status",
+                    "RAG backend init (1/2): vector=disabled (intentional metadata-only mode)",
                 )
 
             # BM25 (SQLite FTS5) Başlatma
@@ -1522,6 +1534,10 @@ class DocumentStore:
 
         return f"RAG: {len(self._index)} belge | Motorlar: {', '.join(engines)}"
 
+    def pgvector_runtime_status(self) -> dict[str, Any]:
+        """Expose degraded pgvector state for health and metrics consumers."""
+        return pgvector_backend.pgvector_runtime_status(self)
+
 
 # Backend compatibility mixins historically subclassed DocumentStore. Keep that
 # contract while backend implementation lives in focused helper modules.
@@ -1554,28 +1570,25 @@ def get_shared_document_store(
     embedding_function_builder: EmbeddingFunctionBuilder | None = None,
 ) -> DocumentStore:
     """Process içi aynı RAG store'u tekrar kullanarak model init maliyetini düşür."""
-    key = (
-        str(Path(store_dir).resolve()),
-        bool(initialize_vector),
-        str(getattr(cfg, "RAG_VECTOR_BACKEND", "chroma") or "chroma").strip().lower(),
-        str(id(embedding_function_builder))
-        if embedding_function_builder is not None
-        else "default",
+    key = build_store_cache_key(
+        store_dir=store_dir,
+        cfg=cfg,
+        initialize_vector=initialize_vector,
+        embedding_function_builder=embedding_function_builder,
     )
-    with _DOCUMENT_STORE_SINGLETONS_LOCK:
-        store = _DOCUMENT_STORE_SINGLETONS.get(key)
-        if store is None:
-            store = DocumentStore(
-                Path(store_dir),
-                top_k=cfg.RAG_TOP_K,
-                chunk_size=cfg.RAG_CHUNK_SIZE,
-                chunk_overlap=cfg.RAG_CHUNK_OVERLAP,
-                use_gpu=getattr(cfg, "USE_GPU", False),
-                gpu_device=getattr(cfg, "GPU_DEVICE", 0),
-                mixed_precision=getattr(cfg, "GPU_MIXED_PRECISION", False),
-                cfg=cfg,
-                initialize_vector=initialize_vector,
-                embedding_function_builder=embedding_function_builder,
-            )
-            _DOCUMENT_STORE_SINGLETONS[key] = store
-        return store
+
+    def create_store() -> DocumentStore:
+        return DocumentStore(
+            Path(store_dir),
+            top_k=cfg.RAG_TOP_K,
+            chunk_size=cfg.RAG_CHUNK_SIZE,
+            chunk_overlap=cfg.RAG_CHUNK_OVERLAP,
+            use_gpu=getattr(cfg, "USE_GPU", False),
+            gpu_device=getattr(cfg, "GPU_DEVICE", 0),
+            mixed_precision=getattr(cfg, "GPU_MIXED_PRECISION", False),
+            cfg=cfg,
+            initialize_vector=initialize_vector,
+            embedding_function_builder=embedding_function_builder,
+        )
+
+    return _DOCUMENT_STORE_REGISTRY.get_or_create(key, create_store)

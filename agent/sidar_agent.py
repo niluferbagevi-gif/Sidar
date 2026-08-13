@@ -6,7 +6,6 @@ Supervisor tabanlı multi-agent omurgasıyla çalışan yazılım mühendisi AI 
 import asyncio
 import contextlib
 import inspect
-import json
 import logging
 import threading
 import time
@@ -57,6 +56,8 @@ from agent.self_heal.orchestrator import (
 from agent.self_heal.planner import build_plan as build_self_heal_plan_service
 from agent.self_heal.planner import collect_snapshots as collect_self_heal_snapshots_service
 from agent.self_heal.planner import resolve_scope_batches as resolve_self_heal_scope_batches_service
+from agent.services.response_service import parse_tool_call as parse_tool_call_service
+from agent.services.tool_service import execute_tool as execute_tool_service
 from agent.triggers import build_trigger_correlation as build_trigger_correlation_service
 from agent.triggers import handle_external_trigger as handle_external_trigger_service
 from config import Config
@@ -306,22 +307,7 @@ class SidarAgent:
         Geçersiz JSON durumunda ``final_answer`` aracına yönlendirir.
         ``tool`` anahtarı eksikse varsayılan olarak ``final_answer`` atanır.
         """
-        import re as _re
-
-        text = raw.strip() if isinstance(raw, str) else ""
-        # Markdown ```json ... ``` veya ``` ... ``` bloğunu soy
-        md_match = _re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
-        if md_match:
-            text = md_match.group(1).strip()
-        try:
-            data = json.loads(text)
-        except (json.JSONDecodeError, ValueError):
-            return {"tool": "final_answer", "argument": raw}
-        if not isinstance(data, dict):
-            return {"tool": "final_answer", "argument": raw}
-        if "tool" not in data:
-            data["tool"] = "final_answer"
-        return data
+        return parse_tool_call_service(raw)
 
     async def initialize(self) -> None:
         if self._initialized:
@@ -915,21 +901,11 @@ class SidarAgent:
         return text
 
     async def _execute_tool(self, tool: str, argument: str) -> str:
-        normalized_tool = str(tool or "").strip().lower()
-        if not normalized_tool:
-            raise ValueError("Araç adı boş olamaz.")
-
-        handler_name = f"_tool_{normalized_tool}"
-        handler = getattr(self, handler_name, None)
-        if handler is None:
-            raise ValueError(f"Bilinmeyen araç: {normalized_tool}")
-        if not callable(handler):
-            raise TypeError(f"Araç işleyicisi çağrılabilir değil: {handler_name}")
-
-        result = handler(argument)
-        if asyncio.iscoroutine(result):
-            result = await result
-        return str(result)
+        return await execute_tool_service(
+            tool,
+            argument,
+            resolve_handler=lambda handler_name: getattr(self, handler_name, None),
+        )
 
     async def _tool_subtask(self, arg: str) -> str:
         task = (arg or "").strip()

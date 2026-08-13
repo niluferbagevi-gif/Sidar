@@ -10,20 +10,48 @@ import sqlite3
 from pathlib import Path
 from typing import Any, cast
 
-from core.db.dialect import join_sql_identifiers
-
 logger = logging.getLogger(__name__)
 
-PROMPT_REGISTRY_COLUMN_NAMES = (
-    "id",
-    "role_name",
-    "prompt_text",
-    "version",
-    "is_active",
-    "created_at",
-    "updated_at",
+PROMPT_REGISTRY_COLUMNS = "id, role_name, prompt_text, version, is_active, created_at, updated_at"
+_POSTGRES_LIST_PROMPTS_SQL = (
+    "SELECT id, role_name, prompt_text, version, is_active, created_at, updated_at "
+    "FROM prompt_registry"
 )
-PROMPT_REGISTRY_COLUMNS = join_sql_identifiers(PROMPT_REGISTRY_COLUMN_NAMES)
+_SQLITE_LIST_PROMPTS_BY_ROLE_SQL = """
+    SELECT id, role_name, prompt_text, version, is_active, created_at, updated_at
+    FROM prompt_registry
+    WHERE role_name=?
+    ORDER BY role_name ASC, version DESC
+"""
+_SQLITE_LIST_PROMPTS_SQL = """
+    SELECT id, role_name, prompt_text, version, is_active, created_at, updated_at
+    FROM prompt_registry
+    ORDER BY role_name ASC, version DESC
+"""
+_POSTGRES_ACTIVE_PROMPT_SQL = """
+    SELECT id, role_name, prompt_text, version, is_active, created_at, updated_at
+    FROM prompt_registry
+    WHERE role_name=$1 AND is_active=TRUE
+    ORDER BY version DESC
+    LIMIT 1
+"""
+_SQLITE_ACTIVE_PROMPT_SQL = """
+    SELECT id, role_name, prompt_text, version, is_active, created_at, updated_at
+    FROM prompt_registry
+    WHERE role_name=? AND is_active=1
+    ORDER BY version DESC
+    LIMIT 1
+"""
+_POSTGRES_INSERT_PROMPT_SQL = """
+    INSERT INTO prompt_registry (role_name, prompt_text, version, is_active,
+    created_at, updated_at)
+    VALUES ($1, $2, $3, $4, $5, $6)
+    RETURNING id, role_name, prompt_text, version, is_active, created_at, updated_at
+"""
+_SQLITE_PROMPT_BY_VERSION_SQL = """
+    SELECT id, role_name, prompt_text, version, is_active, created_at, updated_at
+    FROM prompt_registry WHERE role_name=? AND version=?
+"""
 
 
 def _prompt_record(prompt_record_cls: type[Any], row: Any, *, sqlite_bool: bool = False) -> Any:
@@ -73,7 +101,7 @@ async def list_prompts(
     role = (role_name or "").strip() or None
     if db._backend == "postgresql":
         assert db._pg_pool is not None
-        query = f"SELECT {PROMPT_REGISTRY_COLUMNS} FROM prompt_registry"  # nosec B608  # PROMPT_REGISTRY_COLUMNS sabit modül seviyesi değerdir, kullanıcı girdisi değildir.
+        query = _POSTGRES_LIST_PROMPTS_SQL
         args: tuple[Any, ...] = ()
         if role:
             query += " WHERE role_name=$1"
@@ -88,23 +116,9 @@ async def list_prompts(
     def _run() -> list[sqlite3.Row]:
         assert db._sqlite_conn is not None
         if role:
-            cur = db._sqlite_conn.execute(
-                f"""
-                SELECT {PROMPT_REGISTRY_COLUMNS}
-                FROM prompt_registry
-                WHERE role_name=?
-                ORDER BY role_name ASC, version DESC
-                """,  # nosec B608  # PROMPT_REGISTRY_COLUMNS sabit modül seviyesi değerdir, kullanıcı girdisi değildir.
-                (role,),
-            )
+            cur = db._sqlite_conn.execute(_SQLITE_LIST_PROMPTS_BY_ROLE_SQL, (role,))
             return cast(list[sqlite3.Row], cur.fetchall())
-        cur = db._sqlite_conn.execute(
-            f"""
-            SELECT {PROMPT_REGISTRY_COLUMNS}
-            FROM prompt_registry
-            ORDER BY role_name ASC, version DESC
-            """  # nosec B608  # PROMPT_REGISTRY_COLUMNS sabit modül seviyesi değerdir, kullanıcı girdisi değildir.
-        )
+        cur = db._sqlite_conn.execute(_SQLITE_LIST_PROMPTS_SQL)
         return cast(list[sqlite3.Row], cur.fetchall())
 
     rows = await db._run_sqlite_op(_run, write=False)
@@ -118,16 +132,7 @@ async def get_active_prompt(db: Any, role_name: str, *, prompt_record_cls: type[
     if db._backend == "postgresql":
         assert db._pg_pool is not None
         async with db._pg_pool.acquire() as conn:
-            row = await conn.fetchrow(
-                f"""
-                SELECT {PROMPT_REGISTRY_COLUMNS}
-                FROM prompt_registry
-                WHERE role_name=$1 AND is_active=TRUE
-                ORDER BY version DESC
-                LIMIT 1
-                """,  # nosec B608  # PROMPT_REGISTRY_COLUMNS sabit modül seviyesi değerdir, kullanıcı girdisi değildir.
-                role,
-            )
+            row = await conn.fetchrow(_POSTGRES_ACTIVE_PROMPT_SQL, role)
         if not row:
             return None
         return _prompt_record(prompt_record_cls, row)
@@ -136,16 +141,7 @@ async def get_active_prompt(db: Any, role_name: str, *, prompt_record_cls: type[
 
     def _run() -> sqlite3.Row | None:
         assert db._sqlite_conn is not None
-        cur = db._sqlite_conn.execute(
-            f"""
-            SELECT {PROMPT_REGISTRY_COLUMNS}
-            FROM prompt_registry
-            WHERE role_name=? AND is_active=1
-            ORDER BY version DESC
-            LIMIT 1
-            """,  # nosec B608  # PROMPT_REGISTRY_COLUMNS sabit modül seviyesi değerdir, kullanıcı girdisi değildir.
-            (role,),
-        )
+        cur = db._sqlite_conn.execute(_SQLITE_ACTIVE_PROMPT_SQL, (role,))
         return cast(sqlite3.Row | None, db._sqlite_fetchone(cur))
 
     row = await db._run_sqlite_op(_run)
@@ -188,12 +184,7 @@ async def upsert_prompt(
                         now_dt,
                     )
                 row = await conn.fetchrow(
-                    f"""
-                    INSERT INTO prompt_registry (role_name, prompt_text, version, is_active,
-                    created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6)
-                    RETURNING {PROMPT_REGISTRY_COLUMNS}
-                    """,  # nosec B608  # PROMPT_REGISTRY_COLUMNS sabit modül seviyesi değerdir, kullanıcı girdisi değildir.
+                    _POSTGRES_INSERT_PROMPT_SQL,
                     role,
                     text,
                     new_version,
@@ -227,13 +218,7 @@ async def upsert_prompt(
             (role, text, new_version, 1 if activate else 0, now, now),
         )
         db._sqlite_conn.commit()
-        out = db._sqlite_conn.execute(
-            f"""
-            SELECT {PROMPT_REGISTRY_COLUMNS}
-            FROM prompt_registry WHERE role_name=? AND version=?
-            """,  # nosec B608  # PROMPT_REGISTRY_COLUMNS sabit modül seviyesi değerdir, kullanıcı girdisi değildir.
-            (role, new_version),
-        )
+        out = db._sqlite_conn.execute(_SQLITE_PROMPT_BY_VERSION_SQL, (role, new_version))
         fetched = db._sqlite_fetchone(out)
         assert fetched is not None
         return cast(sqlite3.Row, fetched)

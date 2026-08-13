@@ -13,6 +13,55 @@ from core.embeddings import get_sentence_transformer_model
 logger = logging.getLogger(__name__)
 
 
+def _mark_pgvector_degraded(store: Any, operation: str, exc: BaseException) -> None:
+    """Record a machine-readable runtime failure while preserving BM25 fallback."""
+    store._pgvector_available = False
+    store._pgvector_degraded = True
+    store._pgvector_degraded_operation = operation
+    store._pgvector_degraded_reason = type(exc).__name__
+    store._pgvector_failure_count = int(getattr(store, "_pgvector_failure_count", 0) or 0) + 1
+
+
+def pgvector_runtime_status(store: Any) -> dict[str, Any]:
+    """Return health/metric-friendly pgvector state without exposing credentials."""
+    return {
+        "backend": "pgvector",
+        "available": bool(getattr(store, "_pgvector_available", False)),
+        "degraded": bool(getattr(store, "_pgvector_degraded", False)),
+        "operation": str(getattr(store, "_pgvector_degraded_operation", "") or ""),
+        "reason": str(getattr(store, "_pgvector_degraded_reason", "") or ""),
+        "failure_count": int(getattr(store, "_pgvector_failure_count", 0) or 0),
+    }
+
+
+def _pgvector_sql(pg_table: str) -> dict[str, str]:
+    """Centralize the only reviewed dynamic-identifier SQL construction surface."""
+    if not is_valid_pgvector_identifier(pg_table):
+        raise ValueError("invalid PGVECTOR_TABLE identifier")
+    return {
+        "delete": (
+            f"DELETE FROM {pg_table} WHERE parent_id = :parent_id "  # nosec B608  # pg_table bu yardımcı içinde yeniden doğrulanır.
+            "AND session_id = :session_id"
+        ),
+        "upsert": """
+            INSERT INTO __TABLE__
+            (doc_id, parent_id, session_id, chunk_index, title, source, chunk_content, embedding)
+            VALUES (:doc_id, :parent_id, :session_id, :chunk_index, :title, :source,
+                    :chunk_content, CAST(:embedding AS vector))
+            ON CONFLICT (doc_id, chunk_index) DO UPDATE SET
+                parent_id = EXCLUDED.parent_id, session_id = EXCLUDED.session_id,
+                title = EXCLUDED.title, source = EXCLUDED.source,
+                chunk_content = EXCLUDED.chunk_content, embedding = EXCLUDED.embedding
+        """.replace("__TABLE__", pg_table),  # nosec B608  # pg_table bu yardımcı içinde yeniden doğrulanır.
+        "select": """
+            SELECT doc_id, parent_id, title, source, chunk_content,
+                   (embedding <=> CAST(:qvec AS vector)) AS distance
+            FROM __TABLE__ WHERE session_id = :session_id
+            ORDER BY embedding <=> CAST(:qvec AS vector) ASC LIMIT :lim
+        """.replace("__TABLE__", pg_table),  # nosec B608  # pg_table bu yardımcı içinde yeniden doğrulanır.
+    }
+
+
 def is_valid_pgvector_identifier(identifier: str) -> bool:
     """Return True for unquoted PostgreSQL identifiers safe to embed in DDL."""
     return is_safe_sql_identifier(identifier)
@@ -55,12 +104,9 @@ def _reject_if_invalid_pg_table(store: Any, pg_table: str) -> bool:
     """
     if is_valid_pgvector_identifier(pg_table):
         return True
-    store._pgvector_available = False
-    logger.warning(
-        pgvector_failure_action_message(
-            ValueError("invalid PGVECTOR_TABLE; expected pattern " r"^[A-Za-z_][A-Za-z0-9_]*$")
-        )
-    )
+    error = ValueError("invalid PGVECTOR_TABLE; expected pattern ^[A-Za-z_][A-Za-z0-9_]*$")
+    _mark_pgvector_degraded(store, "identifier_validation", error)
+    logger.warning(pgvector_failure_action_message(error))
     return False
 
 
@@ -68,6 +114,9 @@ def init_pgvector(store: Any) -> None:
     """Initialize PostgreSQL + pgvector table."""
     db_url = str(getattr(store.cfg, "DATABASE_URL", "") or "")
     if not db_url.startswith("postgresql"):
+        _mark_pgvector_degraded(
+            store, "initialization", RuntimeError("DATABASE_URL is not PostgreSQL")
+        )
         logger.warning(
             pgvector_failure_action_message(RuntimeError("DATABASE_URL is not PostgreSQL"))
         )
@@ -78,6 +127,9 @@ def init_pgvector(store: Any) -> None:
         return
 
     if not store._check_import("sqlalchemy") or not store._check_import("pgvector"):
+        _mark_pgvector_degraded(
+            store, "initialization", RuntimeError("pgvector dependencies missing")
+        )
         logger.warning(
             pgvector_failure_action_message(RuntimeError("pgvector dependencies missing"))
         )
@@ -103,7 +155,7 @@ def init_pgvector(store: Any) -> None:
                     PRIMARY KEY (doc_id, chunk_index)
                 )
             """
-            conn.execute(text(create_table_sql))  # nosec B608
+            conn.execute(text(create_table_sql))  # nosec B608  # tablo adı safe identifier üreticisinden gelir; veri değerleri bind edilir.
             conn.execute(
                 text(f"CREATE INDEX IF NOT EXISTS idx_{pg_table}_session ON {pg_table}(session_id)")
             )
@@ -122,6 +174,9 @@ def init_pgvector(store: Any) -> None:
         )
         store._pg_embedding_device = "cuda" if bool(getattr(store, "_use_gpu", False)) else "cpu"
         store._pgvector_available = True
+        store._pgvector_degraded = False
+        store._pgvector_degraded_operation = ""
+        store._pgvector_degraded_reason = ""
         store._log_backend_init_status_once(
             "pgvector_init_success",
             "pgvector backend başlatıldı: table=%s model=%s",
@@ -131,7 +186,7 @@ def init_pgvector(store: Any) -> None:
     except Exception as exc:
         logger.warning(pgvector_failure_action_message(exc))
         logger.debug("pgvector backend devre dışı bırakıldı: error_type=%s", type(exc).__name__)
-        store._pgvector_available = False
+        _mark_pgvector_degraded(store, "initialization", exc)
 
 
 def pgvector_embed_texts(
@@ -152,6 +207,7 @@ def pgvector_embed_texts(
         return [list(map(float, v)) for v in vectors]
     except Exception as exc:
         logger.warning("pgvector embedding üretilemedi: %s", exc)
+        _mark_pgvector_degraded(store, "embedding", exc)
         return []
 
 
@@ -176,6 +232,7 @@ def upsert_pgvector_chunks(
         pg_table = pgvector_table_name(store)
         if not _reject_if_invalid_pg_table(store, pg_table):
             return
+        sql = _pgvector_sql(pg_table)
         vectors = store._pgvector_embed_texts(chunks)
         if not vectors:
             return
@@ -183,10 +240,7 @@ def upsert_pgvector_chunks(
         engine = store._require_pg_engine()
         with engine.begin() as conn:
             conn.execute(
-                text(
-                    f"DELETE FROM {pg_table} WHERE parent_id = :parent_id"  # nosec B608  # pg_table içi kontrollü tablo adı üreticisinden gelir, kullanıcı girdisi değildir.
-                    " AND session_id = :session_id"
-                ),
+                text(sql["delete"]),
                 {"parent_id": parent_id, "session_id": session_id},
             )
             rows = [
@@ -202,25 +256,10 @@ def upsert_pgvector_chunks(
                 }
                 for idx, (chunk, vec) in enumerate(zip(chunks, vectors, strict=False))
             ]
-            upsert_sql = """
-                    INSERT INTO __TABLE__
-                    (doc_id, parent_id, session_id, chunk_index, title, source, chunk_content,
-                    embedding)
-                    VALUES
-                    (:doc_id, :parent_id, :session_id, :chunk_index, :title, :source,
-                    :chunk_content, CAST(:embedding AS vector))
-                    ON CONFLICT (doc_id, chunk_index)
-                    DO UPDATE SET
-                        parent_id = EXCLUDED.parent_id,
-                        session_id = EXCLUDED.session_id,
-                        title = EXCLUDED.title,
-                        source = EXCLUDED.source,
-                        chunk_content = EXCLUDED.chunk_content,
-                        embedding = EXCLUDED.embedding
-                """.replace("__TABLE__", pg_table)  # nosec B608
-            conn.execute(text(upsert_sql), rows)
+            conn.execute(text(sql["upsert"]), rows)
     except Exception as exc:
         logger.error("pgvector belge ekleme hatası: %s", exc)
+        _mark_pgvector_degraded(store, "upsert", exc)
 
 
 def delete_pgvector_parent(store: Any, parent_id: str, session_id: str) -> None:
@@ -232,17 +271,16 @@ def delete_pgvector_parent(store: Any, parent_id: str, session_id: str) -> None:
         pg_table = pgvector_table_name(store)
         if not _reject_if_invalid_pg_table(store, pg_table):
             return
+        sql = _pgvector_sql(pg_table)
         engine = store._require_pg_engine()
         with engine.begin() as conn:
             conn.execute(
-                text(
-                    f"DELETE FROM {pg_table} WHERE parent_id = :parent_id"  # nosec B608  # pg_table içi kontrollü tablo adı üreticisinden gelir, kullanıcı girdisi değildir.
-                    " AND session_id = :session_id"
-                ),
+                text(sql["delete"]),
                 {"parent_id": parent_id, "session_id": session_id},
             )
     except Exception as exc:
         logger.error("pgvector silme hatası: %s", exc)
+        _mark_pgvector_degraded(store, "delete", exc)
 
 
 def fetch_pgvector(store: Any, query: str, top_k: int, session_id: str) -> list[dict[str, Any]]:
@@ -258,19 +296,12 @@ def fetch_pgvector(store: Any, query: str, top_k: int, session_id: str) -> list[
         pg_table = pgvector_table_name(store)
         if not _reject_if_invalid_pg_table(store, pg_table):
             return []
+        sql = _pgvector_sql(pg_table)
         qvec = format_vector_for_sql(vectors[0])
         engine = store._require_pg_engine()
         with engine.begin() as conn:
-            select_sql = """
-                    SELECT doc_id, parent_id, title, source, chunk_content,
-                           (embedding <=> CAST(:qvec AS vector)) AS distance
-                    FROM __TABLE__
-                    WHERE session_id = :session_id
-                    ORDER BY embedding <=> CAST(:qvec AS vector) ASC
-                    LIMIT :lim
-                """.replace("__TABLE__", pg_table)  # nosec B608
             rows = conn.execute(
-                text(select_sql),
+                text(sql["select"]),
                 {
                     "qvec": qvec,
                     "session_id": session_id,
@@ -301,6 +332,7 @@ def fetch_pgvector(store: Any, query: str, top_k: int, session_id: str) -> list[
         return found_docs
     except Exception as exc:
         logger.warning("pgvector arama hatası: %s", exc)
+        _mark_pgvector_degraded(store, "search", exc)
         return []
 
 
@@ -326,6 +358,7 @@ __all__ = [
     "pgvector_embed_texts",
     "pgvector_failure_action_message",
     "pgvector_search",
+    "pgvector_runtime_status",
     "pgvector_table_name",
     "upsert_pgvector_chunks",
 ]

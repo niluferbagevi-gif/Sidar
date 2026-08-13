@@ -80,13 +80,13 @@ async def _copy_table(conn: Any, sqlite_path: Path, table: str, dry_run: bool) -
     # Validate and interpolate the exact same immutable snapshot.  This closes the
     # validate-then-join gap if introspection handling is changed in the future.
     col_list = join_sql_identifiers(columns)
-    query = f"INSERT INTO {table} ({col_list}) VALUES ({placeholders})"  # nosec B608
+    query = f"INSERT INTO {table} ({col_list}) VALUES ({placeholders})"  # nosec B608  # table ve kolonlar sabit TABLES allowlist'inden gelir.
 
     if dry_run:
         return len(rows)
 
     async with conn.transaction():
-        await conn.execute(f"TRUNCATE TABLE {table} RESTART IDENTITY CASCADE")  # nosec B608
+        await conn.execute(f"TRUNCATE TABLE {table} RESTART IDENTITY CASCADE")  # nosec B608  # table sabit TABLES allowlist'inden gelir.
         for row in rows:
             await conn.execute(query, *row)
     return len(rows)

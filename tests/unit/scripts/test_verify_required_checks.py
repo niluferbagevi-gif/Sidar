@@ -151,6 +151,47 @@ def test_fetch_required_contexts_wraps_http_errors(monkeypatch: pytest.MonkeyPat
         )
 
 
+def test_fetch_required_contexts_explains_403_admin_token_requirement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_urlopen(_request, timeout):  # noqa: ANN001 - urllib Request type differs by minor.
+        assert timeout == 3.0
+        raise HTTPError("https://api.github.test", 403, "Forbidden", hdrs=None, fp=None)
+
+    monkeypatch.setattr(audit, "urlopen", fake_urlopen)
+
+    with pytest.raises(audit.RequiredCheckAuditError) as exc_info:
+        audit._fetch_required_contexts(
+            api_url="https://api.github.test",
+            repo="owner/repo",
+            branch="main",
+            token="insufficient-token",
+            timeout=3.0,
+        )
+
+    message = str(exc_info.value)
+    assert "HTTP 403" in message
+    assert "BRANCH_PROTECTION_AUDIT_TOKEN" in message
+    assert "Administration: read" in message
+    assert "could not be compared with live branch protection" in message
+
+
+def test_cli_prefers_branch_protection_audit_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BRANCH_PROTECTION_AUDIT_TOKEN", "admin-read-token")
+    monkeypatch.setenv("GITHUB_TOKEN", "default-actions-token")
+
+    args = audit._parse_args([])
+
+    assert args.token == "admin-read-token"
+
+
+def test_audit_workflow_injects_dedicated_admin_read_token() -> None:
+    workflow = Path(".github/workflows/branch-protection-audit.yml").read_text(encoding="utf-8")
+
+    assert "BRANCH_PROTECTION_AUDIT_TOKEN: ${{ secrets.BRANCH_PROTECTION_AUDIT_TOKEN }}" in workflow
+    assert "GITHUB_TOKEN: ${{ github.token }}" in workflow
+
+
 def test_cli_offline_mode_fails_when_context_is_missing(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

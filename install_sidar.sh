@@ -182,7 +182,7 @@ load_remote_script_checksums() {
 load_remote_script_checksums
 
 SIDAR_INSTALLER_EMBEDDED_SOURCE_REF="main"
-SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="37feb6b8e62d5631f32fd3cc273c4689db96e285"
+SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="a2b78f33aa9940d7316ca27d63b5fe752e6ddc0c"
 
 sidar_truthy_early_bool() {
     local raw="${1:-}"
@@ -563,6 +563,7 @@ INSTALL_UTILITY_MODULES=(
     "utils/services_docker.sh"
     "utils/ollama_models.sh"
     "utils/playwright_ubuntu_override.sh"
+    "utils/repo_metadata.sh"
 )
 
 INSTALL_PHASE_MODULES=(
@@ -601,7 +602,7 @@ read -r -d '' EMBEDDED_MODULE_HASHES_MANIFEST <<'SIDAR_MODULE_HASHES_EOF' || tru
 4a668ed1f4e9563352bf2f3bf5a58a5c88d27423cacf07c578e578dfe8a9d2ba  scripts/install_modules/install_dispatcher.sh
 a25095932f256989c1a517bd157c808a548d15cc08a96b56e0a7a312d5aac4e2  scripts/install_modules/install_helpers.sh
 054b069b8b5656b60204a40d72f30f6bdcb81cbb94473ed1cc407369814d34c1  scripts/install_modules/install_runtime.sh
-2e70edd087a296d4175c429cc12f1d961e4fece46c6c83bcc80a94e4e6db359b  scripts/install_modules/phases/01_context.sh
+494f2d0c5071c5bf38238ed4cd7be673186d230a0856e329bb92a21a20e80001  scripts/install_modules/phases/01_context.sh
 d5fc907be5f085db23189cc349c01072f34d36fd6313db6ca745edea3e10071b  scripts/install_modules/phases/02_repo.sh
 41d198205629671a12d3d9de44e3ca0a597447c00eb2b93feab40c7a0add98df  scripts/install_modules/phases/03_runtime.sh
 36d89771aece3334013906d55be48ee2d7a357490688e4562fd76684a7523702  scripts/install_modules/phases/03_runtime_ollama.sh
@@ -626,8 +627,9 @@ f0ad30e94055baffa17b519ea30c2ad0c1eba355a6ef03a72f3cd1fd8373cebe  scripts/instal
 95d2664491bc38ff01d7f3951cde14832dc542965aea5e0cdeffef01f0d31b2a  scripts/install_modules/utils/installer_hash_guard.sh
 2b4934ce22b5814a6bfc800e149392def0ebbf7b12a951fcfc443a0431aba585  scripts/install_modules/utils/ollama_models.sh
 04d67e8a412448bb38bd94ab525f8d5d95856d20fa7bb10a098ad3e893676ea2  scripts/install_modules/utils/playwright_ubuntu_override.sh
-a8997d9ab218f5879e140fbfa784754898a353c2c9b77dc3801093f1960d8bc7  scripts/install_modules/utils/python_env.sh
+3a89ce3a67b9d9b84e93511e5a4bbf7701a05e294fc41ff11099090b56f0357e  scripts/install_modules/utils/python_env.sh
 8e006705540afec95fdf002ad5ab253b1be67c54b582229fb4a667813ec57a9e  scripts/install_modules/utils/remote_script.sh
+cfbab9634b880d0c37e3d79a75c03694d6360e3d1f4c42e2a21ee2179b3e010c  scripts/install_modules/utils/repo_metadata.sh
 efec83c69fa618e4274f4936bb1156128f3dc6e9f605270ebfe3b8fc58afde77  scripts/install_modules/utils/services_docker.sh
 dfaeaa3d8a14c56d3b6cea8142cea0859252efa6321ce962dec9035440c5b868  scripts/install_modules/utils/ux.sh
 7340b3b24a8d0d563f0054a6b507c8dbd262d047dfb82aa7e76f7c020524eb83  scripts/install_modules/utils/wsl_gpu_preflight.sh
@@ -1700,7 +1702,8 @@ sidar_source_install_utils \
     "env_utils.sh" \
     "services_docker.sh" \
     "ollama_models.sh" \
-    "playwright_ubuntu_override.sh"
+    "playwright_ubuntu_override.sh" \
+    "repo_metadata.sh"
 SIDAR_INSTALL_REQUESTED_VERSION="${INSTALL_SIDAR_VERSION:-}"
 INSTALL_SIDAR_VERSION="$(resolve_install_sidar_version)"
 if [[ -n "$SIDAR_INSTALL_REQUESTED_VERSION" && "$INSTALL_SIDAR_VERSION" != "0.0.0" && "$SIDAR_INSTALL_REQUESTED_VERSION" != "$INSTALL_SIDAR_VERSION" ]]; then
@@ -1762,12 +1765,16 @@ refresh_install_sidar_version_from_repo() {
     export INSTALL_SIDAR_VERSION
 }
 
-PYTHON_VERSION="3.11"
+PYTHON_VERSION="3.11.15"
 if [[ -f "$SCRIPT_DIR/.python-version" ]]; then
     PYTHON_VERSION="$(tr -d '[:space:]' < "$SCRIPT_DIR/.python-version")"
 fi
-if [[ "$PYTHON_VERSION" != "3.11" ]]; then
-    fail ".python-version değeri yalnızca 3.11 olmalıdır. Güncel değer: ${PYTHON_VERSION}"
+if [[ "$PYTHON_VERSION" != 3.11.* ]]; then
+    fail ".python-version değeri canonical Python 3.11.x olmalıdır. Güncel değer: ${PYTHON_VERSION}"
+fi
+if [[ -f "$SCRIPT_DIR/scripts/toolchain.env" ]]; then
+    # shellcheck source=scripts/toolchain.env
+    source "$SCRIPT_DIR/scripts/toolchain.env"
 fi
 # shellcheck disable=SC2034  # retained for downstream phase/default URL hooks.
 DEFAULT_DATABASE_URL=""

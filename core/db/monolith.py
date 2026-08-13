@@ -183,6 +183,37 @@ def _postgres_user_action_message(reason: str, exc: BaseException | None = None)
 
 logger = logging.getLogger(__name__)
 _ASYNCPG_COMMAND_TAG_COUNT_RE = _DEFAULT_ASYNCPG_COMMAND_TAG_COUNT_RE
+_INSECURE_LOCAL_DATABASE_URL = "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/sidar"
+
+
+class DatabaseConfigurationError(RuntimeError):
+    """Raised when the database facade cannot resolve a safe connection URL."""
+
+
+def _resolve_database_url(cfg: Any) -> str:
+    """Resolve a configured DSN, allowing the legacy default only by local opt-in."""
+    database_url = str(getattr(cfg, "DATABASE_URL", "") or "").strip()
+    if database_url:
+        return database_url
+
+    environment = str(getattr(cfg, "SIDAR_ENV", "") or "").strip().lower()
+    raw_allow_insecure = getattr(cfg, "SIDAR_ALLOW_INSECURE_LOCAL_DB_DEFAULT", False)
+    allow_insecure = raw_allow_insecure is True or (
+        isinstance(raw_allow_insecure, str)
+        and raw_allow_insecure.strip().lower() in {"1", "true", "yes", "on"}
+    )
+    if allow_insecure and environment in {"development", "test"}:
+        logger.warning(
+            "SIDAR_ALLOW_INSECURE_LOCAL_DB_DEFAULT etkin; yalnız yerel kullanım için "
+            "postgres/postgres PostgreSQL varsayılanı kullanılıyor."
+        )
+        return _INSECURE_LOCAL_DATABASE_URL
+
+    raise DatabaseConfigurationError(
+        "DATABASE_URL yapılandırılmamış. Güvenli bir bağlantı URL'si sağlayın; yalnız "
+        "development/test ortamında geçici yerel kullanım için "
+        "SIDAR_ALLOW_INSECURE_LOCAL_DB_DEFAULT=true açıkça ayarlanabilir."
+    )
 
 
 def _quote_sql_identifier(identifier: str) -> str:
@@ -218,8 +249,8 @@ class Database(DatabaseConnectionMixin):
     """Asenkron veritabanı erişim katmanı.
 
     Not:
-    - `DATABASE_URL` yoksa varsayılan PostgreSQL DSN kullanılır:
-      `postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/sidar`
+    - `DATABASE_URL` yoksa fail-closed davranılır. Eski yerel DSN yalnız
+      development/test ortamında açık opt-in ile kullanılabilir.
     - PostgreSQL URL (postgresql:// / postgresql+asyncpg://) verildiğinde `asyncpg`
       kullanılır; paket yoksa anlaşılır hata döndürür.
     - SQLite hâlâ desteklenir (örn. `sqlite+aiosqlite:///data/sidar.db`).
@@ -229,9 +260,7 @@ class Database(DatabaseConnectionMixin):
         self, cfg: Config | None = None, *, pg_pool_factory: Callable[..., Any] | None = None
     ) -> None:
         self.cfg = cfg or Config()
-        self.database_url = (
-            getattr(self.cfg, "DATABASE_URL", "") or ""
-        ).strip() or "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/sidar"
+        self.database_url = _resolve_database_url(self.cfg)
         self.pool_size = max(1, int(getattr(self.cfg, "DB_POOL_SIZE", 5) or 5))
         self.pool_min_size = max(
             1,
@@ -766,7 +795,7 @@ class Database(DatabaseConnectionMixin):
                 return
             for v in range(current + 1, self.target_schema_version + 1):
                 self._sqlite_conn.execute(
-                    f"INSERT INTO {tbl} (version, applied_at, description) VALUES (?, ?, ?)",  # nosec B608
+                    f"INSERT INTO {tbl} (version, applied_at, description) VALUES (?, ?, ?)",  # nosec B608  # tbl sistem içi sabit ve identifier validator ile doğrulanmıştır.
                     (v, _utc_now_iso(), f"baseline migration v{v}"),
                 )
             self._sqlite_conn.commit()
@@ -789,7 +818,7 @@ class Database(DatabaseConnectionMixin):
                 return
             for v in range(current + 1, self.target_schema_version + 1):
                 await conn.execute(
-                    f"INSERT INTO {tbl} (version, applied_at, description) VALUES ($1, $2, $3)",  # nosec B608
+                    f"INSERT INTO {tbl} (version, applied_at, description) VALUES ($1, $2, $3)",  # nosec B608  # tbl sistem içi sabit ve identifier validator ile doğrulanmıştır.
                     v,
                     datetime.now(UTC),
                     f"baseline migration v{v}",

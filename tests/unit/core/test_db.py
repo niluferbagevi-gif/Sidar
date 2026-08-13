@@ -23,6 +23,7 @@ import core.db as core_db
 import core.db.auth as db_auth
 from core.db import (
     Database,
+    DatabaseConfigurationError,
     _expires_in,
     _hash_password,
     _new_entity_id,
@@ -52,6 +53,29 @@ class DummyCfg:
     JWT_TTL_DAYS: int = 3
     SQLITE_MAX_CONCURRENT_OPS: int = 4
     SIDAR_AUTO_MIGRATE: bool = True
+    SIDAR_ENV: str = "test"
+    SIDAR_ALLOW_INSECURE_LOCAL_DB_DEFAULT: bool = False
+
+
+def test_database_missing_url_fails_closed_in_production(tmp_path: Path) -> None:
+    cfg = DummyCfg(DATABASE_URL="", BASE_DIR=str(tmp_path))
+    cfg.SIDAR_ENV = "production"
+    cfg.SIDAR_ALLOW_INSECURE_LOCAL_DB_DEFAULT = True
+
+    with pytest.raises(DatabaseConfigurationError, match="DATABASE_URL yapılandırılmamış"):
+        Database(cfg)
+
+
+def test_database_allows_insecure_default_only_with_explicit_local_opt_in(
+    tmp_path: Path,
+) -> None:
+    cfg = DummyCfg(DATABASE_URL="", BASE_DIR=str(tmp_path))
+    cfg.SIDAR_ENV = "development"
+    cfg.SIDAR_ALLOW_INSECURE_LOCAL_DB_DEFAULT = True
+
+    database = Database(cfg)
+
+    assert database.database_url == ("postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/sidar")
 
 
 class _FakeAcquire:

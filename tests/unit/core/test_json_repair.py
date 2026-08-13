@@ -3,10 +3,37 @@ from __future__ import annotations
 import pytest
 
 from core.utils.json_repair import (
+    MAX_JSON_REPAIR_ATTEMPTS,
+    _json_dumps_if_valid,
+    _RepairBudget,
     is_safe_literal_eval_candidate,
     repair_json_text,
     repair_json_text_async,
 )
+
+
+def test_json_decoder_attempts_are_bounded_before_late_payload() -> None:
+    payload = " ".join("{" for _ in range(MAX_JSON_REPAIR_ATTEMPTS + 5)) + ' {"late": true}'
+    budget = _RepairBudget()
+
+    assert _json_dumps_if_valid(payload, budget=budget) is None
+    assert budget.remaining == 0
+
+
+def test_repair_budget_prevents_literal_eval_after_parser_budget_is_exhausted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = []
+    monkeypatch.setattr(
+        "core.utils.json_repair.ast.literal_eval",
+        lambda value: calls.append(value) or {"unexpected": True},
+    )
+
+    budget = _RepairBudget(remaining=0)
+    from core.utils.json_repair import _literal_eval_dict_fallback
+
+    assert _literal_eval_dict_fallback("{'k': 'v'}", budget=budget) is None
+    assert calls == []
 
 
 def test_is_safe_literal_eval_candidate_handles_escaped_quotes() -> None:

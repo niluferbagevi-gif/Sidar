@@ -100,6 +100,8 @@ def test_config_exposes_typed_domain_settings_facades() -> None:
     assert config.Config.sandbox_settings is config._SANDBOX_SETTINGS
     assert config.Config.observability_settings is config._OBSERVABILITY_SETTINGS
     assert config.Config.self_heal_settings is config._SELF_HEAL_SETTINGS
+    assert config.Config.database_settings is config._DATABASE_SETTINGS
+    assert config.Config.DATABASE_URL == config.Config.database_settings.database_url
 
 
 def test_config_legacy_import_surface_survives_split() -> None:

@@ -142,6 +142,7 @@ write_test_summary_json() {
   local installer_mode="${SIDAR_INSTALLER_MODE:-development_local}"
   local junit_dir="${TEST_SUMMARY_JUNIT_DIR:-artifacts/pytest}"
   local backend_failed_tests_enabled="false"
+  local local_readiness_passed="false"
 
   smoke_status="$(backend_stage_summary_status smoke)"
   integration_status="$(backend_stage_summary_status integration)"
@@ -203,6 +204,9 @@ write_test_summary_json() {
     benchmark_ran=0
   fi
   benchmark_status="$(quality_summary_status "${benchmark_ran}" "${BENCHMARK_EXIT_CODE}")"
+  if stage_all_selected && [ "${FINAL_EXIT_CODE:-1}" -eq 0 ]; then
+    local_readiness_passed="true"
+  fi
 
   mkdir -p "$(dirname "${TEST_SUMMARY_JSON}")"
   if command -v python >/dev/null 2>&1; then
@@ -242,7 +246,8 @@ write_test_summary_json() {
       "${benchmark_compare_fail}" \
       "${benchmark_json_output}" \
       "${frontend_e2e_scope}" \
-      "${frontend_e2e_script}"
+      "${frontend_e2e_script}" \
+      "${local_readiness_passed}"
     then
       echo "🧾 Makinece okunabilir test özeti yazıldı: ${TEST_SUMMARY_JSON}"
     else

@@ -14,6 +14,9 @@ def build_store_status_label(store: Any) -> str:
     pgvector_available = bool(getattr(store, "_pgvector_available", False))
     if backend == "pgvector" and not pgvector_available and "pgvector (pasif)" not in status:
         status = (status + " | pgvector (pasif)").strip(" |")
+    operation = str(getattr(store, "_pgvector_degraded_operation", "") or "")
+    if backend == "pgvector" and operation:
+        status = f"{status} | pgvector degraded:{operation}"
     return status
 
 

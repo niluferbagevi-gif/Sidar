@@ -14,6 +14,18 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def requires_container_shell(manager: Any) -> bool:
+    """Return whether host command execution is forbidden for this runtime.
+
+    ``ACCESS_LEVEL=full`` is an authorization decision, not an isolation
+    boundary. Production commands must therefore use CodeManager's container
+    sandbox regardless of whether the blacklist considers their text benign.
+    """
+    cfg = getattr(manager, "cfg", None)
+    environment = str(getattr(cfg, "SIDAR_ENV", "") or os.getenv("SIDAR_ENV", "")).strip().lower()
+    return environment == "production"
+
+
 def build_sanitized_shell_args(
     command: str,
     *,
@@ -183,6 +195,19 @@ def run_shell_command(
     if not command or not command.strip():
         return False, "⚠ Çalıştırılacak komut belirtilmedi."
 
+    if requires_container_shell(manager):
+        sandbox_runner = getattr(manager, "run_shell_in_sandbox", None)
+        if not callable(sandbox_runner):
+            return False, (
+                "Production ortamında host komut yürütme kapalıdır; "
+                "container sandbox kullanılamıyor."
+            )
+        logger.info(
+            "Production shell komutu host yerine resource/network policy uygulayan "
+            "container sandbox'a yönlendiriliyor."
+        )
+        return sandbox_runner(command, cwd=cwd)
+
     work_dir = cwd or str(manager.base_dir)
 
     shell_meta_chars = ("|", "&", ";", ">", "<", "$(", "`")
@@ -250,4 +275,9 @@ def run_shell_command(
         return False, f"Kabuk hatası: {exc}"
 
 
-__all__ = ["build_sanitized_shell_args", "find_destructive_shell_pattern", "run_shell_command"]
+__all__ = [
+    "build_sanitized_shell_args",
+    "find_destructive_shell_pattern",
+    "requires_container_shell",
+    "run_shell_command",
+]

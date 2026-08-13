@@ -3271,7 +3271,7 @@ async def test_document_store_reinitialization_logs_ready_bm25_vector_backends(
 
 
 async def test_document_store_init_with_vector_initialization_disabled(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     init_calls: list[str] = []
     monkeypatch.setattr(rag.DocumentStore, "_load_index", lambda self: {})
@@ -3290,10 +3290,40 @@ async def test_document_store_init_with_vector_initialization_disabled(
         BASE_DIR=tmp_path,
         GRAPH_RAG_MAX_FILES=1,
     )
-    store = rag.DocumentStore(tmp_path / "no_vector_init", cfg=cfg, initialize_vector=False)
+    with caplog.at_level("INFO"):
+        store = rag.DocumentStore(tmp_path / "no_vector_init", cfg=cfg, initialize_vector=False)
 
     assert store._chroma_available is False
     assert init_calls == ["fts"]
+    assert "metadata-only seed mode" in caplog.text
+    assert "intentionally skipped" in caplog.text
+    assert "pgvector/ChromaDB arızası değildir" in caplog.text
+
+
+async def test_metadata_only_notice_is_not_suppressed_by_prior_store(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setattr(rag.DocumentStore, "_load_index", lambda self: {})
+    monkeypatch.setattr(rag.DocumentStore, "_init_fts", lambda self: None)
+    monkeypatch.setattr(rag.DocumentStore, "_check_import", lambda self, _m: True)
+    monkeypatch.setattr(rag.DocumentStore, "_backend_info_logged", {})
+    cfg = SimpleNamespace(
+        RAG_TOP_K=1,
+        RAG_CHUNK_SIZE=8,
+        RAG_CHUNK_OVERLAP=2,
+        RAG_VECTOR_BACKEND="chroma",
+        AI_PROVIDER="openai",
+        RAG_LOCAL_ENABLE_HYBRID=False,
+        ENABLE_GRAPH_RAG=False,
+        BASE_DIR=tmp_path,
+        GRAPH_RAG_MAX_FILES=1,
+    )
+
+    with caplog.at_level("INFO"):
+        rag.DocumentStore(tmp_path / "first", cfg=cfg, initialize_vector=False)
+        rag.DocumentStore(tmp_path / "second", cfg=cfg, initialize_vector=False)
+
+    assert caplog.text.count("RAG metadata-only seed mode") == 2
 
 
 async def test_add_document_from_file_uses_filename_when_title_empty(tmp_path: Path) -> None:

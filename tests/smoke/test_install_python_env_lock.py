@@ -49,7 +49,7 @@ def test_create_uv_venv_pins_python_311_and_warns_on_override(tmp_path):
               cat > "$venv_dir/bin/python" <<'EOS'
 #!/usr/bin/env bash
 if [[ "${1:-}" == "-c" ]]; then
-  echo "3.11"
+  echo "3.11.15"
 else
   echo "Python 3.11.9"
 fi
@@ -96,13 +96,13 @@ EOS
         output="$(create_uv_venv 2>&1)"
         overridden_version="$($SCRIPT_DIR/.venv/bin/python --version)"
         [[ "$overridden_version" == Python\ 3.11.* ]]
-        [[ "$output" == *"WARN:PYTHON_VERSION=3.12 algılandı; runtime için 3.11 zorunlu."* ]]
+        [[ "$output" == *"WARN:PYTHON_VERSION=3.12 algılandı; runtime için 3.11.15 zorunlu."* ]]
 
         venv_calls_before="$(grep -c "^venv " "$UV_STUB_LOG")"
         [[ "$venv_calls_before" == "2" ]]
         output="$(create_uv_venv 2>&1)"
         venv_calls_after="$(grep -c "^venv " "$UV_STUB_LOG")"
-        [[ "$output" == *"OK:.venv mevcut sürümle uyumlu: 3.11"* ]]
+        [[ "$output" == *"OK:.venv mevcut sürümle uyumlu: 3.11.15"* ]]
         [[ "$venv_calls_before" == "$venv_calls_after" ]]
         """
     )

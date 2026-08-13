@@ -1277,6 +1277,9 @@ write_test_summary_json false
         "ci_fail_closed": True,
     }
     assert summary["production_ready"] is False
+    assert summary["local_readiness_passed"] is False
+    assert summary["release_evidence_complete"] is False
+    assert summary["release_ready"] is False
     assert summary["backend_failed_tests"] == []
     assert summary["installer"] == {
         "bootstrap_mode": "raw-module-fallback",
@@ -2616,6 +2619,21 @@ def test_dev_full_and_base_quality_gates_auto_build_the_plugin_sandbox_image() -
     ]
     assert "AUTO_BUILD_DOCKER_TEST_IMAGE=1" in base_quality_gates_block
     assert "DOCKER_TEST_IMAGE=$(PLUGIN_SANDBOX_IMAGE)" in base_quality_gates_block
+
+
+def test_make_validation_aliases_distinguish_development_from_release() -> None:
+    """Make aliases must not imply that development validation is release evidence."""
+    makefile = Path("Makefile").read_text(encoding="utf-8")
+
+    assert "validate-dev: dev-full" in makefile
+    assert "validate:\n" in makefile
+    assert "Release/merge kanıtı için: make release-readiness" in makefile
+    assert "$(MAKE) validate-dev" in makefile
+    assert "release-readiness: production-readiness" in makefile
+
+    testing = Path("docs/TESTING.md").read_text(encoding="utf-8")
+    assert "make validate" in testing
+    assert "yalnız development doğrulamasıdır, release kanıtı değildir" in testing
 
 
 def test_testing_docs_explain_external_production_readiness_dependencies() -> None:
@@ -5372,11 +5390,25 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert 'if [ "${FRONTEND_E2E_ENFORCE_RESULT}" = "1" ]; then' in script
     assert "Restore Playwright browser cache" in ci
     assert "~/.cache/ms-playwright" in ci
-    assert "playwright-${{ runner.os }}-${{ hashFiles('web_ui_react/package-lock.json') }}" in ci
+    assert "playwright-ubuntu-24.04-${{ hashFiles('web_ui_react/package-lock.json') }}" in ci
     assert ci.index("Restore Playwright browser cache") < ci.index(
         "Install Playwright Chromium for frontend smoke tests"
     )
     assert "npx playwright install --with-deps chromium" in ci
+
+
+def test_release_playwright_evidence_is_pinned_to_supported_ubuntu_runner() -> None:
+    ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    test_job = ci[ci.index("  test:\n") : ci.index("  installer-smoke:")]
+    testing_doc = Path("docs/TESTING.md").read_text(encoding="utf-8")
+
+    assert "runs-on: ubuntu-24.04" in test_job
+    assert "runs-on: ubuntu-latest" not in test_job
+    assert "playwright-ubuntu-24.04-${{ hashFiles" in test_job
+    assert "playwright-${{ runner.os }}" not in test_job
+    assert "Ubuntu 26.04/WSL" in testing_doc
+    assert "geliştirici uyumluluğu" in testing_doc
+    assert "release E2E kanıtı sayılmaz" in testing_doc
     # All 8 web_ui_react/e2e/ specs run here (not just the smoke default),
     # see test_ci_runs_full_frontend_e2e_suite_not_just_smoke below for the
     # regression this closes.
@@ -6055,6 +6087,42 @@ def test_frontend_bundle_budget_warns_when_totals_approach_budget(tmp_path: Path
     assert "watch dependency additions" in result.stderr
     assert report["budgetUsage"]["totalJs"]["warning"] is True
     assert report["budgetsKb"]["warnRatio"] == 0.9
+
+
+def test_frontend_bundle_budget_warns_before_named_chunk_hard_limit(tmp_path: Path) -> None:
+    assets_dir = tmp_path / "assets"
+    assets_dir.mkdir()
+    (assets_dir / "react-dom-near-budget.js").write_text("a" * 950, encoding="utf-8")
+    (assets_dir / "ChatMarkdownRenderer-stub.js").write_text("a", encoding="utf-8")
+    (assets_dir / "highlight-js-core-stub.js").write_text("a", encoding="utf-8")
+    report_path = tmp_path / "bundle-budget.json"
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "SIDAR_REACT_DOM_CHUNK_BUDGET_KB": "1",
+            "SIDAR_TOTAL_JS_BUDGET_KB": "10",
+            "SIDAR_TOTAL_GZIP_BUDGET_KB": "10",
+            "SIDAR_BUNDLE_BUDGET_WARN_RATIO": "0.9",
+            "SIDAR_BUNDLE_BUDGET_REPORT_PATH": str(report_path),
+            "SIDAR_BUNDLE_ASSETS_DIR": str(assets_dir),
+        }
+    )
+
+    result = subprocess.run(
+        ["node", "web_ui_react/scripts/check-bundle-budget.mjs"],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    react_dom = next(item for item in report["namedChunks"] if item["label"] == "React DOM")
+    assert result.returncode == 0
+    assert "React DOM chunk react-dom-near-budget.js is at" in result.stderr
+    assert react_dom["usage"][0]["warning"] is True
+    assert report["budgetUsage"]["totalJs"]["warning"] is False
 
 
 def test_frontend_bundle_budget_requires_total_budgets_for_ci_gate(tmp_path: Path) -> None:

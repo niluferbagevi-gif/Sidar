@@ -31,6 +31,7 @@ from typing import Any, cast
 from launcher import doctor as launcher_doctor
 from launcher import process as launcher_process
 from launcher import selection as launcher_selection
+from launcher import ui as launcher_ui
 
 LAUNCHER_SESSION_FILENAME = ".sidar_session.json"
 LAUNCHER_SESSION_VERSION = 1
@@ -131,19 +132,7 @@ BASE_DIR = str(getattr(cfg, "BASE_DIR", BASE_DIR))
 
 def print_banner() -> None:
     """Etkileşimli menü için renkli karşılama ekranı."""
-    banner = f"""{CYAN}{BOLD}
- ╔══════════════════════════════════════════════╗
- ║  ███████╗██╗██████╗  █████╗ ██████╗          ║
- ║  ██╔════╝██║██╔══██╗██╔══██╗██╔══██╗         ║
- ║  ███████╗██║██║  ██║███████║██████╔╝         ║
- ║  ╚════██║██║██║  ██║██╔══██║██╔══██╗         ║
- ║  ███████║██║██████╔╝██║  ██║██║  ██║         ║
- ║  ╚══════╝╚═╝╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝         ║
- ║         SİDAR AKILLI BAŞLATICI               ║
- ╚══════════════════════════════════════════════╝{RESET}
-    """
-    print(banner)
-    print(f"{GREEN}Hoş geldiniz! Lütfen Sidar'ı nasıl başlatmak istediğinizi seçin.{RESET}\n")
+    launcher_ui.print_banner(cyan=CYAN, bold=BOLD, reset=RESET, green=GREEN)
 
 
 def ask_choice(
@@ -154,46 +143,47 @@ def ask_choice(
     default_badge: str | None = None,
 ) -> str:
     """Kullanıcıya seçenekler sunar ve güvenli bir şekilde girdiyi alır."""
-    print(f"{YELLOW}{BOLD}{prompt}{RESET}")
-
-    for key, (desc, _value) in options.items():
-        if key == default_key:
-            badge = default_badge or "Varsayılan"
-            is_default = f" {GREEN}({badge}){RESET}"
-        else:
-            is_default = ""
-        print(f"  {CYAN}[{key}]{RESET} {desc}{is_default}")
-
-    while True:
-        choice = input(f"\n{BOLD}Seçiminiz [{'/'.join(options.keys())}]: {RESET}").strip()
-
-        if not choice:
-            return options[default_key][1]
-
-        if choice in options:
-            return options[choice][1]
-
-        print(f"{MAGENTA}Geçersiz seçim. Lütfen tekrar deneyin.{RESET}")
+    return launcher_ui.ask_choice(
+        prompt,
+        options,
+        default_key,
+        default_badge=default_badge,
+        input_fn=input,
+        yellow=YELLOW,
+        bold=BOLD,
+        reset=RESET,
+        cyan=CYAN,
+        green=GREEN,
+        magenta=MAGENTA,
+    )
 
 
 def ask_text(prompt: str, default: str = "", *, default_badge: str | None = None) -> str:
     """Kullanıcıdan metin girdisi alır."""
-    if default:
-        badge = f" {GREEN}({default_badge}){RESET}" if default_badge else ""
-        suffix = f" {CYAN}[{default}]{RESET}{badge}"
-    else:
-        suffix = ""
-    raw = input(f"{YELLOW}{BOLD}{prompt}{RESET}{suffix}: ").strip()
-    return raw or default
+    return launcher_ui.ask_text(
+        prompt,
+        default,
+        default_badge=default_badge,
+        input_fn=input,
+        yellow=YELLOW,
+        bold=BOLD,
+        reset=RESET,
+        cyan=CYAN,
+        green=GREEN,
+    )
 
 
 def confirm(prompt: str, default_yes: bool = True) -> bool:
     """Kullanıcıdan Evet/Hayır onayı alır."""
-    hint = "[Y/n]" if default_yes else "[y/N]"
-    raw = input(f"\n{YELLOW}{BOLD}{prompt}{RESET} {CYAN}{hint}{RESET}: ").strip().lower()
-    if not raw:
-        return default_yes
-    return raw in {"y", "yes", "e", "evet"}
+    return launcher_ui.confirm(
+        prompt,
+        default_yes,
+        input_fn=input,
+        yellow=YELLOW,
+        bold=BOLD,
+        reset=RESET,
+        cyan=CYAN,
+    )
 
 
 def validate_runtime_dependencies(mode: str) -> tuple[bool, str | None]:

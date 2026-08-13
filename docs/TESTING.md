@@ -213,15 +213,26 @@ sözleşmeyi kullanır ve hangi kapının production readiness sayıldığını 
 gösterir:
 
 ```bash
+make validate-dev          # Açık isimli geliştirici tam doğrulaması; dev-full hedefini çalıştırır.
+make validate              # Geriye dönük alias; yalnız development doğrulamasıdır, release kanıtı değildir.
 make dev-full              # Geliştirici tam doğrulaması + local frontend bundle budget (local profil varsayılanları).
 make ci-parity             # dev-full + TEST_PROFILE=ci + tam (8 spec) frontend e2e: CI'nın "test" job'ının gerçek local provası.
 make plugin-sandbox-security # Güncel checkout'tan sidar:latest build eder; 6 gerçek-container escape testinde skip'i hata sayar.
 make benchmark-seed        # Lokal benchmark baseline bootstrap/seed yardımcısı.
 make doctor-production-readiness  # Release gate öncesi ortam doctor/preflight raporu.
 make production-readiness  # CI profili + benchmark + frontend e2e + SIDAR_PRODUCTION_READINESS.
+make release-readiness     # production-readiness için açık isimli release/merge alias'ı.
 make frontend-gate         # Frontend lint/typecheck/coverage/e2e kalite kapısı.
 make backend-integration   # Backend integration stage'i; global coverage gate uygulanmaz.
 ```
+
+`artifacts/test-summary.json`, geriye dönük `production_ready` alanına ek olarak kanıt
+seviyelerini ayrı boolean alanlarla bildirir: `local_readiness_passed` seçili local tam
+kapının sonucunu, `release_evidence_complete` dış CI/GPU kanıtlarının tamamlanmasını ve
+`release_ready` bu iki sınıfın release için birlikte sağlandığını gösterir. Yerel summary
+self-hosted GPU required-check sonucunu içermediğinden `release_evidence_complete` ve
+`release_ready` fail-closed olarak `false` kalır; nihai release kararı GitHub CI aggregate
+check'inden alınır.
 
 > `DOCKER_TEST_IMAGE`/`sidar:latest`'in **iki bağımsız tüketicisi** var, kolayca karıştırılabilir:
 > `managers/code_manager.py`'nin `CodeManager` Docker REPL/code-exec sandbox'ı (README.md'nin
@@ -606,6 +617,15 @@ BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1 RUN_BENCHMARKS=required
 > yapılmalıdır.
 
 ## Frontend Playwright CDN 403 / restricted network
+
+### Release kanıtı ve yerel compatibility ayrımı
+
+Ubuntu 26.04/WSL üzerindeki Playwright OS override yalnız geliştirici uyumluluğu
+sağlar; bu sonuç tek başına release E2E kanıtı sayılmaz. Zorunlu GitHub CI `test`
+job'ı Playwright Chromium kurulumunu ve frontend smoke/E2E kapısını açıkça pinlenmiş
+`ubuntu-24.04` runner üzerinde çalıştırır. Browser cache anahtarı da host image
+değişimlerinde uyumsuz binary restore edilmemesi için `playwright-ubuntu-24.04-*`
+namespace'ini kullanır. Release/merge kararı bu resmi destekli CI kanıtına dayanmalıdır.
 
 `make production-readiness` frontend E2E smoke testlerini zorunlu çalıştırır
 (`RUN_FRONTEND_E2E=1`). `web_ui_react` bağımlılıkları kurulduktan sonra Chromium

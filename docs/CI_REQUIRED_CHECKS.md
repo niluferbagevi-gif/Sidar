@@ -125,6 +125,15 @@ calling GitHub. The script intentionally fails closed when a release-critical jo
 from `.github/workflows/ci.yml` is absent from branch protection, or when the
 GitHub API cannot be reached/authorized during the scheduled audit.
 
+The scheduled workflow prefers the repository secret
+`BRANCH_PROTECTION_AUDIT_TOKEN`. Configure it as a fine-grained personal access
+token or GitHub App installation token scoped to this repository with
+**Administration: read** permission. The built-in `github.token` is retained only
+as a fallback and can receive HTTP 403 for branch-protection metadata; a 403 means
+the live configuration was **not verified**, not that required checks are present.
+The script fails closed and prints this remediation instead of treating the local
+workflow contract as proof of GitHub Settings.
+
 
 ## Autonomous/direct push guardrails
 

@@ -3,15 +3,15 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
-PYTHON_MAJOR_MINOR = "3.11"
+PYTHON_MAJOR_MINOR = "3.11.15"
 PYTHON_BASE_IMAGE = f"python:{PYTHON_MAJOR_MINOR}-slim"
 UV_IMAGE = (
-    "ghcr.io/astral-sh/uv:0.8.13@"
-    "sha256:4de5495181a281bc744845b9579acf7b221d6791f99bcc211b9ec13f417c2853"
+    "ghcr.io/astral-sh/uv:0.12.0@"
+    "sha256:606e70c71c852d03f611b1e56a195d08648507018a7057fab82c4974c4eae105"
 )
 PRODUCTION_PYTHON_IMAGE = (
-    "python:3.11.13-slim-bookworm@"
-    "sha256:86adf8dbadc3d6e82ee5dd2c74bec2e1c2467cdad47886280501df722372d2e1"
+    "python:3.11.15-slim-bookworm@"
+    "sha256:d29f48a31a8b408ed19272ca1e7b10ebae13b240a27e862d3d4217c528e2e0c3"
 )
 
 
@@ -51,6 +51,22 @@ def test_production_dockerfile_pins_build_inputs_by_version_and_digest():
     assert f"ARG BASE_IMAGE={PRODUCTION_PYTHON_IMAGE}" in dockerfile
     assert f"COPY --from={UV_IMAGE} /uv /uvx /bin/" in dockerfile
     assert "ghcr.io/astral-sh/uv:latest" not in dockerfile
+
+
+def test_production_dockerfile_keeps_build_toolchain_out_of_runtime_stage():
+    """The deploy image must copy artifacts, not compilers or package managers."""
+    dockerfile = _read("Dockerfile.production")
+    builder, runtime = dockerfile.split("FROM ${BASE_IMAGE} AS runtime", maxsplit=1)
+
+    assert "FROM ${BASE_IMAGE} AS builder" in builder
+    assert "build-essential git" in builder
+    assert "COPY --from=builder /app /app" in runtime
+    runtime_apt = runtime.split("apt-get install -y --no-install-recommends", maxsplit=1)[1].split(
+        "rm -rf /var/lib/apt/lists/*", maxsplit=1
+    )[0]
+    for build_only in ("build-essential", " git", "/uv /uvx", "python3-pip", "python3-venv"):
+        assert build_only not in runtime_apt
+    assert "ca-certificates curl ffmpeg" in runtime_apt
 
 
 def test_main_dockerfile_documents_current_cuda_13_example_consistently():

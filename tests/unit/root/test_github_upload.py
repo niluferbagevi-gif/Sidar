@@ -13,6 +13,8 @@ import github_upload as gu
 
 ORIGINAL_SYNC_INSTALL_MANIFESTS_BEFORE_COMMIT = gu.sync_install_manifests_before_commit
 ORIGINAL_RUN_PRE_PUSH_QUALITY_GATE = gu.run_pre_push_quality_gate
+ORIGINAL_RUN_DIRECT_MAIN_READINESS_GATE = gu.run_direct_main_readiness_gate
+ORIGINAL_RECORD_UPLOAD_SOURCE_HEAD = gu.record_upload_source_head
 ORIGINAL_STAMP_INSTALL_MANIFEST_PIN_AFTER_COMMIT = gu.stamp_install_manifest_pin_after_commit
 ORIGINAL_ENSURE_FULL_GIT_HISTORY_FOR_MANIFEST_CHECKS = (
     gu.ensure_full_git_history_for_manifest_checks
@@ -25,6 +27,8 @@ ORIGINAL_REEXEC_AFTER_EXTERNAL_BRANCH_MERGE = gu.reexec_after_external_branch_me
 def _stub_upload_guards(monkeypatch):
     monkeypatch.setattr(gu, "sync_install_manifests_before_commit", lambda: (True, ""))
     monkeypatch.setattr(gu, "run_pre_push_quality_gate", lambda: (True, ""))
+    monkeypatch.setattr(gu, "run_direct_main_readiness_gate", lambda: (True, ""))
+    monkeypatch.setattr(gu, "record_upload_source_head", lambda: (True, "a" * 40))
     monkeypatch.setattr(gu, "stamp_install_manifest_pin_after_commit", lambda: (True, ""))
     monkeypatch.setattr(gu, "assert_no_unmerged_files", lambda: None)
     monkeypatch.setattr(gu, "reexec_after_external_branch_merge", lambda: None)
@@ -777,6 +781,61 @@ def test_run_pre_push_quality_gate_stops_on_installer_abort_smoke_failure(monkey
         ["bash", "install_sidar.sh"],
         {"SIDAR_INSTALL_TEST_MODE": "1", "SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY": "1"},
     ) in calls
+
+
+def test_record_upload_source_head_captures_valid_revision(monkeypatch):
+    monkeypatch.setattr(
+        gu,
+        "run_command",
+        lambda cmd, show_output=False: (True, "ABCDEF0123456789" * 2 + "ABCDEF01"),
+    )
+
+    ok, revision = ORIGINAL_RECORD_UPLOAD_SOURCE_HEAD()
+
+    assert ok is True
+    assert revision == ("abcdef0123456789" * 2 + "abcdef01")
+
+
+def test_record_upload_source_head_fails_closed_on_invalid_output(monkeypatch):
+    monkeypatch.setattr(gu, "run_command", lambda cmd, show_output=False: (True, "HEAD"))
+
+    ok, error = ORIGINAL_RECORD_UPLOAD_SOURCE_HEAD()
+
+    assert ok is False
+    assert "geçersiz revision" in error
+
+
+def test_direct_main_readiness_gate_requires_static_then_production(monkeypatch):
+    calls = []
+
+    def fake_run(cmd, show_output=False):
+        calls.append(cmd)
+        return True, ""
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+
+    assert ORIGINAL_RUN_DIRECT_MAIN_READINESS_GATE() == (True, "")
+    assert calls == [
+        ["bash", "run_tests.sh", "--stage", "static"],
+        ["make", "production-readiness"],
+    ]
+
+
+def test_direct_main_readiness_gate_stops_before_production_when_static_fails(monkeypatch):
+    calls = []
+
+    def fake_run(cmd, show_output=False):
+        calls.append(cmd)
+        return False, "static failed"
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+
+    ok, error = ORIGINAL_RUN_DIRECT_MAIN_READINESS_GATE()
+
+    assert ok is False
+    assert "bash run_tests.sh --stage static" in error
+    assert "static failed" in error
+    assert calls == [["bash", "run_tests.sh", "--stage", "static"]]
 
 
 def test_stamp_install_manifest_pin_after_commit_no_drift(monkeypatch):

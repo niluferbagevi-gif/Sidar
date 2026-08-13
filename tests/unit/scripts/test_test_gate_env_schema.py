@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from scripts.test_gates import env_schema
 
 
@@ -38,3 +40,17 @@ def test_main_fails_fast_by_default_and_supports_explicit_warning_mode(monkeypat
     monkeypatch.setenv("TEST_ENV_SCHEMA_MODE", "warn")
     assert env_schema.main() == 0
     assert "Bilinmeyen" in capsys.readouterr().err
+
+
+def test_schema_mode_is_declared_in_test_environment_template() -> None:
+    """Expose the operator setting only in its semantically owned test template."""
+    templates = sorted(Path().glob(".env*.example"))
+    declarations = {
+        path.name
+        for path in templates
+        if "TEST_ENV_SCHEMA_MODE=" in path.read_text(encoding="utf-8")
+    }
+
+    assert "TEST_ENV_SCHEMA_MODE" in env_schema.TEST_GATE_ENV_NAMES
+    assert declarations == {".env.test.example"}
+    assert "TEST_ENV_SCHEMA_MODE=error" in Path(".env.test.example").read_text(encoding="utf-8")

@@ -154,6 +154,14 @@ normal kurulum varsayılanı ve önerisi `developer-full` / `dev-full` profilidi
 `dev-light` bilinçli seçilebilir. Tam test/CI veya `--production-readiness` akışı da `developer-full` / `dev-full` profilini kullanarak
 `uv sync --frozen --all-extras` sözleşmesini korur. Kullanıcı menüsü:
 
+`pyproject.toml` ayrıca deployment/CI bileşimi için kanonik, açık isimli yapı taşlarını
+tanımlar: `runtime-core`, `runtime-postgres`, `runtime-gpu`, `provider-ollama`,
+`provider-openai`, `provider-gemini`, `ci-cpu` ve `ci-gpu`. Eski `postgres`, `gpu`,
+`openai`, `gemini`, `dev` ve kolaylık profilleri geriye dönük uyumluluk için korunur;
+production profilleri artık `runtime-postgres` üzerinden bileşir. `runtime-core` ve
+`provider-ollama` bilinçli boş extra'lardır: temel proje bağımlılıklarının ve harici SDK
+gerektirmeyen Ollama HTTP yolunun komut satırında açıkça adlandırılmasını sağlar.
+
 1. `dev-light` — hızlı yerel geliştirici kurulumu.
 2. `developer-full` / `dev-full` — önerilen varsayılan; tüm extras ve tam CI/test paritesi.
 3. `dev-gpu` — geliştirici + RAG/GPU runtime; provider/browser/voice extras yok.
@@ -240,7 +248,7 @@ için `--allow-stale-baseline` kullanılabilir fakat CI standardı değildir.
 3. **Docker/installer koordinasyonu:** `Dockerfile.production` yeni no-dev profile'ı kullanır; ana
    `Dockerfile` ve installer varsayılanları local/CI paritesi için `uv sync --all-extras` kalır.
 4. **Production varsayılanlarını daraltma (P2 structural hardening):** Dev/test araçları Faz 1'de `dev`
-   extra'ya taşındı; production profili `sidar[postgres,telemetry]`, production-minimal profili ise `sidar[postgres]` ile dev araçlarını ve Pyright LSP yükünü dışarıda tutar.
+   extra'ya taşındı; production profili `sidar[runtime-postgres,telemetry]`, production-minimal profili ise `sidar[runtime-postgres]` ile dev araçlarını ve Pyright LSP yükünü dışarıda tutar.
    Dockerfile, installer ve deployment varsayılanları ancak dry-run ve smoke doğrulamaları geçtikten sonra
    production profile yönlendirilir.
 5. **Güvenlik doğrulaması:** Production-minimal profilinde `pip-audit`, import smoke, web boot smoke ve DB migration

@@ -1,5 +1,10 @@
 {
   "captured_at": "2026-08-12",
-  "maximum_skipped_tests": 72,
-  "policy": "Bandit metrics._totals.skipped_tests may only stay level or decrease."
+  "maximum_skipped_tests": 60,
+  "policy": "Bandit metrics._totals.skipped_tests may only stay level or decrease.",
+  "reduction_targets": [
+    {"due_date": "2027-01-31", "maximum_skipped_tests": 40},
+    {"due_date": "2027-04-30", "maximum_skipped_tests": 20},
+    {"due_date": "2027-07-31", "maximum_skipped_tests": 0}
+  ]
 }

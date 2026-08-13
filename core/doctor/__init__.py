@@ -1493,6 +1493,7 @@ def check_gpu_memory_config() -> DoctorCheck:
     gpu_info = str(getattr(Config, "GPU_INFO", "") or "").strip()
     docker_image = str(getattr(Config, "DOCKER_IMAGE", "") or "").strip()
     docker_test_image = str(getattr(Config, "DOCKER_TEST_IMAGE", "") or "").strip()
+    auto_build_docker_test_image = os.getenv("AUTO_BUILD_DOCKER_TEST_IMAGE", "0") == "1"
     llm_fraction = float(getattr(Config, "LLM_GPU_MEMORY_FRACTION", 0.0) or 0.0)
     rag_fraction = float(getattr(Config, "RAG_GPU_MEMORY_FRACTION", 0.0) or 0.0)
     legacy_fraction = float(getattr(Config, "GPU_MEMORY_FRACTION", 0.0) or 0.0)
@@ -1506,6 +1507,7 @@ def check_gpu_memory_config() -> DoctorCheck:
         "gpu_info": gpu_info,
         "docker_image": docker_image,
         "docker_test_image": docker_test_image,
+        "auto_build_docker_test_image": auto_build_docker_test_image,
         "gpu_memory_fraction": legacy_fraction,
         "llm_gpu_memory_fraction": llm_fraction,
         "rag_gpu_memory_fraction": rag_fraction,
@@ -1559,10 +1561,24 @@ def check_gpu_memory_config() -> DoctorCheck:
             ]
         )
     elif docker_test_image == "sidar:latest" and not sidar_image_exists:
-        details["docker_test_image_hint"] = (
-            "DOCKER_TEST_IMAGE is sidar:latest but local Docker daemon cannot find that image."
-        )
-        details.setdefault("recommended_commands", []).append("docker build -t sidar:latest .")
+        if auto_build_docker_test_image:
+            details["docker_test_image_hint_level"] = "info"
+            details["docker_test_image_hint"] = (
+                "DOCKER_TEST_IMAGE is sidar:latest but the image is missing; the enabled "
+                "automatic builder will build it before tests run."
+            )
+        else:
+            details["docker_test_image_hint_level"] = "warn"
+            warnings.append(
+                "DOCKER_TEST_IMAGE is sidar:latest but the image is missing and automatic "
+                "build is disabled"
+            )
+            details["docker_test_image_hint"] = (
+                "Enable AUTO_BUILD_DOCKER_TEST_IMAGE=1 or build sidar:latest before Docker tests."
+            )
+            details.setdefault("recommended_commands", []).append(
+                "AUTO_BUILD_DOCKER_TEST_IMAGE=1 DOCKER_TEST_IMAGE=sidar:latest bash run_tests.sh"
+            )
 
     status = "warn" if warnings else "pass"
     message = "; ".join(warnings or ["Local model and VRAM configuration look safe"])
