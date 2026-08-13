@@ -226,6 +226,14 @@ make frontend-gate         # Frontend lint/typecheck/coverage/e2e kalite kapıs�
 make backend-integration   # Backend integration stage'i; global coverage gate uygulanmaz.
 ```
 
+`artifacts/test-summary.json`, geriye dönük `production_ready` alanına ek olarak kanıt
+seviyelerini ayrı boolean alanlarla bildirir: `local_readiness_passed` seçili local tam
+kapının sonucunu, `release_evidence_complete` dış CI/GPU kanıtlarının tamamlanmasını ve
+`release_ready` bu iki sınıfın release için birlikte sağlandığını gösterir. Yerel summary
+self-hosted GPU required-check sonucunu içermediğinden `release_evidence_complete` ve
+`release_ready` fail-closed olarak `false` kalır; nihai release kararı GitHub CI aggregate
+check'inden alınır.
+
 > `DOCKER_TEST_IMAGE`/`sidar:latest`'in **iki bağımsız tüketicisi** var, kolayca karıştırılabilir:
 > `managers/code_manager.py`'nin `CodeManager` Docker REPL/code-exec sandbox'ı (README.md'nin
 > "Coverage/QA ajanları için önerilen kalıcı ayar" bölümü, ~satır 1144-1157) ve buradaki plugin

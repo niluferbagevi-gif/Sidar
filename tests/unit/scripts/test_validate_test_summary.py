@@ -21,6 +21,9 @@ def _summary(
             "compare_required": production_ready,
             "compare_enforced": production_ready,
         },
+        "local_readiness_passed": production_ready,
+        "release_evidence_complete": False,
+        "release_ready": False,
         "production_ready": production_ready,
         "production_readiness": "passed" if production_ready else "not_run",
         "production_readiness_detail": {
@@ -81,6 +84,21 @@ def test_release_mode_rejects_seeded_but_not_compared_benchmark() -> None:
     errors = validate_summary(summary, "release")
 
     assert "release mode benchmark_compare=compared_enforced bekler" in errors
+
+
+def test_summary_rejects_release_ready_without_complete_evidence() -> None:
+    summary = _summary(
+        production_ready=False,
+        status="development_only",
+        validation_class="development_full",
+        release_blocking=True,
+        exit_code=10,
+    )
+    summary["release_ready"] = True
+
+    errors = validate_summary(summary, "development")
+
+    assert "release_ready=true için release_evidence_complete=true olmalıdır" in errors
 
 
 def test_development_mode_validates_schema_without_requiring_release() -> None:

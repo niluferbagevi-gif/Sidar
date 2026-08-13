@@ -1277,6 +1277,9 @@ write_test_summary_json false
         "ci_fail_closed": True,
     }
     assert summary["production_ready"] is False
+    assert summary["local_readiness_passed"] is False
+    assert summary["release_evidence_complete"] is False
+    assert summary["release_ready"] is False
     assert summary["backend_failed_tests"] == []
     assert summary["installer"] == {
         "bootstrap_mode": "raw-module-fallback",

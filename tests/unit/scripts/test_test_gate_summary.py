@@ -46,6 +46,7 @@ def _summary_args(output_path: Path, junit_dir: Path) -> list[str]:
         "artifacts/benchmark/benchmark.json",
         "smoke",
         "test:e2e:smoke",
+        "false",  # local_readiness_passed
     ]
 
 
@@ -102,6 +103,9 @@ def test_summary_helper_writes_run_tests_payload_and_failed_backend_tests(tmp_pa
         "ttft_budget_ms": 200,
         "latency_budget_ms": 250,
     }
+    assert payload["local_readiness_passed"] is False
+    assert payload["release_evidence_complete"] is False
+    assert payload["release_ready"] is False
     assert payload["backend_failed_tests"] == [
         "tests/unit/root/test_config.py::test_failure",
         "tests/unit/root/test_config.py::test_error",
@@ -120,7 +124,20 @@ def test_summary_helper_rejects_wrong_argument_count(tmp_path: Path, capsys) -> 
     assert summary.main([str(tmp_path / "test-summary.json")]) == 2
 
     captured = capsys.readouterr()
-    assert "expected 37 arguments" in captured.err
+    assert "expected 38 arguments" in captured.err
+
+
+def test_summary_separates_local_readiness_from_external_release_evidence(tmp_path: Path) -> None:
+    args = _summary_args(tmp_path / "test-summary.json", tmp_path / "pytest")
+    args[-1] = "true"
+    args[10] = "true"
+
+    payload = summary.build_summary(args)
+
+    assert payload["local_readiness_passed"] is True
+    assert payload["production_ready"] is True
+    assert payload["release_evidence_complete"] is False
+    assert payload["release_ready"] is False
 
 
 def test_summary_helper_skips_malicious_backend_junit_xml(tmp_path: Path) -> None:
