@@ -48,6 +48,29 @@ def _reduction_targets(path: Path) -> list[tuple[dt.date, int]]:
     return targets
 
 
+def _debt_plan(path: Path) -> tuple[str, tuple[str, ...]]:
+    """Return and validate the accountable, ordered suppression review plan."""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    plan = payload.get("debt_plan")
+    if not isinstance(plan, dict):
+        raise ValueError("debt_plan object olmalıdır")
+    owner = plan.get("owner")
+    review_order = plan.get("review_order")
+    rule = plan.get("rule")
+    if not isinstance(owner, str) or not owner.strip():
+        raise ValueError("debt_plan.owner boş olmayan string olmalıdır")
+    if (
+        not isinstance(review_order, list)
+        or not review_order
+        or any(not isinstance(item, str) or not item.endswith(".py") for item in review_order)
+        or len(review_order) != len(set(review_order))
+    ):
+        raise ValueError("debt_plan.review_order benzersiz Python dosyaları içermelidir")
+    if not isinstance(rule, str) or "bulk-remove" not in rule:
+        raise ValueError("debt_plan.rule toplu suppression kaldırmayı yasaklamalıdır")
+    return owner, tuple(review_order)
+
+
 def _skipped_tests(path: Path) -> int:
     payload = json.loads(path.read_text(encoding="utf-8"))
     skipped = payload.get("metrics", {}).get("_totals", {}).get("skipped_tests")
@@ -66,6 +89,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         limit = _baseline_limit(args.baseline)
         targets = _reduction_targets(args.baseline)
+        owner, review_order = _debt_plan(args.baseline)
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         print(f"Bandit suppression baseline geçersiz: {exc}", file=sys.stderr)
         return 2
@@ -98,6 +122,10 @@ def main(argv: list[str] | None = None) -> int:
             return completed.returncode or 2
 
     print(f"Bandit suppression ratchet: skipped_tests={skipped}, maximum={limit}")
+    print(
+        f"Bandit suppression debt plan: owner={owner}, "
+        f"review_order={','.join(review_order)}"
+    )
     today = dt.date.today()
     effective_target = next(((date, value) for date, value in targets if date >= today), None)
     if effective_target:

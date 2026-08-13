@@ -39,6 +39,19 @@ def test_bandit_suppression_baseline_matches_current_scan_and_quality_gates() ->
         0,
     ]
     assert suppression_baseline._reduction_targets(root / "bandit-suppression-baseline.json")
+    owner, review_order = suppression_baseline._debt_plan(
+        root / "bandit-suppression-baseline.json"
+    )
+    assert owner == "security-review"
+    assert review_order == (
+        "core/rag/backends/pgvector.py",
+        "core/db/monolith.py",
+        "scripts/migrate_sqlite_to_pg.py",
+        "scripts/ci/verify_required_checks.py",
+        "github_upload.py",
+    )
+    for relative_path in review_order:
+        assert "# nosec" in (root / relative_path).read_text(encoding="utf-8")
     command = "uv run python scripts/ci/check_bandit_suppression_baseline.py"
     assert command in local_gate
     assert command in ci
@@ -127,6 +140,25 @@ def test_reduction_targets_must_strictly_decrease(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="kesin azalmalıdır"):
         suppression_baseline._reduction_targets(baseline)
+
+
+def test_bandit_debt_plan_requires_unique_python_hotspots(tmp_path: Path) -> None:
+    baseline = tmp_path / "baseline.json"
+    baseline.write_text(
+        json.dumps(
+            {
+                "debt_plan": {
+                    "owner": "security-review",
+                    "review_order": ["core/db.py", "core/db.py"],
+                    "rule": "Do not bulk-remove suppressions.",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="benzersiz Python dosyaları"):
+        suppression_baseline._debt_plan(baseline)
 
 
 def _imports_sql_identifier_validator(source: str) -> bool:

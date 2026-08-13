@@ -2,6 +2,18 @@
   "captured_at": "2026-08-12",
   "maximum_skipped_tests": 60,
   "policy": "Bandit metrics._totals.skipped_tests may only stay level or decrease.",
+  "debt_plan": {
+    "classification": "P2 planned security debt",
+    "owner": "security-review",
+    "review_order": [
+      "core/rag/backends/pgvector.py",
+      "core/db/monolith.py",
+      "scripts/migrate_sqlite_to_pg.py",
+      "scripts/ci/verify_required_checks.py",
+      "github_upload.py"
+    ],
+    "rule": "Do not bulk-remove suppressions; preserve identifier validation and add focused tests before each removal."
+  },
   "reduction_targets": [
     {"due_date": "2027-01-31", "maximum_skipped_tests": 40},
     {"due_date": "2027-04-30", "maximum_skipped_tests": 20},
