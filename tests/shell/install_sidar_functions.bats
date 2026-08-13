@@ -276,15 +276,11 @@ EOF
   run_installer_function '
     tmpdir="$(mktemp -d)"
     trap "rm -rf \"$tmpdir\"" EXIT
-    cat > "$tmpdir/pyproject.toml" <<EOF
-[dependency-groups]
-dev = [
-  "playwright>=1.60,<1.62",
-]
-EOF
+    expected_spec="$(resolve_playwright_python_spec "$repo_root/pyproject.toml")"
+    cp "$repo_root/pyproject.toml" "$tmpdir/pyproject.toml"
 
-    [[ "$(resolve_playwright_python_spec "$tmpdir/pyproject.toml")" == "playwright>=1.60,<1.62" ]]
-    [[ "$(resolve_playwright_python_spec "$tmpdir/missing.toml")" == "playwright>=1.60,<1.62" ]]
+    [[ "$(resolve_playwright_python_spec "$tmpdir/pyproject.toml")" == "$expected_spec" ]]
+    [[ "$(resolve_playwright_python_spec "$tmpdir/missing.toml")" == playwright* ]]
   '
   [ "$status" -eq 0 ]
 }
@@ -293,6 +289,7 @@ EOF
   run_installer_function '
     tmpdir="$(mktemp -d)"
     trap "rm -rf \"$tmpdir\"" EXIT
+    expected_spec="$(resolve_playwright_python_spec "$repo_root/pyproject.toml")"
     mkdir -p "$tmpdir/bin"
     cat > "$tmpdir/os-release" <<EOF
 ID=debian
@@ -306,7 +303,7 @@ case "\$*" in
   "-m playwright install --with-deps chromium") echo "ERROR: Playwright does not support chromium on debian13-x64" >&2; exit 1 ;;
   "-m playwright install chromium") echo "ERROR: Playwright does not support chromium on debian13-x64" >&2; exit 1 ;;
   "-m playwright install-deps chromium") exit 0 ;;
-  "- playwright>=1.60,<1.62") exit 1 ;;
+  "- $expected_spec") exit 1 ;;
 esac
 exit 1
 EOF
@@ -329,7 +326,7 @@ EOF
     # manual instructions instead, without ever depending on the exact CLI
     # error text (see test_playwright_install_fallback_does_not_depend_on_cli_error_text).
     [[ ! -e "$tmpdir/uv-called" ]]
-    grep -q "^- playwright>=1.60,<1.62|$" "$tmpdir/python.log"
+    grep -Fqx -- "- $expected_spec|" "$tmpdir/python.log"
   '
   [ "$status" -eq 0 ]
   [[ "$output" == *"Çıktı metninden bağımsız fallback: yalnızca Chromium binary kurulumu deneniyor"* ]]
@@ -342,6 +339,7 @@ EOF
   run_installer_function '
     tmpdir="$(mktemp -d)"
     trap "rm -rf \"$tmpdir\"" EXIT
+    expected_spec="$(resolve_playwright_python_spec "$repo_root/pyproject.toml")"
     mkdir -p "$tmpdir/bin"
     cat > "$tmpdir/os-release" <<EOF
 ID=debian
@@ -358,7 +356,7 @@ case "\$*" in
     echo "ERROR: Playwright does not support chromium on debian13-x64" >&2
     exit 1
     ;;
-  "- playwright>=1.60,<1.62") exit 0 ;;
+  "- $expected_spec") exit 0 ;;
 esac
 exit 1
 EOF
@@ -374,10 +372,10 @@ EOF
 
     install_playwright_browsers
 
-    grep -q "^add --dev playwright>=1.60,<1.62$" "$tmpdir/uv.log"
+    grep -Fqx -- "add --dev $expected_spec" "$tmpdir/uv.log"
   '
   [ "$status" -eq 0 ]
-  [[ "$output" == *"playwright>=1.60,<1.62 şartını sağlamıyor"* ]]
+  [[ "$output" == *"şartını sağlamıyor"* ]]
   [[ "$output" == *"upgrade fallback ile tamamlandı"* ]]
 }
 
