@@ -171,8 +171,9 @@ def test_ruff_failure_is_aggregated_without_short_circuiting_independent_phases(
     """Ruff failures must fail the final gate without suppressing later diagnostics."""
     script = RUN_TESTS.read_text(encoding="utf-8")
 
-    assert "run_precommit_autofix || exit 1" not in script
-    assert "run_checked run_precommit_autofix\nRUFF_EXIT_CODE=$?" in script
+    assert "run_precommit_autofix" not in script
+    assert "run_checked run_ruff_autofix\n  RUFF_EXIT_CODE=$?" in script
+    assert "run_checked run_ruff_quality_gate\n  RUFF_EXIT_CODE=$?" in script
     assert 'if [ "${RUFF_EXIT_CODE}" -ne 0 ]; then' in script
     assert 'echo "   Ruff Çıkış Kodu: ${RUFF_EXIT_CODE}"' in script
 
@@ -323,18 +324,22 @@ def test_run_tests_enforces_required_static_security_and_coverage_gates() -> Non
 
 def test_run_tests_ruff_autofix_is_explicit_opt_in() -> None:
     script = _script()
-    precommit_block = _extract_run_tests_function("run_precommit_autofix")
+    gate_block = _extract_run_tests_function("run_ruff_quality_gate")
+    autofix_block = _extract_run_tests_function("run_ruff_autofix")
 
-    assert 'if [ "${RUFF_AUTOFIX:-0}" != "1" ]; then' in precommit_block
-    assert "uv run ruff check ." in precommit_block
-    assert "uv run ruff format --check ." in precommit_block
-    assert "RUFF_AUTOFIX=1 bash run_tests.sh --stage all" in precommit_block
-    assert "uv run ruff check --fix" in precommit_block
-    assert "uv run ruff format ." in precommit_block
-    assert 'report_git_diff_state "RUFF_AUTOFIX başlangıç durumu"' in precommit_block
-    assert 'report_git_diff_state "RUFF_AUTOFIX bitiş durumu"' in precommit_block
-    assert script.index('if [ "${RUFF_AUTOFIX:-0}" != "1" ]; then') < script.index(
-        "uv run ruff check --fix"
+    assert "uv run --frozen ruff check ." in gate_block
+    assert "uv run --frozen ruff format --check ." in gate_block
+    assert "RUFF_AUTOFIX=1 bash run_tests.sh --stage all" in gate_block
+    assert "--fix" not in gate_block
+    assert "uv run --frozen ruff check --fix" in autofix_block
+    assert "uv run --frozen ruff format ." in autofix_block
+    assert 'report_git_diff_state "RUFF_AUTOFIX başlangıç durumu"' in autofix_block
+    assert 'report_git_diff_state "RUFF_AUTOFIX bitiş durumu"' in autofix_block
+    assert script.index('if [ "${RUFF_AUTOFIX:-0}" = "1" ]; then') < script.index(
+        "run_checked run_ruff_autofix"
+    )
+    assert script.index("run_checked run_ruff_autofix") < script.index(
+        "run_checked run_ruff_quality_gate"
     )
 
 

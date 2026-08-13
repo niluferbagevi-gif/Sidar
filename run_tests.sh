@@ -173,8 +173,14 @@ cleanup_zone_identifier_artifacts || exit 1
 # ihlallerini final sonuca dahil et, ancak bağımsız backend/frontend/benchmark
 # fazlarının tanı üretmesini engelleme.
 RUFF_EXIT_CODE=0
-run_checked run_precommit_autofix
-RUFF_EXIT_CODE=$?
+if [ "${RUFF_AUTOFIX:-0}" = "1" ]; then
+  run_checked run_ruff_autofix
+  RUFF_EXIT_CODE=$?
+fi
+if [ "${RUFF_EXIT_CODE}" -eq 0 ]; then
+  run_checked run_ruff_quality_gate
+  RUFF_EXIT_CODE=$?
+fi
 if [ "${RUFF_EXIT_CODE}" -ne 0 ]; then
   echo "⚠️ Ruff kalite kapısı başarısız; bağımsız kalite fazları çalıştırılmaya devam edecek."
 fi
