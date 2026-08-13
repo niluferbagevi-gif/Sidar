@@ -119,9 +119,7 @@ def test_reduction_targets_must_strictly_decrease(tmp_path: Path) -> None:
         json.dumps(
             {
                 "maximum_skipped_tests": 72,
-                "reduction_targets": [
-                    {"due_date": "2026-10-31", "maximum_skipped_tests": 72}
-                ],
+                "reduction_targets": [{"due_date": "2026-10-31", "maximum_skipped_tests": 72}],
             }
         ),
         encoding="utf-8",

@@ -75,9 +75,7 @@ def test_database_allows_insecure_default_only_with_explicit_local_opt_in(
 
     database = Database(cfg)
 
-    assert database.database_url == (
-        "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/sidar"
-    )
+    assert database.database_url == ("postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/sidar")
 
 
 class _FakeAcquire:

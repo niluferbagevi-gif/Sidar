@@ -106,9 +106,7 @@ def _reject_if_invalid_pg_table(store: Any, pg_table: str) -> bool:
         return True
     error = ValueError("invalid PGVECTOR_TABLE; expected pattern ^[A-Za-z_][A-Za-z0-9_]*$")
     _mark_pgvector_degraded(store, "identifier_validation", error)
-    logger.warning(
-        pgvector_failure_action_message(error)
-    )
+    logger.warning(pgvector_failure_action_message(error))
     return False
 
 

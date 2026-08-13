@@ -32,10 +32,10 @@ def contract_errors(root: Path, pins: dict[str, str]) -> list[str]:
     errors: list[str] = []
     if (root / ".python-version").read_text(encoding="utf-8").strip() != pins["PYTHON_VERSION"]:
         errors.append(".python-version canonical PYTHON_VERSION ile eşleşmiyor")
-    uv_image = f'ghcr.io/astral-sh/uv:{pins["UV_VERSION"]}@{pins["UV_IMAGE_DIGEST"]}'
+    uv_image = f"ghcr.io/astral-sh/uv:{pins['UV_VERSION']}@{pins['UV_IMAGE_DIGEST']}"
     for name in ("Dockerfile", "Dockerfile.production"):
         text = (root / name).read_text(encoding="utf-8")
-        if f'ARG PYTHON_VERSION={pins["PYTHON_VERSION"]}' not in text:
+        if f"ARG PYTHON_VERSION={pins['PYTHON_VERSION']}" not in text:
             errors.append(f"{name}: Python pin drift")
         if uv_image not in text:
             errors.append(f"{name}: uv image pin drift")

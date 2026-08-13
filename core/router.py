@@ -233,9 +233,7 @@ class _SqliteDailyBudgetTracker:
             daily_cost REAL NOT NULL
         )
     """
-    _SELECT_USAGE_SQL = (
-        "SELECT day_epoch, daily_cost FROM cost_routing_daily_budget WHERE id = 1"
-    )
+    _SELECT_USAGE_SQL = "SELECT day_epoch, daily_cost FROM cost_routing_daily_budget WHERE id = 1"
     _UPSERT_USAGE_SQL = (
         "INSERT INTO cost_routing_daily_budget (id, day_epoch, daily_cost) VALUES (1, ?, ?)"
         " ON CONFLICT(id) DO UPDATE SET"

@@ -12,9 +12,7 @@ from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
-PROMPT_REGISTRY_COLUMNS = (
-    "id, role_name, prompt_text, version, is_active, created_at, updated_at"
-)
+PROMPT_REGISTRY_COLUMNS = "id, role_name, prompt_text, version, is_active, created_at, updated_at"
 _POSTGRES_LIST_PROMPTS_SQL = (
     "SELECT id, role_name, prompt_text, version, is_active, created_at, updated_at "
     "FROM prompt_registry"
