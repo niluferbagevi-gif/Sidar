@@ -124,6 +124,21 @@ sidar_install_frontend_e2e_label() {
 }
 
 print_install_summary_extended_test_statuses() {
+    local summary_ruff=""
+    local summary_aggregate=""
+    summary_ruff="$(sidar_install_summary_field_or_empty ruff)"
+    summary_aggregate="$(sidar_install_summary_field_or_empty aggregate)"
+    case "$summary_ruff" in
+        passed) echo "  Ruff kalite kapısı: başarılı (lint + repo-geneli format)." ;;
+        failed) echo "  Ruff kalite kapısı: hata var; diğer bağımsız fazlar çalıştırıldı ve sonuç aggregate'e dahil edildi." ;;
+        *) echo "  Ruff kalite kapısı: durum özeti yok (${summary_ruff:-skipped})." ;;
+    esac
+    case "$summary_aggregate" in
+        passed) echo "  Birleşik kalite sonucu: başarılı." ;;
+        failed) echo "  Birleşik kalite sonucu: hata var; ayrıntılar artifacts/test-summary.json içinde." ;;
+        *) echo "  Birleşik kalite sonucu: durum özeti yok." ;;
+    esac
+
     local frontend_e2e_label=""
     frontend_e2e_label="$(sidar_install_frontend_e2e_label)"
     local summary_integration=""
@@ -464,7 +479,8 @@ print_summary() {
     echo ""
     echo -e "${BOLD}Gözlemlenebilirlik (Telemetry)${NC}"
     echo "  İzleme servislerini başlat: COMPOSE_PROFILES=observability docker compose up -d jaeger prometheus grafana"
-    echo "  Grafana paneli    : http://localhost:3000 (varsayılan: admin / admin)"
+    echo "  Grafana paneli    : http://localhost:3000"
+    echo "  Grafana girişi    : kullanıcı admin; parola .env içinde installer tarafından üretilen GRAFANA_ADMIN_PASSWORD"
     echo "  Prometheus paneli : http://localhost:9090"
     echo "  Jaeger UI         : http://localhost:16686"
     echo "  Not: Bu servisler docker_setup/ altındaki hazır konfigürasyonları kullanır."

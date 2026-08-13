@@ -135,6 +135,12 @@ wheels = [
 ]
 
 [[package]]
+name = "annoy"
+version = "1.17.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/07/38/e321b0e05d8cc068a594279fb7c097efb1df66231c295d482d7ad51b6473/annoy-1.17.3.tar.gz", hash = "sha256:9cbfebefe0a5f843eba29c6be4c84d601f4f41ad4ded0486f1b88c3b07739c15", size = 647460, upload-time = "2023-06-14T13:56:48.772Z" }
+
+[[package]]
 name = "anthropic"
 version = "0.121.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1726,16 +1732,16 @@ wheels = [
 
 [[package]]
 name = "nemoguardrails"
-version = "0.23.0"
+version = "0.22.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
     { name = "aiohttp-retry" },
+    { name = "annoy" },
     { name = "dataclasses-json" },
     { name = "fastembed" },
     { name = "httpx" },
     { name = "jinja2" },
-    { name = "jsonschema" },
     { name = "lark" },
     { name = "nest-asyncio" },
     { name = "onnxruntime" },
@@ -1749,9 +1755,8 @@ dependencies = [
     { name = "typer" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/73/ec/02ea37d5bea9178b192540fb9dfcfc1d7a080fb20a6465612b888e896306/nemoguardrails-0.23.0-py3-none-any.whl", hash = "sha256:91106c9718748fd760e873dd872915c6ed15d15c80300d538c8a1f4024eff92a", size = 891405, upload-time = "2026-07-01T16:24:54.322Z" },
+    { url = "https://files.pythonhosted.org/packages/04/e2/6f04405cba34473e64d6f414511fbd36ab660582bfa3d5cbadc79f608151/nemoguardrails-0.22.0-py3-none-any.whl", hash = "sha256:9c4d5fbb7ce9f75a40b86322ee3a11efcd374b2d1154e7c2bfa1723585379587", size = 8991801, upload-time = "2026-05-22T20:30:20.314Z" },
 ]
-
 [[package]]
 name = "nest-asyncio"
 version = "1.6.0"
@@ -3756,7 +3761,7 @@ requires-dist = [
     { name = "litellm", marker = "extra == 'litellm'", specifier = ">=1.96.0,<2.0.0" },
     { name = "msal", marker = "extra == 'teams'", specifier = ">=1.36.0,<2.0.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = "~=1.11.2" },
-    { name = "nemoguardrails", specifier = ">=0.23.0,<0.24.0" },
+    { name = "nemoguardrails", specifier = ">=0.22.0,<0.23.0" },
     { name = "nvidia-ml-py", marker = "extra == 'gpu'", specifier = "~=12.560.30" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=2.53.0,<3.0.0" },
     { name = "openai-whisper", marker = "extra == 'voice'", specifier = ">=20231117" },

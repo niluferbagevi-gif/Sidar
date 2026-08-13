@@ -102,29 +102,33 @@ report_git_diff_state() {
     git diff --stat || true
   fi
 }
-run_precommit_autofix() {
+run_ruff_quality_gate() {
   if ! command -v uv >/dev/null 2>&1; then
     echo "⚠️ 'uv' bulunamadı; Ruff kalite kapısı atlanıyor."
     return 0
   fi
 
-  if [ "${RUFF_AUTOFIX:-0}" != "1" ]; then
-    echo "🔍 Ruff kalite kapısı: uv run ruff check ."
-    if ! uv run ruff check .; then
-      echo "❌ Ruff lint kontrolü başarısız. Düzeltmek için: RUFF_AUTOFIX=1 bash run_tests.sh --stage all"
-      return 1
-    fi
-    echo "🔍 Ruff format kapısı: uv run ruff format --check ."
-    if ! uv run ruff format --check .; then
-      echo "❌ Ruff format kontrolü başarısız. Düzeltmek için: RUFF_AUTOFIX=1 bash run_tests.sh --stage all"
-      return 1
-    fi
+  echo "🔍 Ruff kalite kapısı: uv run --frozen ruff check ."
+  if ! uv run --frozen ruff check .; then
+    echo "❌ Ruff lint kontrolü başarısız. Düzeltmek için: RUFF_AUTOFIX=1 bash run_tests.sh --stage all"
+    return 1
+  fi
+  echo "🔍 Ruff format kapısı: uv run --frozen ruff format --check ."
+  if ! uv run --frozen ruff format --check .; then
+    echo "❌ Ruff format kontrolü başarısız. Düzeltmek için: RUFF_AUTOFIX=1 bash run_tests.sh --stage all"
+    return 1
+  fi
+}
+
+run_ruff_autofix() {
+  if ! command -v uv >/dev/null 2>&1; then
+    echo "⚠️ 'uv' bulunamadı; Ruff autofix çalıştırılamıyor."
     return 0
   fi
 
   report_git_diff_state "RUFF_AUTOFIX başlangıç durumu"
 
-  local ruff_autofix_cmd=(uv run ruff check --fix)
+  local ruff_autofix_cmd=(uv run --frozen ruff check --fix)
   local unsafe_fixes="${RUFF_AUTOFIX_UNSAFE:-0}"
   local unsafe_rules="${RUFF_AUTOFIX_UNSAFE_RULES:-I,UP}"
   if [ "${unsafe_fixes}" = "1" ]; then
@@ -143,8 +147,8 @@ run_precommit_autofix() {
     report_git_diff_state "RUFF_AUTOFIX bitiş durumu"
     return 1
   fi
-  echo "🧹 Ruff format opt-in: uv run ruff format ."
-  if ! uv run ruff format .; then
+  echo "🧹 Ruff format opt-in: uv run --frozen ruff format ."
+  if ! uv run --frozen ruff format .; then
     echo "❌ Ruff format autofix başarısız. Testler durduruldu."
     report_git_diff_state "RUFF_AUTOFIX bitiş durumu"
     return 1

@@ -63,6 +63,27 @@ def installer_contract_sources() -> str:
     return "\n".join(path.read_text(encoding="utf-8") for path in paths)
 
 
+def test_grafana_operator_guidance_uses_generated_secret_not_default_credentials() -> None:
+    """Installer and primary docs must match Docker Compose's fail-closed credential contract."""
+    installer = Path("scripts/install_modules/phases/07_finish.sh").read_text(encoding="utf-8")
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+    primary_docs = "\n".join(
+        Path(path).read_text(encoding="utf-8")
+        for path in (
+            "README.md",
+            "docs/ENVIRONMENT_CONFIGURATION.md",
+            "docs/project-report/04-teknik-borc-ve-yapilandirma.md",
+        )
+    )
+
+    assert "kullanıcı admin" in installer
+    assert "GRAFANA_ADMIN_PASSWORD" in installer
+    assert "varsayılan: admin / admin" not in installer
+    assert "default admin/admin is refused" in compose
+    assert "GRAFANA_ADMIN_PASSWORD" in primary_docs
+    assert "admin/admin" in primary_docs
+
+
 def project_report_sources() -> str:
     """Return the project report index and all topic sections as one contract surface."""
     paths = [Path("docs/PROJE_RAPORU.md"), *sorted(Path("docs/project-report").glob("*.md"))]
@@ -165,6 +186,29 @@ def test_run_checked_propagates_exit_code_and_passes_through_stdio(tmp_path) -> 
 
     assert result.returncode == 0
     assert result.stdout == "before\nmid\ncaptured=7\nafter\n"
+
+
+def test_ruff_failure_is_aggregated_without_short_circuiting_independent_phases() -> None:
+    """Ruff failures must fail the final gate without suppressing later diagnostics."""
+    script = RUN_TESTS.read_text(encoding="utf-8")
+
+    assert "run_precommit_autofix" not in script
+    assert "run_checked run_ruff_autofix\n  RUFF_EXIT_CODE=$?" in script
+    assert "run_checked run_ruff_quality_gate\n  RUFF_EXIT_CODE=$?" in script
+    assert 'if [ "${RUFF_EXIT_CODE}" -ne 0 ]; then' in script
+    assert 'echo "   Ruff Çıkış Kodu: ${RUFF_EXIT_CODE}"' in script
+
+    backend_block = _run_tests_block_between(
+        'if [ "${SIDAR_RUN_BACKEND_PYTEST}" = "1" ]; then',
+        "elif stage_selected static; then",
+    )
+    assert "if ! run_static_analysis_gates; then" in backend_block
+    assert "sync_ollama_models && run_static_analysis_gates &&" not in backend_block
+    assert "ensure_runtime_dependencies && run_static_analysis_gates" not in backend_block
+    assert "run_pytest_coverage_report" in backend_block
+
+    final_block = script[script.index("FINAL_EXIT_CODE=0") :]
+    assert '[ "${RUFF_EXIT_CODE}" -ne 0 ]' in final_block
 
 
 def test_frontend_coverage_dark_mode_links_are_injected_without_late_css_imports(tmp_path) -> None:
@@ -301,18 +345,22 @@ def test_run_tests_enforces_required_static_security_and_coverage_gates() -> Non
 
 def test_run_tests_ruff_autofix_is_explicit_opt_in() -> None:
     script = _script()
-    precommit_block = _extract_run_tests_function("run_precommit_autofix")
+    gate_block = _extract_run_tests_function("run_ruff_quality_gate")
+    autofix_block = _extract_run_tests_function("run_ruff_autofix")
 
-    assert 'if [ "${RUFF_AUTOFIX:-0}" != "1" ]; then' in precommit_block
-    assert "uv run ruff check ." in precommit_block
-    assert "uv run ruff format --check ." in precommit_block
-    assert "RUFF_AUTOFIX=1 bash run_tests.sh --stage all" in precommit_block
-    assert "uv run ruff check --fix" in precommit_block
-    assert "uv run ruff format ." in precommit_block
-    assert 'report_git_diff_state "RUFF_AUTOFIX başlangıç durumu"' in precommit_block
-    assert 'report_git_diff_state "RUFF_AUTOFIX bitiş durumu"' in precommit_block
-    assert script.index('if [ "${RUFF_AUTOFIX:-0}" != "1" ]; then') < script.index(
-        "uv run ruff check --fix"
+    assert "uv run --frozen ruff check ." in gate_block
+    assert "uv run --frozen ruff format --check ." in gate_block
+    assert "RUFF_AUTOFIX=1 bash run_tests.sh --stage all" in gate_block
+    assert "--fix" not in gate_block
+    assert "uv run --frozen ruff check --fix" in autofix_block
+    assert "uv run --frozen ruff format ." in autofix_block
+    assert 'report_git_diff_state "RUFF_AUTOFIX başlangıç durumu"' in autofix_block
+    assert 'report_git_diff_state "RUFF_AUTOFIX bitiş durumu"' in autofix_block
+    assert script.index('if [ "${RUFF_AUTOFIX:-0}" = "1" ]; then') < script.index(
+        "run_checked run_ruff_autofix"
+    )
+    assert script.index("run_checked run_ruff_autofix") < script.index(
+        "run_checked run_ruff_quality_gate"
     )
 
 
@@ -2822,6 +2870,19 @@ def test_direct_local_stage_all_enables_frontend_bundle_budget_by_default() -> N
     assert "bash run_tests.sh --stage all` hem" in testing_docs
 
 
+def test_pre_commit_ruff_format_scope_matches_repository_ci_gate() -> None:
+    """Pre-commit must include Markdown code blocks covered by the CI repo-wide gate."""
+    config = Path(".pre-commit-config.yaml").read_text(encoding="utf-8")
+    hook_start = config.index("      - id: ruff-format-check")
+    hook_end = config.index("\n      - id:", hook_start + 1)
+    format_hook = config[hook_start:hook_end]
+
+    assert "entry: uv run --frozen ruff format --check ." in format_hook
+    assert "pass_filenames: false" in format_hook
+    assert "always_run: true" in format_hook
+    assert "types_or:" not in format_hook
+
+
 def test_pre_commit_config_runs_uv_managed_static_gates() -> None:
     config = Path(".pre-commit-config.yaml").read_text(encoding="utf-8")
     pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
@@ -2831,7 +2892,7 @@ def test_pre_commit_config_runs_uv_managed_static_gates() -> None:
     assert "id: ruff-check" in config
     assert "entry: uv run ruff check --force-exclude" in config
     assert "id: ruff-format-check" in config
-    assert "entry: uv run ruff format --check --force-exclude" in config
+    assert "entry: uv run --frozen ruff format --check ." in config
     assert "id: mypy" in config
     assert "entry: uv run mypy ." in config
     assert "pass_filenames: false" in config
@@ -2935,13 +2996,19 @@ def test_web_framework_dependencies_exclude_vulnerable_starlette_release() -> No
         if (requirement := Requirement(dependency)).name in {"fastapi", "starlette"}
     }
 
-    assert "0.136.1" in dependency_specifiers["fastapi"]
-    assert "0.129.2" not in dependency_specifiers["fastapi"]
-    assert "1.3.1" in dependency_specifiers["starlette"]
-    assert "1.1.0" not in dependency_specifiers["starlette"]
+    validated_fastapi = Version("0.141.1")
+    validated_starlette = Version("1.6.0")
+    vulnerable_fastapi = Version("0.129.2")
+    vulnerable_starlette = Version("1.1.0")
+
+    assert validated_fastapi in dependency_specifiers["fastapi"]
+    assert validated_starlette in dependency_specifiers["starlette"]
+    assert vulnerable_fastapi not in dependency_specifiers["fastapi"]
+    assert vulnerable_starlette not in dependency_specifiers["starlette"]
     assert Version(locked_packages["fastapi"]) in dependency_specifiers["fastapi"]
     assert Version(locked_packages["starlette"]) in dependency_specifiers["starlette"]
-    assert Version("1.1.0") not in dependency_specifiers["starlette"]
+    assert Version(locked_packages["fastapi"]) >= validated_fastapi
+    assert Version(locked_packages["starlette"]) >= validated_starlette
 
 
 def test_pytest_shellcheck_quality_gate_is_registered() -> None:
@@ -5143,15 +5210,17 @@ def test_ci_enables_uv_dependency_cache_for_main_test_job() -> None:
     """Large wheels (pyarrow, etc.) must come from the uv cache on retries."""
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 
-    # Find the first setup-uv block in the workflow (the main test job).
+    test_job = ci_workflow[ci_workflow.index("  test:\n") :]
     setup_uv_marker = "uses: astral-sh/setup-uv@v4"
-    first_idx = ci_workflow.find(setup_uv_marker)
+    first_idx = test_job.find(setup_uv_marker)
     assert first_idx != -1
-    block = ci_workflow[first_idx : first_idx + 400]
+    block = test_job[first_idx : first_idx + 500]
 
+    assert 'version: "0.12.0"' in block
     assert "enable-cache: true" in block
     assert "cache-dependency-glob" in block
     assert "uv.lock" in block
+    assert test_job.index("Verify canonical toolchain contract") > first_idx
 
 
 def test_ci_uses_shared_system_dependency_installer_without_duplicate_apt_step() -> None:

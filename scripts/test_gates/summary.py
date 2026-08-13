@@ -98,6 +98,8 @@ def build_summary(args: list[str]) -> dict[str, object]:
         frontend_e2e_scope,
         frontend_e2e_script,
         local_readiness_passed,
+        ruff_status,
+        aggregate_status,
     ) = args
 
     local_ready = _flag_enabled(local_readiness_passed)
@@ -107,6 +109,8 @@ def build_summary(args: list[str]) -> dict[str, object]:
     release_evidence_complete = False
 
     return {
+        "ruff": ruff_status,
+        "aggregate": aggregate_status,
         "smoke": smoke,
         "integration": integration,
         "e2e": e2e,
@@ -180,7 +184,7 @@ def build_summary(args: list[str]) -> dict[str, object]:
 def main(argv: list[str] | None = None) -> int:
     """Write a summary JSON file and return a process status code."""
     args = list(sys.argv[1:] if argv is None else argv)
-    expected_arg_count = 38
+    expected_arg_count = 40
     if len(args) != expected_arg_count:
         print(
             f"expected {expected_arg_count} arguments, got {len(args)}",

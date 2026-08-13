@@ -644,6 +644,7 @@ tetikleme koşullarını ve bağlam hijyeni beklentilerini açıklar.
 from agent.base_agent import BaseAgent
 from agent.registry import AgentCatalog
 
+
 @AgentCatalog.register(
     capabilities=["example_capability"],
     description="Örnek uzman ajan",
