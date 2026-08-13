@@ -20,6 +20,13 @@ def test_json_decoder_attempts_are_bounded_before_late_payload() -> None:
     assert budget.remaining == 0
 
 
+def test_json_dumps_returns_none_when_repair_budget_starts_exhausted() -> None:
+    budget = _RepairBudget(remaining=0)
+
+    assert _json_dumps_if_valid('{"valid": true}', budget=budget) is None
+    assert budget.remaining == 0
+
+
 def test_repair_budget_prevents_literal_eval_after_parser_budget_is_exhausted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
