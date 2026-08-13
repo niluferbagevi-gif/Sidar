@@ -1284,8 +1284,53 @@ def test_gpu_memory_config_warns_for_high_budget_profile_drift_and_missing_image
     assert "differs from the Sidar standard" in check.message
     assert "runtime is CPU mode" in check.message
     assert "access level is not sandbox" in check.message
-    assert "local Docker daemon cannot find" in check.details["docker_test_image_hint"]
-    assert "docker build -t sidar:latest ." in check.details["recommended_commands"]
+    assert "Enable AUTO_BUILD_DOCKER_TEST_IMAGE=1" in check.details["docker_test_image_hint"]
+    assert check.details["docker_test_image_hint_level"] == "warn"
+    assert "AUTO_BUILD_DOCKER_TEST_IMAGE=1" in check.details["recommended_commands"][-1]
+
+
+def test_gpu_memory_config_reports_missing_image_as_info_when_auto_build_enabled(monkeypatch):
+    from config import Config
+
+    monkeypatch.setenv("AUTO_BUILD_DOCKER_TEST_IMAGE", "1")
+    monkeypatch.setattr(Config, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(Config, "CODING_MODEL", "qwen2.5-coder:7b")
+    monkeypatch.setattr(Config, "ACCESS_LEVEL", "sandbox")
+    monkeypatch.setattr(Config, "USE_GPU", False)
+    monkeypatch.setattr(Config, "DOCKER_IMAGE", "")
+    monkeypatch.setattr(Config, "DOCKER_TEST_IMAGE", "sidar:latest")
+    monkeypatch.setattr(Config, "GPU_MEMORY_FRACTION", 0.8)
+    monkeypatch.setattr(Config, "LLM_GPU_MEMORY_FRACTION", 0.6)
+    monkeypatch.setattr(Config, "RAG_GPU_MEMORY_FRACTION", 0.2)
+    monkeypatch.setattr(doctor, "_docker_image_exists_local", lambda image: False)
+
+    check = doctor.check_gpu_memory_config()
+
+    assert check.status == "pass"
+    assert check.details["docker_test_image_hint_level"] == "info"
+    assert "automatic builder will build it" in check.details["docker_test_image_hint"]
+
+
+def test_gpu_memory_config_warns_when_image_missing_and_auto_build_disabled(monkeypatch):
+    from config import Config
+
+    monkeypatch.delenv("AUTO_BUILD_DOCKER_TEST_IMAGE", raising=False)
+    monkeypatch.setattr(Config, "AI_PROVIDER", "ollama")
+    monkeypatch.setattr(Config, "CODING_MODEL", "qwen2.5-coder:7b")
+    monkeypatch.setattr(Config, "ACCESS_LEVEL", "sandbox")
+    monkeypatch.setattr(Config, "USE_GPU", False)
+    monkeypatch.setattr(Config, "DOCKER_IMAGE", "")
+    monkeypatch.setattr(Config, "DOCKER_TEST_IMAGE", "sidar:latest")
+    monkeypatch.setattr(Config, "GPU_MEMORY_FRACTION", 0.8)
+    monkeypatch.setattr(Config, "LLM_GPU_MEMORY_FRACTION", 0.6)
+    monkeypatch.setattr(Config, "RAG_GPU_MEMORY_FRACTION", 0.2)
+    monkeypatch.setattr(doctor, "_docker_image_exists_local", lambda image: False)
+
+    check = doctor.check_gpu_memory_config()
+
+    assert check.status == "warn"
+    assert "automatic build is disabled" in check.message
+    assert check.details["docker_test_image_hint_level"] == "warn"
 
 
 def test_gpu_memory_config_warns_when_budget_is_normalized(monkeypatch):
