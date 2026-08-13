@@ -342,8 +342,10 @@ class DocumentStore:
                     )
             else:
                 self._chroma_available = False
-                self._log_backend_init_status_once(
-                    "metadata_only_seed_notice",
+                # This is invocation-specific operator context, not a backend capability
+                # status. Always emit it at INFO so a previous DocumentStore in the same
+                # long-lived process cannot suppress the explanation for a later seed run.
+                logger.info(
                     "RAG metadata-only seed mode: vector runtime initialization intentionally "
                     "skipped (initialize_vector=False); bu pgvector/ChromaDB arızası değildir.",
                 )
