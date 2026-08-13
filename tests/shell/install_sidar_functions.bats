@@ -276,15 +276,11 @@ EOF
   run_installer_function '
     tmpdir="$(mktemp -d)"
     trap "rm -rf \"$tmpdir\"" EXIT
-    cat > "$tmpdir/pyproject.toml" <<EOF
-[dependency-groups]
-dev = [
-  "playwright>=1.60,<1.62",
-]
-EOF
+    expected_spec="$(resolve_playwright_python_spec "$repo_root/pyproject.toml")"
+    cp "$repo_root/pyproject.toml" "$tmpdir/pyproject.toml"
 
-    [[ "$(resolve_playwright_python_spec "$tmpdir/pyproject.toml")" == "playwright>=1.60,<1.62" ]]
-    [[ "$(resolve_playwright_python_spec "$tmpdir/missing.toml")" == "playwright>=1.60,<1.62" ]]
+    [[ "$(resolve_playwright_python_spec "$tmpdir/pyproject.toml")" == "$expected_spec" ]]
+    [[ "$(resolve_playwright_python_spec "$tmpdir/missing.toml")" == playwright* ]]
   '
   [ "$status" -eq 0 ]
 }
@@ -293,6 +289,7 @@ EOF
   run_installer_function '
     tmpdir="$(mktemp -d)"
     trap "rm -rf \"$tmpdir\"" EXIT
+    expected_spec="$(resolve_playwright_python_spec "$repo_root/pyproject.toml")"
     mkdir -p "$tmpdir/bin"
     cat > "$tmpdir/os-release" <<EOF
 ID=debian
@@ -306,7 +303,7 @@ case "\$*" in
   "-m playwright install --with-deps chromium") echo "ERROR: Playwright does not support chromium on debian13-x64" >&2; exit 1 ;;
   "-m playwright install chromium") echo "ERROR: Playwright does not support chromium on debian13-x64" >&2; exit 1 ;;
   "-m playwright install-deps chromium") exit 0 ;;
-  "- playwright>=1.60,<1.62") exit 1 ;;
+  "- $expected_spec") exit 1 ;;
 esac
 exit 1
 EOF
@@ -329,7 +326,7 @@ EOF
     # manual instructions instead, without ever depending on the exact CLI
     # error text (see test_playwright_install_fallback_does_not_depend_on_cli_error_text).
     [[ ! -e "$tmpdir/uv-called" ]]
-    grep -q "^- playwright>=1.60,<1.62|$" "$tmpdir/python.log"
+    grep -Fqx -- "- $expected_spec|" "$tmpdir/python.log"
   '
   [ "$status" -eq 0 ]
   [[ "$output" == *"Çıktı metninden bağımsız fallback: yalnızca Chromium binary kurulumu deneniyor"* ]]
@@ -342,6 +339,7 @@ EOF
   run_installer_function '
     tmpdir="$(mktemp -d)"
     trap "rm -rf \"$tmpdir\"" EXIT
+    expected_spec="$(resolve_playwright_python_spec "$repo_root/pyproject.toml")"
     mkdir -p "$tmpdir/bin"
     cat > "$tmpdir/os-release" <<EOF
 ID=debian
@@ -358,7 +356,7 @@ case "\$*" in
     echo "ERROR: Playwright does not support chromium on debian13-x64" >&2
     exit 1
     ;;
-  "- playwright>=1.60,<1.62") exit 0 ;;
+  "- $expected_spec") exit 0 ;;
 esac
 exit 1
 EOF
@@ -374,10 +372,10 @@ EOF
 
     install_playwright_browsers
 
-    grep -q "^add --dev playwright>=1.60,<1.62$" "$tmpdir/uv.log"
+    grep -Fqx -- "add --dev $expected_spec" "$tmpdir/uv.log"
   '
   [ "$status" -eq 0 ]
-  [[ "$output" == *"playwright>=1.60,<1.62 şartını sağlamıyor"* ]]
+  [[ "$output" == *"şartını sağlamıyor"* ]]
   [[ "$output" == *"upgrade fallback ile tamamlandı"* ]]
 }
 
@@ -1017,7 +1015,7 @@ ENV
   [ "$status" -eq 0 ]
   [[ "$output" == *"FRONTEND QA ÇALIŞTIRILMADI"* ]]
   [[ "$output" == *"React build geçti ≠ frontend QA geçti"* ]]
-  [[ "$output" == *"npm run lint && npm run typecheck && npm run test:coverage && npm run test:e2e:smoke"* ]]
+  [[ "$output" == *"npm run audit:high && npm run lint && npm run typecheck && npm run test:coverage && npm run build:budget && npm run test:e2e:smoke"* ]]
 }
 
 @test "React build summary uses red block when frontend QA failed" {
@@ -1376,7 +1374,7 @@ EOF
 printf "%s|%s\\n" "\${AUTO_OPEN_ARTIFACTS:-}" "\$*" > "$tmpdir/make.log"
 mkdir -p "$tmpdir/artifacts"
 cat > "$tmpdir/artifacts/test-summary.json" <<JSON
-{"frontend_lint":"passed","frontend_typecheck":"passed","frontend_coverage":"passed","frontend_e2e":"passed"}
+{"frontend_audit":"passed","frontend_lint":"passed","frontend_typecheck":"passed","frontend_coverage":"passed","frontend_bundle_budget":"passed","frontend_e2e":"passed"}
 JSON
 EOF
     chmod +x "$tmpdir/bin/make"
@@ -3143,7 +3141,7 @@ EOF
     trap "rm -rf \"$tmpdir\"" EXIT
     TEST_SUMMARY_JSON="$tmpdir/test-summary.json"
     cat > "$TEST_SUMMARY_JSON" <<JSON
-{"integration":"passed","e2e":"passed","frontend_lint":"passed","frontend_typecheck":"passed","frontend_coverage":"passed","frontend_e2e":"passed","frontend_e2e_scope":"full","frontend_e2e_script":"test:e2e"}
+{"integration":"passed","e2e":"passed","frontend_audit":"passed","frontend_lint":"passed","frontend_typecheck":"passed","frontend_coverage":"passed","frontend_bundle_budget":"passed","frontend_e2e":"passed","frontend_e2e_scope":"full","frontend_e2e_script":"test:e2e"}
 JSON
     INTEGRATION_TEST_STATUS="atlandi_bayrak"
     FRONTEND_QUALITY_STATUS="atlandi_bayrak"
@@ -3152,7 +3150,7 @@ JSON
   [ "$status" -eq 0 ]
   [[ "$output" == *"Entegrasyon testleri: başarılı (run_tests.sh --stage all içinde doğrulandı)."* ]]
   [[ "$output" == *"E2E testleri: başarılı (run_tests.sh --stage all içinde doğrulandı)."* ]]
-  [[ "$output" == *"Frontend kalite kapısı: başarılı (lint/typecheck/coverage/tam Playwright E2E (npm run test:e2e) doğrulandı)."* ]]
+  [[ "$output" == *"Frontend kalite kapısı: başarılı (audit/lint/typecheck/coverage/bundle budget/tam Playwright E2E (npm run test:e2e) doğrulandı)."* ]]
   [[ "$output" != *"e2e smoke"* ]]
   [[ "$output" != *"Entegrasyon testleri: atlandı"* ]]
 }

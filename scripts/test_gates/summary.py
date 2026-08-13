@@ -65,6 +65,7 @@ def build_summary(args: list[str]) -> dict[str, object]:
         integration,
         e2e,
         frontend_lint,
+        frontend_audit,
         frontend_typecheck,
         frontend_coverage,
         frontend_bundle_budget,
@@ -115,6 +116,7 @@ def build_summary(args: list[str]) -> dict[str, object]:
         "integration": integration,
         "e2e": e2e,
         "frontend_lint": frontend_lint,
+        "frontend_audit": frontend_audit,
         "frontend_typecheck": frontend_typecheck,
         "frontend_coverage": frontend_coverage,
         "frontend_bundle_budget": frontend_bundle_budget,
@@ -184,7 +186,7 @@ def build_summary(args: list[str]) -> dict[str, object]:
 def main(argv: list[str] | None = None) -> int:
     """Write a summary JSON file and return a process status code."""
     args = list(sys.argv[1:] if argv is None else argv)
-    expected_arg_count = 40
+    expected_arg_count = 41
     if len(args) != expected_arg_count:
         print(
             f"expected {expected_arg_count} arguments, got {len(args)}",

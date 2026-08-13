@@ -9,9 +9,17 @@ import shlex
 import shutil
 import subprocess  # nosec B404
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Protocol, cast
 
 logger = logging.getLogger(__name__)
+
+
+class SandboxRunner(Protocol):
+    """Callable contract for production container shell delegation."""
+
+    def __call__(self, command: str, *, cwd: str | None = None) -> tuple[bool, str]:
+        """Execute ``command`` in the sandbox and return status plus output."""
+        ...
 
 
 def requires_container_shell(manager: Any) -> bool:
@@ -206,7 +214,8 @@ def run_shell_command(
             "Production shell komutu host yerine resource/network policy uygulayan "
             "container sandbox'a yönlendiriliyor."
         )
-        return sandbox_runner(command, cwd=cwd)
+        typed_sandbox_runner = cast(SandboxRunner, sandbox_runner)
+        return typed_sandbox_runner(command, cwd=cwd)
 
     work_dir = cwd or str(manager.base_dir)
 

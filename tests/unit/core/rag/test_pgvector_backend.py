@@ -1,6 +1,8 @@
 import importlib
 from types import SimpleNamespace
 
+import pytest
+
 from core.rag.backends import pgvector as pgvector_module
 
 
@@ -67,3 +69,10 @@ def test_pgvector_sql_builder_centralizes_validated_identifier_interpolation():
 
     assert set(queries) == {"delete", "upsert", "select"}
     assert all("rag_embeddings" in query for query in queries.values())
+
+
+def test_pgvector_sql_builder_rejects_malicious_identifier() -> None:
+    pgvector = importlib.reload(pgvector_module)
+
+    with pytest.raises(ValueError, match="invalid PGVECTOR_TABLE identifier"):
+        pgvector._pgvector_sql("rag_embeddings; DROP TABLE users")

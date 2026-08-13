@@ -169,9 +169,9 @@ print_install_summary_extended_test_statuses() {
         echo "  E2E testleri: durum özeti yok. Doğrulamak için: bash run_tests.sh --stage e2e"
     fi
 
-    if sidar_install_summary_all_passed frontend_lint frontend_typecheck frontend_coverage frontend_e2e; then
-        echo "  Frontend kalite kapısı: başarılı (lint/typecheck/coverage/${frontend_e2e_label} doğrulandı)."
-    elif sidar_install_summary_any_failed frontend_lint frontend_typecheck frontend_coverage frontend_e2e; then
+    if sidar_install_summary_all_passed frontend_audit frontend_lint frontend_typecheck frontend_coverage frontend_bundle_budget frontend_e2e; then
+        echo "  Frontend kalite kapısı: başarılı (audit/lint/typecheck/coverage/bundle budget/${frontend_e2e_label} doğrulandı)."
+    elif sidar_install_summary_any_failed frontend_audit frontend_lint frontend_typecheck frontend_coverage frontend_bundle_budget frontend_e2e; then
         echo "  Frontend kalite kapısı: hata var (artifacts/test-summary.json). Tekrar için: RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend"
     elif [[ "$FRONTEND_QUALITY_STATUS" == "tamamlandi" ]]; then
         echo "  Frontend kalite kapısı: başarılı (run_tests.sh --stage frontend)."
@@ -208,10 +208,10 @@ print_react_frontend_qa_status_block() {
     local frontend_status="${FRONTEND_QUALITY_STATUS:-atlandi_bayrak}"
     local frontend_e2e_label=""
     frontend_e2e_label="$(sidar_install_frontend_e2e_label)"
-    local frontend_quality_command="cd web_ui_react && npm run lint && npm run typecheck && npm run test:coverage && npm run test:e2e:smoke"
+    local frontend_quality_command="cd web_ui_react && npm run audit:high && npm run lint && npm run typecheck && npm run test:coverage && npm run build:budget && npm run test:e2e:smoke"
 
     if [[ "$frontend_status" == "tamamlandi" ]]; then
-        echo -e "       ${GREEN}✅ Frontend QA: lint/typecheck/coverage/${frontend_e2e_label} tamamlandı.${NC}"
+        echo -e "       ${GREEN}✅ Frontend QA: audit/lint/typecheck/coverage/bundle budget/${frontend_e2e_label} tamamlandı.${NC}"
         return
     fi
 
@@ -223,7 +223,7 @@ print_react_frontend_qa_status_block() {
     else
         echo -e "       ${YELLOW}${BOLD}⚠️  FRONTEND QA ÇALIŞTIRILMADI${NC}"
         echo -e "       ${YELLOW}React build geçti ≠ frontend QA geçti.${NC}"
-        echo -e "       ${YELLOW}Lint, typecheck, coverage ve ${frontend_e2e_label} henüz doğrulanmadı.${NC}"
+        echo -e "       ${YELLOW}Audit, lint, typecheck, coverage, bundle budget ve ${frontend_e2e_label} henüz doğrulanmadı.${NC}"
         echo -e "       ${YELLOW}Ayrı frontend kalite kapısını çalıştırın:${NC}"
     fi
     echo "       ${frontend_quality_command}"

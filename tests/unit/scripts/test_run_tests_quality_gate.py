@@ -1531,6 +1531,8 @@ def test_install_validation_summary_reads_run_tests_json_for_partial_full_failur
                 "integration": "passed",
                 "e2e": "passed",
                 "frontend_lint": "passed",
+                "frontend_audit": "passed",
+                "frontend_bundle_budget": "passed",
                 "frontend_typecheck": "passed",
                 "frontend_coverage": "passed",
                 "frontend_e2e": "passed",
@@ -1595,6 +1597,8 @@ def test_optional_full_validation_syncs_frontend_status_from_run_tests_summary(
         json.dumps(
             {
                 "frontend_lint": "passed",
+                "frontend_audit": "passed",
+                "frontend_bundle_budget": "passed",
                 "frontend_typecheck": "passed",
                 "frontend_coverage": "passed",
                 "frontend_e2e": "passed",
@@ -1631,6 +1635,94 @@ printf 'FRONTEND_QUALITY_STATUS=%s\n' ${FRONTEND_QUALITY_STATUS}""",
     assert "artifacts/test-summary.json üzerinden tamamlandı" in result.stdout
 
 
+def test_frontend_audit_failure_is_reported_as_failed_not_skipped(tmp_path: Path) -> None:
+    validation_phase = Path("scripts/install_modules/phases/10_validation.sh").resolve()
+    summary_json = tmp_path / "test-summary.json"
+    summary_json.write_text(
+        json.dumps(
+            {
+                "frontend_audit": "failed",
+                "frontend_lint": "passed",
+                "frontend_typecheck": "passed",
+                "frontend_coverage": "passed",
+                "frontend_bundle_budget": "passed",
+                "frontend_e2e": "passed",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """set -Eeuo pipefail
+source "$1"
+TEST_SUMMARY_JSON="$2"
+FRONTEND_QUALITY_STATUS=atlandi_bayrak
+info() { :; }
+warn() { printf 'WARN:%s\n' "$*"; }
+sync_frontend_quality_status_from_test_summary || true
+printf 'FRONTEND_QUALITY_STATUS=%s\n' "$FRONTEND_QUALITY_STATUS"
+""",
+            "bash",
+            str(validation_phase),
+            str(summary_json),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "FRONTEND_QUALITY_STATUS=hata" in result.stdout
+    assert "hata olarak işaretlendi" in result.stdout
+
+
+def test_frontend_quality_is_skipped_only_when_no_gate_ran(tmp_path: Path) -> None:
+    validation_phase = Path("scripts/install_modules/phases/10_validation.sh").resolve()
+    summary_json = tmp_path / "test-summary.json"
+    summary_json.write_text(
+        json.dumps(
+            {
+                field: "skipped"
+                for field in (
+                    "frontend_audit",
+                    "frontend_lint",
+                    "frontend_typecheck",
+                    "frontend_coverage",
+                    "frontend_bundle_budget",
+                    "frontend_e2e",
+                )
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            """set -Eeuo pipefail
+source "$1"
+TEST_SUMMARY_JSON="$2"
+FRONTEND_QUALITY_STATUS=atlandi_bayrak
+info() { :; }
+warn() { :; }
+sync_frontend_quality_status_from_test_summary || true
+printf 'FRONTEND_QUALITY_STATUS=%s\n' "$FRONTEND_QUALITY_STATUS"
+""",
+            "bash",
+            str(validation_phase),
+            str(summary_json),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "FRONTEND_QUALITY_STATUS=atlandi" in result.stdout
+
+
 def test_full_validation_failure_syncs_frontend_status_from_summary(tmp_path: Path) -> None:
     validation_phase = Path("scripts/install_modules/phases/10_validation.sh").resolve()
     summary_json = tmp_path / "test-summary.json"
@@ -1638,6 +1730,8 @@ def test_full_validation_failure_syncs_frontend_status_from_summary(tmp_path: Pa
         json.dumps(
             {
                 "frontend_lint": "passed",
+                "frontend_audit": "passed",
+                "frontend_bundle_budget": "passed",
                 "frontend_typecheck": "passed",
                 "frontend_coverage": "passed",
                 "frontend_e2e": "passed",
@@ -1694,6 +1788,8 @@ def test_optional_dev_full_validation_failure_syncs_frontend_status_from_summary
         json.dumps(
             {
                 "frontend_lint": "passed",
+                "frontend_audit": "passed",
+                "frontend_bundle_budget": "passed",
                 "frontend_typecheck": "passed",
                 "frontend_coverage": "passed",
                 "frontend_e2e": "passed",
@@ -1836,7 +1932,7 @@ print_react_frontend_qa_status_block""",
     )
 
     assert (
-        "✅ Frontend QA: lint/typecheck/coverage/"
+        "✅ Frontend QA: audit/lint/typecheck/coverage/bundle budget/"
         "Playwright smoke (npm run test:e2e:smoke) tamamlandı."
     ) in result.stdout
     assert "FRONTEND QA ÇALIŞTIRILMADI" not in result.stdout
@@ -1854,6 +1950,8 @@ def test_install_validation_summary_separates_development_full_validation_from_p
                 "integration": "passed",
                 "e2e": "passed",
                 "frontend_lint": "passed",
+                "frontend_audit": "passed",
+                "frontend_bundle_budget": "passed",
                 "frontend_typecheck": "passed",
                 "frontend_coverage": "passed",
                 "frontend_e2e": "passed",

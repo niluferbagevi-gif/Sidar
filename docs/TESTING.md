@@ -618,6 +618,17 @@ BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1 RUN_BENCHMARKS=required
 
 ## Frontend Playwright CDN 403 / restricted network
 
+### Python ve Node Playwright sürüm sözleşmesi
+
+Playwright iki bağımsız test yüzeyinde kullanılır. Python paketi backend ve
+`BrowserManager` entegrasyonlarını, `@playwright/test` ise `web_ui_react` E2E
+senaryolarını çalıştırır. Bu nedenle sürüm aralıkları ve browser binary/cache'leri
+bilinçli olarak birebir eşitlenmez. Kanonik alt/üst sınırlar `scripts/toolchain.env`
+içindeki `PLAYWRIGHT_PYTHON_MIN`/`MAX` ve `PLAYWRIGHT_NODE_MIN`/`MAX` değerleridir;
+`scripts/ci/check_toolchain_contract.py` bunların `pyproject.toml` ve frontend
+`package.json` ile eşleşmesini kalite kapısında doğrular. Bir aralık değiştirildiğinde
+ilgili lockfile ve browser cache anahtarı birlikte yenilenmelidir.
+
 ### Release kanıtı ve yerel compatibility ayrımı
 
 Ubuntu 26.04/WSL üzerindeki Playwright OS override yalnız geliştirici uyumluluğu
