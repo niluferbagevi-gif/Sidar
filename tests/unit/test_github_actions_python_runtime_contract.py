@@ -2,7 +2,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW_DIR = ROOT / ".github" / "workflows"
-PYTHON_MAJOR_MINOR = "3.11"
+PYTHON_MAJOR_MINOR = "3.11.15"
 PINNED_WORKFLOWS = [
     "ci.yml",
     "migration-cutover-checks.yml",

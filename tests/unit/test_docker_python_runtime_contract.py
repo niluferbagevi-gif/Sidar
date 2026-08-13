@@ -3,15 +3,15 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
-PYTHON_MAJOR_MINOR = "3.11"
+PYTHON_MAJOR_MINOR = "3.11.15"
 PYTHON_BASE_IMAGE = f"python:{PYTHON_MAJOR_MINOR}-slim"
 UV_IMAGE = (
-    "ghcr.io/astral-sh/uv:0.8.13@"
-    "sha256:4de5495181a281bc744845b9579acf7b221d6791f99bcc211b9ec13f417c2853"
+    "ghcr.io/astral-sh/uv:0.12.0@"
+    "sha256:606e70c71c852d03f611b1e56a195d08648507018a7057fab82c4974c4eae105"
 )
 PRODUCTION_PYTHON_IMAGE = (
-    "python:3.11.13-slim-bookworm@"
-    "sha256:86adf8dbadc3d6e82ee5dd2c74bec2e1c2467cdad47886280501df722372d2e1"
+    "python:3.11.15-slim-bookworm@"
+    "sha256:d29f48a31a8b408ed19272ca1e7b10ebae13b240a27e862d3d4217c528e2e0c3"
 )
 
 

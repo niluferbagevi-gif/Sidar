@@ -5,6 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PYTHON_MAJOR_MINOR = "3.11"
+PYTHON_PATCH_PIN = "3.11.15"
 PYTHON_PROJECT_RANGE = ">=3.11,<3.12"
 
 
@@ -21,7 +22,7 @@ def test_project_packaging_targets_python_311_only():
 
 
 def test_project_python_pin_and_lock_are_python_311_only():
-    assert (ROOT / ".python-version").read_text().strip() == PYTHON_MAJOR_MINOR
+    assert (ROOT / ".python-version").read_text().strip() == PYTHON_PATCH_PIN
 
     lock_text = (ROOT / "uv.lock").read_text()
     assert 'requires-python = "==3.11.*"' in lock_text

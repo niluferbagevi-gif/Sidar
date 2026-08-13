@@ -94,7 +94,7 @@ services:
     build:
       context: .
       args:
-        BASE_IMAGE: python:3.11-slim
+        BASE_IMAGE: python:3.11.15-slim
         GPU_ENABLED: "false"
     container_name: sidar_migrate
     user: "${SIDAR_CONTAINER_UID:-10001}:${SIDAR_CONTAINER_GID:-10001}"
@@ -160,7 +160,7 @@ services:
     build:
       context: .
       args:
-        BASE_IMAGE: python:3.11-slim
+        BASE_IMAGE: python:3.11.15-slim
         GPU_ENABLED: "false"
     container_name: sidar_agent
     user: "${SIDAR_CONTAINER_UID:-10001}:${SIDAR_CONTAINER_GID:-10001}"
@@ -300,7 +300,7 @@ services:
     build:
       context: .
       args:
-        BASE_IMAGE: python:3.11-slim
+        BASE_IMAGE: python:3.11.15-slim
         GPU_ENABLED: "false"
     container_name: sidar_web
     user: "${SIDAR_CONTAINER_UID:-10001}:${SIDAR_CONTAINER_GID:-10001}"

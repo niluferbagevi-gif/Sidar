@@ -3,6 +3,14 @@ set -Eeuo pipefail
 # shellcheck disable=SC2034  # sentinel read indirectly by sidar_source_install_utils.
 SIDAR_INSTALL_UTIL_PYTHON_ENV_SH_LOADED=1
 
+_sidar_toolchain_file="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)/scripts/toolchain.env"
+if [[ -f "$_sidar_toolchain_file" ]]; then
+    # shellcheck source=scripts/toolchain.env
+    source "$_sidar_toolchain_file"
+fi
+SIDAR_TOOLCHAIN_PYTHON_VERSION="${PYTHON_VERSION:-3.11.15}"
+SIDAR_TOOLCHAIN_UV_VERSION="${UV_VERSION:-0.12.0}"
+
 # uv-only Python environment helpers for the phase-based Sidar installer.
 # Package resolution and environment synchronization intentionally go through
 # uv venv / uv sync; legacy environment and tool-install fallbacks are not used.
@@ -31,7 +39,7 @@ install_uv_cli() {
             uv_install_script="$DOWNLOADED_SCRIPT_FILE"
         fi
 
-        sh "$uv_install_script"
+        UV_VERSION="$SIDAR_TOOLCHAIN_UV_VERSION" sh "$uv_install_script"
         [[ "$uv_install_script" == "${DOWNLOADED_SCRIPT_FILE:-}" ]] && rm -f "$DOWNLOADED_SCRIPT_FILE"
         if [[ -f "$HOME/.cargo/env" ]]; then
             # shellcheck source=/dev/null
@@ -45,12 +53,17 @@ install_uv_cli() {
     if ! command -v uv &>/dev/null; then
         fail "uv kurulumu başarısız oldu. Lütfen PATH ayarlarını ve kurulum çıktısını kontrol edin."
     fi
+    local expected_uv_version="$SIDAR_TOOLCHAIN_UV_VERSION"
+    local detected_uv_version
+    detected_uv_version="$(uv --version | awk '{print $2}')"
+    [[ "$detected_uv_version" == "$expected_uv_version" ]] || fail \
+        "uv toolchain drift: beklenen ${expected_uv_version}, bulunan ${detected_uv_version}. scripts/toolchain.env sözleşmesini uygulayın."
     ok "uv $(uv --version | cut -d' ' -f2)"
 }
 
 create_uv_venv() {
     step "uv venv Ortamı"
-    local expected_python_version="3.11"
+    local expected_python_version="$SIDAR_TOOLCHAIN_PYTHON_VERSION"
     local requested_python_version="${PYTHON_VERSION:-$expected_python_version}"
     if [[ -n "${PYTHON_VERSION:-}" && "$requested_python_version" != "$expected_python_version" ]]; then
         warn "PYTHON_VERSION=${requested_python_version} algılandı; runtime için ${expected_python_version} zorunlu."

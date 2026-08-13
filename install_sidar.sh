@@ -626,7 +626,7 @@ f0ad30e94055baffa17b519ea30c2ad0c1eba355a6ef03a72f3cd1fd8373cebe  scripts/instal
 95d2664491bc38ff01d7f3951cde14832dc542965aea5e0cdeffef01f0d31b2a  scripts/install_modules/utils/installer_hash_guard.sh
 2b4934ce22b5814a6bfc800e149392def0ebbf7b12a951fcfc443a0431aba585  scripts/install_modules/utils/ollama_models.sh
 04d67e8a412448bb38bd94ab525f8d5d95856d20fa7bb10a098ad3e893676ea2  scripts/install_modules/utils/playwright_ubuntu_override.sh
-a8997d9ab218f5879e140fbfa784754898a353c2c9b77dc3801093f1960d8bc7  scripts/install_modules/utils/python_env.sh
+3a89ce3a67b9d9b84e93511e5a4bbf7701a05e294fc41ff11099090b56f0357e  scripts/install_modules/utils/python_env.sh
 8e006705540afec95fdf002ad5ab253b1be67c54b582229fb4a667813ec57a9e  scripts/install_modules/utils/remote_script.sh
 efec83c69fa618e4274f4936bb1156128f3dc6e9f605270ebfe3b8fc58afde77  scripts/install_modules/utils/services_docker.sh
 dfaeaa3d8a14c56d3b6cea8142cea0859252efa6321ce962dec9035440c5b868  scripts/install_modules/utils/ux.sh
@@ -1762,12 +1762,16 @@ refresh_install_sidar_version_from_repo() {
     export INSTALL_SIDAR_VERSION
 }
 
-PYTHON_VERSION="3.11"
+PYTHON_VERSION="3.11.15"
 if [[ -f "$SCRIPT_DIR/.python-version" ]]; then
     PYTHON_VERSION="$(tr -d '[:space:]' < "$SCRIPT_DIR/.python-version")"
 fi
-if [[ "$PYTHON_VERSION" != "3.11" ]]; then
-    fail ".python-version değeri yalnızca 3.11 olmalıdır. Güncel değer: ${PYTHON_VERSION}"
+if [[ "$PYTHON_VERSION" != 3.11.* ]]; then
+    fail ".python-version değeri canonical Python 3.11.x olmalıdır. Güncel değer: ${PYTHON_VERSION}"
+fi
+if [[ -f "$SCRIPT_DIR/scripts/toolchain.env" ]]; then
+    # shellcheck source=scripts/toolchain.env
+    source "$SCRIPT_DIR/scripts/toolchain.env"
 fi
 # shellcheck disable=SC2034  # retained for downstream phase/default URL hooks.
 DEFAULT_DATABASE_URL=""

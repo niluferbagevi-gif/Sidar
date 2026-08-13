@@ -24,7 +24,7 @@
 # ── Build-time argümanlar ──────────────────────────────────────
 # GPU örneği:       nvidia/cuda:13.0.0-runtime-ubuntu22.04
 # CPU varsayılanı:  python:${PYTHON_VERSION}-slim
-ARG PYTHON_VERSION=3.11
+ARG PYTHON_VERSION=3.11.15
 ARG BASE_IMAGE=python:${PYTHON_VERSION}-slim
 ARG GPU_ENABLED=false
 ARG SIDAR_VERSION=5.2.0
@@ -32,7 +32,7 @@ ARG SIDAR_VERSION=5.2.0
 FROM ${BASE_IMAGE}
 
 # FROM öncesi ARG değerini build katmanlarında da kullanmak için yeniden tanımla.
-ARG PYTHON_VERSION=3.11
+ARG PYTHON_VERSION=3.11.15
 ARG SIDAR_VERSION=5.2.0
 
 # Meta veriler
@@ -93,7 +93,7 @@ ENV UV_INDEX_STRATEGY=first-index \
 # Bağımlılık Yönetimi — uv lock dosyasından deterministik kurulum
 # Sandbox testleri `run_tests.sh` gibi betikleri doğrudan container içinde
 # çalıştırdığı için uv binary'si imajda önceden bulunmalıdır.
-COPY --from=ghcr.io/astral-sh/uv:0.8.13@sha256:4de5495181a281bc744845b9579acf7b221d6791f99bcc211b9ec13f417c2853 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.12.0@sha256:606e70c71c852d03f611b1e56a195d08648507018a7057fab82c4974c4eae105 /uv /uvx /bin/
 RUN uv --version && uvx --version
 COPY pyproject.toml uv.lock README.md ./
 RUN test -f uv.lock || (echo "uv.lock is required for deterministic builds" >&2; exit 1)

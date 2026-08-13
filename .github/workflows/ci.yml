@@ -37,13 +37,17 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.11.15'
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v4
         with:
+          version: "0.12.0"
           enable-cache: true
           cache-dependency-glob: '**/uv.lock'
+
+      - name: Verify canonical toolchain contract
+        run: python scripts/ci/check_toolchain_contract.py
 
       - name: Install system dependencies
         run: bash scripts/install_ci_system_deps.sh
@@ -194,7 +198,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.11.15'
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v4
@@ -563,11 +567,12 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.11.15'
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v4
         with:
+          version: "0.12.0"
           enable-cache: true
           cache-dependency-glob: '**/uv.lock'
 
@@ -629,11 +634,12 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.11.15'
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v4
         with:
+          version: "0.12.0"
           enable-cache: true
           cache-dependency-glob: '**/uv.lock'
 
@@ -775,11 +781,12 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.11.15'
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v4
         with:
+          version: "0.12.0"
           enable-cache: false
 
       - name: Validate production-minimal installer sync
@@ -878,11 +885,12 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.11.15'
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v4
         with:
+          version: "0.12.0"
           enable-cache: true
 
       - name: Cache APT packages (PortAudio)
@@ -931,11 +939,12 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.11.15'
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v4
         with:
+          version: "0.12.0"
           enable-cache: true
 
       - name: Cache APT packages (PortAudio)
@@ -1008,11 +1017,12 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.11.15'
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v4
         with:
+          version: "0.12.0"
           enable-cache: false
 
       - name: Cache APT packages (PortAudio)
