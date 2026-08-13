@@ -31,9 +31,9 @@ devam edebilir. Bu, facade tarafından bilinçli olarak korunur. Yeni kod ise m�
 olduğunda domain modüllerini doğrudan hedeflemelidir:
 
 ```python
-from core.db import Database              # geriye dönük uyumlu public facade
-from core.db.auth import UserRecord       # yeni domain import sınırı
-from core.db.session import SessionRecord # yeni domain import sınırı
+from core.db import Database  # geriye dönük uyumlu public facade
+from core.db.auth import UserRecord  # yeni domain import sınırı
+from core.db.session import SessionRecord  # yeni domain import sınırı
 ```
 
 Test importları için kural: `tests/unit/core/test_db.py` gibi legacy kapsamlı testler
