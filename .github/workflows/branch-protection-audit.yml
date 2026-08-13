@@ -35,5 +35,8 @@ jobs:
 
       - name: Verify main branch required checks
         env:
+          # github.token commonly receives HTTP 403 for branch-protection metadata.
+          # Configure this fine-grained PAT/App token with Administration: read.
+          BRANCH_PROTECTION_AUDIT_TOKEN: ${{ secrets.BRANCH_PROTECTION_AUDIT_TOKEN }}
           GITHUB_TOKEN: ${{ github.token }}
         run: uv run python scripts/ci/verify_required_checks.py --branch main

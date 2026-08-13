@@ -104,6 +104,14 @@ def _fetch_required_contexts(
         with urlopen(request, timeout=timeout) as response:  # nosec B310
             raw_payload = response.read().decode("utf-8")
     except HTTPError as exc:
+        if exc.code == 403:
+            raise RequiredCheckAuditError(
+                "GitHub required-check API returned HTTP 403 for "
+                f"{repo}@{branch}. The CI contract could not be compared with live branch "
+                "protection. Configure BRANCH_PROTECTION_AUDIT_TOKEN with repository "
+                "Administration: read permission (or an equivalent authorized admin token); "
+                "github.token may not read this endpoint."
+            ) from exc
         raise RequiredCheckAuditError(
             f"GitHub required-check API returned HTTP {exc.code} for {repo}@{branch}: {exc.reason}"
         ) from exc
@@ -140,7 +148,14 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--repo", default=os.getenv("GITHUB_REPOSITORY") or _repo_from_git_remote())
     parser.add_argument("--branch", default=os.getenv("SIDAR_REQUIRED_CHECK_BRANCH", "main"))
     parser.add_argument("--api-url", default=os.getenv("GITHUB_API_URL", "https://api.github.com"))
-    parser.add_argument("--token", default=os.getenv("GITHUB_TOKEN"))
+    parser.add_argument(
+        "--token",
+        default=os.getenv("BRANCH_PROTECTION_AUDIT_TOKEN") or os.getenv("GITHUB_TOKEN"),
+        help=(
+            "Authorized GitHub token. Defaults to BRANCH_PROTECTION_AUDIT_TOKEN, then "
+            "GITHUB_TOKEN. Live audits require repository Administration: read permission."
+        ),
+    )
     parser.add_argument("--timeout", default=20.0, type=float)
     parser.add_argument(
         "--job-id",
