@@ -125,11 +125,7 @@ async def test_federation_execute_builds_autonomy_payload() -> None:
 
     federation.configure_federation_dependencies(
         lambda: SimpleNamespace(
-            cfg=SimpleNamespace(
-                ENABLE_SWARM_FEDERATION=True,
-                SIDAR_ENV="test",
-                SWARM_FEDERATION_SHARED_SECRET="unit-test-secret",
-            ),
+            cfg=SimpleNamespace(ENABLE_SWARM_FEDERATION=True, SWARM_FEDERATION_SHARED_SECRET=""),
             verify_hmac_signature=lambda *_args, **_kwargs: None,
             federation_task_envelope_cls=_Envelope,
             federation_task_result_cls=_Result,
