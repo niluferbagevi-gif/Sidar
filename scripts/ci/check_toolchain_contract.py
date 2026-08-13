@@ -21,7 +21,17 @@ def read_toolchain(path: Path = TOOLCHAIN_FILE) -> dict[str, str]:
         if not separator or not re.fullmatch(r"[A-Z][A-Z0-9_]*", key) or not value:
             raise ValueError(f"Geçersiz toolchain satırı: {raw_line!r}")
         values[key] = value
-    required = {"PYTHON_VERSION", "PYTHON_MINOR", "UV_VERSION", "UV_IMAGE_DIGEST", "NODE_VERSION"}
+    required = {
+        "PYTHON_VERSION",
+        "PYTHON_MINOR",
+        "UV_VERSION",
+        "UV_IMAGE_DIGEST",
+        "NODE_VERSION",
+        "PLAYWRIGHT_PYTHON_MIN",
+        "PLAYWRIGHT_PYTHON_MAX",
+        "PLAYWRIGHT_NODE_MIN",
+        "PLAYWRIGHT_NODE_MAX",
+    }
     if missing := required - values.keys():
         raise ValueError(f"Eksik toolchain anahtarları: {sorted(missing)}")
     return values
@@ -56,6 +66,19 @@ def contract_errors(root: Path, pins: dict[str, str]) -> list[str]:
         }
         if "actions/setup-node@" in text and not node_pins.intersection(normalized_lines):
             errors.append(f"{path.relative_to(root)}: Node pin drift")
+    pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
+    python_playwright = (
+        f'playwright>={pins["PLAYWRIGHT_PYTHON_MIN"]},<{pins["PLAYWRIGHT_PYTHON_MAX"]}'
+    )
+    if f'"{python_playwright}"' not in pyproject:
+        errors.append("pyproject.toml: Python Playwright range drift")
+    package_json = (root / "web_ui_react/package.json").read_text(encoding="utf-8")
+    node_playwright = (
+        f'"@playwright/test": ">={pins["PLAYWRIGHT_NODE_MIN"]} '
+        f'<{pins["PLAYWRIGHT_NODE_MAX"]}"'
+    )
+    if node_playwright not in package_json:
+        errors.append("web_ui_react/package.json: Node Playwright range drift")
     return errors
 
 
