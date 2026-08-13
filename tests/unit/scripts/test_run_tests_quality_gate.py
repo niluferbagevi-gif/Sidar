@@ -2849,6 +2849,19 @@ def test_direct_local_stage_all_enables_frontend_bundle_budget_by_default() -> N
     assert "bash run_tests.sh --stage all` hem" in testing_docs
 
 
+def test_pre_commit_ruff_format_scope_matches_repository_ci_gate() -> None:
+    """Pre-commit must include Markdown code blocks covered by the CI repo-wide gate."""
+    config = Path(".pre-commit-config.yaml").read_text(encoding="utf-8")
+    hook_start = config.index("      - id: ruff-format-check")
+    hook_end = config.index("\n      - id:", hook_start + 1)
+    format_hook = config[hook_start:hook_end]
+
+    assert "entry: uv run --frozen ruff format --check ." in format_hook
+    assert "pass_filenames: false" in format_hook
+    assert "always_run: true" in format_hook
+    assert "types_or:" not in format_hook
+
+
 def test_pre_commit_config_runs_uv_managed_static_gates() -> None:
     config = Path(".pre-commit-config.yaml").read_text(encoding="utf-8")
     pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
@@ -2858,7 +2871,7 @@ def test_pre_commit_config_runs_uv_managed_static_gates() -> None:
     assert "id: ruff-check" in config
     assert "entry: uv run ruff check --force-exclude" in config
     assert "id: ruff-format-check" in config
-    assert "entry: uv run ruff format --check --force-exclude" in config
+    assert "entry: uv run --frozen ruff format --check ." in config
     assert "id: mypy" in config
     assert "entry: uv run mypy ." in config
     assert "pass_filenames: false" in config
