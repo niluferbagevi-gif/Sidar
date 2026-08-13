@@ -6057,6 +6057,42 @@ def test_frontend_bundle_budget_warns_when_totals_approach_budget(tmp_path: Path
     assert report["budgetsKb"]["warnRatio"] == 0.9
 
 
+def test_frontend_bundle_budget_warns_before_named_chunk_hard_limit(tmp_path: Path) -> None:
+    assets_dir = tmp_path / "assets"
+    assets_dir.mkdir()
+    (assets_dir / "react-dom-near-budget.js").write_text("a" * 950, encoding="utf-8")
+    (assets_dir / "ChatMarkdownRenderer-stub.js").write_text("a", encoding="utf-8")
+    (assets_dir / "highlight-js-core-stub.js").write_text("a", encoding="utf-8")
+    report_path = tmp_path / "bundle-budget.json"
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "SIDAR_REACT_DOM_CHUNK_BUDGET_KB": "1",
+            "SIDAR_TOTAL_JS_BUDGET_KB": "10",
+            "SIDAR_TOTAL_GZIP_BUDGET_KB": "10",
+            "SIDAR_BUNDLE_BUDGET_WARN_RATIO": "0.9",
+            "SIDAR_BUNDLE_BUDGET_REPORT_PATH": str(report_path),
+            "SIDAR_BUNDLE_ASSETS_DIR": str(assets_dir),
+        }
+    )
+
+    result = subprocess.run(
+        ["node", "web_ui_react/scripts/check-bundle-budget.mjs"],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    react_dom = next(item for item in report["namedChunks"] if item["label"] == "React DOM")
+    assert result.returncode == 0
+    assert "React DOM chunk react-dom-near-budget.js is at" in result.stderr
+    assert react_dom["usage"][0]["warning"] is True
+    assert report["budgetUsage"]["totalJs"]["warning"] is False
+
+
 def test_frontend_bundle_budget_requires_total_budgets_for_ci_gate(tmp_path: Path) -> None:
     assets_dir = tmp_path / "assets"
     assets_dir.mkdir()

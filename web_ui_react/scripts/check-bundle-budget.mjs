@@ -274,6 +274,10 @@ for (const budget of namedChunkBudgets) {
   budget.oversizedChunks = budget.chunks.filter(
     (chunk) => chunk.sizeBytes > budget.budgetKb * 1024,
   );
+  budget.usage = budget.chunks.map((chunk) => ({
+    name: chunk.name,
+    ...buildBudgetUsage(`${budget.label} chunk ${chunk.name}`, chunk.sizeBytes, budget.budgetKb),
+  }));
   for (const chunk of budget.chunks) {
     console.log(
       `${budget.label} chunk: ${chunk.name} ${formatKb(chunk.sizeBytes)} KB (gzip ${formatKb(chunk.gzipBytes)} KB, budget ${budget.budgetKb} KB)`,
@@ -355,6 +359,7 @@ writeReport({
     label: budget.label,
     envVar: budget.envVar,
     budgetKb: budget.budgetKb,
+    usage: budget.usage,
     chunks: budget.chunks.map(chunkWithKb),
   })),
   topChunks: topChunks.map(chunkWithKb),
