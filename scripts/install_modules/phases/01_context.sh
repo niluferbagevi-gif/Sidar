@@ -119,6 +119,7 @@ sidar_fail_if_wsl_integration_autofix_applied_current_session() {
 
 sidar_phase_initialize_context() {
     banner
+    sidar_report_install_source_metadata "$SCRIPT_DIR"
     report_repo_lookup_context
     detect_environment
     sidar_source_install_utils "wsl_gpu_preflight.sh"
