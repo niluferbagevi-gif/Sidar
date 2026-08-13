@@ -1041,6 +1041,7 @@ async def _await_if_needed(value: Any) -> Any:
 
 _register_exception_handlers = _app_factory.register_exception_handlers
 app = _app_factory.create_app(
+    settings=cfg,
     lifespan=_app_lifespan,
     version=str(getattr(cfg, "VERSION", "") or ""),
 )
