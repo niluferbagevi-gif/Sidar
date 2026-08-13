@@ -96,16 +96,19 @@ load/error boilerplate'i), `lib/errors.ts` (6 dosyaya kopyalanmış
 `errorMessage()`) ve bunun üzerine kurulan `hooks/useAsyncResource.ts`. Bunlar
 birer "taşıma" değildir -- untyped envanteri azaltmazlar -- ama typed tabanı
 büyütüp ratchet'in `minimum_typed_files` tabanının üstünde headroom bırakırlar.
-2026-08-09'daki ilk mekanik test migrasyonundan sonra güncel envanter 8 `.js`,
-20 `.jsx`, 17 `.ts`, 22 `.tsx`; ratchet 28 untyped / 39 typed'dır. Ölçülen
+2026-08-09'daki ilk mekanik test migrasyonundan sonra envanter 8 `.js`,
+20 `.jsx`, 17 `.ts`, 22 `.tsx`; ratchet 28 untyped / 39 typed olmuştur.
+`src/test/viteProxyConfig.test.ts` geçişiyle Vite proxy/chunk fixture'ları da
+TypeScript kapısına alınmış; güncel envanter 7 `.js`, 20 `.jsx`, 18 `.ts`, 22 `.tsx`,
+ratchet ise 27 untyped / 40 typed seviyesine ilerlemiştir. Ölçülen
 ilerleme `typescript-migration-baseline.json` içinde hemen sıkılaştırılarak
 kampanyanın geriye gitmesi engellenmiştir.
 
 ## Zorunlu ratchet
 
-`typescript-migration-baseline.json`, en fazla 28 untyped (`.js` + `.jsx`) ve en az
-39 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. Envanter ayrıca bu borcu
-`production_untyped=0` ve `test_untyped=28` olarak ayırır; böylece test migrasyonu devam
+`typescript-migration-baseline.json`, en fazla 27 untyped (`.js` + `.jsx`) ve en az
+40 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. Envanter ayrıca bu borcu
+`production_untyped=0` ve `test_untyped=27` olarak ayırır; böylece test migrasyonu devam
 ederken production ağacına yeni JavaScript eklenmesi toplam ratchet içinde gizlenemez.
 `test`, `tests`, `__tests__` dizinleri ile `*.test.*`/`*.spec.*` dosyaları test kaynağı
 sayılır. İlk test dilimi olarak
@@ -128,10 +131,9 @@ değerleri `npm run typecheck:inventory` tarafından tarih geldiğinde fail-clos
 
 | Son tarih | En fazla untyped | En az typed | Teslim odağı |
 |---|---:|---:|---|
-| 2026-09-30 | 45 | 15 | Düşük bağımlılıklı hook/helper ve ortak API tipleri |
-| 2026-12-15 | 30 | 30 | `src/lib`, veri/state ve controller katmanı |
-| 2027-02-15 | 12 | 48 | Kalan test dosyalarının bir kısmının `.test.ts`/`.test.tsx`'e dönüşümü |
-| 2027-03-31 | 0 | 60 | Tüm test dosyalarının dönüşümü, tam `.ts/.tsx` kaynak ağacı ve compatibility kapısının kaldırılması |
+| 2026-10-31 | 20 | 47 | Kalan test dosyalarının bir kısmının dönüşümü: düşük bağımlılıklı helper, fixture ve saf lib testleri |
+| 2027-01-31 | 10 | 57 | Hook, API mock ve component testlerinin ikinci dilimi |
+| 2027-03-31 | 0 | 67 | Tüm test dosyalarının dönüşümü, tam `.ts/.tsx` kaynak ağacı ve compatibility kapısının kaldırılması |
 
 Milestone zamanı geldiğinde baseline'daki genel ratchet daha gevşek kalsa bile tarihli hedef
 önceliklidir. Gecikme, baseline veya tarihi ileri taşıyarak gizlenemez; sahip onayı, gerekçe ve
