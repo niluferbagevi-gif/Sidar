@@ -1492,8 +1492,6 @@ def check_gpu_memory_config() -> DoctorCheck:
     use_gpu = bool(getattr(Config, "USE_GPU", False))
     gpu_info = str(getattr(Config, "GPU_INFO", "") or "").strip()
     docker_image = str(getattr(Config, "DOCKER_IMAGE", "") or "").strip()
-    docker_test_image = str(getattr(Config, "DOCKER_TEST_IMAGE", "") or "").strip()
-    auto_build_docker_test_image = os.getenv("AUTO_BUILD_DOCKER_TEST_IMAGE", "0") == "1"
     llm_fraction = float(getattr(Config, "LLM_GPU_MEMORY_FRACTION", 0.0) or 0.0)
     rag_fraction = float(getattr(Config, "RAG_GPU_MEMORY_FRACTION", 0.0) or 0.0)
     legacy_fraction = float(getattr(Config, "GPU_MEMORY_FRACTION", 0.0) or 0.0)
@@ -1506,8 +1504,6 @@ def check_gpu_memory_config() -> DoctorCheck:
         "use_gpu": use_gpu,
         "gpu_info": gpu_info,
         "docker_image": docker_image,
-        "docker_test_image": docker_test_image,
-        "auto_build_docker_test_image": auto_build_docker_test_image,
         "gpu_memory_fraction": legacy_fraction,
         "llm_gpu_memory_fraction": llm_fraction,
         "rag_gpu_memory_fraction": rag_fraction,
@@ -1532,22 +1528,38 @@ def check_gpu_memory_config() -> DoctorCheck:
         warnings.append(
             "local Ollama coding model differs from the Sidar standard qwen2.5-coder:7b"
         )
-    if not use_gpu and (
-        (docker_image and "gpu" in docker_image.lower())
-        or (docker_test_image and "gpu" in docker_test_image.lower())
-    ):
+    if not use_gpu and (docker_image and "gpu" in docker_image.lower()):
         warnings.append(
             "Docker image suggests GPU profile but runtime is CPU mode; verify NVIDIA Container "
             "Toolkit, CUDA visibility, and USE_GPU settings"
         )
     if access_level != "sandbox":
         warnings.append("CLI access level is not sandbox; verify this is intentional")
-    sidar_image_exists = _docker_image_exists_local("sidar:latest")
+    status = "warn" if warnings else "pass"
+    message = "; ".join(warnings or ["Local model and VRAM configuration look safe"])
+    return DoctorCheck("gpu_memory_config", status, message, details)
+
+
+def check_docker_test_image() -> DoctorCheck:
+    """Report Docker test-image readiness independently from GPU configuration."""
+    from config import Config
+
+    docker_test_image = str(getattr(Config, "DOCKER_TEST_IMAGE", "") or "").strip()
+    auto_build = os.getenv("AUTO_BUILD_DOCKER_TEST_IMAGE", "0") == "1"
+    production_readiness = os.getenv("SIDAR_PRODUCTION_READINESS", "0") == "1"
+    image_exists = _docker_image_exists_local(docker_test_image)
+    details: dict[str, Any] = {
+        "docker_test_image": docker_test_image,
+        "image_exists": image_exists,
+        "auto_build_docker_test_image": auto_build,
+        "production_readiness": production_readiness,
+        "recommended_commands": [],
+    }
+
     if docker_test_image == "python:3.11-slim":
-        warnings.append(
-            "DOCKER_TEST_IMAGE currently points to python:3.11-slim; this can start containers "
-            "but those tests may miss uv/pytest and project extras unless the container is "
-            "created from sidar:latest"
+        message = (
+            "DOCKER_TEST_IMAGE points to python:3.11-slim; Docker tests may miss Sidar test "
+            "dependencies"
         )
         details["docker_image_container_note"] = (
             "Docker image is the reusable template, container is a running instance. Having a "
@@ -1560,29 +1572,32 @@ def check_gpu_memory_config() -> DoctorCheck:
                 "echo 'DOCKER_TEST_IMAGE=sidar:latest' >> .env.development",
             ]
         )
-    elif docker_test_image == "sidar:latest" and not sidar_image_exists:
-        if auto_build_docker_test_image:
-            details["docker_test_image_hint_level"] = "info"
-            details["docker_test_image_hint"] = (
-                "DOCKER_TEST_IMAGE is sidar:latest but the image is missing; the enabled "
-                "automatic builder will build it before tests run."
-            )
-        else:
-            details["docker_test_image_hint_level"] = "warn"
-            warnings.append(
-                "DOCKER_TEST_IMAGE is sidar:latest but the image is missing and automatic "
-                "build is disabled"
-            )
-            details["docker_test_image_hint"] = (
-                "Enable AUTO_BUILD_DOCKER_TEST_IMAGE=1 or build sidar:latest before Docker tests."
-            )
-            details.setdefault("recommended_commands", []).append(
-                "AUTO_BUILD_DOCKER_TEST_IMAGE=1 DOCKER_TEST_IMAGE=sidar:latest bash run_tests.sh"
-            )
-
-    status = "warn" if warnings else "pass"
-    message = "; ".join(warnings or ["Local model and VRAM configuration look safe"])
-    return DoctorCheck("gpu_memory_config", status, message, details)
+        return DoctorCheck("docker_test_image", "warn", message, details)
+    if image_exists:
+        return DoctorCheck("docker_test_image", "pass", "Docker test image is available", details)
+    details["recommended_commands"] = [
+        "AUTO_BUILD_DOCKER_TEST_IMAGE=1 DOCKER_TEST_IMAGE=sidar:latest bash run_tests.sh"
+    ]
+    if auto_build:
+        return DoctorCheck(
+            "docker_test_image",
+            "pass",
+            "Docker test image is missing; enabled auto-build will create it before tests",
+            details,
+        )
+    if production_readiness:
+        return DoctorCheck(
+            "docker_test_image",
+            "fail",
+            "Docker test image is missing for production-readiness and auto-build is disabled",
+            details,
+        )
+    return DoctorCheck(
+        "docker_test_image",
+        "pass",
+        "Docker test image is not built yet; make dev-full enables its automatic build",
+        {**details, "hint_level": "info"},
+    )
 
 
 def _parse_migration_revisions() -> tuple[list[str], list[str]]:
@@ -1834,6 +1849,7 @@ def run_doctor_report(
     )
     from core.doctor.checks.database import check_database_env as database_env_check
     from core.doctor.checks.database import check_pgvector_ready as pgvector_ready_check
+    from core.doctor.checks.gpu import check_docker_test_image as docker_test_image_check
     from core.doctor.checks.gpu import check_gpu as gpu_check
     from core.doctor.checks.gpu import check_gpu_memory_config as gpu_memory_config_check
     from core.doctor.checks.rag import (
@@ -1848,6 +1864,7 @@ def run_doctor_report(
         check_prometheus_runtime(),
         environment_profile_check(),
         gpu_memory_config_check(),
+        docker_test_image_check(),
         database_env_check(),
     ]
     database_connectivity = database_connectivity_check()

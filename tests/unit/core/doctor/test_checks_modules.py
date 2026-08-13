@@ -90,6 +90,15 @@ def test_check_rag_index_ready_delegates_to_doctor(monkeypatch):
     assert rag_checks.check_rag_index_ready() is sentinel
 
 
+def test_check_docker_test_image_delegates_to_doctor(monkeypatch):
+    from core.doctor.checks import gpu as gpu_checks
+
+    sentinel = DoctorCheck("docker_test_image", "pass", "ok", {})
+    monkeypatch.setattr(gpu_checks._doctor, "check_docker_test_image", lambda: sentinel)
+
+    assert gpu_checks.check_docker_test_image() is sentinel
+
+
 def test_check_graphrag_entity_memory_ready_delegates_to_doctor(monkeypatch):
     from core.doctor.checks import rag as rag_checks
 

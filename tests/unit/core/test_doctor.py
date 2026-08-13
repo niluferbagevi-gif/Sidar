@@ -44,6 +44,9 @@ def test_run_doctor_report_writes_json_and_aggregates_warn(monkeypatch, tmp_path
     monkeypatch.setattr(
         doctor, "check_gpu_memory_config", lambda: DoctorCheck("gpu_memory_config", "pass", "ok")
     )
+    monkeypatch.setattr(
+        doctor, "check_docker_test_image", lambda: DoctorCheck("docker_test_image", "pass", "ok")
+    )
     monkeypatch.setattr(doctor, "check_database_env", lambda: DoctorCheck("db", "pass", "ok"))
     monkeypatch.setattr(
         doctor, "check_database_connectivity", lambda: DoctorCheck("db_conn", "pass", "ok")
@@ -1263,7 +1266,7 @@ def test_docker_image_exists_local_handles_empty_image_and_runtime_error(monkeyp
     assert doctor._docker_image_exists_local("sidar:latest") is False
 
 
-def test_gpu_memory_config_warns_for_high_budget_profile_drift_and_missing_image(monkeypatch):
+def test_gpu_memory_config_warns_only_for_gpu_and_runtime_profile_drift(monkeypatch):
     from config import Config
 
     monkeypatch.setattr(Config, "AI_PROVIDER", "ollama")
@@ -1275,8 +1278,6 @@ def test_gpu_memory_config_warns_for_high_budget_profile_drift_and_missing_image
     monkeypatch.setattr(Config, "GPU_MEMORY_FRACTION", 0.8)
     monkeypatch.setattr(Config, "LLM_GPU_MEMORY_FRACTION", 0.6)
     monkeypatch.setattr(Config, "RAG_GPU_MEMORY_FRACTION", 0.36)
-    monkeypatch.setattr(doctor, "_docker_image_exists_local", lambda image: False)
-
     check = doctor.check_gpu_memory_config()
 
     assert check.status == "warn"
@@ -1284,12 +1285,10 @@ def test_gpu_memory_config_warns_for_high_budget_profile_drift_and_missing_image
     assert "differs from the Sidar standard" in check.message
     assert "runtime is CPU mode" in check.message
     assert "access level is not sandbox" in check.message
-    assert "Enable AUTO_BUILD_DOCKER_TEST_IMAGE=1" in check.details["docker_test_image_hint"]
-    assert check.details["docker_test_image_hint_level"] == "warn"
-    assert "AUTO_BUILD_DOCKER_TEST_IMAGE=1" in check.details["recommended_commands"][-1]
+    assert "docker_test_image" not in check.details
 
 
-def test_gpu_memory_config_reports_missing_image_as_info_when_auto_build_enabled(monkeypatch):
+def test_docker_test_image_reports_missing_image_as_ready_when_auto_build_enabled(monkeypatch):
     from config import Config
 
     monkeypatch.setenv("AUTO_BUILD_DOCKER_TEST_IMAGE", "1")
@@ -1304,14 +1303,14 @@ def test_gpu_memory_config_reports_missing_image_as_info_when_auto_build_enabled
     monkeypatch.setattr(Config, "RAG_GPU_MEMORY_FRACTION", 0.2)
     monkeypatch.setattr(doctor, "_docker_image_exists_local", lambda image: False)
 
-    check = doctor.check_gpu_memory_config()
+    check = doctor.check_docker_test_image()
 
     assert check.status == "pass"
-    assert check.details["docker_test_image_hint_level"] == "info"
-    assert "automatic builder will build it" in check.details["docker_test_image_hint"]
+    assert check.name == "docker_test_image"
+    assert "enabled auto-build" in check.message
 
 
-def test_gpu_memory_config_warns_when_image_missing_and_auto_build_disabled(monkeypatch):
+def test_docker_test_image_is_info_in_development_when_auto_build_is_deferred(monkeypatch):
     from config import Config
 
     monkeypatch.delenv("AUTO_BUILD_DOCKER_TEST_IMAGE", raising=False)
@@ -1326,11 +1325,25 @@ def test_gpu_memory_config_warns_when_image_missing_and_auto_build_disabled(monk
     monkeypatch.setattr(Config, "RAG_GPU_MEMORY_FRACTION", 0.2)
     monkeypatch.setattr(doctor, "_docker_image_exists_local", lambda image: False)
 
-    check = doctor.check_gpu_memory_config()
+    check = doctor.check_docker_test_image()
 
-    assert check.status == "warn"
-    assert "automatic build is disabled" in check.message
-    assert check.details["docker_test_image_hint_level"] == "warn"
+    assert check.status == "pass"
+    assert check.details["hint_level"] == "info"
+    assert "make dev-full" in check.message
+
+
+def test_docker_test_image_fails_production_readiness_when_missing(monkeypatch):
+    from config import Config
+
+    monkeypatch.setenv("SIDAR_PRODUCTION_READINESS", "1")
+    monkeypatch.delenv("AUTO_BUILD_DOCKER_TEST_IMAGE", raising=False)
+    monkeypatch.setattr(Config, "DOCKER_TEST_IMAGE", "sidar:latest")
+    monkeypatch.setattr(doctor, "_docker_image_exists_local", lambda _image: False)
+
+    check = doctor.check_docker_test_image()
+
+    assert check.status == "fail"
+    assert "production-readiness" in check.message
 
 
 def test_gpu_memory_config_warns_when_budget_is_normalized(monkeypatch):
@@ -1372,7 +1385,7 @@ def test_gpu_memory_config_confirms_standard_local_model(monkeypatch):
     assert check.details["normalized"] is True
 
 
-def test_gpu_memory_config_warns_for_default_slim_test_image(monkeypatch):
+def test_docker_test_image_warns_for_default_slim_test_image(monkeypatch):
     from config import Config
 
     monkeypatch.setattr(Config, "AI_PROVIDER", "ollama")
@@ -1383,10 +1396,10 @@ def test_gpu_memory_config_warns_for_default_slim_test_image(monkeypatch):
     monkeypatch.setattr(Config, "RAG_GPU_MEMORY_FRACTION", 0.3)
     monkeypatch.setattr(Config, "DOCKER_TEST_IMAGE", "python:3.11-slim")
 
-    check = doctor.check_gpu_memory_config()
+    check = doctor.check_docker_test_image()
 
     assert check.status == "warn"
-    assert "DOCKER_TEST_IMAGE currently points to python:3.11-slim" in check.message
+    assert "DOCKER_TEST_IMAGE points to python:3.11-slim" in check.message
     assert "docker build -t sidar:latest ." in check.details["recommended_commands"]
     assert "DOCKER_TEST_IMAGE=sidar:latest" in check.details["recommended_commands"][-1]
 
