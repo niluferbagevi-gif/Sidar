@@ -49,7 +49,11 @@ def test_create_uv_venv_pins_python_311_and_warns_on_override(tmp_path):
               cat > "$venv_dir/bin/python" <<'EOS'
 #!/usr/bin/env bash
 if [[ "${1:-}" == "-c" ]]; then
-  echo "3.11.15"
+  if [[ "${2:-}" == *"sys.version_info.micro"* ]]; then
+    echo "3.11.15"
+  else
+    echo "3.11"
+  fi
 else
   echo "Python 3.11.9"
 fi
@@ -113,6 +117,51 @@ EOS
         env=_clean_subprocess_env(UV_STUB_LOG=str(tmp_path / "uv.log")),
         check=True,
     )
+
+
+def test_create_uv_venv_preserves_full_patch_version_from_pyvenv_fallback(tmp_path):
+    script_dir = tmp_path / "sidar"
+    venv_dir = script_dir / ".venv"
+    (venv_dir / "bin").mkdir(parents=True)
+    (venv_dir / "bin" / "python").write_text(
+        "#!/usr/bin/env bash\nexit 1\n", encoding="utf-8"
+    )
+    (venv_dir / "bin" / "python").chmod(0o755)
+    (venv_dir / "bin" / "activate").write_text("true\n", encoding="utf-8")
+    (venv_dir / "pyvenv.cfg").write_text("version = 3.11.15\n", encoding="utf-8")
+
+    fake_bin = tmp_path / "fakebin"
+    fake_bin.mkdir()
+    uv_stub = fake_bin / "uv"
+    uv_stub.write_text(
+        '#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "${UV_STUB_LOG:?}"\n'
+        '[[ "$*" == "python install 3.11.15" ]]\n',
+        encoding="utf-8",
+    )
+    uv_stub.chmod(0o755)
+
+    script = textwrap.dedent(
+        r"""
+        set -euo pipefail
+        source scripts/install_modules/utils/python_env.sh
+        step(){ :; }; info(){ :; }; warn(){ :; }; fail(){ exit 1; }
+        ok(){ echo "OK:$*"; }
+        export SCRIPT_DIR="$1" PATH="$2:$PATH"
+        unset PYTHON_VERSION
+        create_uv_venv
+        """
+    )
+    result = subprocess.run(
+        ["bash", "-lc", script, "sidar-smoke", str(script_dir), str(fake_bin)],
+        cwd=os.getcwd(),
+        env=_clean_subprocess_env(UV_STUB_LOG=str(tmp_path / "uv.log")),
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "OK:.venv mevcut sürümle uyumlu: 3.11.15" in result.stdout
+    assert "venv --python" not in (tmp_path / "uv.log").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize(

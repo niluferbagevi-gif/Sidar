@@ -79,9 +79,12 @@ create_uv_venv() {
     if [[ -d "$VENV_DIR" ]]; then
         info "Mevcut uv venv bulundu: $VENV_DIR"
         local detected_python_version=""
-        detected_python_version="$("$VENV_DIR/bin/python" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || true)"
+        # Tekrarlanabilir installer sözleşmesi major.minor.micro ile sabitlenir.
+        # Yalnız major.minor okumak, doğru patch sürümündeki bir ortamı her
+        # installer çalışmasında hatalı biçimde yeniden oluşturur.
+        detected_python_version="$("$VENV_DIR/bin/python" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")' 2>/dev/null || true)"
         if [[ -z "$detected_python_version" && -f "$VENV_DIR/pyvenv.cfg" ]]; then
-            detected_python_version="$(awk -F'= *' '/^version[[:space:]]*=/{print $2; exit}' "$VENV_DIR/pyvenv.cfg" 2>/dev/null | awk -F. '{print $1"."$2}' || true)"
+            detected_python_version="$(awk -F'= *' '/^version[[:space:]]*=/{print $2; exit}' "$VENV_DIR/pyvenv.cfg" 2>/dev/null || true)"
         fi
         if [[ "$detected_python_version" == "$PYTHON_VERSION" ]]; then
             ok ".venv mevcut sürümle uyumlu: $detected_python_version"
