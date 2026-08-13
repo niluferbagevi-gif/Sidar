@@ -14,6 +14,7 @@ def _summary_args(output_path: Path, junit_dir: Path) -> list[str]:
         "passed",  # integration
         "skipped",  # e2e
         "passed",  # frontend_lint
+        "passed",  # frontend_audit
         "passed",  # frontend_typecheck
         "passed",  # frontend_coverage
         "skipped",  # frontend_bundle_budget
@@ -81,6 +82,7 @@ def test_summary_helper_writes_run_tests_payload_and_failed_backend_tests(tmp_pa
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["ruff"] == "failed"
     assert payload["aggregate"] == "failed"
+    assert payload["frontend_audit"] == "passed"
     assert payload["production_readiness_detail"] == {
         "status": "partial_stage",
         "reason": "selected stage set does not cover the full production readiness gate",
@@ -128,13 +130,13 @@ def test_summary_helper_rejects_wrong_argument_count(tmp_path: Path, capsys) -> 
     assert summary.main([str(tmp_path / "test-summary.json")]) == 2
 
     captured = capsys.readouterr()
-    assert "expected 40 arguments" in captured.err
+    assert "expected 41 arguments" in captured.err
 
 
 def test_summary_separates_local_readiness_from_external_release_evidence(tmp_path: Path) -> None:
     args = _summary_args(tmp_path / "test-summary.json", tmp_path / "pytest")
     args[-3] = "true"
-    args[10] = "true"
+    args[11] = "true"
 
     payload = summary.build_summary(args)
 
@@ -142,6 +144,15 @@ def test_summary_separates_local_readiness_from_external_release_evidence(tmp_pa
     assert payload["production_ready"] is True
     assert payload["release_evidence_complete"] is False
     assert payload["release_ready"] is False
+
+
+def test_summary_preserves_failed_frontend_audit_result(tmp_path: Path) -> None:
+    args = _summary_args(tmp_path / "test-summary.json", tmp_path / "pytest")
+    args[5] = "failed"
+
+    payload = summary.build_summary(args)
+
+    assert payload["frontend_audit"] == "failed"
 
 
 def test_summary_helper_skips_malicious_backend_junit_xml(tmp_path: Path) -> None:

@@ -117,6 +117,7 @@ write_test_summary_json() {
   local integration_status=""
   local e2e_status=""
   local frontend_lint_status=""
+  local frontend_audit_status=""
   local frontend_typecheck_status=""
   local frontend_coverage_status=""
   local frontend_bundle_budget_status=""
@@ -150,6 +151,7 @@ write_test_summary_json() {
   integration_status="$(backend_stage_summary_status integration)"
   e2e_status="$(backend_stage_summary_status e2e)"
   frontend_lint_status="$(quality_summary_status "${FRONTEND_LINT_RAN}" "${FRONTEND_LINT_EXIT_CODE}")"
+  frontend_audit_status="$(quality_summary_status "${FRONTEND_NPM_AUDIT_RAN:-0}" "${FRONTEND_NPM_AUDIT_EXIT_CODE:-0}")"
   frontend_typecheck_status="$(quality_summary_status "${FRONTEND_TYPECHECK_RAN}" "${FRONTEND_TYPECHECK_EXIT_CODE}")"
   frontend_coverage_status="$(quality_summary_status "${FRONTEND_COVERAGE_RAN}" "${FRONTEND_COVERAGE_EXIT_CODE}")"
   frontend_bundle_budget_status="$(quality_summary_status "${FRONTEND_BUNDLE_BUDGET_RAN:-0}" "${FRONTEND_BUNDLE_BUDGET_EXIT_CODE:-0}")"
@@ -223,6 +225,7 @@ write_test_summary_json() {
       "${integration_status}" \
       "${e2e_status}" \
       "${frontend_lint_status}" \
+      "${frontend_audit_status}" \
       "${frontend_typecheck_status}" \
       "${frontend_coverage_status}" \
       "${frontend_bundle_budget_status}" \

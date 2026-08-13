@@ -586,25 +586,42 @@ print_install_production_readiness_notice() {
 }
 
 sync_frontend_quality_status_from_test_summary() {
-    local summary_frontend_lint=""
-    local summary_frontend_typecheck=""
-    local summary_frontend_coverage=""
-    local summary_frontend_e2e=""
+    local field=""
+    local status=""
+    local all_passed=true
+    local any_failed=false
+    local any_ran=false
+    local -a mandatory_frontend_fields=(
+        frontend_audit frontend_lint frontend_typecheck frontend_coverage
+        frontend_bundle_budget frontend_e2e
+    )
 
-    if summary_frontend_lint="$(read_install_test_summary_field frontend_lint)" &&
-        summary_frontend_typecheck="$(read_install_test_summary_field frontend_typecheck)" &&
-        summary_frontend_coverage="$(read_install_test_summary_field frontend_coverage)" &&
-        summary_frontend_e2e="$(read_install_test_summary_field frontend_e2e)" &&
-        [[ "$summary_frontend_lint" == "passed" ]] &&
-        [[ "$summary_frontend_typecheck" == "passed" ]] &&
-        [[ "$summary_frontend_coverage" == "passed" ]] &&
-        [[ "$summary_frontend_e2e" == "passed" ]]; then
+    [[ -r "${TEST_SUMMARY_JSON:-}" ]] || return 1
+
+    for field in "${mandatory_frontend_fields[@]}"; do
+        status="$(read_install_test_summary_field "$field" 2>/dev/null || printf 'skipped')"
+        case "$status" in
+            passed) any_ran=true ;;
+            failed) any_ran=true; any_failed=true; all_passed=false ;;
+            *) all_passed=false ;;
+        esac
+    done
+
+    if [[ "$any_failed" == true ]]; then
+        FRONTEND_QUALITY_STATUS="hata"
+        warn "Frontend kalite durumu artifacts/test-summary.json üzerinden hata olarak işaretlendi."
+        return 1
+    fi
+    if [[ "$all_passed" == true ]]; then
         # shellcheck disable=SC2034  # scripts/install_modules/phases/07_finish.sh reads this sourced state.
         FRONTEND_QUALITY_STATUS="tamamlandi"
         info "Frontend kalite durumu artifacts/test-summary.json üzerinden tamamlandı olarak işaretlendi."
         return 0
     fi
-
+    FRONTEND_QUALITY_STATUS="atlandi"
+    if [[ "$any_ran" == true ]]; then
+        info "Frontend kalite kapılarının yalnız bir bölümü çalıştı; durum atlandı/eksik olarak işaretlendi."
+    fi
     return 1
 }
 
@@ -850,6 +867,7 @@ print_install_validation_coverage() {
     local summary_integration=""
     local summary_e2e=""
     local summary_frontend_lint=""
+    local summary_frontend_audit=""
     local summary_frontend_typecheck=""
     local summary_frontend_coverage=""
     local summary_frontend_build="skipped"
@@ -863,6 +881,7 @@ print_install_validation_coverage() {
         summary_smoke="$(read_install_test_summary_field smoke)" &&
         summary_integration="$(read_install_test_summary_field integration)" &&
         summary_e2e="$(read_install_test_summary_field e2e)" &&
+        summary_frontend_audit="$(read_install_test_summary_field frontend_audit)" &&
         summary_frontend_lint="$(read_install_test_summary_field frontend_lint)" &&
         summary_frontend_typecheck="$(read_install_test_summary_field frontend_typecheck)" &&
         summary_frontend_coverage="$(read_install_test_summary_field frontend_coverage)" &&
@@ -886,6 +905,7 @@ print_install_validation_coverage() {
         print_install_validation_gate_line "Smoke       " "$summary_smoke" "tests/smoke" "bash run_tests.sh --stage smoke"
         print_install_validation_gate_line "Integration " "$summary_integration" "tests/integration" "bash run_tests.sh --stage integration"
         print_install_validation_gate_line "E2E         " "$summary_e2e" "tests/e2e/{agents,cli,web}" "bash run_tests.sh --stage e2e"
+        print_install_validation_gate_line "Frontend audit" "$summary_frontend_audit" "npm run audit:high" "bash run_tests.sh --stage frontend"
         print_install_validation_gate_line "Frontend lint" "$summary_frontend_lint" "npm run lint" "bash run_tests.sh --stage frontend"
         print_install_validation_gate_line "Frontend type" "$summary_frontend_typecheck" "npm run typecheck" "bash run_tests.sh --stage frontend"
         print_install_validation_gate_line "Frontend cov " "$summary_frontend_coverage" "npm run test:coverage" "bash run_tests.sh --stage frontend"
