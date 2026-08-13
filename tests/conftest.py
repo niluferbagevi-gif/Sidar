@@ -16,10 +16,18 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+
+def _is_truthy_env(value: str | None) -> bool:
+    """Return whether an environment flag is explicitly enabled."""
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 # Bazı modüller import anında Config() oluşturuyor.
 # Pytest collection aşamasında test-env işaretleri henüz garanti olmadığından
-# kritik ayarların boş gelmesini önlemek için en erken noktada varsayılanları set ediyoruz.
-os.environ.setdefault("SIDAR_ENV", "test")
+# kritik ayarların boş gelmesini önlemek için en erken noktada test ortamını zorluyoruz.
+# Production profili gereken testler monkeypatch ile bunu test kapsamında açıkça seçer.
+if not _is_truthy_env(os.getenv("SIDAR_TEST_PRESERVE_RUNTIME_ENV")):
+    os.environ["SIDAR_ENV"] = "test"
 if os.getenv("SIDAR_TEST_LOAD_REAL_KEYS", "0").strip().lower() not in {"1", "true", "yes"}:
     os.environ["SIDAR_KEYS_FILE"] = ""
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key-for-ci-testing-only!")
@@ -36,11 +44,6 @@ from tests._fixtures.dotenv import (
 from tests._fixtures.dotenv import (
     load_pytest_dotenv_chain as _fixture_load_pytest_dotenv_chain,
 )
-
-
-def _is_truthy_env(value: str | None) -> bool:
-    """Return whether an environment flag is explicitly enabled."""
-    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _isolate_github_env_for_tests() -> None:

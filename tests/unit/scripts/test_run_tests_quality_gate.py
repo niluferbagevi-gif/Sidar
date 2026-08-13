@@ -990,7 +990,9 @@ def test_pytest_conftest_checks_env_test_postgres_password_parity() -> None:
 def test_pytest_conftest_keeps_installer_collection_lightweight() -> None:
     conftest = Path("tests/conftest.py").read_text(encoding="utf-8")
 
-    assert 'os.environ.setdefault("SIDAR_ENV", "test")' in conftest
+    assert 'os.environ["SIDAR_ENV"] = "test"' in conftest
+    assert "SIDAR_TEST_PRESERVE_RUNTIME_ENV" in conftest
+    assert 'os.environ.setdefault("SIDAR_ENV", "test")' not in conftest
     assert 'os.environ["SIDAR_KEYS_FILE"] = ""' in conftest
     assert "SIDAR_TEST_LOAD_REAL_KEYS" in conftest
     assert 'importlib.import_module("agent.sidar_agent")' not in conftest
