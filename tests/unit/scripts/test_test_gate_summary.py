@@ -47,6 +47,8 @@ def _summary_args(output_path: Path, junit_dir: Path) -> list[str]:
         "smoke",
         "test:e2e:smoke",
         "false",  # local_readiness_passed
+        "failed",  # ruff_status
+        "failed",  # aggregate_status
     ]
 
 
@@ -77,6 +79,8 @@ def test_summary_helper_writes_run_tests_payload_and_failed_backend_tests(tmp_pa
     assert summary.main(_summary_args(output_path, junit_dir)) == 0
 
     payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["ruff"] == "failed"
+    assert payload["aggregate"] == "failed"
     assert payload["production_readiness_detail"] == {
         "status": "partial_stage",
         "reason": "selected stage set does not cover the full production readiness gate",
@@ -124,12 +128,12 @@ def test_summary_helper_rejects_wrong_argument_count(tmp_path: Path, capsys) -> 
     assert summary.main([str(tmp_path / "test-summary.json")]) == 2
 
     captured = capsys.readouterr()
-    assert "expected 38 arguments" in captured.err
+    assert "expected 40 arguments" in captured.err
 
 
 def test_summary_separates_local_readiness_from_external_release_evidence(tmp_path: Path) -> None:
     args = _summary_args(tmp_path / "test-summary.json", tmp_path / "pytest")
-    args[-1] = "true"
+    args[-3] = "true"
     args[10] = "true"
 
     payload = summary.build_summary(args)
