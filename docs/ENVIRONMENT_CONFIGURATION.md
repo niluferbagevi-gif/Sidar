@@ -90,6 +90,11 @@ uygundur; ancak `.env.production` gerçek dağıtıma kaynak olacaksa production
 rotate edilmelidir. Operasyon adımları için
 `docs/runbooks/production-secret-rotation.md` runbook'unu uygulayın.
 
+Grafana için kanonik giriş sözleşmesi: kullanıcı adı `admin`, parola ise seçili
+dotenv kaynağındaki (normal kurulumda `.env`) `GRAFANA_ADMIN_PASSWORD` değeridir.
+`admin/admin` varsayılanı güvenlik nedeniyle reddedilir; parolayı terminal veya
+dokümantasyon çıktısına kopyalamayın.
+
 ### One-off overrides
 
 For temporary experiments, prefer `DOTENV_FILE` instead of editing multiple profile

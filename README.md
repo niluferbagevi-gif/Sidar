@@ -181,6 +181,10 @@
 - **Admin Paneli:** Sistem kullanımını, aktif kullanıcıları ve global kotaları izleyebileceğiniz Web UI yönetim arayüzü.
 - **Gözlemlenebilirlik (Observability):** Grafana ve Prometheus üzerinden anlık token tüketimi, USD maliyet ve LLM gecikme (latency) takibi.
 
+> **Grafana girişi:** Kullanıcı adı `admin`'dir; parola installer'ın `.env` içinde
+> ürettiği `GRAFANA_ADMIN_PASSWORD` değeridir. Güvensiz `admin/admin` varsayılanı
+> Docker Compose tarafından reddedilir.
+
 ### ✅ TodoManager ile Görev Takibi
 
 - Ajan görevleri `TodoManager` üzerinden durum bazlı (`pending`, `in_progress`, `done`) yönetir.

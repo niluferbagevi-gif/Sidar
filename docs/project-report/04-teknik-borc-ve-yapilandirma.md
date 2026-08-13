@@ -193,6 +193,7 @@ Sistemin davranışını kontrol eden çevre değişkenleri artık birkaç API a
 | `OTEL_SERVICE_NAME` | `sidar` | Telemetri panellerinde servisin görünen adı |
 | `OTEL_INSTRUMENT_FASTAPI` / `OTEL_INSTRUMENT_HTTPX` | `true` / `true` | FastAPI ve HTTPX otomatik enstrümantasyon anahtarları |
 | `GRAFANA_URL` | `http://localhost:3000` | Web admin panelindeki Grafana bağlantı hedefi |
+| `GRAFANA_ADMIN_PASSWORD` | Installer tarafından `.env` içinde güvenli üretilir | Grafana kullanıcısı `admin` için zorunlu parola; `admin/admin` varsayılanı reddedilir |
 
 ### 12.7 Dış Entegrasyonlar, Managers ve Plugin Yüzeyleri
 

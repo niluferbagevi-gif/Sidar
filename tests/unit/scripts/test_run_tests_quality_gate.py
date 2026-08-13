@@ -63,6 +63,27 @@ def installer_contract_sources() -> str:
     return "\n".join(path.read_text(encoding="utf-8") for path in paths)
 
 
+def test_grafana_operator_guidance_uses_generated_secret_not_default_credentials() -> None:
+    """Installer and primary docs must match Docker Compose's fail-closed credential contract."""
+    installer = Path("scripts/install_modules/phases/07_finish.sh").read_text(encoding="utf-8")
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+    primary_docs = "\n".join(
+        Path(path).read_text(encoding="utf-8")
+        for path in (
+            "README.md",
+            "docs/ENVIRONMENT_CONFIGURATION.md",
+            "docs/project-report/04-teknik-borc-ve-yapilandirma.md",
+        )
+    )
+
+    assert "kullanıcı admin" in installer
+    assert "GRAFANA_ADMIN_PASSWORD" in installer
+    assert "varsayılan: admin / admin" not in installer
+    assert "default admin/admin is refused" in compose
+    assert "GRAFANA_ADMIN_PASSWORD" in primary_docs
+    assert "admin/admin" in primary_docs
+
+
 def project_report_sources() -> str:
     """Return the project report index and all topic sections as one contract surface."""
     paths = [Path("docs/PROJE_RAPORU.md"), *sorted(Path("docs/project-report").glob("*.md"))]
