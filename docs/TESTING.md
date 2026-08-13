@@ -607,6 +607,15 @@ BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1 RUN_BENCHMARKS=required
 
 ## Frontend Playwright CDN 403 / restricted network
 
+### Release kanıtı ve yerel compatibility ayrımı
+
+Ubuntu 26.04/WSL üzerindeki Playwright OS override yalnız geliştirici uyumluluğu
+sağlar; bu sonuç tek başına release E2E kanıtı sayılmaz. Zorunlu GitHub CI `test`
+job'ı Playwright Chromium kurulumunu ve frontend smoke/E2E kapısını açıkça pinlenmiş
+`ubuntu-24.04` runner üzerinde çalıştırır. Browser cache anahtarı da host image
+değişimlerinde uyumsuz binary restore edilmemesi için `playwright-ubuntu-24.04-*`
+namespace'ini kullanır. Release/merge kararı bu resmi destekli CI kanıtına dayanmalıdır.
+
 `make production-readiness` frontend E2E smoke testlerini zorunlu çalıştırır
 (`RUN_FRONTEND_E2E=1`). `web_ui_react` bağımlılıkları kurulduktan sonra Chromium
 browser cache'i yoksa yerelde önce şu komutu çalıştırın:

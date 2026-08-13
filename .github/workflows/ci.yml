@@ -136,7 +136,10 @@ jobs:
   test:
     name: Base quality gates (lint, smoke, unit, coverage, frontend)
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.seed_benchmark_baseline }}
-    runs-on: ubuntu-latest
+    # Release-blocking Playwright evidence must use an explicitly supported,
+    # stable host image. Local Ubuntu 26.04 overrides are developer compatibility,
+    # not release evidence.
+    runs-on: ubuntu-24.04
 
     services:
       postgres:
@@ -303,9 +306,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('web_ui_react/package-lock.json') }}
+          key: playwright-ubuntu-24.04-${{ hashFiles('web_ui_react/package-lock.json') }}
           restore-keys: |
-            playwright-${{ runner.os }}-
+            playwright-ubuntu-24.04-
 
       - name: Install Playwright Chromium for frontend smoke tests
         run: |

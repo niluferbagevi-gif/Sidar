@@ -5372,11 +5372,25 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
     assert 'if [ "${FRONTEND_E2E_ENFORCE_RESULT}" = "1" ]; then' in script
     assert "Restore Playwright browser cache" in ci
     assert "~/.cache/ms-playwright" in ci
-    assert "playwright-${{ runner.os }}-${{ hashFiles('web_ui_react/package-lock.json') }}" in ci
+    assert "playwright-ubuntu-24.04-${{ hashFiles('web_ui_react/package-lock.json') }}" in ci
     assert ci.index("Restore Playwright browser cache") < ci.index(
         "Install Playwright Chromium for frontend smoke tests"
     )
     assert "npx playwright install --with-deps chromium" in ci
+
+
+def test_release_playwright_evidence_is_pinned_to_supported_ubuntu_runner() -> None:
+    ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    test_job = ci[ci.index("  test:\n") : ci.index("  installer-smoke:")]
+    testing_doc = Path("docs/TESTING.md").read_text(encoding="utf-8")
+
+    assert "runs-on: ubuntu-24.04" in test_job
+    assert "runs-on: ubuntu-latest" not in test_job
+    assert "playwright-ubuntu-24.04-${{ hashFiles" in test_job
+    assert "playwright-${{ runner.os }}" not in test_job
+    assert "Ubuntu 26.04/WSL" in testing_doc
+    assert "geliştirici uyumluluğu" in testing_doc
+    assert "release E2E kanıtı sayılmaz" in testing_doc
     # All 8 web_ui_react/e2e/ specs run here (not just the smoke default),
     # see test_ci_runs_full_frontend_e2e_suite_not_just_smoke below for the
     # regression this closes.
