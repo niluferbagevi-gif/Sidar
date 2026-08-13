@@ -698,6 +698,35 @@ def run_pre_push_quality_gate() -> tuple[bool, str]:
     return True, ""
 
 
+def record_upload_source_head() -> tuple[bool, str]:
+    """Resolve the immutable source revision used by upload evidence and logs."""
+    success, output = run_command(["git", "rev-parse", "HEAD"], show_output=False)
+    revision = output.strip()
+    if not success:
+        return False, output
+    if not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", revision):
+        return False, f"git rev-parse HEAD geçersiz revision döndürdü: {revision or '<boş>'}"
+    return True, revision.lower()
+
+
+def run_direct_main_readiness_gate() -> tuple[bool, str]:
+    """Require local static and production-readiness evidence for direct main pushes.
+
+    PR-first uploads rely on required remote checks after the branch is pushed.
+    Direct-main bypasses that review boundary, so it must first pass both the
+    explicit static gate and the repository's canonical release-readiness gate.
+    """
+    commands = [
+        ["bash", "run_tests.sh", "--stage", "static"],
+        ["make", "production-readiness"],
+    ]
+    for command in commands:
+        success, output = run_command(command, show_output=False)
+        if not success:
+            return False, f"{' '.join(command)}\n{output}".strip()
+    return True, ""
+
+
 # ═══════════════════════════════════════════════════════════════
 # ANA PROGRAM
 # ═══════════════════════════════════════════════════════════════
@@ -1130,6 +1159,24 @@ def main() -> None:
             f"{gate_err}{Colors.ENDC}"
         )
         sys.exit(1)
+
+    source_success, source_revision = record_upload_source_head()
+    if not source_success:
+        print(
+            f"{Colors.FAIL}❌ Upload kaynak commit'i kaydedilemedi; GitHub'a yükleme "
+            f"durduruldu:\n{source_revision}{Colors.ENDC}"
+        )
+        sys.exit(1)
+    print(f"{Colors.OKBLUE}🔎 Upload kaynak commit'i: {source_revision}{Colors.ENDC}")
+
+    if direct_main:
+        readiness_success, readiness_err = run_direct_main_readiness_gate()
+        if not readiness_success:
+            print(
+                f"{Colors.FAIL}❌ Doğrudan main için zorunlu static/production-readiness "
+                f"kanıtı başarısız; push durduruldu:\n{readiness_err}{Colors.ENDC}"
+            )
+            sys.exit(1)
 
     print(
         f"\n{Colors.HEADER}🚀 GitHub'a yükleniyor (Hedef: {current_branch}). Lütfen "
