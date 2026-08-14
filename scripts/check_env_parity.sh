@@ -34,18 +34,28 @@ Seçenekler:
   --help            Bu yardım metnini göster.
 
 Varsayılan ignore listesi:
-  PYTEST_CURRENT_TEST, VIRTUAL_ENV, CONDA_PREFIX, CI, GITHUB_ACTIONS, MODE_ENV
+  PYTEST_CURRENT_TEST, PYTEST_XDIST_WORKER, VIRTUAL_ENV, CONDA_PREFIX,
+  CI, GITHUB_ACTIONS, GITHUB_REPOSITORY, C_INCLUDE_PATH, DOCKER_SETTINGS_JSON,
+  MODE_ENV
 EOF_USAGE
 }
 
 WARN_ONLY=0
 IGNORE_KEYS=(
+  # Test runner tarafından her worker için üretilir; kullanıcı ayarı değildir.
   PYTEST_CURRENT_TEST
+  PYTEST_XDIST_WORKER
+  # Python/CI çalışma ortamı tarafından yönetilen process metadata'sı.
   VIRTUAL_ENV
   CONDA_PREFIX
   CI
   GITHUB_ACTIONS
+  GITHUB_REPOSITORY
+  # Derleyici toolchain'i ve WSL GPU preflight'ın geçici process girdileri.
+  C_INCLUDE_PATH
+  DOCKER_SETTINGS_JSON
   MODE_ENV
+  # Bu script'in ignore listesini gömülü Python sürecine taşıyan iç değişken.
   SIDAR_ENV_PARITY_IGNORE
 )
 
