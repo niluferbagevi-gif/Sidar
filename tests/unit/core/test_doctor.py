@@ -1310,6 +1310,24 @@ def test_docker_test_image_reports_missing_image_as_ready_when_auto_build_enable
     assert "enabled auto-build" in check.message
 
 
+def test_docker_test_image_reports_existing_image_as_available(monkeypatch):
+    """An existing Sidar image must satisfy the doctor without auto-build."""
+    from config import Config
+
+    monkeypatch.delenv("AUTO_BUILD_DOCKER_TEST_IMAGE", raising=False)
+    monkeypatch.delenv("SIDAR_PRODUCTION_READINESS", raising=False)
+    monkeypatch.setattr(Config, "DOCKER_TEST_IMAGE", "sidar:latest")
+    monkeypatch.setattr(doctor, "_docker_image_exists_local", lambda image: image == "sidar:latest")
+
+    check = doctor.check_docker_test_image()
+
+    assert check.status == "pass"
+    assert check.message == "Docker test image is available"
+    assert check.details["docker_test_image"] == "sidar:latest"
+    assert check.details["image_exists"] is True
+    assert check.details["recommended_commands"] == []
+
+
 def test_docker_test_image_is_info_in_development_when_auto_build_is_deferred(monkeypatch):
     from config import Config
 

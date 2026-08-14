@@ -63,6 +63,18 @@ kullanın. Coverage gate bu akışta varsayılan olarak çalışmaz; böylece fo
 olarak geçen tekil testler toplam repo coverage düşük çıktığı için yanıltıcı şekilde
 başarısız görünmez.
 
+Pytest başlangıcında `tests/conftest.py`, host prosesinde daha önce `SIDAR_ENV=production`
+verilmiş olsa bile hermetik baseline olarak `SIDAR_ENV=test` değerini zorlar. Production
+davranışını sınayan testler profili kendi `monkeypatch` kapsamlarında açıkça seçmelidir.
+Yalnız runtime profilini bilinçli olarak koruması gereken özel doğrulamalarda
+`SIDAR_TEST_PRESERVE_RUNTIME_ENV=1` opt-out'u kullanılabilir; bu bayrak normal unit/CI
+çalıştırmalarında verilmemelidir.
+
+`run_tests.sh` coverage kapısı ayrıca pytest komutunu process seviyesinde
+`SIDAR_ENV=test` ile başlatır. Böylece pytest-xdist worker'ları daha `conftest.py`
+yüklenmeden aynı deterministik ortamı devralır; `DOTENV_FILE` seçimi bu ikinci savunma
+katmanından bağımsız olarak korunur.
+
 ```bash
 uv run pytest tests/unit/core/test_rag.py::test_fetch_pgvector_returns_empty_when_query_embedding_empty -q
 ```

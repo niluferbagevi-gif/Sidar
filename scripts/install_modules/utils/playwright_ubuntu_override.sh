@@ -192,6 +192,22 @@ playwright_install_command_is_python() {
         || "$executable_name" =~ ^python3\.[0-9]+$ ]]
 }
 
+playwright_chromium_launch_smoke() {
+    [[ "$#" -gt 0 ]] || set -- python
+    local -a python_cmd=("$@")
+    "${python_cmd[@]}" - <<'PY_PLAYWRIGHT_CHROMIUM_SMOKE'
+from playwright.sync_api import sync_playwright
+
+with sync_playwright() as playwright:
+    browser = playwright.chromium.launch(headless=True)
+    page = browser.new_page()
+    page.set_content("<title>Sidar Playwright smoke</title>")
+    if page.title() != "Sidar Playwright smoke":
+        raise RuntimeError("Chromium launch smoke title verification failed")
+    browser.close()
+PY_PLAYWRIGHT_CHROMIUM_SMOKE
+}
+
 run_playwright_ubuntu_override_install() {
     local source_os_release="${1:-/etc/os-release}"
     local download_timeout_ms="${2:-120000}"

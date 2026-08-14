@@ -13,6 +13,7 @@ from scripts.ci import check_bandit_suppression_baseline as suppression_baseline
 _INLINE_NOSEC_PROSE = re.compile(r"#\s*nosec\s+B\d{3}\s+[-–—]")
 _NOSEC_B608_RE = re.compile(r"#\s*nosec\s+B608\b")
 _NOSEC_B608_WITH_RATIONALE_RE = re.compile(r"#\s*nosec\s+B608\b\s+#\s*\S")
+_BARE_NOSEC_RE = re.compile(r"#\s*nosec\s*(?:$|#)")
 _SQL_IDENTIFIER_VALIDATOR_MODULES = {"core.db.dialect", "core.db_components.dialect"}
 _SQL_IDENTIFIER_VALIDATOR_NAMES = {"assert_safe_sql_identifier", "is_safe_sql_identifier"}
 _REVIEWED_B608_FILES = (
@@ -32,7 +33,7 @@ def test_bandit_suppression_baseline_matches_current_scan_and_quality_gates() ->
     local_gate = (root / "scripts/test_gates/backend_helpers.sh").read_text(encoding="utf-8")
     ci = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
-    assert baseline["maximum_skipped_tests"] == 60
+    assert baseline["maximum_skipped_tests"] == 59
     assert [target["maximum_skipped_tests"] for target in baseline["reduction_targets"]] == [
         40,
         20,
@@ -75,6 +76,25 @@ def test_nosec_comments_keep_explanatory_prose_outside_bandit_directive() -> Non
             continue
         for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
             if _INLINE_NOSEC_PROSE.search(line):
+                offenders.append(f"{path.relative_to(root)}:{line_number}")
+
+    assert offenders == []
+
+
+def test_production_nosec_directives_always_name_bandit_rules() -> None:
+    """Reject broad production suppressions that hide unrelated Bandit findings."""
+    root = Path(__file__).resolve().parents[2]
+    offenders: list[str] = []
+    for path in root.rglob("*.py"):
+        if any(
+            part in {".git", ".venv", "node_modules", "tests", "web_ui_react"}
+            for part in path.parts
+        ):
+            continue
+        if path == Path(__file__).resolve():
+            continue
+        for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if _BARE_NOSEC_RE.search(line):
                 offenders.append(f"{path.relative_to(root)}:{line_number}")
 
     assert offenders == []

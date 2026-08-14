@@ -429,6 +429,26 @@ def test_run_tests_uses_loadgroup_distribution_for_xdist_state_isolation() -> No
     assert "Unit ağırlığı" in notes
 
 
+def test_unit_pytest_command_forces_test_runtime_environment() -> None:
+    """Keep host runtime state out of the high-concurrency unit phase."""
+    coverage_helper = Path("scripts/test_gates/coverage_helpers.sh").read_text(encoding="utf-8")
+    base_command = coverage_helper[
+        coverage_helper.index("  local base_pytest_cmd=(") : coverage_helper.index(
+            '  if [ "${QUALITY_GATE_EXIT_AFTER_FIRST_FAIL}"',
+        )
+    ]
+    unit_phase = coverage_helper[
+        coverage_helper.index("    local phase1_cmd=(") : coverage_helper.index(
+            '    echo "➡️ Aşama 1 (Unit) komutu',
+        )
+    ]
+
+    assert 'env "SIDAR_ENV=test" "DOTENV_FILE=${test_dotenv_file}"' in base_command
+    assert "uv run pytest -c pyproject.toml" in base_command
+    assert '"${base_pytest_cmd[@]}"' in unit_phase
+    assert "tests/unit" in unit_phase
+
+
 def test_run_tests_enforces_combined_gate_before_ratchet() -> None:
     script = _script()
 
@@ -990,7 +1010,9 @@ def test_pytest_conftest_checks_env_test_postgres_password_parity() -> None:
 def test_pytest_conftest_keeps_installer_collection_lightweight() -> None:
     conftest = Path("tests/conftest.py").read_text(encoding="utf-8")
 
-    assert 'os.environ.setdefault("SIDAR_ENV", "test")' in conftest
+    assert 'os.environ["SIDAR_ENV"] = "test"' in conftest
+    assert "SIDAR_TEST_PRESERVE_RUNTIME_ENV" in conftest
+    assert 'os.environ.setdefault("SIDAR_ENV", "test")' not in conftest
     assert 'os.environ["SIDAR_KEYS_FILE"] = ""' in conftest
     assert "SIDAR_TEST_LOAD_REAL_KEYS" in conftest
     assert 'importlib.import_module("agent.sidar_agent")' not in conftest
@@ -2698,6 +2720,7 @@ def test_makefile_benchmark_seed_is_local_only_and_production_readiness_is_relea
         in base_quality_block
     )
     assert "SIDAR_PRODUCTION_READINESS=$(CI_PRODUCTION_READINESS)" in base_quality_block
+    assert "env -u CI_RUN_BENCHMARKS -u CI_PRODUCTION_READINESS" in base_quality_block
     assert "bash run_tests.sh --stage all" in base_quality_block
     assert (
         "$(MAKE) base-quality-gates CI_RUN_BENCHMARKS=required CI_PRODUCTION_READINESS=1"
@@ -6941,11 +6964,56 @@ def test_shared_playwright_ubuntu_override_helper_lists_modern_chromium_dependen
     phase = Path("scripts/install_modules/phases/13_playwright.sh").read_text(encoding="utf-8")
     assert "playwright_linux_dependencies_ready" in phase
     assert "playwright_missing_ubuntu_dependencies" in phase
+    assert 'playwright_chromium_launch_smoke "${PY_CMD[@]}"' in phase
     assert "apt ön taraması eksik Chromium bağımlılıkları buldu" in phase
     assert (
         '! playwright_host_platform_is_officially_supported "$_pw_os_release_path" "${PY_CMD[@]}"'
         in phase
     )
+
+
+@pytest.mark.parametrize(
+    ("ubuntu_version", "expected_target"),
+    [("24.04", "native"), ("26.04", "ubuntu24.04-x64")],
+)
+def test_playwright_ubuntu_matrix_verifies_target_dependencies_and_chromium_launch(
+    tmp_path: Path,
+    ubuntu_version: str,
+    expected_target: str,
+) -> None:
+    """Pin the installer matrix from host selection through launch smoke."""
+    helper = Path("scripts/install_modules/utils/playwright_ubuntu_override.sh").resolve()
+    os_release = tmp_path / "os-release"
+    mock_python = tmp_path / "python"
+    launch_log = tmp_path / "launch.log"
+    os_release.write_text(f'ID=ubuntu\nVERSION_ID="{ubuntu_version}"\n', encoding="utf-8")
+    mock_python.write_text(
+        """#!/usr/bin/env bash
+payload="$(cat)"
+[[ "${payload}" == *"playwright.chromium.launch(headless=True)"* ]]
+[[ "${payload}" == *"page.title()"* ]]
+printf 'launched|%s\n' "${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-native}" > "${LAUNCH_LOG}"
+""",
+        encoding="utf-8",
+    )
+    mock_python.chmod(0o755)
+    command = (
+        'set -Eeuo pipefail; source "$1"; '
+        'if is_playwright_ubuntu_override_recommended "$2"; then '
+        'PLAYWRIGHT_HOST_PLATFORM_OVERRIDE="$(playwright_ubuntu_override_platform 24.04)"; '
+        "else PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=''; fi; "
+        "export PLAYWRIGHT_HOST_PLATFORM_OVERRIDE; "
+        "playwright_linux_dependencies_ready() { return 0; }; "
+        'playwright_linux_dependencies_ready; playwright_chromium_launch_smoke "$3"'
+    )
+
+    subprocess.run(
+        ["bash", "-c", command, "bash", str(helper), str(os_release), str(mock_python)],
+        check=True,
+        env={**os.environ, "LAUNCH_LOG": str(launch_log)},
+    )
+
+    assert launch_log.read_text(encoding="utf-8").strip() == f"launched|{expected_target}"
 
 
 @pytest.mark.parametrize(

@@ -3929,9 +3929,17 @@ async def test_rate_limit_middleware_allows_ws_and_get_io_when_not_limited(monke
 
 @pytest.mark.asyncio
 async def test_swarm_federation_execute_success(monkeypatch):
+    signature_calls = []
+
+    def _verify_signature(payload, secret, signature, **kwargs):
+        signature_calls.append((payload, secret, signature, kwargs))
+
     monkeypatch.setattr(web_server.cfg, "ENABLE_SWARM_FEDERATION", True)
-    monkeypatch.setattr(web_server.cfg, "SWARM_FEDERATION_SHARED_SECRET", "", raising=False)
-    monkeypatch.setattr(web_server, "_verify_hmac_signature", lambda *args, **kwargs: None)
+    monkeypatch.setattr(web_server.cfg, "SIDAR_ENV", "test", raising=False)
+    monkeypatch.setattr(
+        web_server.cfg, "SWARM_FEDERATION_SHARED_SECRET", "test-federation-secret", raising=False
+    )
+    monkeypatch.setattr(web_server, "_verify_hmac_signature", _verify_signature)
 
     async def _dispatch_ok(**kwargs):
         return {
@@ -3960,13 +3968,28 @@ async def test_swarm_federation_execute_success(monkeypatch):
     )
     assert fed_res.status_code == 200
     assert b'"status":"success"' in fed_res.body
+    assert len(signature_calls) == 1
+    _payload, secret, signature, signature_kwargs = signature_calls[0]
+    assert (secret, signature, signature_kwargs) == (
+        "test-federation-secret",
+        "sig",
+        {"label": "Federation"},
+    )
 
 
 @pytest.mark.asyncio
 async def test_swarm_federation_feedback_success(monkeypatch):
+    signature_calls = []
+
+    def _verify_signature(payload, secret, signature, **kwargs):
+        signature_calls.append((payload, secret, signature, kwargs))
+
     monkeypatch.setattr(web_server.cfg, "ENABLE_SWARM_FEDERATION", True)
-    monkeypatch.setattr(web_server.cfg, "SWARM_FEDERATION_SHARED_SECRET", "", raising=False)
-    monkeypatch.setattr(web_server, "_verify_hmac_signature", lambda *args, **kwargs: None)
+    monkeypatch.setattr(web_server.cfg, "SIDAR_ENV", "test", raising=False)
+    monkeypatch.setattr(
+        web_server.cfg, "SWARM_FEDERATION_SHARED_SECRET", "test-federation-secret", raising=False
+    )
+    monkeypatch.setattr(web_server, "_verify_hmac_signature", _verify_signature)
 
     async def _dispatch_ok(**kwargs):
         return {
@@ -3995,6 +4018,13 @@ async def test_swarm_federation_feedback_success(monkeypatch):
     )
     assert feedback_res.status_code == 200
     assert b'"feedback_id":"fb-1"' in feedback_res.body
+    assert len(signature_calls) == 1
+    _payload, secret, signature, signature_kwargs = signature_calls[0]
+    assert (secret, signature, signature_kwargs) == (
+        "test-federation-secret",
+        "sig",
+        {"label": "Federation feedback"},
+    )
 
 
 @pytest.mark.asyncio
@@ -11875,6 +11905,10 @@ def test_get_rate_limit_key_prefers_authenticated_user() -> None:
 
 async def test_federation_and_github_webhook_paths(monkeypatch):
     monkeypatch.setattr(web_server.cfg, "ENABLE_SWARM_FEDERATION", True)
+    monkeypatch.setattr(web_server.cfg, "SIDAR_ENV", "test", raising=False)
+    monkeypatch.setattr(
+        web_server.cfg, "SWARM_FEDERATION_SHARED_SECRET", "test-federation-secret", raising=False
+    )
     monkeypatch.setattr(web_server, "_verify_hmac_signature", lambda *args, **kwargs: None)
 
     async def _dispatch_ok(**kwargs):

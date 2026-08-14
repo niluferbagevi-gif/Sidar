@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 from fastapi import HTTPException
 
+from agent.core.contracts import ActionFeedback, derive_correlation_id
 from web.routes import autonomy, federation
 
 
@@ -225,3 +226,52 @@ async def test_federation_feedback_fails_closed_when_production_secret_missing()
 
     assert exc_info.value.status_code == 401
     assert "SWARM_FEDERATION_SHARED_SECRET" in str(exc_info.value.detail)
+
+
+@pytest.mark.asyncio
+async def test_federation_feedback_restores_test_baseline_after_production_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep a production-policy check from contaminating the next success path."""
+    with monkeypatch.context() as production_env:
+        production_env.setenv("SIDAR_ENV", "production")
+        assert federation._federation_env_name(SimpleNamespace()) == "production"
+
+    assert federation._federation_env_name(SimpleNamespace()) == "test"
+    dispatch_calls: list[dict[str, Any]] = []
+
+    async def _dispatch(**kwargs):
+        dispatch_calls.append(kwargs)
+        return {"trigger_id": "tr-test", "summary": "accepted"}
+
+    federation.configure_federation_dependencies(
+        lambda: SimpleNamespace(
+            cfg=SimpleNamespace(
+                ENABLE_SWARM_FEDERATION=True,
+                SWARM_FEDERATION_SHARED_SECRET="test-federation-secret",
+            ),
+            verify_hmac_signature=lambda *_args, **_kwargs: None,
+            federation_task_envelope_cls=_Envelope,
+            federation_task_result_cls=_Result,
+            normalize_federation_protocol=lambda protocol: protocol or "federation.v1",
+            legacy_federation_protocol_v1="v1",
+            dispatch_autonomy_trigger=_dispatch,
+            action_feedback_cls=ActionFeedback,
+            derive_correlation_id=derive_correlation_id,
+        )
+    )
+
+    response = await federation.swarm_federation_feedback(
+        federation.FederationFeedbackRequest(
+            feedback_id="fb-test-baseline",
+            source_system="external",
+            source_agent="crew",
+            action_name="deploy",
+            status="done",
+            summary="ok",
+        ),
+        x_sidar_signature="sig",
+    )
+
+    assert response.status_code == 200
+    assert dispatch_calls[0]["event_name"] == "action_feedback"
