@@ -30,6 +30,45 @@ def _workflow(path: Path) -> Path:
     return path
 
 
+def test_repo_from_git_remote_uses_allowlisted_absolute_git(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        audit.shutil, "which", lambda name: "/usr/bin/git" if name == "git" else None
+    )
+
+    def fake_check_output(command, **kwargs):  # noqa: ANN001 - subprocess argv test double.
+        captured["command"] = command
+        captured.update(kwargs)
+        return "git@github.com:owner/repo.git\n"
+
+    monkeypatch.setattr(audit.subprocess, "check_output", fake_check_output)
+
+    assert audit._repo_from_git_remote() == "owner/repo"
+    assert captured == {
+        "command": ["/usr/bin/git", "remote", "get-url", "origin"],
+        "text": True,
+        "stderr": audit.subprocess.DEVNULL,
+        "shell": False,
+        "timeout": 10,
+    }
+
+
+def test_repo_from_git_remote_fails_closed_without_absolute_git(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(audit.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(
+        audit.subprocess,
+        "check_output",
+        lambda *_args, **_kwargs: pytest.fail("subprocess must not run without resolved git"),
+    )
+
+    assert audit._repo_from_git_remote() == ""
+
+
 def test_audit_required_checks_accepts_all_release_contexts(tmp_path: Path) -> None:
     workflow = _workflow(tmp_path / "ci.yml")
     expected_contexts = {

@@ -168,7 +168,7 @@ def test_ci_has_blocking_production_profile_runtime_validation() -> None:
     )
     assert "web.app_factory import create_app" in workflow
     assert "uv run --no-sync alembic upgrade head" in workflow
-    assert "actions/upload-artifact@v4" in job_slice
+    assert "actions/upload-artifact@v7" in job_slice
     assert "production-minimal-runtime-evidence" in workflow
     assert "artifacts/production-minimal/runtime-evidence.json" in workflow
     assert "production-profile-dry-run" in docs

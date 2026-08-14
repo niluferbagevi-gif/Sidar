@@ -122,13 +122,33 @@ def test_ci_required_checks_docs_track_benchmark_seed_duplication_and_reactive_k
     assert "Keepalive is still purely reactive" in docs
     assert "workflow_call` reusable workflow is the right fix" in docs
 
-    # The enumerated drift must still be real, not a stale claim.
-    assert "actions/checkout@v5" in seed_workflow
-    assert "actions/checkout@v4" in ci_workflow
+    # Action runtime pins are now unified; the remaining behavioral drift is real.
+    assert "actions/checkout@v7" in seed_workflow
+    assert "actions/checkout@v7" in ci_workflow
     assert "retention-days: 30" in seed_workflow
     assert "retention-days: 90" in ci_workflow
     assert "compare_name" in seed_workflow
     assert "seed_benchmark_baseline:" in ci_workflow
+
+
+def test_workflows_use_node24_github_action_majors() -> None:
+    """Prevent reintroducing action majors backed by deprecated Node runtimes."""
+    workflow_text = "\n".join(
+        path.read_text(encoding="utf-8") for path in WORKFLOW_DIR.glob("*.yml")
+    )
+
+    assert "actions/checkout@v4" not in workflow_text
+    assert "actions/checkout@v5" not in workflow_text
+    assert "actions/setup-python@v5" not in workflow_text
+    assert "actions/setup-python@v6" not in workflow_text
+    assert "actions/upload-artifact@v4" not in workflow_text
+    assert "actions/cache@v4" not in workflow_text
+    assert "actions/cache/restore@v4" not in workflow_text
+    assert "actions/cache/save@v4" not in workflow_text
+    assert "actions/checkout@v7" in workflow_text
+    assert "actions/setup-python@v7" in workflow_text
+    assert "actions/upload-artifact@v7" in workflow_text
+    assert "actions/cache@v6" in workflow_text
 
 
 def test_ci_has_required_installer_manifest_smoke_gate() -> None:

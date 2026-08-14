@@ -110,6 +110,7 @@ from core.db.dialect import (
 from core.db.dialect import (
     quote_sql_identifier as _quote_sql_identifier_impl,
 )
+from core.db.dialect import render_sql_identifier_template
 from core.db.helpers import (
     new_entity_id as _new_entity_id,
 )
@@ -783,11 +784,15 @@ class Database(DatabaseConnectionMixin):
             assert self._sqlite_conn is not None
             tbl = self._schema_version_table_quoted
             self._sqlite_conn.execute(
-                f"CREATE TABLE IF NOT EXISTS {tbl} (version INTEGER PRIMARY KEY NOT NULL, "
-                "applied_at TEXT NOT NULL, description TEXT NOT NULL)"
+                render_sql_identifier_template(
+                    "CREATE TABLE IF NOT EXISTS {table} "
+                    "(version INTEGER PRIMARY KEY NOT NULL, "
+                    "applied_at TEXT NOT NULL, description TEXT NOT NULL)",
+                    table=tbl,
+                )
             )
             cur = self._sqlite_conn.execute(
-                f"SELECT MAX(version) AS v FROM {tbl}"  # nosec B608  # tablo adı sistem içi sabittir.
+                render_sql_identifier_template("SELECT MAX(version) AS v FROM {table}", table=tbl)
             )
             row = _sqlite_fetchone(cur)
             current = int((row["v"] if row else 0) or 0)
@@ -795,7 +800,10 @@ class Database(DatabaseConnectionMixin):
                 return
             for v in range(current + 1, self.target_schema_version + 1):
                 self._sqlite_conn.execute(
-                    f"INSERT INTO {tbl} (version, applied_at, description) VALUES (?, ?, ?)",  # nosec B608  # tbl sistem içi sabit ve identifier validator ile doğrulanmıştır.
+                    render_sql_identifier_template(
+                        "INSERT INTO {table} (version, applied_at, description) VALUES (?, ?, ?)",
+                        table=tbl,
+                    ),
                     (v, _utc_now_iso(), f"baseline migration v{v}"),
                 )
             self._sqlite_conn.commit()
@@ -807,18 +815,28 @@ class Database(DatabaseConnectionMixin):
         tbl = self._schema_version_table_quoted
         async with self._pg_pool.acquire() as conn:
             await conn.execute(
-                f"CREATE TABLE IF NOT EXISTS {tbl} (version INTEGER PRIMARY KEY NOT NULL, "
-                f"applied_at TIMESTAMPTZ NOT NULL, description TEXT NOT NULL)"
+                render_sql_identifier_template(
+                    "CREATE TABLE IF NOT EXISTS {table} "
+                    "(version INTEGER PRIMARY KEY NOT NULL, "
+                    "applied_at TIMESTAMPTZ NOT NULL, description TEXT NOT NULL)",
+                    table=tbl,
+                )
             )
             current = await conn.fetchval(
-                f"SELECT COALESCE(MAX(version), 0) FROM {tbl}"  # nosec B608  # tablo adı sistem içi sabittir.
+                render_sql_identifier_template(
+                    "SELECT COALESCE(MAX(version), 0) FROM {table}", table=tbl
+                )
             )
             current = int(current or 0)
             if current >= self.target_schema_version:
                 return
             for v in range(current + 1, self.target_schema_version + 1):
                 await conn.execute(
-                    f"INSERT INTO {tbl} (version, applied_at, description) VALUES ($1, $2, $3)",  # nosec B608  # tbl sistem içi sabit ve identifier validator ile doğrulanmıştır.
+                    render_sql_identifier_template(
+                        "INSERT INTO {table} (version, applied_at, description) "
+                        "VALUES ($1, $2, $3)",
+                        table=tbl,
+                    ),
                     v,
                     datetime.now(UTC),
                     f"baseline migration v{v}",

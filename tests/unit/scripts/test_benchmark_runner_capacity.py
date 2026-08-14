@@ -22,10 +22,17 @@ def test_watchdog_workflow_uses_hosted_control_plane_and_checks_capacity() -> No
     )
 
     assert "runs-on: ubuntu-latest" in workflow
-    assert "uses: actions/checkout@v4" in workflow
+    assert "uses: actions/checkout@v7" in workflow
     assert "BENCHMARK_RUNNER_MONITOR_TOKEN" in workflow
     assert "check_benchmark_runner_capacity.py" in workflow
     assert "--minimum-online 1" in workflow
+
+
+def test_watchdog_token_is_documented_in_advanced_env_template() -> None:
+    env_template = Path(".env.advanced.example").read_text(encoding="utf-8")
+
+    assert "BENCHMARK_RUNNER_MONITOR_TOKEN=" in env_template
+    assert "Runner watchdog token'ları SIDAR_KEYS_FILE'da tutulmalıdır." in env_template
 
 
 def test_eligible_online_runners_requires_every_label_and_online_state() -> None:

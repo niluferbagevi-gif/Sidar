@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -22,6 +23,7 @@ DEFAULT_RELEASE_JOB_IDS = (
     "production-readiness",
     "pg-stress",
 )
+_GIT_REMOTE_COMMAND = ("git", "remote", "get-url", "origin")
 
 
 class RequiredCheckAuditError(RuntimeError):
@@ -30,12 +32,21 @@ class RequiredCheckAuditError(RuntimeError):
 
 def _repo_from_git_remote() -> str:
     """Resolve owner/repo from the local git remote when GITHUB_REPOSITORY is absent."""
+    if any("\x00" in part for part in _GIT_REMOTE_COMMAND):
+        return ""
+    git_binary = shutil.which("git")
+    if not git_binary or not Path(git_binary).is_absolute():
+        return ""
+    command = [git_binary, *_GIT_REMOTE_COMMAND[1:]]
     try:
-        # Fixed git command without user shell or user-controlled executable.
-        remote = subprocess.check_output(  # nosec B603 B607
-            ["git", "remote", "get-url", "origin"], text=True, stderr=subprocess.DEVNULL
+        remote = subprocess.check_output(  # nosec B603  # absolute git; exact argv allowlist
+            command,
+            text=True,
+            stderr=subprocess.DEVNULL,
+            shell=False,
+            timeout=10,
         ).strip()
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return ""
     if remote.endswith(".git"):
         remote = remote[:-4]

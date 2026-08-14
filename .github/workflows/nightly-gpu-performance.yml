@@ -26,10 +26,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11.15"
 
@@ -47,7 +47,7 @@ jobs:
 
       - name: Restore GPU trend history cache
         id: gpu-trend-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: .ci-history/gpu_trend_history.json
           key: gpu-trend-history-${{ runner.os }}-${{ runner.name }}-${{ github.ref_name }}
@@ -81,14 +81,14 @@ jobs:
 
       - name: Save GPU trend history cache
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: .ci-history/gpu_trend_history.json
           key: gpu-trend-history-${{ runner.os }}-${{ runner.name }}-${{ github.ref_name }}
 
       - name: Upload benchmark artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nightly-gpu-performance-artifacts
           path: |

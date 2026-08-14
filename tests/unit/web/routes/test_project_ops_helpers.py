@@ -25,6 +25,12 @@ def test_is_allowed_git_command_rejects_null_byte_injection() -> None:
     )
 
 
+def test_is_allowed_git_command_accepts_only_validated_checkout_with_separator() -> None:
+    assert _is_allowed_git_command(["git", "checkout", "--", "feature/safe"]) is True
+    assert _is_allowed_git_command(["git", "checkout", "feature/safe"]) is False
+    assert _is_allowed_git_command(["git", "checkout", "--", "-unsafe"]) is False
+
+
 @pytest.mark.parametrize(
     "branch_name",
     [

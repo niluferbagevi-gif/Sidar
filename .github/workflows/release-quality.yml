@@ -21,8 +21,8 @@ jobs:
       BENCHMARK_COMPARE_FAIL: "mean:10%"
       BENCHMARK_IO_COMPARE_FAIL: "mean:25%"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11.15'
       - uses: astral-sh/setup-uv@v4
@@ -35,7 +35,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --all-extras
       - name: Restore reviewed benchmark baseline
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .benchmarks
           key: benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
@@ -79,7 +79,7 @@ jobs:
             --junitxml=artifacts/release-benchmark/io-junit.xml
       - name: Upload release benchmark evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-benchmark-compare
           path: artifacts/release-benchmark/
@@ -90,7 +90,7 @@ jobs:
     name: Helm lint and template
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: azure/setup-helm@v5
         with:
           version: v3.15.4
@@ -113,7 +113,7 @@ jobs:
     name: SBOM and signing gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: anchore/sbom-action/download-syft@v0.24.0
       - uses: sigstore/cosign-installer@v3.7.0
       - name: Generate CycloneDX SBOM
@@ -121,7 +121,7 @@ jobs:
       - name: Sign SBOM with keyless cosign
         run: cosign sign-blob --yes --bundle artifacts/sbom/sidar.cdx.bundle artifacts/sbom/sidar.cdx.json
       - name: Upload SBOM artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sidar-sbom-and-signature
           path: artifacts/sbom/
@@ -130,8 +130,8 @@ jobs:
     name: Wheel clean install smoke
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11.15'
       - uses: actions/setup-node@v6
@@ -158,7 +158,7 @@ jobs:
           /tmp/sidar-wheel-smoke/bin/sidar doctor --output /tmp/sidar-wheel-doctor.json
           test -s /tmp/sidar-wheel-doctor.json
       - name: Upload wheel
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sidar-wheel
           path: dist/*.whl
@@ -167,7 +167,7 @@ jobs:
     name: Docker image clean smoke
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build Docker image
         run: docker build -t sidar:${{ github.sha }} .
       - uses: anchore/sbom-action/download-syft@v0.24.0
@@ -186,11 +186,11 @@ jobs:
             -e SIDAR_ENV=development \
             sidar:${{ github.sha }} --status
       - name: Upload Docker SBOM artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sidar-docker-sbom-and-signature
           path: artifacts/sbom/
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11.15'
       - uses: astral-sh/setup-uv@v4
@@ -220,8 +220,8 @@ jobs:
     name: Benchmark and coverage trend gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11.15'
       - uses: astral-sh/setup-uv@v4
@@ -229,7 +229,7 @@ jobs:
           version: "0.12.0"
           enable-cache: true
       - name: Restore benchmark coverage trend history
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: artifacts/benchmark-coverage-trend/history.json
           key: benchmark-coverage-trend-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}
@@ -268,7 +268,7 @@ jobs:
             --max-regression-pct 15
       - name: Upload benchmark coverage trend artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: benchmark-coverage-trend
           path: artifacts/benchmark-coverage-trend/

@@ -5,7 +5,7 @@ set -euo pipefail
 project_name="${PRODUCTION_COMPOSE_PROJECT_NAME:-sidar-production-gate}"
 env_file="${PRODUCTION_COMPOSE_ENV_FILE:-.env.production.compose-gate}"
 web_port="${PRODUCTION_COMPOSE_WEB_PORT:-17860}"
-local_env_created=0
+export SIDAR_RUNTIME_ENV_FILE="${SIDAR_RUNTIME_ENV_FILE:-$env_file}"
 compose=(docker compose --project-name "$project_name" --env-file "$env_file" -f docker-compose.yml -f docker-compose.production.yml --profile cpu)
 
 cleanup() {
@@ -19,9 +19,6 @@ cleanup() {
   if [[ "${PRODUCTION_COMPOSE_ENV_FILE:-}" == "" ]]; then
     rm -f "$env_file"
   fi
-  if [[ "$local_env_created" == "1" ]]; then
-    rm -f .env
-  fi
   return "$status"
 }
 trap cleanup EXIT
@@ -30,6 +27,7 @@ if [[ "${PRODUCTION_COMPOSE_ENV_FILE:-}" == "" ]]; then
   cat >"$env_file" <<EOF
 SIDAR_ENV=production
 APP_RUNTIME_MODE=production
+SIDAR_RUNTIME_ENV_FILE=$env_file
 AI_PROVIDER=ollama
 CODING_MODEL=qwen2.5-coder:7b
 POSTGRES_DB=sidar
@@ -49,15 +47,6 @@ SIDAR_LOGS_MOUNT=sidar_logs_prod
 SIDAR_TEMP_MOUNT=sidar_temp_prod
 EOF
   chmod 600 "$env_file"
-fi
-
-# Base Compose services deliberately use `env_file: .env`. CI checkouts do not
-# contain that ignored file, so materialize the same ephemeral, secret-free gate
-# values without overwriting an operator's existing local configuration.
-if [[ ! -e .env ]]; then
-  cp "$env_file" .env
-  chmod 600 .env
-  local_env_created=1
 fi
 
 "${compose[@]}" config --quiet

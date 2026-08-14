@@ -35,10 +35,10 @@ jobs:
       BENCHMARK_JSON_OUTPUT: artifacts/benchmark/benchmark.json
       DOTENV_FILE: .env.test
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11.15"
 
@@ -105,7 +105,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload reviewed baseline artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ inputs.compare_name || 'baseline' }}
           path: |
@@ -115,7 +115,7 @@ jobs:
           retention-days: 30
 
       - name: Save benchmark baseline cache for CI
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: .benchmarks
           key: benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
