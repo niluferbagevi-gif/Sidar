@@ -2720,6 +2720,7 @@ def test_makefile_benchmark_seed_is_local_only_and_production_readiness_is_relea
         in base_quality_block
     )
     assert "SIDAR_PRODUCTION_READINESS=$(CI_PRODUCTION_READINESS)" in base_quality_block
+    assert "env -u CI_RUN_BENCHMARKS -u CI_PRODUCTION_READINESS" in base_quality_block
     assert "bash run_tests.sh --stage all" in base_quality_block
     assert (
         "$(MAKE) base-quality-gates CI_RUN_BENCHMARKS=required CI_PRODUCTION_READINESS=1"

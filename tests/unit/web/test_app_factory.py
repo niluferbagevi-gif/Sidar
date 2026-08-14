@@ -158,9 +158,7 @@ def test_create_app_settings_control_production_policy_without_process_env(
     async def settings_secret_boom() -> None:
         raise RuntimeError("settings-only-secret")
 
-    response = make_test_client(app, raise_server_exceptions=False).get(
-        "/settings-secret-boom"
-    )
+    response = make_test_client(app, raise_server_exceptions=False).get("/settings-secret-boom")
 
     assert app.docs_url is None
     assert response.json() == {"success": False, "error": "İç sunucu hatası"}

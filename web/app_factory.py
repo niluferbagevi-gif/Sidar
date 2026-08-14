@@ -146,9 +146,7 @@ def create_app(
     router registration is centralized through ``register_routers`` in this
     factory module.
     """
-    include_api_docs = (
-        _expose_api_docs(settings) if expose_api_docs is None else expose_api_docs
-    )
+    include_api_docs = _expose_api_docs(settings) if expose_api_docs is None else expose_api_docs
     resolved_version = version or getattr(settings, "VERSION", None) or PRODUCT_VERSION
     application = FastAPI(
         title="Sidar Web UI & REST API",

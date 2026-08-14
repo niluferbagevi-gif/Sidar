@@ -69,9 +69,13 @@ def _git_run(
         return ""
     safe_cmd = [git_executable, *cmd[1:]]
     try:
-        return subprocess.check_output(  # nosec B603  # absolute git; exact argv allowlist; shell=False
-            safe_cmd, cwd=cwd, stderr=stderr, shell=False
-        ).decode().strip()
+        return (
+            subprocess.check_output(  # nosec B603  # absolute git; exact argv allowlist; shell=False
+                safe_cmd, cwd=cwd, stderr=stderr, shell=False
+            )
+            .decode()
+            .strip()
+        )
     except subprocess.CalledProcessError as exc:
         active_logger.warning("Git komutu başarısız oldu: %s (exit=%s)", cmd, exc.returncode)
         return ""
