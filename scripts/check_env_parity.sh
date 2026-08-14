@@ -36,7 +36,7 @@ Seçenekler:
 Varsayılan ignore listesi:
   PYTEST_CURRENT_TEST, PYTEST_XDIST_WORKER, VIRTUAL_ENV, CONDA_PREFIX,
   CI, GITHUB_ACTIONS, GITHUB_REPOSITORY, C_INCLUDE_PATH, DOCKER_SETTINGS_JSON,
-  MODE_ENV
+  DATABASE_URL, SIDAR_CONTAINER_DATABASE_URL, SELF_HEAL_DATABASE_URL, MODE_ENV
 EOF_USAGE
 }
 
@@ -54,6 +54,10 @@ IGNORE_KEYS=(
   # Derleyici toolchain'i ve WSL GPU preflight'ın geçici process girdileri.
   C_INCLUDE_PATH
   DOCKER_SETTINGS_JSON
+  # POSTGRES_* parçalarından türetilen veya yalnız açık runtime override ile kullanılan DSN'ler.
+  DATABASE_URL
+  SIDAR_CONTAINER_DATABASE_URL
+  SELF_HEAL_DATABASE_URL
   MODE_ENV
   # Bu script'in ignore listesini gömülü Python sürecine taşıyan iç değişken.
   SIDAR_ENV_PARITY_IGNORE

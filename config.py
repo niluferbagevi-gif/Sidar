@@ -971,6 +971,9 @@ class Config:
     ENABLE_GRAPH_RAG: bool = get_bool_env("ENABLE_GRAPH_RAG", True)
     GRAPH_RAG_MAX_FILES: int = get_int_env("GRAPH_RAG_MAX_FILES", 5000)
     ENABLE_RAG_ENTITY_EXTRACTION: bool = get_bool_env("ENABLE_RAG_ENTITY_EXTRACTION", True)
+    # Liveness remains process-only; when enabled, /readyz fails closed unless
+    # both the configured vector backend and BM25 runtime are initialized.
+    RAG_REQUIRED_FOR_READINESS: bool = get_bool_env("RAG_REQUIRED_FOR_READINESS", False)
     RAG_ENTITY_MAX_PER_DOC: int = get_int_env("RAG_ENTITY_MAX_PER_DOC", 24)
     ENABLE_RAG_LLM_ENTITY_EXTRACTION: bool = get_bool_env("ENABLE_RAG_LLM_ENTITY_EXTRACTION", False)
     RAG_LLM_ENTITY_PROVIDER: str = os.getenv("RAG_LLM_ENTITY_PROVIDER", "")

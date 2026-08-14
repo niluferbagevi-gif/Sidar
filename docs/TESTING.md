@@ -453,6 +453,11 @@ geçirmez. `production_ready=true` için strict benchmark ve browser kapıların
 `scripts/ci/validate_production_compose.sh` ile production override üzerinde PostgreSQL/Redis
 health, `/healthz`, `/readyz` (RAG/runtime readiness), Alembic head, container restart,
 named-volume persistence ve graceful shutdown davranışlarını doğrular.
+Production profilinde `RAG_REQUIRED_FOR_READINESS=true` olduğundan metadata-only seed'in
+başarılı olması tek başına readiness kanıtı sayılmaz: `/healthz` process liveness için 200 ve
+komponent bazlı `degraded` raporu verebilir; vector+BM25 runtime hazır değilse `/readyz` ve
+zorunlu RAG sorgusu 503 döner. Opsiyonel profiller aynı komponent payload'ını korur fakat RAG
+eksikliği tek başına readiness HTTP kodunu başarısız yapmaz.
 
 ### 1. Self-hosted GPU runner kullanılabilirliği
 

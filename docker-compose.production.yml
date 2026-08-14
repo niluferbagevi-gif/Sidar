@@ -15,6 +15,7 @@ services:
       - APP_RUNTIME_MODE=production
       - DEBUG=false
       - DB_DEGRADED_MODE_ON_POSTGRES_FAILURE=false
+      - RAG_REQUIRED_FOR_READINESS=true
     volumes:
       - sidar_data_prod:/app/data
       - sidar_logs_prod:/app/logs

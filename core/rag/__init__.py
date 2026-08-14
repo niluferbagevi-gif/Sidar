@@ -1534,6 +1534,49 @@ class DocumentStore:
 
         return f"RAG: {len(self._index)} belge | Motorlar: {', '.join(engines)}"
 
+    def runtime_readiness_report(self) -> dict[str, Any]:
+        """Report live retrieval backends independently from seed metadata."""
+        vector_backend = str(getattr(self, "_vector_backend", "") or "").lower()
+        if vector_backend == "pgvector":
+            vector_ready = bool(getattr(self, "_pgvector_available", False))
+        else:
+            vector_ready = bool(
+                getattr(self, "_chroma_available", False)
+                and getattr(self, "collection", None) is not None
+            )
+        bm25_ready = bool(
+            getattr(self, "_bm25_available", False)
+            and getattr(self, "_bm25_init_done", False)
+        )
+        graph_ready = bool(
+            not getattr(self, "_graph_rag_enabled", False)
+            or getattr(self, "_graph_ready", False)
+            or bool(getattr(self, "_entity_graph", {}))
+        )
+        return {
+            "ready": vector_ready and bm25_ready,
+            "document_count": len(self._index),
+            "metadata_seeded": bool(self._index),
+            "vector_initialization_enabled": bool(
+                getattr(self, "_vector_initialization_enabled", False)
+            ),
+            "components": {
+                "rag_vector": {
+                    "healthy": vector_ready,
+                    "status": "healthy" if vector_ready else "unavailable",
+                    "backend": vector_backend or "unknown",
+                },
+                "rag_bm25": {
+                    "healthy": bm25_ready,
+                    "status": "healthy" if bm25_ready else "unavailable",
+                },
+                "rag_graph": {
+                    "healthy": graph_ready,
+                    "status": "healthy" if graph_ready else "unavailable",
+                },
+            },
+        }
+
     def pgvector_runtime_status(self) -> dict[str, Any]:
         """Expose degraded pgvector state for health and metrics consumers."""
         return pgvector_backend.pgvector_runtime_status(self)
