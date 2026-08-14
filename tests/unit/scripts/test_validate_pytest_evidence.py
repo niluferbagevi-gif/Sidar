@@ -64,8 +64,27 @@ def test_validate_evidence_rejects_missing_or_skipped_pytest(tmp_path: Path) -> 
     assert "CI commit SHA boş" in errors
 
 
-def test_cli_always_writes_invalid_attestation_for_diagnostics(tmp_path: Path) -> None:
+def test_cli_writes_invalid_attestation_when_artifacts_are_missing(tmp_path: Path) -> None:
     output = tmp_path / "evidence.json"
+    missing_summary = tmp_path / "missing-summary.json"
+    missing_junit = tmp_path / "missing-pytest"
+    missing_coverage = tmp_path / "missing-coverage.json"
 
-    assert main(["--output", str(output), "--commit-sha", "deadbeef"]) == 1
+    assert (
+        main(
+            [
+                "--summary",
+                str(missing_summary),
+                "--junit-dir",
+                str(missing_junit),
+                "--coverage",
+                str(missing_coverage),
+                "--output",
+                str(output),
+                "--commit-sha",
+                "deadbeef",
+            ]
+        )
+        == 1
+    )
     assert json.loads(output.read_text(encoding="utf-8"))["valid"] is False
