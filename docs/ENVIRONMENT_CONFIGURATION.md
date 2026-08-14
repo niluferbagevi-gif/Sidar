@@ -115,16 +115,17 @@ By default, `install_sidar.sh` writes real service/provider API keys only to
 configuration. If you need the legacy behavior for an isolated environment, opt in
 explicitly:
 
-Seeing `.env` report `0/18` filled service API keys is therefore not a failure when
+Seeing `.env` report `0/N` filled service API keys (for example, `0/21` with the current
+installer key catalog) is therefore not a failure when
 `SIDAR_KEYS_FILE`/`~/.sidar_keys.env` contains the real keys. The `.env` status line
 describes only repo-local materialization; the runtime loader still reads the final
 secret overlay from `SIDAR_KEYS_FILE`. Keep that file outside the repository with mode
 `600` or stricter, and do not copy personal provider keys into `.env` unless the
 explicit materialization opt-in below is intentional.
 
-The installer summary reports the non-secret counts separately: `.env: 0/18` describes
-repo-local materialization, while `Secret overlay durumu: N/18` counts non-empty provider
-keys in `SIDAR_KEYS_FILE` without printing their values. An overlay count below 18 is also
+The installer summary reports the non-secret counts separately: `.env: 0/N` describes
+repo-local materialization, while `Secret overlay durumu: M/N` counts non-empty provider
+keys in `SIDAR_KEYS_FILE` without printing their values. An overlay count below `N` is also
 valid when those optional integrations are unused; provider availability should be judged
 from the masked key-source table rather than by copying secrets back into `.env`.
 
