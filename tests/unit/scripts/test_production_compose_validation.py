@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 
 def test_production_compose_gate_covers_runtime_release_evidence() -> None:
@@ -47,6 +52,52 @@ def test_generated_gate_env_satisfies_required_compose_interpolation() -> None:
     assert "compose-gate-grafana-admin-password-32" not in Path(
         ".github/workflows/ci.yml"
     ).read_text(encoding="utf-8")
+
+
+@pytest.mark.integration
+def test_generated_gate_env_passes_real_compose_config(tmp_path: Path) -> None:
+    """Run Compose interpolation against the gate-generated disposable environment."""
+    docker = shutil.which("docker")
+    if docker is None:
+        pytest.skip("Docker CLI is not installed")
+
+    compose_version = subprocess.run(
+        [docker, "compose", "version"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if compose_version.returncode != 0:
+        pytest.skip("Docker Compose plugin is not installed")
+
+    for relative_path in (
+        "docker-compose.yml",
+        "docker-compose.production.yml",
+        "scripts/ci/validate_production_compose.sh",
+    ):
+        destination = tmp_path / relative_path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(relative_path, destination)
+
+    clean_env = {
+        "HOME": str(tmp_path),
+        "PATH": os.environ["PATH"],
+        "PRODUCTION_COMPOSE_CONFIG_ONLY": "1",
+        "PRODUCTION_COMPOSE_PROJECT_NAME": f"sidar-compose-config-{tmp_path.name}",
+    }
+    completed = subprocess.run(
+        ["bash", "scripts/ci/validate_production_compose.sh"],
+        cwd=tmp_path,
+        env=clean_env,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert not (tmp_path / ".env.production.compose-gate").exists()
+    assert not (tmp_path / ".env").exists()
 
 
 def test_production_readiness_aggregate_requires_compose_and_minimal_profiles() -> None:
