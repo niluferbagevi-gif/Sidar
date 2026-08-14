@@ -411,14 +411,9 @@ def test_run_tests_verifies_alembic_downgrade_upgrade_chain() -> None:
 
 def test_run_tests_uses_loadgroup_distribution_for_xdist_state_isolation() -> None:
     script = _script()
-    coverage_helper = Path("scripts/test_gates/coverage_helpers.sh").read_text(encoding="utf-8")
     notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
 
     assert 'PYTEST_DIST_MODE="${PYTEST_DIST_MODE:-loadgroup}"' in script
-    assert (
-        'env "SIDAR_ENV=test" "DOTENV_FILE=${test_dotenv_file}" uv run pytest'
-        in coverage_helper
-    )
     assert 'base_pytest_cmd+=(-n "${PYTEST_WORKERS}" --dist "${PYTEST_DIST_MODE}")' in script
     assert 'TEST_SUMMARY_JUNIT_DIR="${TEST_SUMMARY_JUNIT_DIR:-artifacts/pytest}"' in script
 
@@ -432,6 +427,26 @@ def test_run_tests_uses_loadgroup_distribution_for_xdist_state_isolation() -> No
 
     assert "Aşama 1 unit fazı artık pytest-xdist mevcutsa" in notes
     assert "Unit ağırlığı" in notes
+
+
+def test_unit_pytest_command_forces_test_runtime_environment() -> None:
+    """Keep host runtime state out of the high-concurrency unit phase."""
+    coverage_helper = Path("scripts/test_gates/coverage_helpers.sh").read_text(encoding="utf-8")
+    base_command = coverage_helper[
+        coverage_helper.index("  local base_pytest_cmd=(") : coverage_helper.index(
+            '  if [ "${QUALITY_GATE_EXIT_AFTER_FIRST_FAIL}"',
+        )
+    ]
+    unit_phase = coverage_helper[
+        coverage_helper.index("    local phase1_cmd=(") : coverage_helper.index(
+            '    echo "➡️ Aşama 1 (Unit) komutu',
+        )
+    ]
+
+    assert 'env "SIDAR_ENV=test" "DOTENV_FILE=${test_dotenv_file}"' in base_command
+    assert "uv run pytest -c pyproject.toml" in base_command
+    assert '"${base_pytest_cmd[@]}"' in unit_phase
+    assert "tests/unit" in unit_phase
 
 
 def test_run_tests_enforces_combined_gate_before_ratchet() -> None:
