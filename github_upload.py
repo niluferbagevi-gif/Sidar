@@ -243,23 +243,70 @@ def _github_repo_slug(remote_url: str) -> str:
     return normalized.removeprefix("https://github.com/")
 
 
+def _github_api_request(
+    url: str,
+    *,
+    method: str,
+    github_token: str,
+    timeout: float,
+    payload: Mapping[str, object] | None = None,
+) -> object:
+    """Send JSON to the allowlisted GitHub API origin through one audited sink."""
+    normalized_method = method.upper()
+    if normalized_method not in {"GET", "POST"}:
+        raise ValueError("GitHub API isteği yalnızca GET veya POST kullanabilir.")
+    if timeout <= 0:
+        raise ValueError("GitHub API timeout değeri pozitif olmalıdır.")
+    parsed = urllib.parse.urlsplit(url)
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("GitHub API URL portu geçersiz.") from exc
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "api.github.com"
+        or port is not None
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.fragment
+    ):
+        raise ValueError(
+            "GitHub API isteği yalnızca https://api.github.com hedefine gönderilebilir."
+        )
+
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {github_token}",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if data is not None:
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(url, data=data, headers=headers, method=normalized_method)
+    # URL origin'i yukarıdaki allowlist ile doğrulanır; tek denetlenmiş ağ sink'i budur.
+    with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310
+        return json.loads(response.read().decode("utf-8"))
+
+
 def _find_existing_upload_pull_request(repo_slug: str, branch: str, github_token: str) -> str:
     """Return an existing open upload PR after an ambiguous create response."""
     owner = repo_slug.partition("/")[0]
     query = urllib.parse.urlencode({"state": "open", "head": f"{owner}:{branch}", "base": "main"})
-    request = urllib.request.Request(  # nosec B310  # Sabit HTTPS GitHub API origin'i.
-        f"https://api.github.com/repos/{repo_slug}/pulls?{query}",
-        headers={
-            "Accept": "application/vnd.github+json",
-            "Authorization": f"Bearer {github_token}",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
-        method="GET",
-    )
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:  # nosec B310
-            result = json.loads(response.read().decode("utf-8"))
-    except (urllib.error.HTTPError, urllib.error.URLError, OSError, json.JSONDecodeError):
+        result = _github_api_request(
+            f"https://api.github.com/repos/{repo_slug}/pulls?{query}",
+            method="GET",
+            github_token=github_token,
+            timeout=30,
+        )
+    except (
+        urllib.error.HTTPError,
+        urllib.error.URLError,
+        OSError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        ValueError,
+    ):
         return ""
     if not isinstance(result, list):
         return ""
@@ -278,31 +325,23 @@ def _open_upload_pull_request_via_api(branch: str, github_token: str) -> tuple[b
     if not repo_slug:
         return False, "GitHub origin adresinden owner/repository bilgisi çözülemedi."
 
-    payload = json.dumps(
-        {
-            "title": f"Sidar {resolve_upload_version()} otomatik yükleme",
-            "head": branch,
-            "base": "main",
-            "body": "Sidar github_upload.py tarafından PR-first yükleme akışıyla oluşturuldu.",
-        }
-    ).encode("utf-8")
-    request = urllib.request.Request(  # nosec B310  # Sabit HTTPS GitHub API origin'i.
-        f"https://api.github.com/repos/{repo_slug}/pulls",
-        data=payload,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "Authorization": f"Bearer {github_token}",
-            "Content-Type": "application/json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
-        method="POST",
-    )
+    payload = {
+        "title": f"Sidar {resolve_upload_version()} otomatik yükleme",
+        "head": branch,
+        "base": "main",
+        "body": "Sidar github_upload.py tarafından PR-first yükleme akışıyla oluşturuldu.",
+    }
     result: object = {}
     last_error = ""
     for attempt in range(1, GITHUB_PR_API_MAX_ATTEMPTS + 1):
         try:
-            with urllib.request.urlopen(request, timeout=30) as response:  # nosec B310
-                result = json.loads(response.read().decode("utf-8"))
+            result = _github_api_request(
+                f"https://api.github.com/repos/{repo_slug}/pulls",
+                method="POST",
+                github_token=github_token,
+                timeout=30,
+                payload=payload,
+            )
             break
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace").strip()
@@ -321,7 +360,13 @@ def _open_upload_pull_request_via_api(branch: str, github_token: str) -> tuple[b
                     return True, existing_url
             last_error = f"GitHub API PR isteği HTTP {exc.code} ile reddedildi: {detail}"
             retryable = exc.code in GITHUB_PR_API_RETRYABLE_HTTP_CODES
-        except (urllib.error.URLError, OSError, json.JSONDecodeError) as exc:
+        except (
+            urllib.error.URLError,
+            OSError,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            ValueError,
+        ) as exc:
             existing_url = _find_existing_upload_pull_request(repo_slug, branch, github_token)
             if existing_url:
                 return True, existing_url
