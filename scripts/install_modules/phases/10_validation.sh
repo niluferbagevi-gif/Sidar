@@ -442,7 +442,7 @@ run_install_frontend_quality_validation() {
     step "Frontend Kalite Kapısı"
 
     if [[ "${RUN_INSTALL_INTEGRATION_TESTS:-false}" != true ]]; then
-        info "--with-integration verilmediği için frontend stage çalıştırılmadı. Manuel komut: RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend"
+        info "Installer erken frontend doğrulaması: atlandı (--with-integration verilmedi). Manuel komut: RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend"
         FRONTEND_QUALITY_STATUS="atlandi_bayrak"
         return
     fi
@@ -588,6 +588,7 @@ print_install_production_readiness_notice() {
 sync_frontend_quality_status_from_test_summary() {
     local field=""
     local status=""
+    local summary_path="${TEST_SUMMARY_JSON:-${SCRIPT_DIR}/artifacts/test-summary.json}"
     local all_passed=true
     local any_failed=false
     local any_ran=false
@@ -596,7 +597,7 @@ sync_frontend_quality_status_from_test_summary() {
         frontend_bundle_budget frontend_e2e
     )
 
-    [[ -r "${TEST_SUMMARY_JSON:-}" ]] || return 1
+    [[ -r "$summary_path" ]] || return 1
 
     for field in "${mandatory_frontend_fields[@]}"; do
         status="$(read_install_test_summary_field "$field" 2>/dev/null || printf 'skipped')"
@@ -775,6 +776,8 @@ print_install_benchmark_baseline_note() {
 }
 
 print_install_ci_parity_summary() {
+    sync_frontend_quality_status_from_test_summary || true
+
     local ci_status="${CI_FULL_VALIDATION_STATUS:-atlandi_bayrak}"
     local frontend_status="${FRONTEND_QUALITY_STATUS:-atlandi_bayrak}"
 
@@ -795,11 +798,15 @@ print_install_ci_parity_summary() {
     fi
 
     if [[ "$frontend_status" == "tamamlandi" ]]; then
-        echo -e "   ${GREEN}✅ Frontend CI paritesi: lint/typecheck/audit/coverage/e2e smoke stage'i geçti.${NC}"
+        if [[ "$ci_status" == "tamamlandi" ]]; then
+            echo -e "   ${GREEN}✅ Dev-full frontend kalite kapısı: artifacts/test-summary.json sonucuna göre geçti.${NC}"
+        else
+            echo -e "   ${GREEN}✅ Installer frontend kalite kapısı: lint/typecheck/audit/coverage/e2e stage'i geçti.${NC}"
+        fi
     elif [[ "$frontend_status" == "hata" ]]; then
-        echo -e "   ${RED}❌ Frontend CI paritesi: frontend stage başarısız.${NC}"
+        echo -e "   ${RED}❌ Frontend kalite kapısı: artifacts/test-summary.json sonucuna göre başarısız.${NC}"
     else
-        echo -e "   ${YELLOW}⏭️  Frontend CI paritesi: frontend stage çalışmadı (${frontend_status:-bilinmiyor}).${NC}"
+        echo -e "   ${YELLOW}⏭️  Installer erken frontend doğrulaması: atlandı (${frontend_status:-bilinmiyor}).${NC}"
     fi
 }
 

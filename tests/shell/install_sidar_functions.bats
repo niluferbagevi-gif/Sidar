@@ -3161,6 +3161,29 @@ JSON
   [[ "$output" != *"Entegrasyon testleri: atlandı"* ]]
 }
 
+@test "dev-full final summary cannot report frontend as both skipped and passed" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    mkdir -p "$SCRIPT_DIR/artifacts"
+    cat > "$SCRIPT_DIR/artifacts/test-summary.json" <<JSON
+{"frontend_audit":"passed","frontend_lint":"passed","frontend_typecheck":"passed","frontend_coverage":"passed","frontend_bundle_budget":"passed","frontend_e2e":"passed"}
+JSON
+    unset TEST_SUMMARY_JSON
+    CI_FULL_VALIDATION_STATUS="tamamlandi"
+    FRONTEND_QUALITY_STATUS="atlandi_bayrak"
+
+    print_install_ci_parity_summary
+
+    [[ "$FRONTEND_QUALITY_STATUS" == "tamamlandi" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Dev-full frontend kalite kapısı: artifacts/test-summary.json sonucuna göre geçti."* ]]
+  [[ "$output" != *"Installer erken frontend doğrulaması: atlandı"* ]]
+  [[ "$output" != *"frontend stage çalışmadı"* ]]
+}
+
 @test "finish summary reports frontend e2e scope and script from test summary" {
   run_installer_function '
     tmpdir="$(mktemp -d)"
