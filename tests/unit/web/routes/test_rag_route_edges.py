@@ -167,6 +167,29 @@ async def test_rag_search_returns_503_when_required_runtime_is_not_ready(tmp_pat
 
 
 @pytest.mark.asyncio
+async def test_rag_search_continues_when_optional_runtime_is_not_ready(tmp_path: Path) -> None:
+    search_calls: list[tuple[Any, ...]] = []
+    docs = SimpleNamespace(
+        runtime_readiness_report=lambda: {
+            "ready": False,
+            "metadata_seeded": True,
+            "components": {
+                "rag_vector": {"healthy": False, "status": "unavailable"},
+                "rag_bm25": {"healthy": True, "status": "healthy"},
+            },
+        },
+        search=lambda *args: search_calls.append(args) or (True, [{"id": "optional-rag"}]),
+    )
+    rag_search = _build_rag_exports(tmp_path, docs, rag_required=False)["rag_search"]
+
+    response = await rag_search(q="sidar", mode="hybrid", top_k=4)
+
+    assert response.status_code == 200
+    assert _json_body(response) == {"success": True, "result": [{"id": "optional-rag"}]}
+    assert search_calls == [("sidar", 4, "hybrid", "session-1")]
+
+
+@pytest.mark.asyncio
 async def test_rag_document_management_routes_cover_success_and_validation(tmp_path: Path) -> None:
     added_files: list[tuple[Any, ...]] = []
     docs = SimpleNamespace(

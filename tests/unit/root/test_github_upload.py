@@ -176,6 +176,123 @@ def test_open_upload_pull_request_uses_github_api_when_gh_is_missing(monkeypatch
     }
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://api.github.com/repos/example/sidar/pulls",
+        "https://evil.example/repos/example/sidar/pulls",
+        "https://api.github.com.evil.example/repos/example/sidar/pulls",
+        "https://api.github.com:443/repos/example/sidar/pulls",
+        "https://user:password@api.github.com/repos/example/sidar/pulls",
+        "https://api.github.com/repos/example/sidar/pulls#fragment",
+        "https://api.github.com:invalid/repos/example/sidar/pulls",
+    ],
+)
+def test_github_api_request_rejects_non_allowlisted_origins(monkeypatch, url):
+    monkeypatch.setattr(
+        gu.urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: pytest.fail("Rejected origins must not reach the network sink"),
+    )
+
+    with pytest.raises(ValueError, match="GitHub API"):
+        gu._github_api_request(
+            url,
+            method="GET",
+            github_token="secret-token",
+            timeout=30,
+        )
+
+
+@pytest.mark.parametrize(
+    ("method", "timeout", "message"),
+    [("DELETE", 30, "GET veya POST"), ("GET", 0, "pozitif")],
+)
+def test_github_api_request_rejects_unsupported_method_or_timeout(method, timeout, message):
+    with pytest.raises(ValueError, match=message):
+        gu._github_api_request(
+            "https://api.github.com/repos/example/sidar/pulls",
+            method=method,
+            github_token="secret-token",
+            timeout=timeout,
+        )
+
+
+def test_github_api_request_accepts_allowlisted_origin_and_requires_timeout(monkeypatch):
+    class ApiResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self):
+            return b'{"ok":true}'
+
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["timeout"] = timeout
+        return ApiResponse()
+
+    monkeypatch.setattr(gu.urllib.request, "urlopen", fake_urlopen)
+
+    result = gu._github_api_request(
+        "https://api.github.com/repos/example/sidar/pulls",
+        method="GET",
+        github_token="secret-token",
+        timeout=7,
+    )
+
+    assert result == {"ok": True}
+    assert captured == {
+        "url": "https://api.github.com/repos/example/sidar/pulls",
+        "timeout": 7,
+    }
+
+
+def test_find_existing_upload_pull_request_encodes_branch_query(monkeypatch):
+    captured = {}
+
+    def fake_request(url, **kwargs):
+        captured["url"] = url
+        captured.update(kwargs)
+        return [{"html_url": "https://github.com/example/sidar/pull/9"}]
+
+    monkeypatch.setattr(gu, "_github_api_request", fake_request)
+
+    result = gu._find_existing_upload_pull_request(
+        "example/sidar",
+        "sidar/upload with+reserved?chars",
+        "secret-token",
+    )
+
+    assert result == "https://github.com/example/sidar/pull/9"
+    assert "head=example%3Asidar%2Fupload+with%2Breserved%3Fchars" in captured["url"]
+    assert captured["method"] == "GET"
+    assert captured["timeout"] == 30
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        gu.urllib.error.URLError("offline"),
+        json.JSONDecodeError("invalid", "not-json", 0),
+    ],
+)
+def test_find_existing_upload_pull_request_fails_safe(monkeypatch, failure):
+    def fail_request(*_args, **_kwargs):
+        raise failure
+
+    monkeypatch.setattr(gu, "_github_api_request", fail_request)
+
+    assert (
+        gu._find_existing_upload_pull_request("example/sidar", "sidar/upload-test", "secret-token")
+        == ""
+    )
+
+
 def test_open_upload_pull_request_retries_transient_api_failure(monkeypatch):
     class ApiResponse:
         def __init__(self, payload):
@@ -258,6 +375,47 @@ def test_open_upload_pull_request_recovers_when_transient_response_hides_created
 
     assert success is True
     assert pr_url == "https://github.com/example/sidar/pull/9"
+    assert methods == ["POST", "GET"]
+
+
+def test_open_upload_pull_request_recovers_existing_pr_after_422(monkeypatch):
+    class ApiResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self):
+            return b'[{"html_url":"https://github.com/example/sidar/pull/10"}]'
+
+    methods = []
+
+    def fake_urlopen(request, timeout):
+        methods.append(request.get_method())
+        assert timeout == 30
+        if request.get_method() == "POST":
+            raise gu.urllib.error.HTTPError(
+                request.full_url,
+                422,
+                "Unprocessable Entity",
+                {},
+                io.BytesIO(b'{"message":"A pull request already exists"}'),
+            )
+        return ApiResponse()
+
+    monkeypatch.setattr(gu.shutil, "which", lambda _command: None)
+    monkeypatch.setattr(
+        gu,
+        "run_command",
+        lambda _command, show_output=False: (True, "https://github.com/example/sidar.git"),
+    )
+    monkeypatch.setattr(gu.urllib.request, "urlopen", fake_urlopen)
+
+    success, pr_url = gu.open_upload_pull_request("sidar/upload-test", "secret-token")
+
+    assert success is True
+    assert pr_url == "https://github.com/example/sidar/pull/10"
     assert methods == ["POST", "GET"]
 
 
