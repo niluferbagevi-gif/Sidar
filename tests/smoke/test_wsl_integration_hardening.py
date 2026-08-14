@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import textwrap
@@ -5,6 +6,71 @@ import textwrap
 import pytest
 
 pytestmark = pytest.mark.installer_smoke
+
+
+@pytest.mark.parametrize(
+    ("settings", "expected_default", "expected_distros"),
+    [
+        (
+            {
+                "EnableIntegrationWithDefaultWslDistro": True,
+                "IntegratedWslDistros": ["Ubuntu", "Ubuntu-24.04"],
+            },
+            "true",
+            "Ubuntu,Ubuntu-24.04",
+        ),
+        (
+            {
+                "enableIntegrationWithDefaultWslDistro": False,
+                "integratedWslDistros": ["Ubuntu-26.04"],
+            },
+            "false",
+            "Ubuntu-26.04",
+        ),
+        (
+            {"wslEngineEnabled": True, "wsl": {"distros": {"Ubuntu": True}}},
+            "true",
+            "Ubuntu",
+        ),
+        (
+            {
+                "integration": {
+                    "wslEngineEnabled": True,
+                    "wslDistros": {"Ubuntu-Preview": True},
+                }
+            },
+            "true",
+            "Ubuntu-Preview",
+        ),
+    ],
+)
+def test_wsl_integration_settings_schema_variants_are_normalized(
+    settings, expected_default, expected_distros
+):
+    """Docker Desktop'ın eski ve yeni settings şemalarını aynı sözleşmeye indirger."""
+    script = textwrap.dedent(
+        """
+        set -euo pipefail
+        source scripts/install_modules/utils/wsl_gpu_preflight.sh
+        sidar_read_docker_settings_json(){ printf '%s' "$DOCKER_SETTINGS_JSON"; }
+        sidar_resolve_wsl_integration_fields
+        """
+    )
+    env = os.environ.copy()
+    env["DOCKER_SETTINGS_JSON"] = json.dumps(settings)
+
+    result = subprocess.run(
+        ["bash", "-c", script],
+        cwd=os.getcwd(),
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    resolved = dict(line.split("=", 1) for line in result.stdout.splitlines())
+
+    assert resolved["enable_default"].lower() == expected_default
+    assert resolved["integrated_csv"] == expected_distros
 
 
 def test_preflight_sets_autofix_eligible_when_default_covers_and_hardening_enabled(tmp_path):
