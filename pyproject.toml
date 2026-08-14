@@ -71,7 +71,7 @@ dependencies = [
   "bleach>=6.4.0,<7.0.0",
   # Keep NeMo Guardrails on the validated 0.22 minor until the SecurityManager
   # adapter contract is re-run against a newer major/minor API.
-  "nemoguardrails>=0.22.0,<0.23.0",
+  "nemoguardrails>=0.23.0,<0.24.0",
   # ── Harici entegrasyonlar ─────────────────────────────────────────────
   "PyGithub~=2.4.0",
   "duckduckgo-search~=6.2.13",
@@ -79,12 +79,12 @@ dependencies = [
   "pillow>=12.2.0,<14.0.0",
   "pyttsx3~=2.98",
   "chromadb~=0.5.5",
-  "langchain-core>=1.0.0,<2.0.0",
+  "langchain-core>=1.5.4,<2.0.0",
   "langchain-community>=0.3.0,<2.0.0",
   "langchain-text-splitters>=1.1.2,<2.0.0",
   # Pin transitive langsmith above GHSA-f4xh-w4cj-qxq8 fix; needed until
   # langchain-* upstream tightens its own floor on langsmith.
-  "langsmith>=0.10.17,<1.0.0",
+  "langsmith>=0.10.18,<1.0.0",
   # ChromaDB 0.5.x brings PostHog as its telemetry client; keep it on the
   # current 5.x API until the Chroma/RAG telemetry smoke matrix validates v6.
   "posthog<6.0.0",
@@ -141,10 +141,10 @@ anthropic = [
   "anthropic~=0.121.0",
 ]
 openai = [
-  "openai>=2.53.0,<3.0.0",
+  "openai>=2.54.0,<3.0.0",
 ]
 litellm = [
-  "litellm>=1.96.0,<2.0.0",
+  "litellm>=1.96.2,<2.0.0",
 ]
 
 # ── Altyapı extras ────────────────────────────────────────────────────────
@@ -172,7 +172,7 @@ rag = [
   "sentence-transformers>=5.7.0,<6.0.0",
 ]
 lora = [
-  "transformers>=5.0.0,<6.0.0",
+  "transformers>=5.15.0,<6.0.0",
   "peft>=0.12.0",
   "datasets>=2.20.0",
   "bitsandbytes>=0.43.0; platform_system != 'Darwin'",
@@ -194,7 +194,7 @@ slack = [
 ]
 browser = [
   "playwright>=1.62.0,<1.63",
-  "selenium~=4.46.0",
+  "selenium~=4.47.0",
 ]
 voice = [
   "SpeechRecognition~=3.10.4",
@@ -208,7 +208,7 @@ tools = [
   "yt-dlp>=2024.0.0",
 ]
 aws = [
-  "boto3~=1.43.67",
+  "boto3~=1.43.69",
 ]
 jira = [
   "jira~=3.10.5",
@@ -249,14 +249,14 @@ dev = [
   "pytest-cov~=5.0.0",
   "pytest-benchmark~=5.2.3",
   "pytest-mock>=3.14.0",
-  "hypothesis>=6.165.2",
+  "hypothesis>=6.165.3",
   "respx>=0.21.1",
   "fakeredis>=2.20.0",
   "testcontainers>=4.0.0",
   "ruff>=0.16.2,<0.17",
   "mypy~=1.11.2",
   "pyright>=1.1.409,<2.0.0",
-  "pre-commit>=4.0.0,<5.0.0",
+  "pre-commit>=4.6.2,<5.0.0",
   "shellcheck-py>=0.11.0.1,<0.12.0",
   "types-bleach>=6.4.0.20260607",
   "defusedxml>=0.7.1",
