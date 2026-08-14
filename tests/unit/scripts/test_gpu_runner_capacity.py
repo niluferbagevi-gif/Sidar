@@ -19,6 +19,18 @@ def test_watchdog_workflow_guards_gate_variable_and_runner_capacity() -> None:
     assert "--minimum-online 2" in workflow
 
 
+def test_runbook_provisions_and_verifies_repository_control_plane() -> None:
+    """Operators must configure GitHub state explicitly instead of weakening the gate."""
+    runbook = Path("docs/runbooks/gpu-runner-continuity.md").read_text(encoding="utf-8")
+
+    assert "gh variable set ENABLE_GPU_BENCH_GATE --body true" in runbook
+    assert "gh variable get ENABLE_GPU_BENCH_GATE" in runbook
+    assert "gh workflow run gpu-runner-capacity-watchdog.yml" in runbook
+    assert "GPU_RUNNER_MONITOR_TOKEN" in runbook
+    assert "`self-hosted`, `linux`, `x64`, `gpu`, `cuda`" in runbook
+    assert "yerel GPU sonucu bu kontrolü bypass edemez" in runbook
+
+
 def _runner(name: str, *, status: str = "online", labels: tuple[str, ...] = ()) -> dict:
     return {
         "name": name,

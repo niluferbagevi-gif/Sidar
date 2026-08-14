@@ -34,6 +34,32 @@ görünür kılan erken uyarıdır.
 > herhangi birinin eksikliğini saatlik fail-closed sinyale dönüştürür. Gerçek release kanıtı yine
 > her CI çalışmasındaki `GPU Inference Quality Gate` sonucudur; yerel benchmark kabul edilmez.
 
+## Repository kontrol düzlemi kurulumu
+
+Bu ayarlar repository yöneticisi tarafından GitHub kontrol düzleminde yapılır; workflow veya
+`.env` içine değer gömülmez. Yetkili bir `gh` oturumuyla değişkeni etkinleştirin ve GitHub'dan
+geri okuyarak yazma işlemini doğrulayın:
+
+```bash
+REPOSITORY=niluferbagevi-gif/Sidar
+gh variable set ENABLE_GPU_BENCH_GATE --body true --repo "$REPOSITORY"
+test "$(gh variable get ENABLE_GPU_BENCH_GATE --repo "$REPOSITORY")" = "true"
+```
+
+Ardından repository runner yönetim ekranında farklı arıza alanlarındaki iki hostun da
+`self-hosted`, `linux`, `x64`, `gpu`, `cuda` etiketlerini taşıdığını ve online olduğunu
+doğrulayın. `GPU_RUNNER_MONITOR_TOKEN` için Actions runner metadata okuma yetkili, dar kapsamlı
+bir token tanımlandıktan sonra watchdog'u manuel çalıştırın:
+
+```bash
+gh workflow run gpu-runner-capacity-watchdog.yml --repo "$REPOSITORY"
+gh run list --workflow gpu-runner-capacity-watchdog.yml --repo "$REPOSITORY" --limit 1
+```
+
+Son koşu yeşil olmadan ve aynı commit için `GPU Inference Quality Gate` artifact'ı oluşmadan
+release kanıtı tamamlanmış sayılmaz. Değişkenin boş/`false` olması veya iki runner'dan birinin
+offline kalması halinde release dondurulur; yerel GPU sonucu bu kontrolü bypass edemez.
+
 ## Failover prosedürü
 
 1. Primary offline ise standby servisinde runner'ı ve `nvidia-smi` görünürlüğünü doğrulayın.
