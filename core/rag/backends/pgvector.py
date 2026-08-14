@@ -7,7 +7,7 @@ import logging
 from typing import Any, cast
 
 from core.db import postgres_failure_diagnosis
-from core.db.dialect import is_safe_sql_identifier
+from core.db.dialect import is_safe_sql_identifier, render_sql_identifier_template
 from core.embeddings import get_sentence_transformer_model
 
 logger = logging.getLogger(__name__)
@@ -39,12 +39,13 @@ def _pgvector_sql(pg_table: str) -> dict[str, str]:
     if not is_valid_pgvector_identifier(pg_table):
         raise ValueError("invalid PGVECTOR_TABLE identifier")
     return {
-        "delete": (
-            f"DELETE FROM {pg_table} WHERE parent_id = :parent_id "  # nosec B608  # pg_table bu yardımcı içinde yeniden doğrulanır.
-            "AND session_id = :session_id"
+        "delete": render_sql_identifier_template(
+            "DELETE FROM {table} WHERE parent_id = :parent_id AND session_id = :session_id",
+            table=pg_table,
         ),
-        "upsert": """
-            INSERT INTO __TABLE__
+        "upsert": render_sql_identifier_template(
+            """
+            INSERT INTO {table}
             (doc_id, parent_id, session_id, chunk_index, title, source, chunk_content, embedding)
             VALUES (:doc_id, :parent_id, :session_id, :chunk_index, :title, :source,
                     :chunk_content, CAST(:embedding AS vector))
@@ -52,14 +53,58 @@ def _pgvector_sql(pg_table: str) -> dict[str, str]:
                 parent_id = EXCLUDED.parent_id, session_id = EXCLUDED.session_id,
                 title = EXCLUDED.title, source = EXCLUDED.source,
                 chunk_content = EXCLUDED.chunk_content, embedding = EXCLUDED.embedding
-        """.replace("__TABLE__", pg_table),  # nosec B608  # pg_table bu yardımcı içinde yeniden doğrulanır.
-        "select": """
+        """,
+            table=pg_table,
+        ),
+        "select": render_sql_identifier_template(
+            """
             SELECT doc_id, parent_id, title, source, chunk_content,
                    (embedding <=> CAST(:qvec AS vector)) AS distance
-            FROM __TABLE__ WHERE session_id = :session_id
+            FROM {table} WHERE session_id = :session_id
             ORDER BY embedding <=> CAST(:qvec AS vector) ASC LIMIT :lim
-        """.replace("__TABLE__", pg_table),  # nosec B608  # pg_table bu yardımcı içinde yeniden doğrulanır.
+        """,
+            table=pg_table,
+        ),
     }
+
+
+def _pgvector_ddl(pg_table: str, embedding_dim: int) -> tuple[str, ...]:
+    """Build pgvector DDL through the audited identifier-template sink."""
+    return (
+        render_sql_identifier_template(
+            """
+                CREATE TABLE IF NOT EXISTS {table} (
+                    doc_id TEXT NOT NULL,
+                    parent_id TEXT NOT NULL,
+                    session_id TEXT NOT NULL,
+                    chunk_index INTEGER NOT NULL,
+                    title TEXT,
+                    source TEXT,
+                    chunk_content TEXT,
+                    embedding vector({dimension}),
+                    PRIMARY KEY (doc_id, chunk_index)
+                )
+            """,
+            table=pg_table,
+            dimension=embedding_dim,
+        ),
+        render_sql_identifier_template(
+            "CREATE INDEX IF NOT EXISTS {index} ON {table}(session_id)",
+            index=f"idx_{pg_table}_session",
+            table=pg_table,
+        ),
+        render_sql_identifier_template(
+            "CREATE INDEX IF NOT EXISTS {index} ON {table}(parent_id)",
+            index=f"idx_{pg_table}_parent",
+            table=pg_table,
+        ),
+        render_sql_identifier_template(
+            "CREATE INDEX IF NOT EXISTS {index} ON {table} USING "
+            "hnsw (embedding vector_cosine_ops)",
+            index=f"idx_{pg_table}_embedding_hnsw",
+            table=pg_table,
+        ),
+    )
 
 
 def is_valid_pgvector_identifier(identifier: str) -> bool:
@@ -142,32 +187,8 @@ def init_pgvector(store: Any) -> None:
         engine = store._require_pg_engine()
         with engine.begin() as conn:
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-            create_table_sql = f"""
-                CREATE TABLE IF NOT EXISTS {pg_table} (
-                    doc_id TEXT NOT NULL,
-                    parent_id TEXT NOT NULL,
-                    session_id TEXT NOT NULL,
-                    chunk_index INTEGER NOT NULL,
-                    title TEXT,
-                    source TEXT,
-                    chunk_content TEXT,
-                    embedding vector({store._pg_embedding_dim}),
-                    PRIMARY KEY (doc_id, chunk_index)
-                )
-            """
-            conn.execute(text(create_table_sql))  # nosec B608  # tablo adı safe identifier üreticisinden gelir; veri değerleri bind edilir.
-            conn.execute(
-                text(f"CREATE INDEX IF NOT EXISTS idx_{pg_table}_session ON {pg_table}(session_id)")
-            )
-            conn.execute(
-                text(f"CREATE INDEX IF NOT EXISTS idx_{pg_table}_parent ON {pg_table}(parent_id)")
-            )
-            conn.execute(
-                text(
-                    f"CREATE INDEX IF NOT EXISTS idx_{pg_table}_embedding_hnsw ON {pg_table} USING "
-                    f"hnsw (embedding vector_cosine_ops)"
-                )
-            )
+            for ddl_statement in _pgvector_ddl(pg_table, int(store._pg_embedding_dim)):
+                conn.execute(text(ddl_statement))
 
         store._pg_embedding_model = get_sentence_transformer_model(
             store._pg_embedding_model_name, store.cfg

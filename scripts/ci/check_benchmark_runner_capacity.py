@@ -42,7 +42,8 @@ def fetch_runner_payload(repository: str, token: str) -> dict[str, Any]:
         },
     )
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:  # nosec B310 -- fixed GitHub API origin
+        # The URL origin is fixed to the GitHub API; only the repository path varies.
+        with urllib.request.urlopen(request, timeout=20) as response:  # nosec B310
             payload = json.loads(response.read().decode("utf-8"))
             if not isinstance(payload, dict):
                 raise RuntimeError("Benchmark runner API response is not a JSON object.")

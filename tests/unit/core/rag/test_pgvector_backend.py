@@ -76,3 +76,16 @@ def test_pgvector_sql_builder_rejects_malicious_identifier() -> None:
 
     with pytest.raises(ValueError, match="invalid PGVECTOR_TABLE identifier"):
         pgvector._pgvector_sql("rag_embeddings; DROP TABLE users")
+
+
+def test_pgvector_ddl_builder_validates_table_indexes_and_dimension() -> None:
+    pgvector = importlib.reload(pgvector_module)
+    statements = pgvector._pgvector_ddl("rag_embeddings", 384)
+
+    assert "CREATE TABLE IF NOT EXISTS rag_embeddings" in statements[0]
+    assert "embedding vector(384)" in statements[0]
+    assert "idx_rag_embeddings_session ON rag_embeddings" in statements[1]
+    with pytest.raises(ValueError, match="Invalid SQL identifier"):
+        pgvector._pgvector_ddl("rag; DROP TABLE users", 384)
+    with pytest.raises(ValueError, match="Invalid SQL integer literal"):
+        pgvector._pgvector_ddl("rag_embeddings", -1)

@@ -14,7 +14,11 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from core.db.dialect import is_safe_sql_identifier, join_sql_identifiers
+from core.db.dialect import (
+    is_safe_sql_identifier,
+    postgres_bind_placeholders,
+    render_sql_identifier_template,
+)
 
 TABLES_IN_ORDER = [
     "users",
@@ -54,13 +58,13 @@ def _load_rows(sqlite_path: Path, table: str) -> tuple[list[str], list[tuple[Any
     try:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
-            f"SELECT * FROM {table}"  # nosec B608  # tablo adı kontrollü TABLES listesinden gelir.
+            render_sql_identifier_template("SELECT * FROM {table}", table=table)
         ).fetchall()
         if not rows:
             cols = [
                 r[1]
                 for r in conn.execute(
-                    f"PRAGMA table_info({table})"  # nosec B608  # tablo adı kontrollü TABLES listesinden gelir.
+                    render_sql_identifier_template("PRAGMA table_info({table})", table=table)
                 ).fetchall()
             ]
             return _safe_column_names(table, cols), []
@@ -76,17 +80,25 @@ async def _copy_table(conn: Any, sqlite_path: Path, table: str, dry_run: bool) -
     if not columns:
         return 0
 
-    placeholders = ", ".join(f"${idx}" for idx in range(1, len(columns) + 1))
+    placeholders = postgres_bind_placeholders(len(columns))
     # Validate and interpolate the exact same immutable snapshot.  This closes the
     # validate-then-join gap if introspection handling is changed in the future.
-    col_list = join_sql_identifiers(columns)
-    query = f"INSERT INTO {table} ({col_list}) VALUES ({placeholders})"  # nosec B608  # table ve kolonlar sabit TABLES allowlist'inden gelir.
+    query = render_sql_identifier_template(
+        "INSERT INTO {table} ({columns}) VALUES ({placeholders})",
+        table=table,
+        columns=columns,
+        placeholders=placeholders,
+    )
 
     if dry_run:
         return len(rows)
 
     async with conn.transaction():
-        await conn.execute(f"TRUNCATE TABLE {table} RESTART IDENTITY CASCADE")  # nosec B608  # table sabit TABLES allowlist'inden gelir.
+        await conn.execute(
+            render_sql_identifier_template(
+                "TRUNCATE TABLE {table} RESTART IDENTITY CASCADE", table=table
+            )
+        )
         for row in rows:
             await conn.execute(query, *row)
     return len(rows)

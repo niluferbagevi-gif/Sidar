@@ -1,15 +1,13 @@
 {
-  "captured_at": "2026-08-13",
-  "maximum_skipped_tests": 59,
+  "captured_at": "2026-08-14",
+  "maximum_skipped_tests": 55,
   "policy": "Bandit metrics._totals.skipped_tests must exactly match this ratchet; every reduction updates the baseline in the same commit and increases are forbidden.",
   "require_exact_baseline": true,
   "debt_plan": {
     "classification": "P2 planned security debt",
     "owner": "security-review",
     "review_order": [
-      "core/rag/backends/pgvector.py",
       "core/db/monolith.py",
-      "scripts/migrate_sqlite_to_pg.py",
       "scripts/ci/verify_required_checks.py",
       "github_upload.py"
     ],

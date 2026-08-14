@@ -33,7 +33,7 @@ def test_bandit_suppression_baseline_matches_current_scan_and_quality_gates() ->
     local_gate = (root / "scripts/test_gates/backend_helpers.sh").read_text(encoding="utf-8")
     ci = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
-    assert baseline["maximum_skipped_tests"] == 59
+    assert baseline["maximum_skipped_tests"] == 55
     assert [target["maximum_skipped_tests"] for target in baseline["reduction_targets"]] == [
         50,
         40,
@@ -45,9 +45,7 @@ def test_bandit_suppression_baseline_matches_current_scan_and_quality_gates() ->
     owner, review_order = suppression_baseline._debt_plan(root / "bandit-suppression-baseline.json")
     assert owner == "security-review"
     assert review_order == (
-        "core/rag/backends/pgvector.py",
         "core/db/monolith.py",
-        "scripts/migrate_sqlite_to_pg.py",
         "scripts/ci/verify_required_checks.py",
         "github_upload.py",
     )
@@ -207,30 +205,11 @@ def _imports_sql_identifier_validator(source: str) -> bool:
     return False
 
 
-def test_pgvector_nosec_b608_usage_keeps_the_identifier_validator_import() -> None:
-    """Guard the safe-identifier import backing pgvector.py's nosec.
+def test_pgvector_uses_audited_builder_without_b608_suppressions() -> None:
+    """Keep pgvector dynamic identifiers on the central validated SQL sink."""
+    root = Path(__file__).resolve().parents[2]
+    source = (root / "core/rag/backends/pgvector.py").read_text(encoding="utf-8")
 
-    core/rag/backends/pgvector.py's `# nosec B608` f-string SQL is safe because every
-    interpolated table/column identifier
-    is validated at the call site via `core.db.dialect`'s
-    `assert_safe_sql_identifier`/`is_safe_sql_identifier` (canonical
-    implementation: `core/db_components/dialect.py`) before it reaches the
-    query string; real data values always go through bind parameters. A
-    friend code review confirmed this and suggested a lightweight guard
-    against the validator import silently disappearing while the `# nosec`
-    markers stay behind -- this AST-based check pins the remaining pgvector
-    file (the other `# nosec B608` sites use different, individually
-    reviewed safe patterns -- module-level constants, a hardcoded table
-    allowlist, enumerated bind-parameter names -- not this validator, so they
-    are intentionally out of scope here).
-    """
-    for relative_path in ("core/rag/backends/pgvector.py",):
-        root = Path(__file__).resolve().parents[2]
-        source = (root / relative_path).read_text(encoding="utf-8")
-
-        assert _NOSEC_B608_RE.search(source), f"{relative_path} no longer has '# nosec B608'"
-        assert _imports_sql_identifier_validator(source), (
-            f"{relative_path} has '# nosec B608' but no longer imports a safe-identifier "
-            "validator (assert_safe_sql_identifier/is_safe_sql_identifier) from "
-            "core.db.dialect/core.db_components.dialect"
-        )
+    assert not _NOSEC_B608_RE.search(source)
+    assert _imports_sql_identifier_validator(source)
+    assert "render_sql_identifier_template" in source
