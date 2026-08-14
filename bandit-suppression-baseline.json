@@ -1,6 +1,6 @@
 {
-  "captured_at": "2026-08-12",
-  "maximum_skipped_tests": 60,
+  "captured_at": "2026-08-13",
+  "maximum_skipped_tests": 59,
   "policy": "Bandit metrics._totals.skipped_tests may only stay level or decrease.",
   "debt_plan": {
     "classification": "P2 planned security debt",

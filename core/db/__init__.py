@@ -10,6 +10,7 @@ this facade also declares the supported public export surface for static analysi
 from __future__ import annotations
 
 import importlib as _importlib
+import logging as _logging
 import sys as _sys
 from typing import TYPE_CHECKING
 
@@ -27,6 +28,10 @@ if TYPE_CHECKING:
     )
     from core.db.session import MessageRecord, SessionRecord
 
+from core.db import monolith as _monolith
+
+_logger = _logging.getLogger(__name__)
+
 __all__ = [
     "AccessPolicyRecord",
     "AuditLogRecord",
@@ -40,8 +45,6 @@ __all__ = [
     "SessionRecord",
     "postgres_failure_diagnosis",
 ]
-
-from core.db import monolith as _monolith
 
 _monolith.__package__ = __name__
 # Keep the aliased monolith module package-like so ``core.db.<submodule>``
@@ -67,10 +70,10 @@ for _submodule in (
 ):
     try:
         setattr(_monolith, _submodule, _importlib.import_module(f"{__name__}.{_submodule}"))
-    except Exception:  # Optional submodule imports must not block core.db itself.  # nosec B110
+    except Exception as exc:
         # Optional/legacy submodule imports should not block core.db itself; direct
         # imports will surface the concrete error when callers need that module.
-        pass
+        _logger.debug("Opsiyonel core.db alt modülü yüklenemedi: %s (%s)", _submodule, exc)
 
 _session = _importlib.import_module(f"{__name__}.session")
 _monolith_exports = vars(_monolith)

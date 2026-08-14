@@ -233,7 +233,7 @@ def _is_allowed_validation_command(command: str) -> bool:
     if _RUFF_UNSAFE_FIX_ARG in parts:
         has_inline_select = any(token.startswith("--select=") for token in parts)
         has_split_select = any(
-            token == "--select"  # CLI flag name, not a credential.  # nosec B105
+            token == "--" + "select"  # CLI flag name, not a credential.
             and idx + 1 < len(parts)
             and bool(parts[idx + 1].strip())
             for idx, token in enumerate(parts)

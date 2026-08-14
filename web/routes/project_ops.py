@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-import subprocess  # nosec B404
+import shutil
+import subprocess
 import sys
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -62,12 +63,15 @@ def _git_run(
     if not _is_allowed_git_command(cmd):
         active_logger.warning("Güvenli olmayan git komutu reddedildi: %s", cmd)
         return ""
+    git_executable = shutil.which("git")
+    if not git_executable or not Path(git_executable).is_absolute():
+        active_logger.warning("Git yürütülebilir dosyası güvenli bir mutlak yola çözülemedi.")
+        return ""
+    safe_cmd = [git_executable, *cmd[1:]]
     try:
-        return (
-            subprocess.check_output(cmd, cwd=cwd, stderr=stderr, shell=False)  # nosec
-            .decode()
-            .strip()
-        )
+        return subprocess.check_output(  # nosec B603  # absolute git; exact argv allowlist; shell=False
+            safe_cmd, cwd=cwd, stderr=stderr, shell=False
+        ).decode().strip()
     except subprocess.CalledProcessError as exc:
         active_logger.warning("Git komutu başarısız oldu: %s (exit=%s)", cmd, exc.returncode)
         return ""

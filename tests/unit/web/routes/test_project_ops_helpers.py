@@ -69,6 +69,39 @@ def test_git_run_logs_called_process_errors(monkeypatch: pytest.MonkeyPatch) -> 
     assert "Git komutu başarısız oldu" in warnings[0][0]
 
 
+def test_git_run_requires_absolute_executable_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
+    from web.routes.project_ops import _git_run
+
+    calls: list[list[str]] = []
+    monkeypatch.setattr("web.routes.project_ops.shutil.which", lambda _name: "relative/git")
+    monkeypatch.setattr(
+        "web.routes.project_ops.subprocess.check_output",
+        lambda command, **_kwargs: calls.append(command) or b"unexpected",
+    )
+
+    assert _git_run(["git"], ".") == ""
+    assert calls == []
+
+
+def test_git_run_executes_resolved_git_with_exact_allowlisted_args(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from web.routes.project_ops import _git_run
+
+    calls: list[tuple[list[str], dict[str, Any]]] = []
+    monkeypatch.setattr("web.routes.project_ops.shutil.which", lambda _name: "/safe/bin/git")
+
+    def _check_output(command: list[str], **kwargs: Any) -> bytes:
+        calls.append((command, kwargs))
+        return b"main\n"
+
+    monkeypatch.setattr("web.routes.project_ops.subprocess.check_output", _check_output)
+
+    assert _git_run(["git", "rev-parse", "--abbrev-ref", "HEAD"], "/repo") == "main"
+    assert calls[0][0] == ["/safe/bin/git", "rev-parse", "--abbrev-ref", "HEAD"]
+    assert calls[0][1]["shell"] is False
+
+
 @pytest.mark.parametrize(
     ("remote", "expected"),
     [
