@@ -18,7 +18,9 @@ import re
 import shutil
 import subprocess  # nosec B404
 import sys
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Mapping, Sequence
 from datetime import datetime
@@ -57,6 +59,10 @@ GENERATED_ARTIFACT_PATHS = {
     "web_ui_react/playwright-report/",
     "web_ui_react/test-results/",
 }
+
+GITHUB_PR_API_MAX_ATTEMPTS = 3
+GITHUB_PR_API_RETRY_BASE_SECONDS = 1.0
+GITHUB_PR_API_RETRYABLE_HTTP_CODES = {408, 429, 500, 502, 503, 504}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -237,6 +243,34 @@ def _github_repo_slug(remote_url: str) -> str:
     return normalized.removeprefix("https://github.com/")
 
 
+def _find_existing_upload_pull_request(repo_slug: str, branch: str, github_token: str) -> str:
+    """Return an existing open upload PR after an ambiguous create response."""
+    owner = repo_slug.partition("/")[0]
+    query = urllib.parse.urlencode({"state": "open", "head": f"{owner}:{branch}", "base": "main"})
+    request = urllib.request.Request(  # nosec B310  # Sabit HTTPS GitHub API origin'i.
+        f"https://api.github.com/repos/{repo_slug}/pulls?{query}",
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {github_token}",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:  # nosec B310
+            result = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.HTTPError, urllib.error.URLError, OSError, json.JSONDecodeError):
+        return ""
+    if not isinstance(result, list):
+        return ""
+    for pull_request in result:
+        if isinstance(pull_request, Mapping):
+            pr_url = str(pull_request.get("html_url", "")).strip()
+            if pr_url:
+                return pr_url
+    return ""
+
+
 def _open_upload_pull_request_via_api(branch: str, github_token: str) -> tuple[bool, str]:
     """Create the upload PR through GitHub's API when the optional ``gh`` CLI is absent."""
     remote_ok, remote_url = run_command(["git", "remote", "get-url", "origin"], show_output=False)
@@ -263,25 +297,42 @@ def _open_upload_pull_request_via_api(branch: str, github_token: str) -> tuple[b
         },
         method="POST",
     )
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:  # nosec B310
-            result = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace").strip()
-        if exc.code == 401:
-            return (
-                False,
-                "GitHub token reddedildi (HTTP 401 / Bad credentials). "
-                "Tokenı GitHub'da yenileyip GITHUB_TOKEN (veya GH_TOKEN/GITHUB_PAT) "
-                "değerini SIDAR_KEYS_FILE ya da ~/.sidar_keys.env içinde güncelleyin. "
-                "Fine-grained token kullanıyorsanız ilgili repository için Pull requests: "
-                "Read and write izni verin.",
-            )
-        return False, f"GitHub API PR isteği HTTP {exc.code} ile reddedildi: {detail}"
-    except (urllib.error.URLError, OSError, json.JSONDecodeError) as exc:
-        return False, f"GitHub API üzerinden PR oluşturulamadı: {exc}"
+    result: object = {}
+    last_error = ""
+    for attempt in range(1, GITHUB_PR_API_MAX_ATTEMPTS + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:  # nosec B310
+                result = json.loads(response.read().decode("utf-8"))
+            break
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace").strip()
+            if exc.code == 401:
+                return (
+                    False,
+                    "GitHub token reddedildi (HTTP 401 / Bad credentials). "
+                    "Tokenı GitHub'da yenileyip GITHUB_TOKEN (veya GH_TOKEN/GITHUB_PAT) "
+                    "değerini SIDAR_KEYS_FILE ya da ~/.sidar_keys.env içinde güncelleyin. "
+                    "Fine-grained token kullanıyorsanız ilgili repository için Pull requests: "
+                    "Read and write izni verin.",
+                )
+            if exc.code == 422:
+                existing_url = _find_existing_upload_pull_request(repo_slug, branch, github_token)
+                if existing_url:
+                    return True, existing_url
+            last_error = f"GitHub API PR isteği HTTP {exc.code} ile reddedildi: {detail}"
+            retryable = exc.code in GITHUB_PR_API_RETRYABLE_HTTP_CODES
+        except (urllib.error.URLError, OSError, json.JSONDecodeError) as exc:
+            existing_url = _find_existing_upload_pull_request(repo_slug, branch, github_token)
+            if existing_url:
+                return True, existing_url
+            last_error = f"GitHub API üzerinden PR oluşturulamadı: {exc}"
+            retryable = True
 
-    pr_url = str(result.get("html_url", "")).strip()
+        if not retryable or attempt == GITHUB_PR_API_MAX_ATTEMPTS:
+            return False, last_error
+        time.sleep(GITHUB_PR_API_RETRY_BASE_SECONDS * (2 ** (attempt - 1)))
+
+    pr_url = str(result.get("html_url", "")).strip() if isinstance(result, Mapping) else ""
     if not pr_url:
         return False, "GitHub API PR yanıtında html_url bulunamadı."
     return True, pr_url

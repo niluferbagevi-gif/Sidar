@@ -35,11 +35,13 @@ def test_bandit_suppression_baseline_matches_current_scan_and_quality_gates() ->
 
     assert baseline["maximum_skipped_tests"] == 59
     assert [target["maximum_skipped_tests"] for target in baseline["reduction_targets"]] == [
+        50,
         40,
         20,
         0,
     ]
     assert suppression_baseline._reduction_targets(root / "bandit-suppression-baseline.json")
+    assert suppression_baseline._requires_exact_baseline(root / "bandit-suppression-baseline.json")
     owner, review_order = suppression_baseline._debt_plan(root / "bandit-suppression-baseline.json")
     assert owner == "security-review"
     assert review_order == (
@@ -158,6 +160,14 @@ def test_reduction_targets_must_strictly_decrease(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="kesin azalmalıdır"):
         suppression_baseline._reduction_targets(baseline)
+
+
+def test_exact_baseline_policy_must_be_explicit_boolean(tmp_path: Path) -> None:
+    baseline = tmp_path / "baseline.json"
+    baseline.write_text(json.dumps({"require_exact_baseline": "yes"}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="boolean"):
+        suppression_baseline._requires_exact_baseline(baseline)
 
 
 def test_bandit_debt_plan_requires_unique_python_hotspots(tmp_path: Path) -> None:

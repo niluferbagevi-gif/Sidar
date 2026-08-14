@@ -96,8 +96,9 @@ def test_nightly_auth_benchmark_requires_cached_baseline_compare():
 
     assert 'BENCHMARK_COMPARE_REQUIRED: "1"' in workflow
     assert 'BENCHMARK_ENFORCE_COMPARE: "1"' in workflow
+    assert "runs-on: [self-hosted, linux, benchmark]" in workflow
     assert "Restore auth benchmark baseline cache" in workflow
-    assert "auth-benchmark-baseline-${{ runner.os }}-py311-" in workflow
+    assert "auth-benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-" in workflow
     assert '--benchmark-compare="${compare_file}"' in workflow
     assert '--benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}"' in workflow
     assert "BENCHMARK_COMPARE_REQUIRED=1 ancak .benchmarks" in workflow
@@ -266,3 +267,20 @@ def test_release_quality_runs_benchmark_coverage_trend_gate():
     assert "--coverage-xml artifacts/benchmark-coverage-trend/coverage.xml" in workflow
     assert "--history-json artifacts/benchmark-coverage-trend/history.json" in workflow
     assert "--max-regression-pct 15" in workflow
+
+
+def test_release_quality_requires_reviewed_benchmark_comparison():
+    workflow = (WORKFLOW_DIR / "release-quality.yml").read_text()
+    job = workflow[
+        workflow.index("  release-benchmark-compare:") : workflow.index("  helm-validate:")
+    ]
+
+    assert "runs-on: [self-hosted, linux, benchmark]" in job
+    assert 'BENCHMARK_COMPARE_FAIL: "mean:10%"' in job
+    assert 'BENCHMARK_IO_COMPARE_FAIL: "mean:25%"' in job
+    assert "benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-" in job
+    assert "Resolve reviewed baseline (fail closed)" in job
+    assert '--benchmark-compare="${BENCHMARK_BASELINE_FILE}"' in job
+    assert '--benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}"' in job
+    assert '--benchmark-compare-fail="${BENCHMARK_IO_COMPARE_FAIL}"' in job
+    assert "--ignore=tests/performance/test_gpu_benchmark.py" in job

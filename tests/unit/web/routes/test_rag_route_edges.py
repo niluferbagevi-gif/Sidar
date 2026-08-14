@@ -20,8 +20,18 @@ class _JsonRequest:
         return self.payload
 
 
-def _build_rag_exports(tmp_path: Path, docs: Any, *, max_upload_bytes: int = 8) -> dict[str, Any]:
-    agent = SimpleNamespace(memory=SimpleNamespace(active_session_id="session-1"), docs=docs)
+def _build_rag_exports(
+    tmp_path: Path,
+    docs: Any,
+    *,
+    max_upload_bytes: int = 8,
+    rag_required: bool = False,
+) -> dict[str, Any]:
+    agent = SimpleNamespace(
+        memory=SimpleNamespace(active_session_id="session-1"),
+        docs=docs,
+        cfg=SimpleNamespace(RAG_REQUIRED_FOR_READINESS=rag_required),
+    )
 
     async def _resolve_agent_instance() -> Any:
         return agent
@@ -130,6 +140,30 @@ async def test_rag_search_accepts_query_at_maximum_length(tmp_path: Path) -> Non
     response = await rag_search(q="x" * rag_route._MAX_RAG_SEARCH_QUERY_CHARS)
 
     assert _json_body(response) == {"success": True, "result": []}
+
+
+@pytest.mark.asyncio
+async def test_rag_search_returns_503_when_required_runtime_is_not_ready(tmp_path: Path) -> None:
+    docs = SimpleNamespace(
+        runtime_readiness_report=lambda: {
+            "ready": False,
+            "metadata_seeded": True,
+            "components": {
+                "rag_vector": {"healthy": False, "status": "unavailable"},
+                "rag_bm25": {"healthy": True, "status": "healthy"},
+            },
+        },
+        search=lambda *_args: pytest.fail("search must not run before required RAG is ready"),
+    )
+    rag_search = _build_rag_exports(tmp_path, docs, rag_required=True)["rag_search"]
+
+    response = await rag_search(q="sidar")
+
+    assert response.status_code == 503
+    payload = _json_body(response)
+    assert payload["error"] == "rag_runtime_not_ready"
+    assert payload["rag"]["metadata_seeded"] is True
+    assert payload["rag"]["components"]["rag_vector"]["status"] == "unavailable"
 
 
 @pytest.mark.asyncio

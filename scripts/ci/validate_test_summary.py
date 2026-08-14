@@ -10,6 +10,9 @@ from pathlib import Path
 from typing import Any
 
 REQUIRED_TOP_LEVEL_FIELDS = {
+    "code_quality_ready",
+    "integration_ready",
+    "production_compose_boot",
     "benchmark_compare",
     "benchmark_baseline",
     "local_readiness_passed",
@@ -58,6 +61,9 @@ def _validate_shape(summary: dict[str, Any]) -> list[str]:
 
     if "production_ready" in summary and not isinstance(summary["production_ready"], bool):
         errors.append("production_ready boolean olmalıdır")
+    for field in ("code_quality_ready", "integration_ready"):
+        if field in summary and not isinstance(summary[field], bool):
+            errors.append(f"{field} boolean olmalıdır")
     for field in ("local_readiness_passed", "release_evidence_complete", "release_ready"):
         if field in summary and not isinstance(summary[field], bool):
             errors.append(f"{field} boolean olmalıdır")
@@ -82,6 +88,12 @@ def _validate_release(summary: dict[str, Any]) -> list[str]:
     detail = summary["production_readiness_detail"]
     if summary.get("production_ready") is not True:
         errors.append("release mode production_ready=true bekler")
+    if summary.get("code_quality_ready") is not True:
+        errors.append("release mode code_quality_ready=true bekler")
+    if summary.get("integration_ready") is not True:
+        errors.append("release mode integration_ready=true bekler")
+    if summary.get("production_compose_boot") != "passed":
+        errors.append("release mode production_compose_boot=passed bekler")
     if detail.get("status") != "passed":
         errors.append("release mode production_readiness_detail.status=passed bekler")
     if detail.get("validation_class") != "production_readiness":

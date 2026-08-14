@@ -17,6 +17,7 @@ function isTestSource(path, sourceDir) {
 function countSourceExtensions(sourceDir) {
   const counts = { js: 0, jsx: 0, ts: 0, tsx: 0 };
   const untyped = { production: 0, test: 0 };
+  const untypedTestFiles = [];
   const visit = (directory) => {
     for (const entry of readdirSync(directory)) {
       const path = resolve(directory, entry);
@@ -28,13 +29,18 @@ function countSourceExtensions(sourceDir) {
       if (Object.hasOwn(counts, extension)) {
         counts[extension] += 1;
         if (extension === "js" || extension === "jsx") {
-          untyped[isTestSource(path, sourceDir) ? "test" : "production"] += 1;
+          if (isTestSource(path, sourceDir)) {
+            untyped.test += 1;
+            untypedTestFiles.push(relative(root, path).split(sep).join("/"));
+          } else {
+            untyped.production += 1;
+          }
         }
       }
     }
   };
   visit(sourceDir);
-  return { counts, untyped };
+  return { counts, untyped, untypedTestFiles: untypedTestFiles.sort() };
 }
 
 function parseRoot(argv) {
@@ -82,6 +88,7 @@ const untyped = counts.js + counts.jsx;
 const typed = counts.ts + counts.tsx;
 const productionUntyped = inventory.untyped.production;
 const testUntyped = inventory.untyped.test;
+const allowedUntypedTestFiles = baseline.allowed_untyped_test_files;
 const failures = [];
 const milestones = Array.isArray(baseline.milestones) ? baseline.milestones : [];
 
@@ -100,6 +107,22 @@ if (
   failures.push(
     `production untyped source count increased: ${productionUntyped} > ${baseline.maximum_production_untyped_files}`,
   );
+}
+if (allowedUntypedTestFiles !== undefined) {
+  if (
+    !Array.isArray(allowedUntypedTestFiles) ||
+    allowedUntypedTestFiles.some((path) => typeof path !== "string") ||
+    new Set(allowedUntypedTestFiles).size !== allowedUntypedTestFiles.length
+  ) {
+    console.error("TypeScript migration baseline allowed_untyped_test_files must be unique paths");
+    process.exit(2);
+  }
+  const newlyUntypedTests = inventory.untypedTestFiles.filter(
+    (path) => !allowedUntypedTestFiles.includes(path),
+  );
+  if (newlyUntypedTests.length > 0) {
+    failures.push(`new untyped test files are forbidden: ${newlyUntypedTests.join(", ")}`);
+  }
 }
 if (
   Number.isInteger(baseline.maximum_test_untyped_files) &&

@@ -11,7 +11,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, cast
 
-REQUIRED_LABELS = frozenset({"self-hosted", "linux", "gpu"})
+REQUIRED_LABELS = frozenset({"self-hosted", "linux", "x64", "gpu", "cuda"})
 
 
 def eligible_online_runners(payload: dict[str, Any]) -> list[str]:

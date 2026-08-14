@@ -11,7 +11,9 @@ concurrency:
 
 jobs:
   auth-benchmark:
-    runs-on: ubuntu-latest
+    # Keep the scheduled comparison on the same stable hardware class as its
+    # baseline. Merely enabling comparison on a shared runner is noisy evidence.
+    runs-on: [self-hosted, linux, benchmark]
     env:
       AUTH_BENCH_P95_BUDGET_MS: "950"
       AUTH_BENCH_P99_BUDGET_MS: "1200"
@@ -40,12 +42,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .benchmarks
-          key: auth-benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}
+          key: auth-benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}
           restore-keys: |
-            auth-benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-
-            auth-benchmark-baseline-${{ runner.os }}-py311-main-
-            auth-benchmark-baseline-${{ runner.os }}-py311-master-
-            auth-benchmark-baseline-${{ runner.os }}-py311-
+            auth-benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ github.ref_name }}-
+            auth-benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-main-
+            auth-benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-master-
+            auth-benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-
 
       - name: Cache APT packages (PortAudio)
         uses: awalsh128/cache-apt-pkgs-action@v1.6.3

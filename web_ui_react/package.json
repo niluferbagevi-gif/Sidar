@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20.0.0 <23.0.0"
   },
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173",
@@ -20,7 +20,7 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:critical": "vitest run src/lib/api.test.js src/lib/routerShim.test.jsx src/test/viteProxyConfig.test.ts",
+    "test:critical": "vitest run src/lib/api.test.ts src/lib/routerShim.test.jsx src/test/viteProxyConfig.test.ts",
     "test:e2e": "playwright test",
     "test:e2e:smoke": "playwright test e2e/chat-websocket.spec.js",
     "test:e2e:critical": "playwright test e2e/chat-websocket.spec.js e2e/agent-manager.spec.js e2e/swarm-flow.spec.js",

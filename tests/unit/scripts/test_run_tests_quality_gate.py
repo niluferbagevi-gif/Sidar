@@ -373,7 +373,10 @@ def test_ci_exposes_security_and_mutation_quality_gates() -> None:
     assert "uv run python scripts/ci/check_bandit_suppression_baseline.py" in ci
     assert "Run base quality gates (performance isolated)" in ci
     assert "RUN_BENCHMARKS=0" in ci
-    assert "needs: [test, benchmark-compare, gpu-inference-policy-gate]" in ci
+    assert (
+        "needs: [test, benchmark-compare, gpu-inference-policy-gate, "
+        "production-profile-dry-run, production-compose-validation]"
+    ) in ci
     assert "uv run python scripts/ci/check_policy_dates.py" in ci
     assert "POSTGRES_PASSWORD: sidar" in ci
     assert "Test-only CI service credentials" in ci
@@ -842,11 +845,22 @@ def test_ci_production_readiness_requires_gpu_inference_evidence_policy() -> Non
         ci.index("  gpu-inference-policy-gate:") : ci.index("  publish-standalone-installer:")
     ]
 
-    assert "needs: [test, benchmark-compare, gpu-inference-policy-gate]" in production_job
+    assert "needs: [test, benchmark-compare, gpu-inference-policy-gate," in production_job
+    assert "production-profile-dry-run, production-compose-validation]" in production_job
     assert "needs: [test, gpu-inference-quality-gate]" in policy_job
-    assert 'if [[ "${GPU_GATE_ENABLED}" != "true" ]]' in policy_job
-    assert 'if [[ "${GPU_GATE_RESULT}" != "success" ]]' in policy_job
-    assert "production readiness must not pass without TTFT/latency evidence" in policy_job
+    assert "run: bash scripts/ci/check_gpu_evidence.sh" in policy_job
+    assert "GPU_GATE_ENABLED: ${{ vars.ENABLE_GPU_BENCH_GATE }}" in policy_job
+    assert "runs-on: [self-hosted, linux, x64, gpu, cuda]" in ci
+
+
+def test_ci_parity_precedes_pytest_and_current_commit_evidence_is_attested() -> None:
+    ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    parity = "run: bash scripts/check_env_parity.sh"
+    full_pytest = "SIDAR_PRODUCTION_READINESS=0 bash run_tests.sh --stage all"
+    evidence = 'scripts/ci/validate_pytest_evidence.py --commit-sha "${GITHUB_SHA}"'
+
+    assert ci.index(parity) < ci.index(full_pytest) < ci.index(evidence)
+    assert "artifacts/pytest-evidence.json" in ci
 
 
 def test_postgresql_multi_user_benchmark_warms_pool_and_uses_stable_pedantic_rounds() -> None:
@@ -2810,7 +2824,7 @@ def test_testing_docs_explain_external_production_readiness_dependencies() -> No
     testing = Path("docs/TESTING.md").read_text(encoding="utf-8")
 
     assert "## CI production-readiness dışsal bağımlılıkları" in testing
-    assert "[self-hosted, linux, gpu]" in testing
+    assert "[self-hosted, linux, x64, gpu, cuda]" in testing
     assert "timeout-minutes" in testing
     assert "queued süreyi" in testing
     assert "ENABLE_GPU_BENCH_GATE" in testing
@@ -2850,7 +2864,7 @@ def test_gpu_gate_timeout_and_benchmark_cache_keepalive_are_fail_closed() -> Non
     gpu_job = ci[
         ci.index("  gpu-inference-quality-gate:") : ci.index("  gpu-inference-policy-gate:")
     ]
-    assert "runs-on: [self-hosted, linux, gpu]" in gpu_job
+    assert "runs-on: [self-hosted, linux, x64, gpu, cuda]" in gpu_job
     assert "timeout-minutes: 45" in gpu_job
     assert 'cron: "17 5 * * 1,4"' in keepalive
     assert "uses: actions/cache/restore@v4" in keepalive
@@ -5377,14 +5391,19 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "Benchmark baseline missing" in ci
     assert "exit 1" in ci
     assert "benchmark-compare:" in ci
-    benchmark_job = ci[ci.index("  benchmark-compare:") : ci.index("  production-readiness:")]
+    benchmark_job = ci[
+        ci.index("  benchmark-compare:") : ci.index("  frontend-node-compatibility:")
+    ]
     seed_job = ci[ci.index("  seed-benchmark-baseline:") : ci.index("  test:")]
     assert "runs-on: [self-hosted, linux, benchmark]" in benchmark_job
     assert "runs-on: ubuntu-latest" not in benchmark_job
     assert "runs-on: [self-hosted, linux, benchmark]" in seed_job
     assert "runner.name" in benchmark_job
     assert "Production readiness aggregate" in ci
-    assert "needs: [test, benchmark-compare, gpu-inference-policy-gate]" in ci
+    assert (
+        "needs: [test, benchmark-compare, gpu-inference-policy-gate, "
+        "production-profile-dry-run, production-compose-validation]"
+    ) in ci
     assert "Run base quality gates (performance isolated)" in ci
     assert "TEST_PROFILE=ci RUN_BENCHMARKS=0 RUN_FRONTEND_E2E=1" in ci
     assert "SIDAR_PRODUCTION_READINESS=0 bash run_tests.sh --stage all" in ci
@@ -5606,6 +5625,11 @@ def test_release_playwright_evidence_is_pinned_to_supported_ubuntu_runner() -> N
     assert "name: Upload Playwright frontend smoke report" in ci
     assert "web_ui_react/playwright-report/" in ci
     assert "web_ui_react/test-results/" in ci
+    assert "name: Attest canonical Playwright browser environment" in test_job
+    assert "evidence_kind: 'canonical-ci-browser-environment'" in test_job
+    assert "headless_launch_smoke: 'passed'" in test_job
+    assert "artifacts/playwright/canonical-environment.json" in test_job
+    assert "artifacts/playwright/canonical-environment.json" in testing_doc
     readme = Path("README.md").read_text(encoding="utf-8")
     testing_doc = Path("docs/TESTING.md").read_text(encoding="utf-8")
     assert "Playwright Chromium cache / CDN 403" in readme
@@ -6165,6 +6189,47 @@ def test_frontend_typescript_inventory_separates_production_and_test_debt(
     )
     assert test_regressed.returncode == 1
     assert "test untyped source count increased: 2 > 1" in test_regressed.stderr
+
+
+def test_frontend_typescript_inventory_forbids_new_js_tests_even_after_migration(
+    tmp_path: Path,
+) -> None:
+    """A migrated legacy test must not create reusable allowance for a new JS test."""
+    checker = Path("scripts/check_frontend_typescript_migration.js").resolve()
+    source = tmp_path / "src"
+    source.mkdir()
+    legacy = source / "legacy.test.js"
+    legacy.write_text("export {};\n", encoding="utf-8")
+    (source / "App.ts").write_text("export const app = true;\n", encoding="utf-8")
+    baseline = {
+        "maximum_untyped_files": 1,
+        "maximum_production_untyped_files": 0,
+        "maximum_test_untyped_files": 1,
+        "minimum_typed_files": 1,
+        "allowed_untyped_test_files": ["src/legacy.test.js"],
+    }
+    (tmp_path / "typescript-migration-baseline.json").write_text(
+        json.dumps(baseline), encoding="utf-8"
+    )
+
+    clean = subprocess.run(
+        ["node", str(checker), f"--root={tmp_path}"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert clean.returncode == 0
+
+    legacy.rename(source / "legacy.test.ts")
+    (source / "new.test.js").write_text("export {};\n", encoding="utf-8")
+    swapped = subprocess.run(
+        ["node", str(checker), f"--root={tmp_path}"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert swapped.returncode == 1
+    assert "new untyped test files are forbidden: src/new.test.js" in swapped.stderr
 
 
 def test_frontend_quality_signals_do_not_fail_fast_after_lint() -> None:

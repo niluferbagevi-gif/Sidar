@@ -42,6 +42,12 @@ def contract_errors(root: Path, pins: dict[str, str]) -> list[str]:
     errors: list[str] = []
     if (root / ".python-version").read_text(encoding="utf-8").strip() != pins["PYTHON_VERSION"]:
         errors.append(".python-version canonical PYTHON_VERSION ile eşleşmiyor")
+    node_version_file = root / "web_ui_react/.nvmrc"
+    if (
+        not node_version_file.is_file()
+        or node_version_file.read_text(encoding="utf-8").strip() != pins["NODE_VERSION"]
+    ):
+        errors.append("web_ui_react/.nvmrc canonical NODE_VERSION ile eşleşmiyor")
     uv_image = f"ghcr.io/astral-sh/uv:{pins['UV_VERSION']}@{pins['UV_IMAGE_DIGEST']}"
     for name in ("Dockerfile", "Dockerfile.production"):
         text = (root / name).read_text(encoding="utf-8")
@@ -63,6 +69,7 @@ def contract_errors(root: Path, pins: dict[str, str]) -> list[str]:
         node_pins = {
             f'node-version: "{pins["NODE_VERSION"]}"',
             f"node-version: '{pins['NODE_VERSION']}'",
+            "node-version-file: web_ui_react/.nvmrc",
         }
         if "actions/setup-node@" in text and not node_pins.intersection(normalized_lines):
             errors.append(f"{path.relative_to(root)}: Node pin drift")

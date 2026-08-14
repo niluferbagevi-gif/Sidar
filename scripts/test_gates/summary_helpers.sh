@@ -260,7 +260,8 @@ write_test_summary_json() {
       "${frontend_e2e_script}" \
       "${local_readiness_passed}" \
       "${ruff_status}" \
-      "${aggregate_status}"
+      "${aggregate_status}" \
+      "${PRODUCTION_COMPOSE_BOOT_STATUS:-not_run}"
     then
       echo "🧾 Makinece okunabilir test özeti yazıldı: ${TEST_SUMMARY_JSON}"
     else

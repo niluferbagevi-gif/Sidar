@@ -723,6 +723,9 @@ ekler ve bunları merge öncesi sinyal olarak kullanır:
 - frontend `npm run lint`, `npm run typecheck`, `npm audit --audit-level=high` ve
   Playwright Chromium smoke hazırlığı/raporu;
 - Bandit ve `pip-audit` SAST/bağımlılık güvenlik kapıları;
+- Bandit `# nosec` borcu için exact ratchet: güncel 59 suppression üst sınır değil,
+  eşleşmesi zorunlu baseline'dır. Her kaldırma aynı commit'te baseline'ı düşürür;
+  yeniden artış yasaktır. Tarihli hedefler sırasıyla `<=50`, `<=40`, `<=20`, `0`'dır;
 - ayrı `.github/workflows/codeql.yml`: Python ve JS/TS için CodeQL semantic/dataflow
   SAST taraması (push/PR/haftalık zamanlanmış), bulgular Security sekmesinde alert
   olarak raporlanır — Bandit'in aksine fonksiyon/modül sınırları arası taint-tracking

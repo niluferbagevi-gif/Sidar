@@ -38,7 +38,10 @@ const namedChunkBudgets = [
     label: "ChatMarkdownRenderer",
     envVar: "SIDAR_MARKDOWN_CHUNK_BUDGET_KB",
     defaultKb: "190",
-    pattern: /^ChatMarkdownRenderer-[\w-]+\.js$/,
+    // MarkdownBody owns the parser/vendor graph after syntax highlighting was
+    // split behind a second lazy boundary. Keep matching the entry chunk too
+    // so either side of that boundary remains covered by the established gate.
+    pattern: /^(?:ChatMarkdownRenderer|MarkdownBody)-[\w-]+\.js$/,
   },
   {
     label: "highlight.js core",

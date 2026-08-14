@@ -22,6 +22,15 @@ def _baseline_limit(path: Path) -> int:
     return limit
 
 
+def _requires_exact_baseline(path: Path) -> bool:
+    """Return whether reductions must update the committed ratchet immediately."""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    value = payload.get("require_exact_baseline")
+    if not isinstance(value, bool):
+        raise ValueError("require_exact_baseline boolean olmalıdır")
+    return value
+
+
 def _reduction_targets(path: Path) -> list[tuple[dt.date, int]]:
     """Read and validate the dated, strictly decreasing suppression roadmap."""
     payload = json.loads(path.read_text(encoding="utf-8"))
@@ -88,6 +97,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         limit = _baseline_limit(args.baseline)
+        require_exact = _requires_exact_baseline(args.baseline)
         targets = _reduction_targets(args.baseline)
         owner, review_order = _debt_plan(args.baseline)
     except (OSError, json.JSONDecodeError, ValueError) as exc:
@@ -143,6 +153,13 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"Bandit suppression sayısı arttı: {skipped} > {limit}. "
             "Yeni # nosec eklemek yerine bulguyu giderin veya baseline değişikliğini inceletin.",
+            file=sys.stderr,
+        )
+        return 1
+    if require_exact and skipped < limit:
+        print(
+            f"Bandit suppression borcu azaldı: {skipped} < {limit}. "
+            "Azaltımı kalıcılaştırmak için maximum_skipped_tests değerini aynı commit'te düşürün.",
             file=sys.stderr,
         )
         return 1

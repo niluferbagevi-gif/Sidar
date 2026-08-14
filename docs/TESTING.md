@@ -29,6 +29,18 @@ yetki kararları gibi kritik dallar, toplam eşik hâlâ geçiyor olsa da küç�
 test dilimleriyle yükseltilmelidir. Backend `%100` tabanı frontend'e örtük olarak
 uygulanmaz; frontend eşiğini değiştirmek ayrıca ölçülmüş bir ratchet kararı gerektirir.
 
+Frontend için zorunlu Node.js sözleşmesi `web_ui_react/.nvmrc` içindeki Node 20'dir.
+Ana CI, release, security-review ve haftalık kritik test akışları sürümü
+`node-version-file: web_ui_react/.nvmrc` ile aynı kaynaktan okur. Node 22 yalnız
+`Frontend Node 22 compatibility (non-blocking)` işiyle ileriye dönük uyumluluk sinyali
+üretir; bu iş Node 20 required kalite kapısının yerine geçmez.
+
+Base Quality Gates içinde env parity pytest'ten önce çalışır. Job ancak parity sonrasında
+gerçek backend JUnit dosyaları, `coverage.json` ve başarılı test summary üretildiğinde yeşil
+olabilir. `scripts/ci/validate_pytest_evidence.py` sıfır/eksik JUnit'i reddeder ve kanıtı
+`GITHUB_SHA` ile `artifacts/pytest-evidence.json` içine bağlar. Böylece eski bir yerel
+`4591 passed` çıktısı veya yalnız parity başarısı current commit pytest kanıtı sayılmaz.
+
 ## `run_tests.sh` konfigürasyon yüzeyi ve yazım hatası koruması
 
 `bash run_tests.sh --help` (veya `-h`) kısa bir kullanım özeti verir: `--stage` seçenekleri
@@ -446,19 +458,37 @@ bootstrap runbook'una link verin ve seed workflow tamamlanmadan merge onayı ver
 Production-readiness kod içi kapıları geçmenin yanında üç dışsal kanıta bağımlıdır. Bunlar
 bilinçli olarak fail-open yapılmamalıdır; eksik dış altyapı ürünün hazır olduğunu kanıtlamaz.
 
+Yerel test özeti üç bağımsız karar alanı üretir: `code_quality_ready`,
+`integration_ready` ve `production_ready`. İlk ikisinin geçmesi üçüncüyü örtük olarak
+geçirmez. `production_ready=true` için strict benchmark ve browser kapılarının yanında
+`production_compose_boot=passed` kanıtı gerekir. Bu kanıt
+`scripts/ci/validate_production_compose.sh` ile production override üzerinde PostgreSQL/Redis
+health, `/healthz`, `/readyz` (RAG/runtime readiness), Alembic head, container restart,
+named-volume persistence ve graceful shutdown davranışlarını doğrular.
+Production profilinde `RAG_REQUIRED_FOR_READINESS=true` olduğundan metadata-only seed'in
+başarılı olması tek başına readiness kanıtı sayılmaz: `/healthz` process liveness için 200 ve
+komponent bazlı `degraded` raporu verebilir; vector+BM25 runtime hazır değilse `/readyz` ve
+zorunlu RAG sorgusu 503 döner. Opsiyonel profiller aynı komponent payload'ını korur fakat RAG
+eksikliği tek başına readiness HTTP kodunu başarısız yapmaz.
+
 ### 1. Self-hosted GPU runner kullanılabilirliği
 
-`gpu-inference-quality-gate`, yalnız `[self-hosted, linux, gpu]` etiketlerinin tümünü taşıyan
+`gpu-inference-quality-gate`, yalnız `[self-hosted, linux, x64, gpu, cuda]` etiketlerinin tümünü taşıyan
 bir runner üzerinde çalışır. Uygun runner çevrimdışı veya meşgulse GitHub Actions job'ı
 çalışmaya başlamadan kuyrukta kalır; workflow içindeki `timeout-minutes` değeri queued süreyi
 sınırlamaz. Job bir runner tarafından alındıktan sonraki kurulum ve benchmark çalışması
 `timeout-minutes: 45` ile sınırlıdır. Bu durumda `gpu-inference-policy-gate` ve onu bekleyen `production-readiness`
 aggregate job'ı da tamamlanamaz.
 
+Bu etiketler workflow'daki `runs-on` scheduler sözleşmesidir.
+`GPU_RUNNER_LABELS=self-hosted,linux,x64,gpu,cuda` benzeri bir environment değeri
+tanımlamak runner kaydına etiket eklemez ve CPU runner'ı GPU runner'a dönüştürmez.
+Etiketleri runner yapılandırmasında kaydedin ve GitHub runner envanterinden doğrulayın.
+
 Operatör kontrol listesi:
 
 1. Repository/organization **Settings → Actions → Runners** altında runner'ın `Idle`/`Online`
-   olduğunu ve `self-hosted`, `linux`, `gpu` etiketlerini taşıdığını doğrulayın.
+   olduğunu ve `self-hosted`, `linux`, `x64`, `gpu`, `cuda` etiketlerini taşıdığını doğrulayın.
 2. Runner servisinin, GPU sürücüsünün ve model servisinin sağlığını kontrol edin; etiketi GPU
    kanıtı üretemeyen genel amaçlı bir runner'a ekleyerek kapıyı atlatmayın.
 3. Runner hazır olduktan sonra kuyruktaki job'ı yeniden çalıştırın. Geçmiş bir başarılı GPU
@@ -648,7 +678,10 @@ sağlar; bu sonuç tek başına release E2E kanıtı sayılmaz. Zorunlu GitHub C
 job'ı Playwright Chromium kurulumunu ve frontend smoke/E2E kapısını açıkça pinlenmiş
 `ubuntu-24.04` runner üzerinde çalıştırır. Browser cache anahtarı da host image
 değişimlerinde uyumsuz binary restore edilmemesi için `playwright-ubuntu-24.04-*`
-namespace'ini kullanır. Release/merge kararı bu resmi destekli CI kanıtına dayanmalıdır.
+namespace'ini kullanır. CI ayrıca gerçek headless Chromium launch smoke sonucunu;
+runner/image, Node, Playwright ve browser sürümleriyle birlikte
+`artifacts/playwright/canonical-environment.json` kanıtına yazar. Release/merge kararı
+yerel override sonucuna değil bu resmi destekli CI kanıtına dayanmalıdır.
 
 `make production-readiness` frontend E2E smoke testlerini zorunlu çalıştırır
 (`RUN_FRONTEND_E2E=1`). `web_ui_react` bağımlılıkları kurulduktan sonra Chromium

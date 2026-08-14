@@ -101,10 +101,22 @@ def build_summary(args: list[str]) -> dict[str, object]:
         local_readiness_passed,
         ruff_status,
         aggregate_status,
+        production_compose_boot,
     ) = args
 
     local_ready = _flag_enabled(local_readiness_passed)
     base_production_ready = production_ready == "true"
+    code_quality_ready = ruff_status == "passed" and all(
+        status == "passed"
+        for status in (
+            frontend_lint,
+            frontend_audit,
+            frontend_typecheck,
+            frontend_coverage,
+            frontend_bundle_budget,
+        )
+    )
+    integration_ready = all(status == "passed" for status in (smoke, integration, e2e))
     # This local summary deliberately excludes the external self-hosted GPU evidence.
     # The CI aggregate is the only authority that may declare release evidence complete.
     release_evidence_complete = False
@@ -112,6 +124,9 @@ def build_summary(args: list[str]) -> dict[str, object]:
     return {
         "ruff": ruff_status,
         "aggregate": aggregate_status,
+        "code_quality_ready": code_quality_ready,
+        "integration_ready": integration_ready,
+        "production_compose_boot": production_compose_boot,
         "smoke": smoke,
         "integration": integration,
         "e2e": e2e,
@@ -152,7 +167,7 @@ def build_summary(args: list[str]) -> dict[str, object]:
             "quality_gate": "GPU Inference Quality Gate (TTFT<=200ms, latency<=250ms)",
             "policy_gate": "GPU Inference Required Evidence Gate",
             "required_variable": "ENABLE_GPU_BENCH_GATE=true",
-            "required_runner_labels": ["self-hosted", "linux", "gpu"],
+            "required_runner_labels": ["self-hosted", "linux", "x64", "gpu", "cuda"],
             "ttft_budget_ms": 200,
             "latency_budget_ms": 250,
         },
@@ -186,7 +201,7 @@ def build_summary(args: list[str]) -> dict[str, object]:
 def main(argv: list[str] | None = None) -> int:
     """Write a summary JSON file and return a process status code."""
     args = list(sys.argv[1:] if argv is None else argv)
-    expected_arg_count = 41
+    expected_arg_count = 42
     if len(args) != expected_arg_count:
         print(
             f"expected {expected_arg_count} arguments, got {len(args)}",

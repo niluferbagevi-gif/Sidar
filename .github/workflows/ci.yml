@@ -268,7 +268,7 @@ jobs:
       - name: Set up Node.js (with npm cache)
         uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version-file: web_ui_react/.nvmrc
           cache: 'npm'
           cache-dependency-path: web_ui_react/package-lock.json
 
@@ -319,6 +319,54 @@ jobs:
           cd web_ui_react
           npx playwright install --with-deps chromium
 
+      - name: Attest canonical Playwright browser environment
+        env:
+          PLAYWRIGHT_EVIDENCE_PATH: ../artifacts/playwright/canonical-environment.json
+        run: |
+          cd web_ui_react
+          mkdir -p ../artifacts/playwright
+          node <<'NODE'
+          const fs = require('node:fs');
+          const os = require('node:os');
+          const path = require('node:path');
+          const { chromium } = require('@playwright/test');
+          const packageJson = require('@playwright/test/package.json');
+
+          (async () => {
+            const browser = await chromium.launch({ headless: true });
+            const page = await browser.newPage();
+            await page.setContent('<title>Sidar canonical Playwright evidence</title>');
+            const title = await page.title();
+            if (title !== 'Sidar canonical Playwright evidence') {
+              throw new Error(`Unexpected Chromium smoke title: ${title}`);
+            }
+            const evidence = {
+              schema_version: 1,
+              evidence_kind: 'canonical-ci-browser-environment',
+              github_sha: process.env.GITHUB_SHA || null,
+              runner_os: process.env.RUNNER_OS || null,
+              runner_arch: process.env.RUNNER_ARCH || null,
+              image_os: process.env.ImageOS || null,
+              platform: os.platform(),
+              platform_release: os.release(),
+              node_version: process.version,
+              playwright_version: packageJson.version,
+              browser_name: 'chromium',
+              browser_version: browser.version(),
+              headless_launch_smoke: 'passed',
+            };
+            await browser.close();
+            fs.writeFileSync(
+              path.resolve(process.env.PLAYWRIGHT_EVIDENCE_PATH),
+              `${JSON.stringify(evidence, null, 2)}\n`,
+              'utf8',
+            );
+          })().catch((error) => {
+            console.error(error);
+            process.exitCode = 1;
+          });
+          NODE
+
       - name: Run SAST gates (Bandit + pip-audit)
         run: |
           uv run python scripts/ci/check_bandit_suppression_baseline.py
@@ -357,6 +405,11 @@ jobs:
 
       - name: Check empty test artifacts
         run: bash scripts/check_empty_test_artifacts.sh
+
+      # Keep this strict contract before pytest. A green Base Quality Gates job
+      # therefore proves parity passed and the evidence validator below ran.
+      - name: Check .env.example ↔ config.py parity
+        run: bash scripts/check_env_parity.sh
 
       - name: Run deterministic quality gates
         run: >-
@@ -442,6 +495,9 @@ jobs:
       - name: Validate base test summary
         run: uv run python scripts/ci/validate_test_summary.py --mode development --summary artifacts/test-summary.json
 
+      - name: Attest current-commit pytest and coverage evidence
+        run: uv run python scripts/ci/validate_pytest_evidence.py --commit-sha "${GITHUB_SHA}"
+
       - name: Verify committed coverage ratchet baseline
         run: |
           if ! git diff --exit-code -- pyproject.toml; then
@@ -479,6 +535,7 @@ jobs:
           path: |
             web_ui_react/playwright-report/
             web_ui_react/test-results/
+            artifacts/playwright/canonical-environment.json
           if-no-files-found: warn
           retention-days: 14
 
@@ -507,6 +564,7 @@ jobs:
           name: backend-quality-trend-artifacts
           path: |
             artifacts/test-summary.json
+            artifacts/pytest-evidence.json
             coverage.json
             coverage.xml
             artifacts/benchmark/benchmark.json
@@ -528,29 +586,6 @@ jobs:
             web_ui_react/coverage/coverage-final.json
           if-no-files-found: warn
           retention-days: 14
-
-      - name: Check .env.example ↔ config.py parity
-        run: |
-          bash scripts/check_env_parity.sh \
-            --ignore AUTONOMOUS_LOOP_REVIEWER_BLOCK_STATE \
-            --ignore BENCHMARK_BASELINE_NAME \
-            --ignore C_INCLUDE_PATH \
-            --ignore DATABASE_URL \
-            --ignore DOCKER_SETTINGS_JSON \
-            --ignore DOTENV_FILE \
-            --ignore GITHUB_API_URL \
-            --ignore GITHUB_REPOSITORY \
-            --ignore GPU_RUNNER_MONITOR_TOKEN \
-            --ignore HF_HUB_CACHE \
-            --ignore PLAYWRIGHT_BROWSERS_PATH \
-            --ignore PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH \
-            --ignore PYTEST_XDIST_WORKER \
-            --ignore SEED_RAG_PGVECTOR_MAX_RETRIES \
-            --ignore SEED_RAG_PGVECTOR_RETRY_DELAY_SEC \
-            --ignore SELF_HEAL_DATABASE_URL \
-            --ignore SIDAR_CONTAINER_DATABASE_URL \
-            --ignore SIDAR_LIBCUDA_CANDIDATE_PATHS \
-            --ignore SIDAR_REQUIRED_CHECK_BRANCH
 
   installer-smoke:
     # Branch protection should mark this job name as required. It runs on every
@@ -765,17 +800,68 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  frontend-node-compatibility:
+    name: Frontend Node ${{ matrix.node }} compatibility (non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up compatibility Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: web_ui_react/package-lock.json
+
+      - name: Install locked frontend dependencies
+        working-directory: web_ui_react
+        run: npm ci
+
+      - name: Run critical compatibility tests and production build
+        working-directory: web_ui_react
+        run: |
+          npm run test:critical
+          npm run build
+
+  production-compose-validation:
+    name: Production Compose runtime validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate production Compose runtime evidence
+        run: bash scripts/ci/validate_production_compose.sh
+
+      - name: Publish production Compose diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-compose-diagnostics
+          path: artifacts/production-compose/
+          if-no-files-found: warn
+          retention-days: 14
+
   production-readiness:
     name: Production readiness aggregate
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.seed_benchmark_baseline }}
     runs-on: ubuntu-latest
-    needs: [test, benchmark-compare, gpu-inference-policy-gate]
+    needs: [test, benchmark-compare, gpu-inference-policy-gate, production-profile-dry-run, production-compose-validation]
 
     steps:
       - name: Confirm production readiness gates
         run: |
-          echo "Base quality, benchmark compare, and GPU inference policy gates passed."
-          echo "Production readiness is the combined result of jobs: test + benchmark-compare + gpu-inference-policy-gate."
+          echo "Base quality, benchmark, GPU evidence, production-minimal imports/migration, and Production Compose runtime gates passed."
+          echo "Production readiness includes production Compose boot, health/readiness, migration head, restart, persistence, and graceful shutdown evidence."
 
   production-profile-dry-run:
     name: Production-minimal runtime validation
@@ -925,7 +1011,9 @@ jobs:
   gpu-inference-quality-gate:
     name: GPU Inference Quality Gate (TTFT<=200ms, latency<=250ms)
     if: ${{ vars.ENABLE_GPU_BENCH_GATE == 'true' }}
-    runs-on: [self-hosted, linux, gpu]
+    # `runs-on` is the scheduler contract. Merely exporting the same strings in
+    # an environment variable would not make a host eligible for this job.
+    runs-on: [self-hosted, linux, x64, gpu, cuda]
     # Primary ve warm-standby aynı etiketleri taşır; GitHub uygun online hostu seçer.
     # Kapasite/RTO sözleşmesi: docs/runbooks/gpu-runner-continuity.md
     # Bounds execution after a runner accepts the job. GitHub does not apply
@@ -989,17 +1077,7 @@ jobs:
         env:
           GPU_GATE_ENABLED: ${{ vars.ENABLE_GPU_BENCH_GATE }}
           GPU_GATE_RESULT: ${{ needs.gpu-inference-quality-gate.result }}
-        run: |
-          set -euo pipefail
-          if [[ "${GPU_GATE_ENABLED}" != "true" ]]; then
-            echo "::error title=GPU inference evidence missing::ENABLE_GPU_BENCH_GATE=true is required for merge/release readiness. Keep primary + warm-standby [self-hosted, linux, gpu] runners online (docs/runbooks/gpu-runner-continuity.md); production readiness must not pass without TTFT/latency evidence."
-            exit 1
-          fi
-          if [[ "${GPU_GATE_RESULT}" != "success" ]]; then
-            echo "::error title=GPU inference gate failed::gpu-inference-quality-gate result=${GPU_GATE_RESULT}; expected success."
-            exit 1
-          fi
-          echo "GPU inference TTFT/latency evidence is present and passing."
+        run: bash scripts/ci/check_gpu_evidence.sh
 
   publish-standalone-installer:
     name: Publish Standalone Installer Bundle

@@ -8,7 +8,7 @@ runner grubunda en az iki bağımsız host **online** tutulur:
 
 - `sidar-gpu-primary`: normal kapasite;
 - `sidar-gpu-standby`: farklı güç/host arıza alanında sıcak yedek;
-- ikisinde de `self-hosted`, `linux`, `gpu` etiketleri ve aynı kilitli toolchain bulunur.
+- ikisinde de `self-hosted`, `linux`, `x64`, `gpu`, `cuda` etiketleri ve aynı kilitli toolchain bulunur.
 
 Hedef RTO 30 dakika, hedef RPO son başarılı benchmark artifact'ıdır. Standby runner haftalık
 olarak gerçek `Nightly GPU Performance` işiyle döndürülmeli; yalnız kayıtlı görünmesi yeterli

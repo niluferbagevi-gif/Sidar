@@ -11,6 +11,81 @@ permissions:
   packages: write
 
 jobs:
+  release-benchmark-compare:
+    name: Release benchmark baseline comparison
+    # Release comparisons must run on the same stable pool used to create the
+    # reviewed baseline; GitHub-hosted runners are too noisy for this gate.
+    runs-on: [self-hosted, linux, benchmark]
+    env:
+      BENCHMARK_COMPARE_NAME: baseline
+      BENCHMARK_COMPARE_FAIL: "mean:10%"
+      BENCHMARK_IO_COMPARE_FAIL: "mean:25%"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11.15'
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.12.0"
+          enable-cache: true
+          cache-dependency-glob: '**/uv.lock'
+      - name: Install system dependencies
+        run: bash scripts/install_ci_system_deps.sh
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras
+      - name: Restore reviewed benchmark baseline
+        uses: actions/cache@v4
+        with:
+          path: .benchmarks
+          key: benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-main-
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-master-
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-
+      - name: Resolve reviewed baseline (fail closed)
+        id: baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          compare_file="$(find .benchmarks -type f -name "*_${BENCHMARK_COMPARE_NAME}.json" -print 2>/dev/null | sort -V | tail -n 1)"
+          if [[ -z "${compare_file}" ]]; then
+            echo "::error title=Release benchmark baseline missing::A release cannot proceed without the reviewed ${BENCHMARK_COMPARE_NAME} baseline."
+            exit 1
+          fi
+          echo "compare_file=${compare_file}" >> "${GITHUB_OUTPUT}"
+      - name: Compare release candidate against baseline
+        env:
+          BENCHMARK_BASELINE_FILE: ${{ steps.baseline.outputs.compare_file }}
+        run: |
+          mkdir -p artifacts/release-benchmark
+          uv run pytest -c pyproject.toml -v tests/performance -n 0 --no-cov \
+            --ignore=tests/performance/test_gpu_benchmark.py \
+            -k "not test_multi_user_session_message_workload_scales_with_concurrency" \
+            --benchmark-json=artifacts/release-benchmark/benchmark.json \
+            --benchmark-compare="${BENCHMARK_BASELINE_FILE}" \
+            --benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}" \
+            --benchmark-warmup=on \
+            --benchmark-disable-gc \
+            --junitxml=artifacts/release-benchmark/junit.xml
+          uv run pytest -c pyproject.toml -v tests/performance/test_benchmark.py -n 0 --no-cov \
+            -k "test_multi_user_session_message_workload_scales_with_concurrency" \
+            --benchmark-json=artifacts/release-benchmark/io-benchmark.json \
+            --benchmark-compare="${BENCHMARK_BASELINE_FILE}" \
+            --benchmark-compare-fail="${BENCHMARK_IO_COMPARE_FAIL}" \
+            --benchmark-warmup=on \
+            --benchmark-disable-gc \
+            --junitxml=artifacts/release-benchmark/io-junit.xml
+      - name: Upload release benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-benchmark-compare
+          path: artifacts/release-benchmark/
+          if-no-files-found: warn
+          retention-days: 30
+
   helm-validate:
     name: Helm lint and template
     runs-on: ubuntu-latest
@@ -61,7 +136,7 @@ jobs:
           python-version: '3.11.15'
       - uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version-file: web_ui_react/.nvmrc
           cache: npm
           cache-dependency-path: web_ui_react/package-lock.json
       - name: Build React dist assets

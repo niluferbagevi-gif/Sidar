@@ -98,17 +98,18 @@ birer "taşıma" değildir -- untyped envanteri azaltmazlar -- ama typed tabanı
 büyütüp ratchet'in `minimum_typed_files` tabanının üstünde headroom bırakırlar.
 2026-08-09'daki ilk mekanik test migrasyonundan sonra envanter 8 `.js`,
 20 `.jsx`, 17 `.ts`, 22 `.tsx`; ratchet 28 untyped / 39 typed olmuştur.
-`src/test/viteProxyConfig.test.ts` geçişiyle Vite proxy/chunk fixture'ları da
-TypeScript kapısına alınmış; güncel envanter 7 `.js`, 20 `.jsx`, 18 `.ts`, 22 `.tsx`,
-ratchet ise 27 untyped / 40 typed seviyesine ilerlemiştir. Ölçülen
+`src/test/viteProxyConfig.test.ts` geçişiyle Vite proxy/chunk fixture'ları, ardından
+`src/lib/api.test.ts` geçişiyle API contract mockları TypeScript kapısına alınmış;
+güncel envanter 6 `.js`, 20 `.jsx`, 19 `.ts`, 22 `.tsx`, ratchet ise
+26 untyped / 41 typed seviyesine ilerlemiştir. Ölçülen
 ilerleme `typescript-migration-baseline.json` içinde hemen sıkılaştırılarak
 kampanyanın geriye gitmesi engellenmiştir.
 
 ## Zorunlu ratchet
 
-`typescript-migration-baseline.json`, en fazla 27 untyped (`.js` + `.jsx`) ve en az
-40 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. Envanter ayrıca bu borcu
-`production_untyped=0` ve `test_untyped=27` olarak ayırır; böylece test migrasyonu devam
+`typescript-migration-baseline.json`, en fazla 26 untyped (`.js` + `.jsx`) ve en az
+41 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. Envanter ayrıca bu borcu
+`production_untyped=0` ve `test_untyped=26` olarak ayırır; böylece test migrasyonu devam
 ederken production ağacına yeni JavaScript eklenmesi toplam ratchet içinde gizlenemez.
 `test`, `tests`, `__tests__` dizinleri ile `*.test.*`/`*.spec.*` dosyaları test kaynağı
 sayılır. İlk test dilimi olarak
@@ -117,6 +118,8 @@ sayılır. İlk test dilimi olarak
 
 - `.js`/`.jsx` toplamındaki net artışı fail-closed reddeder;
 - production ve test untyped tabanlarındaki artışı birbirinden bağımsız reddeder;
+- `allowed_untyped_test_files` envanteri dışında yeni `.test.js/.test.jsx` dosyasını,
+  başka bir legacy testi aynı PR'da migrate ederek toplam sayıyı sabit tutsa bile reddeder;
 - mevcut `.ts`/`.tsx` dosyalarının silinmesi veya untyped biçime döndürülmesini reddeder;
 - `.jsx` → `.tsx` dönüşümlerinde doğal olarak geçer.
 

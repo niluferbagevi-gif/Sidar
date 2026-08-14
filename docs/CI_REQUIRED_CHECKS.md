@@ -30,6 +30,15 @@ an unrelated PR can be blocked at `production-readiness` by a benchmark-runner r
 a cache eviction alone, with no relation to that PR's actual diff. The mitigations below
 narrow the blast radius but do not remove it.
 
+The same reviewed comparison is mandatory in all three promotion paths: normal `main`
+CI (`benchmark-compare`), the scheduled auth benchmark, and
+`release-quality.yml` (`release-benchmark-compare`). Developer runs may still opt in to
+comparison, but release and scheduled workflows fail closed when the baseline is absent.
+The general CPU gate rejects a mean-latency regression above 10% (which is stricter than
+the current 15% release objective and also protects inverse operations/second
+throughput); auth P95/P99 budgets and the separate GPU latency/VRAM evidence gate cover
+workload-specific latency and accelerator-memory limits.
+
 `benchmark-baseline-keepalive.yml` (Mondays/Thursdays, plus manual `workflow_dispatch`)
 exists specifically to restore-and-touch the reviewed default-branch baseline cache more
 often than GitHub's ~7-day cache inactivity eviction window, without regenerating a
@@ -85,7 +94,7 @@ blocked rather than silently falling back to shared hardware.
 
 The hardware benchmark remains in `gpu-inference-quality-gate` / `GPU Inference
 Quality Gate (TTFT<=200ms, latency<=250ms)` and requires a
-`[self-hosted, linux, gpu]` runner. The always-running
+`[self-hosted, linux, x64, gpu, cuda]` runner. The always-running
 `gpu-inference-policy-gate` converts an unset `ENABLE_GPU_BENCH_GATE`, a skipped
 hardware job, unavailable evidence, or a failed benchmark into a blocking
 failure. `production-readiness` depends on that policy job, so its aggregate can
@@ -94,7 +103,7 @@ runner must provision one before claiming merge/release readiness; there is no
 silent checklist-only bypass.
 
 Bu donanım kapısı tek-host bağımlılığı olarak işletilmez. Primary ve farklı arıza alanındaki
-warm-standby runner aynı `[self-hosted, linux, gpu]` etiketlerini taşır; saatlik
+warm-standby runner aynı `[self-hosted, linux, x64, gpu, cuda]` etiketlerini taşır; saatlik
 `GPU Runner Capacity Watchdog` hem `ENABLE_GPU_BENCH_GATE=true` repository variable sözleşmesini
 hem de en az iki online runner kapasitesini arar. Watchdog için repository runner
 metadata okuma yetkili `GPU_RUNNER_MONITOR_TOKEN` secret'ı gerekir. Failover, RTO ve üç aylık
