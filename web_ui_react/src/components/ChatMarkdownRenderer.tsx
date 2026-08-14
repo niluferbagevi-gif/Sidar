@@ -1,30 +1,26 @@
 import React from "react";
-import ReactMarkdown from "react-markdown";
-import type { Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
-import rehypeSidarHighlight from "../lib/rehypeSidarHighlight.js";
+import { MarkdownBody } from "./MarkdownBody.js";
 
-const markdownRenderers: Components = {
-  pre: ({ node: _node, ...props }) => (
-    <div className="code-block-wrapper">
-      <pre {...props} />
-    </div>
-  ),
-};
+const HighlightedChatMarkdownRenderer = React.lazy(() =>
+  import("./HighlightedChatMarkdownRenderer.js").then((module) => ({
+    default: module.HighlightedChatMarkdownRenderer,
+  })),
+);
 
-interface ChatMarkdownRendererProps {
+const FENCED_CODE_BLOCK = /(?:^|\n)\s*(?:```|~~~)[^\n]*\n/;
+
+export interface ChatMarkdownRendererProps {
   content: string;
 }
 
 export const ChatMarkdownRenderer = React.memo(function ChatMarkdownRenderer({ content }: ChatMarkdownRendererProps) {
+  if (!FENCED_CODE_BLOCK.test(content)) {
+    return <MarkdownBody content={content} />;
+  }
+
   return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeSidarHighlight]}
-      className="message__markdown"
-      components={markdownRenderers}
-    >
-      {content}
-    </ReactMarkdown>
+    <React.Suspense fallback={<MarkdownBody content={content} />}>
+      <HighlightedChatMarkdownRenderer content={content} />
+    </React.Suspense>
   );
 });
