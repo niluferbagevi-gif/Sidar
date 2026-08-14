@@ -1,0 +1,27 @@
+services:
+  redis:
+    ports: []
+
+  postgres:
+    ports: []
+
+  ollama:
+    ports: []
+
+  sidar-web:
+    restart: always
+    environment:
+      - SIDAR_ENV=production
+      - APP_RUNTIME_MODE=production
+      - DEBUG=false
+      - DB_DEGRADED_MODE_ON_POSTGRES_FAILURE=false
+    volumes:
+      - sidar_data_prod:/app/data
+      - sidar_logs_prod:/app/logs
+      - sidar_temp_prod:/app/temp
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:7860/healthz >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 20s

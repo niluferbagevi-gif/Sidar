@@ -639,6 +639,21 @@ print_frontend_quality_summary
 
 echo "======================================================"
 
+# Production readiness is a runtime/deployment assertion, not an alias for
+# unit/coverage success. The Compose evidence gate is therefore mandatory only
+# for the strict production-readiness profile and remains outside normal dev runs.
+PRODUCTION_COMPOSE_EXIT_CODE=0
+PRODUCTION_COMPOSE_BOOT_STATUS="not_run"
+if production_readiness_gate_active; then
+  echo "🐳 Production Compose boot/readiness/restart/persistence kapısı çalıştırılıyor..."
+  if bash scripts/ci/validate_production_compose.sh; then
+    PRODUCTION_COMPOSE_BOOT_STATUS="passed"
+  else
+    PRODUCTION_COMPOSE_EXIT_CODE=1
+    PRODUCTION_COMPOSE_BOOT_STATUS="failed"
+  fi
+fi
+
 # 4) Final Durum Değerlendirmesi
 FINAL_EXIT_CODE=0
 if [ "${RUFF_EXIT_CODE}" -ne 0 ] || [ "${BACKEND_EXIT_CODE}" -ne 0 ] || [ "${FRONTEND_EXIT_CODE}" -ne 0 ]; then
@@ -660,11 +675,15 @@ if [ "${FRONTEND_E2E_EXIT_CODE}" -ne 0 ]; then
     echo "   Varsayılan sıkı kapıya dönmek için: FRONTEND_E2E_ENFORCE_RESULT=1 bash run_tests.sh"
   fi
 fi
+if [ "${PRODUCTION_COMPOSE_EXIT_CODE}" -ne 0 ]; then
+  FINAL_EXIT_CODE=1
+fi
 
 PRODUCTION_READY=false
 if production_readiness_gate_active \
   && [ "${FINAL_EXIT_CODE}" -eq 0 ] \
   && [ "${BENCHMARK_COMPARE_STATUS}" = "compared_enforced" ] \
+  && [ "${PRODUCTION_COMPOSE_BOOT_STATUS}" = "passed" ] \
   && [ -n "${BENCHMARK_COMPARE_FILE:-}" ] \
   && [ -f "${BENCHMARK_COMPARE_FILE}" ]; then
   PRODUCTION_READY=true

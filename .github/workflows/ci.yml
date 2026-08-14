@@ -745,17 +745,38 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  production-compose-validation:
+    name: Production Compose runtime validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate production Compose runtime evidence
+        run: bash scripts/ci/validate_production_compose.sh
+
+      - name: Publish production Compose diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-compose-diagnostics
+          path: artifacts/production-compose/
+          if-no-files-found: warn
+          retention-days: 14
+
   production-readiness:
     name: Production readiness aggregate
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.seed_benchmark_baseline }}
     runs-on: ubuntu-latest
-    needs: [test, benchmark-compare, gpu-inference-policy-gate]
+    needs: [test, benchmark-compare, gpu-inference-policy-gate, production-profile-dry-run, production-compose-validation]
 
     steps:
       - name: Confirm production readiness gates
         run: |
-          echo "Base quality, benchmark compare, and GPU inference policy gates passed."
-          echo "Production readiness is the combined result of jobs: test + benchmark-compare + gpu-inference-policy-gate."
+          echo "Base quality, benchmark, GPU evidence, production-minimal imports/migration, and Production Compose runtime gates passed."
+          echo "Production readiness includes production Compose boot, health/readiness, migration head, restart, persistence, and graceful shutdown evidence."
 
   production-profile-dry-run:
     name: Production-minimal runtime validation

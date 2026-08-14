@@ -15,6 +15,9 @@ def _summary(
     exit_code: int,
 ) -> dict[str, object]:
     return {
+        "code_quality_ready": production_ready,
+        "integration_ready": production_ready,
+        "production_compose_boot": "passed" if production_ready else "not_run",
         "benchmark_compare": "compared_enforced" if production_ready else "not_run",
         "benchmark_baseline": {
             "file": ".benchmarks/Linux-CPython-3.11/baseline.json" if production_ready else None,

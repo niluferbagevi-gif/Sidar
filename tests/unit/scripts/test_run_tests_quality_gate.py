@@ -842,7 +842,8 @@ def test_ci_production_readiness_requires_gpu_inference_evidence_policy() -> Non
         ci.index("  gpu-inference-policy-gate:") : ci.index("  publish-standalone-installer:")
     ]
 
-    assert "needs: [test, benchmark-compare, gpu-inference-policy-gate]" in production_job
+    assert "needs: [test, benchmark-compare, gpu-inference-policy-gate," in production_job
+    assert "production-profile-dry-run, production-compose-validation]" in production_job
     assert "needs: [test, gpu-inference-quality-gate]" in policy_job
     assert "run: bash scripts/ci/check_gpu_evidence.sh" in policy_job
     assert "GPU_GATE_ENABLED: ${{ vars.ENABLE_GPU_BENCH_GATE }}" in policy_job

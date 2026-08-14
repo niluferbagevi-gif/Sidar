@@ -446,6 +446,14 @@ bootstrap runbook'una link verin ve seed workflow tamamlanmadan merge onayı ver
 Production-readiness kod içi kapıları geçmenin yanında üç dışsal kanıta bağımlıdır. Bunlar
 bilinçli olarak fail-open yapılmamalıdır; eksik dış altyapı ürünün hazır olduğunu kanıtlamaz.
 
+Yerel test özeti üç bağımsız karar alanı üretir: `code_quality_ready`,
+`integration_ready` ve `production_ready`. İlk ikisinin geçmesi üçüncüyü örtük olarak
+geçirmez. `production_ready=true` için strict benchmark ve browser kapılarının yanında
+`production_compose_boot=passed` kanıtı gerekir. Bu kanıt
+`scripts/ci/validate_production_compose.sh` ile production override üzerinde PostgreSQL/Redis
+health, `/healthz`, `/readyz` (RAG/runtime readiness), Alembic head, container restart,
+named-volume persistence ve graceful shutdown davranışlarını doğrular.
+
 ### 1. Self-hosted GPU runner kullanılabilirliği
 
 `gpu-inference-quality-gate`, yalnız `[self-hosted, linux, x64, gpu, cuda]` etiketlerinin tümünü taşıyan
