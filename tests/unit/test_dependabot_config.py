@@ -36,6 +36,10 @@ def test_dependabot_config_uses_weekly_grouped_prs_with_labels() -> None:
         assert entry["commit-message"]["prefix"] == "deps"
         assert entry["commit-message"]["include"] == "scope"
         assert entry["groups"]
-        for group in entry["groups"].values():
+        for group_name, group in entry["groups"].items():
             assert group["patterns"] == ["*"]
-            assert group["update-types"] == ["minor", "patch"]
+            if group_name == "github-actions-major":
+                assert entry["package-ecosystem"] == "github-actions"
+                assert group["update-types"] == ["major"]
+            else:
+                assert group["update-types"] == ["minor", "patch"]
