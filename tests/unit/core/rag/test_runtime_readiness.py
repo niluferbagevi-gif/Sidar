@@ -34,3 +34,35 @@ def test_runtime_readiness_requires_vector_and_bm25() -> None:
     assert report["ready"] is True
     assert report["document_count"] == 1
     assert report["components"]["rag_vector"]["backend"] == "pgvector"
+
+
+def test_runtime_readiness_chroma_ready_with_collection() -> None:
+    store = _store(vector_ready=False, bm25_ready=True)
+    store._vector_backend = "chroma"
+    store._chroma_available = True
+    store.collection = object()
+
+    report = store.runtime_readiness_report()
+
+    assert report["ready"] is True
+    assert report["components"]["rag_vector"] == {
+        "healthy": True,
+        "status": "healthy",
+        "backend": "chroma",
+    }
+
+
+def test_runtime_readiness_chroma_unavailable_without_collection() -> None:
+    store = _store(vector_ready=False, bm25_ready=True)
+    store._vector_backend = "chroma"
+    store._chroma_available = True
+    store.collection = None
+
+    report = store.runtime_readiness_report()
+
+    assert report["ready"] is False
+    assert report["components"]["rag_vector"] == {
+        "healthy": False,
+        "status": "unavailable",
+        "backend": "chroma",
+    }
