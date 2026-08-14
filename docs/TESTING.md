@@ -29,6 +29,12 @@ yetki kararları gibi kritik dallar, toplam eşik hâlâ geçiyor olsa da küç�
 test dilimleriyle yükseltilmelidir. Backend `%100` tabanı frontend'e örtük olarak
 uygulanmaz; frontend eşiğini değiştirmek ayrıca ölçülmüş bir ratchet kararı gerektirir.
 
+Frontend için zorunlu Node.js sözleşmesi `web_ui_react/.nvmrc` içindeki Node 20'dir.
+Ana CI, release, security-review ve haftalık kritik test akışları sürümü
+`node-version-file: web_ui_react/.nvmrc` ile aynı kaynaktan okur. Node 22 yalnız
+`Frontend Node 22 compatibility (non-blocking)` işiyle ileriye dönük uyumluluk sinyali
+üretir; bu iş Node 20 required kalite kapısının yerine geçmez.
+
 ## `run_tests.sh` konfigürasyon yüzeyi ve yazım hatası koruması
 
 `bash run_tests.sh --help` (veya `-h`) kısa bir kullanım özeti verir: `--stage` seçenekleri

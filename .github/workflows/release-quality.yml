@@ -61,7 +61,7 @@ jobs:
           python-version: '3.11.15'
       - uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version-file: web_ui_react/.nvmrc
           cache: npm
           cache-dependency-path: web_ui_react/package-lock.json
       - name: Build React dist assets
