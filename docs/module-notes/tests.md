@@ -322,7 +322,7 @@ metriği yerine yazılmamalıdır.
 
 - GitHub Actions içinde isteğe bağlı bir GPU kalite kapısı tanımlıdır: `gpu-inference-quality-gate`.
 - Bu job yalnızca repo değişkeni `ENABLE_GPU_BENCH_GATE=true` olduğunda çalışır.
-- Runner gereksinimi: `self-hosted`, `linux`, `gpu` etiketli runner.
+- Runner gereksinimi: `self-hosted`, `linux`, `x64`, `gpu`, `cuda` etiketli runner.
 - Quality gate komutu:
   - `bash scripts/ci/run_ttft_quality_gate.sh`
 - Baseline referansı (2026-04):

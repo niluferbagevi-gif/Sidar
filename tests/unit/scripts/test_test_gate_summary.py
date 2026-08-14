@@ -105,7 +105,7 @@ def test_summary_helper_writes_run_tests_payload_and_failed_backend_tests(tmp_pa
         "quality_gate": "GPU Inference Quality Gate (TTFT<=200ms, latency<=250ms)",
         "policy_gate": "GPU Inference Required Evidence Gate",
         "required_variable": "ENABLE_GPU_BENCH_GATE=true",
-        "required_runner_labels": ["self-hosted", "linux", "gpu"],
+        "required_runner_labels": ["self-hosted", "linux", "x64", "gpu", "cuda"],
         "ttft_budget_ms": 200,
         "latency_budget_ms": 250,
     }

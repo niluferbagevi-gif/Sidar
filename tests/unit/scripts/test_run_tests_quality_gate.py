@@ -844,9 +844,9 @@ def test_ci_production_readiness_requires_gpu_inference_evidence_policy() -> Non
 
     assert "needs: [test, benchmark-compare, gpu-inference-policy-gate]" in production_job
     assert "needs: [test, gpu-inference-quality-gate]" in policy_job
-    assert 'if [[ "${GPU_GATE_ENABLED}" != "true" ]]' in policy_job
-    assert 'if [[ "${GPU_GATE_RESULT}" != "success" ]]' in policy_job
-    assert "production readiness must not pass without TTFT/latency evidence" in policy_job
+    assert "run: bash scripts/ci/check_gpu_evidence.sh" in policy_job
+    assert "GPU_GATE_ENABLED: ${{ vars.ENABLE_GPU_BENCH_GATE }}" in policy_job
+    assert "runs-on: [self-hosted, linux, x64, gpu, cuda]" in ci
 
 
 def test_postgresql_multi_user_benchmark_warms_pool_and_uses_stable_pedantic_rounds() -> None:
@@ -2810,7 +2810,7 @@ def test_testing_docs_explain_external_production_readiness_dependencies() -> No
     testing = Path("docs/TESTING.md").read_text(encoding="utf-8")
 
     assert "## CI production-readiness dışsal bağımlılıkları" in testing
-    assert "[self-hosted, linux, gpu]" in testing
+    assert "[self-hosted, linux, x64, gpu, cuda]" in testing
     assert "timeout-minutes" in testing
     assert "queued süreyi" in testing
     assert "ENABLE_GPU_BENCH_GATE" in testing
@@ -2850,7 +2850,7 @@ def test_gpu_gate_timeout_and_benchmark_cache_keepalive_are_fail_closed() -> Non
     gpu_job = ci[
         ci.index("  gpu-inference-quality-gate:") : ci.index("  gpu-inference-policy-gate:")
     ]
-    assert "runs-on: [self-hosted, linux, gpu]" in gpu_job
+    assert "runs-on: [self-hosted, linux, x64, gpu, cuda]" in gpu_job
     assert "timeout-minutes: 45" in gpu_job
     assert 'cron: "17 5 * * 1,4"' in keepalive
     assert "uses: actions/cache/restore@v4" in keepalive

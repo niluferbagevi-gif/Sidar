@@ -20,7 +20,7 @@
 
 > ⚠️ **`production_ready=true`, GPU Inference Quality Gate'in (TTFT≤200ms, latency≤250ms)
 > geçtiği anlamına gelmez.** GPU kanıtı yalnız `ENABLE_GPU_BENCH_GATE=true` iken güncel commit
-> için `[self-hosted, linux, gpu]` runner'da üretilir. Job'ın skip/queued/failed olması veya
+> için `[self-hosted, linux, x64, gpu, cuda]` runner'da üretilir. Job'ın skip/queued/failed olması veya
 > nightly geçmiş sonucu merge kanıtı değildir; `GPU Inference Required Evidence Gate` bu
 > durumları fail-closed bloke etmelidir. Bu kontrol PR'ın GPU koduna dokunup dokunmamasından
 > bağımsız olarak bütün merge/release kararları için zorunludur.

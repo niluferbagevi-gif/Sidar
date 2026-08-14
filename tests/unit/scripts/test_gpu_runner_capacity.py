@@ -30,8 +30,12 @@ def _runner(name: str, *, status: str = "online", labels: tuple[str, ...] = ()) 
 def test_eligible_online_runners_requires_all_labels_and_online_state() -> None:
     payload = {
         "runners": [
-            _runner("primary", labels=("self-hosted", "Linux", "GPU")),
-            _runner("offline-standby", status="offline", labels=("self-hosted", "linux", "gpu")),
+            _runner("primary", labels=("self-hosted", "Linux", "X64", "GPU", "CUDA")),
+            _runner(
+                "offline-standby",
+                status="offline",
+                labels=("self-hosted", "linux", "x64", "gpu", "cuda"),
+            ),
             _runner("cpu", labels=("self-hosted", "linux")),
         ]
     }
@@ -40,7 +44,7 @@ def test_eligible_online_runners_requires_all_labels_and_online_state() -> None:
 
 def test_main_fails_closed_with_one_runner_and_passes_with_two(tmp_path, capsys) -> None:
     fixture = tmp_path / "runners.json"
-    labels = ("self-hosted", "linux", "gpu")
+    labels = ("self-hosted", "linux", "x64", "gpu", "cuda")
     fixture.write_text(json.dumps({"runners": [_runner("primary", labels=labels)]}))
     assert capacity.main(["--fixture", str(fixture)]) == 1
     assert "kapasitesi yetersiz" in capsys.readouterr().err

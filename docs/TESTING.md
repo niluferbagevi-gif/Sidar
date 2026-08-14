@@ -448,17 +448,22 @@ bilinçli olarak fail-open yapılmamalıdır; eksik dış altyapı ürünün haz
 
 ### 1. Self-hosted GPU runner kullanılabilirliği
 
-`gpu-inference-quality-gate`, yalnız `[self-hosted, linux, gpu]` etiketlerinin tümünü taşıyan
+`gpu-inference-quality-gate`, yalnız `[self-hosted, linux, x64, gpu, cuda]` etiketlerinin tümünü taşıyan
 bir runner üzerinde çalışır. Uygun runner çevrimdışı veya meşgulse GitHub Actions job'ı
 çalışmaya başlamadan kuyrukta kalır; workflow içindeki `timeout-minutes` değeri queued süreyi
 sınırlamaz. Job bir runner tarafından alındıktan sonraki kurulum ve benchmark çalışması
 `timeout-minutes: 45` ile sınırlıdır. Bu durumda `gpu-inference-policy-gate` ve onu bekleyen `production-readiness`
 aggregate job'ı da tamamlanamaz.
 
+Bu etiketler workflow'daki `runs-on` scheduler sözleşmesidir.
+`GPU_RUNNER_LABELS=self-hosted,linux,x64,gpu,cuda` benzeri bir environment değeri
+tanımlamak runner kaydına etiket eklemez ve CPU runner'ı GPU runner'a dönüştürmez.
+Etiketleri runner yapılandırmasında kaydedin ve GitHub runner envanterinden doğrulayın.
+
 Operatör kontrol listesi:
 
 1. Repository/organization **Settings → Actions → Runners** altında runner'ın `Idle`/`Online`
-   olduğunu ve `self-hosted`, `linux`, `gpu` etiketlerini taşıdığını doğrulayın.
+   olduğunu ve `self-hosted`, `linux`, `x64`, `gpu`, `cuda` etiketlerini taşıdığını doğrulayın.
 2. Runner servisinin, GPU sürücüsünün ve model servisinin sağlığını kontrol edin; etiketi GPU
    kanıtı üretemeyen genel amaçlı bir runner'a ekleyerek kapıyı atlatmayın.
 3. Runner hazır olduktan sonra kuyruktaki job'ı yeniden çalıştırın. Geçmiş bir başarılı GPU

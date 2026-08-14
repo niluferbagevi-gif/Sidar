@@ -85,7 +85,7 @@ blocked rather than silently falling back to shared hardware.
 
 The hardware benchmark remains in `gpu-inference-quality-gate` / `GPU Inference
 Quality Gate (TTFT<=200ms, latency<=250ms)` and requires a
-`[self-hosted, linux, gpu]` runner. The always-running
+`[self-hosted, linux, x64, gpu, cuda]` runner. The always-running
 `gpu-inference-policy-gate` converts an unset `ENABLE_GPU_BENCH_GATE`, a skipped
 hardware job, unavailable evidence, or a failed benchmark into a blocking
 failure. `production-readiness` depends on that policy job, so its aggregate can
@@ -94,7 +94,7 @@ runner must provision one before claiming merge/release readiness; there is no
 silent checklist-only bypass.
 
 Bu donanım kapısı tek-host bağımlılığı olarak işletilmez. Primary ve farklı arıza alanındaki
-warm-standby runner aynı `[self-hosted, linux, gpu]` etiketlerini taşır; saatlik
+warm-standby runner aynı `[self-hosted, linux, x64, gpu, cuda]` etiketlerini taşır; saatlik
 `GPU Runner Capacity Watchdog` hem `ENABLE_GPU_BENCH_GATE=true` repository variable sözleşmesini
 hem de en az iki online runner kapasitesini arar. Watchdog için repository runner
 metadata okuma yetkili `GPU_RUNNER_MONITOR_TOKEN` secret'ı gerekir. Failover, RTO ve üç aylık

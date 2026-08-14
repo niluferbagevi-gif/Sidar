@@ -19,7 +19,7 @@
 > kaldırılıp create timeout, non-zero return code ve boş container-id regresyon testleri
 > eklenmiştir; ancak güncel karar her zaman aşağıda tarif edilen artifact ve CI kapılarından
 > yeniden okunmalıdır. GitHub GPU evidence tarafında da `ENABLE_GPU_BENCH_GATE=true`,
-> `GPU_RUNNER_MONITOR_TOKEN`, iki online `[self-hosted, linux, gpu]` runner ve başarılı
+> `GPU_RUNNER_MONITOR_TOKEN`, iki online `[self-hosted, linux, x64, gpu, cuda]` runner ve başarılı
 > GPU inference artifact'ı doğrulanmadan production-ready kabulü yapılamaz.
 
 ### 11.1 Durum Özeti Paneli
