@@ -373,7 +373,10 @@ def test_ci_exposes_security_and_mutation_quality_gates() -> None:
     assert "uv run python scripts/ci/check_bandit_suppression_baseline.py" in ci
     assert "Run base quality gates (performance isolated)" in ci
     assert "RUN_BENCHMARKS=0" in ci
-    assert "needs: [test, benchmark-compare, gpu-inference-policy-gate]" in ci
+    assert (
+        "needs: [test, benchmark-compare, gpu-inference-policy-gate, "
+        "production-profile-dry-run, production-compose-validation]"
+    ) in ci
     assert "uv run python scripts/ci/check_policy_dates.py" in ci
     assert "POSTGRES_PASSWORD: sidar" in ci
     assert "Test-only CI service credentials" in ci
@@ -5388,14 +5391,19 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "Benchmark baseline missing" in ci
     assert "exit 1" in ci
     assert "benchmark-compare:" in ci
-    benchmark_job = ci[ci.index("  benchmark-compare:") : ci.index("  production-readiness:")]
+    benchmark_job = ci[
+        ci.index("  benchmark-compare:") : ci.index("  frontend-node-compatibility:")
+    ]
     seed_job = ci[ci.index("  seed-benchmark-baseline:") : ci.index("  test:")]
     assert "runs-on: [self-hosted, linux, benchmark]" in benchmark_job
     assert "runs-on: ubuntu-latest" not in benchmark_job
     assert "runs-on: [self-hosted, linux, benchmark]" in seed_job
     assert "runner.name" in benchmark_job
     assert "Production readiness aggregate" in ci
-    assert "needs: [test, benchmark-compare, gpu-inference-policy-gate]" in ci
+    assert (
+        "needs: [test, benchmark-compare, gpu-inference-policy-gate, "
+        "production-profile-dry-run, production-compose-validation]"
+    ) in ci
     assert "Run base quality gates (performance isolated)" in ci
     assert "TEST_PROFILE=ci RUN_BENCHMARKS=0 RUN_FRONTEND_E2E=1" in ci
     assert "SIDAR_PRODUCTION_READINESS=0 bash run_tests.sh --stage all" in ci

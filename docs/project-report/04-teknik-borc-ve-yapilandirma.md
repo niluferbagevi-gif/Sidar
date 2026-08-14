@@ -67,7 +67,7 @@ sayılır; bu Markdown tablosundaki snapshot release onayı olarak kullanılamaz
 #### 11.1.3 Frontend TypeScript ratchet durumu
 
 `web_ui_react/typescript-migration-baseline.json`, `web_ui_react/src` için güncel
-geriye-gitmeme sınırını **en fazla 27 untyped (`.js` + `.jsx`)** ve **en az 40 typed
+geriye-gitmeme sınırını **en fazla 26 untyped (`.js` + `.jsx`)** ve **en az 41 typed
 (`.ts` + `.tsx`)** dosya olarak tanımlar. `npm run typecheck:inventory`, untyped
 sayısındaki artışı veya typed sayısındaki düşüşü fail-closed reddeder. Mevcut baseline,
 2026-10-31 için 20/47 ve 2027-01-31 için 10/57 ara hedeflerini, 2027-03-31 içinse
