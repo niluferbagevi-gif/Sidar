@@ -854,7 +854,7 @@ def test_ci_parity_precedes_pytest_and_current_commit_evidence_is_attested() -> 
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     parity = "run: bash scripts/check_env_parity.sh"
     full_pytest = "SIDAR_PRODUCTION_READINESS=0 bash run_tests.sh --stage all"
-    evidence = "scripts/ci/validate_pytest_evidence.py --commit-sha \"${GITHUB_SHA}\""
+    evidence = 'scripts/ci/validate_pytest_evidence.py --commit-sha "${GITHUB_SHA}"'
 
     assert ci.index(parity) < ci.index(full_pytest) < ci.index(evidence)
     assert "artifacts/pytest-evidence.json" in ci

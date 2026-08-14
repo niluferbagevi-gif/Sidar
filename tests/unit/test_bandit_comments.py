@@ -41,9 +41,7 @@ def test_bandit_suppression_baseline_matches_current_scan_and_quality_gates() ->
         0,
     ]
     assert suppression_baseline._reduction_targets(root / "bandit-suppression-baseline.json")
-    assert suppression_baseline._requires_exact_baseline(
-        root / "bandit-suppression-baseline.json"
-    )
+    assert suppression_baseline._requires_exact_baseline(root / "bandit-suppression-baseline.json")
     owner, review_order = suppression_baseline._debt_plan(root / "bandit-suppression-baseline.json")
     assert owner == "security-review"
     assert review_order == (

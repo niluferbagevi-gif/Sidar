@@ -164,9 +164,8 @@ def build_rag_router(
         readiness_fn = getattr(agent.docs, "runtime_readiness_report", None)
         if callable(readiness_fn):
             readiness = readiness_fn()
-            if (
-                not readiness.get("ready", False)
-                and bool(getattr(getattr(agent, "cfg", None), "RAG_REQUIRED_FOR_READINESS", False))
+            if not readiness.get("ready", False) and bool(
+                getattr(getattr(agent, "cfg", None), "RAG_REQUIRED_FOR_READINESS", False)
             ):
                 return JSONResponse(
                     {

@@ -1545,8 +1545,7 @@ class DocumentStore:
                 and getattr(self, "collection", None) is not None
             )
         bm25_ready = bool(
-            getattr(self, "_bm25_available", False)
-            and getattr(self, "_bm25_init_done", False)
+            getattr(self, "_bm25_available", False) and getattr(self, "_bm25_init_done", False)
         )
         graph_ready = bool(
             not getattr(self, "_graph_rag_enabled", False)

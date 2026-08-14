@@ -26,9 +26,7 @@ def test_production_compose_gate_covers_runtime_release_evidence() -> None:
 def test_production_readiness_aggregate_requires_compose_and_minimal_profiles() -> None:
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     aggregate = workflow[
-        workflow.index("  production-readiness:") : workflow.index(
-            "  production-profile-dry-run:"
-        )
+        workflow.index("  production-readiness:") : workflow.index("  production-profile-dry-run:")
     ]
 
     assert "production-compose-validation" in aggregate
