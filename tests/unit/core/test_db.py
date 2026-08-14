@@ -37,6 +37,7 @@ from core.db.dialect import (
     assert_safe_sql_identifier,
     is_safe_sql_identifier,
     join_sql_identifiers,
+    postgres_bind_placeholders,
     render_sql_identifier_template,
 )
 from core.db.helpers import json_dumps as _json_dumps
@@ -72,6 +73,27 @@ def test_render_sql_identifier_template_accepts_only_validated_tokens() -> None:
             render_sql_identifier_template("SELECT * FROM {table}", table=token)
     with pytest.raises(ValueError, match="Invalid SQL integer literal"):
         render_sql_identifier_template("SELECT {value}", value=-1)
+
+
+@pytest.mark.parametrize("count", [0, -1, True, False])
+def test_postgres_bind_placeholders_rejects_invalid_counts(count: int) -> None:
+    with pytest.raises(ValueError, match="must be positive"):
+        postgres_bind_placeholders(count)
+
+
+def test_postgres_bind_placeholders_renders_sequence() -> None:
+    placeholders = postgres_bind_placeholders(3)
+
+    assert placeholders == "$1, $2, $3"
+    assert render_sql_identifier_template("VALUES ({placeholders})", placeholders=placeholders) == (
+        "VALUES ($1, $2, $3)"
+    )
+
+
+@pytest.mark.parametrize("value", [True, False])
+def test_render_sql_identifier_template_rejects_bool_integer_literal(value: bool) -> None:
+    with pytest.raises(ValueError, match="Invalid SQL integer literal"):
+        render_sql_identifier_template("SELECT {value}", value=value)
 
 
 def test_database_missing_url_fails_closed_in_production(tmp_path: Path) -> None:

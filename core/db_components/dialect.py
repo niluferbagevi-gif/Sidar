@@ -51,7 +51,7 @@ def quote_sql_identifier(identifier: str) -> str:
     value = (identifier or "").strip()
     if not value:
         raise ValueError("SQL identifier cannot be empty")
-    return f'"{assert_safe_sql_identifier(value)}"'
+    return _ValidatedSQLFragment(f'"{assert_safe_sql_identifier(value)}"')
 
 
 def join_sql_identifiers(

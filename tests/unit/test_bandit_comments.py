@@ -33,9 +33,8 @@ def test_bandit_suppression_baseline_matches_current_scan_and_quality_gates() ->
     local_gate = (root / "scripts/test_gates/backend_helpers.sh").read_text(encoding="utf-8")
     ci = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
-    assert baseline["maximum_skipped_tests"] == 55
+    assert baseline["maximum_skipped_tests"] == 50
     assert [target["maximum_skipped_tests"] for target in baseline["reduction_targets"]] == [
-        50,
         40,
         20,
         0,
@@ -45,7 +44,6 @@ def test_bandit_suppression_baseline_matches_current_scan_and_quality_gates() ->
     owner, review_order = suppression_baseline._debt_plan(root / "bandit-suppression-baseline.json")
     assert owner == "security-review"
     assert review_order == (
-        "core/db/monolith.py",
         "scripts/ci/verify_required_checks.py",
         "github_upload.py",
     )
@@ -213,3 +211,12 @@ def test_pgvector_uses_audited_builder_without_b608_suppressions() -> None:
     assert not _NOSEC_B608_RE.search(source)
     assert _imports_sql_identifier_validator(source)
     assert "render_sql_identifier_template" in source
+
+
+def test_db_monolith_uses_audited_builder_without_b608_suppressions() -> None:
+    """Keep schema-version SQL on the central validated composition sink."""
+    root = Path(__file__).resolve().parents[2]
+    source = (root / "core/db/monolith.py").read_text(encoding="utf-8")
+
+    assert not _NOSEC_B608_RE.search(source)
+    assert "from core.db.dialect import render_sql_identifier_template" in source

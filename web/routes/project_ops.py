@@ -49,12 +49,20 @@ _SAFE_EXTENSIONS = {
 def _is_allowed_git_command(cmd: list[str]) -> bool:
     if not cmd or any("\x00" in str(part) for part in cmd):
         return False
-    return tuple(str(part) for part in cmd) in _ALLOWED_GIT_COMMANDS
+    normalized = tuple(str(part) for part in cmd)
+    if normalized in _ALLOWED_GIT_COMMANDS:
+        return True
+    return (
+        len(normalized) == 4
+        and normalized[:3] == ("git", "checkout", "--")
+        and is_valid_git_ref_name(normalized[3])
+    )
 
 
-def _git_run(
+def _execute_allowed_git_command(
     cmd: list[str], cwd: str, logger: Any | None = None, stderr: int = subprocess.DEVNULL
-) -> str:
+) -> tuple[bool, str]:
+    """Execute one audited Git argv and return its success flag and output."""
     active_logger = logger
     if active_logger is None:
         import logging
@@ -62,26 +70,31 @@ def _git_run(
         active_logger = logging.getLogger(__name__)
     if not _is_allowed_git_command(cmd):
         active_logger.warning("Güvenli olmayan git komutu reddedildi: %s", cmd)
-        return ""
+        return False, ""
     git_executable = shutil.which("git")
     if not git_executable or not Path(git_executable).is_absolute():
         active_logger.warning("Git yürütülebilir dosyası güvenli bir mutlak yola çözülemedi.")
-        return ""
+        return False, ""
     safe_cmd = [git_executable, *cmd[1:]]
     try:
-        return (
-            subprocess.check_output(  # nosec B603  # absolute git; exact argv allowlist; shell=False
-                safe_cmd, cwd=cwd, stderr=stderr, shell=False
-            )
-            .decode()
-            .strip()
+        output = subprocess.check_output(  # nosec B603  # absolute git; audited argv; shell=False
+            safe_cmd, cwd=cwd, stderr=stderr, shell=False, timeout=10
         )
+        return True, output.decode().strip()
     except subprocess.CalledProcessError as exc:
+        detail = exc.output.decode().strip() if exc.output else ""
         active_logger.warning("Git komutu başarısız oldu: %s (exit=%s)", cmd, exc.returncode)
-        return ""
+        return False, detail
     except (OSError, subprocess.TimeoutExpired) as exc:
         active_logger.warning("Git komutu çalıştırılamadı: %s (%s)", cmd, exc)
-        return ""
+        return False, ""
+
+
+def _git_run(
+    cmd: list[str], cwd: str, logger: Any | None = None, stderr: int = subprocess.DEVNULL
+) -> str:
+    _ok, output = _execute_allowed_git_command(cmd, cwd, logger, stderr)
+    return output
 
 
 def _extract_repo_from_remote(remote: str) -> str:
@@ -322,17 +335,18 @@ def build_project_ops_router(
                 status_code=400,
             )
         root = str(resolve_server_root().resolve())
-        try:
-            await asyncio.to_thread(
-                subprocess.check_output,
-                ["git", "checkout", branch_name],
-                cwd=root,
-                stderr=subprocess.STDOUT,
-            )
+        success, detail = await asyncio.to_thread(
+            _execute_allowed_git_command,
+            ["git", "checkout", "--", branch_name],
+            root,
+            logger,
+            subprocess.STDOUT,
+        )
+        if success:
             return JSONResponse({"success": True, "branch": branch_name})
-        except subprocess.CalledProcessError as exc:
-            detail = exc.output.decode().strip() if exc.output else str(exc)
-            return JSONResponse({"success": False, "error": detail}, status_code=400)
+        return JSONResponse(
+            {"success": False, "error": detail or "Git checkout başarısız oldu."}, status_code=400
+        )
 
     @router.get("/github-repos")
     async def github_repos(owner: str = "", q: str = "") -> Any:

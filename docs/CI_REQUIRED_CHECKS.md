@@ -76,9 +76,8 @@ open and deliberately separate from the release-blocker fixes.
   cadence and issue-creation behavior, decisions that deserve a dedicated PR validated
   against the real `[self-hosted, linux, benchmark]` runner rather than a docs-only pass.
 - **`benchmark-baseline-seed.yml` and `ci.yml`'s `seed-benchmark-baseline` job duplicate
-  nearly the same seeding logic with real, not just cosmetic, drift** — confirmed by diff:
-  different pinned action versions (`actions/checkout@v5`/`setup-python@v6`/
-  `astral-sh/setup-uv@v6` vs `@v4`/`@v5`/`@v4`), `ci.yml`'s job runs
+  nearly the same seeding logic with real, not just cosmetic, drift** — action runtime
+  pins are now aligned on Node 24-backed majors, but `ci.yml`'s job still runs
   `scripts/install_ci_system_deps.sh` and restores any existing cache before overwriting,
   `benchmark-baseline-seed.yml` does neither, retention-days differs (30 vs 90), the
   uploaded artifact name differs (dynamic `benchmark-baseline-...-<compare_name>` vs the

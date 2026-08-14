@@ -1243,8 +1243,8 @@ def test_ci_workflow_documents_and_seeds_benchmark_baseline() -> None:
     assert "seed_benchmark_baseline:" in ci
     assert "seed-benchmark-baseline:" in ci
     assert "Seed benchmark baseline cache" in ci
-    assert "uses: actions/cache/restore@v4" in ci
-    assert "uses: actions/cache/save@v4" in ci
+    assert "uses: actions/cache/restore@v6" in ci
+    assert "uses: actions/cache/save@v6" in ci
     assert '--benchmark-save="${BENCHMARK_BASELINE_NAME}"' in ci
     assert "baseline-seed-manifest.json" in ci
     assert '"schema_version": 1' in ci
@@ -2868,7 +2868,7 @@ def test_gpu_gate_timeout_and_benchmark_cache_keepalive_are_fail_closed() -> Non
     assert "runs-on: [self-hosted, linux, x64, gpu, cuda]" in gpu_job
     assert "timeout-minutes: 45" in gpu_job
     assert 'cron: "17 5 * * 1,4"' in keepalive
-    assert "uses: actions/cache/restore@v4" in keepalive
+    assert "uses: actions/cache/restore@v6" in keepalive
     assert "Require reviewed baseline evidence" in keepalive
     assert "find .benchmarks -type f -name '*_baseline.json'" in keepalive
     assert "exit 1" in keepalive
@@ -5377,7 +5377,7 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
     gitignore = Path(".gitignore").read_text(encoding="utf-8")
 
-    assert "uses: actions/cache@v4" in ci
+    assert "uses: actions/cache@v6" in ci
     assert "id: benchmark-baseline-cache" in ci
     assert "path: .benchmarks" in ci
     assert (
@@ -5440,8 +5440,8 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
         "Rerun normal CI / production-readiness after this cache/artifact is saved."
         in seed_workflow
     )
-    assert "actions/cache/save@v4" in seed_workflow
-    assert "actions/upload-artifact@v4" in seed_workflow
+    assert "actions/cache/save@v6" in seed_workflow
+    assert "actions/upload-artifact@v7" in seed_workflow
     assert "baseline-seed-manifest.json" in ci
     assert "Baseline files:" in ci
     assert "retention-days: 90" in ci

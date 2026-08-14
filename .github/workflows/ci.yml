@@ -32,10 +32,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11.15'
 
@@ -56,7 +56,7 @@ jobs:
         run: uv sync --frozen --all-extras
 
       - name: Restore existing benchmark baseline cache (if any)
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: .benchmarks
           key: benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
@@ -117,7 +117,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload benchmark baseline seed artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: benchmark-baseline-seed
           path: |
@@ -128,7 +128,7 @@ jobs:
           retention-days: 90
 
       - name: Save benchmark baseline cache for CI
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: .benchmarks
           key: benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
@@ -190,7 +190,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # check-install-manifests runs update_install_module_hash_manifest.py
           # --check-pin, which does `git show <pinned commit>:<path>` against
@@ -199,7 +199,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11.15'
 
@@ -255,7 +255,7 @@ jobs:
           SIDAR_INSTALL_TEST_MODE=1 SIDAR_INSTALL_VERSION_PROBE_ONLY=1 bash dist/install_sidar.sh
 
       - name: Upload standalone installer bundle artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: standalone-install-sidar
           path: |
@@ -307,7 +307,7 @@ jobs:
           npm run audit:high
 
       - name: Restore Playwright browser cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-ubuntu-24.04-${{ hashFiles('web_ui_react/package-lock.json') }}
@@ -388,7 +388,7 @@ jobs:
 
       - name: Upload security audit artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: security-audit-artifacts
           path: artifacts/security/
@@ -507,7 +507,7 @@ jobs:
 
       - name: Upload run_tests.sh full log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-run-log
           path: artifacts/test_run.log
@@ -516,7 +516,7 @@ jobs:
 
       - name: Upload mypy failure logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mypy-error-logs
           path: artifacts/mypy_errors*.log
@@ -529,7 +529,7 @@ jobs:
 
       - name: Upload Playwright frontend smoke report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-playwright-report
           path: |
@@ -541,7 +541,7 @@ jobs:
 
       - name: Upload BATS JUnit Report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bats-junit-report
           path: artifacts/bats/report.xml
@@ -550,7 +550,7 @@ jobs:
 
       - name: Upload Backend Coverage Report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: backend-coverage-report
           path: htmlcov/
@@ -559,7 +559,7 @@ jobs:
 
       - name: Upload test summary, coverage XML/JSON + Benchmark JSON artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: backend-quality-trend-artifacts
           path: |
@@ -576,7 +576,7 @@ jobs:
 
       - name: Upload Frontend Coverage Report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-coverage-report
           path: |
@@ -599,7 +599,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # check-install-manifests --check-pin needs the full history to
           # `git show` the commit pinned in SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT;
@@ -607,7 +607,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11.15'
 
@@ -671,10 +671,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11.15'
 
@@ -693,7 +693,7 @@ jobs:
 
       - name: Restore benchmark baseline cache
         id: benchmark-baseline-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .benchmarks
           key: benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
@@ -784,7 +784,7 @@ jobs:
 
       - name: Upload benchmark compare artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: benchmark-compare-artifacts
           path: |
@@ -811,7 +811,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up compatibility Node.js
         uses: actions/setup-node@v6
@@ -837,14 +837,14 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Validate production Compose runtime evidence
         run: bash scripts/ci/validate_production_compose.sh
 
       - name: Publish production Compose diagnostics
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: production-compose-diagnostics
           path: artifacts/production-compose/
@@ -869,10 +869,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11.15'
 
@@ -937,7 +937,7 @@ jobs:
 
       - name: Upload production-minimal runtime evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: production-minimal-runtime-evidence
           path: |
@@ -973,10 +973,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11.15'
 
@@ -1029,10 +1029,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11.15'
 
@@ -1059,7 +1059,7 @@ jobs:
 
       - name: Upload GPU inference gate JUnit report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gpu-inference-quality-gate-junit
           path: gpu-inference-quality-gate.junit.xml
@@ -1074,7 +1074,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Require GPU latency evidence
         env:
@@ -1096,14 +1096,14 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # check-pin needs the full history to `git show` the commit pinned
           # in SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT; shallow clones don't have it.
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11.15'
 

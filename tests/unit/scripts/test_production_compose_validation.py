@@ -52,6 +52,16 @@ def test_generated_gate_env_satisfies_required_compose_interpolation() -> None:
     assert "compose-gate-grafana-admin-password-32" not in Path(
         ".github/workflows/ci.yml"
     ).read_text(encoding="utf-8")
+    assert "SIDAR_RUNTIME_ENV_FILE=$env_file" in generated_env
+
+
+def test_production_profile_is_the_compose_service_env_contract() -> None:
+    """CLI interpolation and container injection must use one production file."""
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+    production_env = Path(".env.production.example").read_text(encoding="utf-8")
+
+    assert compose.count("- ${SIDAR_RUNTIME_ENV_FILE:-.env}") == 5
+    assert "SIDAR_RUNTIME_ENV_FILE=.env.production" in production_env
 
 
 @pytest.mark.integration
