@@ -678,7 +678,10 @@ sağlar; bu sonuç tek başına release E2E kanıtı sayılmaz. Zorunlu GitHub C
 job'ı Playwright Chromium kurulumunu ve frontend smoke/E2E kapısını açıkça pinlenmiş
 `ubuntu-24.04` runner üzerinde çalıştırır. Browser cache anahtarı da host image
 değişimlerinde uyumsuz binary restore edilmemesi için `playwright-ubuntu-24.04-*`
-namespace'ini kullanır. Release/merge kararı bu resmi destekli CI kanıtına dayanmalıdır.
+namespace'ini kullanır. CI ayrıca gerçek headless Chromium launch smoke sonucunu;
+runner/image, Node, Playwright ve browser sürümleriyle birlikte
+`artifacts/playwright/canonical-environment.json` kanıtına yazar. Release/merge kararı
+yerel override sonucuna değil bu resmi destekli CI kanıtına dayanmalıdır.
 
 `make production-readiness` frontend E2E smoke testlerini zorunlu çalıştırır
 (`RUN_FRONTEND_E2E=1`). `web_ui_react` bağımlılıkları kurulduktan sonra Chromium

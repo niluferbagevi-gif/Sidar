@@ -5617,6 +5617,11 @@ def test_release_playwright_evidence_is_pinned_to_supported_ubuntu_runner() -> N
     assert "name: Upload Playwright frontend smoke report" in ci
     assert "web_ui_react/playwright-report/" in ci
     assert "web_ui_react/test-results/" in ci
+    assert "name: Attest canonical Playwright browser environment" in test_job
+    assert "evidence_kind: 'canonical-ci-browser-environment'" in test_job
+    assert "headless_launch_smoke: 'passed'" in test_job
+    assert "artifacts/playwright/canonical-environment.json" in test_job
+    assert "artifacts/playwright/canonical-environment.json" in testing_doc
     readme = Path("README.md").read_text(encoding="utf-8")
     testing_doc = Path("docs/TESTING.md").read_text(encoding="utf-8")
     assert "Playwright Chromium cache / CDN 403" in readme

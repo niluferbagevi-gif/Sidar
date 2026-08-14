@@ -319,6 +319,54 @@ jobs:
           cd web_ui_react
           npx playwright install --with-deps chromium
 
+      - name: Attest canonical Playwright browser environment
+        env:
+          PLAYWRIGHT_EVIDENCE_PATH: ../artifacts/playwright/canonical-environment.json
+        run: |
+          cd web_ui_react
+          mkdir -p ../artifacts/playwright
+          node <<'NODE'
+          const fs = require('node:fs');
+          const os = require('node:os');
+          const path = require('node:path');
+          const { chromium } = require('@playwright/test');
+          const packageJson = require('@playwright/test/package.json');
+
+          (async () => {
+            const browser = await chromium.launch({ headless: true });
+            const page = await browser.newPage();
+            await page.setContent('<title>Sidar canonical Playwright evidence</title>');
+            const title = await page.title();
+            if (title !== 'Sidar canonical Playwright evidence') {
+              throw new Error(`Unexpected Chromium smoke title: ${title}`);
+            }
+            const evidence = {
+              schema_version: 1,
+              evidence_kind: 'canonical-ci-browser-environment',
+              github_sha: process.env.GITHUB_SHA || null,
+              runner_os: process.env.RUNNER_OS || null,
+              runner_arch: process.env.RUNNER_ARCH || null,
+              image_os: process.env.ImageOS || null,
+              platform: os.platform(),
+              platform_release: os.release(),
+              node_version: process.version,
+              playwright_version: packageJson.version,
+              browser_name: 'chromium',
+              browser_version: browser.version(),
+              headless_launch_smoke: 'passed',
+            };
+            await browser.close();
+            fs.writeFileSync(
+              path.resolve(process.env.PLAYWRIGHT_EVIDENCE_PATH),
+              `${JSON.stringify(evidence, null, 2)}\n`,
+              'utf8',
+            );
+          })().catch((error) => {
+            console.error(error);
+            process.exitCode = 1;
+          });
+          NODE
+
       - name: Run SAST gates (Bandit + pip-audit)
         run: |
           uv run python scripts/ci/check_bandit_suppression_baseline.py
@@ -487,6 +535,7 @@ jobs:
           path: |
             web_ui_react/playwright-report/
             web_ui_react/test-results/
+            artifacts/playwright/canonical-environment.json
           if-no-files-found: warn
           retention-days: 14
 
