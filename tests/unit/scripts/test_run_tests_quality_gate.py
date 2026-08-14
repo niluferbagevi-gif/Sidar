@@ -1002,7 +1002,8 @@ def test_env_documentation_clarifies_loading_chain_and_api_key_policy() -> None:
     assert "Yükleme zinciri `config.py` varsayılanları" in project_report
     assert "kalıcı kaynak politikası yalnız `.env`" in project_report
 
-    assert "`.env` report `0/18` filled service API keys" in environment_configuration
+    assert "`.env` report `0/N` filled service API keys" in environment_configuration
+    assert "`0/21` with the current" in environment_configuration
     assert "not a failure when" in environment_configuration
     assert "runtime loader still reads the final" in environment_configuration
     assert "`600` or stricter" in environment_configuration

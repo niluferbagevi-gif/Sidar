@@ -57,7 +57,14 @@ orphaned by design (see above) and must be reseeded via `seed_benchmark_baseline
 regardless of keepalive; keepalive only prevents inactivity eviction of a still-valid
 cache entry, it cannot survive a runner identity change.
 
-**Known follow-up improvements (not yet implemented, flagged in a friend code review):**
+**Known follow-up improvements (partially implemented, flagged in a friend code review):**
+
+The self-hosted runner queue now has a proactive signal: the scheduled/manual
+`Benchmark Runner Capacity Watchdog` checks for an online
+`[self-hosted, linux, benchmark]` runner. See
+[`docs/runbooks/benchmark-runner-continuity.md`](runbooks/benchmark-runner-continuity.md).
+This warns about runner capacity only; the two baseline lifecycle improvements below remain
+open and deliberately separate from the release-blocker fixes.
 
 - **Keepalive is still purely reactive.** It only restores-and-touches the existing cache;
   it never re-runs the benchmark suite to refresh the baseline data itself, and nothing

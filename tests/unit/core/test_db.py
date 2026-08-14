@@ -37,6 +37,7 @@ from core.db.dialect import (
     assert_safe_sql_identifier,
     is_safe_sql_identifier,
     join_sql_identifiers,
+    render_sql_identifier_template,
 )
 from core.db.helpers import json_dumps as _json_dumps
 
@@ -55,6 +56,22 @@ class DummyCfg:
     SIDAR_AUTO_MIGRATE: bool = True
     SIDAR_ENV: str = "test"
     SIDAR_ALLOW_INSECURE_LOCAL_DB_DEFAULT: bool = False
+
+
+def test_render_sql_identifier_template_accepts_only_validated_tokens() -> None:
+    statement = render_sql_identifier_template(
+        "INSERT INTO {table} ({columns}) VALUES ($1, $2) LIMIT {limit}",
+        table="users",
+        columns=("id", "email"),
+        limit=2,
+    )
+
+    assert statement == "INSERT INTO users (id, email) VALUES ($1, $2) LIMIT 2"
+    for token in ("users; DROP TABLE users", "users --"):
+        with pytest.raises(ValueError, match="Invalid SQL identifier"):
+            render_sql_identifier_template("SELECT * FROM {table}", table=token)
+    with pytest.raises(ValueError, match="Invalid SQL integer literal"):
+        render_sql_identifier_template("SELECT {value}", value=-1)
 
 
 def test_database_missing_url_fails_closed_in_production(tmp_path: Path) -> None:
