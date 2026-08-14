@@ -35,6 +35,12 @@ Ana CI, release, security-review ve haftalık kritik test akışları sürümü
 `Frontend Node 22 compatibility (non-blocking)` işiyle ileriye dönük uyumluluk sinyali
 üretir; bu iş Node 20 required kalite kapısının yerine geçmez.
 
+Base Quality Gates içinde env parity pytest'ten önce çalışır. Job ancak parity sonrasında
+gerçek backend JUnit dosyaları, `coverage.json` ve başarılı test summary üretildiğinde yeşil
+olabilir. `scripts/ci/validate_pytest_evidence.py` sıfır/eksik JUnit'i reddeder ve kanıtı
+`GITHUB_SHA` ile `artifacts/pytest-evidence.json` içine bağlar. Böylece eski bir yerel
+`4591 passed` çıktısı veya yalnız parity başarısı current commit pytest kanıtı sayılmaz.
+
 ## `run_tests.sh` konfigürasyon yüzeyi ve yazım hatası koruması
 
 `bash run_tests.sh --help` (veya `-h`) kısa bir kullanım özeti verir: `--stage` seçenekleri

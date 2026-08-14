@@ -850,6 +850,16 @@ def test_ci_production_readiness_requires_gpu_inference_evidence_policy() -> Non
     assert "runs-on: [self-hosted, linux, x64, gpu, cuda]" in ci
 
 
+def test_ci_parity_precedes_pytest_and_current_commit_evidence_is_attested() -> None:
+    ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    parity = "run: bash scripts/check_env_parity.sh"
+    full_pytest = "SIDAR_PRODUCTION_READINESS=0 bash run_tests.sh --stage all"
+    evidence = "scripts/ci/validate_pytest_evidence.py --commit-sha \"${GITHUB_SHA}\""
+
+    assert ci.index(parity) < ci.index(full_pytest) < ci.index(evidence)
+    assert "artifacts/pytest-evidence.json" in ci
+
+
 def test_postgresql_multi_user_benchmark_warms_pool_and_uses_stable_pedantic_rounds() -> None:
     benchmark_test = Path("tests/performance/test_benchmark.py").read_text(encoding="utf-8")
     env_test_example = Path(".env.test.example").read_text(encoding="utf-8")

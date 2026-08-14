@@ -358,6 +358,11 @@ jobs:
       - name: Check empty test artifacts
         run: bash scripts/check_empty_test_artifacts.sh
 
+      # Keep this strict contract before pytest. A green Base Quality Gates job
+      # therefore proves parity passed and the evidence validator below ran.
+      - name: Check .env.example ↔ config.py parity
+        run: bash scripts/check_env_parity.sh
+
       - name: Run deterministic quality gates
         run: >-
           uv run pytest -q --no-cov -m quality_gate
@@ -442,6 +447,9 @@ jobs:
       - name: Validate base test summary
         run: uv run python scripts/ci/validate_test_summary.py --mode development --summary artifacts/test-summary.json
 
+      - name: Attest current-commit pytest and coverage evidence
+        run: uv run python scripts/ci/validate_pytest_evidence.py --commit-sha "${GITHUB_SHA}"
+
       - name: Verify committed coverage ratchet baseline
         run: |
           if ! git diff --exit-code -- pyproject.toml; then
@@ -507,6 +515,7 @@ jobs:
           name: backend-quality-trend-artifacts
           path: |
             artifacts/test-summary.json
+            artifacts/pytest-evidence.json
             coverage.json
             coverage.xml
             artifacts/benchmark/benchmark.json
@@ -528,9 +537,6 @@ jobs:
             web_ui_react/coverage/coverage-final.json
           if-no-files-found: warn
           retention-days: 14
-
-      - name: Check .env.example ↔ config.py parity
-        run: bash scripts/check_env_parity.sh
 
   installer-smoke:
     # Branch protection should mark this job name as required. It runs on every
