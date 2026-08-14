@@ -176,6 +176,91 @@ def test_open_upload_pull_request_uses_github_api_when_gh_is_missing(monkeypatch
     }
 
 
+def test_open_upload_pull_request_retries_transient_api_failure(monkeypatch):
+    class ApiResponse:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self):
+            return json.dumps(self.payload).encode("utf-8")
+
+    calls = []
+    sleeps = []
+
+    def fake_urlopen(request, timeout):
+        calls.append((request.get_method(), request.full_url, timeout))
+        if len(calls) == 1:
+            raise gu.urllib.error.URLError("temporary TLS EOF")
+        if request.get_method() == "GET":
+            return ApiResponse([])
+        return ApiResponse({"html_url": "https://github.com/example/sidar/pull/8"})
+
+    monkeypatch.setattr(gu.shutil, "which", lambda command: None)
+    monkeypatch.setattr(
+        gu,
+        "run_command",
+        lambda command, show_output=False: (True, "https://github.com/example/sidar.git"),
+    )
+    monkeypatch.setattr(gu.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(gu.time, "sleep", sleeps.append)
+
+    success, pr_url = gu.open_upload_pull_request("sidar/upload-test", "secret-token")
+
+    assert success is True
+    assert pr_url == "https://github.com/example/sidar/pull/8"
+    assert [method for method, _url, _timeout in calls] == ["POST", "GET", "POST"]
+    assert sleeps == [1.0]
+
+
+def test_open_upload_pull_request_recovers_when_transient_response_hides_created_pr(
+    monkeypatch,
+):
+    class ApiResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self):
+            return b'[{"html_url":"https://github.com/example/sidar/pull/9"}]'
+
+    methods = []
+
+    def fake_urlopen(request, timeout):
+        methods.append(request.get_method())
+        if request.get_method() == "POST":
+            raise gu.urllib.error.URLError("SSL: UNEXPECTED_EOF_WHILE_READING")
+        assert timeout == 30
+        assert "head=example%3Asidar%2Fupload-test" in request.full_url
+        return ApiResponse()
+
+    monkeypatch.setattr(gu.shutil, "which", lambda command: None)
+    monkeypatch.setattr(
+        gu,
+        "run_command",
+        lambda command, show_output=False: (True, "git@github.com:example/sidar.git"),
+    )
+    monkeypatch.setattr(gu.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(
+        gu.time,
+        "sleep",
+        lambda _delay: pytest.fail("Existing PR recovery must not sleep or retry POST"),
+    )
+
+    success, pr_url = gu.open_upload_pull_request("sidar/upload-test", "secret-token")
+
+    assert success is True
+    assert pr_url == "https://github.com/example/sidar/pull/9"
+    assert methods == ["POST", "GET"]
+
+
 def test_open_upload_pull_request_api_fails_closed_for_invalid_origin(monkeypatch):
     monkeypatch.setattr(gu.shutil, "which", lambda command: None)
     monkeypatch.setattr(
