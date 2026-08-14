@@ -23,8 +23,9 @@ import {
   listHitlPending,
   respondHitl,
 } from "./api.js";
+import type { TokenPrincipal } from "./api.js";
 
-const mockFetch = (response) => {
+const mockFetch = (response: unknown) => {
   const fetchMock = vi.fn().mockResolvedValue(response);
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
@@ -159,7 +160,7 @@ describe("api.js localStorage checks", () => {
       if (originalDescriptor) {
         Object.defineProperty(globalThis, "localStorage", originalDescriptor);
       } else {
-        delete globalThis.localStorage;
+        Reflect.deleteProperty(globalThis, "localStorage");
       }
     }
   });
@@ -182,7 +183,7 @@ describe("api.js localStorage checks", () => {
       if (originalDescriptor) {
         Object.defineProperty(globalThis, "localStorage", originalDescriptor);
       } else {
-        delete globalThis.localStorage;
+        Reflect.deleteProperty(globalThis, "localStorage");
       }
     }
   });
@@ -230,7 +231,7 @@ describe("buildAuthHeaders", () => {
 });
 
 describe("getTokenPrincipal", () => {
-  const makeJwt = (payload) => {
+  const makeJwt = (payload: Record<string, unknown>) => {
     const encodedPayload = btoa(JSON.stringify(payload))
       .replace(/=/g, "")
       .replace(/\+/g, "-")
@@ -267,16 +268,24 @@ describe("getTokenPrincipal", () => {
 });
 
 describe("isAdminPrincipal", () => {
+  const principal = (role: string, username: string): TokenPrincipal => ({
+    id: "principal-1",
+    role,
+    username,
+    tenant_id: "default",
+    exp: 0,
+  });
+
   it("accepts the admin role case-insensitively", () => {
-    expect(isAdminPrincipal({ role: "ADMIN", username: "operator" })).toBe(true);
+    expect(isAdminPrincipal(principal("ADMIN", "operator"))).toBe(true);
   });
 
   it("accepts the bootstrap default_admin identity", () => {
-    expect(isAdminPrincipal({ role: "user", username: "default_admin" })).toBe(true);
+    expect(isAdminPrincipal(principal("user", "default_admin"))).toBe(true);
   });
 
   it("rejects ordinary and missing principals", () => {
-    expect(isAdminPrincipal({ role: "user", username: "operator" })).toBe(false);
+    expect(isAdminPrincipal(principal("user", "operator"))).toBe(false);
     expect(isAdminPrincipal(null)).toBe(false);
   });
 });

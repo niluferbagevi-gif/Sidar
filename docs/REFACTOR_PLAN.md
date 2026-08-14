@@ -171,7 +171,7 @@ taşımaları küçük domain PR'ları için backlog'da tutulur.
   `src/lib/tokenStore.js` (token okuma/yazma/migrasyon/event), `src/lib/httpClient.js`
   (`fetchJson`/auth header) ve `src/lib/api.js` (yalnız domain endpoint'leri, mevcut
   import yolunu re-export ederek) olarak ayırmak — en kırılgan parça (auth) izole
-  test edilebilir hale gelir. Test kapısı: `src/lib/api.test.js` (zaten
+  test edilebilir hale gelir. Test kapısı: `src/lib/api.test.ts` (zaten
   `npm run test:critical` içinde ayrıca çalıştırılıyor).
 - **`src/hooks/useWebSocket.js` (~285 satır):** `onmessage` içinde eski düz mesaj
   şeması (`type` alanı olmadan `chunk`/`error`/`status` gibi alanlara duck-typing

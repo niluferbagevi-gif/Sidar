@@ -6178,6 +6178,47 @@ def test_frontend_typescript_inventory_separates_production_and_test_debt(
     assert "test untyped source count increased: 2 > 1" in test_regressed.stderr
 
 
+def test_frontend_typescript_inventory_forbids_new_js_tests_even_after_migration(
+    tmp_path: Path,
+) -> None:
+    """A migrated legacy test must not create reusable allowance for a new JS test."""
+    checker = Path("scripts/check_frontend_typescript_migration.js").resolve()
+    source = tmp_path / "src"
+    source.mkdir()
+    legacy = source / "legacy.test.js"
+    legacy.write_text("export {};\n", encoding="utf-8")
+    (source / "App.ts").write_text("export const app = true;\n", encoding="utf-8")
+    baseline = {
+        "maximum_untyped_files": 1,
+        "maximum_production_untyped_files": 0,
+        "maximum_test_untyped_files": 1,
+        "minimum_typed_files": 1,
+        "allowed_untyped_test_files": ["src/legacy.test.js"],
+    }
+    (tmp_path / "typescript-migration-baseline.json").write_text(
+        json.dumps(baseline), encoding="utf-8"
+    )
+
+    clean = subprocess.run(
+        ["node", str(checker), f"--root={tmp_path}"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert clean.returncode == 0
+
+    legacy.rename(source / "legacy.test.ts")
+    (source / "new.test.js").write_text("export {};\n", encoding="utf-8")
+    swapped = subprocess.run(
+        ["node", str(checker), f"--root={tmp_path}"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert swapped.returncode == 1
+    assert "new untyped test files are forbidden: src/new.test.js" in swapped.stderr
+
+
 def test_frontend_quality_signals_do_not_fail_fast_after_lint() -> None:
     """Lint, typecheck, coverage, build and E2E must retain separate results."""
     frontend_gate_block = _script()[
