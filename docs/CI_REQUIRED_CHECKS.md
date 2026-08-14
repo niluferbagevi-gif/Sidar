@@ -30,6 +30,15 @@ an unrelated PR can be blocked at `production-readiness` by a benchmark-runner r
 a cache eviction alone, with no relation to that PR's actual diff. The mitigations below
 narrow the blast radius but do not remove it.
 
+The same reviewed comparison is mandatory in all three promotion paths: normal `main`
+CI (`benchmark-compare`), the scheduled auth benchmark, and
+`release-quality.yml` (`release-benchmark-compare`). Developer runs may still opt in to
+comparison, but release and scheduled workflows fail closed when the baseline is absent.
+The general CPU gate rejects a mean-latency regression above 10% (which is stricter than
+the current 15% release objective and also protects inverse operations/second
+throughput); auth P95/P99 budgets and the separate GPU latency/VRAM evidence gate cover
+workload-specific latency and accelerator-memory limits.
+
 `benchmark-baseline-keepalive.yml` (Mondays/Thursdays, plus manual `workflow_dispatch`)
 exists specifically to restore-and-touch the reviewed default-branch baseline cache more
 often than GitHub's ~7-day cache inactivity eviction window, without regenerating a
