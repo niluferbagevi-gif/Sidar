@@ -1073,6 +1073,9 @@ jobs:
     needs: [test, gpu-inference-quality-gate]
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Require GPU latency evidence
         env:
           GPU_GATE_ENABLED: ${{ vars.ENABLE_GPU_BENCH_GATE }}
