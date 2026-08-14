@@ -1,0 +1,27 @@
+name: Benchmark Runner Capacity Watchdog
+
+on:
+  schedule:
+    - cron: "47 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-benchmark-capacity:
+    name: Verify online benchmark runner
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11.15"
+      - name: Check stable benchmark runner capacity
+        env:
+          BENCHMARK_RUNNER_MONITOR_TOKEN: ${{ secrets.BENCHMARK_RUNNER_MONITOR_TOKEN }}
+        run: |
+          python scripts/ci/check_benchmark_runner_capacity.py \
+            --repo "${GITHUB_REPOSITORY}" \
+            --minimum-online 1
