@@ -6963,11 +6963,56 @@ def test_shared_playwright_ubuntu_override_helper_lists_modern_chromium_dependen
     phase = Path("scripts/install_modules/phases/13_playwright.sh").read_text(encoding="utf-8")
     assert "playwright_linux_dependencies_ready" in phase
     assert "playwright_missing_ubuntu_dependencies" in phase
+    assert 'playwright_chromium_launch_smoke "${PY_CMD[@]}"' in phase
     assert "apt ön taraması eksik Chromium bağımlılıkları buldu" in phase
     assert (
         '! playwright_host_platform_is_officially_supported "$_pw_os_release_path" "${PY_CMD[@]}"'
         in phase
     )
+
+
+@pytest.mark.parametrize(
+    ("ubuntu_version", "expected_target"),
+    [("24.04", "native"), ("26.04", "ubuntu24.04-x64")],
+)
+def test_playwright_ubuntu_matrix_verifies_target_dependencies_and_chromium_launch(
+    tmp_path: Path,
+    ubuntu_version: str,
+    expected_target: str,
+) -> None:
+    """Pin the installer matrix from host selection through launch smoke."""
+    helper = Path("scripts/install_modules/utils/playwright_ubuntu_override.sh").resolve()
+    os_release = tmp_path / "os-release"
+    mock_python = tmp_path / "python"
+    launch_log = tmp_path / "launch.log"
+    os_release.write_text(f'ID=ubuntu\nVERSION_ID="{ubuntu_version}"\n', encoding="utf-8")
+    mock_python.write_text(
+        """#!/usr/bin/env bash
+payload="$(cat)"
+[[ "${payload}" == *"playwright.chromium.launch(headless=True)"* ]]
+[[ "${payload}" == *"page.title()"* ]]
+printf 'launched|%s\n' "${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-native}" > "${LAUNCH_LOG}"
+""",
+        encoding="utf-8",
+    )
+    mock_python.chmod(0o755)
+    command = (
+        'set -Eeuo pipefail; source "$1"; '
+        'if is_playwright_ubuntu_override_recommended "$2"; then '
+        'PLAYWRIGHT_HOST_PLATFORM_OVERRIDE="$(playwright_ubuntu_override_platform 24.04)"; '
+        "else PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=''; fi; "
+        "export PLAYWRIGHT_HOST_PLATFORM_OVERRIDE; "
+        "playwright_linux_dependencies_ready() { return 0; }; "
+        'playwright_linux_dependencies_ready; playwright_chromium_launch_smoke "$3"'
+    )
+
+    subprocess.run(
+        ["bash", "-c", command, "bash", str(helper), str(os_release), str(mock_python)],
+        check=True,
+        env={**os.environ, "LAUNCH_LOG": str(launch_log)},
+    )
+
+    assert launch_log.read_text(encoding="utf-8").strip() == f"launched|{expected_target}"
 
 
 @pytest.mark.parametrize(

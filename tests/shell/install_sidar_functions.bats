@@ -392,6 +392,10 @@ EOF
 #!/usr/bin/env bash
 printf "%s|%s|%s\\n" "\$*" "\${PLAYWRIGHT_HOST_PLATFORM_OVERRIDE:-}" "\${OS_RELEASE_PATH:-}" >> "$tmpdir/python.log"
 if [[ "\$*" == "-" ]]; then
+  payload="\$(cat)"
+  if [[ "\$payload" == *"playwright.chromium.launch(headless=True)"* ]]; then
+    exit 0
+  fi
   exit 1
 fi
 if [[ "\$*" == "-m playwright install chromium" ]]; then
@@ -425,7 +429,7 @@ EOF
     # pre-check short-circuits before install-deps chromium ever runs; only
     # -c import playwright, the host-support probe, the latest-supported
     # Ubuntu probe and the override chromium install invoke python.
-    [[ "$(wc -l < "$tmpdir/python.log")" -eq 4 ]]
+    [[ "$(wc -l < "$tmpdir/python.log")" -eq 5 ]]
     sed -n "1p" "$tmpdir/python.log" | grep -q "^-c import playwright||$tmpdir/os-release$"
     sed -n "2p" "$tmpdir/python.log" | grep -q "^-||$tmpdir/os-release$"
     sed -n "3p" "$tmpdir/python.log" | grep -q "^-||$tmpdir/os-release$"
@@ -436,6 +440,7 @@ EOF
   [[ "$output" == *"Chromium override browser downloaded"* ]]
   [[ "$output" == *"apt ön taramasında hazır görünüyor"* ]]
   [[ "$output" == *"proaktif OS override ile tamamlandı"* ]]
+  [[ "$output" == *"Chromium headless launch smoke başarılı"* ]]
   [[ "$output" != *"0 upgraded, 0 newly installed, 0 to remove and 4 not upgraded"* ]]
   [[ "$output" != *"Solving dependencies"* ]]
   [[ "$output" != *"BEWARE: your OS is not officially supported"* ]]
@@ -683,12 +688,13 @@ EOF
 
     install_playwright_browsers
 
-    [[ "$(wc -l < "$tmpdir/python.log")" -eq 2 ]]
+    [[ "$(wc -l < "$tmpdir/python.log")" -eq 3 ]]
     sed -n "2p" "$tmpdir/python.log" | grep -q "^-m playwright install --with-deps chromium||$tmpdir/os-release$"
   '
   [ "$status" -eq 0 ]
   [[ "$output" == *"yalnızca Chromium (--with-deps) kuruluyor"* ]]
   [[ "$output" == *"Playwright kurulumu tamamlandı (chromium, --with-deps)"* ]]
+  [[ "$output" == *"Chromium headless launch smoke başarılı"* ]]
   [[ "$output" != *"proaktif OS override"* ]]
 }
 
