@@ -151,11 +151,25 @@ def test_production_override_actually_closes_datastore_ports(tmp_path: Path) -> 
                 "SIDAR_DATA_MOUNT=sidar_data_prod",
                 "SIDAR_LOGS_MOUNT=sidar_logs_prod",
                 "SIDAR_TEMP_MOUNT=sidar_temp_prod",
+                "WEB_PORT=7860",
+                "WEB_GPU_PORT=7861",
                 "",
             ]
         ),
         encoding="utf-8",
     )
+
+    # Docker Compose gives real shell environment variables precedence over
+    # --env-file, so inheriting the full ambient os.environ here would let an
+    # unrelated WEB_PORT/WEB_GPU_PORT set by some other step in the same CI
+    # job silently override the gate.env values above and make the published
+    # port assertions below flaky/host-dependent. Pass a clean, minimal env
+    # instead (same approach as test_generated_gate_env_passes_real_compose_config).
+    clean_env = {
+        "HOME": str(tmp_path),
+        "PATH": os.environ["PATH"],
+        "SIDAR_RUNTIME_ENV_FILE": str(env_file),
+    }
 
     for profile, closed_services, published_services in (
         ("cpu", ("redis", "postgres", "ollama"), {"sidar-web": "7860"}),
@@ -180,7 +194,7 @@ def test_production_override_actually_closes_datastore_ports(tmp_path: Path) -> 
             check=False,
             capture_output=True,
             text=True,
-            env={**os.environ, "SIDAR_RUNTIME_ENV_FILE": str(env_file)},
+            env=clean_env,
         )
         assert completed.returncode == 0, completed.stderr
         merged = yaml.safe_load(completed.stdout)
