@@ -445,6 +445,21 @@ else
   echo "🧩 Doğrulama sınıfı: seçili stage; dev-full, ci-parity veya production-readiness değildir."
 fi
 
+# GPU stress testleri (RUN_GPU_STRESS) sessizce, çok daha sonra (backend pytest
+# fazının ortasında, coverage_helpers.sh::run_pytest_coverage_report içinde)
+# otomatik açılabiliyordu -- ENABLE_GPU_TESTS=auto (varsayılan) + tespit edilen
+# GPU donanımı birlikte. Bir kod incelemesi bunun "make dev-full" çıktısında
+# geç/az görünür olduğunu işaretledi: kullanıcı hiçbir bayrak vermeden süresi
+# uzun/kaynak yoğun GPU stress testlerini tetikleyebiliyordu. Gerçek karar hâlâ
+# tek kaynaktan (run_pytest_coverage_report) geliyor -- burası yalnız aynı,
+# salt-okunur ön-koşulu erkenden, göze çarpan bir banner ile önizliyor.
+if [ "${ENABLE_GPU_TESTS:-auto}" = "auto" ] && gpu_hardware_available; then
+  echo ""
+  echo "🔥🔥🔥 GPU donanımı tespit edildi — GPU stress testleri (RUN_GPU_STRESS) bu çalıştırmada OTOMATİK etkinleştirilecek. 🔥🔥🔥"
+  echo "    Bu testler süresi uzun ve kaynak yoğun olabilir. Atlamak için: ENABLE_GPU_TESTS=0 bash run_tests.sh ..."
+  echo ""
+fi
+
 # 0) Önceki test artefaktlarını temizle (idempotent başlangıç)
 rm -rf .pytest_cache .coverage .coverage.* coverage.xml htmlcov tests/pytest.log web_ui_react/coverage web_ui_react/playwright-report web_ui_react/test-results "${BATS_REPORT_DIR}" sidar.egg-info build/
 

@@ -12,7 +12,7 @@ if [[ "$gate_enabled" != "true" && "$gate_enabled" != "false" ]]; then
 fi
 
 if [[ "$gate_enabled" == "false" ]]; then
-  echo "::error title=GPU inference evidence disabled::ENABLE_GPU_BENCH_GATE=false is valid for non-release CI, but this repository requires GPU evidence for merge/release readiness." >&2
+  echo "::error title=GPU inference evidence disabled::ENABLE_GPU_BENCH_GATE=false is a syntactically valid boolean (unlike an unset or non-boolean value, which fails the check above), but this repository's merge/release policy requires GPU TTFT/latency evidence unconditionally — there is no non-release exemption. Set ENABLE_GPU_BENCH_GATE=true and provision an eligible self-hosted GPU runner (see docs/runbooks/gpu-runner-continuity.md)." >&2
   exit 1
 fi
 

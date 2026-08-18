@@ -17,14 +17,19 @@ type MarkdownBodyProps = ChatMarkdownRendererProps & {
 
 /** Render Markdown with optional rehype transforms supplied by a lazy feature chunk. */
 export function MarkdownBody({ content, rehypePlugins = [] }: MarkdownBodyProps) {
+  // react-markdown 10 dropped the `className` prop (it used to wrap output in
+  // a `<div className="...">` for you); the explicit wrapper below produces
+  // the exact same DOM the removed prop did, so `.message__markdown`'s
+  // descendant selectors in index.css are unaffected.
   return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      rehypePlugins={rehypePlugins}
-      className="message__markdown"
-      components={markdownRenderers}
-    >
-      {content}
-    </ReactMarkdown>
+    <div className="message__markdown">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={rehypePlugins}
+        components={markdownRenderers}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
   );
 }

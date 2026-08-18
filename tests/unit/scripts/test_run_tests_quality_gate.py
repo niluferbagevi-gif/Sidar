@@ -554,6 +554,29 @@ def test_gpu_defaults_are_cpu_friendly_and_auto_detect_runtime_hardware() -> Non
     assert "auto` değerini geçersiz kılar" in readme
 
 
+def test_run_tests_previews_auto_gpu_stress_enable_prominently_up_front() -> None:
+    """The silent, mid-run GPU auto-enable must also get an early, visible heads-up.
+
+    A code review flagged that ENABLE_GPU_TESTS=auto's RUN_GPU_STRESS=1
+    auto-enable (coverage_helpers.sh::run_pytest_coverage_report) is real and
+    correctly logged, but only surfaces deep inside the backend pytest phase
+    -- easy to miss in a long `make dev-full` scroll. run_tests.sh now prints
+    a loud preview banner right next to the "Doğrulama sınıfı" line, at the
+    very top of the run, before any lengthy Docker/DB/Ollama setup output.
+    """
+    raw_script = RUN_TESTS.read_text(encoding="utf-8")
+
+    banner_pos = raw_script.index("GPU donanımı tespit edildi — GPU stress testleri")
+    validation_class_pos = raw_script.index("Doğrulama sınıfı: seçili stage")
+    artifact_cleanup_pos = raw_script.index("Önceki test artefaktlarını temizle")
+    assert validation_class_pos < banner_pos < artifact_cleanup_pos
+
+    assert 'if [ "${ENABLE_GPU_TESTS:-auto}" = "auto" ] && gpu_hardware_available; then' in (
+        raw_script
+    )
+    assert "Atlamak için: ENABLE_GPU_TESTS=0 bash run_tests.sh" in raw_script
+
+
 def test_run_tests_syncs_effective_dotenv_postgres_password_without_logging_secret() -> None:
     script = _script()
 
@@ -5951,7 +5974,7 @@ def test_npm_audit_safe_accepts_only_the_verified_brace_expansion_backport(
         json.dumps(
             {
                 "packages": {
-                    "node_modules/minimatch/node_modules/brace-expansion": {"version": "1.1.17"}
+                    "node_modules/minimatch/node_modules/brace-expansion": {"version": "1.1.18"}
                 }
             }
         ),
@@ -5959,7 +5982,7 @@ def test_npm_audit_safe_accepts_only_the_verified_brace_expansion_backport(
     )
     manifest_path = tmp_path / "package.json"
     manifest_path.write_text(
-        json.dumps({"overrides": {"brace-expansion": "1.1.17"}}), encoding="utf-8"
+        json.dumps({"overrides": {"brace-expansion": "1.1.18"}}), encoding="utf-8"
     )
     vulnerabilities = {
         "brace-expansion": {
@@ -6002,7 +6025,7 @@ def test_npm_audit_safe_accepts_only_the_verified_brace_expansion_backport(
         }
     )
     assert patched.returncode == 0, patched.stderr
-    assert "1.1.17 güvenlik backport'unu" in patched.stderr
+    assert "1.1.18 güvenlik backport'unu" in patched.stderr
     assert "docs/development/frontend-eslint-10-migration.md" in patched.stderr
     assert "2026-09-30T00:00:00Z" in patched.stderr
     assert "Bu tarihte kapı fail-closed kapanır" in patched.stderr
@@ -6010,7 +6033,7 @@ def test_npm_audit_safe_accepts_only_the_verified_brace_expansion_backport(
         (tmp_path / "artifacts/npm-audit-exception.json").read_text(encoding="utf-8")
     )
     assert exception["advisory"] == "GHSA-mh99-v99m-4gvg"
-    assert exception["backport_version"] == "1.1.17"
+    assert exception["backport_version"] == "1.1.18"
     assert exception["exception_review_at"] == "2026-09-30T00:00:00Z"
     assert exception["days_remaining"] > 0
     assert exception["maintenance_plan"] == ("docs/development/frontend-eslint-10-migration.md")
@@ -6026,7 +6049,7 @@ def test_npm_audit_safe_accepts_only_the_verified_brace_expansion_backport(
     assert "gerçek high veya üstü güvenlik bulgusu" in missing_durable_pin.stderr
     assert not (tmp_path / "artifacts/npm-audit-exception.json").exists()
     manifest_path.write_text(
-        json.dumps({"overrides": {"brace-expansion": "1.1.17"}}), encoding="utf-8"
+        json.dumps({"overrides": {"brace-expansion": "1.1.18"}}), encoding="utf-8"
     )
 
     expired = run_audit(
