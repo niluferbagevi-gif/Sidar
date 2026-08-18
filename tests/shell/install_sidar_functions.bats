@@ -1708,7 +1708,7 @@ EOF
     [[ "$DEPENDENCY_PROFILE" == "dev-full" ]]
   '
   [ "$status" -eq 0 ]
-  [[ "$output" == *"varsayılan tam geliştirici bağımlılık profili seçildi (developer-full)"* ]]
+  [[ "$output" == *"varsayılan tam geliştirici bağımlılık profili seçildi (developer-full, dahili adıyla dev-full)"* ]]
 }
 
 @test "select_dependency_profile promotes production readiness validation to dev-full" {

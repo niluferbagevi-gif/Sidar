@@ -182,15 +182,15 @@ select_dependency_profile() {
     if [[ "$requested" == "ask" ]]; then
         if [[ "${RUN_CI_FULL_VALIDATION:-false}" == true ]]; then
             requested="dev-full"
-            info "Tam CI/production-readiness doğrulaması seçildi; bağımlılık profili developer-full olarak ayarlandı."
+            info "Tam CI/production-readiness doğrulaması seçildi; bağımlılık profili developer-full (dev-full) olarak ayarlandı."
         elif [[ "${NO_INTERACTION:-false}" == true || "${AUTO_INSTALL:-false}" == true ]]; then
             requested="dev-full"
-            info "Etkileşimsiz kurulum: varsayılan tam geliştirici bağımlılık profili seçildi (developer-full)."
+            info "Etkileşimsiz kurulum: varsayılan tam geliştirici bağımlılık profili seçildi (developer-full, dahili adıyla dev-full)."
         elif [[ -t 0 ]]; then
             echo
             echo "Bağımlılık profili seçin:"
             echo "  1) dev-light (hızlı yerel geliştirme + test araçları)"
-            echo "  2) developer-full (önerilen; tüm extras; CI/tam doğrulama)"
+            echo "  2) developer-full (önerilen; tüm extras; CI/tam doğrulama; dahili/log adı: dev-full)"
             echo "  3) dev-gpu (geliştirici + RAG/GPU runtime; provider extras yok)"
             echo "  4) production-minimal (dar no-dev runtime)"
             echo "  5) production (runtime + postgres + telemetry)"
@@ -202,7 +202,7 @@ select_dependency_profile() {
             else
                 profile_choice="2"
                 echo
-                warn "Bağımlılık profili seçimi zaman aşımına uğradı; developer-full seçildi."
+                warn "Bağımlılık profili seçimi zaman aşımına uğradı; developer-full (dev-full) seçildi."
             fi
             case "$profile_choice" in
                 1) requested="dev-light" ;;
@@ -213,13 +213,13 @@ select_dependency_profile() {
                 6) requested="gpu-runtime" ;;
                 7) requested="custom" ;;
                 *)
-                    warn "Geçersiz bağımlılık profili seçimi (${profile_choice}); developer-full kullanılacak."
+                    warn "Geçersiz bağımlılık profili seçimi (${profile_choice}); developer-full (dev-full) kullanılacak."
                     requested="dev-full"
                     ;;
             esac
         else
             requested="dev-full"
-            info "TTY yok; varsayılan tam geliştirici bağımlılık profili seçildi (developer-full)."
+            info "TTY yok; varsayılan tam geliştirici bağımlılık profili seçildi (developer-full, dahili adıyla dev-full)."
         fi
     fi
 
