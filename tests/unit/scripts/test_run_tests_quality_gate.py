@@ -4954,11 +4954,11 @@ def test_install_sidar_selects_pytorch_cuda_wheel_dynamically() -> None:
     selector_body = script[
         selector_start : script.index("sync_pytorch_cuda_wheels()", selector_start)
     ]
-    verify_body = script[
-        script.index("verify_torch_cuda()") : script.index(
-            "# ── 14.", script.index("verify_torch_cuda()")
-        )
-    ]
+    # verify_torch_cuda() is now the last function defined in python_env.sh
+    # (the sole source of truth after 10_validation.sh's dead-code copies were
+    # removed), so there is no trailing "# ── 14." section marker to bound
+    # against anymore — slice to end-of-string instead.
+    verify_body = script[script.index("verify_torch_cuda()") :]
 
     assert "PyTorch cu124 fallback" not in script
     assert "--query-gpu=compute_cap" in script

@@ -3,19 +3,20 @@ set -Eeuo pipefail
 # Sidar installer phase: CUDA, smoke, integration, audit and CI validation helpers.
 
 # ── 13. CUDA bağlantı testi ──────────────────────────────────────────────────
-# sync_pytorch_cuda_wheels()/verify_torch_cuda() scripts/install_modules/utils/python_env.sh
-# içinde tanımlanır. Burada da tam birer kopyaları vardı (dep-profile case
-# listesi dahil dört ayrı yerde tekrarlanan bir DRY ihlaline işaret eden bir
-# kod incelemesiyle bulundu): 04_workspace.sh'ın sidar_phase_workspace_config()'i
-# her zaman verify_torch_cuda() çağrılmadan ÖNCE `sidar_source_install_utils
-# "python_env.sh"` çalıştırır, bu yüzden python_env.sh'ın tanımları bu
-# dosyadaki kopyaları global fonksiyon isim alanında sessizce gölgeliyordu —
-# buradaki kopyalar hiçbir çalışma yolunda gerçekten hiç çalışmıyordu (11_post_install.sh'ın
-# çağrısı da her zaman 04_workspace.sh'tan sonra gelir). Bunu canlı doğruladım:
-# iki `verify_torch_cuda()` kopyası zaten sessizce farklılaşmıştı (buradaki bir
-# `# shellcheck disable=SC2153` yorumu içeriyordu, python_env.sh'daki içermiyordu
-# — şimdi ikisi de içeriyor). Ölü kopyalar kaldırıldı; tek doğru kaynak artık
-# yalnızca python_env.sh.
+# CUDA wheel sync + torch doğrulama fonksiyonları artık yalnızca
+# scripts/install_modules/utils/python_env.sh içinde tanımlı. Burada da tam
+# birer kopyaları vardı (dep-profile case listesi dahil dört ayrı yerde
+# tekrarlanan bir DRY ihlaline işaret eden bir kod incelemesiyle bulundu):
+# 04_workspace.sh'ın sidar_phase_workspace_config()'i bu fonksiyonlar
+# çağrılmadan ÖNCE her zaman `sidar_source_install_utils "python_env.sh"`
+# çalıştırır, bu yüzden python_env.sh'ın tanımları bu dosyadaki kopyaları
+# global fonksiyon isim alanında sessizce gölgeliyordu — buradaki kopyalar
+# hiçbir çalışma yolunda gerçekten hiç çalışmıyordu (11_post_install.sh'ın
+# çağrısı da her zaman 04_workspace.sh'tan sonra gelir). Bunu canlı
+# doğruladım: iki kopya zaten sessizce farklılaşmıştı (buradaki bir
+# `# shellcheck disable=SC2153` yorumu içeriyordu, python_env.sh'daki
+# içermiyordu — şimdi ikisi de içeriyor). Ölü kopyalar kaldırıldı; tek doğru
+# kaynak artık yalnızca python_env.sh.
 
 # ── 14. Smoke testler ────────────────────────────────────────────────────────
 wait_for_redis_before_smoke_tests() {

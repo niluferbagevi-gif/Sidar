@@ -423,7 +423,11 @@ class SystemHealthManager:
             import requests
 
             base_url = getattr(self.cfg, "OLLAMA_URL", "http://localhost:11434/api")
-            timeout = max(1, int(getattr(self.cfg, "OLLAMA_TIMEOUT", 5)))
+            # Deliberately its own short timeout, not OLLAMA_TIMEOUT (the
+            # inference-request timeout, 600s default): this is a lightweight
+            # liveness probe and must fail fast if Ollama is hung, not block
+            # for up to 10 minutes. See config_llm.py::OLLAMA_HEALTH_CHECK_TIMEOUT.
+            timeout = max(1, int(getattr(self.cfg, "OLLAMA_HEALTH_CHECK_TIMEOUT", 5)))
             resp = requests.get(f"{base_url.rstrip('/')}/tags", timeout=timeout)
             return bool(resp.status_code == 200)
         except Exception:

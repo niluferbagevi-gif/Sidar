@@ -312,6 +312,7 @@ def _build_dotenv_reload_plan(
 
 OllamaBatchPolicy = config_llm.OllamaBatchPolicy
 OLLAMA_BATCH_POLICY = config_llm.OLLAMA_BATCH_POLICY
+OLLAMA_TIMEOUT_DEFAULT = config_llm.OLLAMA_TIMEOUT_DEFAULT
 LLMClientSettings = config_llm.LLMClientSettings
 LLM_SETTINGS = config_llm.load_llm_settings(
     env_path=ENV_PATH, skip_default_dotenv=_SKIP_DEFAULT_DOTENV
@@ -580,6 +581,7 @@ class Config:
     # ─── Ollama ──────────────────────────────────────────────
     OLLAMA_URL: str = LLM_SETTINGS.OLLAMA_URL
     OLLAMA_TIMEOUT: int = LLM_SETTINGS.OLLAMA_TIMEOUT
+    OLLAMA_HEALTH_CHECK_TIMEOUT: int = LLM_SETTINGS.OLLAMA_HEALTH_CHECK_TIMEOUT
     OLLAMA_KEEP_ALIVE: str = LLM_SETTINGS.OLLAMA_KEEP_ALIVE
     OLLAMA_NUM_BATCH: int = get_int_env("OLLAMA_NUM_BATCH", LLM_SETTINGS.OLLAMA_NUM_BATCH)
     OLLAMA_CODING_NUM_CTX: int = get_int_env(
@@ -1743,6 +1745,7 @@ def get_config() -> "Config":
 __all__ = [
     "Config",
     "OLLAMA_BATCH_POLICY",
+    "OLLAMA_TIMEOUT_DEFAULT",
     "SANDBOX_LIMITS",
     "get_bool_prefixed_env",
     "get_config",
