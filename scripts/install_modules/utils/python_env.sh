@@ -15,49 +15,69 @@ SIDAR_TOOLCHAIN_UV_VERSION="${UV_VERSION:-0.12.0}"
 # Package resolution and environment synchronization intentionally go through
 # uv venv / uv sync; legacy environment and tool-install fallbacks are not used.
 
+_sidar_install_uv_via_official_script() {
+    local uv_install_script=""
+    if [[ "$OFFLINE_MODE" == true ]]; then
+        info "Çevrimdışı paketlerden uv kurulacak (hedef sürüm: ${SIDAR_TOOLCHAIN_UV_VERSION})."
+        uv_install_script="$(resolve_offline_package_file "uv/install.sh" || true)"
+        [[ -z "$uv_install_script" ]] && uv_install_script="$(resolve_offline_package_file "uv_install.sh" || true)"
+        [[ -z "$uv_install_script" ]] && uv_install_script="$(resolve_offline_package_file "install_uv.sh" || true)"
+        [[ -n "$uv_install_script" ]] || fail "Çevrimdışı mod: offline_packages altında uv kurulum betiği bulunamadı (uv/install.sh, uv_install.sh, install_uv.sh)."
+    else
+        info "Resmi kurulum betiği ile uv indiriliyor (hedef sürüm: ${SIDAR_TOOLCHAIN_UV_VERSION})..."
+        DOWNLOADED_SCRIPT_FILE=""
+        download_verified_script \
+            "https://astral.sh/uv/install.sh" \
+            "${UV_INSTALL_SHA256:-}" \
+            "uv_install"
+        validate_downloaded_script_file "$DOWNLOADED_SCRIPT_FILE" "uv_install"
+        uv_install_script="$DOWNLOADED_SCRIPT_FILE"
+    fi
+
+    UV_VERSION="$SIDAR_TOOLCHAIN_UV_VERSION" sh "$uv_install_script"
+    [[ "$uv_install_script" == "${DOWNLOADED_SCRIPT_FILE:-}" ]] && rm -f "$DOWNLOADED_SCRIPT_FILE"
+    if [[ -f "$HOME/.cargo/env" ]]; then
+        # shellcheck source=/dev/null
+        # shellcheck disable=SC1090,SC1091
+        source "$HOME/.cargo/env"
+    fi
+    # Yeni kurulumlarda terminal yeniden başlatılmadan uv bulunabilsin
+    export PATH="$HOME/.local/bin:$PATH"
+}
+
 install_uv_cli() {
     step "uv CLI Paket Yöneticisi"
     export UV_PROGRESS_BAR=on
     export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
     if ! command -v uv &>/dev/null; then
-        local uv_install_script=""
-        if [[ "$OFFLINE_MODE" == true ]]; then
-            info "uv bulunamadı — çevrimdışı paketlerden kurulacak."
-            uv_install_script="$(resolve_offline_package_file "uv/install.sh" || true)"
-            [[ -z "$uv_install_script" ]] && uv_install_script="$(resolve_offline_package_file "uv_install.sh" || true)"
-            [[ -z "$uv_install_script" ]] && uv_install_script="$(resolve_offline_package_file "install_uv.sh" || true)"
-            [[ -n "$uv_install_script" ]] || fail "Çevrimdışı mod: offline_packages altında uv kurulum betiği bulunamadı (uv/install.sh, uv_install.sh, install_uv.sh)."
-        else
-            info "uv bulunamadı — resmi kurulum betiği ile indiriliyor..."
-            DOWNLOADED_SCRIPT_FILE=""
-            download_verified_script \
-                "https://astral.sh/uv/install.sh" \
-                "${UV_INSTALL_SHA256:-}" \
-                "uv_install"
-            validate_downloaded_script_file "$DOWNLOADED_SCRIPT_FILE" "uv_install"
-            uv_install_script="$DOWNLOADED_SCRIPT_FILE"
-        fi
-
-        UV_VERSION="$SIDAR_TOOLCHAIN_UV_VERSION" sh "$uv_install_script"
-        [[ "$uv_install_script" == "${DOWNLOADED_SCRIPT_FILE:-}" ]] && rm -f "$DOWNLOADED_SCRIPT_FILE"
-        if [[ -f "$HOME/.cargo/env" ]]; then
-            # shellcheck source=/dev/null
-            # shellcheck disable=SC1090,SC1091
-            source "$HOME/.cargo/env"
-        fi
-        # Yeni kurulumlarda terminal yeniden başlatılmadan uv bulunabilsin
-        export PATH="$HOME/.local/bin:$PATH"
+        _sidar_install_uv_via_official_script
     fi
 
     if ! command -v uv &>/dev/null; then
         fail "uv kurulumu başarısız oldu. Lütfen PATH ayarlarını ve kurulum çıktısını kontrol edin."
     fi
+
     local expected_uv_version="$SIDAR_TOOLCHAIN_UV_VERSION"
     local detected_uv_version
     detected_uv_version="$(uv --version | awk '{print $2}')"
-    [[ "$detected_uv_version" == "$expected_uv_version" ]] || fail \
-        "uv toolchain drift: beklenen ${expected_uv_version}, bulunan ${detected_uv_version}. scripts/toolchain.env sözleşmesini uygulayın."
+
+    if [[ "$detected_uv_version" != "$expected_uv_version" ]]; then
+        # Kullanıcının makinesinde daha önce kurulmuş (ör. `uv self update` ile
+        # güncellenmiş veya başka bir projeden kalma) farklı sürümlü bir uv,
+        # scripts/toolchain.env sözleşmesiyle çakışabilir. Kurulumu doğrudan
+        # durdurmak yerine önce sözleşmedeki sürüme kendiliğinden hizalamayı dene.
+        warn "uv toolchain drift: beklenen ${expected_uv_version}, bulunan ${detected_uv_version}. scripts/toolchain.env sözleşmesine göre otomatik hizalanıyor..."
+        if [[ "$OFFLINE_MODE" != true ]] && uv self update --version "$expected_uv_version" &>/dev/null; then
+            info "uv self update ile ${expected_uv_version} sürümüne hizalandı."
+        else
+            _sidar_install_uv_via_official_script
+        fi
+        detected_uv_version="$(uv --version | awk '{print $2}')"
+        [[ "$detected_uv_version" == "$expected_uv_version" ]] || fail \
+            "uv toolchain drift otomatik onarılamadı: beklenen ${expected_uv_version}, bulunan ${detected_uv_version}. Manuel düzeltme: uv self update --version ${expected_uv_version} (uv, apt/pipx/brew gibi bir paket yöneticisiyle kuruldu ise onu kaldırıp installer'ı tekrar çalıştırın)."
+    fi
+
     ok "uv $(uv --version | cut -d' ' -f2)"
 }
 
