@@ -9,6 +9,20 @@ services:
     ports: []
 
   sidar-web:
+    build:
+      dockerfile: Dockerfile.production
+      args:
+        # docker-compose.yml, temel katmanda geliştirme imajı için
+        # BASE_IMAGE=python:3.11.15-slim geçirir; production'da bunu
+        # Dockerfile.production'ın hash-pinlenmiş minimal tabanıyla
+        # geçersiz kılıyoruz — aksi halde compose'un map-merge davranışı
+        # base dosyadaki değeri burada da miras bırakır.
+        BASE_IMAGE: python:3.11.15-slim-bookworm@sha256:d29f48a31a8b408ed19272ca1e7b10ebae13b240a27e862d3d4217c528e2e0c3
+    # docker-compose.yml'deki `--quick web ...` komutu main.py'nin (dev
+    # imajının ENTRYPOINT'i) CLI sözdizimidir. Dockerfile.production'ın
+    # ENTRYPOINT'i doğrudan `uvicorn web_server:app` olduğundan komut
+    # uvicorn'un kabul ettiği argümanlara sıfırlanmalıdır.
+    command: ["--host", "0.0.0.0", "--port", "7860"]
     restart: always
     environment:
       - SIDAR_ENV=production

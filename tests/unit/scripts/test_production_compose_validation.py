@@ -129,3 +129,25 @@ def test_production_override_requires_healthcheck_restart_and_named_volumes() ->
     assert "sidar_data_prod:/app/data" in override
     assert "sidar_logs_prod:/app/logs" in override
     assert "sidar_temp_prod:/app/temp" in override
+
+
+def test_production_override_builds_the_hardened_production_dockerfile() -> None:
+    """Regression guard: the production gate must never fall back to the dev Dockerfile.
+
+    ``docker-compose.yml``'s ``build:`` blocks never set ``dockerfile:``, so they
+    default to the dev-tooling ``Dockerfile`` (build-essential, cargo, git,
+    pyright, shellcheck, ...). Without an explicit override here, the
+    "production" Compose gate silently ships that dev image instead of the
+    minimal, no-dev ``Dockerfile.production``.
+    """
+    base = Path("docker-compose.yml").read_text(encoding="utf-8")
+    override = Path("docker-compose.production.yml").read_text(encoding="utf-8")
+
+    assert "dockerfile:" not in base, (
+        "docker-compose.yml now pins a dockerfile: for a build service; "
+        "re-check whether docker-compose.production.yml's override is still needed/correct."
+    )
+    assert "dockerfile: Dockerfile.production" in override
+    # The dev command syntax (main.py's `--quick web ...` CLI) is invalid against
+    # Dockerfile.production's `uvicorn web_server:app` ENTRYPOINT and must be reset.
+    assert 'command: ["--host", "0.0.0.0", "--port", "7860"]' in override
