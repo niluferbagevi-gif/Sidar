@@ -187,15 +187,26 @@ select_dependency_profile() {
             requested="dev-full"
             info "Etkileşimsiz kurulum: varsayılan tam geliştirici bağımlılık profili seçildi (developer-full, dahili adıyla dev-full)."
         elif [[ -t 0 ]]; then
-            echo
-            echo "Bağımlılık profili seçin:"
-            echo "  1) dev-light (hızlı yerel geliştirme + test araçları)"
-            echo "  2) developer-full (önerilen; tüm extras; CI/tam doğrulama; dahili/log adı: dev-full)"
-            echo "  3) dev-gpu (geliştirici + RAG/GPU runtime; provider extras yok)"
-            echo "  4) production-minimal (dar no-dev runtime)"
-            echo "  5) production (runtime + postgres + telemetry)"
-            echo "  6) gpu-runtime (dar no-dev RAG/GPU runtime)"
-            echo "  7) özel provider seçimi (SIDAR_DEPENDENCY_EXTRAS)"
+            # install_sidar.sh'ın `exec > >(mask_install_log_stream | tee ...) 2>&1`
+            # log yönlendirmesi (satır ~386) normal echo/stdout'u asenkron bir
+            # pipe üzerinden geçirir; hemen altındaki `read ... 2>/dev/tty` ise
+            # kasıtlı olarak bu pipe'ı atlayıp doğrudan terminale yazar (stdout
+            # ayrıca bir dosyaya yönlendirilmiş olsa bile prompt'un görünür
+            # kalması için). İki farklı kanal, yavaş fork'lu ortamlarda (WSL2)
+            # sıralamayı bozabilir: prompt, üstündeki menü satırlarından önce
+            # görünebilir. Menü de aynı `read`'in kullandığı senkron /dev/tty
+            # kanalını paylaşsın diye tek blok halinde /dev/tty'e yazılıyor.
+            {
+                echo
+                echo "Bağımlılık profili seçin:"
+                echo "  1) dev-light (hızlı yerel geliştirme + test araçları)"
+                echo "  2) developer-full (önerilen; tüm extras; CI/tam doğrulama; dahili/log adı: dev-full)"
+                echo "  3) dev-gpu (geliştirici + RAG/GPU runtime; provider extras yok)"
+                echo "  4) production-minimal (dar no-dev runtime)"
+                echo "  5) production (runtime + postgres + telemetry)"
+                echo "  6) gpu-runtime (dar no-dev RAG/GPU runtime)"
+                echo "  7) özel provider seçimi (SIDAR_DEPENDENCY_EXTRAS)"
+            } &> /dev/tty
             local profile_choice=""
             if read -r -t "${SIDAR_PROMPT_TIMEOUT:-180}" -p "Seçim [1-7, varsayılan 2]: " profile_choice 2>/dev/tty; then
                 profile_choice="${profile_choice:-2}"

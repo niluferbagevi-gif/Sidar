@@ -490,6 +490,18 @@ sidar_t() {
 
 ok()   { printf '%s\n' "${GREEN}✅  $*${NC}" >&2; }
 info() { printf '%s\n' "${BLUE}ℹ️   $*${NC}" >&2; }
+# info()/warn()/ok() write to fd2, which the log-capture redirect below
+# (`exec > >(mask_install_log_stream | tee ...) 2>&1`) merges into an
+# asynchronous pipe along with regular stdout. An interactive
+# `read ... 2>/dev/tty` immediately after one of them bypasses that pipe on
+# purpose (so the prompt stays visible even if stdout/stderr are separately
+# redirected to a file) — but on slow-fork platforms (WSL2) the pipe can lag
+# enough for the prompt to appear before the instruction explaining it.
+# tty_notice() renders the same info()-style line straight to /dev/tty
+# instead, so it shares the read's own synchronous channel and can't be
+# reordered relative to it. Use it only for the line(s) directly preceding
+# such a prompt — everywhere else keep using info()/warn()/ok() as usual.
+tty_notice() { printf '%s\n' "${BLUE}ℹ️   $*${NC}" > /dev/tty 2>/dev/null || true; }
 debug() {
     [[ "${SIDAR_DEBUG:-0}" == "1" || "${SIDAR_VERBOSE:-0}" == "1" ]] || return 0
     printf '%s\n' "${BLUE}🔍  $*${NC}" >&2
@@ -608,15 +620,15 @@ a25095932f256989c1a517bd157c808a548d15cc08a96b56e0a7a312d5aac4e2  scripts/instal
 d5fc907be5f085db23189cc349c01072f34d36fd6313db6ca745edea3e10071b  scripts/install_modules/phases/02_repo.sh
 41d198205629671a12d3d9de44e3ca0a597447c00eb2b93feab40c7a0add98df  scripts/install_modules/phases/03_runtime.sh
 36d89771aece3334013906d55be48ee2d7a357490688e4562fd76684a7523702  scripts/install_modules/phases/03_runtime_ollama.sh
-3a1b4ac1325e35dac6f5017e40ff1cf5eae783fe2155f8c8c88f75a9274c8be1  scripts/install_modules/phases/03_system.sh
+9e557608ecef8d76a8b998633c9b81672cf9678068c9256cf11002928f76fc51  scripts/install_modules/phases/03_system.sh
 4ef61725d2c0cf92088b4002e03f36e15354477a37c88fac5f8771a79a5f3e97  scripts/install_modules/phases/04_workspace.sh
 6beadb2761652016b9d7c4de0d35b53b11837ceb16164c9b31ecd84e5f67f816  scripts/install_modules/phases/05_frontend.sh
-ff40d0e69bd2aff31b92e0c07ce2638a239f08d506914170e66727139a38d66b  scripts/install_modules/phases/06_services.sh
+392442f8a5b6dc4f38f21386c7ca440b4126ded4dd8450616850eebcaa326789  scripts/install_modules/phases/06_services.sh
 878756e5a9d6580f47241c7d27d2be8fd441f8cc742afa72f0305e810a075983  scripts/install_modules/phases/07_finish.sh
-ae7549a7b5d2114741c6d89580096bef32c2b8c1591a448cb74096ee7e0ec80a  scripts/install_modules/phases/08_env.sh
+0a156e6a476fe223857b37a28f5c5bde2f1e70aa801e0141920ae2683cc44f41  scripts/install_modules/phases/08_env.sh
 3c5dbf7687703bcef6e0af4a2acd172b0634fe1ae68718e8894bc9781fd23672  scripts/install_modules/phases/09_ollama_models.sh
 9786a5ee322888379c1f72ee764156aa9b59d47a87a01c41489afa2866b73556  scripts/install_modules/phases/10_validation.sh
-276ee64ef086bda1a1441db9fcc1c5bcb5c9a7ea7467527ff171522809cf0e14  scripts/install_modules/phases/11_post_install.sh
+f12a23c2a54609f34604437407dde79da158df1de079424c576d3fd0dbbc4664  scripts/install_modules/phases/11_post_install.sh
 a243dbc96b31e697451b507014d234127eb3fcc2ffe183aa9164027a343aee58  scripts/install_modules/phases/12_alembic.sh
 e1ff202b8ba9470c0a26bb3a8a95b97f05666e328f58e7fd92bb7466ca285027  scripts/install_modules/phases/13_playwright.sh
 ee0bf7637e8b5d303ccfe9c58d50e7e059bcdfcf255946c1cf7e984b5a3340ec  scripts/install_modules/phases/14_react.sh
@@ -629,7 +641,7 @@ f0ad30e94055baffa17b519ea30c2ad0c1eba355a6ef03a72f3cd1fd8373cebe  scripts/instal
 95d2664491bc38ff01d7f3951cde14832dc542965aea5e0cdeffef01f0d31b2a  scripts/install_modules/utils/installer_hash_guard.sh
 2b4934ce22b5814a6bfc800e149392def0ebbf7b12a951fcfc443a0431aba585  scripts/install_modules/utils/ollama_models.sh
 7563c14d01b8afb608f73a57e7271a8cb495741a7eb4f80e6c69d34b4bff2ba4  scripts/install_modules/utils/playwright_ubuntu_override.sh
-2a02eee73f079cf9659b13d8943788a7fd2a4af297c6bdf4906e0ae7abfa146b  scripts/install_modules/utils/python_env.sh
+f3fee5abdba0943d843c996a6f99ff158eab3c73c2b841af0291f2c7d0095060  scripts/install_modules/utils/python_env.sh
 8e006705540afec95fdf002ad5ab253b1be67c54b582229fb4a667813ec57a9e  scripts/install_modules/utils/remote_script.sh
 cfbab9634b880d0c37e3d79a75c03694d6360e3d1f4c42e2a21ee2179b3e010c  scripts/install_modules/utils/repo_metadata.sh
 efec83c69fa618e4274f4936bb1156128f3dc6e9f605270ebfe3b8fc58afde77  scripts/install_modules/utils/services_docker.sh

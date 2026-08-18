@@ -724,7 +724,10 @@ ensure_prerequisites() {
 	                fail "Docker daemon erişilemedi ve etkileşimsiz mod aktif (NO_INTERACTION/AUTO_INSTALL). Kurulum fail-fast durduruldu. Kök neden docker-desktop backend yokluğuysa Docker Desktop reset/reinstall gereklidir."
 	            fi
 
-            info "Lütfen Docker Desktop'ı manuel başlatın (veya service'i ayağa kaldırın), ardından tek seferlik yeniden deneme yapılacak."
+            # tty_notice (info() değil): hemen altındaki `read ... 2>/dev/tty`
+            # ile aynı senkron /dev/tty kanalını paylaşması gerekiyor —
+            # bkz. install_sidar.sh'taki tty_notice() tanımı.
+            tty_notice "Lütfen Docker Desktop'ı manuel başlatın (veya service'i ayağa kaldırın), ardından tek seferlik yeniden deneme yapılacak."
             clear_stdin_buffer
             read -r -p "Docker hazır olduktan sonra [ENTER] tuşuna basın..." 2>/dev/tty
 
@@ -786,6 +789,14 @@ ensure_prerequisites() {
             if [[ "$NO_INTERACTION" == true || "$AUTO_INSTALL" == true ]]; then
                 fail "WSL2 Docker Desktop entegrasyonu kapalı ve etkileşimsiz modda manuel onay alınamıyor (NO_INTERACTION/AUTO_INSTALL aktif). Önce entegrasyonu açıp tekrar deneyin."
             else
+                # Yukarıdaki 1-4 numaralı adımlar normal log-pipe'tan (fail
+                # yolunda da loglanabilmeleri için değiştirilmedi) geçiyor;
+                # bu satır ise altındaki `read ... 2>/dev/tty` ile aynı
+                # senkron /dev/tty kanalını kullanıyor — bkz. tty_notice()
+                # tanımı (install_sidar.sh). Yavaş fork'lu ortamlarda (WSL2)
+                # adımlar gecikmeli görünse bile bu hatırlatma prompt'la
+                # aynı sırada kalır.
+                tty_notice "Yukarıdaki 1-4 numaralı adımları tamamladıktan sonra devam edin."
                 clear_stdin_buffer
                 read -r -p "Entegrasyonu tamamladıktan sonra devam etmek için [ENTER] tuşuna basın..." 2>/dev/tty
             fi

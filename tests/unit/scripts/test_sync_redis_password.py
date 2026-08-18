@@ -160,6 +160,16 @@ def test_sync_env_chain_marks_effective_password_drift_warnings_critical(
     monkeypatch.delenv("SIDAR_ENV", raising=False)
     monkeypatch.delenv("DOTENV_FILE", raising=False)
     monkeypatch.delenv("SIDAR_KEYS_FILE", raising=False)
+    # sync_env_chain() seeds its "effective env" from dict(os.environ)
+    # (sync_redis_password.py:69). CI's "Base quality gates" job exports a
+    # real ambient REDIS_URL=redis://localhost:6379/0 (for other tests that
+    # need a live Redis) which has no password — that ambient value leaked in
+    # here and was reported as an unexpected extra REDIS_URL drift warning,
+    # even though this test's own .env only sets SIDAR_REDIS_URL. Clear both
+    # URL keys the same way the sibling test module clears DATABASE_URL/
+    # SIDAR_CONTAINER_DATABASE_URL for its own warnings-sensitive tests.
+    monkeypatch.delenv("REDIS_URL", raising=False)
+    monkeypatch.delenv("SIDAR_REDIS_URL", raising=False)
 
     base_env = tmp_path / ".env"
     base_env.write_text(
