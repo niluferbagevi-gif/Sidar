@@ -9,6 +9,26 @@ repos:
 
   - repo: local
     hooks:
+      - id: detect-secrets
+        name: detect-secrets scan
+        entry: uv run detect-secrets-hook --baseline .secrets.baseline
+        language: system
+        exclude: ^(uv\.lock|package-lock\.json|web_ui_react/package-lock\.json|\.secrets\.baseline)$
+
+      - id: frontend-eslint
+        name: frontend eslint
+        entry: bash -lc 'cd web_ui_react && npm run lint'
+        language: system
+        files: ^web_ui_react/.*\.(js|jsx|ts|tsx)$
+        pass_filenames: false
+
+      - id: frontend-typecheck
+        name: frontend typescript type check
+        entry: bash -lc 'cd web_ui_react && npm run typecheck'
+        language: system
+        files: ^web_ui_react/.*\.(ts|tsx)$
+        pass_filenames: false
+
       - id: ruff-check
         name: ruff check
         entry: uv run ruff check --force-exclude

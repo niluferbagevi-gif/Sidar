@@ -460,6 +460,39 @@ def test_context_limit_error_without_status_is_non_retryable() -> None:
     assert (retryable, status) == (False, None)
 
 
+def test_oom_error_is_non_retryable_even_with_a_retryable_status_code() -> None:
+    """Fail-closed regression for a review comment.
+
+    Ollama surfaces GPU/CUDA OOM as a generic HTTP 500, which IS in
+    _PROVIDER_RETRYABLE_STATUS_CODES["ollama"] — without OOM-specific
+    classification, an OOM would be retried like any transient 500, and
+    since VRAM exhaustion doesn't clear within the backoff window, the
+    retry just re-triggers the same OOM after a wasted delay.
+    """
+    oom_error = llm_client.LLMAPIError(
+        "ollama", "CUDA error: out of memory", status_code=500, retryable=True
+    )
+
+    retryable, status = llm_client._is_retryable_exception(oom_error, provider="ollama")
+
+    assert (retryable, status) == (False, 500)
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "out of memory",
+        "CUDA out of memory",
+        "cudaMalloc failed",
+        "failed to allocate 4096 MiB",
+        "model requires more system memory than is available",
+    ],
+)
+def test_oom_marker_variants_are_all_detected(message: str) -> None:
+    assert llm_client._is_oom_error(RuntimeError(message)) is True
+    assert llm_client._is_oom_error(RuntimeError("connection refused")) is False
+
+
 def test_extract_status_code_returns_none_for_invalid_status_value() -> None:
     exc = Exception("bad status")
     exc.status_code = "not-a-status"
@@ -1565,6 +1598,35 @@ async def test_ollama_context_limit_error_is_non_retryable(respx_mock_router) ->
     assert exc.value.provider == "ollama"
     assert exc.value.status_code == 400
     assert exc.value.retryable is False
+
+
+@pytest.mark.asyncio
+async def test_ollama_oom_error_is_non_retryable_and_gets_actionable_guidance(
+    respx_mock_router,
+) -> None:
+    """Fail-closed regression for a review comment.
+
+    Ollama's generic HTTP 500 for GPU OOM is normally in the "ollama"
+    provider's retryable-status set — without the _OOM_MARKERS carve-out
+    this would retry LLM_MAX_RETRIES times against the same OOM condition.
+    Also verifies the review's suggested actionable guidance is present.
+    """
+    route = respx_mock_router.post("http://localhost:11434/api/chat").mock(
+        return_value=httpx.Response(500, json={"error": "CUDA error: out of memory"})
+    )
+    client = llm_client.OllamaClient(
+        _make_config(OLLAMA_URL="http://localhost:11434", LLM_MAX_RETRIES=3)
+    )
+
+    with pytest.raises(llm_client.LLMAPIError, match="Ollama isteği başarısız") as exc:
+        await client.chat([{"role": "user", "content": "x"}], stream=False, json_mode=False)
+
+    assert exc.value.provider == "ollama"
+    assert exc.value.status_code == 500
+    assert exc.value.retryable is False
+    assert route.call_count == 1  # not retried despite LLM_MAX_RETRIES=3
+    assert "OOM" in str(exc.value)
+    assert "OLLAMA_NUM_BATCH" in str(exc.value)
 
 
 @pytest.mark.asyncio

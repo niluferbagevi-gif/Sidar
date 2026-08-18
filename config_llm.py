@@ -29,6 +29,16 @@ class OllamaBatchPolicy:
 
 
 OLLAMA_BATCH_POLICY = OllamaBatchPolicy()
+
+# Single source of truth for the Ollama inference-request timeout default.
+# core/llm_client.py and core/llm/ollama.py both used to hardcode their own
+# `_setting(self.config, "OLLAMA_TIMEOUT", 120)` fallback — a stale guess
+# that drifted from this field's real 600s default and only ever mattered
+# for a config object missing the attribute entirely (getattr's fallback),
+# never in normal runtime. Both now import this constant instead of
+# re-guessing it.
+OLLAMA_TIMEOUT_DEFAULT = 600
+
 SUPPORTED_AI_PROVIDERS: frozenset[str] = frozenset(
     {"ollama", "gemini", "openai", "anthropic", "litellm"}
 )
@@ -72,7 +82,16 @@ class LLMClientSettings(BaseSettings):
     LITELLM_MODEL: str = ""
     LITELLM_TIMEOUT: int = 60
     OLLAMA_URL: str = "http://localhost:11434/api"
-    OLLAMA_TIMEOUT: int = 600
+    OLLAMA_TIMEOUT: int = OLLAMA_TIMEOUT_DEFAULT
+    # Deliberately separate from OLLAMA_TIMEOUT: check_ollama() (managers/
+    # system_health.py) is a lightweight "/api/tags" liveness probe, not an
+    # inference request. It used to reuse OLLAMA_TIMEOUT (600s) via
+    # getattr(self.cfg, "OLLAMA_TIMEOUT", 5) — since self.cfg is a real
+    # Config with OLLAMA_TIMEOUT always set, that 5s fallback never actually
+    # applied, so the health check could block for up to 10 minutes waiting
+    # on a hung Ollama before reporting it unreachable, defeating the point
+    # of a health check. Now uses its own short, dedicated timeout.
+    OLLAMA_HEALTH_CHECK_TIMEOUT: int = 5
     OLLAMA_KEEP_ALIVE: str = "30m"
     OLLAMA_NUM_BATCH: int = OLLAMA_BATCH_POLICY.default
     OLLAMA_CODING_NUM_CTX: int = 8192

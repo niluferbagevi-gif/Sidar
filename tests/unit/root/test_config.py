@@ -2579,6 +2579,34 @@ def test_autoselect_ollama_coding_ctx_window_treats_blank_env_as_unset(monkeypat
     assert config.Config.OLLAMA_CODING_NUM_CTX == 8192
 
 
+def test_autoselect_ollama_coding_ctx_window_scales_down_for_low_vram(monkeypatch):
+    """Sub-8-GiB cards must not be left at the same 8192 ctx as 8-16 GiB cards.
+
+    Fail-closed regression for a review comment: this used to only have
+    >=16384/>=8192 tiers, so a 6 GB card (RTX 2060/3050, 4060 laptop, GTX
+    1660, ...) fell through with no branch matching and kept whatever
+    OLLAMA_CODING_NUM_CTX already held - LLMClientSettings' fixed 8192
+    default - identical to an 8-16 GiB card despite far less VRAM headroom.
+    """
+    monkeypatch.setenv("OLLAMA_CODING_NUM_CTX", "")
+    monkeypatch.setattr(config.Config, "USE_GPU", True)
+
+    for vram_mb, expected_ctx in (
+        (16384, 16384),
+        (8192, 8192),
+        (6144, 4096),  # the 6 GB class the review comment called out
+        (4096, 4096),
+        (3072, 2048),
+        (0, 2048),  # USE_GPU forced on without a successful hardware probe
+    ):
+        monkeypatch.setattr(config.Config, "GPU_VRAM_MB", vram_mb)
+        monkeypatch.setattr(config.Config, "OLLAMA_CODING_NUM_CTX", 8192)
+
+        config.Config._autoselect_ollama_coding_ctx_window()
+
+        assert config.Config.OLLAMA_CODING_NUM_CTX == expected_ctx, vram_mb
+
+
 def test_get_missing_critical_runtime_keys_accepts_valid_litellm_url(monkeypatch):
     monkeypatch.setattr(config.Config, "AI_PROVIDER", "litellm")
     monkeypatch.setattr(config.Config, "LITELLM_GATEWAY_URL", "https://litellm.internal")

@@ -220,10 +220,7 @@ sidar_parse_install_cli() {
         info "⚠️  $(sidar_t silent_mode_enabled)"
     fi
 
-    case "${DEPENDENCY_PROFILE}" in
-        ask|dev-light|dev-full|dev-gpu|gpu-runtime|production-minimal|production|custom) ;;
-        *) fail "Geçersiz dependency profile: ${DEPENDENCY_PROFILE}. Desteklenen: dev-light|dev-full|dev-gpu|gpu-runtime|production-minimal|production|custom" ;;
-    esac
+    sidar_fail_unless_known_dependency_profile "${DEPENDENCY_PROFILE}" true
     export DEPENDENCY_PROFILE
 
     if [[ "$SKIP_MODELS" == true && "$DOWNLOAD_MODELS" == true ]]; then

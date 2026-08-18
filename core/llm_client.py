@@ -21,7 +21,7 @@ import httpx
 from opentelemetry import trace
 
 import core.utils.token_counter as token_counter
-from config import OLLAMA_BATCH_POLICY
+from config import OLLAMA_BATCH_POLICY, OLLAMA_TIMEOUT_DEFAULT
 from core.cache_metrics import record_cache_skip
 from core.dlp import mask_messages as _dlp_mask_messages
 from core.llm.cache import SemanticChatCache
@@ -34,6 +34,7 @@ from core.llm.streaming import (
     track_stream_routing_cost,
 )
 from core.llm_metrics import get_current_metrics_user_id, get_llm_metrics_collector
+from core.llm_pricing import MODEL_COSTS_PER_TOKEN_USD
 from core.router import record_routing_cost
 from core.utils.json_repair import (
     is_safe_literal_eval_candidate,
@@ -87,15 +88,25 @@ _CONTEXT_LIMIT_MARKERS = (
     "prompt is too long",
     "reduce the length",
 )
-MODEL_COSTS_PER_TOKEN_USD: dict[str, float] = {
-    "gpt-4o": 5e-6,
-    "gpt-4o-mini": 2e-6,
-    "claude-3-5-sonnet": 3e-6,
-    "claude-3-5-sonnet-latest": 3e-6,
-    "gemini-1.5-pro": 3.5e-6,
-    "gemini-1.5-flash": 7.5e-7,
-}
-
+# Well-known Ollama/llama.cpp CUDA/system out-of-memory message substrings.
+# A code review flagged that OOM errors (typically surfaced as a generic
+# HTTP 500, which IS in _PROVIDER_RETRYABLE_STATUS_CODES["ollama"]) were
+# retried the same as any transient 500 — but VRAM exhaustion is very
+# unlikely to clear up within the ~seconds-scale backoff window, so a retry
+# usually just re-triggers the same OOM after a wasted delay. Not verified
+# against real hardware (no GPU in this environment); based on documented/
+# widely-observed llama.cpp CUDA allocator failure text. Extend this list if
+# a real deployment observes an OOM phrased differently.
+_OOM_MARKERS = (
+    "out of memory",
+    "cuda out of memory",
+    "cuda error: out of memory",
+    "cudamalloc failed",
+    "failed to allocate",
+    "insufficient memory",
+    "model requires more system memory",
+    "not enough memory",
+)
 # Sağlayıcıdan bağımsız, tüm istemcilerin system prompt'una enjekte ettiği standart JSON talimatı
 SIDAR_TOOL_JSON_INSTRUCTION: str = (
     "Yalnızca aşağıdaki JSON şemasına uygun tek bir JSON nesnesi döndür. "
@@ -270,19 +281,29 @@ def _is_context_limit_error(exc: Exception) -> bool:
     return any(marker in detail for marker in _CONTEXT_LIMIT_MARKERS)
 
 
+def _is_oom_error(exc: Exception) -> bool:
+    detail = _format_exception_message(exc).lower()
+    return any(marker in detail for marker in _OOM_MARKERS)
+
+
 def _is_retryable_exception(exc: Exception, provider: str = "") -> tuple[bool, int | None]:
     provider_key = (provider or getattr(exc, "provider", "") or "").strip().lower()
     status_code = _extract_status_code(exc)
 
     if isinstance(exc, LLMAPIError):
-        if _is_context_limit_error(exc):
+        if _is_context_limit_error(exc) or _is_oom_error(exc):
             return False, status_code
         if exc.retryable:
             return True, status_code
         if status_code is None:
             return False, None
 
-    if _is_context_limit_error(exc):
+    if _is_context_limit_error(exc) or _is_oom_error(exc):
+        # OOM (typically a generic HTTP 500 for Ollama, which IS in
+        # _PROVIDER_RETRYABLE_STATUS_CODES) is deliberately excluded from
+        # the normal status-code retry path below: VRAM exhaustion won't
+        # clear within the backoff window, so retrying just re-triggers the
+        # same OOM after a wasted delay. See _OOM_MARKERS.
         return False, status_code
 
     retryable_statuses = _PROVIDER_RETRYABLE_STATUS_CODES.get(
@@ -326,6 +347,12 @@ async def _retry_with_backoff(
             err_detail = _format_exception_message(exc)
             if (not retryable) or attempt >= max_retries:
                 message = f"{retry_hint}: {err_detail}"
+                if _is_oom_error(exc):
+                    message += (
+                        " [GPU belleği yetersiz olabilir (OOM). OLLAMA_NUM_BATCH veya "
+                        "OLLAMA_CODING_NUM_CTX değerini düşürmeyi ya da eşzamanlı istek "
+                        "sayısını (OLLAMA_GPU_REQUEST_POOL_SIZE) azaltmayı deneyin.]"
+                    )
                 raise LLMAPIError(
                     provider, message, status_code=status_code, retryable=retryable
                 ) from exc
@@ -746,7 +773,9 @@ class LLMClient:
         if isinstance(self._client, ollama_cls):
             ollama_client = cast("OllamaClient", self._client)
             return ollama_client._build_timeout()
-        timeout_seconds = max(10, int(_setting(self.config, "OLLAMA_TIMEOUT", 120)))
+        timeout_seconds = max(
+            10, int(_setting(self.config, "OLLAMA_TIMEOUT", OLLAMA_TIMEOUT_DEFAULT))
+        )
         return httpx.Timeout(timeout_seconds, connect=10.0)
 
     def _truncate_messages_for_local_model(

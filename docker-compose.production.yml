@@ -1,14 +1,72 @@
+# Kapsam: bu overlay web-facing/her-zaman-açık servisleri (sidar-web,
+# sidar-web-gpu) ve veri katmanlarını (redis/postgres/ollama*) sertleştirir.
+# `sidar-ai`/`sidar-gpu` (CLI modu) bilinçli olarak dışarıda bırakılıyor:
+# `stdin_open`/`tty` ile etkileşimli/gözetimli kullanım için tasarlanmışlar,
+# arkalarında sürekli çalışan bir "production" servisi kavramı yok (host'a
+# port açmazlar, restart:always burada anlamsız). Bu asimetri bilinçlidir —
+# CPU tarafında da simetriktir (`sidar-ai` de bu overlay'de yok).
+# `ports: []` altta yalnız görünüyor: Compose'un liste alanları için merge
+# davranışı override'daki boş listeyi base dosyanın ports listesiyle
+# birleştirmez/onu silmez — base'in ports'unu aynen korur (bkz.
+# tests/unit/scripts/test_production_compose_validation.py::
+# test_production_override_actually_closes_datastore_ports, izole
+# `docker compose config` repro'suyla doğrulandı). Portu gerçekten
+# kaldırmanın tek yolu compose-spec'in `!reset` merge tag'i.
 services:
   redis:
-    ports: []
+    ports: !reset []
 
   postgres:
-    ports: []
+    ports: !reset []
 
   ollama:
-    ports: []
+    ports: !reset []
+
+  ollama-gpu:
+    ports: !reset []
 
   sidar-web:
+    build:
+      dockerfile: Dockerfile.production
+      args:
+        # docker-compose.yml, temel katmanda geliştirme imajı için
+        # BASE_IMAGE=python:3.11.15-slim geçirir; production'da bunu
+        # Dockerfile.production'ın hash-pinlenmiş minimal tabanıyla
+        # geçersiz kılıyoruz — aksi halde compose'un map-merge davranışı
+        # base dosyadaki değeri burada da miras bırakır.
+        BASE_IMAGE: python:3.11.15-slim-bookworm@sha256:d29f48a31a8b408ed19272ca1e7b10ebae13b240a27e862d3d4217c528e2e0c3
+    # docker-compose.yml'deki `--quick web ...` komutu main.py'nin (dev
+    # imajının ENTRYPOINT'i) CLI sözdizimidir. Dockerfile.production'ın
+    # ENTRYPOINT'i doğrudan `uvicorn web_server:app` olduğundan komut
+    # uvicorn'un kabul ettiği argümanlara sıfırlanmalıdır.
+    command: ["--host", "0.0.0.0", "--port", "7860"]
+    restart: always
+    environment:
+      - SIDAR_ENV=production
+      - APP_RUNTIME_MODE=production
+      - DEBUG=false
+      - DB_DEGRADED_MODE_ON_POSTGRES_FAILURE=false
+      - RAG_REQUIRED_FOR_READINESS=true
+    volumes:
+      - sidar_data_prod:/app/data
+      - sidar_logs_prod:/app/logs
+      - sidar_temp_prod:/app/temp
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:7860/healthz >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 20s
+
+  # sidar-web'in production-runtime sertleştirmesiyle simetrik (restart,
+  # SIDAR_ENV=production, kalıcı named volume, healthcheck). Kasıtlı olarak
+  # değiştirilmeyen tek şey build/dockerfile: Dockerfile.production henüz
+  # CUDA/GPU derlemesini desteklemiyor (GPU_ENABLED/TORCH_INDEX_URL build
+  # arg'ları yok, runtime aşaması CUDA base image kullanmıyor) — bu servis
+  # bu yüzden hâlâ docker-compose.yml'deki geliştirme `Dockerfile`'ını
+  # (nvidia/cuda tabanlı build) kullanır. Dockerfile.production'a GPU desteği
+  # eklenmeden bunu değiştirmek imajı bozardı.
+  sidar-web-gpu:
     restart: always
     environment:
       - SIDAR_ENV=production

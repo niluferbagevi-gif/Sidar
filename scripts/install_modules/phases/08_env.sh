@@ -1256,13 +1256,20 @@ prompt_post_install_sidar_env_mode() {
     elif [[ "$NO_INTERACTION" == true ]]; then
         info "--ci/--no-interaction etkin: SIDAR_ENV varsayılanı development bırakıldı."
     else
-        echo ""
-        echo "======================================================"
-        echo "✅ Kurulum işlemleri tamamlandı!"
-        echo "Sistemi hangi modda çalıştırmak istiyorsunuz?"
-        echo "  1) Development (Geliştirme ve Test - Debug logları açık)"
-        echo "  2) Production  (Canlı Kullanım - Hızlı, güvenli, optimize)"
-        echo "======================================================"
+        # Menü, hemen altındaki `read ... 2>/dev/tty` ile aynı senkron
+        # /dev/tty kanalını paylaşsın diye tek blok halinde /dev/tty'e
+        # yazılıyor — normal stdout install_sidar.sh'ın log-yakalama
+        # pipe'ından (`exec > >(...) 2>&1`) asenkron geçtiği için, yavaş
+        # fork'lu ortamlarda (WSL2) prompt menüden önce görünebilirdi.
+        {
+            echo ""
+            echo "======================================================"
+            echo "✅ Kurulum işlemleri tamamlandı!"
+            echo "Sistemi hangi modda çalıştırmak istiyorsunuz?"
+            echo "  1) Development (Geliştirme ve Test - Debug logları açık)"
+            echo "  2) Production  (Canlı Kullanım - Hızlı, güvenli, optimize)"
+            echo "======================================================"
+        } &> /dev/tty
 
         clear_stdin_buffer
         if read -r -t "$SIDAR_PROMPT_TIMEOUT" -p "Seçiminiz (1 veya 2, varsayılan=1): " env_choice 2>/dev/tty; then

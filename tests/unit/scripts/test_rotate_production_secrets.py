@@ -79,3 +79,73 @@ def test_generated_secrets_retry_values_rejected_by_post_write_audit(monkeypatch
     monkeypatch.setattr(rotation, "is_weak_secret", lambda value: value == rejected)
 
     assert rotation._generate_accepted_secret(lambda: next(candidates)) == accepted
+
+
+def test_rotation_keys_cover_postgres_and_redis_passwords():
+    """Fail-closed regression for a review comment.
+
+    Rotation used to skip POSTGRES_PASSWORD/REDIS_PASSWORD entirely, and no
+    automatic sync script existed for the Redis side of that gap (see
+    scripts/sync_redis_password.py).
+    """
+    assert "POSTGRES_PASSWORD" in ROTATION_KEYS
+    assert "REDIS_PASSWORD" in ROTATION_KEYS
+
+
+def test_apply_propagates_rotated_postgres_and_redis_passwords_into_embedded_urls(tmp_path):
+    """Rotating POSTGRES_PASSWORD/REDIS_PASSWORD must not leave stale URLs behind."""
+    production = tmp_path / ".env.production"
+    _write_env(
+        production,
+        {
+            "POSTGRES_USER": "sidar",
+            "POSTGRES_PASSWORD": "old-postgres-password-value",
+            "REDIS_PASSWORD": "old-redis-password-value",
+            "DATABASE_URL": "postgresql+asyncpg://sidar:old-postgres-password-value@127.0.0.1:5432/sidar",
+            "SIDAR_CONTAINER_DATABASE_URL": (
+                "postgresql+asyncpg://sidar:old-postgres-password-value@postgres:5432/sidar"
+            ),
+            "SIDAR_REDIS_URL": "redis://:old-redis-password-value@127.0.0.1:6379/0",
+        },
+    )
+
+    assert (
+        main(
+            [
+                "--env-file",
+                str(production),
+                "--reference-env",
+                "/dev/null",
+                "--apply",
+                "--ack-memory-key-impact",
+            ]
+        )
+        == 0
+    )
+
+    content = production.read_text(encoding="utf-8")
+    values = dict(line.split("=", 1) for line in content.splitlines() if "=" in line)
+    assert "old-postgres-password-value" not in content
+    assert "old-redis-password-value" not in content
+    assert values["POSTGRES_PASSWORD"] in values["DATABASE_URL"]
+    assert values["POSTGRES_PASSWORD"] in values["SIDAR_CONTAINER_DATABASE_URL"]
+    assert values["REDIS_PASSWORD"] in values["SIDAR_REDIS_URL"]
+
+
+def test_audit_flags_embedded_url_password_left_stale_after_manual_edit(tmp_path, capsys):
+    """A DATABASE_URL/SIDAR_REDIS_URL that drifts from the bare password must fail the audit."""
+    production = tmp_path / ".env.production"
+    _write_env(
+        production,
+        {
+            "POSTGRES_PASSWORD": "current-postgres-password-value-abc",
+            "DATABASE_URL": "postgresql+asyncpg://sidar:STALE-password@127.0.0.1:5432/sidar",
+            "REDIS_PASSWORD": "current-redis-password-value-xyz",
+            "SIDAR_REDIS_URL": "redis://:STALE-password@127.0.0.1:6379/0",
+        },
+    )
+
+    assert main(["--env-file", str(production), "--reference-env", "/dev/null"]) == 1
+    output = capsys.readouterr()
+    assert "DATABASE_URL: embedded_url_password_stale" in output.err
+    assert "SIDAR_REDIS_URL: embedded_url_password_stale" in output.err

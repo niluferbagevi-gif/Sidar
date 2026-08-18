@@ -28,7 +28,10 @@ phase06_docker_daemon_gate_or_fail() {
             info "Etkileşimsiz mod: yeniden deneme öncesi 10sn bekleniyor."
             sleep 10
         else
-            info "Lütfen Docker Desktop'ı açın/yeniden başlatın, sonra yeniden deneme yapılacak."
+            # tty_notice (info() değil): hemen altındaki `read ... 2>/dev/tty`
+            # ile aynı senkron /dev/tty kanalını paylaşması gerekiyor —
+            # bkz. install_sidar.sh'taki tty_notice() tanımı.
+            tty_notice "Lütfen Docker Desktop'ı açın/yeniden başlatın, sonra yeniden deneme yapılacak."
             clear_stdin_buffer
             read -r -p "Devam etmek için [ENTER] tuşuna basın..." 2>/dev/tty
         fi

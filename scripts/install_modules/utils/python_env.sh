@@ -68,14 +68,39 @@ install_uv_cli() {
         # scripts/toolchain.env sözleşmesiyle çakışabilir. Kurulumu doğrudan
         # durdurmak yerine önce sözleşmedeki sürüme kendiliğinden hizalamayı dene.
         warn "uv toolchain drift: beklenen ${expected_uv_version}, bulunan ${detected_uv_version}. scripts/toolchain.env sözleşmesine göre otomatik hizalanıyor..."
-        if [[ "$OFFLINE_MODE" != true ]] && uv self update --version "$expected_uv_version" &>/dev/null; then
-            info "uv self update ile ${expected_uv_version} sürümüne hizalandı."
+        # `uv self update`'in hedef sürümü ALDIĞI yer bir `--version` bayrağı
+        # değil, konumsal (positional) bir argümandır:
+        #   Usage: uv self update [OPTIONS] [TARGET_VERSION]
+        # `--version` verilirse uv "error: unexpected argument '--version'
+        # found" ile exit code 2 döndürür (canlı doğrulandı) — yani bu dal
+        # daha önce HİÇBİR ZAMAN gerçekten çalışmıyordu, `&>/dev/null` +
+        # `if ... &&` zinciri hatayı sessizce yutup her seferinde doğrudan
+        # aşağıdaki (daha ağır, ağ/offline-paket gerektiren) resmi kurulum
+        # betiği fallback'ine düşülüyordu. Bu, "beklenen 0.12.0, bulunan
+        # 0.12.5" gibi bir sürüm uyuşmazlığının fallback'in kendisi de (ör.
+        # offline paket eksikliği, ağ kısıtlaması) başarısız olduğu
+        # ortamlarda kalıcı hale gelmesini açıklıyor.
+        if [[ "$OFFLINE_MODE" != true ]]; then
+            # Çıktı artık `&>/dev/null` ile tamamen atılmıyor: `uv self
+            # update` apt/pipx/brew gibi bir paket yöneticisiyle kurulmuş bir
+            # uv'de rutin olarak reddedilir (uv bunu desteklemez) ve bu,
+            # kullanıcının GÖRMESİ gereken, teşhis değeri olan bir çıktıdır —
+            # aksi halde resmi kurulum betiği fallback'i de (ör. ağ/offline
+            # paket eksikliği) başarısız olduğunda kullanıcı elinde hiçbir
+            # ipucu olmadan kalır.
+            local self_update_output
+            if self_update_output="$(uv self update "$expected_uv_version" 2>&1)"; then
+                info "uv self update ile ${expected_uv_version} sürümüne hizalandı."
+            else
+                info "uv self update başarısız (uv büyük olasılıkla apt/pipx/brew ile kurulmuş ve self-update desteklemiyor); resmi kurulum betiğine düşülüyor. uv çıktısı: ${self_update_output}"
+                _sidar_install_uv_via_official_script
+            fi
         else
             _sidar_install_uv_via_official_script
         fi
         detected_uv_version="$(uv --version | awk '{print $2}')"
         [[ "$detected_uv_version" == "$expected_uv_version" ]] || fail \
-            "uv toolchain drift otomatik onarılamadı: beklenen ${expected_uv_version}, bulunan ${detected_uv_version}. Manuel düzeltme: uv self update --version ${expected_uv_version} (uv, apt/pipx/brew gibi bir paket yöneticisiyle kuruldu ise onu kaldırıp installer'ı tekrar çalıştırın)."
+            "uv toolchain drift otomatik onarılamadı: beklenen ${expected_uv_version}, bulunan ${detected_uv_version}. Manuel düzeltme: uv self update ${expected_uv_version} (uv, apt/pipx/brew gibi bir paket yöneticisiyle kuruldu ise onu kaldırıp installer'ı tekrar çalıştırın)."
     fi
 
     ok "uv $(uv --version | cut -d' ' -f2)"
@@ -163,6 +188,41 @@ normalize_dependency_profile_value() {
     esac
 }
 
+# Kanonik dependency-profile listesi ve "Desteklenen: ..." metni: bu, dört
+# ayrı case bloğunda (install_cli.sh, python_env.sh içinde üç yerde) elle
+# tekrarlanan bir listeydi — bir kod incelemesi bunu DRY ihlali olarak
+# işaretledi. Yeni bir profil eklendiğinde hepsinin manuel güncellenmesi
+# gerekiyordu; biri unutulursa aynı profil bir yerde geçerli, başka yerde
+# "Geçersiz dependency profile" sayılabilirdi. Her çağrı yeri hâlâ kendi
+# case bloğunu koruyor (her dalın gerçek iş mantığı — SYNC_ARGS seçimi vb. —
+# farklı ve merkezi bir case ifadesine indirgenemez), ama artık hepsi aynı
+# "hangi isimler geçerli" listesini ve aynı hata metnini kullanıyor.
+readonly SIDAR_KNOWN_DEPENDENCY_PROFILES=(dev-light dev-full dev-gpu gpu-runtime production-minimal production custom)
+
+sidar_is_known_dependency_profile() {
+    local candidate="${1:-}"
+    local profile
+    for profile in "${SIDAR_KNOWN_DEPENDENCY_PROFILES[@]}"; do
+        [[ "$candidate" == "$profile" ]] && return 0
+    done
+    return 1
+}
+
+sidar_dependency_profile_usage_hint() {
+    local IFS='|'
+    printf '%s' "${SIDAR_KNOWN_DEPENDENCY_PROFILES[*]}"
+}
+
+sidar_fail_unless_known_dependency_profile() {
+    local candidate="${1:-}"
+    local allow_ask="${2:-false}"
+    if [[ "$allow_ask" == true && "$candidate" == "ask" ]]; then
+        return 0
+    fi
+    sidar_is_known_dependency_profile "$candidate" || \
+        fail "Geçersiz dependency profile: ${candidate}. Desteklenen: $(sidar_dependency_profile_usage_hint)"
+}
+
 select_dependency_profile() {
     local requested="${DEPENDENCY_PROFILE:-${SIDAR_DEPENDENCY_PROFILE:-ask}}"
     requested="$(normalize_dependency_profile_value "$requested")"
@@ -170,27 +230,38 @@ select_dependency_profile() {
     if [[ "$requested" == "ask" ]]; then
         if [[ "${RUN_CI_FULL_VALIDATION:-false}" == true ]]; then
             requested="dev-full"
-            info "Tam CI/production-readiness doğrulaması seçildi; bağımlılık profili developer-full olarak ayarlandı."
+            info "Tam CI/production-readiness doğrulaması seçildi; bağımlılık profili developer-full (dev-full) olarak ayarlandı."
         elif [[ "${NO_INTERACTION:-false}" == true || "${AUTO_INSTALL:-false}" == true ]]; then
             requested="dev-full"
-            info "Etkileşimsiz kurulum: varsayılan tam geliştirici bağımlılık profili seçildi (developer-full)."
+            info "Etkileşimsiz kurulum: varsayılan tam geliştirici bağımlılık profili seçildi (developer-full, dahili adıyla dev-full)."
         elif [[ -t 0 ]]; then
-            echo
-            echo "Bağımlılık profili seçin:"
-            echo "  1) dev-light (hızlı yerel geliştirme + test araçları)"
-            echo "  2) developer-full (önerilen; tüm extras; CI/tam doğrulama)"
-            echo "  3) dev-gpu (geliştirici + RAG/GPU runtime; provider extras yok)"
-            echo "  4) production-minimal (dar no-dev runtime)"
-            echo "  5) production (runtime + postgres + telemetry)"
-            echo "  6) gpu-runtime (dar no-dev RAG/GPU runtime)"
-            echo "  7) özel provider seçimi (SIDAR_DEPENDENCY_EXTRAS)"
+            # install_sidar.sh'ın `exec > >(mask_install_log_stream | tee ...) 2>&1`
+            # log yönlendirmesi (satır ~386) normal echo/stdout'u asenkron bir
+            # pipe üzerinden geçirir; hemen altındaki `read ... 2>/dev/tty` ise
+            # kasıtlı olarak bu pipe'ı atlayıp doğrudan terminale yazar (stdout
+            # ayrıca bir dosyaya yönlendirilmiş olsa bile prompt'un görünür
+            # kalması için). İki farklı kanal, yavaş fork'lu ortamlarda (WSL2)
+            # sıralamayı bozabilir: prompt, üstündeki menü satırlarından önce
+            # görünebilir. Menü de aynı `read`'in kullandığı senkron /dev/tty
+            # kanalını paylaşsın diye tek blok halinde /dev/tty'e yazılıyor.
+            {
+                echo
+                echo "Bağımlılık profili seçin:"
+                echo "  1) dev-light (hızlı yerel geliştirme + test araçları)"
+                echo "  2) developer-full (önerilen; tüm extras; CI/tam doğrulama; dahili/log adı: dev-full)"
+                echo "  3) dev-gpu (geliştirici + RAG/GPU runtime; provider extras yok)"
+                echo "  4) production-minimal (dar no-dev runtime)"
+                echo "  5) production (runtime + postgres + telemetry)"
+                echo "  6) gpu-runtime (dar no-dev RAG/GPU runtime)"
+                echo "  7) özel provider seçimi (SIDAR_DEPENDENCY_EXTRAS)"
+            } &> /dev/tty
             local profile_choice=""
             if read -r -t "${SIDAR_PROMPT_TIMEOUT:-180}" -p "Seçim [1-7, varsayılan 2]: " profile_choice 2>/dev/tty; then
                 profile_choice="${profile_choice:-2}"
             else
                 profile_choice="2"
                 echo
-                warn "Bağımlılık profili seçimi zaman aşımına uğradı; developer-full seçildi."
+                warn "Bağımlılık profili seçimi zaman aşımına uğradı; developer-full (dev-full) seçildi."
             fi
             case "$profile_choice" in
                 1) requested="dev-light" ;;
@@ -201,13 +272,13 @@ select_dependency_profile() {
                 6) requested="gpu-runtime" ;;
                 7) requested="custom" ;;
                 *)
-                    warn "Geçersiz bağımlılık profili seçimi (${profile_choice}); developer-full kullanılacak."
+                    warn "Geçersiz bağımlılık profili seçimi (${profile_choice}); developer-full (dev-full) kullanılacak."
                     requested="dev-full"
                     ;;
             esac
         else
             requested="dev-full"
-            info "TTY yok; varsayılan tam geliştirici bağımlılık profili seçildi (developer-full)."
+            info "TTY yok; varsayılan tam geliştirici bağımlılık profili seçildi (developer-full, dahili adıyla dev-full)."
         fi
     fi
 
@@ -222,10 +293,7 @@ select_dependency_profile() {
         [[ -n "${SIDAR_DEPENDENCY_EXTRAS:-}" ]] || fail "custom dependency profile seçildi ancak extras listesi boş."
     fi
 
-    case "$requested" in
-        dev-light|dev-full|dev-gpu|gpu-runtime|production-minimal|production|custom) ;;
-        *) fail "Geçersiz dependency profile: ${requested}. Desteklenen: dev-light|dev-full|dev-gpu|gpu-runtime|production-minimal|production|custom" ;;
-    esac
+    sidar_fail_unless_known_dependency_profile "$requested"
 
     DEPENDENCY_PROFILE="$requested"
     export DEPENDENCY_PROFILE SIDAR_DEPENDENCY_EXTRAS
@@ -298,7 +366,7 @@ install_python_deps() {
             sync_command_label="uv sync --frozen --extra production-minimal --no-dev"
             ;;
         *)
-            fail "Geçersiz dependency profile: ${dependency_profile}. Desteklenen: dev-light|dev-full|dev-gpu|gpu-runtime|production-minimal|production|custom"
+            fail "Geçersiz dependency profile: ${dependency_profile}. Desteklenen: $(sidar_dependency_profile_usage_hint)"
             ;;
     esac
     export DEPENDENCY_PROFILE="$dependency_profile"
@@ -462,7 +530,7 @@ sync_pytorch_cuda_wheels() {
             sync_profile_label="custom + gpu-runtime"
             ;;
         *)
-            fail "Geçersiz dependency profile: ${dependency_profile}. Desteklenen: dev-light|dev-full|dev-gpu|gpu-runtime|production-minimal|production|custom"
+            fail "Geçersiz dependency profile: ${dependency_profile}. Desteklenen: $(sidar_dependency_profile_usage_hint)"
             ;;
     esac
 
@@ -479,6 +547,7 @@ sync_pytorch_cuda_wheels() {
 }
 
 verify_torch_cuda() {
+    # shellcheck disable=SC2153  # GPU_AVAILABLE is sourced from earlier hardware detection phases.
     if [[ "$GPU_AVAILABLE" == true ]]; then
         step "PyTorch CUDA Doğrulaması"
         if python -c "import torch; exit(0 if torch.cuda.is_available() else 1)" >/dev/null 2>&1; then

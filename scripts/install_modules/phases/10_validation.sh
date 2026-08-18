@@ -3,80 +3,20 @@ set -Eeuo pipefail
 # Sidar installer phase: CUDA, smoke, integration, audit and CI validation helpers.
 
 # ── 13. CUDA bağlantı testi ──────────────────────────────────────────────────
-# CUDA wheel tag selection is sourced from scripts/install_modules/utils/python_env.sh.
-sync_pytorch_cuda_wheels() {
-    local cuda_tag="${1:-}"
-    [[ -n "$cuda_tag" ]] || cuda_tag="$(select_pytorch_cuda_wheel_tag)"
-    local index_url="${PYTORCH_CUDA_INDEX_URL:-https://download.pytorch.org/whl/${cuda_tag}}"
-    local dependency_profile="${DEPENDENCY_PROFILE:-${SIDAR_DEPENDENCY_PROFILE:-dev-full}}"
-    dependency_profile="$(normalize_dependency_profile_value "$dependency_profile")"
-    [[ "$dependency_profile" != "ask" ]] || dependency_profile="dev-full"
-
-    local -a sync_args=(--frozen)
-    local sync_profile_label="$dependency_profile"
-    case "$dependency_profile" in
-        dev-full)
-            # Kullanıcı bilinçli tam profili seçtiyse mevcut kapsam korunur.
-            sync_args+=(--all-extras)
-            ;;
-        dev-light|dev-gpu)
-            sync_args+=(--extra dev-gpu)
-            sync_profile_label="${dependency_profile} → dev-gpu"
-            ;;
-        production|production-minimal|gpu-runtime)
-            sync_args+=(--extra gpu-runtime --no-dev)
-            sync_profile_label="${dependency_profile} → gpu-runtime"
-            ;;
-        custom)
-            mapfile -d '' -t sync_args < <(build_custom_dependency_sync_args)
-            sync_args+=(--extra gpu-runtime)
-            sync_profile_label="custom + gpu-runtime"
-            ;;
-        *)
-            fail "Geçersiz dependency profile: ${dependency_profile}. Desteklenen: dev-light|dev-full|dev-gpu|gpu-runtime|production-minimal|production|custom"
-            ;;
-    esac
-
-    sync_args+=(
-        --index "$index_url"
-        --reinstall-package torch
-        --reinstall-package torchvision
-    )
-
-    info "PyTorch CUDA wheel seçimi uv sync ile uygulanıyor: ${cuda_tag} (${index_url}); profil: ${sync_profile_label}"
-    if ! uv sync "${sync_args[@]}"; then
-        fail "PyTorch CUDA bağımlılıkları uv sync ile senkronlanamadı (${cuda_tag})."
-    fi
-}
-
-verify_torch_cuda() {
-    # shellcheck disable=SC2153  # GPU_AVAILABLE is sourced from earlier hardware detection phases.
-    if [[ "$GPU_AVAILABLE" == true ]]; then
-        step "PyTorch CUDA Doğrulaması"
-        if python -c "import torch; exit(0 if torch.cuda.is_available() else 1)" >/dev/null 2>&1; then
-                CUDA_OK=$(python -c "
-import torch
-avail = torch.cuda.is_available()
-ver   = torch.version.cuda or 'N/A'
-dev   = torch.cuda.get_device_name(0) if avail else 'N/A'
-print(f'available={avail} cuda={ver} device={dev}')
-" 2>/dev/null || echo "available=true cuda=N/A device=N/A")
-            TORCH_CUDA_VER=$(echo "$CUDA_OK" | grep -oP 'cuda=\K[^ ]+')
-            TORCH_GPU_NAME=$(echo "$CUDA_OK" | grep -oP 'device=\K.+')
-            ok "PyTorch CUDA aktif: $TORCH_GPU_NAME (CUDA $TORCH_CUDA_VER)"
-        else
-            warn "PyTorch CUDA bulunamadı. torch CPU sürümü kurulmuş olabilir."
-            info "GPU wheel için PyTorch yeniden kuruluyor (GPU compute capability/CUDA sürümüne göre dinamik index seçilecek)..."
-            sync_pytorch_cuda_wheels "$(select_pytorch_cuda_wheel_tag)"
-
-            if python -c "import torch; exit(0 if torch.cuda.is_available() else 1)" >/dev/null 2>&1; then
-                ok "PyTorch CUDA başarıyla kuruldu ve GPU tanındı."
-            else
-                fail "PyTorch CUDA kurulumu yine başarısız oldu. Lütfen manuel kontrol edin."
-            fi
-        fi
-    fi
-}
+# CUDA wheel sync + torch doğrulama fonksiyonları artık yalnızca
+# scripts/install_modules/utils/python_env.sh içinde tanımlı. Burada da tam
+# birer kopyaları vardı (dep-profile case listesi dahil dört ayrı yerde
+# tekrarlanan bir DRY ihlaline işaret eden bir kod incelemesiyle bulundu):
+# 04_workspace.sh'ın sidar_phase_workspace_config()'i bu fonksiyonlar
+# çağrılmadan ÖNCE her zaman `sidar_source_install_utils "python_env.sh"`
+# çalıştırır, bu yüzden python_env.sh'ın tanımları bu dosyadaki kopyaları
+# global fonksiyon isim alanında sessizce gölgeliyordu — buradaki kopyalar
+# hiçbir çalışma yolunda gerçekten hiç çalışmıyordu (11_post_install.sh'ın
+# çağrısı da her zaman 04_workspace.sh'tan sonra gelir). Bunu canlı
+# doğruladım: iki kopya zaten sessizce farklılaşmıştı (buradaki bir
+# `# shellcheck disable=SC2153` yorumu içeriyordu, python_env.sh'daki
+# içermiyordu — şimdi ikisi de içeriyor). Ölü kopyalar kaldırıldı; tek doğru
+# kaynak artık yalnızca python_env.sh.
 
 # ── 14. Smoke testler ────────────────────────────────────────────────────────
 wait_for_redis_before_smoke_tests() {

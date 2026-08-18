@@ -3084,6 +3084,34 @@ def test_pre_commit_config_runs_uv_managed_static_gates() -> None:
     assert "scripts/.*\\.(sh|bash)" in config
 
 
+def test_pre_commit_config_runs_secret_scanning_and_frontend_lint() -> None:
+    """Fail-closed regression for a review comment.
+
+    Only check-merge-conflict was defined; ESLint/TS and secret-leak
+    scanning never ran pre-commit at all.
+    """
+    config = Path(".pre-commit-config.yaml").read_text(encoding="utf-8")
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+    baseline = Path(".secrets.baseline")
+
+    assert "id: detect-secrets" in config
+    assert "entry: uv run detect-secrets-hook --baseline .secrets.baseline" in config
+    assert '"detect-secrets>=1.5.0"' in pyproject
+    assert '"detect-secrets" = "security-tool"' in pyproject
+    assert baseline.is_file()
+
+    assert "id: frontend-eslint" in config
+    assert "npm run lint" in config
+    assert "id: frontend-typecheck" in config
+    assert "npm run typecheck" in config
+    for hook_id in ("frontend-eslint", "frontend-typecheck"):
+        hook_start = config.index(f"      - id: {hook_id}")
+        hook_end = config.index("\n      - id:", hook_start + 1)
+        hook_block = config[hook_start:hook_end]
+        assert "web_ui_react/" in hook_block, hook_id
+        assert "pass_filenames: false" in hook_block, hook_id
+
+
 def test_install_sidar_core_manifest_hashes_match_current_security_files() -> None:
     install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
     sidar_manifest = Path(".sidar_manifest.txt").read_text(encoding="utf-8")
@@ -4926,11 +4954,11 @@ def test_install_sidar_selects_pytorch_cuda_wheel_dynamically() -> None:
     selector_body = script[
         selector_start : script.index("sync_pytorch_cuda_wheels()", selector_start)
     ]
-    verify_body = script[
-        script.index("verify_torch_cuda()") : script.index(
-            "# ── 14.", script.index("verify_torch_cuda()")
-        )
-    ]
+    # verify_torch_cuda() is now the last function defined in python_env.sh
+    # (the sole source of truth after 10_validation.sh's dead-code copies were
+    # removed), so there is no trailing "# ── 14." section marker to bound
+    # against anymore — slice to end-of-string instead.
+    verify_body = script[script.index("verify_torch_cuda()") :]
 
     assert "PyTorch cu124 fallback" not in script
     assert "--query-gpu=compute_cap" in script

@@ -35,7 +35,10 @@ aIWorker:
 
 redis:
   enabled: true
-  image: redis:alpine
+  # docker-compose.yml ile aynı pinlenmiş sürüm (bir kod incelemesi Compose
+  # ile Helm arasındaki sürüm uyuşmazlığını işaret etti — daha önce burada
+  # sürümsüz "redis:alpine" vardı).
+  image: redis:7.4-alpine
   port: 6379
   maxConnections: 100
   storage:
@@ -44,7 +47,8 @@ redis:
 
 postgresql:
   enabled: true
-  image: pgvector/pgvector:pg16
+  # docker-compose.yml ile aynı pinlenmiş sürüm (bkz. redis'teki not yukarıda).
+  image: pgvector/pgvector:0.8.1-pg16
   port: 5432
   database: sidar
   username: sidar
@@ -97,7 +101,7 @@ apm:
         memory: 512Mi
   jaeger:
     enabled: true
-    image: jaegertracing/all-in-one:1.59
+    image: jaegertracing/all-in-one:1.63.0
     service:
       collectorGrpcPort: 4317
       collectorHttpPort: 14268

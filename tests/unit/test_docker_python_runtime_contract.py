@@ -250,14 +250,180 @@ def test_observability_compose_pins_tracing_and_exports_infra_metrics():
     assert cadvisor["privileged"] is True
     assert "/var/lib/docker:/var/lib/docker:ro" in cadvisor["volumes"]
 
-    assert services["prometheus"]["depends_on"] == [
+    assert set(services["prometheus"]["depends_on"]) == {
         "redis-exporter",
         "postgres-exporter",
         "cadvisor",
-    ]
+        "prometheus-token-init",
+    }
+    assert (
+        services["prometheus"]["depends_on"]["prometheus-token-init"]["condition"]
+        == "service_completed_successfully"
+    )
     assert services["prometheus"]["image"] == "prom/prometheus:v2.54.1"
     assert services["grafana"]["image"] == "grafana/grafana:11.2.0"
     assert services["grafana"]["healthcheck"]["test"][0] == "CMD-SHELL"
+
+
+def test_observability_profile_services_have_resource_limits():
+    """Ensure the observability sidecars can't starve the host of CPU/memory.
+
+    A code review flagged that jaeger/the exporters/cadvisor (and, by the
+    same standard already applied to sidar-web/sidar-ai, prometheus/grafana
+    too) had no resource limits at all, unlike sidar-web/sidar-ai which set
+    both the top-level `cpus`/`mem_limit` shorthand and the
+    `deploy.resources.limits` block. Healthchecks for these services were
+    deliberately NOT added in the same change — see the comment above the
+    jaeger service in docker-compose.yml for why (this sandbox has no live
+    Docker daemon to verify wget/curl/shell exist in each third-party image,
+    and a wrong guess produces a permanently-misleading "unhealthy" status).
+    """
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+    services = compose["services"]
+
+    for service_name in (
+        "jaeger",
+        "redis-exporter",
+        "postgres-exporter",
+        "cadvisor",
+        "prometheus",
+        "grafana",
+    ):
+        service = services[service_name]
+        assert "cpus" in service, f"{service_name} is missing a top-level cpus limit"
+        assert "mem_limit" in service, f"{service_name} is missing a top-level mem_limit"
+        limits = service["deploy"]["resources"]["limits"]
+        assert limits["cpus"]
+        assert limits["memory"]
+
+
+def test_prometheus_scrape_of_authenticated_sidar_endpoints_carries_a_bearer_token():
+    """Fail-closed regression for a review comment.
+
+    prometheus.yml never sent any Authorization header for the sidar-web/
+    sidar-gpu jobs, but web_server.py's global auth middleware 401s *every*
+    request lacking `Authorization: Bearer ...` - independent of whether
+    METRICS_TOKEN is configured. Scraping those two jobs was therefore
+    always broken, not just when the documented METRICS_TOKEN hardening
+    step was turned on. docker-compose.yml's prometheus-token-init writes
+    METRICS_TOKEN into the file prometheus.yml now points both jobs at
+    (fail-closed via a required env var if METRICS_TOKEN is unset); the
+    exporter jobs (redis/postgres/cadvisor) are untouched since they are
+    unauthenticated third-party processes outside Sidar's own auth guard.
+    """
+    prometheus_yml = yaml.safe_load(
+        (ROOT / "docker_setup" / "prometheus" / "prometheus.yml").read_text()
+    )
+    jobs = {job["job_name"]: job for job in prometheus_yml["scrape_configs"]}
+
+    for job_name in ("sidar-web", "sidar-gpu"):
+        assert jobs[job_name]["bearer_token_file"] == "/etc/prometheus-secrets/metrics_token"
+    for job_name in ("redis-exporter", "postgres-exporter", "cadvisor"):
+        assert "bearer_token_file" not in jobs[job_name]
+        assert "bearer_token" not in jobs[job_name]
+
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+    services = compose["services"]
+
+    init_service = services["prometheus-token-init"]
+    assert init_service["profiles"] == ["observability"]
+    assert "${METRICS_TOKEN:?" in " ".join(init_service["command"])
+    assert {"prometheus_secrets:/etc/prometheus-secrets"} <= set(init_service["volumes"])
+
+    assert "prometheus_secrets:/etc/prometheus-secrets:ro" in services["prometheus"]["volumes"]
+    assert "prometheus_secrets" in compose["volumes"]
+
+
+def test_postgres_and_ollama_ports_bind_to_loopback_like_redis():
+    """Ensure Postgres/Ollama host ports never bind wider than Redis's loopback-only policy.
+
+    Fail-closed regression: a review comment flagged that redis's port was
+    scoped to `127.0.0.1` while postgres/ollama/ollama-gpu published to all
+    interfaces (`"5432:5432"` / `"11434:11434"`) with no host_ip prefix —
+    reachable from the LAN/WSL even with a strong POSTGRES_PASSWORD, and
+    Ollama's API has no authentication of its own at all.
+    """
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+    services = compose["services"]
+
+    assert services["postgres"]["ports"] == ["127.0.0.1:${POSTGRES_PORT:-5432}:5432"]
+    assert services["ollama"]["ports"] == ["127.0.0.1:${OLLAMA_PORT:-11434}:11434"]
+    assert services["ollama-gpu"]["ports"] == ["127.0.0.1:${OLLAMA_PORT:-11434}:11434"]
+
+
+def test_ollama_services_have_a_healthcheck_and_dependents_wait_for_it():
+    """Ensure Ollama's startup can't race the first request against it.
+
+    A review comment flagged that redis/postgres both have a healthcheck and
+    are waited on via `condition: service_healthy`, but ollama/ollama-gpu had
+    neither: they only defined `condition: service_started`, which is
+    satisfied the instant the container process starts — not when Ollama's
+    HTTP API is actually ready to serve requests. Ollama's official image
+    has no curl/wget in its runtime stage (verified against its Dockerfile),
+    so the healthcheck uses the `ollama` binary already in the image
+    (`ollama list`, which itself talks to the local API and fails until the
+    server is up) instead of redis/postgres's curl/pg_isready style.
+    """
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+    services = compose["services"]
+
+    for service_name in ("ollama", "ollama-gpu"):
+        healthcheck = services[service_name]["healthcheck"]
+        assert healthcheck["test"] == ["CMD", "ollama", "list"]
+        assert healthcheck["retries"] >= 1
+
+    for service_name in ("sidar-ai", "sidar-web", "sidar-gpu", "sidar-web-gpu"):
+        depends_on = services[service_name]["depends_on"]
+        for ollama_dep in ("ollama", "ollama-gpu"):
+            if ollama_dep in depends_on:
+                assert depends_on[ollama_dep]["condition"] == "service_healthy"
+
+
+def test_ollama_image_is_pinned_not_latest():
+    """Ollama was the only unpinned image in docker-compose.yml.
+
+    A code review flagged that every other image (redis, postgres, jaeger,
+    the exporters) is pinned to a specific version, but ollama/ollama-gpu
+    used `ollama/ollama:latest` — an upstream release can silently change
+    behavior/API surface on the next `docker compose pull` with no diff in
+    this repo to review.
+    """
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+    services = compose["services"]
+
+    for service_name in ("ollama", "ollama-gpu"):
+        image = services[service_name]["image"]
+        assert image.startswith("ollama/ollama:")
+        assert ":latest" not in image
+
+
+def test_helm_redis_and_postgresql_images_match_docker_compose_pins():
+    """Helm's redis/postgresql images must not drift from docker-compose.yml.
+
+    A code review found docker-compose.yml pins `redis:7.4-alpine` /
+    `pgvector/pgvector:0.8.1-pg16`, while the Helm chart's values.yaml used
+    unversioned `redis:alpine` / `pgvector/pgvector:pg16` — a real
+    Compose-vs-Helm version mismatch, not just a cosmetic one, since neither
+    values-prod.yaml nor values-staging.yaml override these image fields
+    (verified: only `image.tag`, the app's own image, is CI-overridden).
+    """
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+    redis_image = compose["services"]["redis"]["image"]
+    postgres_image = compose["services"]["postgres"]["image"]
+
+    for rel_path in ("helm/sidar/values.yaml", "sidar_assets/helm/sidar/values.yaml"):
+        document = yaml.safe_load((ROOT / rel_path).read_text())
+        assert document["redis"]["image"] == redis_image
+        assert document["postgresql"]["image"] == postgres_image
+        # values-prod.yaml/values-staging.yaml must not silently reintroduce
+        # an unpinned override on top of the base file's pinned image.
+        for overlay in (
+            rel_path.replace("values.yaml", "values-prod.yaml"),
+            rel_path.replace("values.yaml", "values-staging.yaml"),
+        ):
+            overlay_doc = yaml.safe_load((ROOT / overlay).read_text())
+            assert "image" not in overlay_doc.get("redis", {})
+            assert "image" not in overlay_doc.get("postgresql", {})
 
 
 def test_cli_sandbox_services_use_docker_socket_proxy_not_raw_host_socket():

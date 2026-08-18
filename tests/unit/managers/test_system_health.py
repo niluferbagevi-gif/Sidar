@@ -448,11 +448,44 @@ def test_optimize_gpu_memory_gpu_paths_and_ollama(monkeypatch):
             calls["timeout"] = timeout
             return types.SimpleNamespace(status_code=200)
 
-    manager.cfg = SimpleNamespace(OLLAMA_URL="http://ollama.test/api/", OLLAMA_TIMEOUT=0)
+    manager.cfg = SimpleNamespace(
+        OLLAMA_URL="http://ollama.test/api/", OLLAMA_HEALTH_CHECK_TIMEOUT=0
+    )
     monkeypatch.setitem(sys.modules, "requests", FakeRequests())
     assert manager.check_ollama() is True
     assert calls["url"].endswith("/tags")
     assert calls["timeout"] == 1
+
+
+def test_check_ollama_uses_its_own_short_timeout_not_the_inference_timeout(monkeypatch):
+    """Fail-closed regression for a review comment.
+
+    check_ollama() used to read OLLAMA_TIMEOUT (getattr(self.cfg,
+    "OLLAMA_TIMEOUT", 5)) — since a real Config always has that attribute
+    set (600s default, for full inference requests), the "5" fallback never
+    actually applied and the liveness probe could block for up to 10
+    minutes waiting on a hung Ollama before reporting it unreachable,
+    defeating the point of a health check. It now reads a dedicated
+    OLLAMA_HEALTH_CHECK_TIMEOUT instead, independent of how large
+    OLLAMA_TIMEOUT is configured.
+    """
+    manager = _build_manager(monkeypatch)
+    calls = {}
+
+    class FakeRequests:
+        @staticmethod
+        def get(url, timeout):
+            calls["timeout"] = timeout
+            return types.SimpleNamespace(status_code=200)
+
+    manager.cfg = SimpleNamespace(
+        OLLAMA_URL="http://ollama.test/api/",
+        OLLAMA_TIMEOUT=600,
+        OLLAMA_HEALTH_CHECK_TIMEOUT=5,
+    )
+    monkeypatch.setitem(sys.modules, "requests", FakeRequests())
+    assert manager.check_ollama() is True
+    assert calls["timeout"] == 5
 
 
 def test_update_summary_report_close_repr_and_del(monkeypatch):

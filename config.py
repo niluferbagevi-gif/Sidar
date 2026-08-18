@@ -312,6 +312,7 @@ def _build_dotenv_reload_plan(
 
 OllamaBatchPolicy = config_llm.OllamaBatchPolicy
 OLLAMA_BATCH_POLICY = config_llm.OLLAMA_BATCH_POLICY
+OLLAMA_TIMEOUT_DEFAULT = config_llm.OLLAMA_TIMEOUT_DEFAULT
 LLMClientSettings = config_llm.LLMClientSettings
 LLM_SETTINGS = config_llm.load_llm_settings(
     env_path=ENV_PATH, skip_default_dotenv=_SKIP_DEFAULT_DOTENV
@@ -580,6 +581,7 @@ class Config:
     # ─── Ollama ──────────────────────────────────────────────
     OLLAMA_URL: str = LLM_SETTINGS.OLLAMA_URL
     OLLAMA_TIMEOUT: int = LLM_SETTINGS.OLLAMA_TIMEOUT
+    OLLAMA_HEALTH_CHECK_TIMEOUT: int = LLM_SETTINGS.OLLAMA_HEALTH_CHECK_TIMEOUT
     OLLAMA_KEEP_ALIVE: str = LLM_SETTINGS.OLLAMA_KEEP_ALIVE
     OLLAMA_NUM_BATCH: int = get_int_env("OLLAMA_NUM_BATCH", LLM_SETTINGS.OLLAMA_NUM_BATCH)
     OLLAMA_CODING_NUM_CTX: int = get_int_env(
@@ -1157,10 +1159,25 @@ class Config:
         # Keep check_hardware() as the single source of truth. Importing torch
         # here can observe a different device or driver state than the hardware
         # probe and overwrite cls.GPU_VRAM_MB with inconsistent data.
+        #
+        # Below 8 GiB this used to fall through untouched, leaving
+        # LLMClientSettings' fixed 8192 default in place for 6 GB-class cards
+        # (RTX 2060/3050, 4060 laptop, GTX 1660, ...) — the same context a
+        # 8-16 GiB card gets, with none of its VRAM headroom. The two tiers
+        # below continue the same halving ladder this function already uses
+        # (16384 -> 8192) down to 4096, then floor at 2048 for anything
+        # smaller (including gpu_vram_mb=0, i.e. USE_GPU forced on without a
+        # successful hardware probe) — 2048 mirrors OLLAMA_BATCH_POLICY's own
+        # auto_min, the smallest context this codebase already treats as
+        # meaningful for local Ollama inference.
         if cls.GPU_VRAM_MB >= 16384:
             cls.OLLAMA_CODING_NUM_CTX = 16384
         elif cls.GPU_VRAM_MB >= 8192:
             cls.OLLAMA_CODING_NUM_CTX = 8192
+        elif cls.GPU_VRAM_MB >= 4096:
+            cls.OLLAMA_CODING_NUM_CTX = 4096
+        else:
+            cls.OLLAMA_CODING_NUM_CTX = 2048
 
     @classmethod
     def trusted_proxies_as_list(cls) -> list[str]:
@@ -1728,6 +1745,7 @@ def get_config() -> "Config":
 __all__ = [
     "Config",
     "OLLAMA_BATCH_POLICY",
+    "OLLAMA_TIMEOUT_DEFAULT",
     "SANDBOX_LIMITS",
     "get_bool_prefixed_env",
     "get_config",

@@ -126,10 +126,18 @@ select_runtime_mode() {
             runtime_mode="docker"
             info "--ci/--no-interaction etkin: çalışma modu varsayılanı 'docker' seçildi."
         else
-            echo ""
-            info "Çalışma modu seçimi:"
-            echo "  1) Geliştirici modu (önerilen): uygulama local, altyapı servisleri Docker"
-            echo "  2) Tam Docker modu: web/agent dahil tüm servisler Docker"
+            # Menü, hemen altındaki `read ... 2>/dev/tty` ile aynı senkron
+            # /dev/tty kanalını paylaşsın diye tek blok halinde /dev/tty'e
+            # yazılıyor — normal stdout/stderr install_sidar.sh'ın
+            # log-yakalama pipe'ından (`exec > >(...) 2>&1`) asenkron
+            # geçtiği için, yavaş fork'lu ortamlarda (WSL2) prompt menüden
+            # önce görünebilirdi.
+            {
+                echo ""
+                info "Çalışma modu seçimi:"
+                echo "  1) Geliştirici modu (önerilen): uygulama local, altyapı servisleri Docker"
+                echo "  2) Tam Docker modu: web/agent dahil tüm servisler Docker"
+            } &> /dev/tty
             clear_stdin_buffer
             if read -r -t "$SIDAR_PROMPT_TIMEOUT" -p "Seçim [1/2, varsayılan=1]: " runtime_answer 2>/dev/tty; then
                 :

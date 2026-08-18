@@ -619,9 +619,31 @@ EOF
 detect_environment() {
     step "Çalışma Ortamı Tespiti"
 
-    if grep -qi "microsoft" /proc/sys/kernel/osrelease 2>/dev/null; then
-        WSL2=true
-        info "Ortam: WSL2 (Windows Subsystem for Linux)"
+    local osrelease_path="${SIDAR_OSRELEASE_PATH:-/proc/sys/kernel/osrelease}"
+    local osrelease=""
+    [[ -r "$osrelease_path" ]] && osrelease="$(cat "$osrelease_path" 2>/dev/null || true)"
+
+    if grep -qi "microsoft" <<<"$osrelease"; then
+        # "microsoft" alt-dizgisi tek başına WSL1 ile WSL2'yi ayırmıyor —
+        # her ikisinin de osrelease'inde geçiyor (WSL1: "...-Microsoft",
+        # WSL2: "...-microsoft-standard[-WSL2]"). WSL2'ye özgü ayırt edici,
+        # sürümden bağımsız olarak "standard" alt-dizgisidir (yalnız "wsl2"
+        # aramak, "-WSL2" son ekini henüz eklemeyen eski WSL2 çekirdeklerini
+        # -- ör. "4.19.104-microsoft-standard" -- yanlışlıkla WSL1 gibi
+        # işaretlerdi). Bu ayrım önemli: WSL2=true, GPU passthrough
+        # (/dev/dxg, nvidia-smi) ve Docker Desktop WSL Integration gibi
+        # yalnızca WSL2'de var olan kontrolleri tetikliyor
+        # (wsl_gpu_preflight.sh, wsl_integration_autofix.sh); WSL1'i WSL2
+        # sanmak bu kontrolleri WSL1'de her zaman başarısız kılıp kullanıcıyı
+        # yanlış (gerçekte "WSL2'ye yükseltin" olması gereken) bir "GPU
+        # passthrough kurulu değil" hatasıyla baş başa bırakır.
+        if grep -qi "standard" <<<"$osrelease"; then
+            WSL2=true
+            info "Ortam: WSL2 (Windows Subsystem for Linux 2)"
+        else
+            WSL2=false
+            warn "Ortam: WSL1 (Windows Subsystem for Linux 1) tespit edildi. GPU passthrough ve Docker Desktop WSL Integration WSL1'de desteklenmez; mümkünse 'wsl --set-version <dağıtım> 2' ile WSL2'ye yükseltin."
+        fi
     elif [[ "$(uname -s)" == "Darwin" ]]; then
         WSL2=false
         info "Ortam: macOS"
@@ -724,7 +746,10 @@ ensure_prerequisites() {
 	                fail "Docker daemon erişilemedi ve etkileşimsiz mod aktif (NO_INTERACTION/AUTO_INSTALL). Kurulum fail-fast durduruldu. Kök neden docker-desktop backend yokluğuysa Docker Desktop reset/reinstall gereklidir."
 	            fi
 
-            info "Lütfen Docker Desktop'ı manuel başlatın (veya service'i ayağa kaldırın), ardından tek seferlik yeniden deneme yapılacak."
+            # tty_notice (info() değil): hemen altındaki `read ... 2>/dev/tty`
+            # ile aynı senkron /dev/tty kanalını paylaşması gerekiyor —
+            # bkz. install_sidar.sh'taki tty_notice() tanımı.
+            tty_notice "Lütfen Docker Desktop'ı manuel başlatın (veya service'i ayağa kaldırın), ardından tek seferlik yeniden deneme yapılacak."
             clear_stdin_buffer
             read -r -p "Docker hazır olduktan sonra [ENTER] tuşuna basın..." 2>/dev/tty
 
@@ -786,6 +811,14 @@ ensure_prerequisites() {
             if [[ "$NO_INTERACTION" == true || "$AUTO_INSTALL" == true ]]; then
                 fail "WSL2 Docker Desktop entegrasyonu kapalı ve etkileşimsiz modda manuel onay alınamıyor (NO_INTERACTION/AUTO_INSTALL aktif). Önce entegrasyonu açıp tekrar deneyin."
             else
+                # Yukarıdaki 1-4 numaralı adımlar normal log-pipe'tan (fail
+                # yolunda da loglanabilmeleri için değiştirilmedi) geçiyor;
+                # bu satır ise altındaki `read ... 2>/dev/tty` ile aynı
+                # senkron /dev/tty kanalını kullanıyor — bkz. tty_notice()
+                # tanımı (install_sidar.sh). Yavaş fork'lu ortamlarda (WSL2)
+                # adımlar gecikmeli görünse bile bu hatırlatma prompt'la
+                # aynı sırada kalır.
+                tty_notice "Yukarıdaki 1-4 numaralı adımları tamamladıktan sonra devam edin."
                 clear_stdin_buffer
                 read -r -p "Entegrasyonu tamamladıktan sonra devam etmek için [ENTER] tuşuna basın..." 2>/dev/tty
             fi

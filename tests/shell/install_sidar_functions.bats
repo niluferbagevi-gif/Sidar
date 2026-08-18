@@ -1620,6 +1620,51 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "detect_environment tells WSL1 apart from WSL2 instead of treating both as WSL2" {
+  # Fail-closed regression for a review comment: the old check
+  # (`grep -qi "microsoft" osrelease`) set WSL2=true for BOTH WSL1 and WSL2,
+  # since "microsoft" appears in both real osrelease formats
+  # (WSL1: "...-Microsoft", WSL2: "...-microsoft-standard[-WSL2]"). WSL2=true
+  # gates GPU passthrough (/dev/dxg, nvidia-smi) and Docker Desktop WSL
+  # Integration checks that only apply to WSL2 (wsl_gpu_preflight.sh,
+  # wsl_integration_autofix.sh); mislabeling WSL1 as WSL2 sends a WSL1 user
+  # into GPU-passthrough troubleshooting instead of "upgrade to WSL2".
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+
+    # WSL2, "-WSL2" son eki eklenmeden önceki eski çekirdek formatı — yalnız
+    # "wsl2" alt-dizgisi aranıp "standard" aranmasaydı bu da yanlışlıkla
+    # WSL1 sanılırdı.
+    echo "4.19.104-microsoft-standard" > "$tmpdir/wsl2-old"
+    echo "5.15.167.4-microsoft-standard-WSL2" > "$tmpdir/wsl2-new"
+    echo "4.4.0-19041-Microsoft" > "$tmpdir/wsl1"
+    echo "5.15.0-91-generic" > "$tmpdir/native-linux"
+
+    for case_name in wsl2-old wsl2-new wsl1 native-linux; do
+        SIDAR_OSRELEASE_PATH="$tmpdir/$case_name" detect_environment
+        printf "%s=%s\n" "$case_name" "$WSL2"
+    done
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"wsl2-old=true"* ]]
+  [[ "$output" == *"wsl2-new=true"* ]]
+  [[ "$output" == *"wsl1=false"* ]]
+  [[ "$output" == *"native-linux=false"* ]]
+}
+
+@test "detect_environment warns explicitly when WSL1 is detected" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    echo "4.4.0-19041-Microsoft" > "$tmpdir/wsl1"
+    SIDAR_OSRELEASE_PATH="$tmpdir/wsl1" detect_environment
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"WSL1"* ]]
+  [[ "$output" == *"WSL2"*"yükseltin"* ]]
+}
+
 @test "01_context phase fails offline quality gate when bundle directory is missing" {
   run_installer_function '
     banner() { :; }
@@ -1708,7 +1753,7 @@ EOF
     [[ "$DEPENDENCY_PROFILE" == "dev-full" ]]
   '
   [ "$status" -eq 0 ]
-  [[ "$output" == *"varsayılan tam geliştirici bağımlılık profili seçildi (developer-full)"* ]]
+  [[ "$output" == *"varsayılan tam geliştirici bağımlılık profili seçildi (developer-full, dahili adıyla dev-full)"* ]]
 }
 
 @test "select_dependency_profile promotes production readiness validation to dev-full" {
@@ -1811,6 +1856,110 @@ EOF
     done
   ' _ "$root"
   [ "$status" -eq 0 ]
+}
+
+@test "install_uv_cli's drift self-heal calls uv self update with a positional version, not --version" {
+  # Fail-closed regression for a review comment about install_uv_cli's
+  # toolchain-drift self-heal. Live-verified against a real uv install in
+  # this sandbox that `uv self update` takes its target version as a
+  # positional TARGET_VERSION argument, NOT a --version flag:
+  #   $ uv self update --version 0.12.0
+  #   error: unexpected argument --version found
+  #   (exit code 2)
+  # The old code called `uv self update --version "$expected_uv_version"`,
+  # which therefore ALWAYS failed with exit 2 regardless of the target
+  # version, silently swallowed by `&>/dev/null`, so this branch could never
+  # actually repair a version drift in place - it always fell through to the
+  # heavier official-install-script fallback instead. This test stubs the
+  # fallback to fail loudly if it is ever reached, so it only passes if
+  # install_uv_cli's own `uv self update` invocation succeeds on its own.
+  run_installer_function '
+    sidar_source_install_utils "python_env.sh"
+
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    export HOME="$tmpdir/home"
+    mkdir -p "$HOME" "$tmpdir/bin"
+
+    state="$tmpdir/uv_state"
+    echo "0.12.5" > "$state"
+
+    # Gerçek uv self update sözleşmesini taklit eden fake ikili: hedef sürüm
+    # yalnızca konumsal argüman olarak kabul edilir; --version verilirse
+    # (gerçek uv gibi) exit 2 ile reddeder ve durumu değiştirmez.
+    cat > "$tmpdir/bin/uv" <<"EOF"
+#!/usr/bin/env bash
+state="__STATE__"
+if [[ "$1" == "--version" ]]; then echo "uv $(cat "$state")"; exit 0; fi
+if [[ "$1" == "self" && "$2" == "update" ]]; then
+    shift 2
+    if [[ "${1:-}" == "--version" ]]; then
+        printf "error: unexpected argument (--version found)\n" >&2
+        exit 2
+    fi
+    printf "%s\n" "$1" > "$state"
+    exit 0
+fi
+exit 0
+EOF
+    sed -i "s#__STATE__#$state#g" "$tmpdir/bin/uv"
+    chmod +x "$tmpdir/bin/uv"
+
+    export PATH="$tmpdir/bin:$PATH"
+    export OFFLINE_MODE=false
+    _sidar_install_uv_via_official_script() {
+        echo "unexpected fallback to official install script" >&2
+        return 1
+    }
+
+    install_uv_cli
+    [[ "$(cat "$state")" == "$SIDAR_TOOLCHAIN_UV_VERSION" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"uv self update ile"*"sürümüne hizalandı"* ]]
+  [[ "$output" != *"unexpected fallback"* ]]
+}
+
+@test "install_uv_cli logs the swallowed uv self update error instead of discarding it" {
+  # A review comment noted that uv self update's stderr was fully discarded
+  # (`&>/dev/null`) — a package-manager-installed uv routinely refuses
+  # self-update, and that reason used to be invisible; if the heavier
+  # fallback (network reinstall / offline packages) also failed, the user
+  # was left with zero context for why. The fallback here always fails on
+  # purpose so both messages must appear together in the output.
+  run_installer_function '
+    sidar_source_install_utils "python_env.sh"
+
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    export HOME="$tmpdir/home"
+    mkdir -p "$HOME" "$tmpdir/bin"
+
+    # apt/pipx/brew tarzı bir kurulumu taklit eder: sürüm sorgusu çalışır
+    # ama `self update` gerçek uv gibi anlamlı bir hata mesajıyla reddeder.
+    cat > "$tmpdir/bin/uv" <<"EOF"
+#!/usr/bin/env bash
+if [[ "$1" == "--version" ]]; then echo "uv 0.12.5"; exit 0; fi
+if [[ "$1" == "self" && "$2" == "update" ]]; then
+    printf "error: self-update is only available for uv installed via the standalone installer\n" >&2
+    exit 1
+fi
+exit 0
+EOF
+    chmod +x "$tmpdir/bin/uv"
+
+    export PATH="$tmpdir/bin:$PATH"
+    export OFFLINE_MODE=false
+    _sidar_install_uv_via_official_script() {
+        echo "fallback reached" >&2
+        return 1
+    }
+
+    install_uv_cli
+  '
+  [[ "$output" == *"uv self update başarısız"* ]]
+  [[ "$output" == *"self-update is only available for uv installed via the standalone installer"* ]]
+  [[ "$output" == *"fallback reached"* ]]
 }
 
 @test "install_python_deps installs PortAudio with apt-get directly for root installs" {
@@ -2598,6 +2747,81 @@ EOF
   '
   [ "$status" -eq 1 ]
   [[ "$output" == *"PostgreSQL auth başarısız"* ]]
+}
+
+@test "sync_pytorch_cuda_wheels has a single definition, not a phases/10_validation.sh shadow copy" {
+  # Fail-closed regression for a review comment: sync_pytorch_cuda_wheels()
+  # and verify_torch_cuda() used to have byte-for-byte duplicate definitions
+  # in both scripts/install_modules/utils/python_env.sh and
+  # scripts/install_modules/phases/10_validation.sh (10_validation.sh even
+  # said "sourced from ... python_env.sh" in its own header comment above the
+  # duplicate). Since bash has one global function namespace, whichever file
+  # sourced *last* silently won; the two copies had already drifted apart in
+  # practice (a `# shellcheck disable=SC2153` comment existed on one but not
+  # the other) with nothing to catch it. This test locks in a single source
+  # of truth and exercises the real (non-stubbed) case-dispatch logic that
+  # used to live in two places.
+  local root
+  root="$(repo_root)"
+  run bash -c "grep -c '^sync_pytorch_cuda_wheels() {' '$root/scripts/install_modules/utils/python_env.sh' '$root/scripts/install_modules/phases/10_validation.sh' | awk -F: '{sum += \$2} END {print sum}'"
+  [ "$status" -eq 0 ]
+  [ "$output" -eq 1 ]
+
+  run_installer_function '
+    sidar_source_install_utils "python_env.sh"
+
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    cat > "$tmpdir/uv" <<"EOF"
+#!/usr/bin/env bash
+printf "uv %s\n" "$*" > "${SIDAR_TEST_UV_CALL_LOG:?}"
+exit 0
+EOF
+    chmod +x "$tmpdir/uv"
+    export PATH="$tmpdir:$PATH"
+    export SIDAR_TEST_UV_CALL_LOG="$tmpdir/uv-call.log"
+
+    DEPENDENCY_PROFILE=dev-full
+    sync_pytorch_cuda_wheels "cu121"
+    cat "$tmpdir/uv-call.log"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"sync --frozen --all-extras --index"*"cu121"* ]]
+}
+
+@test "dependency profile validation shares one canonical list across call sites" {
+  # Fail-closed regression for a review comment: the "dev-light|dev-full|
+  # dev-gpu|gpu-runtime|production-minimal|production|custom" list was
+  # hand-copied into 4 separate case blocks across install_cli.sh and
+  # python_env.sh; adding a profile meant updating all of them, and missing
+  # one could make a profile "valid" in one place and "Geçersiz dependency
+  # profile" in another. All four now delegate to
+  # sidar_is_known_dependency_profile()/sidar_fail_unless_known_dependency_profile().
+  run_installer_function '
+    sidar_source_install_utils "python_env.sh"
+
+    sidar_is_known_dependency_profile "dev-full" || exit 1
+    sidar_is_known_dependency_profile "gpu-runtime" || exit 1
+    ! sidar_is_known_dependency_profile "not-a-real-profile" || exit 1
+    ! sidar_is_known_dependency_profile "ask" || exit 1
+
+    [[ "$(sidar_dependency_profile_usage_hint)" == "dev-light|dev-full|dev-gpu|gpu-runtime|production-minimal|production|custom" ]] || exit 1
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "install_cli.sh dependency profile validation accepts ask but rejects unknown profiles" {
+  run_installer_function '
+    sidar_parse_install_cli
+    [[ "$DEPENDENCY_PROFILE" == "ask" ]]
+  '
+  [ "$status" -eq 0 ]
+
+  run_installer_function '
+    sidar_parse_install_cli --dependency-profile=not-a-real-profile
+  '
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Geçersiz dependency profile: not-a-real-profile"* ]]
 }
 
 @test "detect_cuda_driver_capability prefers nvidia-smi cuda_version query output" {

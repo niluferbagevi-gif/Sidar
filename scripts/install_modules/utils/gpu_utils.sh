@@ -244,7 +244,13 @@ detect_gpu() {
         if [[ "${RUN_GPU_STRESS:-0}" != "1" ]]; then
             export RUN_GPU_STRESS=1
             declare -F persist_run_gpu_stress_dotenv >/dev/null 2>&1 && persist_run_gpu_stress_dotenv
-            info "GPU tespit edildiği için RUN_GPU_STRESS=1 otomatik etkinleştirildi."
+            # Eşzamanlılık ve context zaten VRAM'e göre otomatik ölçekleniyor
+            # (bkz. resolve_adaptive_gpu_pool_size, _autoselect_ollama_coding_ctx_window),
+            # bu yüzden burada VRAM eşiğine göre etkinleştirmeyi tamamen
+            # atlamıyoruz — ama tespit edilen VRAM'i mesajda gösteriyoruz ki
+            # düşük VRAM'li bir kartta ("VRAM: 4096 MiB" gibi) zorunlu hale
+            # gelen testin neden düşük eşzamanlılıkla çalıştığı belli olsun.
+            info "GPU tespit edildi (VRAM: ${VRAM_MB} MiB); RUN_GPU_STRESS=1 otomatik etkinleştirildi. Atlamak isterseniz .env.development içinde RUN_GPU_STRESS=0 yapın."
         fi
         ok "GPU     : $GPU_NAME"
         ok "VRAM    : ${VRAM_MB} MiB"
