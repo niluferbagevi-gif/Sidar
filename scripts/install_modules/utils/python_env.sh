@@ -80,8 +80,21 @@ install_uv_cli() {
         # 0.12.5" gibi bir sürüm uyuşmazlığının fallback'in kendisi de (ör.
         # offline paket eksikliği, ağ kısıtlaması) başarısız olduğu
         # ortamlarda kalıcı hale gelmesini açıklıyor.
-        if [[ "$OFFLINE_MODE" != true ]] && uv self update "$expected_uv_version" &>/dev/null; then
-            info "uv self update ile ${expected_uv_version} sürümüne hizalandı."
+        if [[ "$OFFLINE_MODE" != true ]]; then
+            # Çıktı artık `&>/dev/null` ile tamamen atılmıyor: `uv self
+            # update` apt/pipx/brew gibi bir paket yöneticisiyle kurulmuş bir
+            # uv'de rutin olarak reddedilir (uv bunu desteklemez) ve bu,
+            # kullanıcının GÖRMESİ gereken, teşhis değeri olan bir çıktıdır —
+            # aksi halde resmi kurulum betiği fallback'i de (ör. ağ/offline
+            # paket eksikliği) başarısız olduğunda kullanıcı elinde hiçbir
+            # ipucu olmadan kalır.
+            local self_update_output
+            if self_update_output="$(uv self update "$expected_uv_version" 2>&1)"; then
+                info "uv self update ile ${expected_uv_version} sürümüne hizalandı."
+            else
+                info "uv self update başarısız (uv büyük olasılıkla apt/pipx/brew ile kurulmuş ve self-update desteklemiyor); resmi kurulum betiğine düşülüyor. uv çıktısı: ${self_update_output}"
+                _sidar_install_uv_via_official_script
+            fi
         else
             _sidar_install_uv_via_official_script
         fi
@@ -175,6 +188,41 @@ normalize_dependency_profile_value() {
     esac
 }
 
+# Kanonik dependency-profile listesi ve "Desteklenen: ..." metni: bu, dört
+# ayrı case bloğunda (install_cli.sh, python_env.sh içinde üç yerde) elle
+# tekrarlanan bir listeydi — bir kod incelemesi bunu DRY ihlali olarak
+# işaretledi. Yeni bir profil eklendiğinde hepsinin manuel güncellenmesi
+# gerekiyordu; biri unutulursa aynı profil bir yerde geçerli, başka yerde
+# "Geçersiz dependency profile" sayılabilirdi. Her çağrı yeri hâlâ kendi
+# case bloğunu koruyor (her dalın gerçek iş mantığı — SYNC_ARGS seçimi vb. —
+# farklı ve merkezi bir case ifadesine indirgenemez), ama artık hepsi aynı
+# "hangi isimler geçerli" listesini ve aynı hata metnini kullanıyor.
+readonly SIDAR_KNOWN_DEPENDENCY_PROFILES=(dev-light dev-full dev-gpu gpu-runtime production-minimal production custom)
+
+sidar_is_known_dependency_profile() {
+    local candidate="${1:-}"
+    local profile
+    for profile in "${SIDAR_KNOWN_DEPENDENCY_PROFILES[@]}"; do
+        [[ "$candidate" == "$profile" ]] && return 0
+    done
+    return 1
+}
+
+sidar_dependency_profile_usage_hint() {
+    local IFS='|'
+    printf '%s' "${SIDAR_KNOWN_DEPENDENCY_PROFILES[*]}"
+}
+
+sidar_fail_unless_known_dependency_profile() {
+    local candidate="${1:-}"
+    local allow_ask="${2:-false}"
+    if [[ "$allow_ask" == true && "$candidate" == "ask" ]]; then
+        return 0
+    fi
+    sidar_is_known_dependency_profile "$candidate" || \
+        fail "Geçersiz dependency profile: ${candidate}. Desteklenen: $(sidar_dependency_profile_usage_hint)"
+}
+
 select_dependency_profile() {
     local requested="${DEPENDENCY_PROFILE:-${SIDAR_DEPENDENCY_PROFILE:-ask}}"
     requested="$(normalize_dependency_profile_value "$requested")"
@@ -245,10 +293,7 @@ select_dependency_profile() {
         [[ -n "${SIDAR_DEPENDENCY_EXTRAS:-}" ]] || fail "custom dependency profile seçildi ancak extras listesi boş."
     fi
 
-    case "$requested" in
-        dev-light|dev-full|dev-gpu|gpu-runtime|production-minimal|production|custom) ;;
-        *) fail "Geçersiz dependency profile: ${requested}. Desteklenen: dev-light|dev-full|dev-gpu|gpu-runtime|production-minimal|production|custom" ;;
-    esac
+    sidar_fail_unless_known_dependency_profile "$requested"
 
     DEPENDENCY_PROFILE="$requested"
     export DEPENDENCY_PROFILE SIDAR_DEPENDENCY_EXTRAS
@@ -321,7 +366,7 @@ install_python_deps() {
             sync_command_label="uv sync --frozen --extra production-minimal --no-dev"
             ;;
         *)
-            fail "Geçersiz dependency profile: ${dependency_profile}. Desteklenen: dev-light|dev-full|dev-gpu|gpu-runtime|production-minimal|production|custom"
+            fail "Geçersiz dependency profile: ${dependency_profile}. Desteklenen: $(sidar_dependency_profile_usage_hint)"
             ;;
     esac
     export DEPENDENCY_PROFILE="$dependency_profile"
@@ -485,7 +530,7 @@ sync_pytorch_cuda_wheels() {
             sync_profile_label="custom + gpu-runtime"
             ;;
         *)
-            fail "Geçersiz dependency profile: ${dependency_profile}. Desteklenen: dev-light|dev-full|dev-gpu|gpu-runtime|production-minimal|production|custom"
+            fail "Geçersiz dependency profile: ${dependency_profile}. Desteklenen: $(sidar_dependency_profile_usage_hint)"
             ;;
     esac
 
@@ -502,6 +547,7 @@ sync_pytorch_cuda_wheels() {
 }
 
 verify_torch_cuda() {
+    # shellcheck disable=SC2153  # GPU_AVAILABLE is sourced from earlier hardware detection phases.
     if [[ "$GPU_AVAILABLE" == true ]]; then
         step "PyTorch CUDA Doğrulaması"
         if python -c "import torch; exit(0 if torch.cuda.is_available() else 1)" >/dev/null 2>&1; then
