@@ -786,8 +786,15 @@ make production-readiness
 > manifest drift'ini; `check-install-module-pin` ise pre-push aşamasında, iki fazlı
 > fixup commit'i oluşturulduktan sonra pinlenen commit bütünlüğünü;
 > `pytest-meta-contracts` ise pre-push aşamasında hızlı script/config
-> sözleşme regresyonlarını yakalar. Hook kurulumu yapılmadıysa aynı koruma yalnızca
-> CI/branch protection tarafında kalır.
+> sözleşme regresyonlarını yakalar. `detect-secrets` her commit'te diff'i
+> `.secrets.baseline`'a karşı tarar (yeni bir gerçek sızıntıyı fail-closed
+> yakalar; bilinen false positive'ler `pragma: allowlist secret` ile
+> işaretlenip baseline'a eklenir — `uv run detect-secrets scan --baseline
+> .secrets.baseline --update .secrets.baseline` ile yeniden üretilir);
+> `frontend-eslint`/`frontend-typecheck` yalnızca `web_ui_react/` altında
+> değişiklik varsa tetiklenip aynı `npm run lint`/`npm run typecheck`
+> komutlarını CI'dan önce yerel olarak çalıştırır. Hook kurulumu yapılmadıysa
+> aynı koruma yalnızca CI/branch protection tarafında kalır.
 
 Normal kullanıcı, temiz kurulum, kurumsal/offline veya interneti kısıtlı ortamlar için
 öncelikle tek parçalık monolitik Release bundle artefaktını kullanın; bu dosya

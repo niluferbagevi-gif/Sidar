@@ -267,6 +267,7 @@ dev = [
   "types-beautifulsoup4",
   "bandit>=1.7.0",
   "safety>=3.0.0",
+  "detect-secrets>=1.5.0",
   "opentelemetry-api>=1.29.0",
   "opentelemetry-sdk>=1.29.0",
   "opentelemetry-instrumentation-fastapi>=0.50b0",
@@ -294,6 +295,7 @@ cachetools = "runtime"
 chromadb = "runtime"
 cryptography = "runtime"
 defusedxml = "dev"
+"detect-secrets" = "security-tool"
 "duckduckgo-search" = "integration"
 fakeredis = "test-double"
 fastapi = "runtime"
