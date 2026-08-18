@@ -54,7 +54,12 @@ services:
 
   ollama:
     profiles: ["cpu"]
-    image: ollama/ollama:latest
+    # Diğer tüm servisler (redis, postgres, jaeger, exporter'lar) belirli bir
+    # sürüme pinli; yalnız Ollama :latest kullanıyordu — bir upstream sürüm
+    # `docker compose pull` sonrası sessizce farklı davranış/API değişikliği
+    # getirebilir. Diğerleriyle aynı desende belirli bir sürüme pinlendi
+    # (Docker Hub'daki en güncel stabil etiket).
+    image: ollama/ollama:0.32.14
     container_name: sidar_ollama
     restart: unless-stopped
     environment:
@@ -70,10 +75,25 @@ services:
       - "127.0.0.1:${OLLAMA_PORT:-11434}:11434"
     volumes:
       - ollama_data:/root/.ollama
+    # Ollama'nın resmi imajının son runtime aşamasında curl/wget yok (yalnız
+    # ca-certificates/libvulkan1/libopenblas0 kurulu) — bu yüzden
+    # redis/postgres'teki gibi bir curl healthcheck'i "command not found" ile
+    # her zaman unhealthy döner. İmajda zaten var olan `ollama` binary'si
+    # `ollama list` ile yerel API'ye bağlanır; sunucu ayağa kalkmadan
+    # başarısız olur. Önceden yalnız `condition: service_started` vardı —
+    # container process'i başlaması API'nin istek almaya hazır olduğu
+    # anlamına gelmiyordu, bağımlı servisler (sidar-web) ilk isteklerinde
+    # bağlantı hatası alabiliyordu.
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
 
   ollama-gpu:
     profiles: ["gpu"]
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.32.14
     container_name: sidar_ollama
     restart: unless-stopped
     runtime: ${DOCKER_RUNTIME:-nvidia}
@@ -94,8 +114,13 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-
-
+    # bkz. yukarıdaki ollama servisindeki healthcheck notu (curl/wget yok, `ollama list` kullanılır).
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
 
   sidar-migrate:
     profiles: ["cpu", "gpu"]
@@ -189,7 +214,7 @@ services:
       postgres:
         condition: service_healthy
       ollama:
-        condition: service_started
+        condition: service_healthy
       sidar-migrate:
         condition: service_completed_successfully
       docker-socket-proxy:
@@ -263,7 +288,7 @@ services:
       postgres:
         condition: service_healthy
       ollama-gpu:
-        condition: service_started
+        condition: service_healthy
       sidar-migrate:
         condition: service_completed_successfully
       docker-socket-proxy:
@@ -336,7 +361,7 @@ services:
         condition: service_started
         required: false
       ollama:
-        condition: service_started
+        condition: service_healthy
       sidar-migrate:
         condition: service_completed_successfully
 
@@ -410,7 +435,7 @@ services:
         condition: service_started
         required: false
       ollama-gpu:
-        condition: service_started
+        condition: service_healthy
       sidar-migrate:
         condition: service_completed_successfully
 
@@ -451,6 +476,20 @@ services:
       - "host.docker.internal:${HOST_GATEWAY:-host-gateway}"
 
 
+  # Bu bölümdeki observability sidecar'larına (jaeger, exporter'lar, cadvisor,
+  # prometheus) bilinçli olarak curl/wget tabanlı bir healthcheck EKLENMEDİ:
+  # bir kod incelemesi bunların hiçbirinde healthcheck olmadığını işaret etti,
+  # ancak bu sandbox'ta canlı bir Docker daemon olmadığından (yalnızca CLI var)
+  # imajların içeriği (shell/wget/curl var mı) doğrulanamadı — ör. Jaeger'ın
+  # `all-in-one` imajı ve bazı exporter varyantları minimal/`scratch` tabanlı
+  # olup hiç shell içermeyebilir; yanlış bir healthcheck komutu "unhealthy"yi
+  # hiçbir zaman geçmeyen, gerçek bir soruna işaret etmeyen kalıcı bir yanlış
+  # alarma dönüşür (hiçbir servis bunlara `condition: service_healthy` ile
+  # bağımlı değil, yani bunu yanlış yapmak başlangıç sırasını bozmaz ama
+  # yanıltıcı bir sağlık durumu üretir). Bunun yerine, aşağıda gerçekten
+  # doğrulanabilen ve risksiz olan yarı (kaynak limiti) uygulandı; healthcheck
+  # eklemek gerçek bir Docker ortamında her imajın içeriği doğrulanarak ayrı
+  # bir değişiklik olarak yapılmalı.
   jaeger:
     profiles: ["observability"]
     image: jaegertracing/all-in-one:1.63.0
@@ -459,6 +498,13 @@ services:
     ports:
       - "16686:16686"
       - "4317:4317"
+    cpus: 1.0
+    mem_limit: 512m
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
 
   redis-exporter:
     profiles: ["observability"]
@@ -470,6 +516,13 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD:?Set a strong REDIS_PASSWORD in .env; empty/default passwords are refused}
     depends_on:
       - redis
+    cpus: 0.25
+    mem_limit: 128m
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
 
   postgres-exporter:
     profiles: ["observability"]
@@ -481,12 +534,30 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    cpus: 0.25
+    mem_limit: 128m
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
 
   cadvisor:
     profiles: ["observability"]
     image: gcr.io/cadvisor/cadvisor:v0.49.1
     container_name: sidar_cadvisor
     restart: unless-stopped
+    # cAdvisor'ın kendi belgeleri (docs/running.md) `--privileged`'in her
+    # zaman şart olmadığını, yalnız bazı kilitli dağıtımlarda (RHEL/CentOS
+    # tarzı) gerekli olduğunu ve daha dar bir alternatif olarak
+    # `--device=/dev/kmsg` + özel bir seccomp profiliyle de çalışabileceğini
+    # belirtiyor. Burada zaten `/dev/kmsg` device'ı ayrıca mount ediliyor
+    # (aşağıda) — bu da privileged'i teorik olarak gereksiz kılabilir. Ama bu
+    # sandbox'ta gerçek bir host/kernel üzerinde doğrulama imkanı yok ve
+    # yanlış giderse cadvisor'ın bazı host konfigürasyonlarında (özellikle
+    # cgroup v1/v2 karışık ortamlar) container metriklerini sessizce
+    # toplayamaz hale gelmesi riski var; bu yüzden cadvisor'ın kendi
+    # varsayılan/önerilen duruşu korunuyor, yalnızca gerekçesi belgelendi.
     privileged: true
     devices:
       - /dev/kmsg
@@ -496,6 +567,13 @@ services:
       - /sys:/sys:ro
       - /var/lib/docker:/var/lib/docker:ro
       - /dev/disk:/dev/disk:ro
+    cpus: 1.0
+    mem_limit: 512m
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
 
   # prometheus.yml, sidar-web/sidar-gpu job'ları için bearer_token_file ile
   # METRICS_TOKEN okur (bkz. dosyadaki not — bu uçlar zaten her zaman
@@ -536,6 +614,13 @@ services:
         condition: service_started
       prometheus-token-init:
         condition: service_completed_successfully
+    cpus: 1.0
+    mem_limit: 1g
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
 
   grafana:
     profiles: ["observability"]
@@ -558,6 +643,13 @@ services:
       start_period: 30s
     depends_on:
       - prometheus
+    cpus: 0.5
+    mem_limit: 512m
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
 
 volumes:
   redis_data:
