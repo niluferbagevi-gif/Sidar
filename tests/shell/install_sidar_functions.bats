@@ -1813,6 +1813,68 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "install_uv_cli's drift self-heal calls uv self update with a positional version, not --version" {
+  # Fail-closed regression for a review comment about install_uv_cli's
+  # toolchain-drift self-heal. Live-verified against a real uv install in
+  # this sandbox that `uv self update` takes its target version as a
+  # positional TARGET_VERSION argument, NOT a --version flag:
+  #   $ uv self update --version 0.12.0
+  #   error: unexpected argument --version found
+  #   (exit code 2)
+  # The old code called `uv self update --version "$expected_uv_version"`,
+  # which therefore ALWAYS failed with exit 2 regardless of the target
+  # version, silently swallowed by `&>/dev/null`, so this branch could never
+  # actually repair a version drift in place - it always fell through to the
+  # heavier official-install-script fallback instead. This test stubs the
+  # fallback to fail loudly if it is ever reached, so it only passes if
+  # install_uv_cli's own `uv self update` invocation succeeds on its own.
+  run_installer_function '
+    sidar_source_install_utils "python_env.sh"
+
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    export HOME="$tmpdir/home"
+    mkdir -p "$HOME" "$tmpdir/bin"
+
+    state="$tmpdir/uv_state"
+    echo "0.12.5" > "$state"
+
+    # Gerçek uv self update sözleşmesini taklit eden fake ikili: hedef sürüm
+    # yalnızca konumsal argüman olarak kabul edilir; --version verilirse
+    # (gerçek uv gibi) exit 2 ile reddeder ve durumu değiştirmez.
+    cat > "$tmpdir/bin/uv" <<"EOF"
+#!/usr/bin/env bash
+state="__STATE__"
+if [[ "$1" == "--version" ]]; then echo "uv $(cat "$state")"; exit 0; fi
+if [[ "$1" == "self" && "$2" == "update" ]]; then
+    shift 2
+    if [[ "${1:-}" == "--version" ]]; then
+        printf "error: unexpected argument (--version found)\n" >&2
+        exit 2
+    fi
+    printf "%s\n" "$1" > "$state"
+    exit 0
+fi
+exit 0
+EOF
+    sed -i "s#__STATE__#$state#g" "$tmpdir/bin/uv"
+    chmod +x "$tmpdir/bin/uv"
+
+    export PATH="$tmpdir/bin:$PATH"
+    export OFFLINE_MODE=false
+    _sidar_install_uv_via_official_script() {
+        echo "unexpected fallback to official install script" >&2
+        return 1
+    }
+
+    install_uv_cli
+    [[ "$(cat "$state")" == "$SIDAR_TOOLCHAIN_UV_VERSION" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"uv self update ile"*"sürümüne hizalandı"* ]]
+  [[ "$output" != *"unexpected fallback"* ]]
+}
+
 @test "install_python_deps installs PortAudio with apt-get directly for root installs" {
   run_installer_function '
     tmpdir="$(mktemp -d)"

@@ -68,14 +68,26 @@ install_uv_cli() {
         # scripts/toolchain.env sözleşmesiyle çakışabilir. Kurulumu doğrudan
         # durdurmak yerine önce sözleşmedeki sürüme kendiliğinden hizalamayı dene.
         warn "uv toolchain drift: beklenen ${expected_uv_version}, bulunan ${detected_uv_version}. scripts/toolchain.env sözleşmesine göre otomatik hizalanıyor..."
-        if [[ "$OFFLINE_MODE" != true ]] && uv self update --version "$expected_uv_version" &>/dev/null; then
+        # `uv self update`'in hedef sürümü ALDIĞI yer bir `--version` bayrağı
+        # değil, konumsal (positional) bir argümandır:
+        #   Usage: uv self update [OPTIONS] [TARGET_VERSION]
+        # `--version` verilirse uv "error: unexpected argument '--version'
+        # found" ile exit code 2 döndürür (canlı doğrulandı) — yani bu dal
+        # daha önce HİÇBİR ZAMAN gerçekten çalışmıyordu, `&>/dev/null` +
+        # `if ... &&` zinciri hatayı sessizce yutup her seferinde doğrudan
+        # aşağıdaki (daha ağır, ağ/offline-paket gerektiren) resmi kurulum
+        # betiği fallback'ine düşülüyordu. Bu, "beklenen 0.12.0, bulunan
+        # 0.12.5" gibi bir sürüm uyuşmazlığının fallback'in kendisi de (ör.
+        # offline paket eksikliği, ağ kısıtlaması) başarısız olduğu
+        # ortamlarda kalıcı hale gelmesini açıklıyor.
+        if [[ "$OFFLINE_MODE" != true ]] && uv self update "$expected_uv_version" &>/dev/null; then
             info "uv self update ile ${expected_uv_version} sürümüne hizalandı."
         else
             _sidar_install_uv_via_official_script
         fi
         detected_uv_version="$(uv --version | awk '{print $2}')"
         [[ "$detected_uv_version" == "$expected_uv_version" ]] || fail \
-            "uv toolchain drift otomatik onarılamadı: beklenen ${expected_uv_version}, bulunan ${detected_uv_version}. Manuel düzeltme: uv self update --version ${expected_uv_version} (uv, apt/pipx/brew gibi bir paket yöneticisiyle kuruldu ise onu kaldırıp installer'ı tekrar çalıştırın)."
+            "uv toolchain drift otomatik onarılamadı: beklenen ${expected_uv_version}, bulunan ${detected_uv_version}. Manuel düzeltme: uv self update ${expected_uv_version} (uv, apt/pipx/brew gibi bir paket yöneticisiyle kuruldu ise onu kaldırıp installer'ı tekrar çalıştırın)."
     fi
 
     ok "uv $(uv --version | cut -d' ' -f2)"
