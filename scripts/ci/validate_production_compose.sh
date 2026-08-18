@@ -12,8 +12,8 @@ cleanup() {
   local status=$?
   if [[ "$status" -ne 0 ]]; then
     mkdir -p artifacts/production-compose
-    "${compose[@]}" ps --all > artifacts/production-compose/ps.txt 2>&1 || true
-    "${compose[@]}" logs --no-color > artifacts/production-compose/compose.log 2>&1 || true
+    "${compose[@]}" ps --all | tee artifacts/production-compose/ps.txt 2>&1 || true
+    "${compose[@]}" logs --no-color 2>&1 | tee artifacts/production-compose/compose.log || true
   fi
   "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
   if [[ "${PRODUCTION_COMPOSE_ENV_FILE:-}" == "" ]]; then
