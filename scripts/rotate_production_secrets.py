@@ -12,6 +12,7 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
+from scripts import sync_database_passwords, sync_redis_password
 from scripts.secret_strength import is_weak_secret
 
 ROTATION_KEYS = (
@@ -23,7 +24,38 @@ ROTATION_KEYS = (
     "GITHUB_WEBHOOK_SECRET",
     "GRAFANA_ADMIN_PASSWORD",
     "METRICS_TOKEN",
+    # POSTGRES_PASSWORD/REDIS_PASSWORD rotation also propagates into any
+    # embedded DATABASE_URL/SIDAR_CONTAINER_DATABASE_URL/SIDAR_REDIS_URL/
+    # REDIS_URL credentials in the same file (see _sync_embedded_urls) so a
+    # rotation can never leave those URLs pointing at the pre-rotation
+    # password. scripts/sync_database_passwords.py and
+    # scripts/sync_redis_password.py are the standalone tools for repairing
+    # that same drift across the rest of the dotenv chain outside of a
+    # rotation (e.g. .env/.env.development/.env.advanced).
+    "POSTGRES_PASSWORD",
+    "REDIS_PASSWORD",
 )
+
+# Keys whose value is also embedded verbatim (URL-encoded) inside one or more
+# connection-string keys in the same env file, and the sync helper that keeps
+# those URLs aligned with a freshly rotated bare password.
+_URL_SYNC_KEYS: dict[str, Callable[[str], tuple[str, dict[str, object]]]] = {
+    "POSTGRES_PASSWORD": sync_database_passwords.sync_env_text,
+    "REDIS_PASSWORD": sync_redis_password.sync_env_text,
+}
+
+
+def _sync_embedded_urls(content: str) -> str:
+    """Propagate freshly rotated POSTGRES_PASSWORD/REDIS_PASSWORD into embedded URLs.
+
+    Both sync helpers only touch their own URL keys (DATABASE_URL/
+    SIDAR_CONTAINER_DATABASE_URL for Postgres, SIDAR_REDIS_URL/REDIS_URL for
+    Redis) and no-op when those keys are absent from the file, so chaining
+    them unconditionally is safe.
+    """
+    for sync_env_text in _URL_SYNC_KEYS.values():
+        content, _summary = sync_env_text(content)
+    return content
 
 
 def _read_dotenv(path: Path) -> dict[str, str]:
@@ -82,6 +114,15 @@ def _audit(production: Path, references: list[Path]) -> list[str]:
             findings.append(f"{key}: missing_or_weak")
         if value and any(values.get(key) == value for values in reference_values):
             findings.append(f"{key}: shared_with_non_production")
+    # Catch DATABASE_URL/SIDAR_CONTAINER_DATABASE_URL/SIDAR_REDIS_URL/REDIS_URL
+    # still embedding a stale password after a rotation that (for whatever
+    # reason - manual edit, an older backup restored over this file) never
+    # went through _sync_embedded_urls.
+    for warning in (
+        *sync_database_passwords._effective_url_validation_warnings(production_values),
+        *sync_redis_password._effective_url_validation_warnings(production_values),
+    ):
+        findings.append(f"{warning['key']}: embedded_url_password_stale")
     return findings
 
 
@@ -131,6 +172,7 @@ def main(argv: list[str] | None = None) -> int:
         if not args.env_file.is_file():
             parser.error(f"production env file does not exist: {args.env_file}")
         content = _replace_values(args.env_file.read_text(encoding="utf-8"), _generate_values())
+        content = _sync_embedded_urls(content)
         _atomic_write(args.env_file, content)
         print(f"Rotated {len(ROTATION_KEYS)} production secrets; values were not logged.")
 
