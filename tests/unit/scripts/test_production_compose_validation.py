@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import yaml
 
 
 def test_production_compose_gate_covers_runtime_release_evidence() -> None:
@@ -108,6 +109,102 @@ def test_generated_gate_env_passes_real_compose_config(tmp_path: Path) -> None:
     assert completed.returncode == 0, completed.stderr
     assert not (tmp_path / ".env.production.compose-gate").exists()
     assert not (tmp_path / ".env").exists()
+
+
+@pytest.mark.integration
+def test_production_override_actually_closes_datastore_ports(tmp_path: Path) -> None:
+    """`ports: []` in the override does NOT close a base file's published port.
+
+    Fail-closed regression: Compose merges list fields like `ports` by
+    replacing them only when the override's list is non-empty; an empty
+    list contributes nothing, so the override's `ports: []` silently left
+    redis/postgres/ollama/ollama-gpu published exactly as the base file
+    defined them. Verified in isolation with a minimal two-file repro
+    (`ports: []` left `8080:80` untouched) before fixing this file to use
+    the compose-spec `!reset` merge tag, which actually clears the list.
+    This test runs the *real* `docker compose config` (not a text/substring
+    check) so a future edit that reintroduces plain `ports: []` fails here.
+    """
+    docker = shutil.which("docker")
+    if docker is None:
+        pytest.skip("Docker CLI is not installed")
+
+    compose_version = subprocess.run(
+        [docker, "compose", "version"], check=False, capture_output=True, text=True
+    )
+    if compose_version.returncode != 0:
+        pytest.skip("Docker Compose plugin is not installed")
+
+    env_file = tmp_path / "gate.env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "SIDAR_ENV=production",
+                "POSTGRES_DB=sidar",
+                "POSTGRES_USER=sidar",
+                "POSTGRES_PASSWORD=compose-gate-postgres-password-32",
+                "REDIS_PASSWORD=compose-gate-redis-password-32",
+                "GRAFANA_ADMIN_PASSWORD=compose-gate-grafana-admin-password-32",
+                "API_KEY=compose-gate-api-key-32-characters",
+                "JWT_SECRET_KEY=compose-gate-jwt-secret-key-32-characters",
+                "MEMORY_ENCRYPTION_KEY=MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=",
+                "SIDAR_DATA_MOUNT=sidar_data_prod",
+                "SIDAR_LOGS_MOUNT=sidar_logs_prod",
+                "SIDAR_TEMP_MOUNT=sidar_temp_prod",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    for profile, closed_services, published_services in (
+        ("cpu", ("redis", "postgres", "ollama"), {"sidar-web": "7860"}),
+        ("gpu", ("redis", "postgres", "ollama-gpu"), {"sidar-web-gpu": "7861"}),
+    ):
+        completed = subprocess.run(
+            [
+                docker,
+                "compose",
+                "--project-name",
+                f"sidar-port-gate-{profile}-{tmp_path.name}",
+                "--env-file",
+                str(env_file),
+                "-f",
+                "docker-compose.yml",
+                "-f",
+                "docker-compose.production.yml",
+                "--profile",
+                profile,
+                "config",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "SIDAR_RUNTIME_ENV_FILE": str(env_file)},
+        )
+        assert completed.returncode == 0, completed.stderr
+        merged = yaml.safe_load(completed.stdout)
+        services = merged["services"]
+
+        for name in closed_services:
+            assert not services[name].get("ports"), (
+                f"{name} ({profile} profile) is still published in production: "
+                f"{services[name].get('ports')!r}"
+            )
+
+        for name, expected_published_port in published_services.items():
+            ports = services[name]["ports"]
+            assert any(str(p.get("published")) == expected_published_port for p in ports), (
+                name,
+                ports,
+            )
+            assert services[name]["restart"] == "always"
+            assert services[name]["healthcheck"]["test"][0] == "CMD-SHELL"
+            assert {v["source"] for v in services[name]["volumes"]} == {
+                "sidar_data_prod",
+                "sidar_logs_prod",
+                "sidar_temp_prod",
+            }
 
 
 def test_production_readiness_aggregate_requires_compose_and_minimal_profiles() -> None:
