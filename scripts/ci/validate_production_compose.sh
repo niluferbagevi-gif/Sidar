@@ -2,6 +2,41 @@
 
 set -euo pipefail
 
+# Generates a disposable secret that actually passes the fail-closed policy in
+# scripts/secret_strength.py::is_weak_secret (also used at runtime via
+# core/config_secrets.py). Two things that look "random enough" still fail it
+# often enough to matter here:
+#   - Human-readable placeholders like "compose-gate-jwt-secret-key-32-chars"
+#     fail outright (dictionary words, low entropy): config.py's
+#     Config.__init__ then raises ValueError for JWT_SECRET_KEY/API_KEY/
+#     POSTGRES_PASSWORD, so sidar-web crash-loops on boot before this gate's
+#     own healthz/readyz/migration assertions ever run.
+#   - Plain high-entropy output (e.g. `openssl rand -hex`) still trips the
+#     policy's short-substring denylist (tokens like "abc"/"root") often
+#     enough (~0.5% per value, measured) to make CI flaky across 9 generated
+#     secrets per run. So generate with `secrets.token_urlsafe` (wide,
+#     mixed-case alphabet — far fewer accidental denylist collisions) and
+#     retry against the real checker instead of assuming any one draw passes.
+# See tests/unit/scripts/test_production_compose_validation.py::
+# test_generated_gate_env_secrets_satisfy_production_entropy_policy.
+random_secret() {
+  python3 - <<'PY'
+import secrets
+import sys
+
+sys.path.insert(0, ".")
+from scripts.secret_strength import is_weak_secret
+
+for _ in range(50):
+    candidate = secrets.token_urlsafe(32)
+    if not is_weak_secret(candidate):
+        print(candidate)
+        break
+else:
+    raise SystemExit("random_secret: no strong value in 50 attempts")
+PY
+}
+
 project_name="${PRODUCTION_COMPOSE_PROJECT_NAME:-sidar-production-gate}"
 env_file="${PRODUCTION_COMPOSE_ENV_FILE:-.env.production.compose-gate}"
 web_port="${PRODUCTION_COMPOSE_WEB_PORT:-17860}"
@@ -32,12 +67,15 @@ AI_PROVIDER=ollama
 CODING_MODEL=qwen2.5-coder:7b
 POSTGRES_DB=sidar
 POSTGRES_USER=sidar
-POSTGRES_PASSWORD=compose-gate-postgres-password-32
-REDIS_PASSWORD=compose-gate-redis-password-32
-GRAFANA_ADMIN_PASSWORD=compose-gate-grafana-admin-password-32
-METRICS_TOKEN=compose-gate-metrics-token-32-characters
-API_KEY=compose-gate-api-key-32-characters
-JWT_SECRET_KEY=compose-gate-jwt-secret-key-32-characters
+POSTGRES_PASSWORD=$(random_secret)
+REDIS_PASSWORD=$(random_secret)
+GRAFANA_ADMIN_PASSWORD=$(random_secret)
+METRICS_TOKEN=$(random_secret)
+API_KEY=$(random_secret)
+JWT_SECRET_KEY=$(random_secret)
+AUTONOMY_WEBHOOK_SECRET=$(random_secret)
+SWARM_FEDERATION_SHARED_SECRET=$(random_secret)
+GITHUB_WEBHOOK_SECRET=$(random_secret)
 MEMORY_ENCRYPTION_KEY=MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=
 GUARDRAILS_REQUIRED=true
 DB_DEGRADED_MODE_ON_POSTGRES_FAILURE=false

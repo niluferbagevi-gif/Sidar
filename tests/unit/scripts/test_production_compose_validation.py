@@ -49,11 +49,59 @@ def test_generated_gate_env_satisfies_required_compose_interpolation() -> None:
     }
 
     assert required_variables <= generated_variables
-    assert "GRAFANA_ADMIN_PASSWORD=compose-gate-grafana-admin-password-32" in generated_env
+    assert "GRAFANA_ADMIN_PASSWORD=$(random_secret)" in generated_env
     assert "compose-gate-grafana-admin-password-32" not in Path(
         ".github/workflows/ci.yml"
     ).read_text(encoding="utf-8")
     assert "SIDAR_RUNTIME_ENV_FILE=$env_file" in generated_env
+
+
+def test_generated_gate_env_secrets_satisfy_production_entropy_policy() -> None:
+    """Fail-closed regression for the gate's own disposable secrets.
+
+    They used to be human-readable placeholders (e.g. "compose-gate-jwt-secret-key-32-characters")
+    that fail Sidar's production entropy policy. That made
+    `docker compose up --wait sidar-web` crash-loop on ValueError from
+    config.py's Config.__init__ (JWT_SECRET_KEY/API_KEY/POSTGRES_PASSWORD
+    "boş bırakılamaz") before this gate's own healthz/readyz/migration
+    assertions ever ran, breaking the release-blocking evidence job it exists
+    to produce. Every value produced by the script's `random_secret` helper
+    must pass the app's real `is_weak_secret` check.
+    """
+    from core.config_secrets import is_weak_secret
+
+    script = Path("scripts/ci/validate_production_compose.sh").read_text(encoding="utf-8")
+    assert "random_secret()" in script, "gate script must generate secrets via random_secret()"
+
+    function_source = script.split("random_secret() {", maxsplit=1)[1].split("\n}", maxsplit=1)[0]
+    completed = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f"random_secret() {{{function_source}\n}}\nfor _ in 1 2 3; do random_secret; done",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    generated_values = [line for line in completed.stdout.splitlines() if line]
+    assert len(generated_values) == 3
+    for value in generated_values:
+        assert not is_weak_secret(value), f"random_secret() produced a weak value: {value!r}"
+
+    for key in (
+        "POSTGRES_PASSWORD",
+        "REDIS_PASSWORD",
+        "GRAFANA_ADMIN_PASSWORD",
+        "METRICS_TOKEN",
+        "API_KEY",
+        "JWT_SECRET_KEY",
+        "AUTONOMY_WEBHOOK_SECRET",
+        "SWARM_FEDERATION_SHARED_SECRET",
+        "GITHUB_WEBHOOK_SECRET",
+    ):
+        assert f"{key}=$(random_secret)" in script, f"{key} must use random_secret()"
 
 
 def test_production_profile_is_the_compose_service_env_contract() -> None:
