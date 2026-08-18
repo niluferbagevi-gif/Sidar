@@ -250,14 +250,56 @@ def test_observability_compose_pins_tracing_and_exports_infra_metrics():
     assert cadvisor["privileged"] is True
     assert "/var/lib/docker:/var/lib/docker:ro" in cadvisor["volumes"]
 
-    assert services["prometheus"]["depends_on"] == [
+    assert set(services["prometheus"]["depends_on"]) == {
         "redis-exporter",
         "postgres-exporter",
         "cadvisor",
-    ]
+        "prometheus-token-init",
+    }
+    assert (
+        services["prometheus"]["depends_on"]["prometheus-token-init"]["condition"]
+        == "service_completed_successfully"
+    )
     assert services["prometheus"]["image"] == "prom/prometheus:v2.54.1"
     assert services["grafana"]["image"] == "grafana/grafana:11.2.0"
     assert services["grafana"]["healthcheck"]["test"][0] == "CMD-SHELL"
+
+
+def test_prometheus_scrape_of_authenticated_sidar_endpoints_carries_a_bearer_token():
+    """Fail-closed regression for a review comment.
+
+    prometheus.yml never sent any Authorization header for the sidar-web/
+    sidar-gpu jobs, but web_server.py's global auth middleware 401s *every*
+    request lacking `Authorization: Bearer ...` - independent of whether
+    METRICS_TOKEN is configured. Scraping those two jobs was therefore
+    always broken, not just when the documented METRICS_TOKEN hardening
+    step was turned on. docker-compose.yml's prometheus-token-init writes
+    METRICS_TOKEN into the file prometheus.yml now points both jobs at
+    (fail-closed via a required env var if METRICS_TOKEN is unset); the
+    exporter jobs (redis/postgres/cadvisor) are untouched since they are
+    unauthenticated third-party processes outside Sidar's own auth guard.
+    """
+    prometheus_yml = yaml.safe_load(
+        (ROOT / "docker_setup" / "prometheus" / "prometheus.yml").read_text()
+    )
+    jobs = {job["job_name"]: job for job in prometheus_yml["scrape_configs"]}
+
+    for job_name in ("sidar-web", "sidar-gpu"):
+        assert jobs[job_name]["bearer_token_file"] == "/etc/prometheus-secrets/metrics_token"
+    for job_name in ("redis-exporter", "postgres-exporter", "cadvisor"):
+        assert "bearer_token_file" not in jobs[job_name]
+        assert "bearer_token" not in jobs[job_name]
+
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+    services = compose["services"]
+
+    init_service = services["prometheus-token-init"]
+    assert init_service["profiles"] == ["observability"]
+    assert "${METRICS_TOKEN:?" in " ".join(init_service["command"])
+    assert {"prometheus_secrets:/etc/prometheus-secrets"} <= set(init_service["volumes"])
+
+    assert "prometheus_secrets:/etc/prometheus-secrets:ro" in services["prometheus"]["volumes"]
+    assert "prometheus_secrets" in compose["volumes"]
 
 
 def test_postgres_and_ollama_ports_bind_to_loopback_like_redis():

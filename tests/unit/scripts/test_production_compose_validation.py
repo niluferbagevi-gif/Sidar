@@ -145,6 +145,7 @@ def test_production_override_actually_closes_datastore_ports(tmp_path: Path) -> 
                 "POSTGRES_PASSWORD=compose-gate-postgres-password-32",
                 "REDIS_PASSWORD=compose-gate-redis-password-32",
                 "GRAFANA_ADMIN_PASSWORD=compose-gate-grafana-admin-password-32",
+                "METRICS_TOKEN=compose-gate-metrics-token-32-characters",
                 "API_KEY=compose-gate-api-key-32-characters",
                 "JWT_SECRET_KEY=compose-gate-jwt-secret-key-32-characters",
                 "MEMORY_ENCRYPTION_KEY=MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=",
