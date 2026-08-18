@@ -260,6 +260,23 @@ def test_observability_compose_pins_tracing_and_exports_infra_metrics():
     assert services["grafana"]["healthcheck"]["test"][0] == "CMD-SHELL"
 
 
+def test_postgres_and_ollama_ports_bind_to_loopback_like_redis():
+    """Ensure Postgres/Ollama host ports never bind wider than Redis's loopback-only policy.
+
+    Fail-closed regression: a review comment flagged that redis's port was
+    scoped to `127.0.0.1` while postgres/ollama/ollama-gpu published to all
+    interfaces (`"5432:5432"` / `"11434:11434"`) with no host_ip prefix —
+    reachable from the LAN/WSL even with a strong POSTGRES_PASSWORD, and
+    Ollama's API has no authentication of its own at all.
+    """
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+    services = compose["services"]
+
+    assert services["postgres"]["ports"] == ["127.0.0.1:${POSTGRES_PORT:-5432}:5432"]
+    assert services["ollama"]["ports"] == ["127.0.0.1:${OLLAMA_PORT:-11434}:11434"]
+    assert services["ollama-gpu"]["ports"] == ["127.0.0.1:${OLLAMA_PORT:-11434}:11434"]
+
+
 def test_cli_sandbox_services_use_docker_socket_proxy_not_raw_host_socket():
     """Ensure sandbox services never mount the raw host Docker socket.
 

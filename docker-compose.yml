@@ -36,8 +36,12 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-sidar}
       - POSTGRES_USER=${POSTGRES_USER:-sidar}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env; default passwords are refused}
+    # Redis'teki gibi: local geliştirme modundaki uygulamanın (POSTGRES_HOST=127.0.0.1)
+    # erişebilmesi için port yalnız loopback arayüzüne bind edilir; LAN/WSL dışına
+    # publish edilmez — aksi halde host'a erişebilen herhangi bir istemci güçlü bir
+    # parola olsa bile portu tarayıp Postgres'e karşı brute-force/DoS deneyebilirdi.
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker_setup/postgres/init.d/01_create_envs.sql:/docker-entrypoint-initdb.d/01_create_envs.sql:ro
@@ -58,8 +62,12 @@ services:
       - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-30m}
       - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-8192}
       - OLLAMA_NUM_BATCH=${OLLAMA_NUM_BATCH:-2048}
+    # Ollama'nın kendi API'sinde kimlik doğrulama yoktur; port tüm arayüzlere açık
+    # kalırsa LAN/WSL dışından erişebilen herhangi bir istemci modelleri sorgulayabilir,
+    # GPU/CPU kaynağını tüketebilir veya model yönetim uçlarına (pull/delete) erişebilir.
+    # Redis/Postgres'teki gibi yalnız loopback arayüzüne bind edilir.
     ports:
-      - "11434:11434"
+      - "127.0.0.1:${OLLAMA_PORT:-11434}:11434"
     volumes:
       - ollama_data:/root/.ollama
 
@@ -74,8 +82,9 @@ services:
       - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-30m}
       - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-8192}
       - OLLAMA_NUM_BATCH=${OLLAMA_NUM_BATCH:-2048}
+    # bkz. yukarıdaki ollama servisindeki loopback-bind notu (kimlik doğrulaması olmayan API).
     ports:
-      - "11434:11434"
+      - "127.0.0.1:${OLLAMA_PORT:-11434}:11434"
     volumes:
       - ollama_data:/root/.ollama
     deploy:
