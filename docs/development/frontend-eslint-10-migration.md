@@ -18,14 +18,18 @@ gösteriyordu:
 `brace-expansion` → `GHSA-mh99-v99m-4gvg`.
 
 Bu kayıtlar yedi bağımsız güvenlik açığı değildir. Sidar, `brace-expansion` sürümünü
-upstream güvenlik backport'unu içeren tam `1.1.17` sürümüne sabitlemişti. npm advisory
-aralığı bu backport'u tanımadığı sürece `scripts/npm_audit_safe.js`, yalnız aşağıdaki
-koşulların tümü sağlanırsa bu tek advisory zincirini geçici olarak kabul ediyordu:
+upstream güvenlik backport'unu içeren tam `1.1.17` sürümüne sabitlemişti (bkz. yukarıdaki
+"Durum" — pin daha sonra ikinci, ilişkisiz bir advisory yüzünden `1.1.18`'e yükseltildi;
+`scripts/npm_audit_safe.js`'deki `PATCHED_BRACE_EXPANSION_BACKPORT` sabiti de güncel pini
+takip edecek şekilde `1.1.18`'e güncellendi). npm advisory aralığı bu backport'u
+tanımadığı sürece `scripts/npm_audit_safe.js`, yalnız aşağıdaki koşulların tümü
+sağlanırsa bu tek advisory zincirini geçici olarak kabul ediyordu:
 
 1. Advisory kaynak kimliği tam olarak `1124334` olmalıdır.
 2. `package.json` içindeki `overrides.brace-expansion` kalıcı pini ve lockfile içindeki
-   bütün `brace-expansion` örnekleri tam olarak `1.1.17` olmalıdır. Böylece yalnız mevcut
-   kurulum değil, sonraki temiz `npm ci` ve lockfile yenilemeleri de doğrulanır.
+   bütün `brace-expansion` örnekleri, `PATCHED_BRACE_EXPANSION_BACKPORT` sabitiyle
+   (güncel olarak `1.1.18`) tam olarak eşleşmelidir. Böylece yalnız mevcut kurulum değil,
+   sonraki temiz `npm ci` ve lockfile yenilemeleri de doğrulanır.
 3. Bütün raporlanan paketler yalnızca bu advisory zincirine ulaşmalıdır.
 4. İlişkisiz herhangi bir `high` veya `critical` bulgu kalite kapısını kapatmalıdır.
 

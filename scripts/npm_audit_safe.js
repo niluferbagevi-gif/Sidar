@@ -17,10 +17,17 @@ const NETWORK_MARKERS = [
 ];
 const AUDIT_LEVELS = ["info", "low", "moderate", "high", "critical"];
 // npm's advisory range currently treats every 1.x release as <=5.0.7 even
-// though 1.1.17 is the upstream backport that adds bounded expansion length.
-// Keep this exception exact and fail closed until the registry range catches up.
+// though 1.1.17 was the original upstream backport that added bounded
+// expansion length for GHSA-mh99-v99m-4gvg (advisory 1124334). A second,
+// unrelated advisory (GHSA-rgw5-rvv9-x895) later moved the repo's real pin
+// to 1.1.18 (see docs/development/frontend-eslint-10-migration.md's
+// "Durum" section) — this constant is kept aligned with that current pin
+// so this exception (dormant today; `npm audit` reports zero findings) would
+// still correctly recognize the installed version if advisory 1124334's
+// registry-lag situation ever recurs. Keep this exception exact and fail
+// closed until the registry range catches up.
 const PATCHED_BRACE_EXPANSION_ADVISORY = 1124334;
-const PATCHED_BRACE_EXPANSION_BACKPORT = "1.1.17";
+const PATCHED_BRACE_EXPANSION_BACKPORT = "1.1.18";
 const PATCHED_BRACE_EXPANSION_MAINTENANCE_PLAN =
   "docs/development/frontend-eslint-10-migration.md";
 const PATCHED_BRACE_EXPANSION_REVIEW_AT = "2026-09-30T00:00:00Z";

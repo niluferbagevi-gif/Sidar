@@ -34,11 +34,22 @@ def test_gpu_evidence_rejects_missing_or_non_boolean_repository_variable() -> No
 
 
 def test_gpu_evidence_false_is_valid_boolean_but_not_release_ready() -> None:
+    """Explicit false is a valid boolean, but this repo's policy never exempts it.
+
+    A code review flagged the previous wording here ("...is valid for
+    non-release CI, but this repository requires...") as internally
+    contradictory: it read as if some non-release context in *this* CI
+    accepted `false`, when the code (and docs/CI_REQUIRED_CHECKS.md's "no
+    silent checklist-only bypass" policy) rejects it unconditionally, with
+    no release/non-release distinction anywhere in this workflow. The
+    message now says so explicitly instead of implying an exemption exists.
+    """
     completed = _run(enabled="false")
 
     assert completed.returncode == 1
-    assert "valid for non-release CI" in completed.stderr
-    assert "requires GPU evidence for merge/release readiness" in completed.stderr
+    assert "syntactically valid boolean" in completed.stderr
+    assert "no non-release exemption" in completed.stderr
+    assert "requires GPU TTFT/latency evidence unconditionally" in completed.stderr
 
 
 def test_gpu_evidence_requires_successful_hardware_job() -> None:
