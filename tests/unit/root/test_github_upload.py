@@ -12,6 +12,8 @@ import pytest
 import github_upload as gu
 
 ORIGINAL_SYNC_INSTALL_MANIFESTS_BEFORE_COMMIT = gu.sync_install_manifests_before_commit
+ORIGINAL_RUN_PRE_COMMIT_FAST_GATE = gu.run_pre_commit_fast_gate
+ORIGINAL_RUN_POST_COMMIT_INTEGRITY_GATE = gu.run_post_commit_integrity_gate
 ORIGINAL_RUN_PRE_PUSH_QUALITY_GATE = gu.run_pre_push_quality_gate
 ORIGINAL_RUN_DIRECT_MAIN_READINESS_GATE = gu.run_direct_main_readiness_gate
 ORIGINAL_RECORD_UPLOAD_SOURCE_HEAD = gu.record_upload_source_head
@@ -19,6 +21,7 @@ ORIGINAL_STAMP_INSTALL_MANIFEST_PIN_AFTER_COMMIT = gu.stamp_install_manifest_pin
 ORIGINAL_ENSURE_FULL_GIT_HISTORY_FOR_MANIFEST_CHECKS = (
     gu.ensure_full_git_history_for_manifest_checks
 )
+ORIGINAL_DESCRIBE_POST_COMMIT_GATE_FAILURE = gu.describe_post_commit_gate_failure
 ORIGINAL_ASSERT_NO_UNMERGED_FILES = gu.assert_no_unmerged_files
 ORIGINAL_REEXEC_AFTER_EXTERNAL_BRANCH_MERGE = gu.reexec_after_external_branch_merge
 
@@ -26,6 +29,8 @@ ORIGINAL_REEXEC_AFTER_EXTERNAL_BRANCH_MERGE = gu.reexec_after_external_branch_me
 @pytest.fixture(autouse=True)
 def _stub_upload_guards(monkeypatch):
     monkeypatch.setattr(gu, "sync_install_manifests_before_commit", lambda: (True, ""))
+    monkeypatch.setattr(gu, "run_pre_commit_fast_gate", lambda: (True, ""))
+    monkeypatch.setattr(gu, "run_post_commit_integrity_gate", lambda: (True, ""))
     monkeypatch.setattr(gu, "run_pre_push_quality_gate", lambda: (True, ""))
     monkeypatch.setattr(gu, "run_direct_main_readiness_gate", lambda: (True, ""))
     monkeypatch.setattr(gu, "record_upload_source_head", lambda: (True, "a" * 40))
@@ -883,7 +888,7 @@ def test_ensure_full_git_history_stops_when_shallow_check_fails(monkeypatch):
     assert err == "no git"
 
 
-def test_run_pre_push_quality_gate_runs_format_then_lint(monkeypatch):
+def test_run_pre_commit_fast_gate_runs_format_then_lint_then_unit_tests(monkeypatch):
     calls = []
 
     def fake_run(cmd, show_output=True, extra_env=None):
@@ -892,19 +897,98 @@ def test_run_pre_push_quality_gate_runs_format_then_lint(monkeypatch):
 
     monkeypatch.setattr(gu, "run_command", fake_run)
 
-    ok, err = ORIGINAL_RUN_PRE_PUSH_QUALITY_GATE()
+    ok, err = ORIGINAL_RUN_PRE_COMMIT_FAST_GATE()
+
+    assert ok is True
+    assert err == ""
+    assert calls == [
+        (["uv", "run", "ruff", "format", "--check", "."], False, None),
+        (["uv", "run", "ruff", "check", "."], False, None),
+        (["uv", "run", "pytest", "tests/unit", "-q", "--no-cov", "-x"], False, None),
+    ]
+
+
+def test_run_pre_commit_fast_gate_stops_on_first_failure(monkeypatch):
+    calls = []
+
+    def fake_run(cmd, show_output=True, extra_env=None):
+        calls.append(cmd)
+        if cmd == ["uv", "run", "ruff", "format", "--check", "."]:
+            return False, "Would reformat: bad.py"
+        return True, ""
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+
+    ok, err = ORIGINAL_RUN_PRE_COMMIT_FAST_GATE()
+
+    assert ok is False
+    assert "uv run ruff format --check ." in err
+    assert "Would reformat: bad.py" in err
+    assert "Düzeltmek için: uv run ruff format ." in err
+    assert calls == [["uv", "run", "ruff", "format", "--check", "."]]
+
+
+def test_run_pre_commit_fast_gate_stops_when_unit_tests_fail(monkeypatch):
+    calls = []
+    unit_command = ["uv", "run", "pytest", "tests/unit", "-q", "--no-cov", "-x"]
+
+    def fake_run(cmd, show_output=True, extra_env=None):
+        calls.append(cmd)
+        if cmd == unit_command:
+            return False, "1 failed"
+        return True, ""
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+
+    ok, err = ORIGINAL_RUN_PRE_COMMIT_FAST_GATE()
+
+    assert ok is False
+    assert "uv run pytest tests/unit -q --no-cov -x" in err
+    assert "1 failed" in err
+    assert calls == [
+        ["uv", "run", "ruff", "format", "--check", "."],
+        ["uv", "run", "ruff", "check", "."],
+        unit_command,
+    ]
+
+
+def test_run_pre_commit_fast_gate_never_touches_installer_or_git_history(monkeypatch):
+    """The fast gate is git-state independent: no history checks, no installer steps.
+
+    It runs before any upload branch/commit exists, so it must not depend on (or
+    trigger) git-history or installer/manifest checks — those only make sense once a
+    real commit exists (see run_post_commit_integrity_gate).
+    """
+    calls = []
+
+    def fake_run(cmd, show_output=True, extra_env=None):
+        calls.append(cmd)
+        return True, ""
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+
+    ok, _err = ORIGINAL_RUN_PRE_COMMIT_FAST_GATE()
+
+    assert ok is True
+    assert ["git", "rev-parse", "--is-shallow-repository"] not in calls
+    assert ["make", "installer-shellcheck"] not in calls
+
+
+def test_run_post_commit_integrity_gate_runs_installer_and_manifest_checks(monkeypatch):
+    calls = []
+
+    def fake_run(cmd, show_output=True, extra_env=None):
+        calls.append((cmd, show_output, extra_env))
+        return True, ""
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+
+    ok, err = ORIGINAL_RUN_POST_COMMIT_INTEGRITY_GATE()
 
     assert ok is True
     assert err == ""
     assert calls == [
         (["git", "rev-parse", "--is-shallow-repository"], False, None),
-        (["uv", "run", "ruff", "format", "--check", "."], False, None),
-        (["uv", "run", "ruff", "check", "."], False, None),
-        (
-            ["uv", "run", "pytest", "tests/unit", "-q", "--no-cov", "-x"],
-            False,
-            None,
-        ),
         (["make", "installer-shellcheck"], False, None),
         (["sha256sum", "-c", ".sidar_manifest.txt"], False, None),
         (
@@ -960,7 +1044,112 @@ def test_run_pre_push_quality_gate_runs_format_then_lint(monkeypatch):
     ]
 
 
-def test_run_pre_push_quality_gate_stops_on_first_failure(monkeypatch):
+def test_run_post_commit_integrity_gate_stops_on_installer_abort_smoke_failure(monkeypatch):
+    calls = []
+
+    def fake_run(cmd, show_output=True, extra_env=None):
+        calls.append((cmd, extra_env))
+        if cmd == ["bash", "install_sidar.sh"]:
+            return False, "hash verify failed"
+        return True, ""
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+
+    ok, err = ORIGINAL_RUN_POST_COMMIT_INTEGRITY_GATE()
+
+    assert ok is False
+    assert "bash install_sidar.sh" in err
+    assert "hash verify failed" in err
+    assert (
+        ["bash", "install_sidar.sh"],
+        {"SIDAR_INSTALL_TEST_MODE": "1", "SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY": "1"},
+    ) in calls
+
+
+def test_run_post_commit_integrity_gate_never_reruns_fast_gate_checks(monkeypatch):
+    """The integrity gate must not repeat Ruff/unit-test checks; those already ran pre-commit."""
+    calls = []
+
+    def fake_run(cmd, show_output=True, extra_env=None):
+        calls.append(cmd)
+        return True, ""
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+
+    ok, _err = ORIGINAL_RUN_POST_COMMIT_INTEGRITY_GATE()
+
+    assert ok is True
+    assert ["uv", "run", "ruff", "format", "--check", "."] not in calls
+    assert ["uv", "run", "pytest", "tests/unit", "-q", "--no-cov", "-x"] not in calls
+
+
+def test_run_pre_push_quality_gate_combines_fast_then_integrity(monkeypatch):
+    """The combined gate (used by the post-merge-retry path) runs fast, then integrity."""
+    # The autouse fixture stubs the two inner gates out for every other test in this
+    # module; restore the real implementations so the combined gate actually exercises
+    # them here.
+    monkeypatch.setattr(gu, "run_pre_commit_fast_gate", ORIGINAL_RUN_PRE_COMMIT_FAST_GATE)
+    monkeypatch.setattr(
+        gu, "run_post_commit_integrity_gate", ORIGINAL_RUN_POST_COMMIT_INTEGRITY_GATE
+    )
+    calls = []
+
+    def fake_run(cmd, show_output=True, extra_env=None):
+        calls.append(cmd)
+        return True, ""
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+
+    ok, err = ORIGINAL_RUN_PRE_PUSH_QUALITY_GATE()
+
+    assert ok is True
+    assert err == ""
+    assert calls == [
+        ["uv", "run", "ruff", "format", "--check", "."],
+        ["uv", "run", "ruff", "check", "."],
+        ["uv", "run", "pytest", "tests/unit", "-q", "--no-cov", "-x"],
+        ["git", "rev-parse", "--is-shallow-repository"],
+        ["make", "installer-shellcheck"],
+        ["sha256sum", "-c", ".sidar_manifest.txt"],
+        ["uv", "run", "python", "scripts/tools/update_core_install_manifest.py", "--check"],
+        [
+            "uv",
+            "run",
+            "python",
+            "scripts/tools/update_install_module_hash_manifest.py",
+            "--target",
+            "install_sidar.sh",
+            "--check",
+        ],
+        [
+            "uv",
+            "run",
+            "python",
+            "scripts/tools/update_install_module_hash_manifest.py",
+            "--target",
+            "install_sidar.sh",
+            "--check-pin",
+        ],
+        ["bash", "-n", "install_sidar.sh"],
+        ["bash", "install_sidar.sh"],
+        [
+            "uv",
+            "run",
+            "pytest",
+            "-q",
+            "--no-cov",
+            "tests/smoke/test_install_verification.py"
+            "::test_install_sidar_embedded_manifests_in_sync",
+        ],
+    ]
+
+
+def test_run_pre_push_quality_gate_stops_at_fast_gate_before_integrity_checks(monkeypatch):
+    """A fast-gate failure must short-circuit before any integrity-gate step runs."""
+    monkeypatch.setattr(gu, "run_pre_commit_fast_gate", ORIGINAL_RUN_PRE_COMMIT_FAST_GATE)
+    monkeypatch.setattr(
+        gu, "run_post_commit_integrity_gate", ORIGINAL_RUN_POST_COMMIT_INTEGRITY_GATE
+    )
     calls = []
 
     def fake_run(cmd, show_output=True, extra_env=None):
@@ -974,56 +1163,43 @@ def test_run_pre_push_quality_gate_stops_on_first_failure(monkeypatch):
     ok, err = ORIGINAL_RUN_PRE_PUSH_QUALITY_GATE()
 
     assert ok is False
-    assert "uv run ruff format --check ." in err
     assert "Would reformat: bad.py" in err
-    assert "Düzeltmek için: uv run ruff format ." in err
-    assert calls == [
-        ["git", "rev-parse", "--is-shallow-repository"],
-        ["uv", "run", "ruff", "format", "--check", "."],
-    ]
-
-
-def test_run_pre_push_quality_gate_stops_when_unit_tests_fail(monkeypatch):
-    calls = []
-    unit_command = ["uv", "run", "pytest", "tests/unit", "-q", "--no-cov", "-x"]
-
-    def fake_run(cmd, show_output=True, extra_env=None):
-        calls.append(cmd)
-        if cmd == unit_command:
-            return False, "1 failed"
-        return True, ""
-
-    monkeypatch.setattr(gu, "run_command", fake_run)
-
-    ok, err = ORIGINAL_RUN_PRE_PUSH_QUALITY_GATE()
-
-    assert ok is False
-    assert "uv run pytest tests/unit -q --no-cov -x" in err
-    assert "1 failed" in err
-    assert calls[-1] == unit_command
+    assert calls == [["uv", "run", "ruff", "format", "--check", "."]]
+    assert ["git", "rev-parse", "--is-shallow-repository"] not in calls
     assert ["make", "installer-shellcheck"] not in calls
 
 
-def test_run_pre_push_quality_gate_stops_on_installer_abort_smoke_failure(monkeypatch):
-    calls = []
+def test_describe_post_commit_gate_failure_pr_first_offers_switch_and_delete(monkeypatch):
+    monkeypatch.setattr(gu, "run_command", lambda cmd, show_output=False: (True, "abc1234\n"))
 
-    def fake_run(cmd, show_output=True, extra_env=None):
-        calls.append((cmd, extra_env))
-        if cmd == ["bash", "install_sidar.sh"]:
-            return False, "hash verify failed"
-        return True, ""
+    message = ORIGINAL_DESCRIBE_POST_COMMIT_GATE_FAILURE("sidar/upload-test", direct_main=False)
 
-    monkeypatch.setattr(gu, "run_command", fake_run)
+    assert "Korunan branch : sidar/upload-test" in message
+    assert "Korunan commit : abc1234" in message
+    assert "GitHub'a push  : yapılmadı" in message
+    assert "git switch sidar/upload-test" in message
+    assert "git switch main" in message
+    assert "git branch -D sidar/upload-test" in message
 
-    ok, err = ORIGINAL_RUN_PRE_PUSH_QUALITY_GATE()
 
-    assert ok is False
-    assert "bash install_sidar.sh" in err
-    assert "hash verify failed" in err
-    assert (
-        ["bash", "install_sidar.sh"],
-        {"SIDAR_INSTALL_TEST_MODE": "1", "SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY": "1"},
-    ) in calls
+def test_describe_post_commit_gate_failure_direct_main_offers_reset(monkeypatch):
+    monkeypatch.setattr(gu, "run_command", lambda cmd, show_output=False: (True, "abc1234\n"))
+
+    message = ORIGINAL_DESCRIBE_POST_COMMIT_GATE_FAILURE("main", direct_main=True)
+
+    assert "Korunan branch : main" in message
+    assert "Korunan commit : abc1234" in message
+    assert "GitHub'a push  : yapılmadı" in message
+    assert "git reset --hard abc1234~1" in message
+    assert "git switch sidar/upload-test" not in message
+
+
+def test_describe_post_commit_gate_failure_falls_back_when_head_lookup_fails(monkeypatch):
+    monkeypatch.setattr(gu, "run_command", lambda cmd, show_output=False: (False, ""))
+
+    message = ORIGINAL_DESCRIBE_POST_COMMIT_GATE_FAILURE("sidar/upload-test", direct_main=False)
+
+    assert "Korunan commit : bilinmiyor" in message
 
 
 def test_record_upload_source_head_captures_valid_revision(monkeypatch):
@@ -1584,17 +1760,45 @@ def test_main_aborts_when_pin_stamp_fails_after_commit(monkeypatch):
     assert run_main_and_exit_code() == 1
 
 
-def test_main_aborts_when_pre_push_quality_gate_fails(monkeypatch):
+def test_main_aborts_when_fast_gate_fails(monkeypatch):
+    """A fast-gate failure stops main() before any upload branch or commit exists."""
+    branch_calls = []
+    monkeypatch.setattr(
+        gu, "create_upload_branch", lambda: (branch_calls.append(True), "sidar/upload-test")[1]
+    )
+    monkeypatch.setattr(
+        gu,
+        "run_pre_commit_fast_gate",
+        lambda: (False, "uv run ruff format --check .\nWould reformat: a.py"),
+    )
+
+    harness = MainHarness(
+        monkeypatch,
+        [],
+        outputs=[
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "main"),
+        ],
+    )
+
+    assert run_main_and_exit_code() == 1
+    assert branch_calls == []
+    assert not any(cmd[:2] == ["git", "commit"] for cmd in harness.calls)
+
+
+def test_main_aborts_when_post_commit_integrity_gate_fails(monkeypatch, capsys):
     monkeypatch.setattr(gu, "get_deleted_files", lambda: [])
     monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: (["a.py"], []))
     monkeypatch.setattr(gu, "stage_files", lambda _paths: (True, ""))
     monkeypatch.setattr(
         gu,
-        "run_pre_push_quality_gate",
-        lambda: (False, "uv run ruff format --check .\nWould reformat: a.py"),
+        "run_post_commit_integrity_gate",
+        lambda: (False, "sha256sum -c .sidar_manifest.txt\nFAILED"),
     )
 
-    MainHarness(
+    harness = MainHarness(
         monkeypatch,
         [],
         outputs=[
@@ -1605,11 +1809,17 @@ def test_main_aborts_when_pre_push_quality_gate_fails(monkeypatch):
             (True, ""),
             (True, "A a.py"),
             (True, "commit ok"),
+            (True, "deadbeef1"),  # git rev-parse --short HEAD, for the recovery message
         ],
         inputs=["commit msg"],
     )
 
     assert run_main_and_exit_code() == 1
+    assert not any(cmd[:2] == ["git", "push"] for cmd in harness.calls)
+    output = capsys.readouterr().out
+    assert "Korunan branch : main" in output
+    assert "Korunan commit : deadbeef1" in output
+    assert "GitHub'a push  : yapılmadı" in output
 
 
 def test_main_push_rejected_then_merge_then_retry_fail_rule(monkeypatch):
@@ -1761,6 +1971,52 @@ def test_main_default_upload_pushes_timestamped_branch_and_opens_pr(monkeypatch,
     assert "Pull request: pr-url" in output
     assert "henüz main dalında değil" in output
     assert "Merge pull request" in output
+
+
+def test_main_pr_first_post_commit_gate_failure_prints_branch_recovery_instructions(
+    monkeypatch, capsys
+):
+    """PR-first mode keeps the upload branch/commit on integrity-gate failure.
+
+    The user must be told exactly how to continue or discard it, instead of being left
+    stranded silently.
+    """
+    monkeypatch.setattr(gu, "get_deleted_files", lambda: [])
+    monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: (["x.py"], []))
+    monkeypatch.setattr(gu, "stage_files", lambda paths: (True, ""))
+    monkeypatch.setattr(
+        gu,
+        "run_post_commit_integrity_gate",
+        lambda: (False, "sha256sum -c .sidar_manifest.txt\nFAILED"),
+    )
+    harness = MainHarness(
+        monkeypatch,
+        [],
+        outputs=[
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "main"),
+            (True, "reset"),
+            (True, "A x.py"),
+            (True, "commit ok"),
+            (True, "cafef00d"),  # git rev-parse --short HEAD, for the recovery message
+        ],
+        inputs=["upload commit"],
+    )
+    monkeypatch.setattr(gu, "direct_main_upload_allowed", lambda: False)
+    monkeypatch.setattr(gu, "create_upload_branch", lambda: "sidar/upload-test")
+
+    assert run_main_and_exit_code() == 1
+    assert not any(cmd[:2] == ["git", "push"] for cmd in harness.calls)
+
+    output = capsys.readouterr().out
+    assert "Korunan branch : sidar/upload-test" in output
+    assert "Korunan commit : cafef00d" in output
+    assert "GitHub'a push  : yapılmadı" in output
+    assert "git switch sidar/upload-test" in output
+    assert "git switch main" in output
+    assert "git branch -D sidar/upload-test" in output
 
 
 def test_run_command_silent_branches(monkeypatch):
@@ -1996,7 +2252,7 @@ def test_main_no_staged_status_and_clean_worktree_but_unpushed(monkeypatch):
     )
     monkeypatch.setattr(
         gu,
-        "run_pre_push_quality_gate",
+        "run_post_commit_integrity_gate",
         lambda: (guard_order.append("gate"), (True, ""))[1],
     )
     MainHarness(
@@ -2026,7 +2282,7 @@ def test_main_aborts_before_gate_when_unpushed_pin_repair_fails(monkeypatch):
     )
     gate_calls = []
     monkeypatch.setattr(
-        gu, "run_pre_push_quality_gate", lambda: (gate_calls.append(True), (True, ""))[1]
+        gu, "run_post_commit_integrity_gate", lambda: (gate_calls.append(True), (True, ""))[1]
     )
     MainHarness(
         monkeypatch,

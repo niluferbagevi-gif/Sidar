@@ -29,10 +29,10 @@ def _skip_unless_frontend_dependencies_installed(*package_names: str) -> None:
     """Skip (not fail) a test that shells out to a real `npm run ...`.
 
     tests/unit must stay runnable standalone: github_upload.py's local
-    pre-push quality gate runs exactly `uv run pytest tests/unit -q --no-cov
+    pre-commit fast gate runs exactly `uv run pytest tests/unit -q --no-cov
     -x` with no `cd web_ui_react && npm ci` step first -- by design, it's a
-    fast backend/installer-focused gate (see run_pre_push_quality_gate()'s
-    docstring in github_upload.py), not a full CI replica. CI's own
+    fast backend-only gate (see run_pre_commit_fast_gate()'s docstring in
+    github_upload.py), not a full CI replica. CI's own
     dedicated frontend lint/build steps always run `npm ci` first and stay
     the authoritative gate regardless of this check; this live subprocess
     call is a bonus for whoever already has web_ui_react/node_modules
