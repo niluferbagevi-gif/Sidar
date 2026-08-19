@@ -30,6 +30,16 @@ Bu repo için tek doğruluk kaynağı olan operasyonel kabuller:
 - **Paket/komut standardı:** Tüm Python bağımlılık ve komut yönetimi `uv` üzerinden yapılır.
   Kurulum `uv sync`, çalıştırma `uv run`, ek paket kurulumu `uv pip install` ile yürütülür;
   standart pip tabanlı doğrudan kurulum komutları kullanılmamalıdır.
+- **Lock güncelleme standardı:** `uv.lock` rutin olarak Dependabot ile güncel tutulur
+  (`.github/dependabot.yml`: `uv`, npm, GitHub Actions, Docker, Docker Compose
+  ekosistemleri için haftalık, gruplu, izole PR'lar). Yerelde tek bir paketi bilinçli
+  olarak güncellemek gerektiğinde geniş kapsamlı `uv lock --upgrade` yerine
+  `uv lock --upgrade-package <paket>` kullanılır (bkz. `docs/DEPENDENCY_PROFILE_PLAN.md`,
+  `docs/runbooks/torch-cve-upgrade.md`). `uv lock --upgrade` bağımlılık grafiğinin geniş
+  bir bölümünü tek seferde değiştirdiği için bir regresyon çıktığında hangi paketten
+  geldiğini ayırmak zorlaşır; rutin geliştirme akışında çalıştırılmamalıdır. İstisna:
+  `install_sidar.sh --upgrade-lock`, kurulum sırasında bilinçli tam lock yenilemesi için
+  bu geniş komutu kasıtlı ve açıkça opt-in olarak kullanır.
 - **Dev bağımlılıkları:** `dev` extras varsayılan kurulum akışına dahildir. Geliştirici
   ortamı, CI ve ekip paritesi için tam kurulum komutu `uv sync --all-extras` olmalıdır;
   yalnız test araçları gerektiğinde `uv sync --extra dev` yeterlidir.
