@@ -1,6 +1,6 @@
-# `docker/grafana/dashboards/sidar-llm-overview.json`
+# `docker_setup/grafana/dashboards/sidar-llm-overview.json`
 
-- **Kaynak dosya:** `docker/grafana/dashboards/sidar-llm-overview.json`
+- **Kaynak dosya:** `docker_setup/grafana/dashboards/sidar-llm-overview.json`
 - **Not dosyası:** `docs/module-notes/docker/grafana/dashboards/sidar-llm-overview.json.md`
 - **Kategori:** Grafana dashboard tanımı (LLM maliyet/kullanım)
 - **Çalışma tipi:** JSON dashboard schema (Grafana)
@@ -37,8 +37,8 @@ Dashboard üç ana panel içerir:
 
 Bu dosya tek başına çalışmaz; aşağıdaki provisioning zinciri ile Grafana’ya yüklenir:
 
-- `docker/grafana/provisioning/dashboards/dashboards.yml`
-- `docker/grafana/provisioning/datasources/prometheus.yml`
+- `docker_setup/grafana/provisioning/dashboards/dashboards.yml`
+- `docker_setup/grafana/provisioning/datasources/prometheus.yml`
 
 Grafana container içinde dashboard yolu:
 

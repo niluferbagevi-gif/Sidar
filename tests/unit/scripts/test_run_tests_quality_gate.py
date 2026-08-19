@@ -1460,15 +1460,18 @@ def test_security_gate_runs_ruff_debt_baseline_before_bandit() -> None:
     tooling_check = "ensure_security_tool_dependencies"
     debt_check = "uv run python scripts/ci/check_ruff_debt_baseline.py"
     marker_check = "uv run python scripts/ci/check_source_debt_markers.py"
+    module_notes_check = "uv run python scripts/ci/check_module_notes_inventory.py"
     bandit_check = "uv run python scripts/ci/check_bandit_suppression_baseline.py"
     assert tooling_check in body
     assert debt_check in body
     assert marker_check in body
+    assert module_notes_check in body
     assert bandit_check in body
     assert (
         body.index(tooling_check)
         < body.index(debt_check)
         < body.index(marker_check)
+        < body.index(module_notes_check)
         < body.index(bandit_check)
     )
     assert "Güvenlik analizi önkoşulları hazırlanamadı" in body

@@ -1,6 +1,6 @@
-# `docker/grafana/provisioning/dashboards/dashboards.yml`
+# `docker_setup/grafana/provisioning/dashboards/dashboards.yml`
 
-- **Kaynak dosya:** `docker/grafana/provisioning/dashboards/dashboards.yml`
+- **Kaynak dosya:** `docker_setup/grafana/provisioning/dashboards/dashboards.yml`
 - **Not dosyası:** `docs/module-notes/docker/grafana/provisioning/dashboards/dashboards.yml.md`
 - **Kategori:** Grafana dashboard provider provisioning
 - **Çalışma tipi:** YAML provisioning konfigürasyonu
@@ -36,8 +36,8 @@ Bu dosya, Grafana’nın dosya tabanlı dashboard provider’ını tanımlar. B�
 
 ## 5) İlişkili dosyalar
 
-- `docker/grafana/dashboards/sidar-llm-overview.json`
-- `docker/grafana/provisioning/datasources/prometheus.yml`
+- `docker_setup/grafana/dashboards/sidar-llm-overview.json`
+- `docker_setup/grafana/provisioning/datasources/prometheus.yml`
 
 ## 6) Bağımlılıklar
 

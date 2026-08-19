@@ -284,6 +284,9 @@ jobs:
       - name: Check production coverage exclusion budget
         run: uv run python scripts/ci/check_coverage_exclusion_budget.py
 
+      - name: Check module-notes documentation inventory
+        run: uv run python scripts/ci/check_module_notes_inventory.py
+
       - name: Run Python format check gate (ruff format)
         run: uv run ruff format --check .
 

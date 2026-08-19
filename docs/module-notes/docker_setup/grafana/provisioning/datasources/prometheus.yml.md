@@ -1,6 +1,6 @@
-# `docker/grafana/provisioning/datasources/prometheus.yml`
+# `docker_setup/grafana/provisioning/datasources/prometheus.yml`
 
-- **Kaynak dosya:** `docker/grafana/provisioning/datasources/prometheus.yml`
+- **Kaynak dosya:** `docker_setup/grafana/provisioning/datasources/prometheus.yml`
 - **Not dosyası:** `docs/module-notes/docker/grafana/provisioning/datasources/prometheus.yml.md`
 - **Kategori:** Grafana datasource provisioning (Prometheus)
 - **Çalışma tipi:** YAML provisioning konfigürasyonu
@@ -30,14 +30,14 @@ Böylece dashboard sorguları kullanıcı müdahalesi olmadan doğrudan çalış
 ## 4) Nerede kullanılıyor?
 
 - `docker-compose.yml` içinde Grafana provisioning mount’u ile container’a taşınır.
-- `docker/grafana/dashboards/sidar-llm-overview.json` içindeki panel sorguları bu datasource üzerinden çalışır.
+- `docker_setup/grafana/dashboards/sidar-llm-overview.json` içindeki panel sorguları bu datasource üzerinden çalışır.
 - `tests/test_grafana_dashboard_provisioning.py`, bu dosyada `name: Prometheus` ve `url: http://prometheus:9090` değerlerini doğrular.
 
 ## 5) İlişkili bileşenler
 
-- `docker/prometheus/prometheus.yml` (scrape hedefleri)
+- `docker_setup/prometheus/prometheus.yml` (scrape hedefleri)
 - `web_server.py` (`/metrics/llm/prometheus` metrik endpoint’i)
-- `docker/grafana/provisioning/dashboards/dashboards.yml`
+- `docker_setup/grafana/provisioning/dashboards/dashboards.yml`
 
 ## 6) Bağımlılıklar
 
