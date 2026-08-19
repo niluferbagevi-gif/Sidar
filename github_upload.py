@@ -651,6 +651,16 @@ def stamp_install_manifest_pin_after_commit() -> tuple[bool, str]:
     SONRA çalışır. Pin, kendi içinde bulunduğu commit'e değil (bu, commit
     hash'i kendi içeriğine bağlı olduğu için imkânsızdır), bu commit'i takip
     eden ayrı ve küçük bir fixup commit'ine yazılır.
+
+    Damganın yazdığı SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT satırı 40 karakter
+    hex bir commit SHA'sı olduğu için detect-secrets bunu "Hex High Entropy
+    String" olarak işaretler; .secrets.baseline bu satırın hash'ini sabitler ve
+    pin her değiştiğinde baseline bayatlar (bkz. commit 5ccfe56 — o zaman
+    baseline elle tazelendi). Bu, tek seferlik değil, pin her damgalandığında
+    tekrar eden bir durum olduğundan burada da otomatik tazeleniyor: dosyayı
+    detect-secrets ile yeniden tarayıp baseline'ı güncelliyoruz ve değiştiyse
+    aynı fixup commit'ine dahil ediyoruz — aksi halde pre-commit hook'u bu
+    fixup commit'ini her seferinde reddeder.
     """
     head_success, head_out = run_command(["git", "rev-parse", "HEAD"], show_output=False)
     if not head_success:
@@ -681,7 +691,31 @@ def stamp_install_manifest_pin_after_commit() -> tuple[bool, str]:
     if not diff_out.strip():
         return True, ""
 
-    add_success, add_err = stage_files(["install_sidar.sh"])
+    rescan_success, rescan_err = run_command(
+        [
+            "uv",
+            "run",
+            "detect-secrets",
+            "scan",
+            "--baseline",
+            ".secrets.baseline",
+            "install_sidar.sh",
+        ],
+        show_output=False,
+    )
+    if not rescan_success:
+        return False, rescan_err
+
+    fixup_paths = ["install_sidar.sh"]
+    baseline_diff_success, baseline_diff_out = run_command(
+        ["git", "diff", "--name-only", "--", ".secrets.baseline"], show_output=False
+    )
+    if not baseline_diff_success:
+        return False, baseline_diff_out
+    if baseline_diff_out.strip():
+        fixup_paths.append(".secrets.baseline")
+
+    add_success, add_err = stage_files(fixup_paths)
     if not add_success:
         return False, add_err
 
