@@ -1332,6 +1332,12 @@ def test_docker_test_image_is_info_in_development_when_auto_build_is_deferred(mo
     from config import Config
 
     monkeypatch.delenv("AUTO_BUILD_DOCKER_TEST_IMAGE", raising=False)
+    # A production-readiness gate run (make production-readiness) exports
+    # SIDAR_PRODUCTION_READINESS=1 for the whole `bash run_tests.sh` process tree.
+    # Without clearing it here, this development-path assertion inherits that
+    # flag from the outer gate and spuriously exercises the production
+    # fail-closed branch instead of the development info branch under test.
+    monkeypatch.delenv("SIDAR_PRODUCTION_READINESS", raising=False)
     monkeypatch.setattr(Config, "AI_PROVIDER", "ollama")
     monkeypatch.setattr(Config, "CODING_MODEL", "qwen2.5-coder:7b")
     monkeypatch.setattr(Config, "ACCESS_LEVEL", "sandbox")
