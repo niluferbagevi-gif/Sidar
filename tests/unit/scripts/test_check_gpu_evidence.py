@@ -9,12 +9,21 @@ from pathlib import Path
 SCRIPT = Path("scripts/ci/check_gpu_evidence.sh")
 
 
-def _run(*, enabled: str | None, result: str = "success") -> subprocess.CompletedProcess[str]:
+def _run(
+    *,
+    enabled: str | None,
+    result: str = "success",
+    step_summary_path: Path | None = None,
+) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env.pop("GPU_GATE_ENABLED", None)
     if enabled is not None:
         env["GPU_GATE_ENABLED"] = enabled
     env["GPU_GATE_RESULT"] = result
+    if step_summary_path is not None:
+        env["GITHUB_STEP_SUMMARY"] = str(step_summary_path)
+    else:
+        env.pop("GITHUB_STEP_SUMMARY", None)
     return subprocess.run(
         ["bash", str(SCRIPT)],
         env=env,
@@ -64,3 +73,63 @@ def test_gpu_evidence_accepts_enabled_successful_hardware_job() -> None:
 
     assert completed.returncode == 0
     assert "evidence is present and passing" in completed.stdout
+
+
+def test_gpu_evidence_without_step_summary_env_does_not_fail(tmp_path: Path) -> None:
+    """No GITHUB_STEP_SUMMARY (e.g. a local/non-Actions run) must not error."""
+    completed = _run(enabled=None, step_summary_path=None)
+
+    assert completed.returncode == 1
+    assert "must be an explicit boolean" in completed.stderr
+
+
+def test_gpu_evidence_missing_variable_writes_actionable_step_summary(tmp_path: Path) -> None:
+    """The Summary tab must call out this is a repo-admin action, not a code fix.
+
+    A code review noted the raw ::error:: annotation is easy to miss (collapsed
+    log, truncated PR checks list); the fix must also land in the job Summary
+    tab where a reviewer looks first.
+    """
+    summary_path = tmp_path / "summary.md"
+    completed = _run(enabled=None, step_summary_path=summary_path)
+
+    assert completed.returncode == 1
+    summary = summary_path.read_text(encoding="utf-8")
+    assert "repository not configured" in summary
+    assert "repository admin action" in summary
+    assert "ENABLE_GPU_BENCH_GATE" in summary
+    assert "docs/runbooks/gpu-runner-continuity.md" in summary
+
+
+def test_gpu_evidence_false_writes_actionable_step_summary(tmp_path: Path) -> None:
+    summary_path = tmp_path / "summary.md"
+    completed = _run(enabled="false", step_summary_path=summary_path)
+
+    assert completed.returncode == 1
+    summary = summary_path.read_text(encoding="utf-8")
+    assert "evidence disabled" in summary
+    assert "repository admin action" in summary
+    assert "no non-release exemption" in summary or "no" in summary
+
+
+def test_gpu_evidence_hardware_failure_step_summary_does_not_blame_repo_config(
+    tmp_path: Path,
+) -> None:
+    """A real hardware/latency failure must not be framed as a config gap."""
+    summary_path = tmp_path / "summary.md"
+    completed = _run(enabled="true", result="failure", step_summary_path=summary_path)
+
+    assert completed.returncode == 1
+    summary = summary_path.read_text(encoding="utf-8")
+    assert "benchmark job did not pass" in summary
+    assert "not a" in summary
+    assert "repository admin action" not in summary
+
+
+def test_gpu_evidence_success_writes_step_summary(tmp_path: Path) -> None:
+    summary_path = tmp_path / "summary.md"
+    completed = _run(enabled="true", step_summary_path=summary_path)
+
+    assert completed.returncode == 0
+    summary = summary_path.read_text(encoding="utf-8")
+    assert "passing" in summary
