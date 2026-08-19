@@ -4,5 +4,30 @@ global:
 scrape_configs:
   - job_name: "sidar-web"
     metrics_path: /metrics/llm/prometheus
+    # sidar-web/-gpu'nun /metrics* uçları web_server.py'nin global auth
+    # middleware'i tarafından her zaman korunur (Authorization: Bearer
+    # olmayan istekler 401 alır) — METRICS_TOKEN ayarlanmamış olsa bile.
+    # bearer_token_file, docker-compose.yml'deki prometheus-token-init
+    # servisinin METRICS_TOKEN'dan ürettiği dosyayı okur; METRICS_TOKEN
+    # boşsa o servis fail-closed durur ve prometheus hiç ayağa kalkmaz.
+    bearer_token_file: /etc/prometheus-secrets/metrics_token
     static_configs:
       - targets: ["sidar-web:7860"]
+
+  - job_name: "sidar-gpu"
+    metrics_path: /metrics
+    bearer_token_file: /etc/prometheus-secrets/metrics_token
+    static_configs:
+      - targets: ["sidar-web:7860"]
+
+  - job_name: "redis-exporter"
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+
+  - job_name: "postgres-exporter"
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+
+  - job_name: "cadvisor"
+    static_configs:
+      - targets: ["cadvisor:8080"]

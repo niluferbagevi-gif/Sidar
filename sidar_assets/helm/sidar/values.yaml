@@ -24,7 +24,7 @@ web:
 aIWorker:
   enabled: true
   replicaCount: 1
-  command: ["python", "sidar.py"]
+  command: ["python", "main.py", "--quick", "web"]
   resources:
     requests:
       cpu: 500m

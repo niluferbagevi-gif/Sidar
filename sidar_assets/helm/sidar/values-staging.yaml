@@ -35,8 +35,9 @@ database:
   poolSize: 8
 
 postgresql:
+  # Staging secret is supplied by CI/ExternalSecret/private values, never committed.
   existingSecret:
-    name: ""  # ExternalSecret / Vault Secret adını burada belirtin.
+    name: ""
   storage:
     size: 5Gi
     storageClassName: standard

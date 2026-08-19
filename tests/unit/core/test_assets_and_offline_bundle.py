@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import filecmp
 import json
 
+import pytest
+
 from scripts import offline_bundle
+from scripts.sync_packaged_deployment_assets import SYNC_TARGETS
 from sidar_assets.paths import (
     alembic_ini_path,
     asset_path,
@@ -18,6 +22,39 @@ def test_asset_paths_resolve_packaged_readiness_assets() -> None:
     assert migrations_path().joinpath("env.py").is_file()
     assert alembic_ini_path().name == "alembic.ini"
     assert asset_path("migrations", require_exists=True).is_dir()
+
+
+@pytest.mark.parametrize("source, packaged", SYNC_TARGETS, ids=["helm/sidar", "docker_setup"])
+def test_packaged_deployment_assets_match_source_tree(source, packaged) -> None:
+    """Keep sidar_assets/{helm/sidar,docker_setup} byte-for-byte aligned with their source.
+
+    ``sidar_assets/paths.py`` prefers the packaged copy over the repository layout for
+    wheel/container installs, so any drift here ships silently broken deployment assets
+    to those installs (e.g. an AI worker command that references a file which does not
+    exist). Regenerate the packaged copy instead of hand-editing it.
+    """
+    source_manifest = sorted(
+        path.relative_to(source) for path in source.rglob("*") if path.is_file()
+    )
+    packaged_manifest = sorted(
+        path.relative_to(packaged) for path in packaged.rglob("*") if path.is_file()
+    )
+
+    assert packaged_manifest == source_manifest, (
+        f"sidar_assets copy of {source.name} has a different file list than the source "
+        "tree. Run `uv run python scripts/sync_packaged_deployment_assets.py`."
+    )
+
+    mismatched_files = [
+        relative_path.as_posix()
+        for relative_path in source_manifest
+        if not filecmp.cmp(source / relative_path, packaged / relative_path, shallow=False)
+    ]
+    assert not mismatched_files, (
+        f"sidar_assets copy of {source.name} must be generated from its source tree. Run "
+        "`uv run python scripts/sync_packaged_deployment_assets.py`; mismatches: "
+        f"{mismatched_files}"
+    )
 
 
 def test_offline_bundle_manifest_create_and_verify(tmp_path) -> None:
