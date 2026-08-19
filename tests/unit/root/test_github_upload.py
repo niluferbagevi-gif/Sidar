@@ -1141,6 +1141,79 @@ def test_stamp_install_manifest_pin_after_commit_creates_fixup_commit_on_drift(m
     assert "b" * 40 in commit_calls[0][-1]
 
 
+def test_stamp_install_manifest_pin_after_commit_rescans_baseline_and_includes_it_when_changed(
+    monkeypatch,
+):
+    calls = []
+
+    def fake_run(cmd, show_output=True):
+        calls.append(cmd)
+        if cmd == ["git", "rev-parse", "HEAD"]:
+            return True, "e" * 40
+        if cmd == ["git", "diff", "--name-only", "--", "install_sidar.sh"]:
+            return True, "install_sidar.sh"
+        if cmd == ["git", "diff", "--name-only", "--", ".secrets.baseline"]:
+            return True, ".secrets.baseline"
+        if cmd[:2] == ["git", "commit"]:
+            return True, "fixup ok"
+        return True, ""
+
+    stage_calls = []
+    monkeypatch.setattr(gu, "run_command", fake_run)
+    monkeypatch.setattr(gu, "stage_files", lambda paths: (stage_calls.append(paths), (True, ""))[1])
+
+    ok, err = ORIGINAL_STAMP_INSTALL_MANIFEST_PIN_AFTER_COMMIT()
+
+    assert ok is True
+    assert err == ""
+    assert stage_calls == [["install_sidar.sh", ".secrets.baseline"]]
+    assert [
+        "uv",
+        "run",
+        "detect-secrets",
+        "scan",
+        "--baseline",
+        ".secrets.baseline",
+        "install_sidar.sh",
+    ] in calls
+
+
+def test_stamp_install_manifest_pin_after_commit_stops_on_rescan_failure(monkeypatch):
+    def fake_run(cmd, show_output=True):
+        if cmd == ["git", "rev-parse", "HEAD"]:
+            return True, "f" * 40
+        if cmd == ["git", "diff", "--name-only", "--", "install_sidar.sh"]:
+            return True, "install_sidar.sh"
+        if cmd[:1] == ["uv"] and "detect-secrets" in cmd:
+            return False, "detect-secrets scan failed"
+        return True, ""
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+
+    ok, err = ORIGINAL_STAMP_INSTALL_MANIFEST_PIN_AFTER_COMMIT()
+
+    assert ok is False
+    assert err == "detect-secrets scan failed"
+
+
+def test_stamp_install_manifest_pin_after_commit_stops_on_baseline_diff_failure(monkeypatch):
+    def fake_run(cmd, show_output=True):
+        if cmd == ["git", "rev-parse", "HEAD"]:
+            return True, "0" * 40
+        if cmd == ["git", "diff", "--name-only", "--", "install_sidar.sh"]:
+            return True, "install_sidar.sh"
+        if cmd == ["git", "diff", "--name-only", "--", ".secrets.baseline"]:
+            return False, "baseline diff failed"
+        return True, ""
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+
+    ok, err = ORIGINAL_STAMP_INSTALL_MANIFEST_PIN_AFTER_COMMIT()
+
+    assert ok is False
+    assert err == "baseline diff failed"
+
+
 def test_stamp_install_manifest_pin_after_commit_stops_on_stamp_failure(monkeypatch):
     def fake_run(cmd, show_output=True):
         if cmd == ["git", "rev-parse", "HEAD"]:
