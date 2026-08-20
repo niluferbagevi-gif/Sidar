@@ -16,6 +16,12 @@ run_phase08_function() {
     warn() { printf "WARN:%s\n" "$*"; }
     info() { printf "INFO:%s\n" "$*"; }
     ok() { printf "OK:%s\n" "$*"; }
+    # Mirrors install_sidar.sh'"'"'s real debug() gating (SIDAR_DEBUG/SIDAR_VERBOSE)
+    # so tests exercise the same on/off behavior production installs see.
+    debug() {
+      [[ "${SIDAR_DEBUG:-0}" == "1" || "${SIDAR_VERBOSE:-0}" == "1" ]] || return 0
+      printf "DEBUG:%s\n" "$*"
+    }
     read_env_value_from_file() {
       local key="$1" file="$2"
       sed -n "s/^${key}=//p" "$file" | tail -n 1
@@ -75,6 +81,30 @@ EOF
   '
 
   [ "$status" -eq 0 ]
+}
+
+@test "phase 08 GPU branch debug message is silent by default and only shown under SIDAR_DEBUG" {
+  # Regression test for a friend code review finding: configure_gpu_env_defaults()
+  # printed an internal "DEBUG: GPU branch entered ..." line unconditionally via
+  # info() on every GPU-detected install, even for a normal non-debug user run.
+  # It must now go through install_sidar.sh's existing debug() helper (gated on
+  # SIDAR_DEBUG/SIDAR_VERBOSE), matching every other diagnostic line in the
+  # installer (see scripts/install_modules/phases/03_system.sh,12_alembic.sh).
+  run_phase08_function '
+    trap "rm -rf \"$SCRIPT_DIR\"" EXIT
+    : > "$SCRIPT_DIR/.env"
+    GPU_AVAILABLE=true
+
+    configure_gpu_env_defaults "$SCRIPT_DIR/.env"
+    echo "---SIDAR_DEBUG=1---"
+    SIDAR_DEBUG=1 configure_gpu_env_defaults "$SCRIPT_DIR/.env"
+  '
+
+  [ "$status" -eq 0 ]
+  default_run="${output%%---SIDAR_DEBUG=1---*}"
+  debug_run="${output#*---SIDAR_DEBUG=1---}"
+  [[ "$default_run" != *"GPU branch entered"* ]]
+  [[ "$debug_run" == *"DEBUG:GPU branch entered for .env configuration (GPU_AVAILABLE=true)."* ]]
 }
 
 @test "phase 08 API_GROUPS covers every SIDAR_USER_SECRET_ENV_KEYS key exactly once" {

@@ -1147,7 +1147,7 @@ configure_gpu_env_defaults() {
     command -v sed &>/dev/null || return 0
 
     if [[ "$GPU_AVAILABLE" == true ]]; then
-        info "DEBUG: GPU branch entered for .env configuration (GPU_AVAILABLE=true)."
+        debug "GPU branch entered for .env configuration (GPU_AVAILABLE=true)."
         if grep -q '^USE_GPU=' "$env_file"; then
             sed_inplace 's/^USE_GPU=.*/USE_GPU=true/' "$env_file"
         else
