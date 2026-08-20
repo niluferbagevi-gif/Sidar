@@ -101,7 +101,9 @@ güncelleme sözleşmesi `docs/development/frontend-typescript-migration.md` iç
   fark edilmeden büyüyebilir). React DOM varsayılan limiti `SIDAR_REACT_DOM_CHUNK_BUDGET_KB=220`,
   ChatMarkdownRenderer varsayılan limiti `SIDAR_MARKDOWN_CHUNK_BUDGET_KB=190`,
   highlight.js core limiti `SIDAR_HIGHLIGHT_CHUNK_BUDGET_KB=40` değeridir; opsiyonel
-  toplam limitler için `SIDAR_TOTAL_JS_BUDGET_KB` ve `SIDAR_TOTAL_GZIP_BUDGET_KB` verilebilir.
+  toplam limitler varsayılan olarak raw JS için `SIDAR_TOTAL_JS_BUDGET_KB=500`, gzip JS için
+  `SIDAR_TOTAL_GZIP_BUDGET_KB=160` değerleriyle ratchet edilir ve gerektiğinde açık env
+  override ile değiştirilebilir.
   `SIDAR_BUNDLE_BUDGET_WARN_RATIO` varsayılan `0.9` ile toplam JS/gzip
   budget kullanımını %90 seviyesinde uyarı olarak raporlar. `SIDAR_BUNDLE_GZIP_TREND_WARN_KB`
   varsayılan `5` KB artış eşiğiyle önceki

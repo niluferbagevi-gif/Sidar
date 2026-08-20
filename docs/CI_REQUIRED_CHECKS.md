@@ -15,6 +15,7 @@ the expected required contexts should mirror the release-critical jobs in
 | `gpu-inference-policy-gate` | `CI / GPU Inference Required Evidence Gate` | Fails closed unless the self-hosted GPU TTFT/latency benchmark is enabled and succeeds. |
 | `production-readiness` | `CI / Production readiness aggregate` | Aggregates base quality, benchmark comparison, and the required GPU inference evidence policy. |
 | `pg-stress` | `CI / PostgreSQL Connection Pool Stress Test` | Keeps PostgreSQL migration and connection-pool stress coverage blocking for merge readiness. |
+| audit workflow | `Branch protection audit / Required release checks audit` | Verifies the live merge policy itself before a PR can merge. |
 
 The `seed-benchmark-baseline` / `Seed benchmark baseline cache` workflow path is
 intentionally **not** a required PR check: it only runs via manual
@@ -25,10 +26,11 @@ is restored.
 The release-blocking `benchmark-compare` job and both baseline seed paths require a
 dedicated `[self-hosted, linux, benchmark]` runner. Its name is part of the benchmark
 cache key, preventing a baseline produced on one hardware host from being restored on
-another host. This is a deliberate, accepted single point of failure, not an oversight:
-an unrelated PR can be blocked at `production-readiness` by a benchmark-runner rename or
-a cache eviction alone, with no relation to that PR's actual diff. The mitigations below
-narrow the blast radius but do not remove it.
+another host. The pool therefore requires primary and warm-standby
+`[self-hosted, linux, benchmark]` runners, with a reviewed baseline seeded separately for
+each runner name. This preserves hardware-specific comparisons without accepting a single
+runner as a release-critical point of failure. A runner rename still invalidates that host's
+baseline by design and requires an explicit reseed.
 
 The same reviewed comparison is mandatory in all three promotion paths: normal `main`
 CI (`benchmark-compare`), the scheduled auth benchmark, and
@@ -44,7 +46,7 @@ exists specifically to restore-and-touch the reviewed default-branch baseline ca
 often than GitHub's ~7-day cache inactivity eviction window, without regenerating a
 baseline. It **must** run on the same `[self-hosted, linux, benchmark]` runner pool and
 use the exact same `benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-...`
-key prefix as `benchmark-compare`/the seed jobs — `${{ runner.name }}` only resolves to
+key prefix as `benchmark-compare`/the reusable seed job — `${{ runner.name }}` only resolves to
 the value those jobs need on that runner pool. A version of this workflow once ran on
 `ubuntu-latest` with a key that omitted `${{ runner.name }}` entirely; it "passed" every
 scheduled run while silently restoring nothing, so the anti-eviction safety net did not
@@ -57,41 +59,20 @@ orphaned by design (see above) and must be reseeded via `seed_benchmark_baseline
 regardless of keepalive; keepalive only prevents inactivity eviction of a still-valid
 cache entry, it cannot survive a runner identity change.
 
-**Known follow-up improvements (partially implemented, flagged in a friend code review):**
+**Baseline lifecycle controls:**
 
-The self-hosted runner queue now has a proactive signal: the scheduled/manual
-`Benchmark Runner Capacity Watchdog` checks for an online
-`[self-hosted, linux, benchmark]` runner. See
-[`docs/runbooks/benchmark-runner-continuity.md`](runbooks/benchmark-runner-continuity.md).
-This warns about runner capacity only; the two baseline lifecycle improvements below remain
-open and deliberately separate from the release-blocker fixes.
+Ortak reusable seed workflow `.github/workflows/benchmark-baseline-reusable.yml`, hem
+`ci.yml` içindeki manuel bootstrap job'ı hem de `benchmark-baseline-seed.yml` tarafından
+çağrılır. Toolchain kurulumu, mevcut cache restore'u, pytest-benchmark seed komutu, manifest,
+artifact retention ve cache-save anahtarı böylece tek bir implementasyonda tutulur; caller'lar
+yalnız baseline adı, opsiyonel test filtresi ve retention değerini seçer.
 
-- **Keepalive is still purely reactive.** It only restores-and-touches the existing cache;
-  it never re-runs the benchmark suite to refresh the baseline data itself, and nothing
-  proactively alerts (e.g. opens a GitHub issue) when the baseline cache is actually
-  missing/orphaned — today the first signal is an unrelated PR going red at
-  `production-readiness`. A scheduled job that periodically re-seeds for real (not just
-  touches) and/or auto-files an issue when the "Require reviewed baseline evidence" step
-  fails would close this gap. Not implemented here: it changes self-hosted runner load/
-  cadence and issue-creation behavior, decisions that deserve a dedicated PR validated
-  against the real `[self-hosted, linux, benchmark]` runner rather than a docs-only pass.
-- **`benchmark-baseline-seed.yml` and `ci.yml`'s `seed-benchmark-baseline` job duplicate
-  nearly the same seeding logic with real, not just cosmetic, drift** — action runtime
-  pins are now aligned on Node 24-backed majors, but `ci.yml`'s job still runs
-  `scripts/install_ci_system_deps.sh` and restores any existing cache before overwriting,
-  `benchmark-baseline-seed.yml` does neither, retention-days differs (30 vs 90), the
-  uploaded artifact name differs (dynamic `benchmark-baseline-...-<compare_name>` vs the
-  fixed `benchmark-baseline-seed`), and `benchmark-baseline-seed.yml`'s manifest carries
-  `compare_name`/`next_strict_command` fields `ci.yml`'s does not. `benchmark-baseline-
-  seed.yml` also supports named/partial baselines (`compare_name`/`benchmark_filter`
-  inputs) that `ci.yml`'s boolean-only `seed_benchmark_baseline` input cannot express.
-  Merging both into a single `workflow_call` reusable workflow is the right fix, but it
-  first requires deciding which of these divergent behaviors is canonical for each call
-  site (e.g. should the shared workflow always restore-before-save? support partial
-  baselines everywhere?) and validating the merged workflow actually seeds/saves/restores
-  correctly on the real self-hosted runner — this area has already produced two real bugs
-  in this same review (the keepalive cache-key mismatch above), so a docs-only pass is not
-  the place to also rewire the release-blocking seed path itself.
+`benchmark-baseline-keepalive.yml` baseline üretmez veya otomatik olarak güvenilmeyen yeni bir
+ölçümü onaylamaz. Reviewed cache bulunamazsa fail-closed olur ve runner adına göre deduplicate
+edilmiş bir GitHub issue oluşturur/günceller. Operatör reusable seed yolunu çalıştırmalı,
+artifact'ı incelemeli ve strict compare'ı yeniden koşturmalıdır. Otomatik re-seed kasıtlı olarak
+yapılmaz: donanım veya dependency drift'inden sonra yeni performans referansını insan incelemesi
+olmadan kabul etmek regresyonu baseline'a gömebilir.
 
 Do not replace this label set with `ubuntu-latest`: GitHub-hosted shared
 runners have variable CPU, storage and scheduler contention and are unsuitable for a
@@ -148,6 +129,23 @@ as a fallback and can receive HTTP 403 for branch-protection metadata; a 403 mea
 the live configuration was **not verified**, not that required checks are present.
 The script fails closed and prints this remediation instead of treating the local
 workflow contract as proof of GitHub Settings.
+
+The live audit reads the complete branch-protection payload rather than checking
+status contexts alone. In addition to the table above, it fails when pull-request
+reviews are not required, required checks are not strict/up-to-date, administrator
+enforcement is disabled, or force pushes/branch deletion are enabled. Keep bypass
+access limited to explicitly controlled emergency actors; GitHub ruleset bypass
+actors still require periodic review in **Settings → Rules → Rulesets**, because
+their actor list is not represented by the classic branch-protection payload.
+
+Keep `Branch protection audit / Required release checks audit` selected as a
+required `main` check as well. The workflow runs for every pull request via
+`pull_request_target`, using only the trusted default-branch workflow and never
+checking out PR code, so protection drift is detected before merge without exposing
+the administration-read secret to contributed code. It also runs immediately after
+every `main` push while retaining the weekly schedule and manual dispatch. Scheduled,
+manual, and post-push failures create or update a deduplicated GitHub issue; PR failures
+remain visible as a blocking check without generating an issue comment on every commit.
 
 
 ## Autonomous/direct push guardrails

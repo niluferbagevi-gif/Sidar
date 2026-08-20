@@ -1259,6 +1259,9 @@ def test_install_docs_explain_frontend_gate_is_opt_in() -> None:
 
 def test_ci_workflow_documents_and_seeds_benchmark_baseline() -> None:
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    reusable_seed = Path(".github/workflows/benchmark-baseline-reusable.yml").read_text(
+        encoding="utf-8"
+    )
     readme = Path("README.md").read_text(encoding="utf-8")
     testing = Path("docs/TESTING.md").read_text(encoding="utf-8")
 
@@ -1266,15 +1269,14 @@ def test_ci_workflow_documents_and_seeds_benchmark_baseline() -> None:
     assert "seed_benchmark_baseline:" in ci
     assert "seed-benchmark-baseline:" in ci
     assert "Seed benchmark baseline cache" in ci
-    assert "uses: actions/cache/restore@v6" in ci
-    assert "uses: actions/cache/save@v6" in ci
-    assert '--benchmark-save="${BENCHMARK_BASELINE_NAME}"' in ci
-    assert "baseline-seed-manifest.json" in ci
-    assert '"schema_version": 1' in ci
-    assert "retention-days: 90" in ci
-    assert "benchmark-baseline-seed" in ci
-    assert "Next step: rerun the normal CI / production-readiness gate" in ci
-    assert "GitHub Actions → CI → Run workflow" in ci
+    assert "uses: ./.github/workflows/benchmark-baseline-reusable.yml" in ci
+    assert "uses: actions/cache/restore@v6" in reusable_seed
+    assert "uses: actions/cache/save@v6" in reusable_seed
+    assert '--benchmark-save="${BENCHMARK_BASELINE_NAME}"' in reusable_seed
+    assert "baseline-seed-manifest.json" in reusable_seed
+    assert '"schema_version": 1' in reusable_seed
+    assert "retention_days: 90" in ci
+    assert "name: benchmark-baseline-seed" in reusable_seed
     assert "seed_benchmark_baseline=true" in ci
     assert (
         "if: ${{ github.event_name != 'workflow_dispatch' || !inputs.seed_benchmark_baseline }}"
@@ -2916,7 +2918,7 @@ def test_benchmark_baseline_cache_key_prefix_is_identical_everywhere() -> None:
     depend on -- the keepalive workflow "passed" while restoring nothing,
     silently failing to do the one thing it exists for (both of its real runs
     on GitHub Actions failed with "Cache not found"). Every
-    `benchmark-baseline-` cache key across ci.yml, benchmark-baseline-seed.yml
+    `benchmark-baseline-` cache key across ci.yml, benchmark-baseline-reusable.yml
     and benchmark-baseline-keepalive.yml must share the identical
     `benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-`
     prefix so a keepalive/seed/compare cache key can never silently drift
@@ -2927,7 +2929,7 @@ def test_benchmark_baseline_cache_key_prefix_is_identical_everywhere() -> None:
     )
     workflow_paths = [
         Path(".github/workflows/ci.yml"),
-        Path(".github/workflows/benchmark-baseline-seed.yml"),
+        Path(".github/workflows/benchmark-baseline-reusable.yml"),
         Path(".github/workflows/benchmark-baseline-keepalive.yml"),
     ]
 
@@ -3030,6 +3032,18 @@ def test_direct_local_stage_all_enables_frontend_bundle_budget_by_default() -> N
     assert 'FRONTEND_BUNDLE_BUDGET="${FRONTEND_BUNDLE_BUDGET:-0}"' in local_profile
     assert "bundle budget dahil local ortam sağlığını doğrular" in testing_docs
     assert "bash run_tests.sh --stage all` hem" in testing_docs
+
+
+def test_frontend_bundle_budget_defaults_are_ratcheted_and_match_ci() -> None:
+    makefile = Path("Makefile").read_text(encoding="utf-8")
+    ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert "SIDAR_TOTAL_JS_BUDGET_KB ?= 500" in makefile
+    assert "SIDAR_TOTAL_GZIP_BUDGET_KB ?= 160" in makefile
+    assert 'SIDAR_TOTAL_JS_BUDGET_KB: "500"' in ci
+    assert 'SIDAR_TOTAL_GZIP_BUDGET_KB: "160"' in ci
+    assert "SIDAR_TOTAL_JS_BUDGET_KB ?= 550" not in makefile
+    assert "SIDAR_TOTAL_GZIP_BUDGET_KB ?= 170" not in makefile
 
 
 def test_pre_commit_ruff_format_scope_matches_repository_ci_gate() -> None:
@@ -5426,6 +5440,9 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     seed_workflow = Path(".github/workflows/benchmark-baseline-seed.yml").read_text(
         encoding="utf-8"
     )
+    reusable_seed = Path(".github/workflows/benchmark-baseline-reusable.yml").read_text(
+        encoding="utf-8"
+    )
     nightly_gpu = Path(".github/workflows/nightly-gpu-performance.yml").read_text(encoding="utf-8")
     readme = Path("README.md").read_text(encoding="utf-8")
     notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
@@ -5452,7 +5469,8 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     seed_job = ci[ci.index("  seed-benchmark-baseline:") : ci.index("  test:")]
     assert "runs-on: [self-hosted, linux, benchmark]" in benchmark_job
     assert "runs-on: ubuntu-latest" not in benchmark_job
-    assert "runs-on: [self-hosted, linux, benchmark]" in seed_job
+    assert "uses: ./.github/workflows/benchmark-baseline-reusable.yml" in seed_job
+    assert "runs-on: [self-hosted, linux, benchmark]" in reusable_seed
     assert "runner.name" in benchmark_job
     assert "Production readiness aggregate" in ci
     assert (
@@ -5478,30 +5496,29 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "koşu seed moduna düşmez" in notes
     assert "name: Benchmark baseline seed" in seed_workflow
     assert "workflow_dispatch:" in seed_workflow
-    assert "runs-on: [self-hosted, linux, benchmark]" in seed_workflow
+    assert "uses: ./.github/workflows/benchmark-baseline-reusable.yml" in seed_workflow
     assert "runs-on: ubuntu-latest" not in seed_workflow
-    assert "runner.name" in seed_workflow
-    assert 'BENCHMARK_COMPARE_REQUIRED: "0"' in seed_workflow
-    assert 'BENCHMARK_ENFORCE_COMPARE: "0"' in seed_workflow
-    assert "--benchmark-warmup-iterations=100000" in seed_workflow
-    assert "baseline-seed-manifest.json" in seed_workflow
-    assert "next_strict_command" in seed_workflow
+    assert "runner.name" in reusable_seed
+    assert "workflow_call:" in reusable_seed
+    assert "--benchmark-warmup-iterations=100000" in reusable_seed
+    assert "baseline-seed-manifest.json" in reusable_seed
+    assert "next_strict_command" in reusable_seed
     assert (
         "BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1 "
-        "RUN_BENCHMARKS=required ./run_tests.sh" in seed_workflow
+        "RUN_BENCHMARKS=required ./run_tests.sh" in reusable_seed
     )
     assert (
         "Rerun normal CI / production-readiness after this cache/artifact is saved."
-        in seed_workflow
+        in reusable_seed
     )
-    assert "actions/cache/save@v6" in seed_workflow
-    assert "actions/upload-artifact@v7" in seed_workflow
-    assert "baseline-seed-manifest.json" in ci
-    assert "Baseline files:" in ci
-    assert "retention-days: 90" in ci
+    assert "actions/cache/save@v6" in reusable_seed
+    assert "actions/upload-artifact@v7" in reusable_seed
+    assert "baseline-seed-manifest.json" in reusable_seed
+    assert "Baseline files:" in reusable_seed
+    assert "retention_days: 90" in ci
     assert (
         "benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-"
-        "${{ github.ref_name }}-${{ github.run_id }}" in seed_workflow
+        "${{ github.ref_name }}-${{ github.run_id }}" in reusable_seed
     )
     assert "Benchmark baseline seed" in readme
     assert ".github/workflows/benchmark-baseline-seed.yml" in readme

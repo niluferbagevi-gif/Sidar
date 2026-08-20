@@ -136,10 +136,10 @@ export default defineConfig(() => {
           "src/lib/routerShim.tsx", // shim behavior is covered by dedicated router tests
         ],
         thresholds: {
-          lines: 98,
-          functions: 98,
+          lines: 100,
+          functions: 100,
           branches: 100,
-          statements: 98,
+          statements: 100,
         },
       },
     },

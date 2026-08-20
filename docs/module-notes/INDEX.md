@@ -10,6 +10,9 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 > `docs/module-notes/inventory-debt-baseline.json`'daki ratchet tavanını
 > aşmadığını kontrol eder. Sayılar aşağıda elle güncellenir; script bunları
 > `--verify-counts` ile de doğrulayabilir.
+> Baseline tarihli 150 → 100 → 50 → 0 azaltma hedefleri taşır; yeni bir note
+> eklendiğinde CI daha düşük gerçek sayıyı görür ve baseline aynı PR'da
+> `--update` ile aşağı çekilmeden geçmez. `--update` borcu yükseltemez.
 
 - **Toplam kaynak dosya (tests dahil):** 366
 - **Tests dışı dosya sayısı (ayrı not üretilen):** 67
@@ -41,6 +44,7 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `agent/roles/coder_agent.py` → `docs/module-notes/agent/roles/coder_agent.py.md`
 - `agent/roles/researcher_agent.py` → `docs/module-notes/agent/roles/researcher_agent.py.md`
 - `agent/roles/reviewer_agent.py` → `docs/module-notes/agent/roles/reviewer_agent.py.md`
+- `agent/registry.py` → `docs/module-notes/agent/registry.py.md`
 - `agent/sidar_agent.py` → `docs/module-notes/agent/sidar_agent.py.md`
 - `agent/tooling.py` → `docs/module-notes/agent/tooling.py.md`
 - `alembic.ini` → `docs/module-notes/alembic.ini.md`

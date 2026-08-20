@@ -18,16 +18,24 @@ değildir.
 
 `GPU Runner Capacity Watchdog` workflow'u saatlik olarak önce repository variable
 `ENABLE_GPU_BENCH_GATE` değerinin tam olarak `true` kaldığını doğrular, ardından GitHub runner
-API'sini sorgular ve iki uygun online runner bulunmadığında kırmızı olur. Repository secret olarak runner metadata
+API'sini sorgular; iki uygun online runner veya kuyruktaki yeni işi alabilecek en az bir idle
+runner bulunmadığında kırmızı olur. Her `CI` workflow'u requested durumuna geçtiğinde de aynı
+kontrol hemen tetiklenir; böylece label/service/kapasite sorunu saatlik schedule beklemez.
+Repository secret olarak runner metadata
 okuma yetkili, dar kapsamlı `GPU_RUNNER_MONITOR_TOKEN` tanımlanmalıdır. Yerel/fixture kontrolü:
 
 ```bash
 uv run python scripts/ci/check_gpu_runner_capacity.py \
-  --repo owner/Sidar --token "$GPU_RUNNER_MONITOR_TOKEN" --minimum-online 2
+  --repo owner/Sidar --token "$GPU_RUNNER_MONITOR_TOKEN" \
+  --minimum-online 2 --minimum-idle 1
 ```
 
 Bu watchdog merge kanıtının yerine geçmez; arızayı GPU işi kuyrukta süresiz beklemeden önce
 görünür kılan erken uyarıdır.
+
+Başarısız watchdog koşusu aynı başlıklı açık uyarı issue'sunu günceller veya yoksa oluşturur.
+Hata çıktısındaki `envanter` alanı her runner için online/offline, busy/idle ve eksik zorunlu
+etiketleri gösterir; token veya runner credential bilgisi yazdırılmaz.
 
 > Repository variable ve self-hosted runner kapasitesi Git içinde oluşturulamaz veya sürekli
 > açık tutulamaz; bunlar GitHub repository/runner yönetim düzlemine aittir. Bu nedenle workflow

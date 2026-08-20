@@ -3159,6 +3159,7 @@ ENV
     grep -q "^COMPOSE_PROFILES=gpu$" "$tmpdir/.env.development"
   '
   [ "$status" -eq 0 ]
+  [[ "$output" != *"DEBUG: GPU branch entered"* ]]
 }
 
 @test "verify_sidar_keys_file_permissions accepts 600 and 400 modes" {

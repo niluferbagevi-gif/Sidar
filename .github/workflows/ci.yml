@@ -26,112 +26,14 @@ jobs:
   seed-benchmark-baseline:
     name: Seed benchmark baseline cache
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.seed_benchmark_baseline }}
-    # Performance baselines are hardware-specific; never seed them on a shared
-    # GitHub-hosted runner.
-    runs-on: [self-hosted, linux, benchmark]
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: '3.11.15'
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: "0.12.0"
-          enable-cache: true
-          cache-dependency-glob: '**/uv.lock'
-
-      - name: Verify canonical toolchain contract
-        run: python scripts/ci/check_toolchain_contract.py
-
-      - name: Install system dependencies
-        run: bash scripts/install_ci_system_deps.sh
-
-      - name: Install dependencies
-        run: uv sync --frozen --all-extras
-
-      - name: Restore existing benchmark baseline cache (if any)
-        uses: actions/cache/restore@v6
-        with:
-          path: .benchmarks
-          key: benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
-          restore-keys: |
-            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-
-            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-main-
-            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-master-
-            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-
-
-      - name: Seed benchmark baseline
-        env:
-          DOTENV_FILE: .env.test
-          BENCHMARK_BASELINE_NAME: baseline
-          BENCHMARK_JSON_OUTPUT: artifacts/benchmark/benchmark.json
-        run: |
-          set -euo pipefail
-          mkdir -p artifacts/benchmark .benchmarks
-          uv run python -m pytest -c pyproject.toml -v tests/performance -n 0 --no-cov \
-            --benchmark-save="${BENCHMARK_BASELINE_NAME}" \
-            --benchmark-json="${BENCHMARK_JSON_OUTPUT}" \
-            --benchmark-warmup=on \
-            --benchmark-warmup-iterations=100000 \
-            --benchmark-disable-gc
-          benchmark_compare_name="${BENCHMARK_BASELINE_NAME}"
-          if ! find .benchmarks -type f -name "*_${benchmark_compare_name}.json" -print -quit | grep -q .; then
-            echo "::error title=Benchmark seed failed::pytest-benchmark completed but .benchmarks/*_${benchmark_compare_name}.json was not created."
-            exit 1
-          fi
-          mapfile -t baseline_files < <(find .benchmarks -type f -name "*_${benchmark_compare_name}.json" | sort)
-          BASELINE_FILES="$(printf '%s\n' "${baseline_files[@]}")" python - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          baseline_files = os.environ["BASELINE_FILES"].splitlines()
-          manifest = {
-              "schema_version": 1,
-              "baseline_name": os.environ["BENCHMARK_BASELINE_NAME"],
-              "github_run_id": os.environ["GITHUB_RUN_ID"],
-              "github_ref": os.environ["GITHUB_REF"],
-              "github_sha": os.environ["GITHUB_SHA"],
-              "benchmark_files": baseline_files,
-          }
-          Path("artifacts/benchmark/baseline-seed-manifest.json").write_text(
-              json.dumps(manifest, indent=2, sort_keys=True) + "\n",
-              encoding="utf-8",
-          )
-          PY
-          {
-            echo "### Benchmark baseline seeded"
-            echo "- Baseline name: \`${benchmark_compare_name}\`"
-            echo "- Baseline files: \`${#baseline_files[@]}\`"
-            echo "- Seed manifest: \`artifacts/benchmark/baseline-seed-manifest.json\`"
-            echo "- Cache key prefix: \`benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-\`"
-            echo "- Download artifact: \`benchmark-baseline-seed\` and restore its \`.benchmarks/\` directory if cache restore is unavailable."
-            echo "- Next step: rerun the normal CI / production-readiness gate; gated runs remain fail-closed and do not seed baselines."
-            echo "- Operator path: GitHub Actions → CI → Run workflow → \`seed_benchmark_baseline=true\`, then rerun normal CI / production-readiness."
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload benchmark baseline seed artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: benchmark-baseline-seed
-          path: |
-            .benchmarks/
-            artifacts/benchmark/benchmark.json
-            artifacts/benchmark/baseline-seed-manifest.json
-          if-no-files-found: error
-          retention-days: 90
-
-      - name: Save benchmark baseline cache for CI
-        uses: actions/cache/save@v6
-        with:
-          path: .benchmarks
-          key: benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
+    permissions:
+      contents: read
+      actions: write
+    uses: ./.github/workflows/benchmark-baseline-reusable.yml
+    with:
+      compare_name: baseline
+      benchmark_filter: ""
+      retention_days: 90
 
   test:
     name: Base quality gates (lint, smoke, unit, coverage, frontend)
@@ -473,10 +375,10 @@ jobs:
           # check-bundle-budget.mjs requires both budget vars whenever
           # TEST_PROFILE=ci (or SIDAR_PRODUCTION_READINESS=1) so a CI run can
           # never silently skip the frontend bundle-size gate. Match the
-          # Makefile defaults (SIDAR_TOTAL_JS_BUDGET_KB/GZIP_BUDGET_KB ?= 550/170)
-          # used by every local `make dev-full`/`make production-readiness` run.
-          SIDAR_TOTAL_JS_BUDGET_KB: "550"
-          SIDAR_TOTAL_GZIP_BUDGET_KB: "170"
+          # ratcheted Makefile defaults (500/160) used by every local
+          # `make dev-full`/`make production-readiness` run.
+          SIDAR_TOTAL_JS_BUDGET_KB: "500"
+          SIDAR_TOTAL_GZIP_BUDGET_KB: "160"
           # CI no longer hardcodes a separate pre-merge override; it inherits
           # the ratchet-managed pyproject.toml baseline like the local profile
           # (current local/CI baseline: %100; coverage_ratchet.py only raises it)

@@ -1,0 +1,133 @@
+name: Reusable benchmark baseline seed
+
+on:
+  workflow_call:
+    inputs:
+      compare_name:
+        description: "pytest-benchmark baseline name"
+        required: false
+        default: "baseline"
+        type: string
+      benchmark_filter:
+        description: "Optional reviewed pytest -k filter"
+        required: false
+        default: ""
+        type: string
+      retention_days:
+        description: "Reviewed baseline artifact retention"
+        required: false
+        default: 90
+        type: number
+
+jobs:
+  seed-baseline:
+    name: Seed benchmark baseline cache
+    runs-on: [self-hosted, linux, benchmark]
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: write
+    env:
+      BENCHMARK_BASELINE_NAME: ${{ inputs.compare_name }}
+      BENCHMARK_COMPARE_NAME: ${{ inputs.compare_name }}
+      BENCHMARK_FILTER: ${{ inputs.benchmark_filter }}
+      BENCHMARK_JSON_OUTPUT: artifacts/benchmark/benchmark.json
+      DOTENV_FILE: .env.test
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11.15"
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.0"
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+
+      - name: Verify canonical toolchain contract
+        run: python scripts/ci/check_toolchain_contract.py
+
+      - name: Install system dependencies
+        run: bash scripts/install_ci_system_deps.sh
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras
+
+      - name: Restore existing benchmark baseline cache
+        uses: actions/cache/restore@v6
+        with:
+          path: .benchmarks
+          key: benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-main-
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-master-
+
+      - name: Seed pytest-benchmark baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/benchmark .benchmarks
+          pytest_args=(
+            uv run python -m pytest -c pyproject.toml -v tests/performance -n 0 --no-cov
+            --benchmark-save="${BENCHMARK_BASELINE_NAME}"
+            --benchmark-json="${BENCHMARK_JSON_OUTPUT}"
+            --benchmark-warmup=on
+            --benchmark-warmup-iterations=100000
+            --benchmark-disable-gc
+          )
+          if [[ -n "${BENCHMARK_FILTER:-}" ]]; then
+            pytest_args+=(-k "${BENCHMARK_FILTER}")
+          fi
+          "${pytest_args[@]}"
+          mapfile -t baseline_files < <(find .benchmarks -type f -name "*_${BENCHMARK_COMPARE_NAME}.json" | sort -V)
+          if (( ${#baseline_files[@]} == 0 )); then
+            echo "::error title=Benchmark baseline seed failed::No *_${BENCHMARK_COMPARE_NAME}.json file was produced under .benchmarks"
+            exit 1
+          fi
+          BASELINE_FILES="$(printf '%s\n' "${baseline_files[@]}")" python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          manifest = {
+              "schema_version": 1,
+              "baseline_name": os.environ["BENCHMARK_BASELINE_NAME"],
+              "compare_name": os.environ["BENCHMARK_COMPARE_NAME"],
+              "github_run_id": os.environ["GITHUB_RUN_ID"],
+              "github_ref": os.environ["GITHUB_REF"],
+              "github_sha": os.environ["GITHUB_SHA"],
+              "runner_name": os.environ["RUNNER_NAME"],
+              "benchmark_files": os.environ["BASELINE_FILES"].splitlines(),
+              "next_strict_command": "BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1 RUN_BENCHMARKS=required ./run_tests.sh",
+          }
+          Path("artifacts/benchmark/baseline-seed-manifest.json").write_text(
+              json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+          )
+          PY
+          {
+            echo "### Benchmark baseline seed"
+            echo "- Baseline name: \`${BENCHMARK_BASELINE_NAME}\`"
+            echo "- Baseline files: \`${#baseline_files[@]}\`"
+            echo "- Runner-specific cache: \`${{ runner.name }}\`"
+            echo "- Rerun normal CI / production-readiness after this cache/artifact is saved."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload reviewed baseline artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: benchmark-baseline-seed
+          path: |
+            .benchmarks/
+            artifacts/benchmark/benchmark.json
+            artifacts/benchmark/baseline-seed-manifest.json
+          if-no-files-found: error
+          retention-days: ${{ inputs.retention_days }}
+
+      - name: Save benchmark baseline cache for CI
+        uses: actions/cache/save@v6
+        with:
+          path: .benchmarks
+          key: benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}

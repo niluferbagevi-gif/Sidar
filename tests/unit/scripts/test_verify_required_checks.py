@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from urllib.error import HTTPError
 
 import pytest
 
@@ -79,6 +78,7 @@ def test_audit_required_checks_accepts_all_release_contexts(tmp_path: Path) -> N
         "CI / Production readiness aggregate",
         "CI / PostgreSQL Connection Pool Stress Test",
         "CI / Extra non-release check",
+        "Branch protection audit / Required release checks audit",
     }
 
     expected, missing = audit.audit_required_checks(
@@ -94,6 +94,7 @@ def test_audit_required_checks_accepts_all_release_contexts(tmp_path: Path) -> N
         "CI / GPU Inference Required Evidence Gate",
         "CI / Production readiness aggregate",
         "CI / PostgreSQL Connection Pool Stress Test",
+        "Branch protection audit / Required release checks audit",
     ]
     assert missing == []
 
@@ -110,6 +111,7 @@ def test_audit_required_checks_reports_missing_release_context(tmp_path: Path) -
             "CI / Production-minimal runtime validation",
             "CI / GPU Inference Required Evidence Gate",
             "CI / Production readiness aggregate",
+            "Branch protection audit / Required release checks audit",
         },
     )
 
@@ -132,56 +134,141 @@ def test_extract_required_contexts_supports_legacy_contexts_and_checks() -> None
     }
 
 
-def test_fetch_required_contexts_uses_github_api_headers(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: dict[str, object] = {}
+def test_audit_merge_safety_accepts_fail_closed_protection() -> None:
+    payload = {
+        "required_status_checks": {"strict": True, "checks": []},
+        "required_pull_request_reviews": {"required_approving_review_count": 1},
+        "enforce_admins": {"enabled": True},
+        "allow_force_pushes": {"enabled": False},
+        "allow_deletions": {"enabled": False},
+    }
 
-    class FakeResponse:
-        def __enter__(self) -> FakeResponse:
-            return self
+    assert audit.audit_merge_safety(payload) == []
 
-        def __exit__(self, *_args: object) -> None:
-            return None
 
-        def read(self) -> bytes:
-            return json.dumps(
-                {"checks": [{"context": "CI / Installer manifest and smoke gate"}]}
-            ).encode()
+def test_audit_merge_safety_reports_each_unsafe_control() -> None:
+    payload = {
+        "required_status_checks": {"strict": False, "checks": []},
+        "enforce_admins": {"enabled": False},
+        "allow_force_pushes": {"enabled": True},
+        "allow_deletions": {"enabled": True},
+    }
 
-    def fake_urlopen(request, timeout):  # noqa: ANN001 - urllib Request type differs by Python minor.
-        captured["url"] = request.full_url
-        captured["timeout"] = timeout
-        captured["authorization"] = request.headers.get("Authorization")
-        captured["api_version"] = request.headers.get("X-github-api-version")
-        return FakeResponse()
+    assert audit.audit_merge_safety(payload) == [
+        "Require branches to be up to date before merging is disabled",
+        "Require a pull request before merging is disabled",
+        "Administrator enforcement is disabled",
+        "Force pushes are allowed or could not be verified as disabled",
+        "Branch deletion is allowed or could not be verified as disabled",
+    ]
 
-    monkeypatch.setattr(audit, "urlopen", fake_urlopen)
 
-    contexts = audit._fetch_required_contexts(
-        api_url="https://api.github.test",
-        repo="owner/repo",
-        branch="main",
-        token="token-123",
-        timeout=3.0,
-    )
+def test_extract_protection_required_contexts_uses_nested_payload() -> None:
+    payload = {
+        "required_status_checks": {"checks": [{"context": "CI / Production readiness aggregate"}]}
+    }
 
-    assert contexts == {"CI / Installer manifest and smoke gate"}
-    assert captured == {
-        "url": "https://api.github.test/repos/owner/repo/branches/main/protection/required_status_checks",
-        "timeout": 3.0,
-        "authorization": "Bearer token-123",
-        "api_version": "2022-11-28",
+    assert audit._extract_protection_required_contexts(payload) == {
+        "CI / Production readiness aggregate"
     }
 
 
-def test_fetch_required_contexts_wraps_http_errors(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_urlopen(_request, timeout):  # noqa: ANN001 - urllib Request type differs by Python minor.
-        assert timeout == 3.0
-        raise HTTPError("https://api.github.test", 404, "Not Found", hdrs=None, fp=None)
+def test_fetch_branch_protection_uses_complete_protection_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    payload = {
+        "required_status_checks": {"strict": True, "checks": []},
+        "required_pull_request_reviews": {},
+        "enforce_admins": {"enabled": True},
+        "allow_force_pushes": {"enabled": False},
+        "allow_deletions": {"enabled": False},
+    }
 
-    monkeypatch.setattr(audit, "urlopen", fake_urlopen)
+    class FakeResponse:
+        status = 200
+        reason = "OK"
+
+        def read(self) -> bytes:
+            return json.dumps(payload).encode()
+
+    class FakeConnection:
+        def __init__(self, host, port, timeout):  # noqa: ANN001 - protocol test double.
+            captured.update(host=host, port=port, timeout=timeout)
+
+        def request(self, method, path, headers):  # noqa: ANN001 - protocol test double.
+            captured.update(method=method, path=path, headers=headers)
+
+        def getresponse(self):  # noqa: ANN201 - protocol test double.
+            return FakeResponse()
+
+        def close(self) -> None:
+            captured["closed"] = True
+
+    monkeypatch.setattr(audit.http.client, "HTTPSConnection", FakeConnection)
+
+    assert (
+        audit._fetch_branch_protection(
+            api_url="https://api.github.test",
+            repo="owner/repo",
+            branch="main",
+            token="token-123",
+            timeout=3.0,
+        )
+        == payload
+    )
+    assert captured == {
+        "host": "api.github.test",
+        "port": None,
+        "timeout": 3.0,
+        "method": "GET",
+        "path": "/repos/owner/repo/branches/main/protection",
+        "headers": {
+            "Accept": "application/vnd.github+json",
+            "Authorization": "Bearer token-123",
+            "User-Agent": "sidar-required-check-audit",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+        "closed": True,
+    }
+
+
+@pytest.mark.parametrize(
+    "api_url",
+    ["http://api.github.test", "https://user:secret@api.github.test", "file:///tmp/api"],
+)
+def test_fetch_branch_protection_rejects_unsafe_api_urls(api_url: str) -> None:
+    with pytest.raises(audit.RequiredCheckAuditError, match="must be an HTTPS"):
+        audit._fetch_branch_protection(
+            api_url=api_url, repo="owner/repo", branch="main", token="token", timeout=3.0
+        )
+
+
+def test_fetch_branch_protection_wraps_http_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeResponse:
+        status = 404
+        reason = "Not Found"
+
+        def read(self) -> bytes:
+            return b"{}"
+
+    class FakeConnection:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def request(self, *_args, **_kwargs):
+            pass
+
+        def getresponse(self):
+            return FakeResponse()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(audit.http.client, "HTTPSConnection", FakeConnection)
 
     with pytest.raises(audit.RequiredCheckAuditError, match="HTTP 404"):
-        audit._fetch_required_contexts(
+        audit._fetch_branch_protection(
             api_url="https://api.github.test",
             repo="owner/repo",
             branch="main",
@@ -190,17 +277,33 @@ def test_fetch_required_contexts_wraps_http_errors(monkeypatch: pytest.MonkeyPat
         )
 
 
-def test_fetch_required_contexts_explains_403_admin_token_requirement(
+def test_fetch_branch_protection_explains_403_admin_token_requirement(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fake_urlopen(_request, timeout):  # noqa: ANN001 - urllib Request type differs by minor.
-        assert timeout == 3.0
-        raise HTTPError("https://api.github.test", 403, "Forbidden", hdrs=None, fp=None)
+    class ForbiddenResponse:
+        status = 403
+        reason = "Forbidden"
 
-    monkeypatch.setattr(audit, "urlopen", fake_urlopen)
+        def read(self) -> bytes:
+            return b"{}"
+
+    class FakeConnection:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def request(self, *_args, **_kwargs):
+            pass
+
+        def getresponse(self):
+            return ForbiddenResponse()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(audit.http.client, "HTTPSConnection", FakeConnection)
 
     with pytest.raises(audit.RequiredCheckAuditError) as exc_info:
-        audit._fetch_required_contexts(
+        audit._fetch_branch_protection(
             api_url="https://api.github.test",
             repo="owner/repo",
             branch="main",
@@ -212,7 +315,7 @@ def test_fetch_required_contexts_explains_403_admin_token_requirement(
     assert "HTTP 403" in message
     assert "BRANCH_PROTECTION_AUDIT_TOKEN" in message
     assert "Administration: read" in message
-    assert "could not be compared with live branch protection" in message
+    assert "Merge safety could not be verified" in message
 
 
 def test_cli_prefers_branch_protection_audit_token(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -228,6 +331,11 @@ def test_audit_workflow_injects_dedicated_admin_read_token() -> None:
     workflow = Path(".github/workflows/branch-protection-audit.yml").read_text(encoding="utf-8")
 
     assert "BRANCH_PROTECTION_AUDIT_TOKEN: ${{ secrets.BRANCH_PROTECTION_AUDIT_TOKEN }}" in workflow
+    assert "pull_request_target:" in workflow
+    assert "branches: [main]" in workflow
+    assert "issues: write" in workflow
+    assert "actions/github-script@v8" in workflow
+    assert "if: steps.audit.outcome == 'failure'" in workflow
     assert "GITHUB_TOKEN: ${{ github.token }}" in workflow
 
 

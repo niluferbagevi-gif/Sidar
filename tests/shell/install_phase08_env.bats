@@ -26,6 +26,45 @@ run_phase08_function() {
   ' _ "$(repo_root)" "$(mktemp -d)" "$snippet"
 }
 
+@test "phase 08 interactive groups contain every user secret exactly once" {
+  run bash -c '
+    set -Eeuo pipefail
+    cd "$1"
+    export SIDAR_INSTALL_TEST_MODE=1
+    set --
+    source ./install_sidar.sh
+
+    declare -A expected=() occurrences=()
+    while IFS= read -r key; do
+      expected["$key"]=1
+    done < <(sidar_user_api_key_names)
+
+    while IFS= read -r group_spec; do
+      key_csv="${group_spec#*|}"
+      IFS=, read -r -a group_keys <<< "$key_csv"
+      for key in "${group_keys[@]}"; do
+        occurrences["$key"]=$(( ${occurrences["$key"]:-0} + 1 ))
+      done
+    done < <(sidar_user_api_key_group_specs)
+
+    for key in "${!expected[@]}"; do
+      [[ "${occurrences["$key"]:-0}" -eq 1 ]] || {
+        printf "Beklenen secret interaktif gruplarda tam bir kez bulunmuyor: %s (%s)\n" \
+          "$key" "${occurrences["$key"]:-0}" >&2
+        exit 1
+      }
+    done
+    for key in "${!occurrences[@]}"; do
+      [[ -n "${expected["$key"]+x}" ]] || {
+        printf "İnteraktif grupta tanımsız secret var: %s\n" "$key" >&2
+        exit 1
+      }
+    done
+  ' _ "$(repo_root)"
+
+  [ "$status" -eq 0 ]
+}
+
 @test "phase 08 production rotation gate rejects shared secrets and accepts isolated values" {
   run_phase08_function '
     trap "rm -rf \"$SCRIPT_DIR\"" EXIT

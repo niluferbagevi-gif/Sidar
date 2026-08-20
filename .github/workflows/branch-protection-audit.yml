@@ -2,13 +2,21 @@ name: Branch protection audit
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+  # pull_request_target deliberately runs the trusted default-branch workflow
+  # without checking out or executing pull-request code. This lets the audit use
+  # the Administration:read secret, including for fork PRs, before merge.
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
   schedule:
-    # Weekly fail-closed audit that GitHub branch protection still requires the
-    # release-critical CI contexts documented in docs/CI_REQUIRED_CHECKS.md.
+    # Weekly fail-closed audit of required CI contexts and merge-safety controls
+    # (PR-only merges, strict checks, admin enforcement, no force push/deletion).
     - cron: "17 4 * * 1"
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   required-checks:
@@ -34,9 +42,52 @@ jobs:
         run: uv sync --frozen --extra dev
 
       - name: Verify main branch required checks
+        id: audit
+        continue-on-error: true
         env:
           # github.token commonly receives HTTP 403 for branch-protection metadata.
           # Configure this fine-grained PAT/App token with Administration: read.
           BRANCH_PROTECTION_AUDIT_TOKEN: ${{ secrets.BRANCH_PROTECTION_AUDIT_TOKEN }}
           GITHUB_TOKEN: ${{ github.token }}
         run: uv run python scripts/ci/verify_required_checks.py --branch main
+
+      - name: Open or update branch-protection alert
+        if: steps.audit.outcome == 'failure' && github.event_name != 'pull_request_target'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const title = "Branch protection audit is failing";
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              per_page: 100,
+            });
+            const existing = issues.find((issue) => !issue.pull_request && issue.title === title);
+            const body = [
+              "The fail-closed branch-protection audit could not verify the required merge controls.",
+              "",
+              `Event: ${context.eventName}`,
+              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              "",
+              "Check the required contexts, strict/up-to-date setting, PR requirement, admin enforcement, force-push/deletion controls, and `BRANCH_PROTECTION_AUDIT_TOKEN` (`Administration: read`).",
+            ].join("\n");
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+              });
+            }
+
+      - name: Enforce audit result
+        if: steps.audit.outcome == 'failure'
+        run: exit 1

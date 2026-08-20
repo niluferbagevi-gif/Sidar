@@ -17,6 +17,9 @@ def test_watchdog_workflow_guards_gate_variable_and_runner_capacity() -> None:
     assert "GPU_BENCH_GATE_ENABLED: ${{ vars.ENABLE_GPU_BENCH_GATE }}" in workflow
     assert '[[ "${GPU_BENCH_GATE_ENABLED}" != "true" ]]' in workflow
     assert "--minimum-online 2" in workflow
+    assert "--minimum-idle 1" in workflow
+    assert "types: [requested]" in workflow
+    assert "actions/github-script@v8" in workflow
 
 
 def test_runbook_provisions_and_verifies_repository_control_plane() -> None:
@@ -29,12 +32,14 @@ def test_runbook_provisions_and_verifies_repository_control_plane() -> None:
     assert "GPU_RUNNER_MONITOR_TOKEN" in runbook
     assert "`self-hosted`, `linux`, `x64`, `gpu`, `cuda`" in runbook
     assert "yerel GPU sonucu bu kontrolü bypass edemez" in runbook
+    assert "--minimum-idle 1" in runbook
 
 
 def _runner(name: str, *, status: str = "online", labels: tuple[str, ...] = ()) -> dict:
     return {
         "name": name,
         "status": status,
+        "busy": False,
         "labels": [{"name": label} for label in labels],
     }
 
@@ -52,6 +57,7 @@ def test_eligible_online_runners_requires_all_labels_and_online_state() -> None:
         ]
     }
     assert capacity.eligible_online_runners(payload) == ["primary"]
+    assert capacity.eligible_idle_runners(payload) == ["primary"]
 
 
 def test_main_fails_closed_with_one_runner_and_passes_with_two(tmp_path, capsys) -> None:
@@ -68,6 +74,22 @@ def test_main_fails_closed_with_one_runner_and_passes_with_two(tmp_path, capsys)
     )
     assert capacity.main(["--fixture", str(fixture)]) == 0
     assert "primary" in capsys.readouterr().out
+
+
+def test_main_reports_busy_capacity_and_missing_labels(tmp_path, capsys) -> None:
+    fixture = tmp_path / "runners.json"
+    labels = ("self-hosted", "linux", "x64", "gpu", "cuda")
+    primary = _runner("primary", labels=labels)
+    standby = _runner("standby", labels=labels)
+    primary["busy"] = True
+    standby["busy"] = True
+    cpu = _runner("wrong-labels", labels=("self-hosted", "linux"))
+    fixture.write_text(json.dumps({"runners": [primary, standby, cpu]}))
+
+    assert capacity.main(["--fixture", str(fixture), "--minimum-idle", "1"]) == 1
+    error = capsys.readouterr().err
+    assert "idle kapasite yok" in error
+    assert "missing_labels=['cuda', 'gpu', 'x64']" in error
 
 
 def test_main_requires_authenticated_api_inputs(capsys) -> None:

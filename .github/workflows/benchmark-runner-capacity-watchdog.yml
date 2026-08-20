@@ -4,13 +4,17 @@ on:
   schedule:
     - cron: "47 * * * *"
   workflow_dispatch:
+  workflow_run:
+    workflows: [CI]
+    types: [requested]
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   verify-benchmark-capacity:
-    name: Verify online benchmark runner
+    name: Verify redundant benchmark runners
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -19,9 +23,42 @@ jobs:
         with:
           python-version: "3.11.15"
       - name: Check stable benchmark runner capacity
+        id: runner_capacity
+        continue-on-error: true
         env:
           BENCHMARK_RUNNER_MONITOR_TOKEN: ${{ secrets.BENCHMARK_RUNNER_MONITOR_TOKEN }}
         run: |
           python scripts/ci/check_benchmark_runner_capacity.py \
             --repo "${GITHUB_REPOSITORY}" \
-            --minimum-online 1
+            --minimum-online 2 \
+            --minimum-idle 1
+      - name: Open or update benchmark runner capacity alert
+        if: steps.runner_capacity.outcome == 'failure'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const title = "Benchmark CI runner capacity is not release-ready";
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo, state: "open", per_page: 100,
+            });
+            const existing = issues.find((issue) => !issue.pull_request && issue.title === title);
+            const body = [
+              "The benchmark watchdog requires two labeled online runners and at least one idle runner.",
+              "",
+              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              "",
+              "Verify runner services and the `self-hosted`, `linux`, `benchmark` labels. Each host also needs its own reviewed baseline because cache keys include `runner.name`.",
+            ].join("\n");
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: existing.number, body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo, title, body,
+              });
+            }
+      - name: Enforce benchmark runner readiness
+        if: steps.runner_capacity.outcome == 'failure'
+        run: exit 1

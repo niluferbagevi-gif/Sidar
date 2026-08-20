@@ -1973,6 +1973,49 @@ def test_main_default_upload_pushes_timestamped_branch_and_opens_pr(monkeypatch,
     assert "Merge pull request" in output
 
 
+def test_main_approved_deletion_is_committed_to_pr_first_upload_branch(monkeypatch):
+    """Approved tracked deletions must travel through the PR branch, never direct main."""
+    deleted = ["tests/removed_test.py"]
+    staged_deletions: list[list[str]] = []
+    opened: list[tuple[str, str]] = []
+    monkeypatch.setattr(gu, "get_deleted_files", lambda: deleted)
+    monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: ([], []))
+    monkeypatch.setattr(
+        gu,
+        "stage_deleted_files",
+        lambda paths: (staged_deletions.append(paths), (True, ""))[1],
+    )
+    harness = MainHarness(
+        monkeypatch,
+        [],
+        outputs=[
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "main"),
+            (True, "reset"),
+            (True, "D tests/removed_test.py"),
+            (True, "commit ok"),
+            (True, "push ok"),
+        ],
+        inputs=["yes", "remove obsolete test"],
+    )
+    monkeypatch.setattr(gu, "direct_main_upload_allowed", lambda: False)
+    monkeypatch.setattr(gu, "create_upload_branch", lambda: "sidar/upload-deletion-test")
+    monkeypatch.setattr(
+        gu,
+        "open_upload_pull_request",
+        lambda branch, token: (opened.append((branch, token)), (True, "pr-url"))[1],
+    )
+
+    gu.main()
+
+    assert staged_deletions == [deleted]
+    assert ["git", "push", "-u", "origin", "sidar/upload-deletion-test"] in harness.calls
+    assert ["git", "push", "-u", "origin", "main"] not in harness.calls
+    assert opened == [("sidar/upload-deletion-test", "tok")]
+
+
 def test_main_pr_first_post_commit_gate_failure_prints_branch_recovery_instructions(
     monkeypatch, capsys
 ):

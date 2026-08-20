@@ -1,6 +1,13 @@
 {
-  "maximum_undocumented_production_modules": 178,
-  "require_exact_baseline": false,
+  "captured_at": "2026-08-20",
+  "maximum_undocumented_production_modules": 177,
+  "require_exact_baseline": true,
   "owner": "docs/module-notes maintainers",
-  "note": "Ratchet ceiling for production Python modules (agent/, core/, managers/, plugins/, web/, launcher/, and the root entry-point scripts) that have no docs/module-notes/*.md entry in INDEX.md. Never raise this value to make a new, undocumented module pass CI; add its module note and lower the value instead. See scripts/ci/check_module_notes_inventory.py --update."
+  "note": "Ratchet ceiling for production Python modules (agent/, core/, managers/, plugins/, web/, launcher/, and the root entry-point scripts) that have no docs/module-notes/*.md entry in INDEX.md. Never raise this value to make a new, undocumented module pass CI; add its module note and lower the value instead. See scripts/ci/check_module_notes_inventory.py --update.",
+  "reduction_targets": [
+    {"due_date": "2026-11-30", "maximum_undocumented_production_modules": 150},
+    {"due_date": "2027-02-28", "maximum_undocumented_production_modules": 100},
+    {"due_date": "2027-05-31", "maximum_undocumented_production_modules": 50},
+    {"due_date": "2027-08-31", "maximum_undocumented_production_modules": 0}
+  ]
 }

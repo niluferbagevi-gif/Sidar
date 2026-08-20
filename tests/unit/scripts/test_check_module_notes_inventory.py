@@ -120,6 +120,16 @@ def _write_baseline(path, *, limit: int, require_exact: bool = False) -> None:
             {
                 "maximum_undocumented_production_modules": limit,
                 "require_exact_baseline": require_exact,
+                "reduction_targets": (
+                    []
+                    if limit == 0
+                    else [
+                        {
+                            "due_date": "2099-12-31",
+                            "maximum_undocumented_production_modules": 0,
+                        }
+                    ]
+                ),
             }
         ),
         encoding="utf-8",
@@ -209,7 +219,7 @@ def test_main_update_ratchets_baseline_to_current_count(tmp_path, monkeypatch, c
     index_path = _write_minimal_repo(tmp_path)
     (tmp_path / "agent" / "new_module.py").write_text("", encoding="utf-8")
     baseline_path = tmp_path / "baseline.json"
-    _write_baseline(baseline_path, limit=0)
+    _write_baseline(baseline_path, limit=2)
 
     assert (
         checker.main(["--index", str(index_path), "--baseline", str(baseline_path), "--update"])
@@ -219,6 +229,55 @@ def test_main_update_ratchets_baseline_to_current_count(tmp_path, monkeypatch, c
     updated = json.loads(baseline_path.read_text(encoding="utf-8"))
     assert updated["maximum_undocumented_production_modules"] == 1
     assert "güncellendi" in capsys.readouterr().out
+
+
+def test_main_update_refuses_to_raise_baseline(tmp_path, monkeypatch, capsys) -> None:
+    _make_repo(tmp_path, monkeypatch)
+    index_path = _write_minimal_repo(tmp_path)
+    (tmp_path / "agent" / "new_module.py").write_text("", encoding="utf-8")
+    baseline_path = tmp_path / "baseline.json"
+    _write_baseline(baseline_path, limit=0)
+
+    assert (
+        checker.main(["--index", str(index_path), "--baseline", str(baseline_path), "--update"])
+        == 2
+    )
+    assert "borcunu yükseltemez" in capsys.readouterr().err
+
+
+def test_reduction_targets_must_strictly_decrease(tmp_path) -> None:
+    baseline_path = tmp_path / "baseline.json"
+    baseline_path.write_text(
+        json.dumps(
+            {
+                "maximum_undocumented_production_modules": 10,
+                "reduction_targets": [
+                    {
+                        "due_date": "2027-01-01",
+                        "maximum_undocumented_production_modules": 10,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="kesin azalmalıdır"):
+        checker._reduction_targets(baseline_path)
+
+
+def test_committed_inventory_roadmap_and_registry_note_are_ratchet_protected() -> None:
+    baseline = json.loads(checker.DEFAULT_BASELINE.read_text(encoding="utf-8"))
+    index = checker.INDEX_PATH.read_text(encoding="utf-8")
+
+    assert baseline["maximum_undocumented_production_modules"] == 177
+    assert baseline["require_exact_baseline"] is True
+    assert [
+        target["maximum_undocumented_production_modules"]
+        for target in baseline["reduction_targets"]
+    ] == [150, 100, 50, 0]
+    assert "`agent/registry.py` → `docs/module-notes/agent/registry.py.md`" in index
+    assert (checker.ROOT / "docs/module-notes/agent/registry.py.md").is_file()
 
 
 def test_main_rejects_invalid_baseline(tmp_path, monkeypatch, capsys) -> None:

@@ -104,31 +104,25 @@ def test_nightly_auth_benchmark_requires_cached_baseline_compare():
     assert "BENCHMARK_COMPARE_REQUIRED=1 ancak .benchmarks" in workflow
 
 
-def test_ci_required_checks_docs_track_benchmark_seed_duplication_and_reactive_keepalive() -> None:
-    """Guard the benchmark-baseline follow-up notes in the required-checks doc.
-
-    docs/CI_REQUIRED_CHECKS.md must keep the follow-up notes a friend code
-    review raised for the benchmark baseline pipeline: keepalive is
-    restore-only (no proactive re-seed/alerting), and
-    benchmark-baseline-seed.yml/ci.yml's seed-benchmark-baseline job carry
-    real (not just cosmetic) drift that a workflow_call merge would need to
-    resolve deliberately.
-    """
+def test_benchmark_seed_uses_reusable_workflow_and_keepalive_alerts() -> None:
+    """Keep bootstrap logic canonical and missing baseline evidence visible."""
     seed_workflow = (WORKFLOW_DIR / "benchmark-baseline-seed.yml").read_text(encoding="utf-8")
     ci_workflow = (WORKFLOW_DIR / "ci.yml").read_text(encoding="utf-8")
+    reusable = (WORKFLOW_DIR / "benchmark-baseline-reusable.yml").read_text(encoding="utf-8")
+    keepalive = (WORKFLOW_DIR / "benchmark-baseline-keepalive.yml").read_text(encoding="utf-8")
     docs = Path("docs/CI_REQUIRED_CHECKS.md").read_text(encoding="utf-8")
 
-    assert "Known follow-up improvements" in docs
-    assert "Keepalive is still purely reactive" in docs
-    assert "workflow_call` reusable workflow is the right fix" in docs
-
-    # Action runtime pins are now unified; the remaining behavioral drift is real.
-    assert "actions/checkout@v7" in seed_workflow
-    assert "actions/checkout@v7" in ci_workflow
-    assert "retention-days: 30" in seed_workflow
-    assert "retention-days: 90" in ci_workflow
+    reusable_call = "uses: ./.github/workflows/benchmark-baseline-reusable.yml"
+    assert reusable_call in seed_workflow
+    assert reusable_call in ci_workflow
+    assert "workflow_call:" in reusable
+    assert "actions/cache/save@v6" in reusable
+    assert "baseline-seed-manifest.json" in reusable
     assert "compare_name" in seed_workflow
     assert "seed_benchmark_baseline:" in ci_workflow
+    assert "Open or update missing baseline alert" in keepalive
+    assert "actions/github-script@v8" in keepalive
+    assert "Ortak reusable seed workflow" in docs
 
 
 def test_workflows_use_node24_github_action_majors() -> None:

@@ -24,6 +24,7 @@ backlog from growing, and it must be tightened (via --update) as notes are added
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import re
 import sys
@@ -140,9 +141,41 @@ def _load_baseline(path: Path) -> tuple[int, bool]:
     return limit, require_exact
 
 
+def _reduction_targets(path: Path) -> list[tuple[dt.date, int]]:
+    """Read a dated, strictly decreasing module-note debt roadmap."""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    initial = payload.get("maximum_undocumented_production_modules")
+    raw_targets = payload.get("reduction_targets")
+    if not isinstance(initial, int) or isinstance(initial, bool):
+        raise ValueError("reduction roadmap başlangıç limiti integer olmalıdır")
+    if not isinstance(raw_targets, list) or (not raw_targets and initial != 0):
+        raise ValueError("reduction_targets yalnız sıfır borçta boş olabilir")
+    targets: list[tuple[dt.date, int]] = []
+    previous_limit = initial
+    for item in raw_targets:
+        if not isinstance(item, dict):
+            raise ValueError("reduction_targets girdileri object olmalıdır")
+        try:
+            due_date = dt.date.fromisoformat(item["due_date"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("reduction target due_date YYYY-MM-DD olmalıdır") from exc
+        limit = item.get("maximum_undocumented_production_modules")
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 0 <= limit < previous_limit:
+            raise ValueError("reduction target limitleri negatif olmadan kesin azalmalıdır")
+        if targets and due_date <= targets[-1][0]:
+            raise ValueError("reduction target tarihleri kesin artmalıdır")
+        targets.append((due_date, limit))
+        previous_limit = limit
+    return targets
+
+
 def _write_baseline(path: Path, count: int) -> None:
     payload = json.loads(path.read_text(encoding="utf-8"))
+    current = payload.get("maximum_undocumented_production_modules")
+    if not isinstance(current, int) or isinstance(current, bool) or count > current:
+        raise ValueError("--update baseline borcunu yükseltemez; eksik modül notlarını ekleyin")
     payload["maximum_undocumented_production_modules"] = count
+    payload["captured_at"] = dt.date.today().isoformat()
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
@@ -212,17 +245,39 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         limit, require_exact = _load_baseline(args.baseline)
+        targets = _reduction_targets(args.baseline)
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         print(f"Module-notes envanter baseline geçersiz: {exc}", file=sys.stderr)
         return 2
 
     count = len(undocumented)
     if args.update:
-        _write_baseline(args.baseline, count)
+        try:
+            _write_baseline(args.baseline, count)
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            print(f"Module-notes envanter baseline güncellenemedi: {exc}", file=sys.stderr)
+            return 2
         print(f"Module-notes envanter ratchet baseline güncellendi: {count}")
         return 0
 
     print(f"Dokümante edilmemiş production modül sayısı: {count} (baseline={limit})")
+
+    today = dt.date.today()
+    effective_target = next(((date, value) for date, value in targets if date >= today), None)
+    if effective_target:
+        print(
+            "Module-notes azaltma hedefi: "
+            f"due_date={effective_target[0].isoformat()}, maximum={effective_target[1]}"
+        )
+    overdue = [(date, value) for date, value in targets if date < today and count > value]
+    if overdue:
+        due_date, target = overdue[-1]
+        print(
+            f"Module-notes azaltma hedefi gecikti: {count} > {target} "
+            f"(due_date={due_date.isoformat()}).",
+            file=sys.stderr,
+        )
+        return 1
 
     if count > limit:
         print(

@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 concurrency:
   group: benchmark-baseline-cache-keepalive-${{ github.ref }}
@@ -18,7 +19,7 @@ jobs:
   restore-reviewed-baseline:
     name: Restore reviewed benchmark baseline
     # Must run on the same [self-hosted, linux, benchmark] runner pool as
-    # benchmark-compare/seed-baseline (ci.yml / benchmark-baseline-seed.yml):
+    # benchmark-compare/seed-baseline (ci.yml / benchmark-baseline-reusable.yml):
     # their cache key includes ${{ runner.name }} (see docs/CI_REQUIRED_CHECKS.md
     # -- deliberate, prevents comparing against a baseline captured on
     # different hardware). Restoring from ubuntu-latest resolves a different
@@ -41,7 +42,7 @@ jobs:
           # that's what actually resets the cache's last-accessed clock. Keep
           # this key/restore-keys list identical to benchmark-compare's in
           # ci.yml and to seed-baseline's save key in
-          # benchmark-baseline-seed.yml, or a keepalive "success" here again
+          # benchmark-baseline-reusable.yml, or a keepalive "success" here again
           # stops meaning what it says.
           key: benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-keepalive-${{ github.run_id }}
           restore-keys: |
@@ -50,6 +51,8 @@ jobs:
             benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-master-
 
       - name: Require reviewed baseline evidence
+        id: baseline_evidence
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -61,3 +64,37 @@ jobs:
           echo "- Reviewed baseline cache restored; no benchmark was executed and no baseline was regenerated." >> "$GITHUB_STEP_SUMMARY"
           echo "- Runner: \`${{ runner.name }}\`" >> "$GITHUB_STEP_SUMMARY"
           find .benchmarks -type f -name '*_baseline.json' -print | sed 's/^/- `/' | sed 's/$/`/' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open or update missing baseline alert
+        if: steps.baseline_evidence.outcome == 'failure'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const title = `Benchmark baseline missing for ${process.env.RUNNER_NAME}`;
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo, state: "open", per_page: 100,
+            });
+            const existing = issues.find((issue) => !issue.pull_request && issue.title === title);
+            const body = [
+              `No reviewed baseline cache was restored for runner \`${process.env.RUNNER_NAME}\`.`,
+              "",
+              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              "",
+              "Run the Benchmark baseline seed workflow on this runner, review its artifact, then rerun keepalive and strict compare.",
+            ].join("\n");
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: existing.number, body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo, title, body,
+              });
+            }
+        env:
+          RUNNER_NAME: ${{ runner.name }}
+
+      - name: Enforce reviewed baseline evidence
+        if: steps.baseline_evidence.outcome == 'failure'
+        run: exit 1

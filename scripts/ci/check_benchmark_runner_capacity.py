@@ -30,6 +30,37 @@ def eligible_online_runners(payload: dict[str, Any]) -> list[str]:
     return sorted(eligible)
 
 
+def eligible_idle_runners(payload: dict[str, Any]) -> list[str]:
+    """Return eligible online runners that can immediately accept benchmark work."""
+    eligible_names = set(eligible_online_runners(payload))
+    return sorted(
+        str(runner.get("name", "unnamed-runner"))
+        for runner in payload.get("runners", [])
+        if isinstance(runner, dict)
+        and str(runner.get("name", "unnamed-runner")) in eligible_names
+        and runner.get("busy") is False
+    )
+
+
+def runner_inventory_diagnostics(payload: dict[str, Any]) -> list[str]:
+    """Describe status, utilization, and label drift for operator remediation."""
+    diagnostics: list[str] = []
+    for runner in payload.get("runners", []):
+        if not isinstance(runner, dict):
+            continue
+        labels = {
+            str(item.get("name", "")).strip().lower()
+            for item in runner.get("labels", [])
+            if isinstance(item, dict)
+        }
+        diagnostics.append(
+            f"{runner.get('name', 'unnamed-runner')}:status={runner.get('status', 'unknown')},"
+            f"busy={runner.get('busy', 'unknown')},"
+            f"missing_labels={sorted(REQUIRED_LABELS - labels)}"
+        )
+    return sorted(diagnostics)
+
+
 def fetch_runner_payload(repository: str, token: str) -> dict[str, Any]:
     """Fetch repository runner inventory through GitHub's authenticated API."""
     request = urllib.request.Request(
@@ -58,7 +89,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo", default=os.getenv("GITHUB_REPOSITORY", ""))
     parser.add_argument("--token", default=os.getenv("BENCHMARK_RUNNER_MONITOR_TOKEN", ""))
     parser.add_argument("--fixture", type=Path)
-    parser.add_argument("--minimum-online", type=int, default=1)
+    parser.add_argument("--minimum-online", type=int, default=2)
+    parser.add_argument("--minimum-idle", type=int, default=0)
     args = parser.parse_args(argv)
 
     if args.fixture:
@@ -77,16 +109,31 @@ def main(argv: list[str] | None = None) -> int:
             return 2
 
     eligible = eligible_online_runners(payload)
-    minimum = max(1, args.minimum_online)
+    idle = eligible_idle_runners(payload)
+    minimum = max(2, args.minimum_online)
     if len(eligible) < minimum:
         print(
             f"Benchmark runner capacity is insufficient: online={len(eligible)}, "
-            f"required={minimum}, runners={eligible}. "
+            f"required={minimum}, runners={eligible}, "
+            f"inventory={runner_inventory_diagnostics(payload)}. "
             "docs/runbooks/benchmark-runner-continuity.md",
             file=sys.stderr,
         )
         return 1
-    print(f"Benchmark runner capacity is ready: online={len(eligible)}, runners={eligible}")
+    minimum_idle = max(0, args.minimum_idle)
+    if len(idle) < minimum_idle:
+        print(
+            f"Benchmark runner idle capacity is insufficient: idle={len(idle)}, "
+            f"required={minimum_idle}, online_runners={eligible}, "
+            f"inventory={runner_inventory_diagnostics(payload)}. "
+            "docs/runbooks/benchmark-runner-continuity.md",
+            file=sys.stderr,
+        )
+        return 1
+    print(
+        f"Benchmark runner capacity is ready: online={len(eligible)}, idle={len(idle)}, "
+        f"runners={eligible}"
+    )
     return 0
 
 
