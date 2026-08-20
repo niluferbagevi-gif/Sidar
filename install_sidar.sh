@@ -184,7 +184,7 @@ load_remote_script_checksums() {
 load_remote_script_checksums
 
 SIDAR_INSTALLER_EMBEDDED_SOURCE_REF="main"
-SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="1254bfa2fe2ddfcca55613e6e6b812e995b58b39"
+SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="8aa3abc866bfb90da9cdbdfd3bbb376648df2566"
 
 sidar_truthy_early_bool() {
     local raw="${1:-}"
