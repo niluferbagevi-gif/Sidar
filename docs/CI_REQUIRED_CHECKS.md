@@ -149,6 +149,43 @@ the live configuration was **not verified**, not that required checks are presen
 The script fails closed and prints this remediation instead of treating the local
 workflow contract as proof of GitHub Settings.
 
+### ⚠️ Confirmed gap: the audit has never actually verified live branch protection
+
+A friend code review flagged that PR #2755 merged into `main` while its head
+commit's `Benchmark compare gate` and `GPU Inference Quality Gate` jobs were
+still `queued` (no online `[self-hosted, linux, benchmark]` /
+`[self-hosted, linux, x64, gpu, cuda]` runner picked them up), and neither
+`GPU Inference Required Evidence Gate` nor `Production readiness aggregate`
+nor a correctly-named PostgreSQL stress check even appear among that commit's
+13 check runs. Re-checking this directly against the GitHub API confirmed the
+observation and traced the root cause:
+
+- All six `Branch protection audit` runs to date (five scheduled + one manual
+  re-run triggered while investigating this) failed identically: `Verify main
+  branch required checks` exits in ~1 second with `GitHub required-check API
+  returned HTTP 403 ... BRANCH_PROTECTION_AUDIT_TOKEN: ` (empty). The
+  repository secret described above was never actually configured, so every
+  scheduled run since the audit was introduced has failed closed on step 6
+  without ever comparing a single required context against live branch
+  protection.
+- Because `github.token` also cannot read this endpoint (by design — see
+  above), **no automated system in this repository has ever confirmed** that
+  `main` branch protection actually requires the checks in the table above.
+  The PR #2755 observation is consistent with, but does not by itself prove,
+  branch protection being under-configured; an admin/ruleset bypass on that
+  merge is an equally possible explanation. Only a live read of GitHub
+  Settings (or a successful authorized run of this audit) can distinguish
+  the two.
+- This can only be closed by a repository admin, outside of what a PR/CI
+  change can do: (1) create a fine-grained PAT or GitHub App installation
+  token with **Administration: read** on this repo and store it as the
+  `BRANCH_PROTECTION_AUDIT_TOKEN` secret, then (2) open Settings → Rules →
+  Rulesets (or Branches → Branch protection) for `main` and confirm each
+  required check in the table above is actually selected, force pushes are
+  disallowed, and admin/ruleset bypass is off or restricted to a controlled
+  emergency actor. Re-run `Branch protection audit` via `workflow_dispatch`
+  after configuring the secret to get the first real answer.
+
 
 ## Autonomous/direct push guardrails
 
