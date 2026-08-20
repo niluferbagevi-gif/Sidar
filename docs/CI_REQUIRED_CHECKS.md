@@ -25,10 +25,21 @@ is restored.
 The release-blocking `benchmark-compare` job and both baseline seed paths require a
 dedicated `[self-hosted, linux, benchmark]` runner. Its name is part of the benchmark
 cache key, preventing a baseline produced on one hardware host from being restored on
-another host. This is a deliberate, accepted single point of failure, not an oversight:
-an unrelated PR can be blocked at `production-readiness` by a benchmark-runner rename or
-a cache eviction alone, with no relation to that PR's actual diff. The mitigations below
-narrow the blast radius but do not remove it.
+another host. Today this is a single point of failure in practice: an unrelated PR can
+be blocked at `production-readiness` by a benchmark-runner rename or a cache eviction
+alone, with no relation to that PR's actual diff. Following the same redundancy pattern
+already used for the GPU evidence gate (see below), `Benchmark Runner Capacity Watchdog`
+now targets **two** online `[self-hosted, linux, benchmark]` runners
+(`--minimum-online 2`, floored in `scripts/ci/check_benchmark_runner_capacity.py`) instead
+of one. Unlike the GPU runners, this alone does not remove the single point of failure:
+because the baseline cache key includes `${{ runner.name }}`, a second host only helps if
+it *also* has its own independently reviewed baseline seeded on it (via
+`seed_benchmark_baseline=true` landing on that specific host) and its own keepalive
+coverage — a job that happens to land on an unseeded standby fails closed exactly like an
+orphaned cache today. Provisioning and seeding that second host is a real self-hosted
+infrastructure rollout, not a docs/workflow-only change; see
+[`docs/runbooks/benchmark-runner-continuity.md`](runbooks/benchmark-runner-continuity.md)
+for the target architecture and the open per-host seeding gap.
 
 The same reviewed comparison is mandatory in all three promotion paths: normal `main`
 CI (`benchmark-compare`), the scheduled auth benchmark, and
@@ -65,6 +76,19 @@ The self-hosted runner queue now has a proactive signal: the scheduled/manual
 [`docs/runbooks/benchmark-runner-continuity.md`](runbooks/benchmark-runner-continuity.md).
 This warns about runner capacity only; the two baseline lifecycle improvements below remain
 open and deliberately separate from the release-blocker fixes.
+
+- **The watchdog now targets two online benchmark runners, but only one is confirmed to
+  exist today, and no second baseline has been seeded.** Bumping `--minimum-online` to 2
+  makes the *target* explicit and consistent with the GPU redundancy pattern, but closing
+  it requires: (1) provisioning a second `[self-hosted, linux, benchmark]` host in a
+  different failure domain, (2) running `seed_benchmark_baseline=true` in a way that
+  actually lands on that specific host (GitHub does not let two same-labeled runners be
+  targeted individually, so this needs either a temporarily paused primary during the
+  initial seed or a distinct interim label), and (3) confirming `benchmark-baseline-
+  keepalive.yml`'s Monday/Thursday cadence actually reaches both hosts over time rather
+  than assuming whichever runner happens to be idle. None of this can be validated without
+  real second-host hardware, so it is intentionally left as an infrastructure rollout
+  step, not bundled into this docs/workflow-only change.
 
 - **Keepalive is still purely reactive.** It only restores-and-touches the existing cache;
   it never re-runs the benchmark suite to refresh the baseline data itself, and nothing
@@ -118,13 +142,26 @@ içinde tanımlıdır. Watchdog erken uyarıdır; required GPU benchmark kanıt�
 
 Repository administrators should periodically verify that the required check
 names above are selected for protected `main`/`master` branches. This repository
-now includes a scheduled/manual audit workflow (`Branch protection audit`) that
-runs `scripts/ci/verify_required_checks.py` against GitHub's branch protection
-API and compares the protected branch contexts with the release-critical job
-`name:` values in `.github/workflows/ci.yml`. If a job `name:` changes, update
-branch protection at the same time or this audit will fail; without that sync,
-PRs may either be blocked forever by a stale required context or allowed to
-merge without the intended release gate.
+now includes a scheduled/push/manual audit workflow (`Branch protection audit`)
+that runs `scripts/ci/verify_required_checks.py` against GitHub's branch
+protection API and compares the protected branch contexts with the
+release-critical job `name:` values in `.github/workflows/ci.yml`. If a job
+`name:` changes, update branch protection at the same time or this audit will
+fail; without that sync, PRs may either be blocked forever by a stale required
+context or allowed to merge without the intended release gate.
+
+The audit runs on three triggers: the weekly Monday cron, `workflow_dispatch`,
+and every push to `main`. The push trigger exists because branch
+protection/rulesets are GitHub Settings state, not a file in this repo — a
+misconfiguration can appear at any time, independent of what a given merge
+changed — so waiting for the Monday cron could leave a drift unnoticed for up
+to a week; a merge-time run surfaces it the same day, and also covers CI
+required-check contract edits themselves since those land on `main` through
+the same push. On failure, the workflow files (or comments on) a standing
+`branch-protection-audit-failure`-labeled GitHub issue so the failure survives
+past the Actions tab — a plain red scheduled run was not visible enough in
+practice; see the "Confirmed gap" subsection below for why. The next passing
+run closes that issue automatically.
 
 ### Automated required-check audit
 
@@ -148,6 +185,43 @@ as a fallback and can receive HTTP 403 for branch-protection metadata; a 403 mea
 the live configuration was **not verified**, not that required checks are present.
 The script fails closed and prints this remediation instead of treating the local
 workflow contract as proof of GitHub Settings.
+
+### ⚠️ Confirmed gap: the audit has never actually verified live branch protection
+
+A friend code review flagged that PR #2755 merged into `main` while its head
+commit's `Benchmark compare gate` and `GPU Inference Quality Gate` jobs were
+still `queued` (no online `[self-hosted, linux, benchmark]` /
+`[self-hosted, linux, x64, gpu, cuda]` runner picked them up), and neither
+`GPU Inference Required Evidence Gate` nor `Production readiness aggregate`
+nor a correctly-named PostgreSQL stress check even appear among that commit's
+13 check runs. Re-checking this directly against the GitHub API confirmed the
+observation and traced the root cause:
+
+- All six `Branch protection audit` runs to date (five scheduled + one manual
+  re-run triggered while investigating this) failed identically: `Verify main
+  branch required checks` exits in ~1 second with `GitHub required-check API
+  returned HTTP 403 ... BRANCH_PROTECTION_AUDIT_TOKEN: ` (empty). The
+  repository secret described above was never actually configured, so every
+  scheduled run since the audit was introduced has failed closed on step 6
+  without ever comparing a single required context against live branch
+  protection.
+- Because `github.token` also cannot read this endpoint (by design — see
+  above), **no automated system in this repository has ever confirmed** that
+  `main` branch protection actually requires the checks in the table above.
+  The PR #2755 observation is consistent with, but does not by itself prove,
+  branch protection being under-configured; an admin/ruleset bypass on that
+  merge is an equally possible explanation. Only a live read of GitHub
+  Settings (or a successful authorized run of this audit) can distinguish
+  the two.
+- This can only be closed by a repository admin, outside of what a PR/CI
+  change can do: (1) create a fine-grained PAT or GitHub App installation
+  token with **Administration: read** on this repo and store it as the
+  `BRANCH_PROTECTION_AUDIT_TOKEN` secret, then (2) open Settings → Rules →
+  Rulesets (or Branches → Branch protection) for `main` and confirm each
+  required check in the table above is actually selected, force pushes are
+  disallowed, and admin/ruleset bypass is off or restricted to a controlled
+  emergency actor. Re-run `Branch protection audit` via `workflow_dispatch`
+  after configuring the secret to get the first real answer.
 
 
 ## Autonomous/direct push guardrails

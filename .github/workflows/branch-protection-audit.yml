@@ -6,9 +6,23 @@ on:
     # Weekly fail-closed audit that GitHub branch protection still requires the
     # release-critical CI contexts documented in docs/CI_REQUIRED_CHECKS.md.
     - cron: "17 4 * * 1"
+  push:
+    branches:
+      - main
+    # Branch protection/rulesets are GitHub Settings state, not a file in this
+    # repo, so any merge to main is a plausible moment for them to have
+    # drifted (an admin edit, a required-context rename in ci.yml that
+    # protection was never updated to match, etc.). Waiting for the Monday
+    # cron let a misconfiguration go unnoticed for up to a week; a merge-time
+    # run surfaces it the same day. This also covers CI/required-check
+    # contract edits themselves, since those land on main via the same push.
 
 permissions:
   contents: read
+  # File/close the alert issue below. Required-checks metadata itself is
+  # still read with BRANCH_PROTECTION_AUDIT_TOKEN (or github.token, which
+  # commonly 403s) — this permission is unrelated to that read.
+  issues: write
 
 jobs:
   required-checks:
@@ -40,3 +54,78 @@ jobs:
           BRANCH_PROTECTION_AUDIT_TOKEN: ${{ secrets.BRANCH_PROTECTION_AUDIT_TOKEN }}
           GITHUB_TOKEN: ${{ github.token }}
         run: uv run python scripts/ci/verify_required_checks.py --branch main
+
+      # A red scheduled/push run by itself was not visible enough in
+      # practice: this audit failed 403 on every run since it was added and
+      # nobody noticed for weeks (see docs/CI_REQUIRED_CHECKS.md, "Confirmed
+      # gap" section). File (or comment on) a standing issue so a failure
+      # survives past the Actions tab.
+      - name: File/update a visible alert issue on audit failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const label = "branch-protection-audit-failure";
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = [
+              `Branch protection audit failed: ${runUrl}`,
+              "",
+              'See docs/CI_REQUIRED_CHECKS.md ("Confirmed gap: the audit has never actually',
+              'verified live branch protection") for the required remediation steps',
+              "(BRANCH_PROTECTION_AUDIT_TOKEN secret with Administration: read, and/or",
+              "verifying required checks in GitHub Settings).",
+            ].join("\n");
+            const { data: existing } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              labels: label,
+              per_page: 1,
+            });
+            if (existing.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing[0].number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: "Branch protection audit is failing (main required checks unverified)",
+                body,
+                labels: [label],
+              });
+            }
+
+      # Close the loop: once the audit is green again, close whatever alert
+      # issue the failure above filed instead of leaving it open forever.
+      - name: Close alert issue after a passing audit
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const label = "branch-protection-audit-failure";
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const { data: existing } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              labels: label,
+              per_page: 10,
+            });
+            for (const issue of existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `Branch protection audit passed again: ${runUrl}. Closing.`,
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: "closed",
+              });
+            }

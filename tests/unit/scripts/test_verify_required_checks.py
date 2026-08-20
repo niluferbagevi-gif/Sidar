@@ -5,6 +5,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 
 import pytest
+import yaml
 
 from scripts.ci import verify_required_checks as audit
 
@@ -229,6 +230,50 @@ def test_audit_workflow_injects_dedicated_admin_read_token() -> None:
 
     assert "BRANCH_PROTECTION_AUDIT_TOKEN: ${{ secrets.BRANCH_PROTECTION_AUDIT_TOKEN }}" in workflow
     assert "GITHUB_TOKEN: ${{ github.token }}" in workflow
+
+
+def test_audit_workflow_runs_on_schedule_dispatch_and_main_push() -> None:
+    """Guard against a weekly-only cron leaving drift unnoticed for a week.
+
+    A friend code review flagged that the weekly-only cron could leave a
+    branch-protection misconfiguration unnoticed for up to a week. The audit
+    must also re-verify on every push to main, not just on a Monday cron.
+    """
+    workflow_path = Path(".github/workflows/branch-protection-audit.yml")
+    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+
+    triggers = workflow[True] if True in workflow else workflow["on"]
+    assert "workflow_dispatch" in triggers
+    assert any(entry.get("cron") for entry in triggers["schedule"])
+    assert triggers["push"]["branches"] == ["main"]
+
+
+def test_audit_workflow_alerts_on_failure_and_closes_on_recovery() -> None:
+    """Guard the failure/recovery alert issue lifecycle.
+
+    The audit failed 403 on every run for weeks without anyone noticing
+    (see docs/CI_REQUIRED_CHECKS.md "Confirmed gap"): a red scheduled run
+    alone was not visible enough. It must also file/comment on a standing
+    issue when it fails, and close that issue once it passes again.
+    """
+    workflow = yaml.safe_load(
+        Path(".github/workflows/branch-protection-audit.yml").read_text(encoding="utf-8")
+    )
+
+    assert workflow["permissions"]["issues"] == "write"
+
+    steps = workflow["jobs"]["required-checks"]["steps"]
+    steps_by_condition = {step.get("if"): step for step in steps if "if" in step}
+
+    failure_step = steps_by_condition["failure()"]
+    assert failure_step["uses"].startswith("actions/github-script@")
+    assert "branch-protection-audit-failure" in failure_step["with"]["script"]
+    assert "issues.create" in failure_step["with"]["script"]
+
+    recovery_step = steps_by_condition["success()"]
+    assert recovery_step["uses"].startswith("actions/github-script@")
+    assert "branch-protection-audit-failure" in recovery_step["with"]["script"]
+    assert 'state: "closed"' in recovery_step["with"]["script"]
 
 
 def test_cli_offline_mode_fails_when_context_is_missing(

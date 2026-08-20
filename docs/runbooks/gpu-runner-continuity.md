@@ -72,6 +72,27 @@ offline kalması halinde release dondurulur; yerel GPU sonucu bu kontrolü bypas
 5. İki runner tekrar online olduğunda watchdog'u manuel çalıştırın ve olay kaydına RTO, kök neden
    ile kullanılan artifact run ID'sini yazın.
 
+## ⚠️ Confirmed gap: watchdog hiçbir zaman gerçekten kapasite kontrolü yapmadı
+
+Bir arkadaş kod incelemesi PR #2755'in `GPU Inference Quality Gate` job'ının `queued` kalmasını
+sorgulaması üzerine GitHub Actions run geçmişi doğrudan kontrol edildi: `GPU Runner Capacity
+Watchdog` kurulduğu günden bu yana incelenebilen **her çalıştırmasında** (saatlik, 326 run)
+`ENABLE_GPU_BENCH_GATE` adımı geçiyor (repository variable doğru şekilde `true`), ama `Check
+primary and warm-standby capacity` adımında `GPU_RUNNER_MONITOR_TOKEN` boş olduğu için
+`GPU runner watchdog için --repo/GITHUB_REPOSITORY ve --token/GPU_RUNNER_MONITOR_TOKEN
+gerekli.` hatasıyla `exit 2` ile başarısız olmuş. Repository secret'ı hiç oluşturulmamış.
+Sonuç: bu watchdog **hiçbir zaman gerçekten GitHub runner API'sini sorgulayıp iki online GPU
+runner olup olmadığını döndürmedi** — her saatlik çalıştırma aynı ön-kontrol hatasında
+duruyor. `main` üzerinde şu an `sidar-gpu-primary`/`sidar-gpu-standby` gerçekten online mı, bu
+runbook'taki hiçbir otomasyon tarafından teyit edilmemiştir; PR #2755'in `GPU Inference Quality
+Gate` job'ının merge anında hâlâ `queued` olması ve `GPU Inference Required Evidence Gate`ın
+takip eden CI çalışmalarında düzenli kırmızı olması bununla tutarlıdır. Kapatmak için
+repository admin'i GitHub Settings → Actions → Runners'ı doğrudan açıp iki hostun
+Idle/Online göründüğünü gözle doğrulamalı (watchdog bunu şu an teyit edemiyor), GitHub runner
+metadata okuma yetkili bir PAT/App token oluşturup `GPU_RUNNER_MONITOR_TOKEN` secret'ı olarak
+eklemeli, ardından watchdog'u `workflow_dispatch` ile manuel çalıştırıp ilk gerçek sonucu
+almalıdır.
+
 ## Üç aylık tatbikat
 
 Primary runner servisini kontrollü durdurun, bir GPU gate'inin standby üzerinde tamamlandığını

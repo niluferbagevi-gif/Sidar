@@ -16,6 +16,12 @@ run_phase08_function() {
     warn() { printf "WARN:%s\n" "$*"; }
     info() { printf "INFO:%s\n" "$*"; }
     ok() { printf "OK:%s\n" "$*"; }
+    # Mirrors install_sidar.sh'"'"'s real debug() gating (SIDAR_DEBUG/SIDAR_VERBOSE)
+    # so tests exercise the same on/off behavior production installs see.
+    debug() {
+      [[ "${SIDAR_DEBUG:-0}" == "1" || "${SIDAR_VERBOSE:-0}" == "1" ]] || return 0
+      printf "DEBUG:%s\n" "$*"
+    }
     read_env_value_from_file() {
       local key="$1" file="$2"
       sed -n "s/^${key}=//p" "$file" | tail -n 1
@@ -73,6 +79,102 @@ EOF
     grep -q "^USE_GPU=false$" "$SCRIPT_DIR/.env.production"
     grep -q "^COMPOSE_PROFILES=cpu$" "$SCRIPT_DIR/.env.production"
   '
+
+  [ "$status" -eq 0 ]
+}
+
+@test "phase 08 GPU branch debug message is silent by default and only shown under SIDAR_DEBUG" {
+  # Regression test for a friend code review finding: configure_gpu_env_defaults()
+  # printed an internal "DEBUG: GPU branch entered ..." line unconditionally via
+  # info() on every GPU-detected install, even for a normal non-debug user run.
+  # It must now go through install_sidar.sh's existing debug() helper (gated on
+  # SIDAR_DEBUG/SIDAR_VERBOSE), matching every other diagnostic line in the
+  # installer (see scripts/install_modules/phases/03_system.sh,12_alembic.sh).
+  run_phase08_function '
+    trap "rm -rf \"$SCRIPT_DIR\"" EXIT
+    : > "$SCRIPT_DIR/.env"
+    GPU_AVAILABLE=true
+
+    configure_gpu_env_defaults "$SCRIPT_DIR/.env"
+    echo "---SIDAR_DEBUG=1---"
+    SIDAR_DEBUG=1 configure_gpu_env_defaults "$SCRIPT_DIR/.env"
+  '
+
+  [ "$status" -eq 0 ]
+  default_run="${output%%---SIDAR_DEBUG=1---*}"
+  debug_run="${output#*---SIDAR_DEBUG=1---}"
+  [[ "$default_run" != *"GPU branch entered"* ]]
+  [[ "$debug_run" == *"DEBUG:GPU branch entered for .env configuration (GPU_AVAILABLE=true)."* ]]
+}
+
+@test "phase 08 API_GROUPS covers every SIDAR_USER_SECRET_ENV_KEYS key exactly once" {
+  # Regression test for a friend code review finding: SIDAR_USER_SECRET_ENV_KEYS
+  # (install_sidar.sh) is documented as the single source of truth for user
+  # secret keys, but _api_groups_definition() in 08_env.sh (which drives the
+  # zenity/whiptail/read interactive collector) used to be a hand-maintained
+  # list that silently fell out of sync with it: GOOGLE_API_KEY, JIRA_API_TOKEN
+  # and META_GRAPH_API_TOKEN were added to SIDAR_USER_SECRET_ENV_KEYS for log
+  # masking/reporting but never to the interactive groups, so the install
+  # wizard never asked for them. This asserts every key in
+  # SIDAR_USER_SECRET_ENV_KEYS appears in _api_groups_definition() exactly
+  # once (and vice versa), so a future addition to one without the other
+  # fails CI instead of shipping silently.
+  run bash -c '
+    set -Eeuo pipefail
+    repo_root="$1"
+
+    # Pull the real SIDAR_USER_SECRET_ENV_KEYS array declaration verbatim out
+    # of install_sidar.sh (without sourcing/running the whole installer).
+    array_src="$(sed -n "/^SIDAR_USER_SECRET_ENV_KEYS=($/,/^)$/p" "$repo_root/install_sidar.sh")"
+    [[ -n "$array_src" ]]
+    eval "$array_src"
+    (( ${#SIDAR_USER_SECRET_ENV_KEYS[@]} > 0 ))
+
+    warn() { :; }
+    info() { :; }
+    ok() { :; }
+    source "$repo_root/scripts/install_modules/phases/08_env.sh"
+
+    mapfile -t user_keys < <(sidar_user_api_key_names)
+    mapfile -t group_lines < <(_api_groups_definition)
+
+    declare -A group_key_count=()
+    for line in "${group_lines[@]}"; do
+      keys_csv="${line#*|}"
+      IFS="," read -r -a keys <<< "$keys_csv"
+      for k in "${keys[@]}"; do
+        group_key_count["$k"]=$(( ${group_key_count["$k"]:-0} + 1 ))
+      done
+    done
+
+    missing=()
+    duplicated=()
+    for k in "${user_keys[@]}"; do
+      count="${group_key_count[$k]:-0}"
+      if (( count == 0 )); then
+        missing+=("$k")
+      elif (( count > 1 )); then
+        duplicated+=("$k")
+      fi
+      unset "group_key_count[$k]"
+    done
+
+    # Anything left in group_key_count is a group key with no matching entry
+    # in SIDAR_USER_SECRET_ENV_KEYS -- also a drift bug, just the other way.
+    extra=("${!group_key_count[@]}")
+
+    if (( ${#missing[@]} > 0 )); then
+      printf "MISSING_FROM_API_GROUPS:%s\n" "${missing[@]}"
+    fi
+    if (( ${#duplicated[@]} > 0 )); then
+      printf "DUPLICATED_IN_API_GROUPS:%s\n" "${duplicated[@]}"
+    fi
+    if (( ${#extra[@]} > 0 )); then
+      printf "EXTRA_IN_API_GROUPS_NOT_IN_USER_KEYS:%s\n" "${extra[@]}"
+    fi
+
+    [[ ${#missing[@]} -eq 0 && ${#duplicated[@]} -eq 0 && ${#extra[@]} -eq 0 ]]
+  ' _ "$(repo_root)"
 
   [ "$status" -eq 0 ]
 }
