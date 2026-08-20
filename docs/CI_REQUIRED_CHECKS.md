@@ -25,10 +25,21 @@ is restored.
 The release-blocking `benchmark-compare` job and both baseline seed paths require a
 dedicated `[self-hosted, linux, benchmark]` runner. Its name is part of the benchmark
 cache key, preventing a baseline produced on one hardware host from being restored on
-another host. This is a deliberate, accepted single point of failure, not an oversight:
-an unrelated PR can be blocked at `production-readiness` by a benchmark-runner rename or
-a cache eviction alone, with no relation to that PR's actual diff. The mitigations below
-narrow the blast radius but do not remove it.
+another host. Today this is a single point of failure in practice: an unrelated PR can
+be blocked at `production-readiness` by a benchmark-runner rename or a cache eviction
+alone, with no relation to that PR's actual diff. Following the same redundancy pattern
+already used for the GPU evidence gate (see below), `Benchmark Runner Capacity Watchdog`
+now targets **two** online `[self-hosted, linux, benchmark]` runners
+(`--minimum-online 2`, floored in `scripts/ci/check_benchmark_runner_capacity.py`) instead
+of one. Unlike the GPU runners, this alone does not remove the single point of failure:
+because the baseline cache key includes `${{ runner.name }}`, a second host only helps if
+it *also* has its own independently reviewed baseline seeded on it (via
+`seed_benchmark_baseline=true` landing on that specific host) and its own keepalive
+coverage — a job that happens to land on an unseeded standby fails closed exactly like an
+orphaned cache today. Provisioning and seeding that second host is a real self-hosted
+infrastructure rollout, not a docs/workflow-only change; see
+[`docs/runbooks/benchmark-runner-continuity.md`](runbooks/benchmark-runner-continuity.md)
+for the target architecture and the open per-host seeding gap.
 
 The same reviewed comparison is mandatory in all three promotion paths: normal `main`
 CI (`benchmark-compare`), the scheduled auth benchmark, and
@@ -65,6 +76,19 @@ The self-hosted runner queue now has a proactive signal: the scheduled/manual
 [`docs/runbooks/benchmark-runner-continuity.md`](runbooks/benchmark-runner-continuity.md).
 This warns about runner capacity only; the two baseline lifecycle improvements below remain
 open and deliberately separate from the release-blocker fixes.
+
+- **The watchdog now targets two online benchmark runners, but only one is confirmed to
+  exist today, and no second baseline has been seeded.** Bumping `--minimum-online` to 2
+  makes the *target* explicit and consistent with the GPU redundancy pattern, but closing
+  it requires: (1) provisioning a second `[self-hosted, linux, benchmark]` host in a
+  different failure domain, (2) running `seed_benchmark_baseline=true` in a way that
+  actually lands on that specific host (GitHub does not let two same-labeled runners be
+  targeted individually, so this needs either a temporarily paused primary during the
+  initial seed or a distinct interim label), and (3) confirming `benchmark-baseline-
+  keepalive.yml`'s Monday/Thursday cadence actually reaches both hosts over time rather
+  than assuming whichever runner happens to be idle. None of this can be validated without
+  real second-host hardware, so it is intentionally left as an infrastructure rollout
+  step, not bundled into this docs/workflow-only change.
 
 - **Keepalive is still purely reactive.** It only restores-and-touches the existing cache;
   it never re-runs the benchmark suite to refresh the baseline data itself, and nothing

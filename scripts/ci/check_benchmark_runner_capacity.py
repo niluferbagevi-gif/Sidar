@@ -1,4 +1,4 @@
-"""Validate that GitHub exposes an online self-hosted benchmark runner."""
+"""Validate that GitHub exposes redundant online self-hosted benchmark runners."""
 
 from __future__ import annotations
 
@@ -58,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo", default=os.getenv("GITHUB_REPOSITORY", ""))
     parser.add_argument("--token", default=os.getenv("BENCHMARK_RUNNER_MONITOR_TOKEN", ""))
     parser.add_argument("--fixture", type=Path)
-    parser.add_argument("--minimum-online", type=int, default=1)
+    parser.add_argument("--minimum-online", type=int, default=2)
     args = parser.parse_args(argv)
 
     if args.fixture:
@@ -77,7 +77,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
 
     eligible = eligible_online_runners(payload)
-    minimum = max(1, args.minimum_online)
+    minimum = max(2, args.minimum_online)
     if len(eligible) < minimum:
         print(
             f"Benchmark runner capacity is insufficient: online={len(eligible)}, "

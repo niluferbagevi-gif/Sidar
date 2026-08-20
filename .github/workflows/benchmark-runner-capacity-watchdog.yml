@@ -24,4 +24,4 @@ jobs:
         run: |
           python scripts/ci/check_benchmark_runner_capacity.py \
             --repo "${GITHUB_REPOSITORY}" \
-            --minimum-online 1
+            --minimum-online 2

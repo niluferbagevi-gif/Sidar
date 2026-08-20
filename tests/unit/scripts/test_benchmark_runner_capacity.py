@@ -25,7 +25,7 @@ def test_watchdog_workflow_uses_hosted_control_plane_and_checks_capacity() -> No
     assert "uses: actions/checkout@v7" in workflow
     assert "BENCHMARK_RUNNER_MONITOR_TOKEN" in workflow
     assert "check_benchmark_runner_capacity.py" in workflow
-    assert "--minimum-online 1" in workflow
+    assert "--minimum-online 2" in workflow
 
 
 def test_watchdog_token_is_documented_in_advanced_env_template() -> None:
@@ -51,7 +51,7 @@ def test_eligible_online_runners_requires_every_label_and_online_state() -> None
     assert capacity.eligible_online_runners(payload) == ["stable"]
 
 
-def test_main_fails_closed_without_capacity_and_passes_with_runner(tmp_path, capsys) -> None:
+def test_main_fails_closed_with_one_runner_and_passes_with_two(tmp_path, capsys) -> None:
     fixture = tmp_path / "runners.json"
     labels = ("self-hosted", "linux", "benchmark")
     fixture.write_text(json.dumps({"runners": []}), encoding="utf-8")
@@ -60,6 +60,15 @@ def test_main_fails_closed_without_capacity_and_passes_with_runner(tmp_path, cap
 
     fixture.write_text(
         json.dumps({"runners": [_runner("stable", labels=labels)]}), encoding="utf-8"
+    )
+    assert capacity.main(["--fixture", str(fixture)]) == 1
+    assert "capacity is insufficient" in capsys.readouterr().err
+
+    fixture.write_text(
+        json.dumps(
+            {"runners": [_runner("stable", labels=labels), _runner("standby", labels=labels)]}
+        ),
+        encoding="utf-8",
     )
     assert capacity.main(["--fixture", str(fixture)]) == 0
     assert "stable" in capsys.readouterr().out
