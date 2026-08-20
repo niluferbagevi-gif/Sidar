@@ -77,6 +77,78 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "phase 08 API_GROUPS covers every SIDAR_USER_SECRET_ENV_KEYS key exactly once" {
+  # Regression test for a friend code review finding: SIDAR_USER_SECRET_ENV_KEYS
+  # (install_sidar.sh) is documented as the single source of truth for user
+  # secret keys, but _api_groups_definition() in 08_env.sh (which drives the
+  # zenity/whiptail/read interactive collector) used to be a hand-maintained
+  # list that silently fell out of sync with it: GOOGLE_API_KEY, JIRA_API_TOKEN
+  # and META_GRAPH_API_TOKEN were added to SIDAR_USER_SECRET_ENV_KEYS for log
+  # masking/reporting but never to the interactive groups, so the install
+  # wizard never asked for them. This asserts every key in
+  # SIDAR_USER_SECRET_ENV_KEYS appears in _api_groups_definition() exactly
+  # once (and vice versa), so a future addition to one without the other
+  # fails CI instead of shipping silently.
+  run bash -c '
+    set -Eeuo pipefail
+    repo_root="$1"
+
+    # Pull the real SIDAR_USER_SECRET_ENV_KEYS array declaration verbatim out
+    # of install_sidar.sh (without sourcing/running the whole installer).
+    array_src="$(sed -n "/^SIDAR_USER_SECRET_ENV_KEYS=($/,/^)$/p" "$repo_root/install_sidar.sh")"
+    [[ -n "$array_src" ]]
+    eval "$array_src"
+    (( ${#SIDAR_USER_SECRET_ENV_KEYS[@]} > 0 ))
+
+    warn() { :; }
+    info() { :; }
+    ok() { :; }
+    source "$repo_root/scripts/install_modules/phases/08_env.sh"
+
+    mapfile -t user_keys < <(sidar_user_api_key_names)
+    mapfile -t group_lines < <(_api_groups_definition)
+
+    declare -A group_key_count=()
+    for line in "${group_lines[@]}"; do
+      keys_csv="${line#*|}"
+      IFS="," read -r -a keys <<< "$keys_csv"
+      for k in "${keys[@]}"; do
+        group_key_count["$k"]=$(( ${group_key_count["$k"]:-0} + 1 ))
+      done
+    done
+
+    missing=()
+    duplicated=()
+    for k in "${user_keys[@]}"; do
+      count="${group_key_count[$k]:-0}"
+      if (( count == 0 )); then
+        missing+=("$k")
+      elif (( count > 1 )); then
+        duplicated+=("$k")
+      fi
+      unset "group_key_count[$k]"
+    done
+
+    # Anything left in group_key_count is a group key with no matching entry
+    # in SIDAR_USER_SECRET_ENV_KEYS -- also a drift bug, just the other way.
+    extra=("${!group_key_count[@]}")
+
+    if (( ${#missing[@]} > 0 )); then
+      printf "MISSING_FROM_API_GROUPS:%s\n" "${missing[@]}"
+    fi
+    if (( ${#duplicated[@]} > 0 )); then
+      printf "DUPLICATED_IN_API_GROUPS:%s\n" "${duplicated[@]}"
+    fi
+    if (( ${#extra[@]} > 0 )); then
+      printf "EXTRA_IN_API_GROUPS_NOT_IN_USER_KEYS:%s\n" "${extra[@]}"
+    fi
+
+    [[ ${#missing[@]} -eq 0 && ${#duplicated[@]} -eq 0 && ${#extra[@]} -eq 0 ]]
+  ' _ "$(repo_root)"
+
+  [ "$status" -eq 0 ]
+}
+
 @test "phase 08 secret propagation never creates a production env file" {
   run_phase08_function '
     trap "rm -rf \"$SCRIPT_DIR\"" EXIT

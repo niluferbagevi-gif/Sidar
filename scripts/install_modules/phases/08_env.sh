@@ -44,6 +44,28 @@ sidar_user_api_key_names() {
     printf '%s\n' "${SIDAR_USER_SECRET_ENV_KEYS[@]}"
 }
 
+# Interaktif toplayıcının (zenity/whiptail/read — üçü de aynı diziyi kullanır)
+# grupladığı anahtarların TEK tanımı. Her satır "Başlık|KEY1,KEY2,..." biçiminde.
+#
+# ÖNEMLİ: Buradaki her anahtar SIDAR_USER_SECRET_ENV_KEYS'de (install_sidar.sh)
+# de bulunmalı ve tersi de geçerli olmalı — aksi halde ya kullanıcıya hiç
+# sorulmayan bir secret kalır (kurulum sonunda .sidar_keys.env'de sessizce
+# boş kalır) ya da hiçbir zaman toplanmayan bir grup anahtarı kalır. Bu
+# daha önce gerçekleşmiş bir sınıf hatadır: SIDAR_USER_SECRET_ENV_KEYS'e
+# GOOGLE_API_KEY/JIRA_API_TOKEN/META_GRAPH_API_TOKEN eklenmişti (log
+# maskeleme + raporlama düzeltmesi) ama bu grup tanımı güncellenmemişti,
+# üçü de interaktif kurulum sihirbazında hiç sorulmuyordu.
+# tests/shell/install_phase08_env.bats bu invariant'ı CI'da zorunlu kılar.
+_api_groups_definition() {
+    printf '%s\n' \
+        "AI Sağlayıcıları|OPENAI_API_KEY,GEMINI_API_KEY,GOOGLE_API_KEY,ANTHROPIC_API_KEY,LITELLM_API_KEY,HF_TOKEN" \
+        "GitHub ve Web Arama|GITHUB_TOKEN,TAVILY_API_KEY,GOOGLE_SEARCH_API_KEY,GOOGLE_SEARCH_CX" \
+        "Slack|SLACK_TOKEN,SLACK_APP_LEVEL_TOKEN,SLACK_WEBHOOK_URL,SLACK_DEFAULT_CHANNEL" \
+        "Jira|JIRA_URL,JIRA_EMAIL,JIRA_TOKEN,JIRA_API_TOKEN,JIRA_DEFAULT_PROJECT" \
+        "Microsoft Teams|TEAMS_WEBHOOK_URL" \
+        "Meta|META_GRAPH_API_TOKEN"
+}
+
 # ── İnteraktif API Anahtarı Toplama ──────────────────────────────────────────
 # Eksik API anahtarları için zenity (GUI) → whiptail (TUI) → read (fallback)
 # sırasıyla denenir; kullanıcı anahtarları girdikten sonra kurulum devam eder.
@@ -57,18 +79,19 @@ collect_api_keys_interactive() {
 
     # Gruplar: "Başlık|KEY1,KEY2,..."  (her grup zenity'de ayrı form / whiptail'de bölüm)
     # NOT: GROUPS bash reserved değişkeni olduğundan API_GROUPS adı kullanılıyor.
-    local -a API_GROUPS=(
-        "AI Sağlayıcıları|OPENAI_API_KEY,GEMINI_API_KEY,ANTHROPIC_API_KEY,LITELLM_API_KEY,HF_TOKEN"
-        "GitHub ve Web Arama|GITHUB_TOKEN,TAVILY_API_KEY,GOOGLE_SEARCH_API_KEY,GOOGLE_SEARCH_CX"
-        "Slack|SLACK_TOKEN,SLACK_APP_LEVEL_TOKEN,SLACK_WEBHOOK_URL,SLACK_DEFAULT_CHANNEL"
-        "Jira|JIRA_URL,JIRA_EMAIL,JIRA_TOKEN,JIRA_DEFAULT_PROJECT"
-        "Microsoft Teams|TEAMS_WEBHOOK_URL"
-    )
+    # _api_groups_definition() tarafından üretilir (bkz. aşağıdaki tanım) — bu
+    # dizinin SIDAR_USER_SECRET_ENV_KEYS ile senkron kalması
+    # tests/shell/install_phase08_env.bats içindeki invariant testiyle CI'da
+    # zorunlu kılınır: yeni bir kullanıcı secret'ı eklenip bu gruplara
+    # eklenmezse test kırmızı olur.
+    local -a API_GROUPS=()
+    mapfile -t API_GROUPS < <(_api_groups_definition)
 
     _key_label() {
         case "$1" in
             OPENAI_API_KEY)        echo "OpenAI API Anahtarı" ;;
             GEMINI_API_KEY)        echo "Google Gemini API Anahtarı" ;;
+            GOOGLE_API_KEY)        echo "Google API Anahtarı (Gemini/Workspace)" ;;
             ANTHROPIC_API_KEY)     echo "Anthropic Claude API Anahtarı" ;;
             LITELLM_API_KEY)       echo "LiteLLM / OpenRouter API Anahtarı" ;;
             HF_TOKEN)              echo "HuggingFace Token" ;;
@@ -83,8 +106,10 @@ collect_api_keys_interactive() {
             JIRA_URL)              echo "Jira URL (örn: https://sirket.atlassian.net)" ;;
             JIRA_EMAIL)            echo "Jira Atlassian E-posta" ;;
             JIRA_TOKEN)            echo "Jira API Token" ;;
+            JIRA_API_TOKEN)        echo "Jira API Token (alternatif/entegrasyon override) [opt]" ;;
             JIRA_DEFAULT_PROJECT)  echo "Jira Proje Anahtarı (örn: SID)" ;;
             TEAMS_WEBHOOK_URL)     echo "Microsoft Teams Webhook URL" ;;
+            META_GRAPH_API_TOKEN)  echo "Meta Graph API Token (Instagram/Facebook)" ;;
             *)                     echo "$1" ;;
         esac
     }
