@@ -118,13 +118,26 @@ içinde tanımlıdır. Watchdog erken uyarıdır; required GPU benchmark kanıt�
 
 Repository administrators should periodically verify that the required check
 names above are selected for protected `main`/`master` branches. This repository
-now includes a scheduled/manual audit workflow (`Branch protection audit`) that
-runs `scripts/ci/verify_required_checks.py` against GitHub's branch protection
-API and compares the protected branch contexts with the release-critical job
-`name:` values in `.github/workflows/ci.yml`. If a job `name:` changes, update
-branch protection at the same time or this audit will fail; without that sync,
-PRs may either be blocked forever by a stale required context or allowed to
-merge without the intended release gate.
+now includes a scheduled/push/manual audit workflow (`Branch protection audit`)
+that runs `scripts/ci/verify_required_checks.py` against GitHub's branch
+protection API and compares the protected branch contexts with the
+release-critical job `name:` values in `.github/workflows/ci.yml`. If a job
+`name:` changes, update branch protection at the same time or this audit will
+fail; without that sync, PRs may either be blocked forever by a stale required
+context or allowed to merge without the intended release gate.
+
+The audit runs on three triggers: the weekly Monday cron, `workflow_dispatch`,
+and every push to `main`. The push trigger exists because branch
+protection/rulesets are GitHub Settings state, not a file in this repo — a
+misconfiguration can appear at any time, independent of what a given merge
+changed — so waiting for the Monday cron could leave a drift unnoticed for up
+to a week; a merge-time run surfaces it the same day, and also covers CI
+required-check contract edits themselves since those land on `main` through
+the same push. On failure, the workflow files (or comments on) a standing
+`branch-protection-audit-failure`-labeled GitHub issue so the failure survives
+past the Actions tab — a plain red scheduled run was not visible enough in
+practice; see the "Confirmed gap" subsection below for why. The next passing
+run closes that issue automatically.
 
 ### Automated required-check audit
 
