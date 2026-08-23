@@ -83,8 +83,14 @@ install_gvisor() {
 
 install_kata() {
   echo "==> Kata Containers kurulumu"
-  run "apt-get update"
-  run "DEBIAN_FRONTEND=noninteractive apt-get install -y kata-containers"
+  # -o DPkg::Lock::Timeout: taze açılmış bir host'ta unattended-upgrades/
+  # apt.systemd.daily dpkg kilidini tutuyor olabilir; bu seçenek olmadan
+  # apt-get kilit tutulduğu an anında başarısız olur (bkz.
+  # scripts/install_modules/install_helpers.sh: sidar_apt_get). run()'ın
+  # dry-run string tabanlı tasarımı nedeniyle burada ortak sidar_apt_get
+  # sarmalayıcısı yerine aynı bayraklar doğrudan eklendi.
+  run "apt-get -o DPkg::Lock::Timeout=180 -o Acquire::Retries=3 update"
+  run "DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=180 -o Acquire::Retries=3 install -y kata-containers"
 
   # Bazı dağıtımlarda binary adı/container yolu farklı olabiliyor.
   if [[ "$DRY_RUN" == "0" ]]; then
