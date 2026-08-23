@@ -196,10 +196,48 @@ sidar_apt_get_as() {
     [[ "$acquire_retries" =~ ^[0-9]+$ ]] || acquire_retries=3
 
     sidar_apt_lock_wait_notice "$lock_timeout"
+
+    # apt-get çıktısı hem terminale akıtılır hem de bir kerelik geçici loga
+    # yakalanır: DPkg::Lock::Timeout süresi bile yetmeyip apt-get gerçekten
+    # başarısız dönerse, bu log kilit hatasını tespit edip SIDAR_LAST_FAIL_MESSAGE
+    # üzerinden install_remediation.sh'daki apt-lock-contention sınıflandırmasına
+    # (bkz. sidar_failure_code_for_signal) anlamlı bir "reason" metni taşımak
+    # için kullanılır. Çağıran kendi "if ! sidar_apt_get ...; then" gibi bir
+    # akışla hatayı zaten yakalıyorsa (ör. ffmpeg/zenity fallback'leri) bu
+    # yalnızca teşhis amaçlıdır ve normal kontrol akışını değiştirmez —
+    # sidar_apt_get_as her koşulda gerçek apt-get çıkış koduyla döner.
+    local apt_log=""
+    apt_log="$(mktemp "${TMPDIR:-/tmp}/sidar_apt_get.XXXXXX" 2>/dev/null || printf '/tmp/sidar_apt_get.%s' "$$")"
+    # NOT: bilerek "if pipeline; then ...; fi" değil, "pipeline || apt_rc=$?"
+    # kullanılıyor. POSIX/bash'te else dalı olmayan ve koşulu false dönen bir
+    # if-statement'ın kendi exit status'u 0'dır — "apt_rc=$?" o yapının hemen
+    # ardına konsaydı, apt-get gerçekten başarısız olsa bile her zaman 0
+    # okurdu (klasik bir tuzak). "|| apt_rc=$?" ise $?'yi doğrudan
+    # başarısız olan komuttan yakalar ve set -e altında da güvenlidir.
+    local apt_rc=0
     "${_sidar_apt_sudo_prefix[@]}" env DEBIAN_FRONTEND=noninteractive apt-get \
         -o "DPkg::Lock::Timeout=${lock_timeout}" \
         -o "Acquire::Retries=${acquire_retries}" \
-        "$@"
+        "$@" 2>&1 | tee "$apt_log" || apt_rc=$?
+
+    if (( apt_rc == 0 )); then
+        rm -f "$apt_log" 2>/dev/null || true
+        # Başarılı bir apt-get çağrısı, daha önce yakalanmış olabilecek
+        # geçici bir apt-lock ipucunun artık geçersiz olduğunu gösterir;
+        # ileride ilgisiz bir hatanın yanlışlıkla apt-lock-contention olarak
+        # sınıflandırılmasını önlemek için temizle.
+        unset SIDAR_LAST_FAIL_MESSAGE 2>/dev/null || true
+        return 0
+    fi
+
+    if grep -qiE "could not get lock|unable to acquire the dpkg frontend lock|dpkg frontend lock" "$apt_log" 2>/dev/null; then
+        local lock_tail=""
+        lock_tail="$(tail -n 5 "$apt_log" 2>/dev/null | tr '\n' ' ')"
+        SIDAR_LAST_FAIL_MESSAGE="apt/dpkg kilidi ${lock_timeout}s DPkg::Lock::Timeout süresi içinde de serbest kalmadı. ${lock_tail}"
+        export SIDAR_LAST_FAIL_MESSAGE
+    fi
+    rm -f "$apt_log" 2>/dev/null || true
+    return "$apt_rc"
 }
 
 sidar_apt_get() {
