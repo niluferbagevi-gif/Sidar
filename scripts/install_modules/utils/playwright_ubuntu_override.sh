@@ -332,6 +332,6 @@ install_playwright_linux_dependencies_fallback() {
         return 1
     fi
 
-    sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y \
+    sidar_apt_get install -y \
         "${playwright_linux_dependencies[@]}"
 }

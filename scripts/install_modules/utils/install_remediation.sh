@@ -74,6 +74,15 @@ sidar_failure_code_for_signal() {
             echo "remote-script-checksum-missing"
             return 0
             ;;
+        *"could not get lock"*|*"unable to acquire the dpkg frontend lock"*|*"dpkg frontend lock"*|*"apt/dpkg kilidi"*)
+            # unattended-upgrades/apt.systemd.daily taze açılmış bir ortamda
+            # dpkg kilidini tutuyorsa ve sidar_apt_get_as'in kendi
+            # DPkg::Lock::Timeout süresi bile yetmediyse buraya düşer. Bu,
+            # dakikalar içinde kendiliğinden düzelmesi beklenen geçici bir
+            # kaynak çakışmasıdır — deterministik bir kod hatası değildir.
+            echo "apt-lock-contention"
+            return 0
+            ;;
         *"installer smoke gate başarısız"*|*"install_sidar_version"*"eşleşmiyor"*)
             echo "installer-smoke-gate-failure"
             return 0
@@ -201,6 +210,56 @@ EOF
             ;;
     esac
 }
+
+sidar_is_apt_lock_contention_signal() {
+    local failed_cmd="${1:-}"
+    local reason="${2:-}"
+    [[ "$(sidar_failure_code_for_signal "$failed_cmd" "$reason" || true)" == "apt-lock-contention" ]]
+}
+
+
+# apt-get çağrıları zaten kendi -o DPkg::Lock::Timeout süresini bekler (bkz.
+# scripts/install_modules/install_helpers.sh: sidar_apt_get_as). Bu fonksiyon,
+# o süre bile yetmeyip apt-get gerçekten başarısız döndüğünde resume öncesi
+# ek bir güvenlik payı tanır: kilit bu noktada da hâlâ tutuluyorsa kısa
+# aralıklarla yoklayıp serbest kalmasını bekler (üst sınırlı, sonsuz döngü
+# değildir). fuser yoksa veya kilit dosyaları yoksa sessizce hemen döner.
+sidar_wait_for_apt_lock_release() {
+    local max_wait="${SIDAR_APT_LOCK_WAIT_MAX_SECONDS:-240}"
+    [[ "$max_wait" =~ ^[0-9]+$ ]] || max_wait=240
+    local poll_interval="${SIDAR_APT_LOCK_WAIT_POLL_SECONDS:-5}"
+    [[ "$poll_interval" =~ ^[0-9]+$ ]] || poll_interval=5
+
+    command -v fuser >/dev/null 2>&1 || return 0
+
+    local -a lock_files=(/var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock)
+    local lock_file=""
+    local still_locked=false
+    local waited=0
+
+    while (( waited < max_wait )); do
+        still_locked=false
+        for lock_file in "${lock_files[@]}"; do
+            [[ -e "$lock_file" ]] || continue
+            if fuser "$lock_file" >/dev/null 2>&1; then
+                still_locked=true
+                break
+            fi
+        done
+        if [[ "$still_locked" == false ]]; then
+            if (( waited > 0 )); then
+                info "Auto-heal: apt/dpkg kilidi serbest kaldı (${waited}s beklendi); kurulum resume ediliyor."
+            fi
+            return 0
+        fi
+        sleep "$poll_interval"
+        waited=$(( waited + poll_interval ))
+    done
+
+    warn "Auto-heal: apt/dpkg kilidi ${max_wait}s içinde serbest kalmadı; yine de resume denenecek (bir sonraki apt-get çağrısı kendi DPkg::Lock::Timeout süresi kadar ayrıca bekleyecek)."
+    return 0
+}
+
 
 sidar_is_installer_smoke_gate_failure() {
     local failed_cmd="${1:-}"
@@ -487,6 +546,16 @@ sidar_phase_remediation_strategy() {
         sidar_write_remediation_report "$phase" "test-gate-failure" "fail-fast;no-retry;no-resume"
         return 1
     fi
+    # apt-lock-contention hangi fazda oluşursa oluşsun (03_system.sh'ın
+    # apt-get çağrıları artık 02_repo, 03_runtime, 05_frontend, 08_env ve
+    # utils/gpu_utils.sh, utils/playwright_ubuntu_override.sh üzerinden
+    # birden çok fazdan tetiklenebiliyor) aynı şekilde ele alınır: resume
+    # etmeden önce kilidin serbest kalmasını üst sınırlı olarak bekle.
+    if sidar_is_apt_lock_contention_signal "$failed_cmd" "$reason"; then
+        sidar_wait_for_apt_lock_release
+        sidar_write_remediation_report "$phase" "apt-lock-contention" "no-destructive-change;waited-for-lock-release;resume-phase"
+        return 0
+    fi
 
     case "$phase" in
         03_runtime)
@@ -682,9 +751,20 @@ sidar_handle_install_failure() {
         return 1
     fi
     if [[ "$attempt" -gt 0 && "${SIDAR_INSTALL_LAST_FAILURE_PHASE:-}" == "$phase" && "${SIDAR_INSTALL_LAST_FAILURE_SIGNATURE:-}" == "$failure_signature" ]]; then
-        warn "Auto-heal: ${phase} fazında aynı failure imzası tekrarlandı (${failure_signature}); retry erken kesiliyor."
-        sidar_write_remediation_report "$phase" "repeated-failure-signature" "fail-fast;no-retry;signature=${failure_signature}"
-        return 1
+        # apt-lock-contention kasıtlı olarak bu erken-kesme kuralının dışında
+        # tutulur: aynı imza burada "kod deterministik olarak bozuk" anlamına
+        # gelmez, yalnızca kilidin henüz serbest kalmadığı anlamına gelir.
+        # sidar_phase_remediation_strategy zaten resume öncesi
+        # sidar_wait_for_apt_lock_release ile üst sınırlı bekliyor; bu yüzden
+        # burada erken pes etmek yerine normal transient retry bütçesi
+        # (attempt >= max_attempts kontrolü aşağıda) tüketilsin.
+        if sidar_is_apt_lock_contention_signal "$failed_cmd" "$reason"; then
+            warn "Auto-heal: ${phase} fazında apt/dpkg kilidi hâlâ tekrarlanıyor (${failure_signature}, deneme=${attempt}); bekleme sonrası yine de retry denenecek."
+        else
+            warn "Auto-heal: ${phase} fazında aynı failure imzası tekrarlandı (${failure_signature}); retry erken kesiliyor."
+            sidar_write_remediation_report "$phase" "repeated-failure-signature" "fail-fast;no-retry;signature=${failure_signature}"
+            return 1
+        fi
     fi
     export SIDAR_INSTALL_LAST_FAILURE_SIGNATURE="$failure_signature"
     export SIDAR_INSTALL_LAST_FAILURE_PHASE="$phase"
