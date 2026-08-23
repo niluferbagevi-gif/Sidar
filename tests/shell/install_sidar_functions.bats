@@ -2591,6 +2591,162 @@ EOF
   [[ "$output" != *"unexpected-resume"* ]]
 }
 
+@test "sidar_apt_get_as bir dpkg lock-frontend hatasını yakalayıp apt-lock-contention olarak sınıflandırılabilir hale getirir" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/bin/sudo" <<EOF
+#!/usr/bin/env bash
+echo "E: Could not get lock /var/lib/dpkg/lock-frontend. It is held by process 4242 (unattended-upgr)" >&2
+exit 100
+EOF
+    chmod +x "$tmpdir/bin/sudo"
+    export PATH="$tmpdir/bin:$PATH"
+
+    sudo_cmd=(sudo)
+    apt_rc=0
+    sidar_apt_get_as sudo_cmd install -y curl || apt_rc=$?
+    [[ "$apt_rc" -eq 100 ]] || { echo "unexpected-rc=$apt_rc"; exit 1; }
+    [[ -n "${SIDAR_LAST_FAIL_MESSAGE:-}" ]] || { echo "SIDAR_LAST_FAIL_MESSAGE-not-set"; exit 1; }
+    code="$(sidar_failure_code_for_signal "sidar_apt_get install -y curl" "$SIDAR_LAST_FAIL_MESSAGE")"
+    [[ "$code" == "apt-lock-contention" ]] || { echo "unexpected-code=$code"; exit 1; }
+    echo "CLASSIFIED_OK"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"CLASSIFIED_OK"* ]]
+}
+
+@test "sidar_wait_for_apt_lock_release kilit serbest kalana kadar bekleyip sonra devam eder" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/bin/fuser" <<EOF
+#!/usr/bin/env bash
+count_file="$tmpdir/fuser-calls"
+count=0
+[[ -f "\$count_file" ]] && count="\$(cat "\$count_file")"
+count=\$((count + 1))
+printf "%s" "\$count" > "\$count_file"
+if [[ "\$count" -le 2 ]]; then
+  echo "\$1: 4242"
+  exit 0
+fi
+exit 1
+EOF
+    chmod +x "$tmpdir/bin/fuser"
+    export PATH="$tmpdir/bin:$PATH"
+
+    SIDAR_APT_LOCK_WAIT_MAX_SECONDS=30
+    SIDAR_APT_LOCK_WAIT_POLL_SECONDS=1
+    sidar_wait_for_apt_lock_release
+    echo "WAIT_RETURNED"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"WAIT_RETURNED"* ]]
+  [[ "$output" == *"apt/dpkg kilidi serbest kaldı"* ]]
+}
+
+@test "auto-heal apt-lock-contention hatası tekrarlanan imzada erken kesilmeyip retry bütçesini tüketir" {
+  run_installer_function '
+    SIDAR_CURRENT_INSTALL_PHASE=02_repo
+    SIDAR_INSTALL_REMEDIATION_ATTEMPT=1
+    SIDAR_INSTALL_LAST_FAILURE_PHASE=02_repo
+    reason="E: Could not get lock /var/lib/dpkg/lock-frontend. It is held by process 4242 (unattended-upgr)"
+    SIDAR_INSTALL_LAST_FAILURE_SIGNATURE="$(sidar_failure_signature 02_repo "sidar_apt_get install -y curl" "$reason" 100)"
+    sidar_wait_for_apt_lock_release() { echo "wait-called"; return 0; }
+    resumed=0
+    sidar_resume_after_remediation() {
+      resumed=1
+      echo "resume-called"
+      return 0
+    }
+    sidar_handle_install_failure 100 20 "sidar_apt_get install -y curl" "$reason" || true
+    [[ "$resumed" -eq 1 ]] || { echo "resume-not-called"; exit 1; }
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"wait-called"* ]]
+  [[ "$output" == *"resume-called"* ]]
+  [[ "$output" == *"apt/dpkg kilidi hâlâ tekrarlanıyor"* ]]
+  [[ "$output" != *"aynı failure imzası tekrarlandı"* ]]
+}
+
+@test "apt-get lock-frontend hatası sonrası bekleme+resume ile tekrar denenip başarıyla tamamlanır" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/bin/sudo" <<EOF
+#!/usr/bin/env bash
+attempt_file="$tmpdir/apt-attempts"
+n=0
+[[ -f "\$attempt_file" ]] && n="\$(cat "\$attempt_file")"
+n=\$((n + 1))
+printf "%s" "\$n" > "\$attempt_file"
+if [[ "\$n" -eq 1 ]]; then
+  echo "E: Could not get lock /var/lib/dpkg/lock-frontend. It is held by process 4242 (unattended-upgr)" >&2
+  exit 100
+fi
+echo "apt-get ok (deneme \$n)"
+exit 0
+EOF
+    chmod +x "$tmpdir/bin/sudo"
+    cat > "$tmpdir/bin/fuser" <<EOF
+#!/usr/bin/env bash
+count_file="$tmpdir/fuser-calls"
+count=0
+[[ -f "\$count_file" ]] && count="\$(cat "\$count_file")"
+count=\$((count + 1))
+printf "%s" "\$count" > "\$count_file"
+# İlk iki çağrı sidar_apt_lock_wait_notice tarafından (apt-get denemesinden
+# önce, biri boolean kontrol biri tutan pid değerini okumak için) tüketilir;
+# kilidin sidar_wait_for_apt_lock_release döngüsünde en az bir kez hala
+# tutuluyor olarak görülmesi için eşik üç olarak ayarlandı.
+if [[ "\$count" -le 3 ]]; then
+  echo "\$1: 4242"
+  exit 0
+fi
+exit 1
+EOF
+    chmod +x "$tmpdir/bin/fuser"
+    export PATH="$tmpdir/bin:$PATH"
+
+    SIDAR_CURRENT_INSTALL_PHASE=02_repo
+    SIDAR_INSTALL_REMEDIATION_ATTEMPT=0
+    SIDAR_APT_LOCK_WAIT_MAX_SECONDS=30
+    SIDAR_APT_LOCK_WAIT_POLL_SECONDS=1
+
+    sudo_cmd=(sudo)
+    retry_succeeded=0
+    # Gerçek installer resume/re-exec yerine (bats altında exec edilemez),
+    # aynı apt-get adımını burada tekrar dener -- tıpkı gerçek resume sonrası
+    # 03_system.sh install_system_dependencies() yeniden çalıştığında olacağı
+    # gibi. Bu kez fuser kilidi bulamıyor ve fake sudo/apt-get ikinci
+    # denemede başarıyla dönüyor.
+    sidar_resume_after_remediation() {
+      if sidar_apt_get_as sudo_cmd install -y curl; then
+        retry_succeeded=1
+      fi
+      return 0
+    }
+
+    apt_rc=0
+    sidar_apt_get_as sudo_cmd install -y curl || apt_rc=$?
+    if [[ "$apt_rc" -ne 0 ]]; then
+      sidar_handle_install_failure "$apt_rc" 30 "sidar_apt_get_as sudo_cmd install -y curl" "$SIDAR_LAST_FAIL_MESSAGE" || true
+    fi
+
+    [[ "$retry_succeeded" -eq 1 ]] || { echo "RETRY_DID_NOT_SUCCEED"; exit 1; }
+    echo "RETRY_SUCCEEDED"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"apt/dpkg kilidi serbest kaldı"* ]]
+  [[ "$output" == *"apt-get ok (deneme 2)"* ]]
+  [[ "$output" == *"RETRY_SUCCEEDED"* ]]
+  [[ "$output" != *"erken kesiliyor"* ]]
+}
+
 @test "postgres volume discovery catches Sidar volumes after project directory mismatch" {
   run_installer_function '
     docker() {
