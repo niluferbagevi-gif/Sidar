@@ -71,7 +71,7 @@ FULL       → tam erişim (shell, git, npm, proje geneli yazma)
 
 #### 5.3.3 Kriptografik Kimlik/Oturum Güvenliği (Güncellendi)
 - Parola doğrulama akışı yeni kayıtlar için `Argon2id`, legacy kayıtlar için `PBKDF2-HMAC-SHA256` + salt + sabit-zamanlı karşılaştırma (`secrets.compare_digest`) ile uygulanır.
-- **[ÖNEMLİ] Kriptografik Güçlendirme:** Parola türetme algoritmasındaki iterasyon sayısının (önceki: `120000`) güncel OWASP standartlarına (min `600000`) uygun hale getirilmesi teknik bir borç olarak işaretlenmiştir. Yeni nesil GPU'ların kırabilme kapasitesine karşı kurumsal sistemlerde bu değerin artırılması zorunludur.
+- **[KAPANDI] Kriptografik Güçlendirme:** Parola türetme algoritmasının iterasyon sayısı güncel OWASP standardına (min `600000`) yükseltilmiştir — `core/db/auth.py` içindeki `_PBKDF2_MIN_ITERATIONS = 600000` sabiti yeni/aktif hash üretiminde zorunlu tabandır. Eski `120000` değeri artık yalnızca `_PBKDF2_LEGACY_ITERATIONS` olarak, geçmişte bu iterasyonla üretilmiş mevcut hash'lerin doğrulanabilmesi (geriye dönük uyumluluk) amacıyla korunmaktadır ve yeni parola/hash üretiminde kullanılmaz. Bu artık aktif bir teknik borç değildir.
 - Oturum belirteçleri `secrets.token_urlsafe(...)` ile üretilir; kullanıcı/oturum anahtarlarında UUID kullanımı tahmin edilebilirlik riskini azaltır.
 - WebSocket kanalında `auth` handshake zorunludur; geçersiz/eksik token durumunda bağlantı policy violation ile kapatılır.
 
@@ -108,10 +108,11 @@ FULL       → tam erişim (shell, git, npm, proje geneli yazma)
 
 Güncel depoda test envanteri kurumsal kalite kapılarına göre agresif biçimde genişletilmiştir:
 
-- **`test_*.py` modül sayısı:** **213**
-- **`tests/*.py` toplamı (`conftest.py` + `__init__.py` dahil):** **215**
-- **Toplam test satırı (`tests/*.py`):** **65.729**
-- **Kapsama politikası:** `.coveragerc`, `pytest.ini`, `run_tests.sh` ve CI hattı ile yönetilen **%90 hard gate**
+- **`test_*.py` modül sayısı:** **251** (`tests/` altında alt dizinlere dağılmış; `tests/unit`, `tests/integration`, `tests/e2e`, `tests/smoke`, `tests/performance`, `tests/quality`, `tests/shell` dahil)
+- **`tests/**/*.py` toplamı (`conftest.py` + `__init__.py` dahil):** **277**
+- **Toplam test satırı (`tests/**/*.py`):** **109.922**
+- **Toplam koşulan test sayısı:** backend `pytest` ~**4.406** + frontend `vitest` ~**166** = **~4.572** (`make dev-full` lokal koşumuna göre; sürekli değişebileceğinden CI'daki güncel `production_readiness` çıktısı esas alınmalıdır)
+- **Kapsama politikası:** `.coveragerc`, `pytest.ini`, `run_tests.sh` ve CI hattı ile yönetilen **`pyproject.toml` `[tool.coverage.report] fail_under = 100` ratchet tabanı** (bkz. §6.2; eski `%90` eşiği artık geçerli değildir)
 
 **Öne çıkan test kategorileri (v5.0.0-alpha):**
 - **Coverage / Sert kalite kapısı:** `test_quick_100.py`, `test_ultimate_coverage.py`, `pytest-cov`, `.coveragerc`, `run_tests.sh`
@@ -178,7 +179,7 @@ ratchet üst sınırını birlikte loglar.
 
 ### 6.3 Test Havuzu ve Modüler Senaryolar
 
-- Güncel depoda `test_*.py` desenine uyan **213 test modülü** bulunur; `tests/*.py` toplamı (yardımcı dosyalar dahil) **215** adettir.
+- Güncel depoda `test_*.py` desenine uyan **251 test modülü** bulunur; `tests/**/*.py` toplamı (yardımcı dosyalar dahil) **277** adettir (güncel toplam koşulan test sayısı için bu bölümün girişindeki özete bakınız).
 - Test havuzu yalnızca klasik unit testlerden oluşmaz; tenant veri izolasyonu, RBAC policy enforcement, DLP maskeleme, HITL onay akışı, semantic cache eviction/benzerlik mantığı, swarm görev dağıtımı ve plugin marketplace gibi enterprise senaryoları kapsar.
 - Örnek yüksek değerli senaryolar: `test_tenant_rbac_scenarios.py`, `test_dlp_masking.py`, `test_hitl_approval.py`, `test_semantic_cache_runtime.py`, `test_swarm_orchestrator.py`, `test_plugin_marketplace_flow.py`, `test_otel_rag_spans.py`, `test_llm_judge.py`, `test_active_learning.py`.
 
@@ -272,7 +273,7 @@ Bu bölüm, güncel `pyproject.toml`, `requirements-dev.txt`, `environment.yml` 
 - `rank-bm25` bağımlılığı ise mevcut bağımlılık dosyalarında hâlen tanımlıdır; hibrit RAG/BM25 uyumluluğu için opsiyonel katmanda korunmaktadır.
 - `chardet` şu an doğrudan bağımlılık listesinde pinlenmemiştir; encoding fallback davranışı uygulama katmanında güvenli decode stratejileriyle yönetilmektedir.
 
-**Auth Notu (v3.0):** Güncel kod tabanında kimlik doğrulama bearer token + DB tabanlı oturum modeli ile yürütülür. Şifre doğrulama `core/db.py` içinde Argon2id varsayılanı ve legacy PBKDF2-HMAC doğrulamasıyla yapılır; **`PyJWT~=2.9.0`** `pyproject.toml` çekirdek bağımlılıkları arasında yer alır ve `web_server.py` içinde stateless JWT token üretimi/doğrulaması için kullanılır.
+**Auth Notu (v3.0):** Güncel kod tabanında kimlik doğrulama bearer token + DB tabanlı oturum modeli ile yürütülür. Şifre doğrulama `core/db/auth.py` içinde Argon2id varsayılanı (yeni kayıtlar) ve legacy `PBKDF2-HMAC-SHA256` doğrulamasıyla (min `600000` iterasyon, eski `120000` yalnızca geriye dönük doğrulama için) yapılır; **`PyJWT~=2.9.0`** `pyproject.toml` çekirdek bağımlılıkları arasında yer alır ve `web_server.py` içinde stateless JWT token üretimi/doğrulaması için kullanılır.
 
 ---
 
