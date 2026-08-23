@@ -2644,6 +2644,22 @@ def test_ci_system_dependency_installer_provisions_shell_test_tools() -> None:
     )
 
 
+def test_installer_media_packages_disable_weak_desktop_dependencies() -> None:
+    """Headless installs must retain required media tools without desktop recommendations."""
+    system_phase = Path("scripts/install_modules/phases/03_system.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert (
+        "apt-get -o Acquire::Retries=3 install -y \\\n"
+        '            --no-install-recommends "${linux_media_pkgs[@]}"'
+        in system_phase
+    )
+    assert "dnf install -y --setopt=install_weak_deps=False" in system_phase
+    assert "zypper --non-interactive install --no-recommends" in system_phase
+    assert "pacman varsayılan olarak optdepends paketlerini otomatik kurmaz" in system_phase
+
+
 def test_ci_system_dependency_installer_check_mode_reports_apt_missing(tmp_path: Path) -> None:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
@@ -3950,6 +3966,8 @@ def test_install_sidar_runtime_phase_uses_transient_retry_budget() -> None:
                 sidar_retry_budget_for_failure 03_runtime 'network fetch' 'temporary failure'
             sidar_retry_budget_for_failure 03_runtime 'pytest' 'deterministic failure'
             sidar_retry_budget_for_failure 04_workspace 'unknown' 'unknown'
+            sidar_retry_budget_for_failure 04_workspace 'uv sync' \
+              'Failed to download distribution due to network timeout. Try increasing UV_HTTP_TIMEOUT'
             if sidar_is_deterministic_failure_signal 'sh /tmp/ollama_install_script' \
               'sudo: timed out deterministic'; then
                 echo deterministic
@@ -3964,7 +3982,7 @@ def test_install_sidar_runtime_phase_uses_transient_retry_budget() -> None:
         text=True,
     )
 
-    assert result.stdout.splitlines() == ["3", "2", "1", "1", "transient"]
+    assert result.stdout.splitlines() == ["3", "2", "1", "1", "3", "transient"]
 
 
 def test_install_sidar_auto_heal_wraps_phases_and_resumes() -> None:
@@ -4006,6 +4024,17 @@ def test_install_sidar_auto_heal_wraps_phases_and_resumes() -> None:
     assert "uv lock" in remediation_utils
     assert "exec env" in remediation_utils
     assert "artifacts/install/remediation" in remediation_utils
+
+
+def test_uv_progress_configuration_uses_only_supported_tty_behavior() -> None:
+    """Installer must not advertise an unsupported uv progress environment variable."""
+    python_env = Path("scripts/install_modules/utils/python_env.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "UV_PROGRESS_BAR" not in python_env
+    assert 'if [[ ! -t 1 && ! -t 2 ]]; then' in python_env
+    assert "canlı yüzde çubuğu yerine paket indirme satırları" in python_env
 
 
 def test_install_sidar_runtime_ollama_remediation_writes_action_reports(tmp_path: Path) -> None:

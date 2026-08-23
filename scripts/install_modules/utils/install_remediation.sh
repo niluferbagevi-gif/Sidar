@@ -70,6 +70,10 @@ sidar_failure_code_for_signal() {
     normalized="$(printf '%s' "$signal" | tr '[:upper:]' '[:lower:]')"
 
     case "$normalized" in
+        *"network timeout"*|*"uv_http_timeout"*|*"failed to extract archive"*)
+            echo "uv-network-timeout"
+            return 0
+            ;;
         *"checksum değeri tanımlı değil"*|*"_install_sha256"*|*"allow_unverified_remote_scripts"*|*"supply-chain"*|*"checksum doğrulaması başarısız"*)
             echo "remote-script-checksum-missing"
             return 0
@@ -253,6 +257,12 @@ sidar_retry_budget_for_failure() {
         return 0
     fi
 
+    if [[ "$phase" == "04_workspace" ]] && \
+        [[ "$(sidar_failure_code_for_signal "$failed_cmd" "$reason" || true)" == "uv-network-timeout" ]]; then
+        echo "${SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS_TRANSIENT:-3}"
+        return 0
+    fi
+
     case "$phase" in
         02_repo|03_runtime|05_frontend|06_models|06_services)
             echo "${SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS_TRANSIENT:-3}"
@@ -372,6 +382,7 @@ sidar_fix_pep639_legacy_license_classifier() {
 sidar_remediate_uv_sync_failure() {
     local failure_signal="${1:-}"
     local action="uv-sync-remediation"
+    local failure_code=""
     cd "$SCRIPT_DIR" || return 1
 
     if ! command -v uv &>/dev/null; then
@@ -380,6 +391,19 @@ sidar_remediate_uv_sync_failure() {
     fi
 
     mkdir -p artifacts/install/remediation
+
+    failure_code="$(sidar_failure_code_for_signal "uv sync" "$failure_signal" || true)"
+    if [[ "$failure_code" == "uv-network-timeout" ]]; then
+        local current_timeout="${UV_HTTP_TIMEOUT:-30}"
+        [[ "$current_timeout" =~ ^[0-9]+$ ]] || current_timeout=30
+        if (( current_timeout < 300 )); then
+            export UV_HTTP_TIMEOUT=300
+        elif (( current_timeout < 600 )); then
+            export UV_HTTP_TIMEOUT=600
+        fi
+        action="${action}+http-timeout-${UV_HTTP_TIMEOUT}s"
+        warn "Auto-heal: uv ağ zaman aşımı algılandı; UV_HTTP_TIMEOUT=${UV_HTTP_TIMEOUT}s ile yeniden denenecek."
+    fi
 
     sidar_fix_pep639_legacy_license_classifier "$failure_signal" action || true
 
@@ -410,7 +434,9 @@ sidar_remediate_uv_sync_failure() {
         action="${action}+uv-lock-created"
     fi
 
-    if ! uv cache prune >/tmp/sidar_uv_cache_prune.log 2>&1; then
+    if [[ "$failure_code" == "uv-network-timeout" ]]; then
+        info "Auto-heal: ağ zaman aşımında geçerli indirme cache'i korunuyor."
+    elif ! uv cache prune >/tmp/sidar_uv_cache_prune.log 2>&1; then
         warn "Auto-heal: uv cache prune başarısız oldu; sync retry yine de denenecek."
     else
         action="${action}+uv-cache-pruned"
@@ -624,6 +650,7 @@ sidar_handle_install_failure() {
     local attempt="${SIDAR_INSTALL_REMEDIATION_ATTEMPT:-0}"
     local max_attempts="${SIDAR_INSTALL_REMEDIATION_MAX_ATTEMPTS:-1}"
     local failure_signature=""
+    local failure_code=""
 
     sidar_install_auto_heal_enabled || return 1
     [[ -n "$phase" ]] || return 1
@@ -636,6 +663,7 @@ sidar_handle_install_failure() {
     max_attempts="$(sidar_retry_budget_for_failure "$phase" "$failed_cmd" "$reason")"
     [[ "$max_attempts" =~ ^[0-9]+$ ]] || max_attempts=1
     failure_signature="$(sidar_failure_signature "$phase" "$failed_cmd" "$reason" "$exit_code")"
+    failure_code="$(sidar_failure_code_for_signal "$failed_cmd" "$reason" || true)"
 
     if sidar_is_non_retryable_failure_code "$exit_code"; then
         warn "Auto-heal: ${phase} fazında deterministik hata (rc=${exit_code}) algılandı; retry/resume atlanıyor."
@@ -681,7 +709,12 @@ sidar_handle_install_failure() {
         sidar_write_remediation_report "$phase" "test-gate-failure" "fail-fast;no-retry;no-resume;signature=${failure_signature}"
         return 1
     fi
-    if [[ "$attempt" -gt 0 && "${SIDAR_INSTALL_LAST_FAILURE_PHASE:-}" == "$phase" && "${SIDAR_INSTALL_LAST_FAILURE_SIGNATURE:-}" == "$failure_signature" ]]; then
+    # uv timeout remediation her retry'da timeout'u büyüterek yürütme koşulunu
+    # değiştirir. İmza normalizasyonu 30s/300s gibi süreleri eşitlediği için bu
+    # sınıfı bütçe tükenene kadar generic tekrar-imza korumasından hariç tut.
+    if [[ "$attempt" -gt 0 && "${SIDAR_INSTALL_LAST_FAILURE_PHASE:-}" == "$phase" && \
+        "${SIDAR_INSTALL_LAST_FAILURE_SIGNATURE:-}" == "$failure_signature" && \
+        !( "$failure_code" == "uv-network-timeout" && "$attempt" -lt "$max_attempts" ) ]]; then
         warn "Auto-heal: ${phase} fazında aynı failure imzası tekrarlandı (${failure_signature}); retry erken kesiliyor."
         sidar_write_remediation_report "$phase" "repeated-failure-signature" "fail-fast;no-retry;signature=${failure_signature}"
         return 1

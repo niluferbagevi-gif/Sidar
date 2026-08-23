@@ -47,7 +47,6 @@ _sidar_install_uv_via_official_script() {
 
 install_uv_cli() {
     step "uv CLI Paket Yöneticisi"
-    export UV_PROGRESS_BAR=on
     export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
     if ! command -v uv &>/dev/null; then
@@ -322,6 +321,10 @@ build_custom_dependency_sync_args() {
 install_python_deps() {
     step "Python Bağımlılıkları Kuruluyor"
 
+    # uv'nin 30 saniyelik varsayılanı büyük GPU wheel'lerinde yavaş veya kararsız
+    # bağlantıları gereksiz yere başarısız kılar. Kullanıcının açık override'ını koru.
+    export UV_HTTP_TIMEOUT="${UV_HTTP_TIMEOUT:-300}"
+
     cd "$SCRIPT_DIR" || return 1
     UV_CMD=(uv)
 
@@ -393,6 +396,9 @@ install_python_deps() {
     info "Bağımlılık profili: ${dependency_profile} — ${sync_command_label}."
     if [[ "$dependency_profile" == "production" || "$dependency_profile" == "production-minimal" ]]; then
         warn "Production dependency profili dev/test araçlarını kurmaz; smoke/CI/self-healing için dev-full veya dev-light kullanın."
+    fi
+    if [[ ! -t 1 && ! -t 2 ]]; then
+        info "uv çıktısı bir TTY'ye bağlı değil; canlı yüzde çubuğu yerine paket indirme satırları gösterilecek."
     fi
     if ! "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"; then
         fail "Bağımlılık kurulumu başarısız oldu (${sync_command_label}). Lock dosyası pyproject ile uyumsuzsa bilinçli olarak --upgrade-lock çalıştırın."
