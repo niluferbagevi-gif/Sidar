@@ -151,6 +151,65 @@ sidar_source_install_utils() {
     done
 }
 
+# apt/dpkg kilidi (unattended-upgrades, apt.systemd.daily/cloud-init timer'ları)
+# taze açılmış her Ubuntu/WSL2 ortamında kurulumun ilk dakikalarında son derece
+# yaygındır. Kilit tutulduğu anda çıplak "apt-get install" -o Acquire::Retries
+# ile korunsa bile anında rc=100 ile ölür (bu seçenek yalnızca ağ indirme
+# hatalarını kapsar, dpkg kilidini beklemez) — bu da auto-heal retry'ının aynı
+# failure "signature"ını üretip erken vazgeçmesine yol açar (bkz.
+# utils/install_remediation.sh: sidar_failure_signature / repeated-failure-signature
+# early-cutoff). Bu yüzden tüm apt-get install/update çağrıları -o
+# DPkg::Lock::Timeout ile kilidi bekleyen bu ortak sarmalayıcıdan geçmelidir.
+#
+# Kullanım:
+#   sidar_apt_get update -y                     # EUID==0 değilse "sudo" ile
+#   sidar_apt_get install -y curl wget ...
+#   sidar_apt_get_as sudo_cmd install -y ...     # önceden kurulmuş özel bir
+#                                                 # sudo prefix array'i ile (ör.
+#                                                 # boş array=root, veya "sudo -n")
+sidar_apt_lock_wait_notice() {
+    local lock_timeout="$1"
+    command -v fuser >/dev/null 2>&1 || return 0
+
+    local lock_file=""
+    for lock_file in /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock; do
+        [[ -e "$lock_file" ]] || continue
+        if fuser "$lock_file" >/dev/null 2>&1; then
+            local holder_pid=""
+            holder_pid="$(fuser "$lock_file" 2>/dev/null | grep -oE '[0-9]+' | head -n1)"
+            local holder_cmd=""
+            [[ -n "$holder_pid" ]] && holder_cmd="$(ps -o comm= -p "$holder_pid" 2>/dev/null || true)"
+            info "apt/dpkg kilidi kullanımda (${lock_file}${holder_cmd:+, tutan süreç: ${holder_cmd} pid=${holder_pid}}); en fazla ${lock_timeout}s beklenecek. Bu genellikle unattended-upgrades/apt.systemd.daily kaynaklıdır ve kendiliğinden serbest kalır."
+            return 0
+        fi
+    done
+    return 0
+}
+
+# $1: sudo prefix'i tutan array'in adı (nameref). Root'ta boş array geçilebilir.
+sidar_apt_get_as() {
+    local -n _sidar_apt_sudo_prefix="$1"
+    shift
+    local lock_timeout="${SIDAR_APT_LOCK_TIMEOUT_SECONDS:-180}"
+    [[ "$lock_timeout" =~ ^[0-9]+$ ]] || lock_timeout=180
+    local acquire_retries="${SIDAR_APT_ACQUIRE_RETRIES:-3}"
+    [[ "$acquire_retries" =~ ^[0-9]+$ ]] || acquire_retries=3
+
+    sidar_apt_lock_wait_notice "$lock_timeout"
+    "${_sidar_apt_sudo_prefix[@]}" env DEBIAN_FRONTEND=noninteractive apt-get \
+        -o "DPkg::Lock::Timeout=${lock_timeout}" \
+        -o "Acquire::Retries=${acquire_retries}" \
+        "$@"
+}
+
+sidar_apt_get() {
+    local -a _sidar_apt_default_sudo=()
+    if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+        _sidar_apt_default_sudo=(sudo)
+    fi
+    sidar_apt_get_as _sidar_apt_default_sudo "$@"
+}
+
 ensure_portaudio_dev() {
     local sync_command="${1:-uv sync --frozen --all-extras}"
     local reason="voice extra içindeki pyaudio derlemesi için PortAudio geliştirme paketleri gerekli (${sync_command} ön koşulu)."
@@ -162,11 +221,15 @@ ensure_portaudio_dev() {
         fi
         info "${reason} portaudio19-dev kuruluyor."
         if [[ "${effective_uid}" -eq 0 ]]; then
-            apt-get update
-            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends portaudio19-dev
+            # shellcheck disable=SC2034  # nameref-consumed by sidar_apt_get_as (indirect use).
+            local -a root_sudo=()
+            sidar_apt_get_as root_sudo update
+            sidar_apt_get_as root_sudo install -y --no-install-recommends portaudio19-dev
         elif command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
-            sudo -n apt-get update
-            sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends portaudio19-dev
+            # shellcheck disable=SC2034  # nameref-consumed by sidar_apt_get_as (indirect use).
+            local -a noninteractive_sudo=(sudo -n)
+            sidar_apt_get_as noninteractive_sudo update
+            sidar_apt_get_as noninteractive_sudo install -y --no-install-recommends portaudio19-dev
         else
             fail "${reason} Önce 'sudo apt-get install -y portaudio19-dev' çalıştırın, ardından kurulumu tekrar deneyin."
         fi

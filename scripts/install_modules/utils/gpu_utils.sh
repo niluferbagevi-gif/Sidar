@@ -357,8 +357,8 @@ setup_nvidia_docker() {
             # NVIDIA repolarını doğrulanmış geçici dosyalardan, açık izinlerle kur.
             install_nvidia_container_repository
 
-            sudo apt-get update
-            sudo apt-get install -y nvidia-container-toolkit
+            sidar_apt_get update
+            sidar_apt_get install -y nvidia-container-toolkit
 
             # Docker'ı NVIDIA runtime kullanacak şekilde yapılandır
             sudo nvidia-ctk runtime configure --runtime=docker

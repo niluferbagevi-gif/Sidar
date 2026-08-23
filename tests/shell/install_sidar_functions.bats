@@ -499,7 +499,7 @@ EOF
     # deliberately fails so install-deps chromium actually runs, fails, and
     # the fixed apt dependency list is retried (2nd sudo call) and succeeds.
     [[ "$(cat "$tmpdir/sudo-count")" -eq 2 ]]
-    grep -q "^DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libxshmfence1 libgbm1 libgtk-3-0t64 libpango-1.0-0 libcairo2 libasound2t64$" "$tmpdir/sudo.log"
+    grep -q "^env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=180 -o Acquire::Retries=3 install -y libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libxshmfence1 libgbm1 libgtk-3-0t64 libpango-1.0-0 libcairo2 libasound2t64$" "$tmpdir/sudo.log"
   '
   [ "$status" -eq 0 ]
   [[ "$output" == *"apt ön taraması eksik Chromium bağımlılıkları buldu"* ]]
@@ -1993,8 +1993,8 @@ EOF
 
     install_python_deps
 
-    grep -q "^update$" "$tmpdir/apt.log"
-    grep -q "^install -y --no-install-recommends portaudio19-dev$" "$tmpdir/apt.log"
+    grep -q "^-o DPkg::Lock::Timeout=180 -o Acquire::Retries=3 update$" "$tmpdir/apt.log"
+    grep -q "^-o DPkg::Lock::Timeout=180 -o Acquire::Retries=3 install -y --no-install-recommends portaudio19-dev$" "$tmpdir/apt.log"
     grep -q "^sync --frozen --all-extras$" "$tmpdir/uv.log"
   '
   [ "$status" -eq 0 ]
@@ -2041,8 +2041,8 @@ EOF
 
     [[ ! -s "$tmpdir/apt.log" ]]
     grep -q "^-n true$" "$tmpdir/sudo.log"
-    grep -q "^-n apt-get update$" "$tmpdir/sudo.log"
-    grep -q "^-n env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends portaudio19-dev$" "$tmpdir/sudo.log"
+    grep -q "^-n env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=180 -o Acquire::Retries=3 update$" "$tmpdir/sudo.log"
+    grep -q "^-n env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=180 -o Acquire::Retries=3 install -y --no-install-recommends portaudio19-dev$" "$tmpdir/sudo.log"
     grep -q "^sync --frozen --all-extras$" "$tmpdir/uv.log"
   '
   [ "$status" -eq 0 ]
