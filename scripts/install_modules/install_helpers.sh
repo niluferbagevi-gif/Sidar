@@ -203,10 +203,13 @@ sidar_apt_get_as() {
 }
 
 sidar_apt_get() {
-    local -a _sidar_apt_default_sudo=()
-    if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
-        _sidar_apt_default_sudo=(sudo)
-    fi
+    # install_sidar.sh kendisi root/sudo ile çalıştırılmayı zaten reddeder
+    # (bkz. install_sidar.sh içindeki EUID==0 guard'ı), bu yüzden çağıran
+    # tüm normal kurulum yolları için sabit "sudo" öneki, değiştirdiği eski
+    # literal "sudo apt-get ..." çağrılarıyla birebir aynı davranışı korur.
+    # Root/sudo-öneki gerektirmeyen özel durumlar (ör. zaten root context'i,
+    # ya da "sudo -n") sidar_apt_get_as ile kendi sudo prefix array'ini geçmelidir.
+    local -a _sidar_apt_default_sudo=(sudo)
     sidar_apt_get_as _sidar_apt_default_sudo "$@"
 }
 
