@@ -2640,7 +2640,7 @@ def test_ci_system_dependency_installer_provisions_shell_test_tools() -> None:
     assert "Run 'sudo -v' first" in installer
     assert (
         '"${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive apt-get '
-        '-o DPkg::Lock::Timeout=180 -o Acquire::Retries=3 install -y '
+        "-o DPkg::Lock::Timeout=180 -o Acquire::Retries=3 install -y "
         '--no-install-recommends "${MISSING_PACKAGES[@]}"' in installer
     )
 
