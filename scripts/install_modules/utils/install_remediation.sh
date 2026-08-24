@@ -90,6 +90,17 @@ sidar_failure_code_for_signal() {
             echo "test-gate-failure"
             return 0
             ;;
+        *"coding model json smoke testi başarısız"*)
+            # scripts/install_modules/phases/09_ollama_models.sh::run_coding_model_smoke_prompt()
+            # zaten dahili bir kurtarma denemesi (azaltılmış num_ctx) yaptıktan
+            # SONRA fail() çağırıyor - bu sinyal, o iç retry'in de başarısız
+            # olduğu anlamına gelir. Kör bir faz-seviyesi retry aynı VRAM
+            # durumuna tekrar çarpar (her deneme gerçek bir HTTP isteği + 75s'e
+            # kadar timeout içerir); bu yüzden deterministik kabul edilip somut
+            # .env rehberliğiyle doğrudan durduruluyor (bkz. review bulgusu (e)).
+            echo "coding-model-oom-failure"
+            return 0
+            ;;
         *"assert"*|*"unit test"*|*"test failed"*|*"deterministic"*)
             echo "deterministic-failure"
             return 0
@@ -114,7 +125,7 @@ sidar_is_deterministic_failure_signal() {
     fi
 
     case "$code" in
-        remote-script-checksum-missing|installer-smoke-gate-failure|installer-hash-drift|learned-non-retryable-failure|test-gate-failure|deterministic-failure)
+        remote-script-checksum-missing|installer-smoke-gate-failure|installer-hash-drift|learned-non-retryable-failure|test-gate-failure|coding-model-oom-failure|deterministic-failure)
             return 0
             ;;
         *)
@@ -128,6 +139,27 @@ sidar_is_test_gate_failure_signal() {
     local failed_cmd="${1:-}"
     local reason="${2:-}"
     [[ "$(sidar_failure_code_for_signal "$failed_cmd" "$reason" || true)" == "test-gate-failure" ]]
+}
+
+
+sidar_is_coding_model_oom_failure() {
+    local failed_cmd="${1:-}"
+    local reason="${2:-}"
+    [[ "$(sidar_failure_code_for_signal "$failed_cmd" "$reason" || true)" == "coding-model-oom-failure" ]]
+}
+
+
+# sidar_coding_model_oom_guidance() review bulgusu (e): auto-heal katmanı bu
+# senaryoya özel hiçbir rehberlik vermiyordu - ikinci denemede doğrudan
+# "repeated-failure-signature" ile fail-fast'e düşüyordu. run_coding_model_smoke_prompt()
+# kendi fail() mesajında zaten Ollama'nın gerçek hata metnini ve OOM ise
+# core/llm_client.py::OOM_REMEDIATION_HINT'i gösteriyor (review bulgusu (d));
+# bu, auto-heal raporuna ek olarak somut .env anahtarlarını ve manuel bir
+# teşhis komutunu tekrarlıyor.
+sidar_coding_model_oom_guidance() {
+    cat <<'EOF'
+Coding model smoke testi deterministiktir: run_coding_model_smoke_prompt() zaten dahili olarak azaltılmış num_ctx ile bir kurtarma denemesi yaptı ve o da başarısız oldu; kör bir faz retry'i aynı VRAM durumuna tekrar çarpar. Önerilen sonraki adımlar: (1) .env dosyasında OLLAMA_CODING_NUM_CTX=2048 (gerekirse OLLAMA_NUM_BATCH=1024 veya 512) ayarlayıp './install_sidar.sh --download-models' ile yeniden çalıştırın; (2) 'ollama ps' / 'nvidia-smi' ile başka bir sürecin VRAM'i işgal etmediğini doğrulayın; (3) gerçek hata gövdesini görmek için: curl -s http://localhost:11434/api/generate -d '{"model":"qwen2.5-coder:7b","prompt":"test","stream":false}' | head -c 500
+EOF
 }
 
 
@@ -487,6 +519,10 @@ sidar_phase_remediation_strategy() {
         sidar_write_remediation_report "$phase" "test-gate-failure" "fail-fast;no-retry;no-resume"
         return 1
     fi
+    if sidar_is_coding_model_oom_failure "$failed_cmd" "$reason"; then
+        sidar_write_remediation_report "$phase" "coding-model-oom-failure" "no-retry;manual-fix-required"
+        return 1
+    fi
 
     case "$phase" in
         03_runtime)
@@ -679,6 +715,16 @@ sidar_handle_install_failure() {
             warn "Auto-heal: ${test_gate_guidance}"
         fi
         sidar_write_remediation_report "$phase" "test-gate-failure" "fail-fast;no-retry;no-resume;signature=${failure_signature}"
+        return 1
+    fi
+    if sidar_is_coding_model_oom_failure "$failed_cmd" "$reason"; then
+        warn "Auto-heal: ${phase} fazında coding model smoke testi (muhtemelen GPU VRAM OOM) hatası algılandı; retry/resume atlanıyor."
+        local coding_model_oom_guidance=""
+        coding_model_oom_guidance="$(sidar_coding_model_oom_guidance || true)"
+        if [[ -n "$coding_model_oom_guidance" ]]; then
+            warn "Auto-heal: ${coding_model_oom_guidance}"
+        fi
+        sidar_write_remediation_report "$phase" "coding-model-oom-failure" "fail-fast;no-retry;manual-fix-required;signature=${failure_signature}"
         return 1
     fi
     if [[ "$attempt" -gt 0 && "${SIDAR_INSTALL_LAST_FAILURE_PHASE:-}" == "$phase" && "${SIDAR_INSTALL_LAST_FAILURE_SIGNATURE:-}" == "$failure_signature" ]]; then
