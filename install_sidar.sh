@@ -1865,6 +1865,6 @@ main() {
     sidar_dispatch_install_phases "$@"
 }
 
-if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]; then
+if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" && "${BASH_SOURCE[0]}" == "${0}" ]]; then
     main "$@"
 fi
