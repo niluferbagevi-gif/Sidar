@@ -600,6 +600,8 @@ INSTALL_PHASE_MODULES=(
 )
 
 INSTALL_REMOTE_MODULES=(
+    "install_cli.sh"
+    "install_dispatcher.sh"
     "install_helpers.sh"
     "install_runtime.sh"
     "install_cli.sh"
