@@ -43,12 +43,111 @@ sidar_ollama_read_runtime_setting() {
     sidar_ollama_positive_int_or_default "$raw" "$default_value"
 }
 
+# sidar_ollama_python_effective_ctx_batch() Sidar Python runtime'ının
+# core/llm/ollama.py::chat() içinde GERÇEKTE göndereceği num_ctx/num_batch
+# çiftini STDOUT'a iki satır halinde yazar (1. satır num_ctx, 2. satır
+# num_batch). Kaynak tek: config.py'nin VRAM'e göre otomatik ayarladığı
+# Config.OLLAMA_CODING_NUM_CTX ve config_llm.OLLAMA_BATCH_POLICY ile
+# hesaplanan efektif num_batch — ollama.py'deki clamp()/auto_batch_for_context()
+# çağrılarının birebir aynısı, burada tekrar uygulanıyor.
+#
+# Review bulgusu (b): kurulum betiği daha önce .env'deki sabit
+# OLLAMA_NUM_CTX/OLLAMA_NUM_BATCH değerlerini (örnek dosyalarda 8192/2048)
+# kullanıyordu — bu, config.py'nin OLLAMA_CODING_NUM_CTX auto-tune
+# mekanizmasından tamamen bağımsız, ayrı bir kaynaktı; smoke testinin
+# gönderdiği context ile gerçek runtime'ın kullanacağı context yalnızca
+# rastlantıyla aynıydı. Bu fonksiyon ikisini tek doğruluk kaynağına bağlar.
+#
+# uv bulunamazsa veya import/hesaplama başarısız olursa boş çıktı ile
+# başarısız döner (çağıran eski sabit bash varsayılanına düşer) — kurulumun
+# bu adımı asla kilitlememesi için.
+sidar_ollama_python_effective_ctx_batch() {
+    command -v uv &>/dev/null || return 1
+    [[ -d "$SCRIPT_DIR" ]] || return 1
+
+    (cd "$SCRIPT_DIR" && uv run python - <<'PY_OLLAMA_EFFECTIVE_CTX' 2>/dev/null
+from __future__ import annotations
+
+import io
+import os
+import sys
+
+# config.py imports core.config_logging_setup at import time, which points
+# the root logger's StreamHandler at sys.stdout (see core/logging_config.py)
+# - so a plain "import config" prints an INFO banner line to STDOUT before
+# our own print() calls run, corrupting the two-line output this function's
+# callers parse positionally. Redirect sys.stdout for the whole
+# import+compute step; logging.StreamHandler binds the object reference at
+# handler-creation time, so this keeps every log line captured in the
+# buffer (not just the import-time banner) without needing to guess which
+# env var silences which logger.
+os.environ.setdefault("SIDAR_CONFIG_QUIET", "true")
+_real_stdout = sys.stdout
+sys.stdout = io.StringIO()
+try:
+    import config
+    from config_llm import OLLAMA_BATCH_POLICY
+
+    config.Config._ensure_hardware_info_loaded()
+    num_ctx = int(config.Config.OLLAMA_CODING_NUM_CTX)
+    configured_num_batch = int(config.Config.OLLAMA_NUM_BATCH)
+    num_batch = OLLAMA_BATCH_POLICY.clamp(configured_num_batch) if configured_num_batch > 0 else 0
+    if num_batch <= 0:
+        num_batch = OLLAMA_BATCH_POLICY.auto_batch_for_context(num_ctx)
+except Exception:
+    sys.stdout = _real_stdout
+    raise SystemExit(1)
+else:
+    sys.stdout = _real_stdout
+    print(num_ctx)
+    print(num_batch)
+PY_OLLAMA_EFFECTIVE_CTX
+    )
+}
+
 sidar_ollama_runtime_num_ctx() {
-    sidar_ollama_read_runtime_setting "${1:-$SCRIPT_DIR/.env}" "OLLAMA_NUM_CTX" "OLLAMA_CODING_NUM_CTX" "$SIDAR_OLLAMA_DEFAULT_NUM_CTX"
+    local env_file="${1:-$SCRIPT_DIR/.env}"
+    local explicit=""
+    explicit="$(sidar_ollama_read_runtime_setting "$env_file" "OLLAMA_NUM_CTX" "OLLAMA_CODING_NUM_CTX" "")"
+    if [[ -n "$explicit" ]]; then
+        printf '%s\n' "$explicit"
+        return 0
+    fi
+
+    local py_output="" py_ctx=""
+    if py_output=$(sidar_ollama_python_effective_ctx_batch "$env_file"); then
+        py_ctx="${py_output%%$'\n'*}"
+    fi
+    if [[ "$py_ctx" =~ ^[0-9]+$ ]] && (( py_ctx > 0 )); then
+        printf '%s\n' "$py_ctx"
+        return 0
+    fi
+
+    printf '%s\n' "$SIDAR_OLLAMA_DEFAULT_NUM_CTX"
 }
 
 sidar_ollama_runtime_num_batch() {
-    sidar_ollama_read_runtime_setting "${1:-$SCRIPT_DIR/.env}" "OLLAMA_NUM_BATCH" "" "$SIDAR_OLLAMA_DEFAULT_NUM_BATCH"
+    local env_file="${1:-$SCRIPT_DIR/.env}"
+    local explicit=""
+    explicit="$(sidar_ollama_read_runtime_setting "$env_file" "OLLAMA_NUM_BATCH" "" "")"
+    if [[ -n "$explicit" ]]; then
+        printf '%s\n' "$explicit"
+        return 0
+    fi
+
+    local py_output="" py_batch=""
+    if py_output=$(sidar_ollama_python_effective_ctx_batch "$env_file"); then
+        py_batch="${py_output#*$'\n'}"
+    fi
+    # 0 config_llm.OLLAMA_BATCH_POLICY.auto_batch_for_context()'in geçerli bir
+    # sonucu (ollama.py bunu "num_batch seçeneğini hiç gönderme" olarak okur),
+    # bu yüzden ctx'in aksine burada >0 şartı aranmıyor.
+    if [[ "$py_batch" =~ ^[0-9]+$ ]]; then
+        printf '%s\n' "$py_batch"
+        return 0
+    fi
+
+    printf '%s\n' "$SIDAR_OLLAMA_DEFAULT_NUM_BATCH"
 }
 
 sidar_ollama_export_runtime_defaults() {

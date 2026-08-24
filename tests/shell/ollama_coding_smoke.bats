@@ -109,11 +109,18 @@ run_smoke_snippet() {
       done
       if [[ "$call_number" -eq 1 ]]; then
         # Simulate a VRAM OOM: HTTP 500, empty/minimal body.
+        grep -q "\"num_batch\": 2048" "$payload_file" || { echo "expected original num_batch=2048 in first attempt payload" >&2; return 9; }
         printf "%s" "{\"error\":\"an error was encountered while running the model\"}" > "$out_file"
         printf "500"
       else
-        # Reduced-context retry succeeds.
+        # Reduced-context retry succeeds. num_batch must be untouched: the
+        # codebase deliberately does not scale num_batch down for VRAM (see
+        # core/llm/ollama.py - shrinking it risks the llama.cpp
+        # GGML_ASSERT(n_tokens_all <= cparams.n_batch) crash on long prompts
+        # without actually reducing VRAM use, since ctx/KV-cache is what
+        # drives that, not batch).
         grep -q "\"num_ctx\": 4096" "$payload_file" || { echo "expected reduced num_ctx=4096 in retry payload" >&2; return 9; }
+        grep -q "\"num_batch\": 2048" "$payload_file" || { echo "expected num_batch to stay at 2048 (untouched) in retry payload" >&2; return 9; }
         printf "%s" "{\"response\":\"{\\\"sidar_smoke\\\": true}\"}" > "$out_file"
         printf "200"
       fi
@@ -125,10 +132,11 @@ run_smoke_snippet() {
     [[ "$warn_msgs" == *"HTTP 500"* ]]
     [[ "$ok_msgs" == *"Düşük VRAM"* ]]
 
-    # The working reduced values must be persisted so a re-run does not
-    # repeat the same failure signature.
+    # Only the working reduced ctx is persisted (so a re-run does not repeat
+    # the same failure signature); num_batch is intentionally left alone.
     grep -q "^OLLAMA_CODING_NUM_CTX=4096$" "$tmpdir/.env"
-    grep -q "^OLLAMA_NUM_BATCH=4096$" "$tmpdir/.env"
+    grep -q "^OLLAMA_NUM_BATCH=2048$" "$tmpdir/.env"
+    [[ "$(grep -c "^OLLAMA_NUM_BATCH=" "$tmpdir/.env")" == "1" ]]
   '
   [ "$status" -eq 0 ]
 }

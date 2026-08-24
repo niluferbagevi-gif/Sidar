@@ -168,12 +168,23 @@ import json
 import sys
 
 path, model, num_ctx, num_batch = sys.argv[1:5]
+# core/llm/ollama.py's real chat() call only sets num_ctx/num_batch when
+# they resolve to a positive value (0/negative means "let Ollama use its
+# own default" - see config_llm.OLLAMA_BATCH_POLICY.auto_batch_for_context).
+# Mirror that here so the smoke test sends the exact same options shape.
+options = {}
+num_ctx_int = int(num_ctx)
+num_batch_int = int(num_batch)
+if num_ctx_int > 0:
+    options["num_ctx"] = num_ctx_int
+if num_batch_int > 0:
+    options["num_batch"] = num_batch_int
 payload = {
     "model": model,
     "prompt": 'Return exactly this JSON and nothing else: {"sidar_smoke": true}',
     "stream": False,
     "format": "json",
-    "options": {"num_ctx": int(num_ctx), "num_batch": int(num_batch)},
+    "options": options,
 }
 with open(path, "w", encoding="utf-8") as handle:
     json.dump(payload, handle)
@@ -233,7 +244,6 @@ run_coding_model_smoke_prompt() {
     local ollama_num_ctx=""
     local ollama_num_batch=""
     local reduced_num_ctx=""
-    local reduced_num_batch=""
     local http_status=""
     local attempt_output=""
     local smoke_floor_ctx=2048
@@ -251,42 +261,39 @@ run_coding_model_smoke_prompt() {
     # Sınırdaki (~8 GiB) VRAM'li kartlarda config.py'nin otomatik seçtiği
     # context penceresi hiç payı olmadan GPU belleğini doldurabilir ve Ollama
     # `/api/generate` çağrısı HTTP 500 ile döner. Kör bir "fail" yerine, önce
-    # daha düşük num_ctx/num_batch ile tek seferlik bir kurtarma denemesi
-    # yap: başarılı olursa değeri .env'e kalıcı yaz (bir daha aynı hatayı
+    # daha düşük num_ctx ile tek seferlik bir kurtarma denemesi yap: başarılı
+    # olursa OLLAMA_CODING_NUM_CTX'i .env'e kalıcı yaz (bir daha aynı hatayı
     # tekrarlayıp installer auto-heal'in "repeated-failure-signature" ile
     # erken durmasını önle); başarısız olursa kullanıcıya somut bir sonraki
-    # adım söyle.
+    # adım söyle. num_batch bilerek DOKUNULMADAN bırakılıyor: core/llm/ollama.py
+    # içindeki yorum, VRAM için num_batch'i küçültmenin daha önce
+    # değerlendirilip reddedildiğini belgeliyor (num_batch'i küçültmek VRAM'i
+    # azaltmaz, llama.cpp'nin `GGML_ASSERT(n_tokens_all <= cparams.n_batch)`
+    # ile düşme riskini artırır); bu yüzden burada da yalnızca ctx (asıl KV
+    # cache/VRAM maliyetini taşıyan değer) küçültülüyor.
     if [[ "$http_status" != "200" ]] \
         && _sidar_ollama_smoke_looks_like_vram_pressure "$http_status" "$response_file" \
         && (( ollama_num_ctx > smoke_floor_ctx )); then
         warn "Coding model JSON smoke testi ilk denemede başarısız oldu (HTTP ${http_status}, ${model_name}); GPU VRAM baskısına işaret ediyor olabilir."
         reduced_num_ctx=$(( ollama_num_ctx / 2 ))
         (( reduced_num_ctx >= smoke_floor_ctx )) || reduced_num_ctx="$smoke_floor_ctx"
-        if (( reduced_num_ctx <= smoke_floor_ctx )); then
-            reduced_num_batch=0
-        else
-            reduced_num_batch="$reduced_num_ctx"
-            (( reduced_num_batch <= 4096 )) || reduced_num_batch=4096
-        fi
 
-        info "Daha düşük context ile tekrar deneniyor (num_ctx=${reduced_num_ctx}, num_batch=${reduced_num_batch})..."
+        info "Daha düşük context ile tekrar deneniyor (num_ctx=${reduced_num_ctx}, num_batch=${ollama_num_batch} değişmedi)..."
         rm -f "$response_file"
-        attempt_output=$(_sidar_ollama_smoke_attempt "$model_name" "$ollama_base_url" "$reduced_num_ctx" "$reduced_num_batch")
+        attempt_output=$(_sidar_ollama_smoke_attempt "$model_name" "$ollama_base_url" "$reduced_num_ctx" "$ollama_num_batch")
         http_status="${attempt_output%%$'\n'*}"
         response_file="${attempt_output#*$'\n'}"
 
         if [[ "$http_status" == "200" ]]; then
             sidar_write_env_value "$env_file" "OLLAMA_CODING_NUM_CTX" "$reduced_num_ctx"
-            sidar_write_env_value "$env_file" "OLLAMA_NUM_BATCH" "$reduced_num_batch"
-            ok "Düşük VRAM'e uygun context ile smoke testi başarılı; .env dosyasına kalıcı yazıldı (OLLAMA_CODING_NUM_CTX=${reduced_num_ctx}, OLLAMA_NUM_BATCH=${reduced_num_batch})."
+            ok "Düşük VRAM'e uygun context ile smoke testi başarılı; .env dosyasına kalıcı yazıldı (OLLAMA_CODING_NUM_CTX=${reduced_num_ctx})."
             ollama_num_ctx="$reduced_num_ctx"
-            ollama_num_batch="$reduced_num_batch"
         fi
     fi
 
     if [[ "$http_status" != "200" ]]; then
         rm -f "$response_file"
-        fail "Coding model JSON smoke testi başarısız: Ollama generate çağrısı yanıt vermedi (${model_name}, HTTP ${http_status:-000}). GPU VRAM sınırdaysa (ör. ~8 GB kart), .env dosyasında OLLAMA_CODING_NUM_CTX=2048 ve OLLAMA_NUM_BATCH=0 ayarlayıp kurulumu yeniden deneyin; ya da 'ollama ps'/'nvidia-smi' ile başka bir sürecin VRAM'i işgal etmediğini doğrulayın."
+        fail "Coding model JSON smoke testi başarısız: Ollama generate çağrısı yanıt vermedi (${model_name}, HTTP ${http_status:-000}). GPU VRAM sınırdaysa (ör. ~8 GB kart), .env dosyasında OLLAMA_CODING_NUM_CTX=2048 ayarlayıp kurulumu yeniden deneyin; ya da 'ollama ps'/'nvidia-smi' ile başka bir sürecin VRAM'i işgal etmediğini doğrulayın."
     fi
 
     response_text=$(python3 - "$response_file" <<'PYSMOKE' 2>/dev/null || true
