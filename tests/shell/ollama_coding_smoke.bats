@@ -161,6 +161,9 @@ run_smoke_snippet() {
     fail(){
       local msg="$*"
       [[ "$msg" == *"HTTP 500"* ]] || { echo "expected HTTP 500 in fail message: $msg" >&2; exit 77; }
+      # Review bulgusu (d): curl -f eskiden Ollama gövdesindeki gerçek hata
+      # metnini sessizce atıyordu. Artık görünmeli.
+      [[ "$msg" == *"cuda error: out of memory"* ]] || { echo "expected the real Ollama error text surfaced in fail message: $msg" >&2; exit 77; }
       [[ "$msg" == *"OLLAMA_CODING_NUM_CTX=2048"* ]] || { echo "expected remediation hint in fail message: $msg" >&2; exit 77; }
       # .env must NOT have been rewritten on a failed retry.
       grep -q "^OLLAMA_CODING_NUM_CTX=8192$" "$tmpdir/.env" || { echo ".env was unexpectedly rewritten" >&2; exit 77; }
@@ -183,6 +186,16 @@ run_smoke_snippet() {
     run_coding_model_smoke_prompt "qwen2.5-coder:7b" "http://localhost:11434"
   '
   [ "$status" -eq 99 ]
+  # Regression guard: install_sidar.sh's global `trap ... ERR` (set -Eeuo
+  # pipefail) must not fire for the internal uv/python calls this path makes
+  # (_sidar_ollama_oom_remediation_hint, _sidar_ollama_extract_error_snippet)
+  # - a bare `var=$(fn)` at any of their call sites used to cascade into
+  # multiple "Kurulum başarısız" ERR-trap messages and corrupt the exit
+  # code, even though this whole path is designed to fail *soft* into a
+  # single, clean fail() call. This ran with the real (unmocked) `uv` binary
+  # from a SCRIPT_DIR with no pyproject.toml - exactly the shape that used
+  # to trigger it.
+  [[ "$output" != *"Kurulum başarısız"* ]]
 }
 
 @test "run_coding_model_smoke_prompt does not retry a non-VRAM failure (e.g. 404 unknown model)" {
