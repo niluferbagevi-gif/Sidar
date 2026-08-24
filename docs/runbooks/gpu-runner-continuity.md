@@ -1,5 +1,12 @@
 # Self-hosted GPU CI runner süreklilik planı
 
+## Runner host bootstrap ön koşulları
+
+Bu runbook, runner'ın zaten kurulu ve online olduğunu varsayar. Sıfırdan bir host hazırlarken
+`./config.sh` öncesi `sudo ./bin/installdependencies.sh` çalıştırılmalıdır (GitHub Actions
+runner ikilisinin, .NET Core 6 tabanlı olduğu için gerektirdiği `libicu` vb. bağımlılıklar için) —
+ayrıntı ve gerekçe: `benchmark-runner-continuity.md` → "Runner host bootstrap ön koşulları".
+
 ## Amaç ve SLO
 
 GPU inference kalite kapısı fail-closed kalır; CPU emülasyonu veya checklist sonucu gerçek
