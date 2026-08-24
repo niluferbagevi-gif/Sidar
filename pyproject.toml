@@ -33,7 +33,7 @@ dependencies = [
   # ile takip edilir.
   # ── Temel altyapı ──────────────────────────────────────────────────────
   "packaging~=26.3",
-  "python-dotenv==1.2.2",
+  "python-dotenv==1.2.3",
   "pyyaml~=6.0.2",
   # HTTP client policy: production imports use httpx only; the old httpx2
   # migration candidate was retired to keep the runtime dependency graph smaller.
@@ -65,13 +65,13 @@ dependencies = [
   "requests>=2.32.5",
   "tenacity>=8.0.0,<10.0.0",
   # ── İçerik işleme ─────────────────────────────────────────────────────
-  "tiktoken~=0.13.0",
+  "tiktoken>=0.13,<0.15",
   "rank-bm25==0.2.2",
   "beautifulsoup4~=4.15.0",
   "bleach>=6.4.0,<7.0.0",
   # Keep NeMo Guardrails on the validated 0.22 minor until the SecurityManager
   # adapter contract is re-run against a newer major/minor API.
-  "nemoguardrails>=0.22.0,<0.23.0",
+  "nemoguardrails>=0.22.0,<0.24.0",
   # ── Harici entegrasyonlar ─────────────────────────────────────────────
   "PyGithub~=2.4.0",
   "duckduckgo-search~=6.2.13",
@@ -194,7 +194,7 @@ slack = [
 ]
 browser = [
   "playwright>=1.62.0,<1.63",
-  "selenium~=4.46.0",
+  "selenium>=4.46,<4.48",
 ]
 voice = [
   "SpeechRecognition~=3.10.4",
