@@ -24,7 +24,7 @@ DEFAULT_RELEASE_JOB_IDS = (
     "production-readiness",
     "pg-stress",
 )
-BRANCH_PROTECTION_AUDIT_CONTEXT = "Branch protection audit / Required release checks audit"
+BRANCH_PROTECTION_AUDIT_CONTEXT = "Required release checks audit"
 _GIT_REMOTE_COMMAND = ("git", "remote", "get-url", "origin")
 
 
@@ -61,11 +61,18 @@ def _repo_from_git_remote() -> str:
 
 
 def _load_expected_check_names(workflow_path: Path, job_ids: tuple[str, ...]) -> list[str]:
-    """Return GitHub check-run context names for selected workflow job ids."""
+    """Return GitHub check-run context names for selected workflow job ids.
+
+    GitHub Actions reports a check run's context as the job's own `name:` (or its
+    id, if unnamed) with no workflow-name prefix, unless the job name is
+    ambiguous across workflows — which none of these release-critical jobs are.
+    Confirmed against this repo's live branch-protection UI and Jobs API output
+    (e.g. the audit job itself reports as "Required release checks audit", not
+    "Branch protection audit / Required release checks audit").
+    """
     workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
     if not isinstance(workflow, dict):
         raise RequiredCheckAuditError(f"Workflow YAML is not a mapping: {workflow_path}")
-    workflow_name = str(workflow.get("name") or workflow_path.stem)
     jobs = workflow.get("jobs")
     if not isinstance(jobs, dict):
         raise RequiredCheckAuditError(f"Workflow has no jobs mapping: {workflow_path}")
@@ -77,7 +84,7 @@ def _load_expected_check_names(workflow_path: Path, job_ids: tuple[str, ...]) ->
         if not isinstance(job, dict):
             missing_job_ids.append(job_id)
             continue
-        expected.append(f"{workflow_name} / {job.get('name') or job_id}")
+        expected.append(str(job.get("name") or job_id))
     if missing_job_ids:
         raise RequiredCheckAuditError(
             "Release-critical job id(s) missing from workflow: " + ", ".join(missing_job_ids)

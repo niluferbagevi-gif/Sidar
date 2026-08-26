@@ -163,6 +163,10 @@ helm/**/*.tgz
 chroma_db/
 .git/
 models/
+# HuggingFace Hub cache snapshot dirs (models--<org>--<name>) can land at the
+# repo root instead of ~/.cache/huggingface/hub if HF_HOME/HF_HUB_CACHE isn't
+# resolved for a given shell/process; never track or scan them.
+models--*/
 
 # --- Ekstra Önerilen Kurallar ---
 
