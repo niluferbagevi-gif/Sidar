@@ -31,6 +31,16 @@ run_smoke_snippet() {
     export SIDAR_INSTALL_TEST_MODE=1
     set --
     source ./install_sidar.sh
+    # run_coding_model_smoke_prompt resolves num_ctx/num_batch via
+    # sidar_ollama_runtime_num_ctx/_num_batch, which check the process
+    # environment before the target .env file (see the identical comment in
+    # ollama_ctx_batch_source_of_truth.bats). Without this, a caller that
+    # already exported OLLAMA_NUM_CTX/OLLAMA_NUM_BATCH earlier in the same
+    # process tree (e.g. the install_sidar.sh Ollama phase exports these
+    # itself, then its own end-of-install CI Tam Dogrulama / make dev-full
+    # step runs bats as a child process) silently shadows the tmpdir/.env
+    # fixture each test below constructs.
+    unset OLLAMA_NUM_CTX OLLAMA_NUM_BATCH OLLAMA_CODING_NUM_CTX
     eval "$test_snippet"
   ' _ "$root" "$snippet"
 }

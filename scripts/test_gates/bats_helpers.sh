@@ -71,7 +71,19 @@ run_bats_shell_tests() {
 
   echo "🐚 BATS shell testleri çalıştırılıyor..."
   mkdir -p "${BATS_REPORT_DIR}"
+  # -u OLLAMA_NUM_CTX/_NUM_BATCH/_CODING_NUM_CTX: defense-in-depth alongside
+  # the DATABASE_URL/POSTGRES_PASSWORD stripping above. install_sidar.sh's
+  # own Ollama phase (sidar_ollama_export_runtime_defaults) exports these
+  # into its own process before this step ever runs; when run_tests.sh runs
+  # as a *child* of that same install_sidar.sh run (its end-of-install "CI
+  # Tam Doğrulama" -> `make dev-full` prompt), that export otherwise leaks
+  # into every bats subshell and shadows the isolated tmpdir/.env fixtures
+  # tests/shell/ollama_ctx_batch_source_of_truth.bats and
+  # tests/shell/ollama_coding_smoke.bats construct. Those test files also
+  # unset these themselves now (belt-and-suspenders), but stripping here too
+  # keeps this entry point correct for any future test with the same shape.
   if env -u DATABASE_URL -u TEST_DATABASE_URL -u POSTGRES_PASSWORD \
+    -u OLLAMA_NUM_CTX -u OLLAMA_NUM_BATCH -u OLLAMA_CODING_NUM_CTX \
     bats --report-formatter junit --output "${BATS_REPORT_DIR}" tests/shell; then
     echo "✅ BATS shell testleri geçti. JUnit raporu: ${BATS_REPORT_DIR}/report.xml"
     return 0

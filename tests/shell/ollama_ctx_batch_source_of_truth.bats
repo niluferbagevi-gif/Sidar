@@ -31,6 +31,17 @@ run_ollama_snippet() {
     export SIDAR_INSTALL_TEST_MODE=1
     set --
     source ./install_sidar.sh
+    # sidar_ollama_runtime_num_ctx/_num_batch deliberately check the process
+    # environment before falling back to the target .env file (real 12-factor
+    # override behavior) - so if the calling shell already has these exported
+    # (e.g. install_sidar.sh itself exports them earlier in the very same
+    # run via sidar_ollama_export_runtime_defaults(), and this bats file
+    # then runs as a child process of that run - see "CI Tam Doğrulama" /
+    # `make dev-full` at the end of install_sidar.sh), every fixture below
+    # would be silently shadowed by that leaked value instead of exercising
+    # the tmpdir/.env this test actually constructs. Force a clean slate so
+    # these tests are hermetic regardless of caller.
+    unset OLLAMA_NUM_CTX OLLAMA_NUM_BATCH OLLAMA_CODING_NUM_CTX
     eval "$test_snippet"
   ' _ "$root" "$snippet"
 }
