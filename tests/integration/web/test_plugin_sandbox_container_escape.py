@@ -26,6 +26,12 @@ this matrix runs against a real image on every PR and again at the release
 gate. ``make plugin-sandbox-security`` builds the current checkout locally and
 sets ``SIDAR_REQUIRE_PLUGIN_SANDBOX_CONTAINER_TESTS=1`` so unavailable
 prerequisites fail instead of producing six misleading skips.
+
+Two tests poll for asynchronous ``docker rm --force`` cleanup after a real
+timeout/OOM-kill and can need more than the 60s default budget on a slow or
+busy Docker daemon (see ``_assert_no_orphan_containers``); set
+``SIDAR_SANDBOX_TEST_CLEANUP_TIMEOUT_S`` to raise it, e.g. for WSL2 + Docker
+Desktop under concurrent load.
 """
 
 from __future__ import annotations
@@ -41,7 +47,11 @@ import uuid
 
 import pytest
 
-from tests._helpers.docker_sandbox import docker_bin, require_or_skip_reason
+from tests._helpers.docker_sandbox import (
+    docker_bin,
+    orphan_cleanup_timeout_seconds,
+    require_or_skip_reason,
+)
 from web.plugins.sandbox import (
     DockerPluginSandboxBackend,
     PluginSandboxError,
@@ -205,13 +215,13 @@ def _running_containers_for_image(image: str) -> list[str]:
 def _assert_no_orphan_containers(image: str) -> None:
     """Poll for --rm cleanup; Docker removes the container asynchronously.
 
-    60s (5s -> 15s -> 30s -> 60s) headroom: a CI runner building the target
-    image, running Postgres/Redis service containers, and this module's own
-    xdist workers concurrently can genuinely make async ``--rm`` teardown
-    slower than on an idle developer machine -- three consecutive real CI
-    runs each needed more than the previous budget (client-triggered kill,
-    then a cgroup OOM-kill, then this same hanging-process scenario again
-    still exceeding 30s). A companion real-CI capture in this same run
+    60s (5s -> 15s -> 30s -> 60s) default headroom: a CI runner building the
+    target image, running Postgres/Redis service containers, and this
+    module's own xdist workers concurrently can genuinely make async ``--rm``
+    teardown slower than on an idle developer machine -- three consecutive
+    real CI runs each needed more than the previous budget (client-triggered
+    kill, then a cgroup OOM-kill, then this same hanging-process scenario
+    again still exceeding 30s). A companion real-CI capture in this same run
     showed a *different* symptom of the identical root cause: the worker
     produced a correct, complete JSON response but the surrounding `docker
     run` client process still didn't return before
@@ -219,15 +229,25 @@ def _assert_no_orphan_containers(image: str) -> None:
     request timeout -- i.e. this CI environment's container-teardown latency
     under load is a real, repeatedly-confirmed, double-digit-second
     phenomenon, not a one-off flake to nudge past with a small increment.
+
+    The budget is overridable via ``SIDAR_SANDBOX_TEST_CLEANUP_TIMEOUT_S``
+    (see ``tests._helpers.docker_sandbox.orphan_cleanup_timeout_seconds``) for
+    environments where even 60s isn't enough (e.g. WSL2 + Docker Desktop
+    under concurrent load).
     """
-    deadline = time.monotonic() + 60
+    timeout_s = orphan_cleanup_timeout_seconds()
+    deadline = time.monotonic() + timeout_s
     remaining: list[str] = []
     while time.monotonic() < deadline:
         remaining = _running_containers_for_image(image)
         if not remaining:
             return
         time.sleep(0.5)
-    pytest.fail(f"Sandbox container(ler) --rm ile temizlenmedi: {remaining}")
+    pytest.fail(
+        f"Sandbox container(ler) --rm ile temizlenmedi ({timeout_s:g}s bütçe; "
+        "SIDAR_SANDBOX_TEST_CLEANUP_TIMEOUT_S ile artırılabilir): "
+        f"{remaining}"
+    )
 
 
 def test_container_escape_matrix_rejects_network_fs_env_and_host_process_access() -> None:

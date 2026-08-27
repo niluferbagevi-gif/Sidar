@@ -275,6 +275,16 @@ doğrular, mevcut olabilecek eski `sidar:latest` tag'ine güvenmeyip güncel che
 build eder ve `SIDAR_REQUIRE_PLUGIN_SANDBOX_CONTAINER_TESTS=1` ile herhangi bir altyapı
 eksikliğinin skip olarak gizlenmesini engeller.
 
+İki test (`test_container_timeout_is_enforced_and_cleaned_up_for_a_real_hanging_process` ve
+memory-bomb testi), gerçek bir timeout/OOM-kill sonrası asenkron `docker rm --force`
+temizliğini `_assert_no_orphan_containers` ile 60 saniyeye kadar poll eder — bu bütçe
+`web/plugins/sandbox.py`'deki uygulama kodunun bir hatası değil, CI'da tekrarlanan
+gözlemlere dayanan Docker daemon teardown gecikmesi içindir. WSL2 + Docker Desktop gibi
+kaynak kısıtlı/eşzamanlı yüklü geliştirici makinelerinde 60 saniye yetmiyorsa
+`SIDAR_SANDBOX_TEST_CLEANUP_TIMEOUT_S` ortam değişkeniyle (saniye cinsinden, örn. `120`)
+artırılabilir; `tests/_helpers/docker_sandbox.py::orphan_cleanup_timeout_seconds` boş/geçersiz/
+pozitif olmayan değerlerde sessizce 60 saniye varsayılanına döner.
+
 `tests/integration/web/test_plugin_sandbox_integration.py` yukarıdaki gerçek-container
 matrisinden farklıdır: plugin sandbox backend'i her ortamda varsayılan olarak Docker
 kullandığı için (`web/plugins/sandbox.py:plugin_sandbox_backend`) bu test de gerçek
