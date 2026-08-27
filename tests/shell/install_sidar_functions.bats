@@ -24,6 +24,10 @@ run_installer_function() {
     unset DATABASE_URL TEST_DATABASE_URL POSTGRES_PASSWORD
     unset SIDAR_PRODUCTION_READINESS PRODUCTION_READINESS TEST_PROFILE
     unset RUN_BENCHMARKS RUN_FRONTEND_E2E AUTO_OPEN_ARTIFACTS
+    # sidar_ollama_export_runtime_defaults() (09_ollama_models.sh) exports
+    # these during a real install; same inherited-state hazard as the vars
+    # above.
+    unset OLLAMA_NUM_CTX OLLAMA_NUM_BATCH OLLAMA_CODING_NUM_CTX
     set --
     source ./install_sidar.sh
     eval "$test_snippet"
