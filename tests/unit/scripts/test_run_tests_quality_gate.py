@@ -4202,18 +4202,26 @@ def test_create_directories_permission_steps_no_longer_swallow_errors_silently()
     assert "sidar_run_or_warn() {" in workspace_phase
     for expected_call in (
         'sidar_run_or_warn "chmod 755 \\"$SCRIPT_DIR/$dir\\"" chmod 755 "$SCRIPT_DIR/$dir"',
-        'sidar_run_or_warn "chown 10001:10001 \\"$SCRIPT_DIR/$bind_dir\\"" chown 10001:10001'
-        ' "$SCRIPT_DIR/$bind_dir"',
         'sidar_run_or_warn "chmod u+rwx,g+rx,o+rx \\"$SCRIPT_DIR/$bind_dir\\"" chmod'
         ' u+rwx,g+rx,o+rx "$SCRIPT_DIR/$bind_dir"',
-        'sidar_run_or_warn "setfacl -m u:10001:rwx \\"$SCRIPT_DIR/$bind_dir\\"" setfacl -m'
-        ' u:10001:rwx "$SCRIPT_DIR/$bind_dir"',
+        'sidar_run_or_warn "chown 10001:10001 \\"$SCRIPT_DIR/$bind_dir\\"" chown 10001:10001'
+        ' "$SCRIPT_DIR/$bind_dir"',
         'sidar_run_or_warn "chown 10001:10001 \\"$log_file\\"" chown 10001:10001 "$log_file"',
-        'sidar_run_or_warn "setfacl -m u:10001:rw \\"$log_file\\"" setfacl -m u:10001:rw'
-        ' "$log_file"',
+        'sidar_run_or_warn "chown \\"$(id -u):$(id -g)\\" \\"$log_file\\"" chown'
+        ' "$(id -u):$(id -g)" "$log_file"',
         'sidar_run_or_warn "chmod u+rw \\"$log_file\\"" chmod u+rw "$log_file"',
     ):
         assert expected_call in create_directories_block, expected_call
+
+    # chown <başka-uid>, root olmayan bir kullanıcı için POSIX'te her zaman
+    # EPERM ile başarısız olur ve install_sidar.sh root/sudo ile çalıştırılmayı
+    # zaten reddeder (bkz. dosyanın en üstündeki EUID guard'ı) — bu yüzden
+    # sabit 10001 chown'ı yalnızca gerçekten root iken denenmeli. Root
+    # olmayan (asıl/normal) akışta artık chown/setfacl hiç denenmiyor;
+    # bunun yerine ensure_container_uid_gid_defaults() (08_env.sh)
+    # container'ı host kullanıcısının UID/GID'siyle çalıştırıyor.
+    assert 'if [[ "$(id -u)" -eq 0 ]]; then' in create_directories_block
+    assert "setfacl" not in create_directories_block
 
 
 def test_sidar_run_or_warn_surfaces_error_and_stays_non_fatal(tmp_path: Path) -> None:

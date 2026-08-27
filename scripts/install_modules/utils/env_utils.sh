@@ -82,6 +82,7 @@ setup_env_file() {
         harden_database_credentials "$ENV_FILE"
         sync_postgres_env_with_database_url "$ENV_FILE"
         ensure_local_service_host_defaults "$ENV_FILE"
+        ensure_container_uid_gid_defaults "$ENV_FILE"
         ensure_auto_secrets "$ENV_FILE"
         propagate_shared_secrets_to_env_variants "$ENV_FILE"
         validate_required_security_profile "$ENV_FILE"
@@ -107,6 +108,7 @@ setup_env_file() {
     harden_database_credentials "$ENV_FILE"
     sync_postgres_env_with_database_url "$ENV_FILE"
     ensure_local_service_host_defaults "$ENV_FILE"
+    ensure_container_uid_gid_defaults "$ENV_FILE"
 
     # Güvenlik secret'larını üret/doğrula (her iki yolda da çalışan üst-düzey fonksiyon)
     ensure_auto_secrets "$ENV_FILE"

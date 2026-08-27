@@ -32,29 +32,36 @@ create_directories() {
         sidar_run_or_warn "chmod 755 \"$SCRIPT_DIR/$dir\"" chmod 755 "$SCRIPT_DIR/$dir" || true
     done
 
-    # Tam Docker modunda container kullanıcı UID/GID (10001) bind-mount dizinlerine
-    # yazabilmelidir; aksi halde /app/logs gibi yolarda Permission denied oluşur.
+    # Tam Docker modunda container kullanıcı UID/GID'si bind-mount dizinlerine
+    # yazabilmelidir; aksi halde /app/logs gibi yollarda Permission denied oluşur.
+    # `chown <başka-uid>` root olmayan bir kullanıcı için POSIX'te her zaman
+    # EPERM ile başarısız olur — ve install_sidar.sh kök seviyede root/sudo ile
+    # çalıştırılmayı zaten reddeder (bkz. dosyanın en üstündeki EUID guard'ı) —
+    # bu yüzden bu betik pratikte hep root olmayan bir kullanıcı olarak koşar.
+    # Root/sudo ile çalıştırılan istisnai (ör. test) senaryoda imaja gömülü
+    # sabit 10001:10001 kullanıcısına doğrudan chown edilebilir; normal
+    # (root olmayan) akışta bunu denemek yerine container'ın kendisini host
+    # kullanıcısıyla aynı UID/GID'de çalıştırıyoruz (bkz.
+    # ensure_container_uid_gid_defaults() / 08_env.sh) — bu dizinler zaten host
+    # kullanıcısı tarafından oluşturulduğu için hiçbir izin değişikliğine
+    # gerek kalmaz.
     local runtime_mode="${APP_RUNTIME_MODE_SELECTED:-${APP_RUNTIME_MODE:-${AUTO_RUNTIME_MODE:-ask}}}"
     if [[ "$runtime_mode" == "docker" ]]; then
         local -a docker_bind_dirs=(logs data temp sessions)
         local bind_dir=""
         for bind_dir in "${docker_bind_dirs[@]}"; do
             mkdir -p "$SCRIPT_DIR/$bind_dir"
-            sidar_run_or_warn "chown 10001:10001 \"$SCRIPT_DIR/$bind_dir\"" chown 10001:10001 "$SCRIPT_DIR/$bind_dir" || true
             sidar_run_or_warn "chmod u+rwx,g+rx,o+rx \"$SCRIPT_DIR/$bind_dir\"" chmod u+rwx,g+rx,o+rx "$SCRIPT_DIR/$bind_dir" || true
-            if command -v setfacl &>/dev/null; then
-                sidar_run_or_warn "setfacl -m u:10001:rwx \"$SCRIPT_DIR/$bind_dir\"" setfacl -m u:10001:rwx "$SCRIPT_DIR/$bind_dir" || true
+            if [[ "$(id -u)" -eq 0 ]]; then
+                sidar_run_or_warn "chown 10001:10001 \"$SCRIPT_DIR/$bind_dir\"" chown 10001:10001 "$SCRIPT_DIR/$bind_dir" || true
             fi
         done
     fi
 
     local log_file="$SCRIPT_DIR/logs/sidar_system.log"
     if [[ -f "$log_file" && ! -w "$log_file" ]]; then
-        if [[ "${APP_RUNTIME_MODE_SELECTED:-${APP_RUNTIME_MODE:-${AUTO_RUNTIME_MODE:-ask}}}" == "docker" ]]; then
+        if [[ "${APP_RUNTIME_MODE_SELECTED:-${APP_RUNTIME_MODE:-${AUTO_RUNTIME_MODE:-ask}}}" == "docker" && "$(id -u)" -eq 0 ]]; then
             sidar_run_or_warn "chown 10001:10001 \"$log_file\"" chown 10001:10001 "$log_file" || true
-            if command -v setfacl &>/dev/null; then
-                sidar_run_or_warn "setfacl -m u:10001:rw \"$log_file\"" setfacl -m u:10001:rw "$log_file" || true
-            fi
         else
             sidar_run_or_warn "chown \"$(id -u):$(id -g)\" \"$log_file\"" chown "$(id -u):$(id -g)" "$log_file" || true
         fi

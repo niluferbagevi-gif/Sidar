@@ -1786,6 +1786,140 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "create_directories skips the doomed chown 10001 attempt for docker mode when not root" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    SCRIPT_DIR="$tmpdir"
+    REQUIRED_DIRS=(data logs temp sessions)
+    APP_RUNTIME_MODE_SELECTED=docker
+
+    cat > "$tmpdir/bin/id" <<EOF
+#!/usr/bin/env bash
+case "\$1" in
+  -u) echo 1000 ;;
+  -g) echo 1000 ;;
+esac
+EOF
+    cat > "$tmpdir/bin/chown" <<EOF
+#!/usr/bin/env bash
+printf "chown:%s\n" "\$*" >> "$tmpdir/chown.log"
+exit 0
+EOF
+    chmod +x "$tmpdir/bin/id" "$tmpdir/bin/chown"
+    export PATH="$tmpdir/bin:$PATH"
+
+    create_directories
+
+    [[ ! -f "$tmpdir/chown.log" ]]
+    [[ -d "$tmpdir/logs" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "create_directories chowns bind dirs to 10001 for docker mode only when actually running as root" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    SCRIPT_DIR="$tmpdir"
+    REQUIRED_DIRS=(data logs temp sessions)
+    APP_RUNTIME_MODE_SELECTED=docker
+
+    cat > "$tmpdir/bin/id" <<EOF
+#!/usr/bin/env bash
+echo 0
+EOF
+    cat > "$tmpdir/bin/chown" <<EOF
+#!/usr/bin/env bash
+printf "chown:%s\n" "\$*" >> "$tmpdir/chown.log"
+exit 0
+EOF
+    chmod +x "$tmpdir/bin/id" "$tmpdir/bin/chown"
+    export PATH="$tmpdir/bin:$PATH"
+
+    create_directories
+
+    grep -q "^chown:10001:10001 $tmpdir/logs\$" "$tmpdir/chown.log"
+    grep -q "^chown:10001:10001 $tmpdir/data\$" "$tmpdir/chown.log"
+    grep -q "^chown:10001:10001 $tmpdir/temp\$" "$tmpdir/chown.log"
+    grep -q "^chown:10001:10001 $tmpdir/sessions\$" "$tmpdir/chown.log"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "ensure_container_uid_gid_defaults writes host UID/GID to .env for docker mode when not root and unset" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    env_file="$tmpdir/.env"
+    touch "$env_file"
+    APP_RUNTIME_MODE_SELECTED=docker
+
+    cat > "$tmpdir/bin/id" <<EOF
+#!/usr/bin/env bash
+case "\$1" in
+  -u) echo 1001 ;;
+  -g) echo 1002 ;;
+esac
+EOF
+    chmod +x "$tmpdir/bin/id"
+    export PATH="$tmpdir/bin:$PATH"
+
+    ensure_container_uid_gid_defaults "$env_file"
+
+    grep -q "^SIDAR_CONTAINER_UID=1001$" "$env_file"
+    grep -q "^SIDAR_CONTAINER_GID=1002$" "$env_file"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "ensure_container_uid_gid_defaults is a no-op outside docker mode, when root, or when already set" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+
+    cat > "$tmpdir/bin/id" <<EOF
+#!/usr/bin/env bash
+case "\$1" in
+  -u) echo 0 ;;
+  -g) echo 0 ;;
+esac
+EOF
+    chmod +x "$tmpdir/bin/id"
+    export PATH="$tmpdir/bin:$PATH"
+
+    env_file1="$tmpdir/.env.local"
+    touch "$env_file1"
+    APP_RUNTIME_MODE_SELECTED=local
+    ensure_container_uid_gid_defaults "$env_file1"
+    [[ ! -s "$env_file1" ]]
+
+    env_file2="$tmpdir/.env.root"
+    touch "$env_file2"
+    APP_RUNTIME_MODE_SELECTED=docker
+    ensure_container_uid_gid_defaults "$env_file2"
+    [[ ! -s "$env_file2" ]]
+
+    cat > "$tmpdir/bin/id" <<EOF2
+#!/usr/bin/env bash
+case "\$1" in
+  -u) echo 1001 ;;
+  -g) echo 1002 ;;
+esac
+EOF2
+
+    env_file3="$tmpdir/.env.preset"
+    printf "SIDAR_CONTAINER_UID=42\n" > "$env_file3"
+    ensure_container_uid_gid_defaults "$env_file3"
+    [[ "$(cat "$env_file3")" == "SIDAR_CONTAINER_UID=42" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
 @test "select_dependency_profile defaults noninteractive installer to dev-full" {
   run_installer_function '
     DEPENDENCY_PROFILE=ask
