@@ -88,13 +88,22 @@ RUN uv --version && uvx --version
 # .deb arşivlerinin yeniden indirilmesini önler. Cache mount'lar son imaja
 # sızmadığı için burada `rm -rf /var/lib/apt/lists/*` gerekmez/zararlıdır
 # (cache'i her build'de boşaltır).
+# build-essential/pkg-config/shellcheck bilinçli olarak runtime image'da
+# kalıyor (run_tests.sh gibi betikler doğrudan bu container içinde
+# çalıştırılıyor — bkz. `docker-compose.production.yml`/Dockerfile.production
+# ayrımı, üretim için ayrı, minimal bir imaj kullanır). `cargo` (rustc/llvm
+# ile birlikte ~110MB) daha önce burada listeliydi; uv.lock'ta sdist'ten
+# derlenen tek 5 paket (annoy, bottle-websocket, eel, openai-whisper,
+# pyaudio) doğrulandı — hiçbiri Rust değil (annoy/pyaudio yalnızca
+# build-essential'daki gcc/g++'a ihtiyaç duyuyor), repoda da hiç
+# Cargo.toml/*.rs yok; bu yüzden kaldırıldı.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
     set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
       ca-certificates git build-essential curl wget zstd \
-      docker.io portaudio19-dev python3-pyaudio alsa-utils v4l-utils ffmpeg cargo pkg-config \
+      docker.io portaudio19-dev python3-pyaudio alsa-utils v4l-utils ffmpeg pkg-config \
       shellcheck \
     ; \
     if [ -f /etc/os-release ] && grep -qi 'ubuntu' /etc/os-release; then \

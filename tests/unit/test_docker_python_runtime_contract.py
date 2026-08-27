@@ -40,6 +40,23 @@ def test_main_dockerfile_installs_shellcheck_os_package():
     assert dockerfile.index("shellcheck") < dockerfile.index("ENV UV_INDEX_STRATEGY=first-index")
 
 
+def test_main_dockerfile_does_not_install_unused_rust_toolchain():
+    """Regression: `cargo` (with rustc/llvm, ~110MB) was in the runtime apt layer unused.
+
+    Verified against uv.lock: the only 5 packages built from sdist (no
+    prebuilt wheel at all) are annoy, bottle-websocket, eel, openai-whisper,
+    and pyaudio — none are Rust-based (annoy/pyaudio only need the C/C++
+    compiler already provided by build-essential). The repo itself has no
+    Cargo.toml/*.rs either. A full `uv sync --frozen --all-extras` with
+    cargo/rustc removed from PATH was verified to succeed before this
+    package was dropped from the Dockerfile.
+    """
+    dockerfile = _read("Dockerfile")
+
+    assert " cargo " not in dockerfile
+    assert "build-essential" in dockerfile
+
+
 def test_main_dockerfile_uses_cache_mount_for_apt_not_baked_in_lists_cleanup():
     """Regression: GPU builds previously re-downloaded the same .deb archives every time.
 
