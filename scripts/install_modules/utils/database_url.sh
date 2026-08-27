@@ -110,10 +110,22 @@ sync_postgres_env_variants_with_source() {
     local source_env_file="$1"
     shift || true
     local -a variant_specs=("$@")
+    # NOT: POSTGRES_DB burada kasıtlı olarak yok. .env.development.example gibi
+    # profil şablonları POSTGRES_DB'yi bilinçli olarak base/production'dan
+    # (POSTGRES_DB=sidar) izole tutar (ör. POSTGRES_DB=sidar_development) —
+    # kendi yorum satırlarında bunu açıkça belirtiyorlar. Bunu bir "credential"
+    # gibi ele alıp base .env'den zorla kopyalamak bu izolasyonu eziyor ve
+    # core/doctor'ın environment_profile kontrolünün tam olarak yakaladığı
+    # "POSTGRES_DB='sidar' is not isolated from the base/production database"
+    # uyarısına yol açıyordu. DATABASE_URL/SIDAR_CONTAINER_DATABASE_URL yine de
+    # senkronize edilir (parola rotasyonu için gerekli); ardından
+    # sync_database_env_chain_after_setup()'ın çağırdığı
+    # ensure_database_url_defaults_for_variants(), her varyantın DSN'indeki
+    # veritabanı adını YİNE O DOSYANIN KENDİ (burada dokunulmamış) POSTGRES_DB
+    # değerine göre yeniden hizalar — böylece izolasyon korunur.
     local -a postgres_keys=(
         POSTGRES_USER
         POSTGRES_PASSWORD
-        POSTGRES_DB
         DATABASE_URL
         SIDAR_CONTAINER_DATABASE_URL
     )

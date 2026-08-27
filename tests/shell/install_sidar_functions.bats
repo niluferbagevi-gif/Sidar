@@ -946,6 +946,7 @@ ENV
     cat > "$env_file" <<ENV
 DATABASE_URL=postgresql+asyncpg://sidar:${master_pw}@127.0.0.1:5432/sidar?ssl=disable
 POSTGRES_PASSWORD=old_value_that_should_be_replaced
+POSTGRES_DB=sidar
 ENV
     for variant in .env.development .env.test .env.advanced; do
       cat > "$tmpdir/${variant}.example" <<ENV
@@ -954,6 +955,7 @@ DATABASE_URL=postgresql+asyncpg://sidar:example_password@127.0.0.1:5432/sidar
 ENV
       cat > "$tmpdir/$variant" <<ENV
 POSTGRES_PASSWORD=${stale_pw}
+POSTGRES_DB=sidar_${variant#.env.}
 DATABASE_URL=postgresql+asyncpg://sidar:${stale_pw}@127.0.0.1:5432/sidar
 SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:${stale_pw}@postgres:5432/sidar
 ENV
@@ -962,10 +964,16 @@ ENV
     SCRIPT_DIR="$tmpdir"
     sync_postgres_env_with_database_url "$env_file"
 
+    # POSTGRES_USER/PASSWORD ve DSN değerleri credential niteliğinde olduğu
+    # için base .env ile zorunlu senkronize edilir. POSTGRES_DB ise senkronize
+    # EDILMEMELI: her varyantin kendi izole veritabani adi (ornek:
+    # .env.development icin sidar_development), base .env dosyasindaki
+    # POSTGRES_DB=sidar degeriyle ezilmeden korunmalidir (bkz. core/doctor
+    # environment_profile kontrolu).
     for variant in .env.development .env.test .env.advanced; do
       grep -q "^POSTGRES_USER=sidar$" "$tmpdir/$variant"
       grep -q "^POSTGRES_PASSWORD=${master_pw}$" "$tmpdir/$variant"
-      grep -q "^POSTGRES_DB=sidar$" "$tmpdir/$variant"
+      grep -q "^POSTGRES_DB=sidar_${variant#.env.}$" "$tmpdir/$variant"
       grep -q "^DATABASE_URL=postgresql+asyncpg://sidar:${master_pw}@127.0.0.1:5432/sidar?ssl=disable$" "$tmpdir/$variant"
       grep -q "^SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:${master_pw}@postgres:5432/sidar$" "$tmpdir/$variant"
     done
