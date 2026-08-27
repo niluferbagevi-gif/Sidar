@@ -34,7 +34,59 @@ def test_main_dockerfile_installs_shellcheck_os_package():
 
     assert "shellcheck \\" in dockerfile
     assert dockerfile.index("pkg-config") < dockerfile.index("shellcheck")
-    assert dockerfile.index("shellcheck") < dockerfile.index("rm -rf /var/lib/apt/lists/*")
+    # System apt layer uses a BuildKit cache mount (no baked-in
+    # `rm -rf /var/lib/apt/lists/*`), so anchor on the ENV block that
+    # follows it to confirm shellcheck still lands in that same layer.
+    assert dockerfile.index("shellcheck") < dockerfile.index("ENV UV_INDEX_STRATEGY=first-index")
+
+
+def test_main_dockerfile_uses_cache_mount_for_apt_not_baked_in_lists_cleanup():
+    """Regression: GPU builds previously re-downloaded the same .deb archives every time.
+
+    A BuildKit cache mount keeps them across builds instead. Cache mounts
+    never persist into the image layer, so the old
+    `rm -rf /var/lib/apt/lists/*` cleanup would only defeat the cache.
+    """
+    dockerfile = _read("Dockerfile")
+
+    assert "--mount=type=cache,target=/var/cache/apt" in dockerfile
+    assert "--mount=type=cache,target=/var/lib/apt/lists" in dockerfile
+
+
+def test_main_dockerfile_installs_gpu_python_via_uv_not_deadsnakes_ppa():
+    """Regression: a GPU (Ubuntu-based nvidia/cuda) build previously added the deadsnakes PPA.
+
+    That dragged in ~60 unrelated packages (software-properties-common,
+    dbus, PackageKit, PolicyKit, ...) and could trip tzdata's interactive
+    prompt. `uv python install` provisions the same pinned version without
+    apt/PPA at all.
+    """
+    dockerfile = _read("Dockerfile")
+
+    assert "uv python install ${PYTHON_VERSION}" in dockerfile
+    assert "deadsnakes" not in dockerfile
+    assert "add-apt-repository" not in dockerfile
+    assert "software-properties-common" not in dockerfile
+
+
+def test_main_dockerfile_disables_interactive_apt_prompts():
+    """Regression: without DEBIAN_FRONTEND=noninteractive, tzdata drops apt into a prompt.
+
+    tzdata is pulled in transitively by packages like
+    docker.io/ffmpeg/alsa-utils on an Ubuntu-based GPU base image, and the
+    interactive timezone prompt it triggers hangs forever in a TTY-less CI
+    build.
+    """
+    dockerfile = _read("Dockerfile")
+
+    assert "DEBIAN_FRONTEND=noninteractive" in dockerfile
+    assert "TZ=Etc/UTC" in dockerfile
+    # Anchor on the actual apt RUN instruction (not just any "apt-get
+    # install" substring — the file's GPU usage comment near the top also
+    # mentions one) to confirm the ENV lands before that layer runs.
+    assert dockerfile.index("DEBIAN_FRONTEND=noninteractive") < dockerfile.index(
+        "RUN --mount=type=cache,target=/var/cache/apt"
+    )
 
 
 def test_main_dockerfile_preinstalls_uv_for_sandbox_regression_tests():

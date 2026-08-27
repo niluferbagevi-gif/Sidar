@@ -48,7 +48,7 @@ ARG MEMORY_ENCRYPTION_KEY=""
 # DEBIAN_FRONTEND/TZ: apt-get install sırasında tzdata gibi paketlerin
 # interaktif coğrafi bölge sorusuna düşüp build'i (özellikle TTY'siz CI
 # ortamında) sonsuza kadar kilitlemesini engeller. GPU tabanlı image'larda
-# (nvidia/cuda, Ubuntu tabanlı) add-apt-repository + ek paket kurulumları
+# (nvidia/cuda, Ubuntu tabanlı) docker.io/ffmpeg/alsa-utils gibi paketler
 # tzdata'yı bağımlılık olarak çekebildiği için bu ayar zorunludur.
 ENV DEBIAN_FRONTEND=noninteractive \
     TZ=Etc/UTC \
@@ -73,9 +73,24 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # Çalışma dizini
 WORKDIR /app
 
+# Bağımlılık Yönetimi — uv lock dosyasından deterministik kurulum
+# Sandbox testleri `run_tests.sh` gibi betikleri doğrudan container içinde
+# çalıştırdığı için uv binary'si imajda önceden bulunmalıdır.
+# Python provisioning'den önce kopyalanır: `uv python install` sistem
+# apt/PPA'sından bağımsız kendi standalone Python build'ini kurabiliyor
+# (bkz. aşağıdaki sistem bağımlılıkları katmanı).
+COPY --from=ghcr.io/astral-sh/uv:0.12.0@sha256:606e70c71c852d03f611b1e56a195d08648507018a7057fab82c4974c4eae105 /uv /uvx /bin/
+RUN uv --version && uvx --version
+
 # Sistem bağımlılıkları
 # GPU base image'ında (nvidia/cuda) libcuda ve sürücü zaten mevcuttur.
-RUN set -eux; \
+# apt önbellekleri BuildKit cache mount ile tutulur; her build'de aynı
+# .deb arşivlerinin yeniden indirilmesini önler. Cache mount'lar son imaja
+# sızmadığı için burada `rm -rf /var/lib/apt/lists/*` gerekmez/zararlıdır
+# (cache'i her build'de boşaltır).
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
       ca-certificates git build-essential curl wget zstd \
@@ -83,26 +98,14 @@ RUN set -eux; \
       shellcheck \
     ; \
     if [ -f /etc/os-release ] && grep -qi 'ubuntu' /etc/os-release; then \
-      apt-get install -y --no-install-recommends software-properties-common; \
-      add-apt-repository ppa:deadsnakes/ppa; \
-      apt-get update; \
-      PYTHON_APT_VERSION="${PYTHON_VERSION%.*}"; \
-      apt-get install -y --no-install-recommends \
-        python${PYTHON_APT_VERSION} python${PYTHON_APT_VERSION}-venv python${PYTHON_APT_VERSION}-distutils python3-pip; \
-      update-alternatives --install /usr/bin/python3 python3 /usr/bin/python${PYTHON_APT_VERSION} 2; \
+      uv python install ${PYTHON_VERSION}; \
     else \
       apt-get install -y --no-install-recommends python3 python3-venv python3-pip; \
-    fi; \
-    rm -rf /var/lib/apt/lists/*
+    fi
 
 ENV UV_INDEX_STRATEGY=first-index \
     PATH="${VIRTUAL_ENV}/bin:$PATH"
 
-# Bağımlılık Yönetimi — uv lock dosyasından deterministik kurulum
-# Sandbox testleri `run_tests.sh` gibi betikleri doğrudan container içinde
-# çalıştırdığı için uv binary'si imajda önceden bulunmalıdır.
-COPY --from=ghcr.io/astral-sh/uv:0.12.0@sha256:606e70c71c852d03f611b1e56a195d08648507018a7057fab82c4974c4eae105 /uv /uvx /bin/
-RUN uv --version && uvx --version
 COPY pyproject.toml uv.lock README.md ./
 RUN test -f uv.lock || (echo "uv.lock is required for deterministic builds" >&2; exit 1)
 RUN --mount=type=cache,target=/root/.cache/uv \
