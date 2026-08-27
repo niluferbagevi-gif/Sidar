@@ -592,6 +592,13 @@ index-strategy = "first-index"
 environments = ["sys_platform == 'linux'"]
 override-dependencies = ["setuptools>=83.0.0"]
 
+# Linux (the only `environments` target below, and the platform every Docker
+# image builds on) intentionally has no pinned CUDA index: torch's own
+# manylinux wheel on PyPI already declares CUDA 13.x runtime deps
+# (nvidia-cudnn-cu13, cuda-toolkit[...] extras, etc. — see uv.lock) that
+# match the nvidia/cuda:13.0.0 GPU base image, so `uv sync --frozen` resolves
+# a working GPU-capable torch with no extra index at all. Only macOS (CPU-only
+# PyTorch has no CUDA build) needs an explicit alternate index.
 [tool.uv.sources]
 torch = [
   { index = "pytorch-cpu", marker = "platform_system == 'Darwin'" },
@@ -606,11 +613,6 @@ torchaudio = [
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
-explicit = true
-
-[[tool.uv.index]]
-name = "pytorch-cu124"
-url = "https://download.pytorch.org/whl/cu124"
 explicit = true
 
 [tool.setuptools.packages.find]

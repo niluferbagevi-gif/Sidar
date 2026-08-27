@@ -263,7 +263,12 @@ services:
       args:
         BASE_IMAGE: nvidia/cuda:13.0.0-runtime-ubuntu22.04
         GPU_ENABLED: "true"
-        TORCH_INDEX_URL: https://download.pytorch.org/whl/cu130
+        # No TORCH_INDEX_URL: the Dockerfile never declares that ARG, and
+        # `uv sync --frozen` installs exactly what uv.lock pins regardless —
+        # torch's manylinux wheel already bundles CUDA 13.x runtime deps
+        # matching this base image (see pyproject.toml's [tool.uv.sources]
+        # comment). A build arg here was previously silently dropped by
+        # Docker with no effect; removed rather than wired up as dead noise.
     container_name: sidar_agent_gpu
     user: "${SIDAR_CONTAINER_UID:-10001}:${SIDAR_CONTAINER_GID:-10001}"
     restart: unless-stopped
@@ -404,7 +409,12 @@ services:
       args:
         BASE_IMAGE: nvidia/cuda:13.0.0-runtime-ubuntu22.04
         GPU_ENABLED: "true"
-        TORCH_INDEX_URL: https://download.pytorch.org/whl/cu130
+        # No TORCH_INDEX_URL: the Dockerfile never declares that ARG, and
+        # `uv sync --frozen` installs exactly what uv.lock pins regardless —
+        # torch's manylinux wheel already bundles CUDA 13.x runtime deps
+        # matching this base image (see pyproject.toml's [tool.uv.sources]
+        # comment). A build arg here was previously silently dropped by
+        # Docker with no effect; removed rather than wired up as dead noise.
     container_name: sidar_web_gpu
     user: "${SIDAR_CONTAINER_UID:-10001}:${SIDAR_CONTAINER_GID:-10001}"
     restart: unless-stopped

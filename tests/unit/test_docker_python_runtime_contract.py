@@ -155,6 +155,39 @@ def test_dockerfiles_only_grant_runtime_user_ownership_to_writable_directories()
         assert "/app/.venv" not in ownership_instruction
 
 
+def test_pyproject_has_no_orphaned_pytorch_cuda_index():
+    """Regression: `pytorch-cu124` was declared but never referenced by [tool.uv.sources].
+
+    On linux (the only `environments` target), torch resolves from the
+    default PyPI index and already bundles CUDA 13.x runtime deps (see
+    uv.lock) matching the nvidia/cuda:13.0.0 GPU base image — no separate
+    CUDA-tagged index is needed there. Only `pytorch-cpu` (for Darwin) is
+    real. Wiring the dead cu124 index up instead of removing it would have
+    been actively wrong: it targets an older CUDA build than the image
+    actually ships.
+    """
+    pyproject = _read("pyproject.toml")
+
+    assert "pytorch-cu124" not in pyproject
+    assert 'name = "pytorch-cpu"' in pyproject
+
+
+def test_compose_gpu_builds_have_no_dead_torch_index_url_arg():
+    """Regression: a TORCH_INDEX_URL build arg the Dockerfile never declared.
+
+    docker-compose.yml passed it anyway (silently dropped by Docker), and
+    `uv sync --frozen` would ignore it even if wired up — it installs
+    exactly what uv.lock pins, not whatever an index-url arg points at.
+    """
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+    dockerfile = _read("Dockerfile")
+
+    for service_name in ("sidar-gpu", "sidar-web-gpu"):
+        build_args = compose["services"][service_name]["build"]["args"]
+        assert "TORCH_INDEX_URL" not in build_args
+    assert "ARG TORCH_INDEX_URL" not in dockerfile
+
+
 def test_compose_cpu_builds_use_python_311_base_image():
     compose = _read("docker-compose.yml")
 
