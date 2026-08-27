@@ -9,8 +9,45 @@ sidar_weak_password_recovery_allowed() {
 }
 
 
+sidar_alembic_venv_has_asyncpg() {
+    local python_bin="$1"
+    "$python_bin" -c "import asyncpg" &>/dev/null
+}
+
+# `.venv/bin/python` var olması, Alembic'in gerçekten çalışabileceği anlamına
+# gelmez: "Tam Docker" modu host'ta `uv sync` hiç çalıştırmaz (bkz.
+# 04_workspace.sh::sidar_phase_workspace_config), ama diskte önceki/kısmi bir
+# `.venv` kalmış olabilir (ör. daha önce farklı bir dependency profile ile
+# `sync-deps` çalıştırılmış, veya kurulum subcommand akışıyla adım adım
+# sürdürülmüş). Böyle bir venv'i körü körüne seçmek, `postgresql+asyncpg://`
+# DSN'i için gereken `asyncpg` sürücüsü eksikken migrasyonun ortasında
+# "ModuleNotFoundError: No module named 'asyncpg'" ile kurulumu tamamen
+# durdurmasına yol açar. Seçmeden önce hızlı bir smoke-check yapılır; eksikse
+# `uv` mevcutsa venv `uv sync --frozen --extra postgres` ile tamamlanmaya
+# çalışılır (yalnızca postgres extra'sı — dev-full gibi ağır profilleri veya
+# PortAudio gibi sistem ön koşullarını tetiklemeyen, hedefe özel bir kurtarma).
 resolve_alembic_python() {
     local venv_python="$SCRIPT_DIR/.venv/bin/python"
+
+    if [[ -x "$venv_python" ]] && sidar_alembic_venv_has_asyncpg "$venv_python"; then
+        printf '%s\n' "$venv_python"
+        return 0
+    fi
+
+    if command -v uv &>/dev/null && [[ -f "$SCRIPT_DIR/uv.lock" ]]; then
+        if [[ -x "$venv_python" ]]; then
+            warn "Mevcut .venv içinde 'asyncpg' bulunamadı (eksik/eski bir kurulumdan kalma olabilir); 'uv sync --frozen --extra postgres' ile tamamlanıyor..."
+        else
+            info ".venv henüz oluşturulmamış; Alembic migrasyonu için 'uv sync --frozen --extra postgres' ile hazırlanıyor..."
+        fi
+        if (cd "$SCRIPT_DIR" && uv sync --frozen --extra postgres &>/dev/null) && \
+            [[ -x "$venv_python" ]] && sidar_alembic_venv_has_asyncpg "$venv_python"; then
+            ok ".venv tamamlandı; Alembic migrasyonu bu ortam üzerinden çalışacak."
+            printf '%s\n' "$venv_python"
+            return 0
+        fi
+        warn "'.venv' 'uv sync --frozen --extra postgres' ile tamamlanamadı; Alembic migrasyonu asyncpg olmadan başarısız olabilir. Manuel: (cd \"$SCRIPT_DIR\" && uv sync --frozen --all-extras)"
+    fi
 
     if [[ -x "$venv_python" ]]; then
         printf '%s\n' "$venv_python"

@@ -2221,6 +2221,7 @@ EOF
 #!/usr/bin/env bash
 printf "venv|%s|%s\n" "\${DATABASE_URL:-}" "\$*" >> "$tmpdir/python.log"
 case "\$*" in
+  "-c import asyncpg") exit 0 ;;
   "-m alembic current --check-heads") exit 2 ;;
   "-m alembic current") echo "  0006_access_control_schema (head)" ;;
   "-m alembic heads") echo "    0006_access_control_schema (head)" ;;
@@ -2236,11 +2237,107 @@ EOF
 
     is_alembic_at_head
 
-    [[ "$(wc -l < "$tmpdir/python.log")" -eq 3 ]]
+    [[ "$(wc -l < "$tmpdir/python.log")" -eq 4 ]]
+    grep -q "^venv||-c import asyncpg$" "$tmpdir/python.log"
     grep -q "^venv|postgresql+asyncpg://sidar:secret@localhost:5432/sidar|-m alembic current --check-heads$" "$tmpdir/python.log"
     grep -q "^venv|postgresql+asyncpg://sidar:secret@localhost:5432/sidar|-m alembic current$" "$tmpdir/python.log"
     grep -q "^venv|postgresql+asyncpg://sidar:secret@localhost:5432/sidar|-m alembic heads$" "$tmpdir/python.log"
     ! grep -q "^system|" "$tmpdir/python.log"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "resolve_alembic_python self-heals a stale venv missing asyncpg via uv sync --extra postgres" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/.venv/bin" "$tmpdir/bin"
+    SCRIPT_DIR="$tmpdir"
+    touch "$tmpdir/uv.lock"
+
+    # Venv python lacks asyncpg until the marker file (written by the fake
+    # `uv sync` below) appears, simulating a stale/incomplete .venv left over
+    # from an earlier install attempt (e.g. a different dependency profile,
+    # or "Tam Docker" mode, which never runs uv sync on the host at all).
+    cat > "$tmpdir/.venv/bin/python" <<EOF
+#!/usr/bin/env bash
+printf "venv:%s\n" "\$*" >> "$tmpdir/python.log"
+if [[ "\$*" == "-c import asyncpg" ]]; then
+  [[ -f "$tmpdir/.venv/.asyncpg-installed" ]] && exit 0 || exit 1
+fi
+EOF
+    cat > "$tmpdir/bin/uv" <<EOF
+#!/usr/bin/env bash
+printf "uv:%s\n" "\$*" >> "$tmpdir/uv.log"
+[[ "\$*" == "sync --frozen --extra postgres" ]] && touch "$tmpdir/.venv/.asyncpg-installed"
+exit 0
+EOF
+    chmod +x "$tmpdir/.venv/bin/python" "$tmpdir/bin/uv"
+    export PATH="$tmpdir/bin:$PATH"
+
+    resolved="$(resolve_alembic_python)"
+
+    [[ "$resolved" == "$tmpdir/.venv/bin/python" ]]
+    [[ -f "$tmpdir/uv.log" ]]
+    grep -q "^uv:sync --frozen --extra postgres$" "$tmpdir/uv.log"
+    [[ "$(wc -l < "$tmpdir/python.log")" -eq 2 ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "resolve_alembic_python warns and still returns the venv when uv sync cannot fix a missing asyncpg" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/.venv/bin" "$tmpdir/bin"
+    SCRIPT_DIR="$tmpdir"
+    touch "$tmpdir/uv.lock"
+
+    cat > "$tmpdir/.venv/bin/python" <<EOF
+#!/usr/bin/env bash
+exit 1
+EOF
+    cat > "$tmpdir/bin/uv" <<EOF
+#!/usr/bin/env bash
+exit 1
+EOF
+    chmod +x "$tmpdir/.venv/bin/python" "$tmpdir/bin/uv"
+    export PATH="$tmpdir/bin:$PATH"
+
+    resolved="$(resolve_alembic_python)"
+    echo "RESOLVED=$resolved"
+
+    [[ "$resolved" == "$tmpdir/.venv/bin/python" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"RESOLVED="*"/.venv/bin/python"* ]]
+  [[ "$output" == *"tamamlanamadı"* ]]
+}
+
+@test "resolve_alembic_python does not touch uv when the venv already has asyncpg" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/.venv/bin" "$tmpdir/bin"
+    SCRIPT_DIR="$tmpdir"
+    touch "$tmpdir/uv.lock"
+
+    cat > "$tmpdir/.venv/bin/python" <<EOF
+#!/usr/bin/env bash
+exit 0
+EOF
+    cat > "$tmpdir/bin/uv" <<EOF
+#!/usr/bin/env bash
+printf "uv should not run\n" >> "$tmpdir/uv.log"
+exit 99
+EOF
+    chmod +x "$tmpdir/.venv/bin/python" "$tmpdir/bin/uv"
+    export PATH="$tmpdir/bin:$PATH"
+
+    resolved="$(resolve_alembic_python)"
+
+    [[ "$resolved" == "$tmpdir/.venv/bin/python" ]]
+    [[ ! -f "$tmpdir/uv.log" ]]
   '
   [ "$status" -eq 0 ]
 }
