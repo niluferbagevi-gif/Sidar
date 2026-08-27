@@ -86,9 +86,10 @@ RUN set -eux; \
       apt-get install -y --no-install-recommends software-properties-common; \
       add-apt-repository ppa:deadsnakes/ppa; \
       apt-get update; \
+      PYTHON_APT_VERSION="${PYTHON_VERSION%.*}"; \
       apt-get install -y --no-install-recommends \
-        python${PYTHON_VERSION} python${PYTHON_VERSION}-venv python${PYTHON_VERSION}-distutils python3-pip; \
-      update-alternatives --install /usr/bin/python3 python3 /usr/bin/python${PYTHON_VERSION} 2; \
+        python${PYTHON_APT_VERSION} python${PYTHON_APT_VERSION}-venv python${PYTHON_APT_VERSION}-distutils python3-pip; \
+      update-alternatives --install /usr/bin/python3 python3 /usr/bin/python${PYTHON_APT_VERSION} 2; \
     else \
       apt-get install -y --no-install-recommends python3 python3-venv python3-pip; \
     fi; \

@@ -19,6 +19,17 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 set -Eeuo pipefail
 
+# uv (ve varsa cargo) kullanıcı-yerel kurulum dizinlerini PATH'e en baştan
+# ekle. install_uv_cli() zaten aynı export'u yapıyor, ama yalnızca sync-deps
+# fazında çalışıyor; prepare-system/provision-models/smoke gibi diğer alt
+# komutlar install_uv_cli()'ı hiç çağırmadan doğrudan ensure_prerequisites()
+# ile başlıyor. uv disk üzerinde (~/.local/bin/uv) zaten kurulu olsa bile bu
+# fazların PATH'inde bulunmuyorsa "uv bulunamadı" fallback'leri (PostgreSQL
+# dotenv senkronizasyonu, runtime env enjeksiyon kontrolü, RAG metadata seed
+# vb.) sessizce atlanıyordu. Süreç genelinde tek bir export burada, en tepede
+# yapılarak alt komutların hepsi aynı PATH'i miras alır.
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+
 # Tek ERR trap handler'ı: sidar_t/warn/LOG_FILE gibi loglama yardımcıları
 # script'in ilerleyen satırlarına (~300+) kadar tanımlı değildir, bu yüzden
 # bootstrap aşamasında (örn. probe-only fast-path) bu fonksiyonlar henüz
@@ -184,7 +195,7 @@ load_remote_script_checksums() {
 load_remote_script_checksums
 
 SIDAR_INSTALLER_EMBEDDED_SOURCE_REF="main"
-SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="99032a1c9f5221f559d70aecc10c8bc76619ca44"
+SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="ccf49c63a03749240cad9d848e7a6f2c79f915fe"
 
 sidar_truthy_early_bool() {
     local raw="${1:-}"
@@ -620,14 +631,14 @@ a25095932f256989c1a517bd157c808a548d15cc08a96b56e0a7a312d5aac4e2  scripts/instal
 d5fc907be5f085db23189cc349c01072f34d36fd6313db6ca745edea3e10071b  scripts/install_modules/phases/02_repo.sh
 41d198205629671a12d3d9de44e3ca0a597447c00eb2b93feab40c7a0add98df  scripts/install_modules/phases/03_runtime.sh
 36d89771aece3334013906d55be48ee2d7a357490688e4562fd76684a7523702  scripts/install_modules/phases/03_runtime_ollama.sh
-eb808f0c4775cb1132317fa4f2c9af7f3bd88f15d2b581432560070b1543f9be  scripts/install_modules/phases/03_system.sh
-4ef61725d2c0cf92088b4002e03f36e15354477a37c88fac5f8771a79a5f3e97  scripts/install_modules/phases/04_workspace.sh
+9d6b90afd91f1c07bbc68abb1efba133bac1b35eac003eef8adac203499c3bd8  scripts/install_modules/phases/03_system.sh
+3b0648939ddff9173ad74f0c52e649e6077c0fcb96809b2cb919d5daabceca2d  scripts/install_modules/phases/04_workspace.sh
 6beadb2761652016b9d7c4de0d35b53b11837ceb16164c9b31ecd84e5f67f816  scripts/install_modules/phases/05_frontend.sh
 392442f8a5b6dc4f38f21386c7ca440b4126ded4dd8450616850eebcaa326789  scripts/install_modules/phases/06_services.sh
 878756e5a9d6580f47241c7d27d2be8fd441f8cc742afa72f0305e810a075983  scripts/install_modules/phases/07_finish.sh
 7038cbc76155bf5138408b7295c65b5019680743e48b3bbb955dfec0b6eaeeef  scripts/install_modules/phases/08_env.sh
 3b70d62dd0cd89c0c6eb5d0093ce5ed84e44bcd794ce0e9533b6523654ff1724  scripts/install_modules/phases/09_ollama_models.sh
-bf1283d9609296eff11579189e7a4f87dfbd82339eeac6aa2fb249caf45cf406  scripts/install_modules/phases/10_validation.sh
+6c1b18930ac0f5cb2ed569ab4cd31ee3739d6a2c0f89a6e693a0eb0005b5df78  scripts/install_modules/phases/10_validation.sh
 f12a23c2a54609f34604437407dde79da158df1de079424c576d3fd0dbbc4664  scripts/install_modules/phases/11_post_install.sh
 a243dbc96b31e697451b507014d234127eb3fcc2ffe183aa9164027a343aee58  scripts/install_modules/phases/12_alembic.sh
 e1ff202b8ba9470c0a26bb3a8a95b97f05666e328f58e7fd92bb7466ca285027  scripts/install_modules/phases/13_playwright.sh

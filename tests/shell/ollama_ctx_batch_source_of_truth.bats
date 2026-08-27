@@ -29,6 +29,13 @@ run_ollama_snippet() {
     test_snippet="$2"
     cd "$repo_root"
     export SIDAR_INSTALL_TEST_MODE=1
+    # A real install_sidar.sh run exports these (sidar_ollama_export_runtime_
+    # defaults() in 09_ollama_models.sh) and a bats subshell invoked from that
+    # same terminal/session inherits them, silently overriding every scenario
+    # below that supplies its own temp .env file (sidar_ollama_read_runtime_
+    # setting() checks the process env before the file). Isolate regardless of
+    # what invoked bats.
+    unset OLLAMA_NUM_CTX OLLAMA_NUM_BATCH OLLAMA_CODING_NUM_CTX
     set --
     source ./install_sidar.sh
     eval "$test_snippet"
