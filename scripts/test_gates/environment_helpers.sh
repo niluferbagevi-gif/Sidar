@@ -102,10 +102,47 @@ report_git_diff_state() {
     git diff --stat || true
   fi
 }
+# `uv run --frozen ruff ...` hiçbir sync/install yapmaz, yalnızca mevcut
+# .venv'i olduğu gibi kullanır. run_tests.sh bu kalite kapısını en baştan
+# (ensure_project_venv'den hemen sonra, backend test fazının kendi
+# ensure_runtime_dependencies self-heal'i devreye girmeden çok önce) çalıştırır.
+# "Tam Docker" kurulum modunda host'ta hiç `uv sync` çalışmaz; kurulum yalnızca
+# Alembic için `uv sync --frozen --extra postgres` çalıştırmış olabilir — bu
+# durumda ruff (bir "dev" bağımlılığı) henüz kurulu değildir ve doğrudan
+# çağrı "No such file or directory" ile başarısız olur. resolve_alembic_python
+# (scripts/install_modules/phases/12_alembic.sh) ile aynı desen: eksikse
+# hedefe özel bir profille tamamla ve tekrar dene. `--extra dev` yeterlidir
+# (ruff = "dev" bağımlılık grubunda, bkz. pyproject.toml) ve --all-extras'ın
+# tetikleyeceği PortAudio/ses gibi sistem bağımlılığı gerektiren ekstralara
+# ihtiyaç duymaz.
+ensure_ruff_available() {
+  if uv run --frozen ruff --version >/dev/null 2>&1; then
+    return 0
+  fi
+
+  echo "⚠️ Ruff bulunamadı (ör. 'Tam Docker' kurulum modunda .venv hiç senkronize edilmemiş olabilir, ya da yalnızca dar bir extra profille -- Alembic için 'postgres' gibi -- senkronize edilmiştir)."
+  echo "ℹ️ Ruff için 'uv sync --frozen --extra dev' ile tamamlanıyor..."
+  if ! uv sync --frozen --extra dev; then
+    echo "❌ Ruff'ın otomatik kurulumu başarısız oldu. Manuel: uv sync --frozen --extra dev (veya --all-extras)"
+    return 1
+  fi
+
+  if ! uv run --frozen ruff --version >/dev/null 2>&1; then
+    echo "❌ Ruff doğrulaması başarısız: senkronizasyon sonrası hâlâ bulunamadı."
+    return 1
+  fi
+
+  echo "✅ Ruff hazır; kalite kapısı devam ediyor."
+}
+
 run_ruff_quality_gate() {
   if ! command -v uv >/dev/null 2>&1; then
     echo "⚠️ 'uv' bulunamadı; Ruff kalite kapısı atlanıyor."
     return 0
+  fi
+
+  if ! ensure_ruff_available; then
+    return 1
   fi
 
   echo "🔍 Ruff kalite kapısı: uv run --frozen ruff check ."
@@ -124,6 +161,10 @@ run_ruff_autofix() {
   if ! command -v uv >/dev/null 2>&1; then
     echo "⚠️ 'uv' bulunamadı; Ruff autofix çalıştırılamıyor."
     return 0
+  fi
+
+  if ! ensure_ruff_available; then
+    return 1
   fi
 
   report_git_diff_state "RUFF_AUTOFIX başlangıç durumu"
