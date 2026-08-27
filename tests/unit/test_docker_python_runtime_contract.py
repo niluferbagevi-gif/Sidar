@@ -34,7 +34,76 @@ def test_main_dockerfile_installs_shellcheck_os_package():
 
     assert "shellcheck \\" in dockerfile
     assert dockerfile.index("pkg-config") < dockerfile.index("shellcheck")
-    assert dockerfile.index("shellcheck") < dockerfile.index("rm -rf /var/lib/apt/lists/*")
+    # System apt layer uses a BuildKit cache mount (no baked-in
+    # `rm -rf /var/lib/apt/lists/*`), so anchor on the ENV block that
+    # follows it to confirm shellcheck still lands in that same layer.
+    assert dockerfile.index("shellcheck") < dockerfile.index("ENV UV_INDEX_STRATEGY=first-index")
+
+
+def test_main_dockerfile_does_not_install_unused_rust_toolchain():
+    """Regression: `cargo` (with rustc/llvm, ~110MB) was in the runtime apt layer unused.
+
+    Verified against uv.lock: the only 5 packages built from sdist (no
+    prebuilt wheel at all) are annoy, bottle-websocket, eel, openai-whisper,
+    and pyaudio — none are Rust-based (annoy/pyaudio only need the C/C++
+    compiler already provided by build-essential). The repo itself has no
+    Cargo.toml/*.rs either. A full `uv sync --frozen --all-extras` with
+    cargo/rustc removed from PATH was verified to succeed before this
+    package was dropped from the Dockerfile.
+    """
+    dockerfile = _read("Dockerfile")
+
+    assert " cargo " not in dockerfile
+    assert "build-essential" in dockerfile
+
+
+def test_main_dockerfile_uses_cache_mount_for_apt_not_baked_in_lists_cleanup():
+    """Regression: GPU builds previously re-downloaded the same .deb archives every time.
+
+    A BuildKit cache mount keeps them across builds instead. Cache mounts
+    never persist into the image layer, so the old
+    `rm -rf /var/lib/apt/lists/*` cleanup would only defeat the cache.
+    """
+    dockerfile = _read("Dockerfile")
+
+    assert "--mount=type=cache,target=/var/cache/apt" in dockerfile
+    assert "--mount=type=cache,target=/var/lib/apt/lists" in dockerfile
+
+
+def test_main_dockerfile_installs_gpu_python_via_uv_not_deadsnakes_ppa():
+    """Regression: a GPU (Ubuntu-based nvidia/cuda) build previously added the deadsnakes PPA.
+
+    That dragged in ~60 unrelated packages (software-properties-common,
+    dbus, PackageKit, PolicyKit, ...) and could trip tzdata's interactive
+    prompt. `uv python install` provisions the same pinned version without
+    apt/PPA at all.
+    """
+    dockerfile = _read("Dockerfile")
+
+    assert "uv python install ${PYTHON_VERSION}" in dockerfile
+    assert "deadsnakes" not in dockerfile
+    assert "add-apt-repository" not in dockerfile
+    assert "software-properties-common" not in dockerfile
+
+
+def test_main_dockerfile_disables_interactive_apt_prompts():
+    """Regression: without DEBIAN_FRONTEND=noninteractive, tzdata drops apt into a prompt.
+
+    tzdata is pulled in transitively by packages like
+    docker.io/ffmpeg/alsa-utils on an Ubuntu-based GPU base image, and the
+    interactive timezone prompt it triggers hangs forever in a TTY-less CI
+    build.
+    """
+    dockerfile = _read("Dockerfile")
+
+    assert "DEBIAN_FRONTEND=noninteractive" in dockerfile
+    assert "TZ=Etc/UTC" in dockerfile
+    # Anchor on the actual apt RUN instruction (not just any "apt-get
+    # install" substring — the file's GPU usage comment near the top also
+    # mentions one) to confirm the ENV lands before that layer runs.
+    assert dockerfile.index("DEBIAN_FRONTEND=noninteractive") < dockerfile.index(
+        "RUN --mount=type=cache,target=/var/cache/apt"
+    )
 
 
 def test_main_dockerfile_preinstalls_uv_for_sandbox_regression_tests():
@@ -101,6 +170,39 @@ def test_dockerfiles_only_grant_runtime_user_ownership_to_writable_directories()
 
         assert ownership_instruction.replace("\\\n", " ").split() == [*writable_directories]
         assert "/app/.venv" not in ownership_instruction
+
+
+def test_pyproject_has_no_orphaned_pytorch_cuda_index():
+    """Regression: `pytorch-cu124` was declared but never referenced by [tool.uv.sources].
+
+    On linux (the only `environments` target), torch resolves from the
+    default PyPI index and already bundles CUDA 13.x runtime deps (see
+    uv.lock) matching the nvidia/cuda:13.0.0 GPU base image — no separate
+    CUDA-tagged index is needed there. Only `pytorch-cpu` (for Darwin) is
+    real. Wiring the dead cu124 index up instead of removing it would have
+    been actively wrong: it targets an older CUDA build than the image
+    actually ships.
+    """
+    pyproject = _read("pyproject.toml")
+
+    assert "pytorch-cu124" not in pyproject
+    assert 'name = "pytorch-cpu"' in pyproject
+
+
+def test_compose_gpu_builds_have_no_dead_torch_index_url_arg():
+    """Regression: a TORCH_INDEX_URL build arg the Dockerfile never declared.
+
+    docker-compose.yml passed it anyway (silently dropped by Docker), and
+    `uv sync --frozen` would ignore it even if wired up — it installs
+    exactly what uv.lock pins, not whatever an index-url arg points at.
+    """
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+    dockerfile = _read("Dockerfile")
+
+    for service_name in ("sidar-gpu", "sidar-web-gpu"):
+        build_args = compose["services"][service_name]["build"]["args"]
+        assert "TORCH_INDEX_URL" not in build_args
+    assert "ARG TORCH_INDEX_URL" not in dockerfile
 
 
 def test_compose_cpu_builds_use_python_311_base_image():

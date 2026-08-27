@@ -239,7 +239,13 @@ run_smoke_tests() {
         info "GPU tespit edilmedi; GPU stres smoke testi varsayılan davranışla atlanabilir."
     fi
 
-    if ! python -c "import pytest" >/dev/null 2>&1; then
+    # Not: `prepare-system`/`provision-models`/`smoke` gibi bağımsız alt-komutlar
+    # .venv'i bu process içinde aktive etmez (yalnız `sync-deps`/`create_uv_venv`
+    # yapar). Bu yüzden kontrol de gerçek çalıştırma yöntemiyle aynı olmalı
+    # (`uv run`), aksi halde venv aktif olmayan bir shell'de bare `python` PATH'te
+    # bulunamadığı veya sistem Python'ına işaret ettiği için pytest kurulu olsa
+    # bile yanlışlıkla "kurulu değil" denip smoke testler sessizce atlanır.
+    if ! uv run --no-sync python -c "import pytest" >/dev/null 2>&1; then
         warn "pytest bu ortamda kurulu değil. Varsayılan dev paketleri için kurulum betiğini uv.lock ile tekrar çalıştırın."
         SMOKE_TEST_STATUS="pytest_yok"
         return

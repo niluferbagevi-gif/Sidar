@@ -295,7 +295,7 @@ def test_production_override_builds_the_hardened_production_dockerfile() -> None
     """Regression guard: the production gate must never fall back to the dev Dockerfile.
 
     ``docker-compose.yml``'s ``build:`` blocks never set ``dockerfile:``, so they
-    default to the dev-tooling ``Dockerfile`` (build-essential, cargo, git,
+    default to the dev-tooling ``Dockerfile`` (build-essential, git,
     pyright, shellcheck, ...). Without an explicit override here, the
     "production" Compose gate silently ships that dev image instead of the
     minimal, no-dev ``Dockerfile.production``.

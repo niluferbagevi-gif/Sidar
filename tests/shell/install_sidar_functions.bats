@@ -24,6 +24,10 @@ run_installer_function() {
     unset DATABASE_URL TEST_DATABASE_URL POSTGRES_PASSWORD
     unset SIDAR_PRODUCTION_READINESS PRODUCTION_READINESS TEST_PROFILE
     unset RUN_BENCHMARKS RUN_FRONTEND_E2E AUTO_OPEN_ARTIFACTS
+    # sidar_ollama_export_runtime_defaults() (09_ollama_models.sh) exports
+    # these during a real install; same inherited-state hazard as the vars
+    # above.
+    unset OLLAMA_NUM_CTX OLLAMA_NUM_BATCH OLLAMA_CODING_NUM_CTX
     set --
     source ./install_sidar.sh
     eval "$test_snippet"
@@ -47,6 +51,47 @@ run_installer_function() {
     [[ -z "${AUTO_OPEN_ARTIFACTS+x}" ]]
   '
   [ "$status" -eq 0 ]
+}
+
+@test "sourcing install_sidar.sh puts ~/.local/bin and ~/.cargo/bin on PATH before any subcommand runs" {
+  # Regresyon: prepare-system/provision-models/smoke alt komutları
+  # install_uv_cli()'ı hiç çağırmadan doğrudan ensure_prerequisites() ile
+  # başlıyordu; PATH'e $HOME/.local/bin eklemek yalnızca install_uv_cli()
+  # içinde (yani yalnız sync-deps fazında) yapılıyordu. Bir arkadaş kod
+  # incelemesi bunu tespit etti: uv diskte kurulu olsa bile diğer alt
+  # komutlarda "uv bulunamadı" fallback'leri sessizce tetikleniyordu.
+  local fake_home
+  fake_home="$(mktemp -d)"
+  export HOME="$fake_home"
+
+  run_installer_function '
+    printf "%s" "$PATH"
+  '
+  rm -rf "$fake_home"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"$fake_home/.local/bin:"* ]]
+  [[ "$output" == *"$fake_home/.cargo/bin:"* ]]
+}
+
+@test "ensure_prerequisites re-applies the ~/.local/bin PATH export as a second line of defense" {
+  # Bu fonksiyon başka bir betikten install_sidar.sh'in üst seviye export'u
+  # olmadan doğrudan source edilirse diye aynı export'u kendi başında da
+  # tekrarlıyor. Ağır git/Docker/WSL kontrollerine girmeden yalnızca bu ilk
+  # satırı doğrulamak için info() ilk çağrısında PATH'i yazdırıp çıkıyor.
+  local fake_home
+  fake_home="$(mktemp -d)"
+  export HOME="$fake_home"
+
+  run_installer_function '
+    PATH="/usr/bin:/bin"
+    step() { :; }
+    info() { printf "%s" "$PATH"; exit 0; }
+    ensure_prerequisites
+  '
+  rm -rf "$fake_home"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"$fake_home/.local/bin:"* ]]
+  [[ "$output" == *"$fake_home/.cargo/bin:"* ]]
 }
 
 @test "normalize_bool maps accepted true/false values and rejects unknown input" {

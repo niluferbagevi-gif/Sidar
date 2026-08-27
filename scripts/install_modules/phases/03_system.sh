@@ -657,6 +657,11 @@ detect_environment() {
 ensure_prerequisites() {
     step "Ön Koşullar Kontrol Ediliyor"
 
+    # Savunma amaçlı ikinci katman: install_sidar.sh üst seviyede aynı export'u
+    # zaten yapıyor, ama bu fonksiyon başka bir betikten doğrudan (üst
+    # export'suz) source edilirse yine de uv zaten kuruluysa PATH'te bulunsun.
+    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+
     info "Kurulum yöneticisi: yalnızca uv venv akışı kullanılacak; eski paket yöneticisi tabanlı ortam kurulumları devre dışı."
     info "Not: install_sidar.sh betiğini sudo ile çalıştırmayın; gerekli yerde sudo apt-get çağrılarını betik kendisi yapar."
 
@@ -684,7 +689,7 @@ ensure_prerequisites() {
         warn "FFmpeg bulunamadı. openai-whisper ve yt-dlp özellikleri FFmpeg olmadan çalışmaz."
         if command -v apt-get &>/dev/null && command -v sudo &>/dev/null; then
             info "Kurulum yapılıyor: sudo apt-get update && sudo apt-get install -y ffmpeg"
-            if sudo apt-get update && sudo apt-get install -y ffmpeg; then
+            if sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ffmpeg; then
                 ok "FFmpeg otomatik kuruldu."
             else
                 warn "FFmpeg otomatik kurulamadı, manuel kurunuz."
