@@ -45,7 +45,14 @@ LABEL description="Yazılım Mühendisi AI Asistanı - Docker İzolasyonu"
 # GPU_ENABLED build-arg çalışma zamanında USE_GPU env değişkenine dönüşür
 # MEMORY_ENCRYPTION_KEY: docker run -e MEMORY_ENCRYPTION_KEY=<fernet_key> ile iletilebilir
 ARG MEMORY_ENCRYPTION_KEY=""
-ENV PYTHONDONTWRITEBYTECODE=1 \
+# DEBIAN_FRONTEND/TZ: apt-get install sırasında tzdata gibi paketlerin
+# interaktif coğrafi bölge sorusuna düşüp build'i (özellikle TTY'siz CI
+# ortamında) sonsuza kadar kilitlemesini engeller. GPU tabanlı image'larda
+# (nvidia/cuda, Ubuntu tabanlı) add-apt-repository + ek paket kurulumları
+# tzdata'yı bağımlılık olarak çekebildiği için bu ayar zorunludur.
+ENV DEBIAN_FRONTEND=noninteractive \
+    TZ=Etc/UTC \
+    PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PORT=7860 \
     PIP_NO_CACHE_DIR=1 \

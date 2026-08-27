@@ -684,7 +684,7 @@ ensure_prerequisites() {
         warn "FFmpeg bulunamadı. openai-whisper ve yt-dlp özellikleri FFmpeg olmadan çalışmaz."
         if command -v apt-get &>/dev/null && command -v sudo &>/dev/null; then
             info "Kurulum yapılıyor: sudo apt-get update && sudo apt-get install -y ffmpeg"
-            if sudo apt-get update && sudo apt-get install -y ffmpeg; then
+            if sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ffmpeg; then
                 ok "FFmpeg otomatik kuruldu."
             else
                 warn "FFmpeg otomatik kurulamadı, manuel kurunuz."
