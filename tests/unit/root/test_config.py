@@ -2369,6 +2369,60 @@ def test_reload_environment_skip_default_dotenv_keeps_explicit_and_secret_layers
     assert loaded_labels == ["explicit:DOTENV_FILE", "secret:SIDAR_KEYS_FILE"]
 
 
+def test_full_module_reload_does_not_leak_dotenv_values_into_real_environment(
+    monkeypatch, tmp_path
+):
+    """Regression test: `importlib.reload(config)` must not pollute the real process env.
+
+    This mirrors test_sidar_keys_file_supports_user_home_and_overrides: it
+    loads a throwaway dotenv file containing a distinctive secret value via a
+    full `importlib.reload(config)`. Unlike monkeypatch.setenv/delenv, the
+    dotenv chain writes straight into the real `os.environ` (python-dotenv's
+    `load_dotenv(override=...)`), which monkeypatch cannot see or revert.
+    Without tests/unit/root/conftest.py's autouse `_isolate_config_dotenv_state`
+    fixture restoring the real environment (and reloading config against it)
+    after every test, this value would leak into whichever test in the same
+    pytest worker happens to run next -- exactly the failure this regression
+    test guards against (see
+    test_reload_environment_skip_default_dotenv_keeps_explicit_and_secret_layers,
+    which previously observed this leaked value instead of its own explicit
+    dotenv layer's value under certain xdist scheduling orders).
+    """
+    keys_file = tmp_path / "sidar_keys.env"
+    keys_file.write_text(
+        "JWT_SECRET_KEY=leaked-secret-must-not-survive-this-test\n", encoding="utf-8"
+    )
+    monkeypatch.delenv("DOTENV_FILE", raising=False)
+    monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+    monkeypatch.setenv("SIDAR_ENV", "development")
+    monkeypatch.setenv("SIDAR_KEYS_FILE", str(keys_file))
+
+    reloaded = importlib.reload(config)
+
+    assert reloaded.Config.JWT_SECRET_KEY == "leaked-secret-must-not-survive-this-test"
+    # The autouse isolation fixture's teardown (which runs after this test
+    # function returns, restoring the pre-test os.environ snapshot and
+    # reloading config against it) is what actually prevents the leak; this
+    # assertion just documents that the dotenv chain wrote the secret
+    # straight into the real environment, which is precisely why that
+    # fixture is required.
+    assert os.environ.get("JWT_SECRET_KEY") == "leaked-secret-must-not-survive-this-test"
+
+
+def test_next_test_does_not_observe_the_previous_tests_leaked_dotenv_value():
+    """Regression test: must run immediately after the leak-inducing test above.
+
+    Confirms tests/unit/root/conftest.py's autouse `_isolate_config_dotenv_state`
+    fixture actually cleaned up the real `os.environ` and config module state
+    left behind by test_full_module_reload_does_not_leak_dotenv_values_into_real_environment
+    (declared immediately above -- pytest runs a module's tests in
+    declaration order absent xdist/randomization).
+    """
+    assert os.environ.get("JWT_SECRET_KEY") != "leaked-secret-must-not-survive-this-test"
+    assert "JWT_SECRET_KEY" not in config._DOTENV_MANAGED_KEYS
+    assert config.Config.JWT_SECRET_KEY != "leaked-secret-must-not-survive-this-test"
+
+
 def test_config_init_logs_env_status_before_missing_jwt_failure(monkeypatch, caplog):
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
     monkeypatch.delenv("SIDAR_ENV", raising=False)
@@ -2739,6 +2793,41 @@ def test_reload_environment_loads_new_development_profile(monkeypatch, tmp_path)
     assert config.Config.WEB_PORT == 8765
     report = config.get_dotenv_load_report()
     assert any(event["label"] == "environment:development" and event["loaded"] for event in report)
+
+
+def test_reload_environment_refreshes_jwt_algorithm_ttl_and_explicit_flag(monkeypatch, tmp_path):
+    """Regression test: reload_environment() must fully refresh JWT security fields.
+
+    config_security.load_security_settings() derives JWT_ALGORITHM,
+    JWT_TTL_DAYS and _JWT_SECRET_KEY_EXPLICITLY_CONFIGURED alongside
+    JWT_SECRET_KEY at import time, but apply_runtime_env_overrides()
+    (core/config_runtime_env.py) used to only refresh JWT_SECRET_KEY itself
+    on reload. That left the other three stale after a runtime secret
+    rotation: in particular, _JWT_SECRET_KEY_EXPLICITLY_CONFIGURED staying
+    `False` from an earlier auto-generated secret would make
+    get_missing_security_runtime_keys() keep treating a freshly configured,
+    perfectly valid production JWT secret as "not explicitly configured".
+    """
+    monkeypatch.setattr(config.Config, "_ensure_hardware_info_loaded", lambda: None)
+    monkeypatch.setattr(config.Config, "_apply_gpu_memory_safety_check", lambda: None)
+    monkeypatch.delenv("DOTENV_FILE", raising=False)
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+    monkeypatch.setenv("SIDAR_SKIP_DEFAULT_DOTENV", "1")
+    monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+    monkeypatch.setattr(config.Config, "_JWT_SECRET_KEY_EXPLICITLY_CONFIGURED", False)
+    monkeypatch.setattr(config.Config, "JWT_ALGORITHM", "HS256")
+    monkeypatch.setattr(config.Config, "JWT_TTL_DAYS", 7)
+
+    monkeypatch.setenv("JWT_SECRET_KEY", "rotated-explicit-jwt-secret")
+    monkeypatch.setenv("JWT_ALGORITHM", "HS512")
+    monkeypatch.setenv("JWT_TTL_DAYS", "30")
+
+    config.reload_environment()
+
+    assert config.Config.JWT_SECRET_KEY == "rotated-explicit-jwt-secret"
+    assert config.Config._JWT_SECRET_KEY_EXPLICITLY_CONFIGURED is True
+    assert config.Config.JWT_ALGORITHM == "HS512"
+    assert config.Config.JWT_TTL_DAYS == 30
 
 
 def test_reload_environment_keeps_os_environ_stable_until_effective_finalize(monkeypatch, tmp_path):

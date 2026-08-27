@@ -37,6 +37,18 @@ def apply_runtime_env_overrides(
     )
     config_cls.API_KEY = os.getenv("API_KEY", str(config_cls.API_KEY or ""))
     config_cls.JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", str(config_cls.JWT_SECRET_KEY or ""))
+    # config_security.load_security_settings() derives these two alongside
+    # JWT_SECRET_KEY at import time; a reload must keep them in lockstep with
+    # it, otherwise a runtime secret-rotation reload can leave
+    # _JWT_SECRET_KEY_EXPLICITLY_CONFIGURED/JWT_ALGORITHM/JWT_TTL_DAYS stale.
+    # In particular, a stale `False` here after JWT_SECRET_KEY is freshly
+    # configured makes get_missing_security_runtime_keys() keep treating a
+    # production/multi-worker deployment's now-valid secret as unstable.
+    config_cls._JWT_SECRET_KEY_EXPLICITLY_CONFIGURED = bool(
+        (os.getenv("JWT_SECRET_KEY", "") or "").strip()
+    )
+    config_cls.JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", str(config_cls.JWT_ALGORITHM))
+    config_cls.JWT_TTL_DAYS = get_int_env("JWT_TTL_DAYS", int(config_cls.JWT_TTL_DAYS))
     config_cls.SIDAR_SKIP_DEFAULT_DOTENV = os.getenv(
         "SIDAR_SKIP_DEFAULT_DOTENV", ""
     ).strip().lower() in {"1", "true", "yes", "on"}
