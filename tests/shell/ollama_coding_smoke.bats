@@ -29,6 +29,10 @@ run_smoke_snippet() {
     test_snippet="$2"
     cd "$repo_root"
     export SIDAR_INSTALL_TEST_MODE=1
+    # See ollama_ctx_batch_source_of_truth.bats: a real install_sidar.sh run
+    # exports these, and this test relies on its own temp .env-based num_ctx
+    # values, not whatever leaked from an earlier install in the same shell.
+    unset OLLAMA_NUM_CTX OLLAMA_NUM_BATCH OLLAMA_CODING_NUM_CTX
     set --
     source ./install_sidar.sh
     eval "$test_snippet"
