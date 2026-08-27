@@ -74,7 +74,11 @@ setup_vscode_workspace() {
 
     mkdir -p "$vscode_dir"
 
-    local python_path="$SCRIPT_DIR/.venv/bin/python"
+    # ${workspaceFolder} kasıtlı olarak kullanılıyor: $SCRIPT_DIR gibi mutlak bir
+    # yol yazmak, bu dosya git'te takip edildiği (.gitignore .vscode/settings.json
+    # istisnası) için her kurulumdan sonra repoyu kalıcı olarak "dirty" bırakır
+    # (her kullanıcı/makine kendi mutlak yolunu committed dosyanın üzerine yazar).
+    local python_path='${workspaceFolder}/.venv/bin/python'
 
     cat > "$vscode_dir/settings.json" <<EOF
 {
