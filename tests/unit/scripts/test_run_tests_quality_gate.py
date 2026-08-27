@@ -3665,7 +3665,14 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
         'sidar_source_install_utils "python_env.sh" "database_url.sh" "db_credentials.sh" '
         '"env_utils.sh"' in workspace_phase
     )
-    assert 'sidar_source_install_utils "ollama_models.sh"' in services_phase
+    assert (
+        'sidar_source_install_utils "env_utils.sh" "database_url.sh" "ollama_models.sh"'
+        in services_phase
+    )
+    # Tam Docker modu, host/WSL2'de zaten çalışan bir native Ollama'nın
+    # docker compose up'ın kendi Ollama container'ıyla 11434 port çakışmasına
+    # girmesini önlemek için host portunu kontrol edip gerekirse kaydırmalı.
+    assert "sidar_ensure_ollama_host_port_available_for_docker" in services_phase
     assert "sync_database_passwords_before_smoke_tests" in services_phase
     assert "ensure_env_test_postgres_password_matches_base_before_smoke" in services_phase
     assert "ensure_postgres_volume_reset_before_smoke_tests" in services_phase

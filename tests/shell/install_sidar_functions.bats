@@ -2678,7 +2678,7 @@ EOF
 
     sidar_phase_local_migrations_and_models
     sidar_phase_services_and_validation
-    [[ "${events[*]}" == "source:ollama_models.sh prepare_docker_for_migrations ensure_postgres_databases_exist run_migrations seed_rag_metadata_after_migrations download_ollama_models phase06_docker_daemon_gate_or_fail run_pre_service_installer_smoke_gate launch_docker_services run_smoke_tests run_install_integration_api_tests run_install_frontend_quality_validation run_test_artifact_audit" ]]
+    [[ "${events[*]}" == "source:env_utils.sh database_url.sh ollama_models.sh prepare_docker_for_migrations ensure_postgres_databases_exist run_migrations seed_rag_metadata_after_migrations download_ollama_models phase06_docker_daemon_gate_or_fail run_pre_service_installer_smoke_gate launch_docker_services run_smoke_tests run_install_integration_api_tests run_install_frontend_quality_validation run_test_artifact_audit" ]]
   '
   [ "$status" -eq 0 ]
 }
@@ -2709,6 +2709,7 @@ EOF
     prepare_docker_for_migrations() { events+=(unexpected_prepare); return 99; }
     run_migrations() { events+=(unexpected_migration); return 99; }
     download_ollama_models() { events+=(unexpected_models); return 99; }
+    sidar_ensure_ollama_host_port_available_for_docker() { events+=(sidar_ensure_ollama_host_port_available_for_docker); }
     launch_docker_services() { events+=(launch_docker_services); }
     run_smoke_tests() { events+=(unexpected_smoke); return 99; }
     run_install_integration_api_tests() { events+=(unexpected_integration); return 99; }
@@ -2717,7 +2718,7 @@ EOF
 
     sidar_phase_local_migrations_and_models
     sidar_phase_services_and_validation
-    [[ "${events[*]}" == "source:ollama_models.sh phase06_docker_daemon_gate_or_fail launch_docker_services" ]]
+    [[ "${events[*]}" == "source:env_utils.sh database_url.sh ollama_models.sh sidar_ensure_ollama_host_port_available_for_docker phase06_docker_daemon_gate_or_fail launch_docker_services" ]]
     [[ "$MIGRATION_STATUS" == "tam_docker_modu_nedeniyle_atlandi" ]]
     [[ "$SMOKE_TEST_STATUS" == "tam_docker_modu_nedeniyle_atlandi" ]]
     [[ "$INTEGRATION_TEST_STATUS" == "tam_docker_modu_nedeniyle_atlandi" ]]
@@ -2738,13 +2739,178 @@ EOF
     ensure_postgres_databases_exist() { events+=(unexpected_database_bootstrap); return 99; }
     run_migrations() { events+=(unexpected_migration); return 99; }
     download_ollama_models() { events+=(unexpected_models); return 99; }
+    sidar_ensure_ollama_host_port_available_for_docker() { events+=(sidar_ensure_ollama_host_port_available_for_docker); }
     command() { events+=("unexpected_command:$*"); return 99; }
     info() { events+=("info:$*"); }
 
     sidar_phase_local_migrations_and_models
 
-    [[ "${events[*]}" == "source:ollama_models.sh info:Tam Docker modu: lokal migrasyon/model indirme adımları atlanıyor. info:AUTO_SEED_RAG_DOCKER_WARMUP=false; Docker RAG warmup seed atlandı." ]]
+    [[ "${events[*]}" == "source:env_utils.sh database_url.sh ollama_models.sh info:Tam Docker modu: lokal migrasyon/model indirme adımları atlanıyor. sidar_ensure_ollama_host_port_available_for_docker info:AUTO_SEED_RAG_DOCKER_WARMUP=false; Docker RAG warmup seed atlandı." ]]
     [[ "$MIGRATION_STATUS" == "tam_docker_modu_nedeniyle_atlandi" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "sidar_tcp_port_listening detects a real bound socket and correctly reports a free one" {
+  run_installer_function '
+    sidar_source_install_utils "ollama_models.sh"
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    port_file="$tmpdir/port.txt"
+
+    python3 - "$port_file" <<PY &
+import socket, sys, time
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind(("127.0.0.1", 0))
+s.listen(1)
+with open(sys.argv[1], "w") as f:
+    f.write(str(s.getsockname()[1]))
+time.sleep(6)
+PY
+    listener_pid=$!
+    trap "kill $listener_pid 2>/dev/null || true; rm -rf \"$tmpdir\"" EXIT
+
+    bound_port=""
+    for _ in $(seq 1 30); do
+      if [[ -s "$port_file" ]]; then
+        bound_port="$(cat "$port_file")"
+        break
+      fi
+      sleep 0.2
+    done
+    [[ -n "$bound_port" ]]
+
+    sidar_tcp_port_listening 127.0.0.1 "$bound_port"
+
+    free_port=$((bound_port + 1))
+    for _ in $(seq 1 20); do
+      sidar_tcp_port_listening 127.0.0.1 "$free_port" || break
+      free_port=$((free_port + 1))
+    done
+    ! sidar_tcp_port_listening 127.0.0.1 "$free_port"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "sidar_find_free_tcp_port scans forward past occupied ports and gives up after the attempt budget" {
+  run_installer_function '
+    sidar_source_install_utils "ollama_models.sh"
+
+    sidar_tcp_port_listening() {
+      [[ "$2" -lt 11437 ]]
+    }
+    result="$(sidar_find_free_tcp_port 11434 127.0.0.1)"
+    [[ "$result" == "11437" ]]
+
+    sidar_tcp_port_listening() { return 0; }
+    ! sidar_find_free_tcp_port 20000 127.0.0.1
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "sidar_ensure_ollama_host_port_available_for_docker is a no-op when the configured port is free" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    SCRIPT_DIR="$tmpdir"
+    printf "OLLAMA_PORT=11434\nOLLAMA_URL=http://localhost:11434/api\n" > "$tmpdir/.env"
+
+    sidar_source_install_utils "env_utils.sh" "database_url.sh" "ollama_models.sh"
+    cat > "$tmpdir/bin/docker" <<EOF
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "$tmpdir/bin/docker"
+    export PATH="$tmpdir/bin:$PATH"
+    sidar_tcp_port_listening() { return 1; }
+    sidar_find_free_tcp_port() { events_marker=called; echo unexpected; return 0; }
+
+    sidar_ensure_ollama_host_port_available_for_docker
+
+    [[ "$(cat "$tmpdir/.env")" == "OLLAMA_PORT=11434
+OLLAMA_URL=http://localhost:11434/api" ]]
+    [[ -z "${events_marker:-}" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "sidar_ensure_ollama_host_port_available_for_docker shifts OLLAMA_PORT/OLLAMA_URL when the configured port is occupied" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    SCRIPT_DIR="$tmpdir"
+    printf "OLLAMA_PORT=11434\nOLLAMA_URL=http://localhost:11434/api\n" > "$tmpdir/.env"
+
+    sidar_source_install_utils "env_utils.sh" "database_url.sh" "ollama_models.sh"
+    cat > "$tmpdir/bin/docker" <<EOF
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "$tmpdir/bin/docker"
+    export PATH="$tmpdir/bin:$PATH"
+    sidar_tcp_port_listening() { return 0; }
+    sidar_find_free_tcp_port() { echo 11450; return 0; }
+
+    sidar_ensure_ollama_host_port_available_for_docker
+
+    grep -q "^OLLAMA_PORT=11450$" "$tmpdir/.env"
+    grep -q "^OLLAMA_URL=http://localhost:11450/api$" "$tmpdir/.env"
+    [[ "$OLLAMA_PORT" == "11450" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "sidar_ensure_ollama_host_port_available_for_docker warns and leaves .env untouched when no free port is found" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    SCRIPT_DIR="$tmpdir"
+    printf "OLLAMA_PORT=11434\n" > "$tmpdir/.env"
+
+    sidar_source_install_utils "env_utils.sh" "database_url.sh" "ollama_models.sh"
+    cat > "$tmpdir/bin/docker" <<EOF
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "$tmpdir/bin/docker"
+    export PATH="$tmpdir/bin:$PATH"
+    sidar_tcp_port_listening() { return 0; }
+    sidar_find_free_tcp_port() { return 1; }
+
+    if sidar_ensure_ollama_host_port_available_for_docker; then
+      echo "expected non-zero exit" >&2
+      exit 1
+    fi
+
+    [[ "$(cat "$tmpdir/.env")" == "OLLAMA_PORT=11434" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"boş bir yedek port bulunamadı"* ]]
+}
+
+@test "sidar_ensure_ollama_host_port_available_for_docker is a no-op when docker is unavailable" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    printf "OLLAMA_PORT=11434\n" > "$tmpdir/.env"
+
+    sidar_source_install_utils "env_utils.sh" "database_url.sh" "ollama_models.sh"
+    sidar_tcp_port_listening() { echo unexpected; return 0; }
+    command() {
+      if [[ "$1" == "-v" && "$2" == "docker" ]]; then
+        return 1
+      fi
+      builtin command "$@"
+    }
+
+    sidar_ensure_ollama_host_port_available_for_docker
+
+    [[ "$(cat "$tmpdir/.env")" == "OLLAMA_PORT=11434" ]]
   '
   [ "$status" -eq 0 ]
 }

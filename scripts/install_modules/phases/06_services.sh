@@ -935,7 +935,7 @@ seed_rag_in_docker_after_startup() {
 }
 
 sidar_phase_local_migrations_and_models() {
-    sidar_source_install_utils "ollama_models.sh"
+    sidar_source_install_utils "env_utils.sh" "database_url.sh" "ollama_models.sh"
     if [[ "${APP_RUNTIME_MODE_SELECTED:-local}" == "local" ]]; then
         # DB migrasyonu öncesi servis hazırlığı: kullanıcı onayı bu aşamada alınır.
         prepare_docker_for_migrations
@@ -986,6 +986,14 @@ PY
         # shellcheck disable=SC2034  # summarized by print_summary in the finish phase.
         MIGRATION_STATUS="tam_docker_modu_nedeniyle_atlandi"
         info "Tam Docker modu: lokal migrasyon/model indirme adımları atlanıyor."
+        # local moddaki download_ollama_models()'in cleanup_temp_ollama trap'i
+        # yalnızca KENDİ başlattığı geçici süreci kapattığı için Tam Docker
+        # modunda hiç çalışmıyordu; host/WSL2'de zaten çalışan bir native
+        # Ollama, docker compose up'ın 11434'ü bağlamasını engelleyebiliyordu.
+        # docker compose up'tan (launch_docker_services, 11_post_install.sh)
+        # önce host portunu kontrol edip gerekirse otomatik boş bir porta
+        # kaydır (bkz. ollama_models.sh).
+        sidar_ensure_ollama_host_port_available_for_docker || true
         seed_rag_in_docker_after_startup
     fi
 }

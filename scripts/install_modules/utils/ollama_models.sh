@@ -285,6 +285,71 @@ PY
     return 1
 }
 
+# `local` runtime modunda download_ollama_models()'in kendi cleanup_temp_ollama
+# trap'i, YALNIZCA bu fonksiyonun kendisinin başlattığı geçici 'ollama serve'
+# sürecini kapatarak Docker Ollama servisiyle 11434 port çakışmasını önlüyor
+# (bkz. sidar_phase_local_migrations_and_models()). "Tam Docker" modu bu
+# fonksiyonu hiç çağırmadığından bu korumadan tamamen yoksundu: WSL2/host'ta
+# zaten çalışan (systemd, önceki bir kurulum turu veya Windows tarafında
+# native bir süreç olabilir) bir Ollama, `docker compose up`'ın kendi Ollama
+# container'ını aynı host portuna bağlamasını engelleyip "ports are not
+# available" ile kurulumu durdurabiliyordu. O sürecin sahibini/nereden
+# çalıştığını (WSL2 içinden Windows tarafı bir süreç görünmez/öldürülemez
+# bile olabilir) platformlar arası güvenle tespit edip durdurmak yerine,
+# Docker'ın kullanacağı HOST portunu otomatik boş bir porta kaydırıyoruz.
+# Konteynerler arası iletişim (`OLLAMA_URL=http://ollama:11434/api`,
+# docker-compose.yml) Docker'ın kendi iç ağını kullandığından bu host-port
+# kaydırmasından etkilenmez.
+sidar_tcp_port_listening() {
+    local host="$1"
+    local port="$2"
+    (exec 3<>"/dev/tcp/${host}/${port}") 2>/dev/null
+}
+
+sidar_find_free_tcp_port() {
+    local start_port="$1"
+    local host="${2:-127.0.0.1}"
+    local port="$start_port"
+    local attempts=0
+    while (( attempts < 50 )); do
+        if ! sidar_tcp_port_listening "$host" "$port"; then
+            printf '%s\n' "$port"
+            return 0
+        fi
+        port=$((port + 1))
+        attempts=$((attempts + 1))
+    done
+    return 1
+}
+
+sidar_ensure_ollama_host_port_available_for_docker() {
+    local env_file="$SCRIPT_DIR/.env"
+    local configured_port=""
+    local free_port=""
+
+    command -v docker &>/dev/null || return 0
+    [[ -f "$env_file" ]] || return 0
+
+    configured_port="$(read_env_value_from_file "OLLAMA_PORT" "$env_file" | tr -d '[:space:]')"
+    configured_port="${configured_port:-11434}"
+    [[ "$configured_port" =~ ^[0-9]+$ ]] || configured_port=11434
+
+    if ! sidar_tcp_port_listening "127.0.0.1" "$configured_port"; then
+        return 0
+    fi
+
+    warn "127.0.0.1:${configured_port} zaten kullanımda — muhtemelen host/WSL2'de native bir Ollama süreci/servisi çalışıyor. Docker Ollama servisi bu host portunu bağlayamayabilir (\"ports are not available\" ile kurulum durabilir)."
+    if ! free_port="$(sidar_find_free_tcp_port $((configured_port + 1)) "127.0.0.1")"; then
+        warn "127.0.0.1 üzerinde boş bir yedek port bulunamadı; OLLAMA_PORT değiştirilmedi. 'docker compose up' port çakışmasıyla başarısız olursa native Ollama sürecini durdurun veya .env'deki OLLAMA_PORT'u elle değiştirip tekrar deneyin."
+        return 1
+    fi
+
+    sidar_write_env_value "$env_file" "OLLAMA_PORT" "$free_port"
+    sidar_write_env_value "$env_file" "OLLAMA_URL" "http://localhost:${free_port}/api"
+    export OLLAMA_PORT="$free_port"
+    warn ".env: OLLAMA_PORT=${free_port} olarak güncellendi (127.0.0.1:${configured_port} host'ta zaten kullanımdaydı); Docker Ollama servisi bu yeni host portuna bağlanacak. Konteynerler arası iletişim etkilenmez (dahili Docker ağı 'ollama:11434' kullanmaya devam eder)."
+}
+
 download_ollama_models() {
     step "Ollama Modelleri Hazırlanıyor"
     local estimated_size_gb="~14.8 GB"
