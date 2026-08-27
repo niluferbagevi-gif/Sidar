@@ -120,10 +120,6 @@ run_migrations() {
 
     cd "$SCRIPT_DIR" || return 1
 
-    ALEMBIC_PYTHON="$(resolve_alembic_python)" || \
-        fail "Python yorumlayıcısı bulunamadı. python3 kurup yeniden deneyin (örn. sudo apt-get install -y python3)."
-    ALEMBIC_CMD=("$ALEMBIC_PYTHON" -m alembic upgrade head)
-
     DB_URL=""
     DB_URL_SOURCE=""
     if resolve_runtime_database_url >/dev/null; then
@@ -136,10 +132,18 @@ run_migrations() {
 
     if [[ -z "$DB_URL" ]]; then
         warn "DATABASE_URL bulunamadı — otomatik migrasyon atlandı."
-        info "Veritabanını başlattıktan sonra manuel çalıştırın: ${ALEMBIC_PYTHON} -m alembic upgrade head"
+        info "Veritabanını başlattıktan sonra manuel çalıştırın: (proje .venv'i veya python3) -m alembic upgrade head"
         MIGRATION_STATUS="db_url_yok"
         return
     fi
+
+    # Python yorumlayıcısı (ve olası .venv self-heal'i) yalnızca gerçekten bir
+    # DATABASE_URL çözüldüğünde — yani migrasyon fiilen denenecekse — resolve
+    # edilir; DB_URL yoksa yukarıdaki erken dönüş zaten hiçbir Python/uv
+    # işlemi tetiklemeden migrasyonu atlar.
+    ALEMBIC_PYTHON="$(resolve_alembic_python)" || \
+        fail "Python yorumlayıcısı bulunamadı. python3 kurup yeniden deneyin (örn. sudo apt-get install -y python3)."
+    ALEMBIC_CMD=("$ALEMBIC_PYTHON" -m alembic upgrade head)
 
     # Güvenlik: DB_URL içindeki parolayı loglarda maskele.
     local masked_db_url=""
@@ -371,7 +375,6 @@ is_alembic_at_head() {
     local db_url_source=""
 
     [[ -f "$alembic_ini" ]] || return 1
-    py_bin="$(resolve_alembic_python)" || return 1
 
     if resolve_runtime_database_url >/dev/null; then
         db_url="$RUNTIME_DATABASE_URL"
@@ -386,6 +389,11 @@ is_alembic_at_head() {
         debug "Alembic head kontrolü için DATABASE_URL boş; current/head sorgusu atlandı."
         return 1
     fi
+
+    # Python yorumlayıcısı (ve olası .venv self-heal'i) yalnızca gerçek bir
+    # DATABASE_URL çözüldüğünde resolve edilir — bkz. run_migrations()'daki
+    # aynı gerekçe.
+    py_bin="$(resolve_alembic_python)" || return 1
 
     check_output="$(env "DATABASE_URL=$db_url" "$py_bin" -m alembic current --check-heads 2>&1)" || check_rc=$?
     if [[ "$check_rc" -eq 0 ]]; then
