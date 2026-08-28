@@ -3367,6 +3367,99 @@ EOF
   [[ "$output" == *"PostgreSQL auth başarısız"* ]]
 }
 
+@test "ensure_postgres_databases_exist retries a transient connection failure before succeeding" {
+  # A friend's install-log review found this was a single-shot check: right
+  # after `docker compose up -d` returns, postgres can take a few seconds to
+  # start accepting connections, and one hiccup here used to abort the whole
+  # install via auto-heal's "no applicable self-heal strategy".
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    counter_file="$tmpdir/attempts"
+    echo 0 > "$counter_file"
+    cat > "$tmpdir/psql" <<"EOF"
+#!/usr/bin/env bash
+n=$(cat "__COUNTER__")
+n=$((n + 1))
+echo "$n" > "__COUNTER__"
+if [[ "$*" == *"-tAc SELECT 1 FROM pg_database"* ]]; then
+  if [[ "$n" -lt 3 ]]; then
+    echo "psql: error: connection refused" >&2
+    exit 2
+  fi
+  echo "1"
+  exit 0
+fi
+exit 0
+EOF
+    sed -i "s#__COUNTER__#$counter_file#g" "$tmpdir/psql"
+    chmod +x "$tmpdir/psql"
+    PATH="$tmpdir:$PATH"
+    hash -r
+    sleep() { :; }
+
+    ensure_postgres_databases_exist "127.0.0.1" "5432" "sidar" "super-secret" "sidar"
+    [[ "$(cat "$counter_file")" -ge 3 ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "ensure_postgres_databases_exist points at docker compose up when postgres is not running" {
+  run_installer_function '
+    cat > "$BATS_TEST_TMPDIR/psql" <<"EOF"
+#!/usr/bin/env bash
+echo "psql: error: connection refused" >&2
+exit 2
+EOF
+    chmod +x "$BATS_TEST_TMPDIR/psql"
+    PATH="$BATS_TEST_TMPDIR:$PATH"
+    hash -r
+    sleep() { :; }
+    docker() {
+      if [[ "$1" == "compose" && "$2" == "version" ]]; then
+        return 0
+      fi
+      if [[ "$1" == "compose" && "$2" == "ps" ]]; then
+        return 0
+      fi
+      return 1
+    }
+
+    ensure_postgres_databases_exist "127.0.0.1" "5432" "sidar" "super-secret" "sidar"
+  '
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Docker'da çalışmıyor görünüyor"* ]]
+  [[ "$output" == *"docker compose up -d postgres"* ]]
+}
+
+@test "ensure_postgres_databases_exist points at healthcheck wait when postgres container is already running" {
+  run_installer_function '
+    cat > "$BATS_TEST_TMPDIR/psql" <<"EOF"
+#!/usr/bin/env bash
+echo "psql: error: connection refused" >&2
+exit 2
+EOF
+    chmod +x "$BATS_TEST_TMPDIR/psql"
+    PATH="$BATS_TEST_TMPDIR:$PATH"
+    hash -r
+    sleep() { :; }
+    docker() {
+      if [[ "$1" == "compose" && "$2" == "version" ]]; then
+        return 0
+      fi
+      if [[ "$1" == "compose" && "$2" == "ps" ]]; then
+        echo "fakecontainerid123"
+        return 0
+      fi
+      return 1
+    }
+
+    ensure_postgres_databases_exist "127.0.0.1" "5432" "sidar" "super-secret" "sidar"
+  '
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"çalışıyor ama bağlantı henüz kabul etmiyor"* ]]
+}
+
 @test "sync_pytorch_cuda_wheels has a single definition, not a phases/10_validation.sh shadow copy" {
   # Fail-closed regression for a review comment: sync_pytorch_cuda_wheels()
   # and verify_torch_cuda() used to have byte-for-byte duplicate definitions

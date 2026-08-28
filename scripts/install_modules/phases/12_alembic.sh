@@ -428,6 +428,10 @@ ensure_postgres_databases_exist() (
     local psql_bin=""
     local psql_err_file=""
     local select_output=""
+    local connect_attempt=0
+    local connect_max_attempts=3
+    local connect_retry_delay=2
+    local select_ok=false
 
     # PATH kurulum sırasında değişebilir; eski Bash command hash kayıtlarının
     # sistemdeki veya PATH üzerinden sağlanan güncel psql ikilisini gölgelemesini önle.
@@ -444,14 +448,43 @@ ensure_postgres_databases_exist() (
     unique_dbs=$(printf "%s\n" "${required_dbs[@]}" | awk 'NF && !seen[$0]++')
     while IFS= read -r db_name; do
         [[ -n "$db_name" ]] || continue
-        : >"$psql_err_file"
-        if ! select_output=$(PGPASSWORD="$db_password" "$psql_bin" -w \
-            -h "$db_host" -p "$db_port" -U "$db_user" -d postgres \
-            -tAc "SELECT 1 FROM pg_database WHERE datname = '${db_name}'" 2>"$psql_err_file"); then
+        select_ok=false
+        # `docker compose up -d`'nin dönmesiyle postgres'in gerçekten bağlantı
+        # kabul etmesi arasında birkaç saniye olabilir (healthcheck henüz
+        # `healthy` olmayabilir). Bu fonksiyon Alembic fazının PostgreSQL'e
+        # değen İLK adımı olduğu için (run_migrations()'daki asıl pg_isready/
+        # Docker-başlatma fallback'inden ÖNCE çağrılıyor), kısa bir retry
+        # olmadan tek bir bağlantı hıçkırığı tüm kurulumu (auto-heal'in
+        # "uygulanabilir strateji yok" demesiyle) durdurabiliyordu — bir
+        # arkadaşın kurulum log incelemesi.
+        for ((connect_attempt = 1; connect_attempt <= connect_max_attempts; connect_attempt++)); do
+            : >"$psql_err_file"
+            if select_output=$(PGPASSWORD="$db_password" "$psql_bin" -w \
+                -h "$db_host" -p "$db_port" -U "$db_user" -d postgres \
+                -tAc "SELECT 1 FROM pg_database WHERE datname = '${db_name}'" 2>"$psql_err_file"); then
+                select_ok=true
+                break
+            fi
             if grep -Eqi 'authentication|password' "$psql_err_file"; then
+                # Auth hatası bağlantı sorunundan farklıdır: yeniden denemek
+                # fayda sağlamaz, mevcut fail-fast davranışı korunur.
                 fail "PostgreSQL auth başarısız: .env POSTGRES_PASSWORD ile container parolası uyumsuz. Çözüm: docker compose down -v && yeniden kurulum."
             fi
-            warn "PostgreSQL veritabanı varlık sorgusu başarısız: ${db_name}"
+            [[ "$connect_attempt" -lt "$connect_max_attempts" ]] && sleep "$connect_retry_delay"
+        done
+        if [[ "$select_ok" != true ]]; then
+            local docker_hint=""
+            if [[ "$db_host" == "localhost" || "$db_host" == "127.0.0.1" ]] \
+                && command -v docker &>/dev/null && docker compose version &>/dev/null; then
+                local running_id=""
+                running_id="$(cd "$SCRIPT_DIR" 2>/dev/null && docker compose ps postgres --status running -q 2>/dev/null)" || true
+                if [[ -n "$running_id" ]]; then
+                    docker_hint=" PostgreSQL container Docker'da çalışıyor ama bağlantı henüz kabul etmiyor; healthcheck tamamlanana kadar biraz daha bekleyip tekrar deneyin veya inceleyin: docker compose logs postgres"
+                else
+                    docker_hint=" PostgreSQL servisi Docker'da çalışmıyor görünüyor (durum için: docker compose ps postgres). Önce başlatın: docker compose up -d postgres"
+                fi
+            fi
+            warn "PostgreSQL veritabanı varlık sorgusu başarısız: ${db_name} (${connect_max_attempts} deneme sonrası).${docker_hint}"
             return 1
         fi
         if grep -qx '1' <<<"$select_output"; then
