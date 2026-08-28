@@ -173,6 +173,126 @@ EOF
   [[ "$output" == *"otomatik kurulumu başarısız"* ]]
 }
 
+# Reproduces a real-world crash: `python` is bare-called in several places
+# (check_python_version, generate_test_secret_value,
+# render_generated_secret_sentinels, validate_coverage_ratchet_state) but
+# many modern Ubuntu/WSL systems only ship `python3`, not a `python` shim.
+# This is exactly the scenario when `uv` isn't on PATH yet either (e.g.
+# install_sidar.sh was executed, not sourced, so its PATH export never
+# reaches the caller's shell): ensure_project_venv() returns early without
+# activating the venv, and these helpers then fell through to a bare
+# `python` call that doesn't exist. resolve_test_gate_python() must resolve
+# python3 in that case, matching the
+# scripts/install_modules/phases/12_alembic.sh::resolve_alembic_python
+# pattern used elsewhere in the installer.
+_write_fake_bin_with_only_python3() {
+  local bin_dir="$1"
+  ln -s "$(command -v python3)" "$bin_dir/python3"
+  ln -s "$(command -v bash)" "$bin_dir/bash"
+}
+
+@test "resolve_test_gate_python finds python3 when bare 'python' is absent from PATH" {
+  local root tmpdir
+  root="$(repo_root)"
+  tmpdir="$(mktemp -d)"
+  mkdir -p "$tmpdir/bin"
+  _write_fake_bin_with_only_python3 "$tmpdir/bin"
+
+  run env -i "PATH=$tmpdir/bin" "HOME=$HOME" bash -c '
+    source "$1/scripts/test_gates/environment_helpers.sh"
+    PROJECT_VENV_DIR="/nonexistent"
+    resolve_test_gate_python
+  ' _ "$root"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"/python3" ]]
+  rm -rf "$tmpdir"
+}
+
+@test "check_python_version succeeds on a system with only python3 on PATH (no bare 'python')" {
+  local root tmpdir
+  root="$(repo_root)"
+  tmpdir="$(mktemp -d)"
+  mkdir -p "$tmpdir/bin"
+  _write_fake_bin_with_only_python3 "$tmpdir/bin"
+
+  run env -i "PATH=$tmpdir/bin" "HOME=$HOME" bash -c '
+    source "$1/scripts/test_gates/environment_helpers.sh"
+    PROJECT_VENV_DIR="/nonexistent"
+    check_python_version
+  ' _ "$root"
+
+  [ "$status" -eq 0 ]
+  rm -rf "$tmpdir"
+}
+
+@test "check_python_version fails with a diagnostic message when neither python3 nor python exist" {
+  local root tmpdir
+  root="$(repo_root)"
+  tmpdir="$(mktemp -d)"
+  mkdir -p "$tmpdir/bin"
+  ln -s "$(command -v bash)" "$tmpdir/bin/bash"
+
+  run env -i "PATH=$tmpdir/bin" "HOME=$HOME" bash -c '
+    source "$1/scripts/test_gates/environment_helpers.sh"
+    PROJECT_VENV_DIR="/nonexistent"
+    check_python_version
+  ' _ "$root"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Python bulunamadı"* ]]
+  [[ "$output" == *"terminali kapatıp yeniden açın"* ]]
+  rm -rf "$tmpdir"
+}
+
+@test "render_generated_secret_sentinels works on a system with only python3 on PATH" {
+  local root tmpdir target
+  root="$(repo_root)"
+  tmpdir="$(mktemp -d)"
+  mkdir -p "$tmpdir/bin"
+  _write_fake_bin_with_only_python3 "$tmpdir/bin"
+  target="$tmpdir/.env.test"
+  cat > "$target" <<'ENV'
+SIDAR_ENV=test
+POSTGRES_PASSWORD=__GENERATE__
+ENV
+
+  run env -i "PATH=$tmpdir/bin" "HOME=$HOME" POSTGRES_PASSWORD='ci-service-password' bash -c '
+    source "$1/scripts/test_gates/environment_helpers.sh"
+    PROJECT_VENV_DIR="/nonexistent"
+    render_generated_secret_sentinels "$2"
+  ' _ "$root" "$target"
+
+  [ "$status" -eq 0 ]
+  grep -q '^POSTGRES_PASSWORD=ci-service-password$' "$target"
+  rm -rf "$tmpdir"
+}
+
+@test "validate_coverage_ratchet_state works on a system with only python3 on PATH" {
+  local root tmpdir statefile
+  root="$(repo_root)"
+  tmpdir="$(mktemp -d)"
+  mkdir -p "$tmpdir/bin"
+  _write_fake_bin_with_only_python3 "$tmpdir/bin"
+  statefile="$tmpdir/coverage_ratchet.toml"
+  cat > "$statefile" <<'TOML'
+[tool.coverage.report]
+fail_under = 42
+TOML
+
+  run env -i "PATH=$tmpdir/bin" "HOME=$HOME" bash -c '
+    source "$1/scripts/test_gates/environment_helpers.sh"
+    PROJECT_VENV_DIR="/nonexistent"
+    COVERAGE_RATCHET_STATE_FILE="$2"
+    COVERAGE_RATCHET_MIN_EXISTING_GATE=0
+    validate_coverage_ratchet_state
+  ' _ "$root" "$statefile"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == "42" ]]
+  rm -rf "$tmpdir"
+}
+
 @test "run_ruff_quality_gate self-heals a missing ruff before running the lint/format checks" {
   local root tmpdir
   root="$(repo_root)"
