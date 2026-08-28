@@ -41,6 +41,15 @@ project_name="${PRODUCTION_COMPOSE_PROJECT_NAME:-sidar-production-gate}"
 env_file="${PRODUCTION_COMPOSE_ENV_FILE:-.env.production.compose-gate}"
 web_port="${PRODUCTION_COMPOSE_WEB_PORT:-17860}"
 export SIDAR_RUNTIME_ENV_FILE="${SIDAR_RUNTIME_ENV_FILE:-$env_file}"
+# docker-compose.yml's container_name fields interpolate ${COMPOSE_PROJECT_NAME:-sidar}
+# (see docker-compose.yml) so this isolated gate stack never collides with a
+# developer's already-running dev stack (both would otherwise be literally
+# "sidar_ollama" etc. on the same Docker daemon -- "Conflict. The container
+# name ... is already in use"). --project-name alone already threads through
+# to this interpolation on the Compose versions this repo has been verified
+# against, but exporting COMPOSE_PROJECT_NAME explicitly keeps that from being
+# an undocumented, version-dependent assumption.
+export COMPOSE_PROJECT_NAME="$project_name"
 compose=(docker compose --project-name "$project_name" --env-file "$env_file" -f docker-compose.yml -f docker-compose.production.yml --profile cpu)
 
 cleanup() {
