@@ -239,6 +239,35 @@ def test_load_dotenv_if_exists_records_empty_missing_and_loaded_paths(tmp_path, 
     assert sources["DOTENV_SAMPLE"]["label"] == "loaded"
 
 
+def test_dotenv_layer_active_for_label_covers_all_layer_categories(tmp_path):
+    active_plan = config_dotenv.DotenvReloadPlan(
+        base_path=tmp_path / ".env",
+        advanced_path=tmp_path / ".env.advanced",
+        explicit_path=str(tmp_path / "explicit.env"),
+        sidar_keys_file=str(tmp_path / "keys.env"),
+        skip_default_layers=False,
+    )
+    inactive_plan = config_dotenv.DotenvReloadPlan(
+        base_path=tmp_path / ".env",
+        advanced_path=tmp_path / ".env.advanced",
+        explicit_path="",
+        sidar_keys_file="",
+        skip_default_layers=True,
+    )
+
+    active = config_dotenv._dotenv_layer_active_for_label
+    assert active("base", active_plan) is True
+    assert active("base", inactive_plan) is False
+    assert active("advanced", active_plan) is True
+    assert active("environment:development", active_plan) is True
+    assert active("environment:development", inactive_plan) is False
+    assert active("explicit:DOTENV_FILE", active_plan) is True
+    assert active("explicit:DOTENV_FILE", inactive_plan) is False
+    assert active("secret:SIDAR_KEYS_FILE", active_plan) is True
+    assert active("secret:SIDAR_KEYS_FILE", inactive_plan) is False
+    assert active("some-unrecognized-label", active_plan) is False
+
+
 def test_load_dotenv_into_effective_env_and_reload_baseline(tmp_path):
     events: list[dict[str, object]] = []
     missing: list[str] = []
