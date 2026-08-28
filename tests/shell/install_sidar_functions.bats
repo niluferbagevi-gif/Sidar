@@ -1410,6 +1410,119 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "ci-full validation auto-seeds a missing benchmark baseline before production-readiness" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    RUN_CI_FULL_VALIDATION=true
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/Makefile" <<EOF
+production-readiness:
+	@true
+benchmark-seed:
+	@true
+EOF
+    cat > "$tmpdir/bin/make" <<EOF
+#!/usr/bin/env bash
+printf "%s\\n" "\$*" >> "$tmpdir/make.log"
+EOF
+    chmod +x "$tmpdir/bin/make"
+    export PATH="$tmpdir/bin:$PATH"
+    cat > "$tmpdir/run_tests.sh" <<EOF
+#!/usr/bin/env bash
+exit 99
+EOF
+    chmod +x "$tmpdir/run_tests.sh"
+
+    # No .benchmarks/ directory at all: a completely fresh checkout.
+    run_install_ci_full_validation
+
+    [[ "$CI_FULL_VALIDATION_STATUS" == "tamamlandi" ]]
+    [[ "$(cat "$tmpdir/make.log")" == "benchmark-seed
+production-readiness" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *".benchmarks"*"baseline bulunamadı"* ]]
+  [[ "$output" == *"make benchmark-seed"*"otomatik çalıştırılıyor"* ]]
+  [[ "$output" == *"baseline'ı oluşturuldu"* ]]
+}
+
+@test "ci-full validation skips benchmark-seed when a baseline already exists" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    RUN_CI_FULL_VALIDATION=true
+    mkdir -p "$tmpdir/bin"
+    mkdir -p "$tmpdir/.benchmarks/Linux-CPython-3.11-64bit"
+    touch "$tmpdir/.benchmarks/Linux-CPython-3.11-64bit/0001_baseline.json"
+    cat > "$tmpdir/Makefile" <<EOF
+production-readiness:
+	@true
+benchmark-seed:
+	@true
+EOF
+    cat > "$tmpdir/bin/make" <<EOF
+#!/usr/bin/env bash
+printf "%s\\n" "\$*" >> "$tmpdir/make.log"
+EOF
+    chmod +x "$tmpdir/bin/make"
+    export PATH="$tmpdir/bin:$PATH"
+    cat > "$tmpdir/run_tests.sh" <<EOF
+#!/usr/bin/env bash
+exit 99
+EOF
+    chmod +x "$tmpdir/run_tests.sh"
+
+    run_install_ci_full_validation
+
+    [[ "$CI_FULL_VALIDATION_STATUS" == "tamamlandi" ]]
+    [[ "$(cat "$tmpdir/make.log")" == "production-readiness" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"benchmark baseline bulunamadı"* ]]
+  [[ "$output" != *"make benchmark-seed"*"otomatik çalıştırılıyor"* ]]
+}
+
+@test "ci-full validation still attempts production-readiness when benchmark-seed itself fails" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    RUN_CI_FULL_VALIDATION=true
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/Makefile" <<EOF
+production-readiness:
+	@true
+benchmark-seed:
+	@false
+EOF
+    cat > "$tmpdir/bin/make" <<EOF
+#!/usr/bin/env bash
+printf "%s\\n" "\$*" >> "$tmpdir/make.log"
+[[ "\$*" == "benchmark-seed" ]] && exit 1
+exit 0
+EOF
+    chmod +x "$tmpdir/bin/make"
+    export PATH="$tmpdir/bin:$PATH"
+    cat > "$tmpdir/run_tests.sh" <<EOF
+#!/usr/bin/env bash
+exit 99
+EOF
+    chmod +x "$tmpdir/run_tests.sh"
+
+    run_install_ci_full_validation
+
+    [[ "$CI_FULL_VALIDATION_STATUS" == "tamamlandi" ]]
+    [[ "$(cat "$tmpdir/make.log")" == "benchmark-seed
+production-readiness" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"make benchmark-seed"*"başarısız oldu"* ]]
+  [[ "$output" == *"yine de denenecek"* ]]
+}
+
 
 @test "development full validation prompt runs GPU stress full gate when accepted" {
   run_installer_function '
