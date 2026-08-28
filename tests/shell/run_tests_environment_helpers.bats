@@ -189,6 +189,12 @@ _write_fake_bin_with_only_python3() {
   local bin_dir="$1"
   ln -s "$(command -v python3)" "$bin_dir/python3"
   ln -s "$(command -v bash)" "$bin_dir/bash"
+  # render_generated_secret_sentinels() itself shells out to `grep` (to check
+  # for the __GENERATE__ sentinel) independently of the python resolution
+  # this fixture exists to test; without it on PATH here, that internal grep
+  # call fails, the function no-ops via its early-return guard, and the
+  # __GENERATE__ line is silently never replaced.
+  ln -s "$(command -v grep)" "$bin_dir/grep"
 }
 
 @test "resolve_test_gate_python finds python3 when bare 'python' is absent from PATH" {
