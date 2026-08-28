@@ -125,6 +125,11 @@ services:
   sidar-migrate:
     profiles: ["cpu", "gpu"]
     image: ${SIDAR_DOCKER_IMAGE:-sidar:latest}
+    # `image` never resolves against a registry — it only names the locally
+    # built tag. Without pull_policy, `docker compose up` tries a registry
+    # pull first, fails with a confusing "pull access denied" before falling
+    # back to `build:`. Force straight to the local build instead.
+    pull_policy: build
     build:
       context: .
       args:
@@ -191,6 +196,11 @@ services:
   sidar-ai:
     profiles: ["cpu"]
     image: ${SIDAR_DOCKER_IMAGE:-sidar:latest}
+    # `image` never resolves against a registry — it only names the locally
+    # built tag. Without pull_policy, `docker compose up` tries a registry
+    # pull first, fails with a confusing "pull access denied" before falling
+    # back to `build:`. Force straight to the local build instead.
+    pull_policy: build
     build:
       context: .
       args:
@@ -258,6 +268,11 @@ services:
   sidar-gpu:
     profiles: ["gpu"]
     image: ${SIDAR_GPU_DOCKER_IMAGE:-sidar-gpu:latest}
+    # `image` never resolves against a registry — it only names the locally
+    # built tag. Without pull_policy, `docker compose up` tries a registry
+    # pull first, fails with a confusing "pull access denied" before falling
+    # back to `build:`. Force straight to the local build instead.
+    pull_policy: build
     build:
       context: .
       args:
