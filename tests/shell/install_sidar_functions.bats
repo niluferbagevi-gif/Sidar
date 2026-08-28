@@ -2848,6 +2848,61 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "sidar_compose_up_with_retry succeeds on the first attempt without sleeping" {
+  # A friend's install-log review found `docker compose up -d` was a single
+  # shot with no retry: one transient registry hiccup on ANY image (even one
+  # unrelated to the app, e.g. tecnativa/docker-socket-proxy) dropped the
+  # whole `up -d`, leaving postgres never started and the later Alembic
+  # phase crashing hard.
+  run_installer_function '
+    events=()
+    docker() { events+=("docker:$*"); return 0; }
+    sleep() { events+=("sleep:$*"); }
+    warn() { events+=("warn:$*"); }
+
+    sidar_compose_up_with_retry docker compose up -d
+    [[ "${events[*]}" == "docker:compose up -d" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "sidar_compose_up_with_retry retries with backoff after a transient failure then succeeds" {
+  run_installer_function '
+    events=()
+    call_count=0
+    docker() {
+      call_count=$((call_count + 1))
+      events+=("docker:attempt${call_count}")
+      [[ "$call_count" -ge 2 ]]
+    }
+    sleep() { events+=("sleep:$*"); }
+    warn() { events+=("warn:$*"); }
+
+    sidar_compose_up_with_retry docker compose up -d
+    [[ "${#events[@]}" -eq 4 ]]
+    [[ "${events[0]}" == "docker:attempt1" ]]
+    [[ "${events[1]}" == *"1/3"* ]]
+    [[ "${events[2]}" == "sleep:5" ]]
+    [[ "${events[3]}" == "docker:attempt2" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "sidar_compose_up_with_retry fails after 3 attempts, sleeping only between attempts" {
+  run_installer_function '
+    events=()
+    docker() { events+=(docker); return 1; }
+    sleep() { events+=("sleep:$*"); }
+    warn() { events+=(warn); }
+
+    if sidar_compose_up_with_retry docker compose up -d; then
+      exit 1
+    fi
+    [[ "${events[*]}" == "docker warn sleep:5 docker warn sleep:10 docker" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
 @test "06 services docker mode honors disabled RAG warmup without local side effects" {
   run_installer_function '
     events=()
