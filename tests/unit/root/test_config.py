@@ -2369,6 +2369,7 @@ def test_reload_environment_skip_default_dotenv_keeps_explicit_and_secret_layers
     assert loaded_labels == ["explicit:DOTENV_FILE", "secret:SIDAR_KEYS_FILE"]
 
 
+@pytest.mark.xdist_group(name="config_dotenv_leak_pair")
 def test_full_module_reload_does_not_leak_dotenv_values_into_real_environment(
     monkeypatch, tmp_path
 ):
@@ -2409,14 +2410,18 @@ def test_full_module_reload_does_not_leak_dotenv_values_into_real_environment(
     assert os.environ.get("JWT_SECRET_KEY") == "leaked-secret-must-not-survive-this-test"
 
 
+@pytest.mark.xdist_group(name="config_dotenv_leak_pair")
 def test_next_test_does_not_observe_the_previous_tests_leaked_dotenv_value():
     """Regression test: must run immediately after the leak-inducing test above.
 
     Confirms tests/unit/root/conftest.py's autouse `_isolate_config_dotenv_state`
     fixture actually cleaned up the real `os.environ` and config module state
     left behind by test_full_module_reload_does_not_leak_dotenv_values_into_real_environment
-    (declared immediately above -- pytest runs a module's tests in
-    declaration order absent xdist/randomization).
+    (declared immediately above). Plain declaration order only holds without
+    xdist/randomization; the CI invocation runs `-n auto --dist loadgroup`,
+    so both tests share the `config_dotenv_leak_pair` xdist_group to force
+    them onto the same worker in this same relative order regardless of
+    scheduling.
     """
     assert os.environ.get("JWT_SECRET_KEY") != "leaked-secret-must-not-survive-this-test"
     assert "JWT_SECRET_KEY" not in config._DOTENV_MANAGED_KEYS
@@ -2828,6 +2833,47 @@ def test_reload_environment_refreshes_jwt_algorithm_ttl_and_explicit_flag(monkey
     assert config.Config._JWT_SECRET_KEY_EXPLICITLY_CONFIGURED is True
     assert config.Config.JWT_ALGORITHM == "HS512"
     assert config.Config.JWT_TTL_DAYS == 30
+
+
+def test_reload_environment_preserves_direct_override_of_a_previously_dotenv_managed_key(
+    monkeypatch,
+):
+    """Regression test: a direct os.environ write must survive reload_environment().
+
+    _reload_dotenv_chain()'s baseline used to pop *every* previously
+    dotenv-managed key unconditionally (dotenv_reload_baseline_environment),
+    even when this round's active dotenv sources never get a chance to
+    re-supply it (e.g. SIDAR_SKIP_DEFAULT_DOTENV newly set). A key that was
+    dotenv-managed in an earlier round and then overwritten directly on
+    os.environ since (a runtime secret rotation, monkeypatch.setenv) was
+    silently wiped by the very next reload_environment() call -- exactly the
+    JWT_SECRET_KEY failure this pair mirrors
+    (test_reload_environment_refreshes_jwt_algorithm_ttl_and_explicit_flag),
+    but seeded deterministically here instead of depending on whichever
+    dotenv files happen to be on disk when the suite runs.
+    """
+    monkeypatch.setattr(config.Config, "_ensure_hardware_info_loaded", lambda: None)
+    monkeypatch.setattr(config.Config, "_apply_gpu_memory_safety_check", lambda: None)
+
+    # Simulate: JWT_SECRET_KEY was dotenv-managed by the "base" layer in an
+    # earlier round.
+    config._DOTENV_MANAGED_KEYS.add("JWT_SECRET_KEY")
+    config._DOTENV_KEY_SOURCES["JWT_SECRET_KEY"] = {
+        "label": "base",
+        "path": str(config.BASE_DIR / ".env"),
+        "override": False,
+    }
+
+    # Something now writes the key directly, bypassing dotenv entirely.
+    monkeypatch.setenv("JWT_SECRET_KEY", "rotated-explicit-jwt-secret")
+    monkeypatch.delenv("DOTENV_FILE", raising=False)
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+    monkeypatch.setenv("SIDAR_SKIP_DEFAULT_DOTENV", "1")
+
+    config.reload_environment()
+
+    assert os.environ.get("JWT_SECRET_KEY") == "rotated-explicit-jwt-secret"
+    assert config.Config.JWT_SECRET_KEY == "rotated-explicit-jwt-secret"
 
 
 def test_reload_environment_keeps_os_environ_stable_until_effective_finalize(monkeypatch, tmp_path):

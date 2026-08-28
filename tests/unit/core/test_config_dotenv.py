@@ -302,6 +302,42 @@ def test_load_dotenv_into_effective_env_and_reload_baseline(tmp_path):
     assert effective_env["KEPT"] == "original"
     assert effective_env["NEW"] == "value"
     assert sources["NEW"]["label"] == "reload"
+
+    # "MANAGED" was seeded as if a previous round's "base" layer supplied it.
+    sources["MANAGED"] = {"label": "base", "path": str(tmp_path / ".env"), "override": False}
+
+    # The base layer is active this round -> a stale, previous-round dotenv
+    # value legitimately gets a chance to be refreshed (or dropped) by the
+    # fresh file read, so it's evicted from the baseline here.
+    plan_base_active = config_dotenv.DotenvReloadPlan(
+        base_path=tmp_path / ".env",
+        advanced_path=tmp_path / ".env.advanced",
+        skip_default_layers=False,
+    )
+    # "NEW" is also managed now (from the "reload"-labeled load above), but its
+    # label matches no recognized dotenv layer, so it's always treated as
+    # inactive/preserved -- only "MANAGED" (labeled "base") is plan-sensitive.
     assert config_dotenv.dotenv_reload_baseline_environment(
-        environ=effective_env, managed_keys=managed
-    ) == {"KEPT": "original"}
+        environ=effective_env,
+        managed_keys=managed,
+        key_sources=sources,
+        plan=plan_base_active,
+    ) == {"KEPT": "original", "NEW": "value"}
+
+    # Regression: when "MANAGED"'s supplying layer ("base") is NOT active this
+    # round (e.g. SIDAR_SKIP_DEFAULT_DOTENV newly set), the base file never
+    # gets a chance to say anything about the key, so the baseline must not
+    # evict it -- a value written directly to `environ` for that key since
+    # the previous round (a runtime secret rotation, a test's
+    # monkeypatch.setenv) has to survive the reload.
+    plan_base_skipped = config_dotenv.DotenvReloadPlan(
+        base_path=tmp_path / ".env",
+        advanced_path=tmp_path / ".env.advanced",
+        skip_default_layers=True,
+    )
+    assert config_dotenv.dotenv_reload_baseline_environment(
+        environ=effective_env,
+        managed_keys=managed,
+        key_sources=sources,
+        plan=plan_base_skipped,
+    ) == {"MANAGED": "from-old-dotenv", "KEPT": "original", "NEW": "value"}

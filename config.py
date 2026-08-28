@@ -243,10 +243,15 @@ def _load_dotenv_into_effective_env(
     )
 
 
-def _dotenv_reload_baseline_environment() -> dict[str, str]:
+def _dotenv_reload_baseline_environment(
+    *,
+    managed_keys: set[str],
+    key_sources: dict[str, dict[str, Any]],
+    plan: "config_dotenv.DotenvReloadPlan",
+) -> dict[str, str]:
     """Return the pre-dotenv baseline for atomic reload without intermediate os.environ pops."""
     return config_dotenv.dotenv_reload_baseline_environment(
-        environ=os.environ, managed_keys=_DOTENV_MANAGED_KEYS
+        environ=os.environ, managed_keys=managed_keys, key_sources=key_sources, plan=plan
     )
 
 
@@ -1600,8 +1605,19 @@ def _reload_dotenv_chain(*, profile: str | None = None) -> None:
     global _LAST_DOTENV_LOAD_CHAIN_SIGNATURE
     with _CONFIG_STATE_LOCK:
         previous_managed_keys = set(_DOTENV_MANAGED_KEYS)
-        effective_env = _dotenv_reload_baseline_environment()
-        plan = _build_dotenv_reload_plan(effective_env, profile=profile)
+        # Snapshot before the globals below are cleared -- needed to decide,
+        # per key, whether its supplying layer is still active this round
+        # (see _dotenv_reload_baseline_environment's docstring).
+        previous_key_sources = {key: dict(value) for key, value in _DOTENV_KEY_SOURCES.items()}
+        # Resolve the plan (SIDAR_SKIP_DEFAULT_DOTENV/DOTENV_FILE/SIDAR_KEYS_FILE)
+        # from the *real*, unmodified process environment -- never from a
+        # baseline that may have already popped a previously dotenv-managed
+        # control variable, or a direct override of one of these three keys
+        # would be invisible to this reload's own plan.
+        plan = _build_dotenv_reload_plan(dict(os.environ), profile=profile)
+        effective_env = _dotenv_reload_baseline_environment(
+            managed_keys=previous_managed_keys, key_sources=previous_key_sources, plan=plan
+        )
         _DOTENV_MANAGED_KEYS.clear()
         _DOTENV_LOAD_EVENTS.clear()
         _DOTENV_KEY_SOURCES.clear()
