@@ -115,3 +115,60 @@ def test_check_rag_readiness_delegates_to_doctor(monkeypatch):
     monkeypatch.setattr(rag_checks._doctor, "check_rag_readiness", lambda: sentinel)
 
     assert rag_checks.check_rag_readiness() is sentinel
+
+
+def _stub_which(present: set[str]):
+    def _which(name: str) -> str | None:
+        return f"/usr/bin/{name}" if name in present else None
+
+    return _which
+
+
+def test_check_media_tools_warns_when_ffmpeg_is_missing(monkeypatch):
+    from core.doctor.checks import media as media_checks
+
+    monkeypatch.setattr(media_checks.shutil, "which", _stub_which({"yt-dlp", "whisper"}))
+
+    check = media_checks.check_media_tools()
+
+    assert check.status == "warn"
+    assert check.message == (
+        "ffmpeg not found; multimodal video/audio parsing will fail at runtime"
+    )
+    assert check.details == {
+        "ffmpeg_found": False,
+        "yt_dlp_found": True,
+        "whisper_found": True,
+    }
+
+
+def test_check_media_tools_warns_when_only_optional_tools_are_missing(monkeypatch):
+    from core.doctor.checks import media as media_checks
+
+    monkeypatch.setattr(media_checks.shutil, "which", _stub_which({"ffmpeg"}))
+
+    check = media_checks.check_media_tools()
+
+    assert check.status == "warn"
+    assert check.message == "ffmpeg is present; optional media tool(s) not found: yt-dlp, whisper"
+    assert check.details == {
+        "ffmpeg_found": True,
+        "yt_dlp_found": False,
+        "whisper_found": False,
+    }
+
+
+def test_check_media_tools_passes_when_all_tools_are_found(monkeypatch):
+    from core.doctor.checks import media as media_checks
+
+    monkeypatch.setattr(media_checks.shutil, "which", _stub_which({"ffmpeg", "yt-dlp", "whisper"}))
+
+    check = media_checks.check_media_tools()
+
+    assert check.status == "pass"
+    assert check.message == "ffmpeg, yt-dlp, and whisper are all available"
+    assert check.details == {
+        "ffmpeg_found": True,
+        "yt_dlp_found": True,
+        "whisper_found": True,
+    }

@@ -403,6 +403,13 @@ print_summary() {
         echo ""
     fi
 
+    if ! command -v ffmpeg >/dev/null 2>&1; then
+        echo -e "  ${YELLOW}⚠️  ffmpeg bulunamadı — multimodal video/ses ayrıştırma (frame/ses kanalı çıkarımı) şu an çalışmayacak.${NC}"
+        echo -e "  ${YELLOW}   Kurulum: Debian/Ubuntu → sudo apt-get install ffmpeg; macOS → brew install ffmpeg.${NC}"
+        echo -e "  ${YELLOW}   Kurulum sonrası doğrulama: uv run python -m core.doctor${NC}"
+        echo ""
+    fi
+
     if [[ "$WSL2" == true ]]; then
         local multimodal_val=""
         [[ -f "$SCRIPT_DIR/.env" ]] && multimodal_val=$(read_env_value_from_file "ENABLE_MULTIMODAL" "$SCRIPT_DIR/.env" | tr -d '[:space:]')

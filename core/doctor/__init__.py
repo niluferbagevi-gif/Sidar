@@ -1855,6 +1855,7 @@ def run_doctor_report(
     from core.doctor.checks.rag import (
         check_graphrag_entity_memory_ready as graphrag_entity_memory_ready_check,
     )
+    from core.doctor.checks.media import check_media_tools as media_tools_check
     from core.doctor.checks.rag import check_rag_index_ready as rag_index_ready_check
     from core.doctor.checks.redis import check_redis as redis_check
     from core.doctor.checks.security import check_environment_profile as environment_profile_check
@@ -1884,6 +1885,7 @@ def run_doctor_report(
             check_websocket_routes(),
             redis_check(),
             gpu_check(),
+            media_tools_check(),
             check_model(smoke=include_model_smoke),
         ]
     )
