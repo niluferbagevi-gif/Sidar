@@ -84,7 +84,7 @@ jobs:
             echo "BENCHMARK_COMPARE_REQUIRED=1 ancak .benchmarks altında ${BENCHMARK_COMPARE_NAME} baseline bulunamadı."
             exit 1
           fi
-          CMD="uv run pytest -q tests/performance/test_benchmark.py -k \"password_hash_cpu_cost or password_verify_cpu_cost\" --benchmark-json=artifacts/auth-benchmark/benchmark.json --benchmark-min-rounds=5 --benchmark-save=${BENCHMARK_COMPARE_NAME} ${compare_args[*]}"
+          CMD="uv run pytest -q tests/performance/test_benchmark.py -k \"password_ and cpu_cost\" --benchmark-json=artifacts/auth-benchmark/benchmark.json --benchmark-min-rounds=30 --benchmark-save=${BENCHMARK_COMPARE_NAME} ${compare_args[*]}"
           if command -v taskset >/dev/null 2>&1; then
             taskset -c "${BENCHMARK_CPU_AFFINITY}" bash -lc "${CMD}"
           else

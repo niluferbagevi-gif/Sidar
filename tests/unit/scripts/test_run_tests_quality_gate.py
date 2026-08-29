@@ -906,10 +906,12 @@ def test_postgresql_multi_user_benchmark_warms_pool_and_uses_stable_pedantic_rou
 def test_password_benchmarks_use_noise_resistant_pedantic_rounds() -> None:
     benchmark_test = Path("tests/performance/test_benchmark.py").read_text(encoding="utf-8")
 
-    assert "_PASSWORD_BENCHMARK_WARMUP_ROUNDS = 3" in benchmark_test
-    assert "_PASSWORD_BENCHMARK_ROUNDS = 10" in benchmark_test
-    assert benchmark_test.count("warmup_rounds=_PASSWORD_BENCHMARK_WARMUP_ROUNDS") == 2
-    assert benchmark_test.count("rounds=_PASSWORD_BENCHMARK_ROUNDS") == 2
+    assert "_PASSWORD_BENCHMARK_WARMUP_ROUNDS = 5" in benchmark_test
+    assert "_PASSWORD_BENCHMARK_ROUNDS = 30" in benchmark_test
+    assert benchmark_test.count("warmup_rounds=_PASSWORD_BENCHMARK_WARMUP_ROUNDS") == 4
+    assert benchmark_test.count("rounds=_PASSWORD_BENCHMARK_ROUNDS") == 4
+    assert 'group="password-application-path"' in benchmark_test
+    assert 'group="password-primitive"' in benchmark_test
 
 
 def test_benchmark_docs_require_uv_and_review_before_promoting_latest_baseline() -> None:
@@ -6743,6 +6745,60 @@ format_backend_failure_reasons() { printf 'none'; }
     assert ci_result.returncode == 1
     assert "Frontend E2E Çıkış Kodu: 1 (enforce=1)" in ci_result.stdout
     assert "Benchmark Çıkış Kodu: 1 (enforce=1)" in ci_result.stdout
+
+
+def test_production_compose_failure_diagnostics_surface_service_and_exception(
+    tmp_path: Path,
+) -> None:
+    """Final diagnostics must make a crashing production service immediately visible."""
+    helpers = Path("scripts/test_gates/summary_helpers.sh").resolve()
+    diagnostics = tmp_path / "production-compose"
+    diagnostics.mkdir()
+    (diagnostics / "ps.txt").write_text(
+        "NAME  IMAGE  COMMAND  SERVICE  CREATED  STATUS  PORTS\n"
+        "sidar-production-gate_web  sidar  cmd  sidar-web  now  Restarting (1) 1 second ago  \n",
+        encoding="utf-8",
+    )
+    (diagnostics / "compose.log").write_text(
+        "sidar-production-gate_web | PermissionError: [Errno 13] Permission denied: "
+        "'/app/web_ui_react/dist/assets'\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; PRODUCTION_COMPOSE_DIAGNOSTICS_DIR="$2"; '
+            "production_compose_failure_diagnostics",
+            "bash",
+            str(helpers),
+            str(diagnostics),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.stdout.splitlines() == [
+        "sidar-web",
+        "PermissionError: [Errno 13] Permission denied: '/app/web_ui_react/dist/assets'",
+    ]
+
+
+def test_final_summary_prints_production_compose_gate_fields() -> None:
+    final_evaluation = _script().split("# 4) Final Durum Değerlendirmesi", maxsplit=1)[1]
+
+    assert "Production Compose Çıkış Kodu: ${PRODUCTION_COMPOSE_EXIT_CODE:-0}" in final_evaluation
+    assert (
+        "Production Compose Durumu: ${PRODUCTION_COMPOSE_DISPLAY_STATUS:-NOT RUN}"
+        in final_evaluation
+    )
+    assert (
+        "Başarısız Servis: ${PRODUCTION_COMPOSE_FAILED_SERVICE:-belirlenemedi}"
+        in final_evaluation
+    )
+    assert "Hata: ${PRODUCTION_COMPOSE_ERROR_SUMMARY" in final_evaluation
 
 
 def test_websocket_mount_status_is_resolved_before_first_paint() -> None:

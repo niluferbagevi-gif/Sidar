@@ -15,7 +15,7 @@ import json
 import os
 import re
 import shutil
-import subprocess  # nosec B404
+import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -1021,7 +1021,7 @@ def _rag_readiness_state() -> dict[str, Any]:
     if vector_backend == "pgvector":
         database_url, _, _, _ = _resolved_database_urls()
         postgres_password = os.getenv("POSTGRES_PASSWORD", "").strip()
-        parsed_database_password = ""  # Empty sentinel; real value is parsed below.  # nosec B105
+        parsed_database_password: str | None = None
         parsed_database_url, _ = _parse_url(database_url)
         if parsed_database_url:
             parsed_database_password = unquote(str(parsed_database_url.password or ""))

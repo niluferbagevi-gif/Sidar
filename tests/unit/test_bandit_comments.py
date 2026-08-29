@@ -33,11 +33,13 @@ def test_bandit_suppression_baseline_matches_current_scan_and_quality_gates() ->
     local_gate = (root / "scripts/test_gates/backend_helpers.sh").read_text(encoding="utf-8")
     ci = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
-    assert baseline["maximum_skipped_tests"] == 49
+    assert baseline["maximum_skipped_tests"] == 40
     assert [target["maximum_skipped_tests"] for target in baseline["reduction_targets"]] == [
-        40,
         20,
         0,
+    ]
+    assert baseline["completed_targets"] == [
+        {"due_date": "2027-01-31", "maximum_skipped_tests": 40, "achieved_at": "2026-08-28"}
     ]
     assert suppression_baseline._reduction_targets(root / "bandit-suppression-baseline.json")
     assert suppression_baseline._requires_exact_baseline(root / "bandit-suppression-baseline.json")

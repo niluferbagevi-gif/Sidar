@@ -155,6 +155,22 @@ def test_validate_production_compose_exports_compose_project_name() -> None:
     )
 
 
+def test_validate_production_compose_isolates_postgres_volume() -> None:
+    """The disposable gate must never mount or remove the development database."""
+    script = Path("scripts/ci/validate_production_compose.sh").read_text(encoding="utf-8")
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+
+    assert "name: ${SIDAR_POSTGRES_VOLUME_NAME:-sidar_postgres_data}" in compose
+    assert (
+        'export SIDAR_POSTGRES_VOLUME_NAME="${SIDAR_POSTGRES_VOLUME_NAME:-${project_name}_postgres_data}"'
+        in script
+    )
+    assert "SIDAR_POSTGRES_VOLUME_NAME=$SIDAR_POSTGRES_VOLUME_NAME" in script
+    assert script.index('export SIDAR_POSTGRES_VOLUME_NAME=') < script.index(
+        'compose=(docker compose --project-name "$project_name"'
+    )
+
+
 @pytest.mark.integration
 def test_compose_project_name_isolates_container_names_between_stacks(tmp_path: Path) -> None:
     """Real Compose interpolation: distinct project names -> distinct container names.

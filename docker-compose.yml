@@ -679,7 +679,9 @@ services:
 volumes:
   redis_data:
   postgres_data:
-    name: sidar_postgres_data
+    # Keep the historical development volume by default, while allowing
+    # disposable/parallel stacks to select an isolated PostgreSQL volume.
+    name: ${SIDAR_POSTGRES_VOLUME_NAME:-sidar_postgres_data}
   ollama_data:
   sidar_data_prod:
   sidar_logs_prod:

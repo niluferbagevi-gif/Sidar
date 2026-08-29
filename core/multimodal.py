@@ -17,7 +17,7 @@ import logging
 import mimetypes
 import re
 import shutil
-import subprocess  # nosec B404
+import subprocess
 import tempfile
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass

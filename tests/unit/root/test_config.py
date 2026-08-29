@@ -2423,9 +2423,14 @@ def test_next_test_does_not_observe_the_previous_tests_leaked_dotenv_value():
     them onto the same worker in this same relative order regardless of
     scheduling.
     """
-    assert os.environ.get("JWT_SECRET_KEY") != "leaked-secret-must-not-survive-this-test"
-    assert "JWT_SECRET_KEY" not in config._DOTENV_MANAGED_KEYS
-    assert config.Config.JWT_SECRET_KEY != "leaked-secret-must-not-survive-this-test"
+    leaked = "leaked-secret-must-not-survive-this-test"
+
+    assert os.environ.get("JWT_SECRET_KEY") != leaked
+    # A developer/installer-created .env may legitimately make JWT_SECRET_KEY
+    # dotenv-managed again when the isolation fixture reloads config. The
+    # bookkeeping set therefore cannot prove whether the throwaway value
+    # leaked; the effective environment and Config value are the contract.
+    assert config.Config.JWT_SECRET_KEY != leaked
 
 
 def test_config_init_logs_env_status_before_missing_jwt_failure(monkeypatch, caplog):

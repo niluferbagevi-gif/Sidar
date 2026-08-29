@@ -69,9 +69,12 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `managers/__init__.py` → `docs/module-notes/managers/__init__.py.md`
 - `managers/code_manager.py` → `docs/module-notes/managers/code_manager.py.md`
 - `managers/github_manager.py` → `docs/module-notes/managers/github_manager.py.md`
+- `managers/jira_manager.py` → `docs/module-notes/managers/jira_manager.py.md`
 - `managers/package_info.py` → `docs/module-notes/managers/package_info.py.md`
 - `managers/security.py` → `docs/module-notes/managers/security.py.md`
+- `managers/slack_manager.py` → `docs/module-notes/managers/slack_manager.py.md`
 - `managers/system_health.py` → `docs/module-notes/managers/system_health.py.md`
+- `managers/teams_manager.py` → `docs/module-notes/managers/teams_manager.py.md`
 - `managers/todo_manager.py` → `docs/module-notes/managers/todo_manager.py.md`
 - `managers/web_search.py` → `docs/module-notes/managers/web_search.py.md`
 - `migrations/env.py` → `docs/module-notes/migrations/env.py.md`

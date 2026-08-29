@@ -11,14 +11,15 @@ from uuid import uuid4
 import pytest
 
 from core.db import Database
+from core.db.auth import _current_password_hash_algorithm, _hash_password, _verify_password
 from scripts.coverage_hotspots import FileCoverage, format_table
 
 pytestmark = pytest.mark.benchmark
 pytest.importorskip("pytest_benchmark")
 
 _FORMAT_TABLE_MAX_MEAN_MS = float(os.getenv("SIDAR_FORMAT_TABLE_MAX_MEAN_MS", "5.0") or "5.0")
-_PASSWORD_BENCHMARK_WARMUP_ROUNDS = 3
-_PASSWORD_BENCHMARK_ROUNDS = 10
+_PASSWORD_BENCHMARK_WARMUP_ROUNDS = 5
+_PASSWORD_BENCHMARK_ROUNDS = 30
 _IO_BENCHMARK_WARMUP_ROUNDS = 5
 _IO_BENCHMARK_ROUNDS = 50
 
@@ -40,6 +41,12 @@ def _attach_latency_percentiles(benchmark, metric_prefix: str) -> None:
     benchmark.extra_info[f"{metric_prefix}_stddev_ms"] = round(stddev_s * 1000, 3)
     if mean_s > 0:
         benchmark.extra_info[f"{metric_prefix}_cv_percent"] = round((stddev_s / mean_s) * 100, 3)
+
+
+def _attach_password_contract(benchmark, *, contract: str, algorithm: str) -> None:
+    """Label auth results so primitive and database-path regressions stay attributable."""
+    benchmark.extra_info["password_benchmark_contract"] = contract
+    benchmark.extra_info["password_hash_algorithm"] = algorithm
 
 
 @pytest.fixture(scope="module")
@@ -273,11 +280,12 @@ def test_multi_user_session_message_workload_scales_with_concurrency(
     assert total_messages == users * messages_per_session
 
 
+@pytest.mark.benchmark(group="password-application-path")
 def test_user_registration_password_hash_cpu_cost(
     benchmark,
     benchmark_multi_user_db: tuple[Database, asyncio.AbstractEventLoop],
 ) -> None:
-    """Parola hash maliyetini içeren kullanıcı kayıt akışını benchmark eder."""
+    """Benchmark the full registration path; keep the legacy name for baseline continuity."""
     db, loop = benchmark_multi_user_db
 
     def _run_once() -> str:
@@ -297,15 +305,21 @@ def test_user_registration_password_hash_cpu_cost(
         rounds=_PASSWORD_BENCHMARK_ROUNDS,
         iterations=1,
     )
+    _attach_password_contract(
+        benchmark,
+        contract="application_path",
+        algorithm=_current_password_hash_algorithm(),
+    )
     _attach_latency_percentiles(benchmark, "password_hash")
     assert isinstance(user_id, str) and bool(user_id.strip())
 
 
+@pytest.mark.benchmark(group="password-application-path")
 def test_user_authentication_password_verify_cpu_cost(
     benchmark,
     benchmark_multi_user_db: tuple[Database, asyncio.AbstractEventLoop],
 ) -> None:
-    """Parola doğrulama maliyetini ölçmek için login akışını benchmark eder."""
+    """Benchmark the full login path; keep the legacy name for baseline continuity."""
     db, loop = benchmark_multi_user_db
     username = f"bench-auth-{uuid4().hex}"
     password = "benchmark-password-123!"
@@ -329,5 +343,48 @@ def test_user_authentication_password_verify_cpu_cost(
         rounds=_PASSWORD_BENCHMARK_ROUNDS,
         iterations=1,
     )
+    _attach_password_contract(
+        benchmark,
+        contract="application_path",
+        algorithm=_current_password_hash_algorithm(),
+    )
     _attach_latency_percentiles(benchmark, "password_verify")
     assert authenticated_user_id == created.id
+
+
+@pytest.mark.benchmark(group="password-primitive")
+def test_password_hash_primitive_cpu_cost(benchmark) -> None:
+    """Measure only Sidar's configured password-hash primitive."""
+    password = "benchmark-password-123!"
+    fixed_salt = "ab" * 16
+
+    encoded = benchmark.pedantic(
+        _hash_password,
+        args=(password, fixed_salt),
+        warmup_rounds=_PASSWORD_BENCHMARK_WARMUP_ROUNDS,
+        rounds=_PASSWORD_BENCHMARK_ROUNDS,
+        iterations=1,
+    )
+    algorithm = encoded.split("$", maxsplit=1)[0]
+    _attach_password_contract(benchmark, contract="primitive", algorithm=algorithm)
+    _attach_latency_percentiles(benchmark, "password_hash_primitive")
+    assert _verify_password(password, encoded)
+
+
+@pytest.mark.benchmark(group="password-primitive")
+def test_password_verify_primitive_cpu_cost(benchmark) -> None:
+    """Measure only Sidar's configured password-verification primitive."""
+    password = "benchmark-password-123!"
+    encoded = _hash_password(password, "cd" * 16)
+
+    verified = benchmark.pedantic(
+        _verify_password,
+        args=(password, encoded),
+        warmup_rounds=_PASSWORD_BENCHMARK_WARMUP_ROUNDS,
+        rounds=_PASSWORD_BENCHMARK_ROUNDS,
+        iterations=1,
+    )
+    algorithm = encoded.split("$", maxsplit=1)[0]
+    _attach_password_contract(benchmark, contract="primitive", algorithm=algorithm)
+    _attach_latency_percentiles(benchmark, "password_verify_primitive")
+    assert verified is True

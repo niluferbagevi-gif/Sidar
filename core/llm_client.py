@@ -47,6 +47,7 @@ if TYPE_CHECKING:
     from core.llm.ollama import OllamaClient
 
 logger = logging.getLogger(__name__)
+_JITTER_RANDOM = random.SystemRandom()
 _COMPAT_IMPORTED_MODULES = (codecs, importlib)
 
 # Geriye dönük test/yardımcı erişimleri
@@ -378,7 +379,9 @@ async def _retry_with_backoff(
                 ) from exc
 
             jitter_cap = min(0.5, base_delay)
-            delay = min(max_delay, base_delay * (2**attempt)) + random.uniform(0, jitter_cap)  # nosec B311  # güvenlik değil jitter/backoff amaçlıdır.
+            delay = min(max_delay, base_delay * (2**attempt)) + _JITTER_RANDOM.uniform(
+                0, jitter_cap
+            )
             attempt += 1
             logger.warning(
                 "%s geçici hata (%s). %d/%d yeniden deneme %.2fs sonra yapılacak.",

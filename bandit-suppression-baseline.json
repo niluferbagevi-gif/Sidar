@@ -1,6 +1,6 @@
 {
-  "captured_at": "2026-08-20",
-  "maximum_skipped_tests": 49,
+  "captured_at": "2026-08-28",
+  "maximum_skipped_tests": 40,
   "policy": "Bandit metrics._totals.skipped_tests must exactly match this ratchet; every reduction updates the baseline in the same commit and increases are forbidden.",
   "require_exact_baseline": true,
   "debt_plan": {
@@ -12,8 +12,10 @@
     ],
     "rule": "Do not bulk-remove suppressions; preserve identifier validation and add focused tests before each removal."
   },
+  "completed_targets": [
+    {"due_date": "2027-01-31", "maximum_skipped_tests": 40, "achieved_at": "2026-08-28"}
+  ],
   "reduction_targets": [
-    {"due_date": "2027-01-31", "maximum_skipped_tests": 40},
     {"due_date": "2027-04-30", "maximum_skipped_tests": 20},
     {"due_date": "2027-07-31", "maximum_skipped_tests": 0}
   ]

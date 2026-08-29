@@ -6,7 +6,7 @@ import asyncio
 import json
 import os
 import shutil
-import subprocess  # nosec B404
+import subprocess
 from collections.abc import Iterable
 from typing import Any
 

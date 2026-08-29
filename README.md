@@ -1148,7 +1148,7 @@ bash run_tests.sh
 uv run --with mutmut mutmut run --max-children 8
 cd web_ui_react && npm run test:critical
 bash scripts/ci/flaky_scan.sh
-uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost or password_verify_cpu_cost" --benchmark-json=artifacts/auth-benchmark/benchmark.json
+uv run pytest -q tests/performance/test_benchmark.py -k "password_ and cpu_cost" --benchmark-json=artifacts/auth-benchmark/benchmark.json
 ```
 
 > Not: `bash run_tests.sh` ve çalıştırma izni verilmiş checkout'larda `./run_tests.sh`
@@ -1205,7 +1205,11 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > iş akışı aynı kritik test setini 5 tekrar (`pytest -n auto -q --maxfail=1`) koşturup
 > `artifacts/flaky/report.md` raporu üretir.
 > Kimlik doğrulama benchmark varyansı için `Nightly Auth Benchmark` iş akışı parola
-> hash/verify testlerini izole CPU pinleme ile çalıştırır; P95/P99 eşiklerini
+> benchmark'larını izole CPU pinleme ile çalıştırır. Sonuçlar iki ayrı kontrat olarak
+> raporlanır: `password-primitive` yalnız hash/verify CPU maliyetini,
+> `password-application-path` ise event loop + veritabanı + model dönüşümü dahil tam
+> register/authenticate yolunu ölçer. Her iki kontrat 5 warmup ve 30 ölçüm turu kullanır;
+> P95/P99 eşiklerini
 > (`AUTH_BENCH_P95_BUDGET_MS`, `AUTH_BENCH_P99_BUDGET_MS`) aşarsa alarm/fail üretir.
 > SQLite/PostgreSQL karşılaştırmalı workload trendi için release tetiklemeli
 > `Release DB Benchmark Trend` iş akışı benchmark JSON + `trend.md` artifact üretir.

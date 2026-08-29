@@ -41,6 +41,12 @@ project_name="${PRODUCTION_COMPOSE_PROJECT_NAME:-sidar-production-gate}"
 env_file="${PRODUCTION_COMPOSE_ENV_FILE:-.env.production.compose-gate}"
 web_port="${PRODUCTION_COMPOSE_WEB_PORT:-17860}"
 export SIDAR_RUNTIME_ENV_FILE="${SIDAR_RUNTIME_ENV_FILE:-$env_file}"
+# The base Compose file intentionally keeps the historical sidar_postgres_data
+# name for normal development. The production evidence gate must not attach to
+# that persistent database: doing so leaks state into migrations/readiness and
+# lets `down --volumes` delete developer data. Namespace the gate volume with
+# the same independently configurable project name as its containers.
+export SIDAR_POSTGRES_VOLUME_NAME="${SIDAR_POSTGRES_VOLUME_NAME:-${project_name}_postgres_data}"
 # docker-compose.yml's container_name fields interpolate ${COMPOSE_PROJECT_NAME:-sidar}
 # (see docker-compose.yml) so this isolated gate stack never collides with a
 # developer's already-running dev stack (both would otherwise be literally
@@ -72,6 +78,7 @@ if [[ "${PRODUCTION_COMPOSE_ENV_FILE:-}" == "" ]]; then
 SIDAR_ENV=production
 APP_RUNTIME_MODE=production
 SIDAR_RUNTIME_ENV_FILE=$env_file
+SIDAR_POSTGRES_VOLUME_NAME=$SIDAR_POSTGRES_VOLUME_NAME
 AI_PROVIDER=ollama
 CODING_MODEL=qwen2.5-coder:7b
 POSTGRES_DB=sidar

@@ -118,6 +118,11 @@ def test_production_dockerfile_pins_build_inputs_by_version_and_digest():
     dockerfile = _read("Dockerfile.production")
 
     assert f"ARG BASE_IMAGE={PRODUCTION_PYTHON_IMAGE}" in dockerfile
+    assert (
+        "ARG NODE_IMAGE=node:20.20.2-bookworm-slim@sha256:"
+        "2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0"
+        in dockerfile
+    )
     assert f"COPY --from={UV_IMAGE} /uv /uvx /bin/" in dockerfile
     assert "ghcr.io/astral-sh/uv:latest" not in dockerfile
 
@@ -136,6 +141,22 @@ def test_production_dockerfile_keeps_build_toolchain_out_of_runtime_stage():
     for build_only in ("build-essential", " git", "/uv /uvx", "python3-pip", "python3-venv"):
         assert build_only not in runtime_apt
     assert "ca-certificates curl ffmpeg" in runtime_apt
+
+
+def test_production_dockerfile_builds_readable_frontend_inside_image():
+    """The runtime SPA must not inherit host ownership or permission bits."""
+    dockerfile = _read("Dockerfile.production")
+    frontend, remainder = dockerfile.split("FROM ${BASE_IMAGE} AS builder", maxsplit=1)
+    runtime = remainder.split("FROM ${BASE_IMAGE} AS runtime", maxsplit=1)[1]
+
+    assert "FROM ${NODE_IMAGE} AS frontend-builder" in frontend
+    assert "COPY web_ui_react/package.json web_ui_react/package-lock.json ./" in frontend
+    assert "npm ci" in frontend
+    assert "npm run build" in frontend
+    assert "COPY --from=frontend-builder /frontend/dist /app/web_ui_react/dist" in runtime
+    assert "find /app/web_ui_react/dist -type d -exec chmod 755 {} +" in runtime
+    assert "find /app/web_ui_react/dist -type f -exec chmod 644 {} +" in runtime
+    assert runtime.index("COPY --from=frontend-builder") < runtime.index("USER sidaruser")
 
 
 def test_main_dockerfile_documents_current_cuda_13_example_consistently():
@@ -217,7 +238,7 @@ def test_compose_postgres_volume_uses_predictable_name():
     compose = _read("docker-compose.yml")
 
     assert "- postgres_data:/var/lib/postgresql/data" in compose
-    assert "  postgres_data:\n    name: sidar_postgres_data" in compose
+    assert "name: ${SIDAR_POSTGRES_VOLUME_NAME:-sidar_postgres_data}" in compose
 
 
 def test_compose_ollama_service_keeps_model_warm_for_gpu_benchmark_stability():
@@ -592,15 +613,8 @@ def test_dockerignore_exists_and_excludes_secrets_from_build_context():
     assert ".venv/" in dockerignore
 
 
-def test_dockerignore_preserves_react_spa_build_output():
-    """Regression: a blanket `dist/`/`build/` exclusion must not swallow `web_ui_react/dist`.
-
-    `web_server.py` serves the SPA from `web_ui_react/dist` (see
-    `web_dist_path()`), which `release-quality.yml` builds via
-    `npm run build` *before* `docker build`, not inside the Dockerfile. A
-    generic `dist/`/`build/` rule would therefore also match
-    `web_ui_react/dist` and silently ship an image with no frontend.
-    """
+def test_dockerignore_excludes_host_react_spa_build_output():
+    """Production frontend artifacts are built in-image, never copied from the host."""
     dockerignore = _read(".dockerignore")
     ignored_lines = {
         line.strip()
@@ -608,6 +622,7 @@ def test_dockerignore_preserves_react_spa_build_output():
         if line.strip() and not line.strip().startswith("#")
     }
 
+    assert "web_ui_react/dist/" in ignored_lines
     assert "dist/" not in ignored_lines
     assert "build/" not in ignored_lines
     assert "/dist/" not in ignored_lines

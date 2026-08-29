@@ -12,7 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
-import subprocess  # nosec B404
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any

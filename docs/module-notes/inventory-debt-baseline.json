@@ -1,6 +1,6 @@
 {
-  "captured_at": "2026-08-20",
-  "maximum_undocumented_production_modules": 177,
+  "captured_at": "2026-08-28",
+  "maximum_undocumented_production_modules": 174,
   "require_exact_baseline": true,
   "owner": "docs/module-notes maintainers",
   "note": "Ratchet ceiling for production Python modules (agent/, core/, managers/, plugins/, web/, launcher/, and the root entry-point scripts) that have no docs/module-notes/*.md entry in INDEX.md. Never raise this value to make a new, undocumented module pass CI; add its module note and lower the value instead. See scripts/ci/check_module_notes_inventory.py --update.",
