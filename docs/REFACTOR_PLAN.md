@@ -179,7 +179,7 @@ taşımaları küçük domain PR'ları için backlog'da tutulur.
   `collaboration_event` vb. açık `type` alanlı) aynı if/else zincirinde karışıyor.
   `{type: handler}` dispatch map'e geçiş mümkün ama `type` alanı olmayan legacy
   mesajlar için mutlaka bir fallback dalı korunmalı — naif bir map bunları
-  sessizce kaybeder. Test kapısı: `src/hooks/useWebSocket.test.js`.
+  sessizce kaybeder. Test kapısı: `src/hooks/useWebSocket.test.ts`.
 - **`src/hooks/useVoiceAssistant.js` (~648 satır):** mikrofon yakalama, VAD,
   websocket protokolü ve ses oynatma kuyruğu tek hook'ta. Hedef adım:
   `useMicCapture`/`useVAD`/`useVoiceSocket`/`useAudioPlaybackQueue` gibi
