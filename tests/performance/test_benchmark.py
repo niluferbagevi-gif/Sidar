@@ -280,6 +280,7 @@ def test_multi_user_session_message_workload_scales_with_concurrency(
     assert total_messages == users * messages_per_session
 
 
+@pytest.mark.password_benchmark
 @pytest.mark.benchmark(group="password-application-path")
 def test_user_registration_password_hash_cpu_cost(
     benchmark,
@@ -314,6 +315,7 @@ def test_user_registration_password_hash_cpu_cost(
     assert isinstance(user_id, str) and bool(user_id.strip())
 
 
+@pytest.mark.password_benchmark
 @pytest.mark.benchmark(group="password-application-path")
 def test_user_authentication_password_verify_cpu_cost(
     benchmark,
@@ -352,6 +354,7 @@ def test_user_authentication_password_verify_cpu_cost(
     assert authenticated_user_id == created.id
 
 
+@pytest.mark.password_benchmark
 @pytest.mark.benchmark(group="password-primitive")
 def test_password_hash_primitive_cpu_cost(benchmark) -> None:
     """Measure only Sidar's configured password-hash primitive."""
@@ -371,6 +374,7 @@ def test_password_hash_primitive_cpu_cost(benchmark) -> None:
     assert _verify_password(password, encoded)
 
 
+@pytest.mark.password_benchmark
 @pytest.mark.benchmark(group="password-primitive")
 def test_password_verify_primitive_cpu_cost(benchmark) -> None:
     """Measure only Sidar's configured password-verification primitive."""

@@ -762,6 +762,20 @@ def test_run_tests_uses_profile_aware_benchmark_compare_defaults() -> None:
     assert '-k "not test_multi_user_session_message_workload_scales_with_concurrency"' in script
     assert "I/O-bound DB concurrency benchmarkı ayrı pytest oturumunda" in script
     assert 'benchmark_io_cmd+=(--benchmark-compare-fail="${BENCHMARK_IO_COMPARE_FAIL}")' in script
+    assert (
+        'BENCHMARK_PASSWORD_COMPARE_FAIL="${BENCHMARK_PASSWORD_COMPARE_FAIL:-mean:30%}"' in script
+    )
+    assert (
+        'BENCHMARK_PASSWORD_JSON_OUTPUT="${BENCHMARK_PASSWORD_JSON_OUTPUT:-artifacts/benchmark/password-benchmark.json}"'
+        in script
+    )
+    assert '-m "not password_benchmark"' in script
+    assert '-m "password_benchmark"' in script
+    assert "Parola hash/verify (CPU-maliyetli) benchmarkı ayrı pytest oturumunda" in script
+    assert (
+        'benchmark_password_cmd+=(--benchmark-compare-fail="${BENCHMARK_PASSWORD_COMPARE_FAIL}")'
+        in script
+    )
     assert '--benchmark-warmup="${BENCHMARK_WARMUP}"' in script
     assert '--benchmark-warmup-iterations="${BENCHMARK_WARMUP_ITERATIONS}"' in script
     assert "benchmark_cmd+=(--benchmark-disable-gc)" in script
@@ -912,6 +926,9 @@ def test_password_benchmarks_use_noise_resistant_pedantic_rounds() -> None:
     assert benchmark_test.count("rounds=_PASSWORD_BENCHMARK_ROUNDS") == 4
     assert 'group="password-application-path"' in benchmark_test
     assert 'group="password-primitive"' in benchmark_test
+    assert (
+        benchmark_test.count("@pytest.mark.password_benchmark\n@pytest.mark.benchmark(group=") == 4
+    )
 
 
 def test_benchmark_docs_require_uv_and_review_before_promoting_latest_baseline() -> None:

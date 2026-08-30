@@ -180,6 +180,10 @@ metriği yerine yazılmamalıdır.
   ve yerel profilde varsayılan `BENCHMARK_ENFORCE_RESULT=1` ile hard-fail üretir; geçici rapor-only
   araştırma için `BENCHMARK_ENFORCE_RESULT=0` açıkça verilmelidir.
   Benchmark komutu GC'yi kapatır ve kalibrasyon warmup'ını etkinleştirir.
+  Parola hash/verify primitive'lerini ölçen `password-application-path`/`password-primitive`
+  grupları (`@pytest.mark.password_benchmark`) yüksek varyanslı oldukları için ayrı bir
+  pytest oturumunda çalışır ve `BENCHMARK_PASSWORD_COMPARE_FAIL` (varsayılan `mean:30%`)
+  ile değerlendirilir; raporu `artifacts/benchmark/password-benchmark.json`'da tutulur.
 - Yeni baseline üretmek için önerilen komut:
   - `uv run pytest tests/performance/ --benchmark-save=baseline`
 - GPU baseline rebase işlemini yalnız temiz çalışma ağacında, aynı WSL2/driver/Ollama profiliyle ve

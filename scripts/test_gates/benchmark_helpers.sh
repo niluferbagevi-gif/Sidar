@@ -80,6 +80,7 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
   benchmark_dotenv_file="${DOTENV_FILE:-.env.test}"
   mkdir -p "$(dirname "${BENCHMARK_JSON_OUTPUT}")"
   mkdir -p "$(dirname "${BENCHMARK_IO_JSON_OUTPUT}")"
+  mkdir -p "$(dirname "${BENCHMARK_PASSWORD_JSON_OUTPUT}")"
   mkdir -p "$(dirname "${BENCHMARK_GPU_JSON_OUTPUT}")"
   benchmark_cmd=(
     env "DOTENV_FILE=${benchmark_dotenv_file}" uv run python -m pytest -c pyproject.toml -v "${PERFORMANCE_TEST_DIR}" -n 0 --no-cov
@@ -88,6 +89,7 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
     --benchmark-warmup-iterations="${BENCHMARK_WARMUP_ITERATIONS}"
   )
   benchmark_io_cmd=()
+  benchmark_password_cmd=()
   benchmark_gpu_cmd=()
   if [ -f "${BENCHMARK_GPU_TEST_FILE}" ]; then
     # GPU benchmarklarını ayrı pytest process'inde çalıştırmak CPU/DB latency
@@ -113,6 +115,7 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
       benchmark_compare_target_found=1
       benchmark_cmd+=(
         -k "not test_multi_user_session_message_workload_scales_with_concurrency"
+        -m "not password_benchmark"
         --benchmark-compare="${BENCHMARK_COMPARE_SELECTOR}"
       )
       benchmark_io_cmd=(
@@ -126,6 +129,22 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
       )
       if [ "${BENCHMARK_DISABLE_GC}" = "1" ]; then
         benchmark_io_cmd+=(--benchmark-disable-gc)
+      fi
+      # Parola hash/verify primitive'leri kasıtlı olarak CPU-maliyetli olduğundan
+      # diğer CPU testlerinden daha yüksek varyansa sahip; genel CPU eşiğinin
+      # gürültüden false-positive regresyon üretmemesi için ayrı pytest oturumunda
+      # daha toleranslı BENCHMARK_PASSWORD_COMPARE_FAIL ile değerlendirilir.
+      benchmark_password_cmd=(
+        env "DOTENV_FILE=${benchmark_dotenv_file}" uv run python -m pytest -c pyproject.toml -v
+        "${PERFORMANCE_TEST_DIR}/test_benchmark.py" -n 0 --no-cov
+        -m "password_benchmark"
+        --benchmark-json="${BENCHMARK_PASSWORD_JSON_OUTPUT}"
+        --benchmark-compare="${BENCHMARK_COMPARE_SELECTOR}"
+        --benchmark-warmup="${BENCHMARK_WARMUP}"
+        --benchmark-warmup-iterations="${BENCHMARK_WARMUP_ITERATIONS}"
+      )
+      if [ "${BENCHMARK_DISABLE_GC}" = "1" ]; then
+        benchmark_password_cmd+=(--benchmark-disable-gc)
       fi
       benchmark_baseline_age_days_value="$(benchmark_baseline_age_days "${BENCHMARK_COMPARE_FILE}" 2>/dev/null || true)"
       if [ -n "${benchmark_baseline_age_days_value}" ] \
@@ -145,8 +164,10 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
           BENCHMARK_COMPARE_STATUS="compared_enforced"
           echo "📈 Benchmark karşılaştırma kapısı etkin (--benchmark-compare=${BENCHMARK_COMPARE_SELECTOR}; baseline=${BENCHMARK_COMPARE_FILE}; regresyon_eşiği=${BENCHMARK_COMPARE_FAIL})."
           echo "ℹ️ I/O-bağımlı DB concurrency benchmark eşiği: ${BENCHMARK_IO_COMPARE_FAIL}."
+          echo "ℹ️ Parola (CPU-maliyetli) benchmark eşiği: ${BENCHMARK_PASSWORD_COMPARE_FAIL}."
           benchmark_cmd+=(--benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}")
           benchmark_io_cmd+=(--benchmark-compare-fail="${BENCHMARK_IO_COMPARE_FAIL}")
+          benchmark_password_cmd+=(--benchmark-compare-fail="${BENCHMARK_PASSWORD_COMPARE_FAIL}")
         fi
       else
         BENCHMARK_COMPARE_STATUS="compared_report_only"
@@ -200,6 +221,16 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
         BENCHMARK_COMPARE_EXIT_CODE="${benchmark_io_exit_code}"
       fi
     fi
+    if [ "${BENCHMARK_EXIT_CODE}" -eq 0 ] && [ "${#benchmark_password_cmd[@]}" -gt 0 ]; then
+      echo "🔐 Parola hash/verify (CPU-maliyetli) benchmarkı ayrı pytest oturumunda çalıştırılıyor..."
+      echo "➡️ Çalıştırılan komut: ${benchmark_password_cmd[*]}"
+      run_checked "${benchmark_password_cmd[@]}"
+      benchmark_password_exit_code=$?
+      if [ "${benchmark_password_exit_code}" -ne 0 ]; then
+        BENCHMARK_EXIT_CODE="${benchmark_password_exit_code}"
+        BENCHMARK_COMPARE_EXIT_CODE="${benchmark_password_exit_code}"
+      fi
+    fi
 
     benchmark_gpu_exit_code=0
     if [ "${#benchmark_gpu_cmd[@]}" -gt 0 ]; then
@@ -237,6 +268,7 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
     echo "ℹ️ Yerel benchmark karşılaştırma hatası tek başına kod regresyonunu kanıtlamaz."
     echo "   Gürültü teşhisi (local eşik, yine fail-closed): BENCHMARK_COMPARE_FAIL=mean:15% make production-readiness"
     echo "   Rapor-only teşhis (release kanıtı değildir): BENCHMARK_ENFORCE_COMPARE=0 make production-readiness"
+    echo "   Yalnız parola (bcrypt/pbkdf2) hash/verify hatası ise: BENCHMARK_PASSWORD_COMPARE_FAIL=mean:40% make production-readiness"
     echo "   GPU/CPU yükünü durdurup aynı baseline ile tekrar ölçün; merge/release için GitHub Actions production-readiness sonucunu esas alın."
   fi
 
