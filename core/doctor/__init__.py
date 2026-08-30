@@ -1852,10 +1852,10 @@ def run_doctor_report(
     from core.doctor.checks.gpu import check_docker_test_image as docker_test_image_check
     from core.doctor.checks.gpu import check_gpu as gpu_check
     from core.doctor.checks.gpu import check_gpu_memory_config as gpu_memory_config_check
+    from core.doctor.checks.media import check_media_tools as media_tools_check
     from core.doctor.checks.rag import (
         check_graphrag_entity_memory_ready as graphrag_entity_memory_ready_check,
     )
-    from core.doctor.checks.media import check_media_tools as media_tools_check
     from core.doctor.checks.rag import check_rag_index_ready as rag_index_ready_check
     from core.doctor.checks.redis import check_redis as redis_check
     from core.doctor.checks.security import check_environment_profile as environment_profile_check

@@ -161,10 +161,11 @@ def test_validate_production_compose_isolates_postgres_volume() -> None:
     compose = Path("docker-compose.yml").read_text(encoding="utf-8")
 
     assert "name: ${SIDAR_POSTGRES_VOLUME_NAME:-sidar_postgres_data}" in compose
-    assert (
-        'export SIDAR_POSTGRES_VOLUME_NAME="${SIDAR_POSTGRES_VOLUME_NAME:-${project_name}_postgres_data}"'
-        in script
+    expected_volume_name_export = (
+        'export SIDAR_POSTGRES_VOLUME_NAME='
+        '"${SIDAR_POSTGRES_VOLUME_NAME:-${project_name}_postgres_data}"'
     )
+    assert expected_volume_name_export in script
     assert "SIDAR_POSTGRES_VOLUME_NAME=$SIDAR_POSTGRES_VOLUME_NAME" in script
     assert script.index('export SIDAR_POSTGRES_VOLUME_NAME=') < script.index(
         'compose=(docker compose --project-name "$project_name"'

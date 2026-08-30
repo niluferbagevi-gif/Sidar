@@ -270,7 +270,7 @@ def test_committed_inventory_roadmap_and_registry_note_are_ratchet_protected() -
     baseline = json.loads(checker.DEFAULT_BASELINE.read_text(encoding="utf-8"))
     index = checker.INDEX_PATH.read_text(encoding="utf-8")
 
-    assert baseline["maximum_undocumented_production_modules"] == 177
+    assert baseline["maximum_undocumented_production_modules"] == 174
     assert baseline["require_exact_baseline"] is True
     assert [
         target["maximum_undocumented_production_modules"]
