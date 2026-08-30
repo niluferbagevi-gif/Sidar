@@ -14,8 +14,8 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 > eklendiğinde CI daha düşük gerçek sayıyı görür ve baseline aynı PR'da
 > `--update` ile aşağı çekilmeden geçmez. `--update` borcu yükseltemez.
 
-- **Toplam kaynak dosya (tests dahil):** 366
-- **Tests dışı dosya sayısı (ayrı not üretilen):** 67
+- **Toplam kaynak dosya (tests dahil):** 367
+- **Tests dışı dosya sayısı (ayrı not üretilen):** 68
 - **Tests dosya sayısı (tek notta özetlenen, `tests/**/*.py`):** 299
 
 ## Not dosyaları
@@ -52,6 +52,7 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `config.py` → `docs/module-notes/config.py.md`
 - `core/__init__.py` → `docs/module-notes/core/__init__.py.md`
 - `core/db/` → `docs/module-notes/core/db.py.md`
+- `core/doctor/checks/media.py` → `docs/module-notes/core/doctor/checks/media.py.md`
 - `core/llm_client.py` → `docs/module-notes/core/llm_client.py.md`
 - `core/llm_metrics.py` → `docs/module-notes/core/llm_metrics.py.md`
 - `core/memory.py` → `docs/module-notes/core/memory.py.md`

@@ -42,9 +42,7 @@ def check_media_tools() -> DoctorCheck:
         )
 
     missing_optional = [
-        name
-        for name, path in (("yt-dlp", yt_dlp_path), ("whisper", whisper_path))
-        if path is None
+        name for name, path in (("yt-dlp", yt_dlp_path), ("whisper", whisper_path)) if path is None
     ]
     if missing_optional:
         return DoctorCheck(
