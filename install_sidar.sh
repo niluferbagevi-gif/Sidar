@@ -1447,6 +1447,13 @@ if [[ "${SIDAR_INSTALL_VERSION_PROBE_ONLY:-0}" != "1" ]]; then
     fi
 fi
 
+if ! verify_core_install_manifest; then
+    case "$?" in
+        2) info "Manifest doğrulaması bootstrap/repo senkronizasyonu sonrasına ertelendi." ;;
+        *) fail "Çekirdek kurulum manifest doğrulaması başarısız." ;;
+    esac
+fi
+
 # Eski/uzaktan indirilen yardımcı modüllerde fonksiyon henüz yoksa tek dosyalık
 # kurulum akışını korumak için güvenli fallback tanımla.
 if ! declare -F clear_stdin_buffer >/dev/null 2>&1; then
