@@ -436,7 +436,42 @@ def get_unmerged_files() -> list[str]:
     return [line.strip() for line in output.splitlines() if line.strip()]
 
 
-def assert_no_unmerged_files() -> None:
+def switch_back_to_original_branch(original_branch: str) -> None:
+    """Commit/push'a ulaşmayan erken çıkışlarda kullanıcıyı başladığı dala geri döndürür.
+
+    ``main()`` işleyişini her zaman 'main' üzerinde sürdürmek için otomatik olarak
+    'main'e (gerekirse stash ile) geçer. Bu geçişten sonra henüz hiçbir commit/push
+    gerçekleşmeden bir hata ("çakışmış dosya", kalite kapısı hatası, upload dalı
+    oluşturulamadı vb.) ya da "yüklenecek değişiklik yok" durumuyla çıkılırsa,
+    kullanıcı fark etmeden 'main'den türetilmiş bir dalda bırakılmamalıdır.
+
+    Commit SONRASI başarısız olan kalite kapıları için bu fonksiyon KASITLI
+    OLARAK çağrılmaz — bkz. ``describe_post_commit_gate_failure``: orada
+    kullanıcının çalışması (upload dalı + commit) bilerek korunur ve elle geri
+    dönüş talimatı verilir.
+    """
+    if not original_branch or original_branch == "main":
+        return
+
+    _, active_branch = run_command(["git", "branch", "--show-current"], show_output=False)
+    active_branch = active_branch.strip()
+    if not active_branch or active_branch == original_branch:
+        return
+
+    checkout_success, checkout_err = run_command(
+        ["git", "checkout", original_branch], show_output=False
+    )
+    if checkout_success:
+        print(f"{Colors.OKBLUE}ℹ️ '{original_branch}' dalına geri dönüldü.{Colors.ENDC}")
+    else:
+        print(
+            f"{Colors.WARNING}⚠️ '{original_branch}' dalına otomatik geri dönülemedi:\n"
+            f"{checkout_err}\nManuel olarak 'git checkout {original_branch}' "
+            f"çalıştırabilirsiniz.{Colors.ENDC}"
+        )
+
+
+def assert_no_unmerged_files(original_branch: str | None = None) -> None:
     """Unmerged dosya varsa commit/push akışını fail-closed durdurur."""
     unmerged_files = get_unmerged_files()
     if not unmerged_files:
@@ -450,6 +485,8 @@ def assert_no_unmerged_files() -> None:
         f"{Colors.WARNING}Çakışmaları çözüp `git add` ile işaretledikten sonra "
         f"aracı tekrar çalıştırın.{Colors.ENDC}"
     )
+    if original_branch:
+        switch_back_to_original_branch(original_branch)
     sys.exit(1)
 
 
@@ -1035,8 +1072,9 @@ def main() -> None:
 
     _, branch_out = run_command(["git", "branch", "--show-current"], show_output=False)
     current_branch = branch_out.strip() if branch_out else "main"
+    original_branch = current_branch
 
-    assert_no_unmerged_files()
+    assert_no_unmerged_files(original_branch)
 
     # Çalışma akışını her zaman main dalında sürdür.
     if current_branch != "main":
@@ -1218,12 +1256,13 @@ def main() -> None:
                 "aracı tekrar çalıştırın."
                 f"{Colors.ENDC}"
             )
+            switch_back_to_original_branch(original_branch)
             sys.exit(1)
 
     # ═══════════════════════════════════════════════════════════════
     # STANDART YÜKLEME İŞLEMİ
     # ═══════════════════════════════════════════════════════════════
-    assert_no_unmerged_files()
+    assert_no_unmerged_files(original_branch)
 
     # Kod/test sözleşmesi, upload dalı veya commit oluşturulmadan ÖNCE doğrulanır:
     # bozuk format/lint veya kırık bir unit test burada durur ve kullanıcı hiçbir
@@ -1236,6 +1275,7 @@ def main() -> None:
             f"oldu; hiçbir upload dalı veya commit oluşturulmadı:\n"
             f"{fast_gate_err}{Colors.ENDC}"
         )
+        switch_back_to_original_branch(original_branch)
         sys.exit(1)
 
     direct_main = direct_main_upload_allowed()
@@ -1249,6 +1289,7 @@ def main() -> None:
             current_branch = create_upload_branch()
         except RuntimeError as exc:
             print(f"{Colors.FAIL}❌ Güvenli upload dalı oluşturulamadı: {exc}{Colors.ENDC}")
+            switch_back_to_original_branch(original_branch)
             sys.exit(1)
         print(f"{Colors.OKGREEN}✅ PR-first upload dalı oluşturuldu: {current_branch}{Colors.ENDC}")
 
@@ -1281,6 +1322,7 @@ def main() -> None:
                     f"{Colors.FAIL}❌ Silinen dosyalar Git'e bildirilirken hata oluştu: "
                     f"{delete_err}{Colors.ENDC}"
                 )
+                switch_back_to_original_branch(original_branch)
                 sys.exit(1)
             print(
                 f"{Colors.OKGREEN}✅ Silinen dosyalar onaylandı ve Git'e bildirildi.{Colors.ENDC}"
@@ -1298,6 +1340,7 @@ def main() -> None:
         add_success, add_err = stage_files(safe_files)
         if not add_success:
             print(f"{Colors.FAIL}❌ Dosyalar eklenirken hata oluştu: {add_err}{Colors.ENDC}")
+            switch_back_to_original_branch(original_branch)
             sys.exit(1)
 
     if blocked_files:
@@ -1311,6 +1354,7 @@ def main() -> None:
             f"{Colors.FAIL}❌ Install manifestleri commit öncesi senkronize edilemedi: "
             f"{manifest_err}{Colors.ENDC}"
         )
+        switch_back_to_original_branch(original_branch)
         sys.exit(1)
 
     _, staged_status = run_command(["git", "diff", "--cached", "--name-status"], show_output=False)
@@ -1338,6 +1382,7 @@ def main() -> None:
 
         if not commit_success:
             print(f"{Colors.FAIL}❌ Dosyalar kaydedilirken hata oluştu: {commit_err}{Colors.ENDC}")
+            switch_back_to_original_branch(original_branch)
             sys.exit(1)
 
         pin_success, pin_err = stamp_install_manifest_pin_after_commit()
@@ -1362,6 +1407,7 @@ def main() -> None:
                 f"{Colors.WARNING}🤷 Yüklenecek yeni bir değişiklik bulunamadı. Projeniz zaten "
                 f"güncel!{Colors.ENDC}"
             )
+            switch_back_to_original_branch(original_branch)
             sys.exit(0)
         else:
             print(
