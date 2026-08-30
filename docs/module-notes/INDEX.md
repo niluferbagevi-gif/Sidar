@@ -8,14 +8,16 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 > altındaki hiçbir not dosyasının bu index'te referanssız (orphan) kalmadığını
 > doğrular, (3) dokümante edilmemiş production modül sayısının
 > `docs/module-notes/inventory-debt-baseline.json`'daki ratchet tavanını
-> aşmadığını kontrol eder. Sayılar aşağıda elle güncellenir; script bunları
-> `--verify-counts` ile de doğrulayabilir.
-> Baseline tarihli 150 → 100 → 50 → 0 azaltma hedefleri taşır; yeni bir note
-> eklendiğinde CI daha düşük gerçek sayıyı görür ve baseline aynı PR'da
-> `--update` ile aşağı çekilmeden geçmez. `--update` borcu yükseltemez.
+> aşmadığını kontrol eder. Sayılar aşağıda elle güncellenir; script'in kendisi
+> bunları otomatik doğrulamaz.
+> Baseline tarihli 100 → 50 → 0 azaltma hedefleri taşır (150 hedefi
+> 2026-08-30'da erken karşılandı ve listeden çıkarıldı — script kesin azalan
+> bir sıra zorunlu kılar); yeni bir note eklendiğinde CI daha düşük gerçek
+> sayıyı görür ve baseline aynı PR'da `--update` ile aşağı çekilmeden geçmez.
+> `--update` borcu yükseltemez.
 
-- **Toplam kaynak dosya (tests dahil):** 367
-- **Tests dışı dosya sayısı (ayrı not üretilen):** 68
+- **Toplam kaynak dosya (tests dahil):** 379
+- **Tests dışı dosya sayısı (ayrı not üretilen):** 80
 - **Tests dosya sayısı (tek notta özetlenen, `tests/**/*.py`):** 299
 
 ## Not dosyaları
@@ -34,25 +36,37 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `agent/auto_handle.py` → `docs/module-notes/agent/auto_handle.py.md`
 - `agent/base_agent.py` → `docs/module-notes/agent/base_agent.py.md`
 - `agent/core/__init__.py` → `docs/module-notes/agent/core/__init__.py.md`
+- `agent/autonomy/` → `docs/module-notes/agent/autonomy.md`
 - `agent/core/contracts.py` → `docs/module-notes/agent/core/contracts.py.md`
+- `agent/core/event_backends/` → `docs/module-notes/agent/core/event_backends.md`
 - `agent/core/event_stream.py` → `docs/module-notes/agent/core/event_stream.py.md`
 - `agent/core/memory_hub.py` → `docs/module-notes/agent/core/memory_hub.py.md`
 - `agent/core/registry.py` → `docs/module-notes/agent/core/registry.py.md`
 - `agent/core/supervisor.py` → `docs/module-notes/agent/core/supervisor.py.md`
 - `agent/definitions.py` → `docs/module-notes/agent/definitions.py.md`
+- `agent/federation/` → `docs/module-notes/agent/federation.md`
+- `agent/github/` → `docs/module-notes/agent/github.md`
+- `agent/maintenance/` → `docs/module-notes/agent/maintenance.md`
 - `agent/roles/__init__.py` → `docs/module-notes/agent/roles/__init__.py.md`
 - `agent/roles/coder_agent.py` → `docs/module-notes/agent/roles/coder_agent.py.md`
+- `agent/roles/coverage/` → `docs/module-notes/agent/roles/coverage.md`
+- `agent/roles/coverage_agent.py` → `docs/module-notes/agent/roles/coverage_agent.py.md`
 - `agent/roles/researcher_agent.py` → `docs/module-notes/agent/roles/researcher_agent.py.md`
 - `agent/roles/reviewer_agent.py` → `docs/module-notes/agent/roles/reviewer_agent.py.md`
 - `agent/registry.py` → `docs/module-notes/agent/registry.py.md`
+- `agent/self_heal/` → `docs/module-notes/agent/self_heal.md`
+- `agent/services/` → `docs/module-notes/agent/services.md`
 - `agent/sidar_agent.py` → `docs/module-notes/agent/sidar_agent.py.md`
 - `agent/tooling.py` → `docs/module-notes/agent/tooling.py.md`
 - `alembic.ini` → `docs/module-notes/alembic.ini.md`
 - `cli.py` → `docs/module-notes/cli.py.md`
 - `config.py` → `docs/module-notes/config.py.md`
 - `core/__init__.py` → `docs/module-notes/core/__init__.py.md`
+- `core/cache/` → `docs/module-notes/core/cache.md`
 - `core/db/` → `docs/module-notes/core/db.py.md`
+- `core/db_components/` → `docs/module-notes/core/db_components.md`
 - `core/doctor/checks/media.py` → `docs/module-notes/core/doctor/checks/media.py.md`
+- `core/llm/` → `docs/module-notes/core/llm.md`
 - `core/llm_client.py` → `docs/module-notes/core/llm_client.py.md`
 - `core/llm_metrics.py` → `docs/module-notes/core/llm_metrics.py.md`
 - `core/memory.py` → `docs/module-notes/core/memory.py.md`
