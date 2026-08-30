@@ -3,7 +3,20 @@ import rehypeSidarHighlight, {
   __rehypeSidarHighlightTestHooks,
 } from "./rehypeSidarHighlight.js";
 
-function buildCodeTree(language, value, classPrefix = "language") {
+// Minimal HAST-like shape covering exactly what these tests build/inspect.
+// `rehypeSidarHighlight()` itself only ever sees `unknown` (see its own
+// module), so this local type exists purely to give the test fixtures (and
+// the deliberately malformed ones below) a typed shape to construct and
+// read back through.
+type TestNode = {
+  type?: string;
+  tagName?: string;
+  value?: string;
+  properties?: { className?: unknown };
+  children?: Array<TestNode | string | null> | null;
+};
+
+function buildCodeTree(language: string, value: string, classPrefix = "language"): TestNode {
   const className = language ? [`${classPrefix}-${language}`] : [];
   return {
     type: "root",
@@ -25,8 +38,9 @@ function buildCodeTree(language, value, classPrefix = "language") {
   };
 }
 
-function codeNode(tree) {
-  return tree.children[0].children[0];
+function codeNode(tree: TestNode): TestNode {
+  const pre = (tree.children as TestNode[])[0];
+  return (pre.children as TestNode[])[0];
 }
 
 describe("rehypeSidarHighlight", () => {
@@ -36,8 +50,8 @@ describe("rehypeSidarHighlight", () => {
     rehypeSidarHighlight()(tree);
 
     const code = codeNode(tree);
-    expect(code.properties.className).toContain("hljs");
-    expect(code.children.some((child) => child.type === "element")).toBe(true);
+    expect(code.properties?.className).toContain("hljs");
+    expect((code.children as TestNode[]).some((child) => child.type === "element")).toBe(true);
   });
 
   it("highlights aliased lang-prefixed code blocks", () => {
@@ -46,8 +60,8 @@ describe("rehypeSidarHighlight", () => {
     rehypeSidarHighlight()(tree);
 
     const code = codeNode(tree);
-    expect(code.properties.className).toEqual(["lang-py", "hljs"]);
-    expect(code.children.some((child) => child.type === "element")).toBe(true);
+    expect(code.properties?.className).toEqual(["lang-py", "hljs"]);
+    expect((code.children as TestNode[]).some((child) => child.type === "element")).toBe(true);
   });
 
   it("highlights language-prefixed javascript aliases", () => {
@@ -56,8 +70,8 @@ describe("rehypeSidarHighlight", () => {
     rehypeSidarHighlight()(tree);
 
     const code = codeNode(tree);
-    expect(code.properties.className).toEqual(["language-js", "hljs"]);
-    expect(code.children.some((child) => child.type === "element")).toBe(true);
+    expect(code.properties?.className).toEqual(["language-js", "hljs"]);
+    expect((code.children as TestNode[]).some((child) => child.type === "element")).toBe(true);
   });
 
   it("leaves unsupported languages untouched", () => {
@@ -66,7 +80,7 @@ describe("rehypeSidarHighlight", () => {
     rehypeSidarHighlight()(tree);
 
     const code = codeNode(tree);
-    expect(code.properties.className).toEqual(["language-ruby"]);
+    expect(code.properties?.className).toEqual(["language-ruby"]);
     expect(code.children).toEqual([{ type: "text", value: "puts 'sidar'" }]);
   });
 
@@ -76,7 +90,7 @@ describe("rehypeSidarHighlight", () => {
     rehypeSidarHighlight()(tree);
 
     const code = codeNode(tree);
-    expect(code.properties.className).toEqual([]);
+    expect(code.properties?.className).toEqual([]);
     expect(code.children).toEqual([{ type: "text", value: "plain sidar" }]);
   });
 
@@ -90,8 +104,8 @@ describe("rehypeSidarHighlight", () => {
     rehypeSidarHighlight()(tree);
 
     const code = codeNode(tree);
-    expect(code.properties.className).toContain("hljs");
-    expect(code.children.some((child) => child.type === "element")).toBe(true);
+    expect(code.properties?.className).toContain("hljs");
+    expect((code.children as TestNode[]).some((child) => child.type === "element")).toBe(true);
   });
 
   it("treats missing and null text children as empty strings", () => {
@@ -101,7 +115,7 @@ describe("rehypeSidarHighlight", () => {
     rehypeSidarHighlight()(tree);
 
     const code = codeNode(tree);
-    expect(code.properties.className).toContain("hljs");
+    expect(code.properties?.className).toContain("hljs");
     expect(code.children).toEqual([]);
   });
 
@@ -112,40 +126,41 @@ describe("rehypeSidarHighlight", () => {
     rehypeSidarHighlight()(tree);
 
     const code = codeNode(tree);
-    expect(code.properties.className).toContain("hljs");
+    expect(code.properties?.className).toContain("hljs");
     expect(code.children).toEqual([]);
   });
 
   it("ignores code nodes with malformed className properties", () => {
     const tree = buildCodeTree("python", "print('sidar')");
     const code = codeNode(tree);
-    code.properties.className = "language-python";
+    code.properties = { className: "language-python" };
 
     rehypeSidarHighlight()(tree);
 
-    expect(code.properties.className).toBe("language-python");
+    expect(code.properties?.className).toBe("language-python");
     expect(code.children).toEqual([{ type: "text", value: "print('sidar')" }]);
   });
 
   it("ignores class names without a language marker", () => {
     const tree = buildCodeTree("python", "print('sidar')");
     const code = codeNode(tree);
-    code.properties.className = ["chat-code"];
+    code.properties = { className: ["chat-code"] };
 
     rehypeSidarHighlight()(tree);
 
-    expect(code.properties.className).toEqual(["chat-code"]);
+    expect(code.properties?.className).toEqual(["chat-code"]);
     expect(code.children).toEqual([{ type: "text", value: "print('sidar')" }]);
   });
 
   it("ignores malformed or non-code AST branches", () => {
-    const tree = {
+    const tree: TestNode = {
       type: "root",
       children: [null, "sidar", { type: "element", tagName: "code", children: null }],
     };
 
     expect(() => rehypeSidarHighlight()(tree)).not.toThrow();
-    expect(tree.children[2].children).toBeNull();
+    const malformedCodeNode = (tree.children as TestNode[])[2];
+    expect(malformedCodeNode.children).toBeNull();
   });
 
   it("accepts undefined trees as a no-op transform", () => {
@@ -209,8 +224,8 @@ describe("rehypeSidarHighlight", () => {
 
     rehypeSidarHighlight()(tree);
 
-    const flattenedText = codeNode(tree)
-      .children.flatMap((child) => child.children || [child])
+    const flattenedText = (codeNode(tree).children as TestNode[])
+      .flatMap((child) => (child.children as TestNode[]) || [child])
       .filter((child) => child.type === "text")
       .map((child) => child.value)
       .join("");
@@ -253,6 +268,11 @@ describe("rehypeSidarHighlight", () => {
   });
 
   it("allows the module to be imported again without alias registration errors", async () => {
+    // Vite's `?query` re-import trick forces a second module instance; the
+    // resulting specifier isn't a real module path, so tsc can't resolve it
+    // statically -- narrow, justified suppression, not a blanket any/unknown
+    // escape hatch.
+    // @ts-expect-error -- Vite-only `?duplicate-alias-test` query specifier
     await expect(import("./rehypeSidarHighlight.js?duplicate-alias-test")).resolves.toBeTruthy();
   });
 
@@ -262,5 +282,4 @@ describe("rehypeSidarHighlight", () => {
       { type: "text", value: "&&" },
     ]);
   });
-
 });

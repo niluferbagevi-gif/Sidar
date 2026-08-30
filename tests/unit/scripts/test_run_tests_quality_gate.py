@@ -6795,8 +6795,7 @@ def test_final_summary_prints_production_compose_gate_fields() -> None:
         in final_evaluation
     )
     assert (
-        "Başarısız Servis: ${PRODUCTION_COMPOSE_FAILED_SERVICE:-belirlenemedi}"
-        in final_evaluation
+        "Başarısız Servis: ${PRODUCTION_COMPOSE_FAILED_SERVICE:-belirlenemedi}" in final_evaluation
     )
     assert "Hata: ${PRODUCTION_COMPOSE_ERROR_SUMMARY" in final_evaluation
 

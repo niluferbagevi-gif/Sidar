@@ -1,0 +1,88 @@
+name: Installer manifest guard
+
+# Defense-in-depth for the release-critical installer manifests.
+#
+# ci.yml's `installer-smoke` job runs the same drift checks, but its
+# `pull_request`/`push` triggers are scoped to `branches: [main, master]`.
+# On a stacked-branch workflow (e.g. a feature branch merging into an
+# intermediate integration branch, which later merges into main) that scope
+# means installer-smoke never runs until the *final* PR targets main —
+# manifest drift introduced earlier can sit unnoticed through several
+# intermediate merges before that gate ever sees it.
+#
+# This workflow closes that gap: it triggers on every push/pull_request
+# regardless of source or base branch, filtered to only the paths that can
+# actually cause installer manifest drift, so it stays cheap while still
+# catching the drift at the commit that introduced it.
+on:
+  push:
+    paths: &installer-manifest-paths
+      - "install_sidar.sh"
+      - ".sidar_manifest.txt"
+      - "core/memory.py"
+      - "core/multimodal.py"
+      - "scripts/install_modules/**"
+      - "scripts/sync_install_manifest.sh"
+      - "scripts/sync_install_module_hashes.sh"
+      - "scripts/tools/update_core_install_manifest.py"
+      - "scripts/tools/update_install_module_hash_manifest.py"
+      - ".github/workflows/installer-manifest-guard.yml"
+  pull_request:
+    paths: *installer-manifest-paths
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installer-manifest-guard-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  installer-manifest-guard:
+    name: Installer manifest drift guard (any branch)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # --check-pin needs the full history to `git show` the commit
+          # pinned in SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT; a shallow
+          # (depth=1) clone doesn't have it.
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11.15'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.12.0"
+          enable-cache: true
+          cache-dependency-glob: '**/uv.lock'
+
+      - name: Install test dependencies
+        run: uv sync --frozen --extra dev
+
+      - name: Installer manifest drift gate
+        run: make check-install-manifests
+
+      - name: Installer ShellCheck gate
+        run: make installer-shellcheck
+
+      - name: Embedded manifest sync test
+        run: >-
+          uv run pytest -q --no-cov
+          tests/smoke/test_install_verification.py::test_install_sidar_embedded_manifests_in_sync
+
+      - name: Verify installer manifests directly
+        run: |
+          sha256sum -c .sidar_manifest.txt
+          uv run python scripts/tools/update_core_install_manifest.py --check
+          uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh --check
+          uv run python scripts/tools/update_install_module_hash_manifest.py --target install_sidar.sh --check-pin
+
+      - name: Installer syntax check
+        run: bash -n install_sidar.sh

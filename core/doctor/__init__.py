@@ -1852,6 +1852,7 @@ def run_doctor_report(
     from core.doctor.checks.gpu import check_docker_test_image as docker_test_image_check
     from core.doctor.checks.gpu import check_gpu as gpu_check
     from core.doctor.checks.gpu import check_gpu_memory_config as gpu_memory_config_check
+    from core.doctor.checks.media import check_media_tools as media_tools_check
     from core.doctor.checks.rag import (
         check_graphrag_entity_memory_ready as graphrag_entity_memory_ready_check,
     )
@@ -1884,6 +1885,7 @@ def run_doctor_report(
             check_websocket_routes(),
             redis_check(),
             gpu_check(),
+            media_tools_check(),
             check_model(smoke=include_model_smoke),
         ]
     )

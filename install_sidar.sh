@@ -195,7 +195,7 @@ load_remote_script_checksums() {
 load_remote_script_checksums
 
 SIDAR_INSTALLER_EMBEDDED_SOURCE_REF="main"
-SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="f2e2b5a051c2072173724bb2b1db33aff31727ab"
+SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="bcca6ad3edbe48545280cef3b144ce6578c4d3a9"
 
 sidar_truthy_early_bool() {
     local raw="${1:-}"
@@ -264,7 +264,7 @@ verify_core_install_manifest() {
 
     cat <<'SIDAR_INSTALL_MANIFEST_EOF' > "$manifest_path"
 32bb465e8344f235b5d50b76498466415dda43b03d7e40fa7014aa3d38847e63  core/memory.py
-8da261301210fbeba7d5d55cff37200342d1661cf6aaa52b43c79295ce56ee46  core/multimodal.py
+98c6dc8e5901ced9cb527c9c620e554e706a6481b84f86ba97f7992152f06780  core/multimodal.py
 SIDAR_INSTALL_MANIFEST_EOF
 
     if (cd "$SCRIPT_DIR" && sha256sum -c "$manifest_path" --status); then
@@ -635,7 +635,7 @@ d5fc907be5f085db23189cc349c01072f34d36fd6313db6ca745edea3e10071b  scripts/instal
 459677e00e767f1fc73886f51790472da29d56e75f7917f0a89618525a69cc53  scripts/install_modules/phases/04_workspace.sh
 6beadb2761652016b9d7c4de0d35b53b11837ceb16164c9b31ecd84e5f67f816  scripts/install_modules/phases/05_frontend.sh
 6d2c3b95654f7309c55341098c426f794b12fa9ca7e62b8cb46ec2fb886ab33c  scripts/install_modules/phases/06_services.sh
-0a24d1497a2a13a5c302803e1bdca828ee3d8eb990f098711677e3cf484df92b  scripts/install_modules/phases/07_finish.sh
+ded3b2dc45c36ab426cbb836a409f82492752498cde19812ec7785bb5eda73c6  scripts/install_modules/phases/07_finish.sh
 639a6d9779a046280344001a8b34dbdd05d59dae4ecf646e745a2a8ea2665242  scripts/install_modules/phases/08_env.sh
 3b70d62dd0cd89c0c6eb5d0093ce5ed84e44bcd794ce0e9533b6523654ff1724  scripts/install_modules/phases/09_ollama_models.sh
 3782f8c8eb4eaf5ab062ce8e5819300ab4102d93fd6673e63b6c26e705bbe111  scripts/install_modules/phases/10_validation.sh

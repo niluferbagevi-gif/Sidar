@@ -20,7 +20,12 @@ testleri taşınan kodla birlikte çalışmaya devam etmelidir.
 - **Yan etki izolasyonu:** DB, shell, Docker, LLM, WebSocket ve dosya sistemi çağrıları domain servislerine
   ayrılırken fake/mock fixture'ları korunur.
 
-## Güncel bakım hotspot snapshot'ı (2026-07-31)
+## Güncel bakım hotspot snapshot'ı (2026-08-30)
+
+Bir arkadaş kod incelemesi bu snapshot'ın hâlâ büyük/riskli işaretlediği
+dosyaları doğru tespit etti; satır sayıları bu turda `wc -l` ile yeniden
+ölçüldü (`run_tests.sh` hariç — o satırın metni ayrı bir testte pinlenmiş,
+bkz. `tests/unit/test_refactor_plan.py`).
 
 Aşağıdaki ölçüm işlevsel hata anlamına gelmez; yeni katkıda bulunanların
 gezinme/review maliyetini azaltmak için refactor backlog'unu görünür tutar.
@@ -31,14 +36,14 @@ test kapısı ve legacy import uyumluluğu ile birlikte ilerlemelidir.
 
 | Dosya | Yaklaşık satır | Not |
 |---|---:|---|
-| `web_server.py` | 2630 | Auth/JWT ile webhook HMAC/replay guard `web/security.py`, access-policy eşleme/serileştirme `web/middleware/access_policy.py`, rate-limit `web/middleware/ratelimit.py`, plugin policy `web/plugins/sandbox.py`, request modelleri `web/routes/request_models.py`, ortak prompt/swarm serileştirme `web/routes/serialization.py` ve route domainleri `web/routes/` altında ayrıldı; plugin sandbox policy üretimde fail-closed kalır, ana dosyada legacy monkeypatch/import wrapper azaltımı sürmeli. |
+| `web_server.py` | 2628 | Auth/JWT ile webhook HMAC/replay guard `web/security.py`, access-policy eşleme/serileştirme `web/middleware/access_policy.py`, rate-limit `web/middleware/ratelimit.py`, plugin policy `web/plugins/sandbox.py`, request modelleri `web/routes/request_models.py`, ortak prompt/swarm serileştirme `web/routes/serialization.py` ve route domainleri `web/routes/` altında ayrıldı; plugin sandbox policy üretimde fail-closed kalır, ana dosyada legacy monkeypatch/import wrapper azaltımı sürmeli. |
 | `run_tests.sh` | 678 | Benchmark, coverage, frontend, service, summary, backend ve BATS uygulamaları `scripts/test_gates/*_helpers.sh` modüllerine çıkarıldı; kök betik stage seçimi, sıralama ve aggregate exit-code facade'ı olarak kaldı. Kalan inline frontend çağrı sıralaması düşük riskli P2 dilimidir. |
-| `core/db/monolith.py` | 1340 | Eski `core/db.py` artık `core/db/` paketi; auth/audit/session/user/prompt/metrics/diagnostics/records/dialect/helpers modülleri ayrıldı ve `core/db/__init__.py` geriye dönük uyumlu facade oldu. Kota/budget yazma gövdesi dahil provider usage akışları `metrics.py`, mesaj CRUD `sessions.py` içindedir; schema bootstrap ile access-policy API yüzeyi hâlâ `monolith.py` içinde yoğunlaşıyor. |
-| `config.py` | 1754 | Dotenv, logging, secret hardening, runtime path inference, rate-limit/Redis, event bus/Kafka, RAG store ve Docker sandbox loaderları ayrıldı; facade hâlâ çok sayıda class attribute compatibility yüzeyi taşıyor. |
-| `install_sidar.sh` | 1849 | CLI argüman parsing `scripts/install_modules/install_cli.sh`, faz dispatcher `scripts/install_modules/install_dispatcher.sh` içine ayrıldı; ana script bootstrap facade olarak daha da inceltilmeli. Son dönemde installer supply-chain sertleştirmesi (SHA-pinli commit, embedded hash manifesti, fail-closed doğrulama) satır sayısını artırdı; bu güvenlik yüzeyi taşınırken davranış korunmalı. |
-| `agent/sidar_agent.py` | 1162 | Self-heal planlama ve execute/rollback, autonomy ve federation helperları ayrıldı; facade küçültme tool/subtask sınırıyla sürmeli. |
-| `core/rag/__init__.py` | 1581 | Query, metadata, entity graph/extraction, projection ve backend helperları ayrıldı; `DocumentStore` compatibility sınıfının kalan orchestration gövdesi hâlâ bu dosyada. |
-| `main.py` | 1241 | Launcher CLI parsing, wizard, process supervision ve session telemetry hâlâ tek facade'da; Doctor preflight orkestrasyonu `core/doctor/launcher_preflight.py` içine ayrıldı. |
+| `core/db/monolith.py` | 1387 | Eski `core/db.py` artık `core/db/` paketi; auth/audit/session/user/prompt/metrics/diagnostics/records/dialect/helpers modülleri ayrıldı ve `core/db/__init__.py` geriye dönük uyumlu facade oldu. Kota/budget yazma gövdesi dahil provider usage akışları `metrics.py`, mesaj CRUD `sessions.py` içindedir; schema bootstrap ile access-policy API yüzeyi hâlâ `monolith.py` içinde yoğunlaşıyor. |
+| `config.py` | 1804 | Dotenv, logging, secret hardening, runtime path inference, rate-limit/Redis, event bus/Kafka, RAG store ve Docker sandbox loaderları ayrıldı; facade hâlâ çok sayıda class attribute compatibility yüzeyi taşıyor. |
+| `install_sidar.sh` | 1881 | CLI argüman parsing `scripts/install_modules/install_cli.sh`, faz dispatcher `scripts/install_modules/install_dispatcher.sh` içine ayrıldı; ana script bootstrap facade olarak daha da inceltilmeli. Son dönemde installer supply-chain sertleştirmesi (SHA-pinli commit, embedded hash manifesti, fail-closed doğrulama) satır sayısını artırdı; bu güvenlik yüzeyi taşınırken davranış korunmalı. |
+| `agent/sidar_agent.py` | 1138 | Self-heal planlama ve execute/rollback, autonomy ve federation helperları ayrıldı; facade küçültme tool/subtask sınırıyla sürmeli. |
+| `core/rag/__init__.py` | 1636 | Query, metadata, entity graph/extraction, projection ve backend helperları ayrıldı; `DocumentStore` compatibility sınıfının kalan orchestration gövdesi hâlâ bu dosyada. |
+| `main.py` | 1231 | Launcher CLI parsing, wizard, process supervision ve session telemetry hâlâ tek facade'da; Doctor preflight orkestrasyonu `core/doctor/launcher_preflight.py` içine ayrıldı. |
 | `managers/code_manager.py` | 1377 | Docker SDK lifecycle ve shell sandbox adapterları ayrıldı; facade wrapper azaltımı güvenli şekilde sürdürülebilir. |
 
 ## P0 güvenlik backlog'u
@@ -65,8 +70,12 @@ test kapısı ve legacy import uyumluluğu ile birlikte ilerlemelidir.
   `SIDAR_PLUGIN_SANDBOX_BACKEND=in_process` ve `SIDAR_ENABLE_IN_PROCESS_PLUGINS=1`
   birlikte verilirse, production dışında açılır.
 - **Sahip:** Backend/Güvenlik bakım ekibi.
-- **Hedef değerlendirme:** 2026-08-15.
-- **Hedef kapanış:** 2026-09-30.
+- **Hedef değerlendirme:** ~~2026-08-15~~ — bu tarih geçti; gecikmeli değerlendirme
+  bir arkadaş kod incelemesinin isteği üzerine 2026-08-30'da yapıldı (bkz. aşağıdaki
+  kabul kriterleri güncellemesi). Sonraki checkpoint: **2026-09-15** (hedef kapanıştan
+  2 hafta önce, gerçek Docker/CI ortamında tam matris + üretim ortam değişkeni denetimi).
+- **Hedef kapanış:** 2026-09-30 — yalnızca 1 ay kaldı; `web_server.py` gibi genel
+  refactor maddelerinin önüne geçen tek P0 madde budur, öncelik takibi sürmeli.
 - **Mevcut risk:** AST doğrulaması ve kısıtlı builtins savunma-derinliğidir; işletim sistemi
   seviyesinde güvenlik sınırı değildir. Yalnız iki açık legacy opt-in'i kullanan
   geliştirme/test plugin kodu host process'in bellek, kimlik ve yaşam döngüsü sınırını paylaşır.
@@ -101,6 +110,12 @@ test kapısı ve legacy import uyumluluğu ile birlikte ilerlemelidir.
   bir breaking-change sürümünde değerlendirilecektir.
 - **Kabul kriterleri:**
   1. Production plugin yükleme/çalıştırma yolunda host process içinde `compile`/`exec` çağrısı yoktur.
+     ✅ Kod incelemesiyle doğrulandı (2026-08-30): `web/plugins/sandbox.py::execute_validated_plugin_source`
+     (asıl `compile`/`exec` çağrısı) yalnızca açıkça legacy `run_plugin_source_in_process` yolundan
+     çağrılır; bu yol `assert_in_process_plugin_execution_allowed()` ile korunur ve
+     `in_process_plugin_execution_allowed()` `SIDAR_ENV in {"prod","production"}` olduğunda ortam
+     değişkeninden bağımsız olarak koşulsuz `False` döner (env override edilemez). Birim testi:
+     `test_in_process_backend_executes_only_outside_production`.
   2. Ağ, dosya sistemi, environment/secret, subprocess ve host process erişim kaçış testleri
      container sınırında reddedilir. ✅ `test_plugin_sandbox_container_escape.py` ile gerçek
      container'a karşı doğrulandı (2026-08-09).
@@ -108,10 +123,27 @@ test kapısı ve legacy import uyumluluğu ile birlikte ilerlemelidir.
      sonlandırılır ve hassas veri loglanmaz. ✅ Timeout/OOM/redaksiyon gerçek container'a karşı
      ayrıca doğrulandı (worker crash/malformed RPC unit contract testlerinde mock ile kalır).
   4. Agent çağrı/yetenek/hata şeması sürümlüdür; uyumsuz plugin host'a import edilmeden reddedilir.
+     ✅ Kod incelemesiyle doğrulandı (2026-08-30): her RPC yanıtı `PLUGIN_RPC_VERSION` ile
+     doğrulanır, uyuşmazlıkta `PluginSandboxError` fırlatılır
+     (`test_docker_backend_request_rejects_rpc_version_mismatch`); `build_isolated_plugin_proxy`
+     gerçek plugin sınıfını host'a hiç import etmeden, yalnızca container'ın `describe` yanıtından
+     dönen metadata ile dinamik bir `BaseAgent` proxy'si üretir.
   5. Docker bulunmayan production ortamında yerel subprocess veya process-içi fallback oluşmaz.
+     ✅ Kod incelemesiyle doğrulandı (2026-08-30): `shutil.which("docker")` bulunamazsa
+     `DockerPluginSandboxBackend` doğrudan `PluginSandboxError` fırlatır, hiçbir subprocess/in-process
+     fallback denemez (`test_docker_backend_fails_closed_without_docker`); `resolve_backend()` her
+     ortamı varsayılan olarak `docker`'a yönlendirir ve yalnızca `{"docker","in_process"}` kabul eder.
   6. Unit sandbox contract testlerine ek olarak container integration ve marketplace smoke testleri
      release kapısında geçer. ✅ `test_isolated_plugin_proxy_executes_successfully_against_the_real_image`
      marketplace proxy akışını gerçek imaja karşı çalıştırır.
+
+  **Not (2026-08-30 gecikmeli değerlendirme):** Altı kriterin altısı da artık kanıtlı — üçü
+  (2, 3, 6) gerçek Docker container'ına karşı, üçü (1, 4, 5) bu turda kod incelemesi + mevcut
+  mock/unit test kanıtıyla (bu oturumda gerçek Docker daemon'ı mevcut değildi, bu nedenle 1/4/5
+  için container-seviyesi yeniden doğrulama yapılmadı). Bu, maddenin kapatılmaya hazır olduğu
+  anlamına gelmez — 2026-09-15 checkpoint'inde gerçek CI/Docker ortamında tam matrisin yeniden
+  koşulup **Bloklayıcı kural**'ın hâlâ ihlal edilmediğinin (yeni plugin özelliği eklenmediğinin)
+  doğrulanması gerekir; sahip ekip bu değerlendirmeyi resmi olarak kapatmalıdır.
 - **Bloklayıcı kural:** Yeni plugin özelliği process-içi backend yüzeyini genişletemez. Bu madde
   kapanana kadar yalnız izolasyon geçişi, fail-closed sertleştirmesi ve test değişiklikleri kabul edilir.
 
@@ -179,7 +211,7 @@ taşımaları küçük domain PR'ları için backlog'da tutulur.
   `collaboration_event` vb. açık `type` alanlı) aynı if/else zincirinde karışıyor.
   `{type: handler}` dispatch map'e geçiş mümkün ama `type` alanı olmayan legacy
   mesajlar için mutlaka bir fallback dalı korunmalı — naif bir map bunları
-  sessizce kaybeder. Test kapısı: `src/hooks/useWebSocket.test.js`.
+  sessizce kaybeder. Test kapısı: `src/hooks/useWebSocket.test.ts`.
 - **`src/hooks/useVoiceAssistant.js` (~648 satır):** mikrofon yakalama, VAD,
   websocket protokolü ve ses oynatma kuyruğu tek hook'ta. Hedef adım:
   `useMicCapture`/`useVAD`/`useVoiceSocket`/`useAudioPlaybackQueue` gibi

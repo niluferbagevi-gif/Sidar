@@ -270,12 +270,12 @@ def test_committed_inventory_roadmap_and_registry_note_are_ratchet_protected() -
     baseline = json.loads(checker.DEFAULT_BASELINE.read_text(encoding="utf-8"))
     index = checker.INDEX_PATH.read_text(encoding="utf-8")
 
-    assert baseline["maximum_undocumented_production_modules"] == 177
+    assert baseline["maximum_undocumented_production_modules"] == 133
     assert baseline["require_exact_baseline"] is True
     assert [
         target["maximum_undocumented_production_modules"]
         for target in baseline["reduction_targets"]
-    ] == [150, 100, 50, 0]
+    ] == [100, 50, 0]
     assert "`agent/registry.py` → `docs/module-notes/agent/registry.py.md`" in index
     assert (checker.ROOT / "docs/module-notes/agent/registry.py.md").is_file()
 

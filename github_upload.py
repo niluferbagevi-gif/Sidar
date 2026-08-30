@@ -103,12 +103,24 @@ def run_command(
     show_output: bool = True,
     extra_env: dict[str, str] | None = None,
 ) -> tuple[bool, str]:
-    """Komutu shell=False ile güvenli ve sınırlı environment ile çalıştırır."""
+    """Komutu shell=False ile güvenli ve sınırlı environment ile çalıştırır.
+
+    Bu betiğin her çağrı noktası (```git switch```, ```git tag```, vb.) argüman
+    listesini kendi içinde, sabit dize parçaları ve dahili olarak üretilmiş
+    değerlerle (zaman damgalı branch/tag adları gibi) kurar. Tek istisna
+    kullanıcıdan `input()` ile alınan `repo_url`'dir; bu değer `run_command`'a
+    ulaşmadan önce `_is_valid_repo_url` ile regex doğrulamasından geçirilir
+    (bkz. çağrı noktası). `args` yine de genel bir `Sequence[str]` parametresi
+    olduğu için Bandit içerik akışını statik olarak kanıtlayamaz; B603 bu
+    yüzden gerçek ve kalıcı bir bulgu -- güvenlik `shell=False` + üstteki
+    çağıran-taraflı doğrulama disipliniyle sağlanıyor, suppression'ın kendisi
+    değil.
+    """
     try:
         env = _build_subprocess_env()
         if extra_env:
             env.update(extra_env)
-        result = subprocess.run(  # nosec B603  # args listesi sistem içi oluşturulur, shell kullanılmaz.
+        result = subprocess.run(  # nosec B603  # shell=False; argv çağıran tarafta sabit/doğrulanmış (bkz. docstring).
             args,
             shell=False,
             check=True,
