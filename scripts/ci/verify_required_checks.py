@@ -24,7 +24,7 @@ DEFAULT_RELEASE_JOB_IDS = (
     "production-readiness",
     "pg-stress",
 )
-BRANCH_PROTECTION_AUDIT_CONTEXT = "Branch protection audit / Required release checks audit"
+BRANCH_PROTECTION_AUDIT_CONTEXT = "Required release checks audit"
 _GIT_REMOTE_COMMAND = ("git", "remote", "get-url", "origin")
 
 
@@ -65,7 +65,6 @@ def _load_expected_check_names(workflow_path: Path, job_ids: tuple[str, ...]) ->
     workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
     if not isinstance(workflow, dict):
         raise RequiredCheckAuditError(f"Workflow YAML is not a mapping: {workflow_path}")
-    workflow_name = str(workflow.get("name") or workflow_path.stem)
     jobs = workflow.get("jobs")
     if not isinstance(jobs, dict):
         raise RequiredCheckAuditError(f"Workflow has no jobs mapping: {workflow_path}")
@@ -77,7 +76,12 @@ def _load_expected_check_names(workflow_path: Path, job_ids: tuple[str, ...]) ->
         if not isinstance(job, dict):
             missing_job_ids.append(job_id)
             continue
-        expected.append(f"{workflow_name} / {job.get('name') or job_id}")
+        # GitHub Actions check-run/context names are the job's own `name:` (or id),
+        # never prefixed with the workflow's `name:`. Confirmed against this repo's
+        # live check runs (webhook check_run payloads and the Checks API) — the
+        # branch-protection "Search for status checks" picker only ever offers
+        # these bare names, so that is what must be stored as the required context.
+        expected.append(str(job.get("name") or job_id))
     if missing_job_ids:
         raise RequiredCheckAuditError(
             "Release-critical job id(s) missing from workflow: " + ", ".join(missing_job_ids)

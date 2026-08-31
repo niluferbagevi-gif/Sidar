@@ -71,14 +71,14 @@ def test_repo_from_git_remote_fails_closed_without_absolute_git(
 def test_audit_required_checks_accepts_all_release_contexts(tmp_path: Path) -> None:
     workflow = _workflow(tmp_path / "ci.yml")
     expected_contexts = {
-        "CI / Base quality gates",
-        "CI / Installer manifest and smoke gate",
-        "CI / Production-minimal runtime validation",
-        "CI / GPU Inference Required Evidence Gate",
-        "CI / Production readiness aggregate",
-        "CI / PostgreSQL Connection Pool Stress Test",
-        "CI / Extra non-release check",
-        "Branch protection audit / Required release checks audit",
+        "Base quality gates",
+        "Installer manifest and smoke gate",
+        "Production-minimal runtime validation",
+        "GPU Inference Required Evidence Gate",
+        "Production readiness aggregate",
+        "PostgreSQL Connection Pool Stress Test",
+        "Extra non-release check",
+        "Required release checks audit",
     }
 
     expected, missing = audit.audit_required_checks(
@@ -88,13 +88,13 @@ def test_audit_required_checks_accepts_all_release_contexts(tmp_path: Path) -> N
     )
 
     assert expected == [
-        "CI / Base quality gates",
-        "CI / Installer manifest and smoke gate",
-        "CI / Production-minimal runtime validation",
-        "CI / GPU Inference Required Evidence Gate",
-        "CI / Production readiness aggregate",
-        "CI / PostgreSQL Connection Pool Stress Test",
-        "Branch protection audit / Required release checks audit",
+        "Base quality gates",
+        "Installer manifest and smoke gate",
+        "Production-minimal runtime validation",
+        "GPU Inference Required Evidence Gate",
+        "Production readiness aggregate",
+        "PostgreSQL Connection Pool Stress Test",
+        "Required release checks audit",
     ]
     assert missing == []
 
@@ -106,31 +106,31 @@ def test_audit_required_checks_reports_missing_release_context(tmp_path: Path) -
         workflow_path=workflow,
         job_ids=audit.DEFAULT_RELEASE_JOB_IDS,
         required_contexts={
-            "CI / Base quality gates",
-            "CI / Installer manifest and smoke gate",
-            "CI / Production-minimal runtime validation",
-            "CI / GPU Inference Required Evidence Gate",
-            "CI / Production readiness aggregate",
-            "Branch protection audit / Required release checks audit",
+            "Base quality gates",
+            "Installer manifest and smoke gate",
+            "Production-minimal runtime validation",
+            "GPU Inference Required Evidence Gate",
+            "Production readiness aggregate",
+            "Required release checks audit",
         },
     )
 
-    assert missing == ["CI / PostgreSQL Connection Pool Stress Test"]
+    assert missing == ["PostgreSQL Connection Pool Stress Test"]
 
 
 def test_extract_required_contexts_supports_legacy_contexts_and_checks() -> None:
     payload = {
-        "contexts": ["CI / Base quality gates"],
+        "contexts": ["Base quality gates"],
         "checks": [
-            {"context": "CI / Installer manifest and smoke gate", "app_id": 15368},
-            {"context": "CI / PostgreSQL Connection Pool Stress Test"},
+            {"context": "Installer manifest and smoke gate", "app_id": 15368},
+            {"context": "PostgreSQL Connection Pool Stress Test"},
         ],
     }
 
     assert audit._extract_required_contexts(payload) == {
-        "CI / Base quality gates",
-        "CI / Installer manifest and smoke gate",
-        "CI / PostgreSQL Connection Pool Stress Test",
+        "Base quality gates",
+        "Installer manifest and smoke gate",
+        "PostgreSQL Connection Pool Stress Test",
     }
 
 
@@ -165,11 +165,11 @@ def test_audit_merge_safety_reports_each_unsafe_control() -> None:
 
 def test_extract_protection_required_contexts_uses_nested_payload() -> None:
     payload = {
-        "required_status_checks": {"checks": [{"context": "CI / Production readiness aggregate"}]}
+        "required_status_checks": {"checks": [{"context": "Production readiness aggregate"}]}
     }
 
     assert audit._extract_protection_required_contexts(payload) == {
-        "CI / Production readiness aggregate"
+        "Production readiness aggregate"
     }
 
 
@@ -349,10 +349,10 @@ def test_cli_offline_mode_fails_when_context_is_missing(
             "--workflow",
             str(workflow),
             "--required-context",
-            "CI / Base quality gates",
+            "Base quality gates",
         ]
     )
 
     captured = capsys.readouterr()
     assert exit_code == 1
-    assert "CI / Installer manifest and smoke gate" in captured.err
+    assert "Installer manifest and smoke gate" in captured.err
