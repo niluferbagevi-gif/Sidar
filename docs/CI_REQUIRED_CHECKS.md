@@ -9,13 +9,22 @@ the expected required contexts should mirror the release-critical jobs in
 
 | Workflow job id | Required GitHub check name | Why it must be required |
 | --- | --- | --- |
-| `test` | `CI / Base quality gates (lint, smoke, unit, coverage, frontend)` | Runs broad non-performance checks on GitHub-hosted infrastructure; performance is deliberately isolated in `benchmark-compare`. |
-| `installer-smoke` | `CI / Installer manifest and smoke gate` | Prevents raw installer, embedded manifest, module hash, and installer smoke drift from merging unnoticed. |
-| `production-profile-dry-run` | `CI / Production-minimal runtime validation` | Release-blocking production-minimal gate: installer sync, FastAPI web boot smoke, Alembic DB migration smoke, and uploaded runtime evidence artifact. |
-| `gpu-inference-policy-gate` | `CI / GPU Inference Required Evidence Gate` | Fails closed unless the self-hosted GPU TTFT/latency benchmark is enabled and succeeds. |
-| `production-readiness` | `CI / Production readiness aggregate` | Aggregates base quality, benchmark comparison, and the required GPU inference evidence policy. |
-| `pg-stress` | `CI / PostgreSQL Connection Pool Stress Test` | Keeps PostgreSQL migration and connection-pool stress coverage blocking for merge readiness. |
-| audit workflow | `Branch protection audit / Required release checks audit` | Verifies the live merge policy itself before a PR can merge. |
+| `test` | `Base quality gates (lint, smoke, unit, coverage, frontend)` | Runs broad non-performance checks on GitHub-hosted infrastructure; performance is deliberately isolated in `benchmark-compare`. |
+| `installer-smoke` | `Installer manifest and smoke gate` | Prevents raw installer, embedded manifest, module hash, and installer smoke drift from merging unnoticed. |
+| `production-profile-dry-run` | `Production-minimal runtime validation` | Release-blocking production-minimal gate: installer sync, FastAPI web boot smoke, Alembic DB migration smoke, and uploaded runtime evidence artifact. |
+| `gpu-inference-policy-gate` | `GPU Inference Required Evidence Gate` | Fails closed unless the self-hosted GPU TTFT/latency benchmark is enabled and succeeds. |
+| `production-readiness` | `Production readiness aggregate` | Aggregates base quality, benchmark comparison, and the required GPU inference evidence policy. |
+| `pg-stress` | `PostgreSQL Connection Pool Stress Test` | Keeps PostgreSQL migration and connection-pool stress coverage blocking for merge readiness. |
+| audit workflow | `Required release checks audit` | Verifies the live merge policy itself before a PR can merge. |
+
+Required GitHub check names are the job's own `name:` value exactly as GitHub
+Actions reports it (a bare check-run name) — **not** prefixed with the
+workflow's `name:`. This repo's branch-protection "required status checks"
+picker only ever offers checks it has actually seen reported (matching real
+`check_run.name` values), so a `<workflow> / <job>`-prefixed entry can never
+be selected or matched; using that format here previously caused
+`scripts/ci/verify_required_checks.py` to report every release-critical job
+as permanently missing regardless of what was configured in GitHub Settings.
 
 The `seed-benchmark-baseline` / `Seed benchmark baseline cache` workflow path is
 intentionally **not** a required PR check: it only runs via manual

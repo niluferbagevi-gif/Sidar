@@ -248,6 +248,8 @@ Bu bölüm, güncel `pyproject.toml`, `requirements-dev.txt`, `environment.yml` 
 
 **Geçiş Notu (v4.0 hazırlığı):** `torch`, `torchvision` ve `sentence-transformers` bağımlılıkları `pyproject.toml` altında `rag` extras grubuna taşınmıştır; minimal CLI kurulumları artık ağır GPU/RAG paketlerini zorunlu çekmez.
 
+**Bilinen bağımlılık açığı — `chromadb==0.5.20` (kabul edilmiş risk, `security/pip-audit-ignores.tsv`):** pip-audit üç yamasız CVE raporluyor (`CVE-2026-45830`/GHSA-2wm9-hf6c-p5cr, `CVE-2026-45833`/GHSA-36p7-vc44-83pf, `CVE-2026-45831`/GHSA-xph7-9rjv-w5fr; hiçbirinde `fix_version` yok). Üçü de ChromaDB'nin *sunucu modu* çok-kiracılı REST/RBAC katmanındaki yetkilendirme açıkları. Sidar bu yüzeyi hiç kullanmaz: `core/rag/backends/chroma.py` yalnızca embedded/in-process `chromadb.PersistentClient` çağırır, repo genelinde `HttpClient`/`AsyncHttpClient`/`chroma run` veya bir Chroma docker-compose servisi yoktur; ayrıca kurulum betiği `.env` içinde varsayılan olarak `RAG_VECTOR_BACKEND=pgvector` yazar, yani chromadb yalnızca opsiyonel bir fallback'tir ve çok-kiracılı RBAC/izolasyon zaten §5.3.8'de anlatılan uygulama-seviyesi katman tarafından sağlanır. İstisnalar `2026-11-30`'da sona erer; `next_review=2026-10-15` — o tarihte yamalı bir chromadb sürümü çıkıp çıkmadığı kontrol edilmeli.
+
 #### 7.4.1 Frontend (React / Node.js) Paketleri
 
 | Paket | Durum | Kullanım Yeri |
