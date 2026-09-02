@@ -1301,7 +1301,8 @@ def test_ci_workflow_documents_and_seeds_benchmark_baseline() -> None:
         "if: ${{ github.event_name != 'workflow_dispatch' || !inputs.seed_benchmark_baseline }}"
         in ci
     )
-    assert "Benchmark baseline missing" in ci
+    assert "mode=bootstrap" in ci
+    assert "Save bootstrap benchmark baseline cache" in ci
     assert "Run base quality gates (performance isolated)" in ci
     assert "Validate base test summary" in ci
     assert "--mode development --summary artifacts/test-summary.json" in ci
@@ -5469,7 +5470,9 @@ def test_ci_uses_shared_system_dependency_installer_without_duplicate_apt_step()
     assert 'echo "=== bats ===" && bats --version' in ci_workflow
 
 
-def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profile() -> None:
+def test_ci_bootstraps_benchmark_baseline_when_unreachable_and_nightly_gpu_uses_full_profile() -> (
+    None
+):
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     seed_workflow = Path(".github/workflows/benchmark-baseline-seed.yml").read_text(
         encoding="utf-8"
@@ -5494,7 +5497,8 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "mkdir -p .benchmarks" in ci
     assert 'echo "BENCHMARK_COMPARE_REQUIRED=1" >> "$GITHUB_ENV"' not in ci
     assert 'echo "BENCHMARK_COMPARE_REQUIRED=0" >> "$GITHUB_ENV"' not in ci
-    assert "Benchmark baseline missing" in ci
+    assert "mode=bootstrap" in ci
+    assert "Save bootstrap benchmark baseline cache" in ci
     assert "exit 1" in ci
     assert "benchmark-compare:" in ci
     benchmark_job = ci[
@@ -5515,7 +5519,7 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "TEST_PROFILE=ci RUN_BENCHMARKS=0 RUN_FRONTEND_E2E=1" in ci
     assert "SIDAR_PRODUCTION_READINESS=0 bash run_tests.sh --stage all" in ci
     assert "GITHUB_STEP_SUMMARY" in ci
-    assert "benchmark compare is fail-closed" in ci
+    assert "No regression comparison was performed this run" in ci
     assert "BENCHMARK_BASELINE_FILE: ${{ steps.benchmark-baseline.outputs.compare_file }}" in ci
     assert '--benchmark-compare="${BENCHMARK_BASELINE_FILE}"' in ci
     assert "BENCHMARK_COMPARE_FAIL: mean:10%" in ci
@@ -5527,7 +5531,8 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert 'RUN_GPU_BENCHMARKS: "full"' in nightly_gpu
     assert ".benchmarks/` dizinini repoya commit etmek yerine GitHub Actions cache" in notes
     assert "BENCHMARK_COMPARE_FAIL=mean:10%" in notes
-    assert "koşu seed moduna düşmez" in notes
+    assert "artık fail-closed sonlanmaz" in notes
+    assert "bootstrap modu" in notes
     assert "name: Benchmark baseline seed" in seed_workflow
     assert "workflow_dispatch:" in seed_workflow
     assert "uses: ./.github/workflows/benchmark-baseline-reusable.yml" in seed_workflow

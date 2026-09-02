@@ -460,8 +460,13 @@ protection altında en az şu CI job'ları required check olmalıdır:
 
 Repo metadata veya ayarlarda auto-merge ileride açılırsa, bu required check'ler ve
 production-readiness doğrulaması zorunlu olmadan auto-merge etkinleştirilmemelidir.
-Benchmark baseline missing nedeniyle `test` job'ı kırılırsa PR açıklamasında bu dokümandaki
-bootstrap runbook'una link verin ve seed workflow tamamlanmadan merge onayı vermeyin.
+`benchmark-compare` job'ı erişilebilir hiçbir cache kapsamında baseline bulamazsa artık
+fail-closed kırılmaz; kendi ölçümünü bootstrap baseline olarak üretip PR'ın kendi ref
+kapsamında cache'ler (bkz. `docs/module-notes/tests.md`). Bu koşuda gerçek bir regresyon
+karşılaştırması **yapılmamıştır** — review sırasında job özetindeki (step summary)
+"Bootstrapping" notunu kontrol edin; görürseniz PR'a bir sonraki push'un (aynı `uv.lock`
+ile) gerçek karşılaştırmayı üreteceğini bilin ve mümkünse merge kararını o push'tan sonrasına
+bırakın.
 
 ## CI production-readiness dışsal bağımlılıkları
 
