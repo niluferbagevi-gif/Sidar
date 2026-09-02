@@ -574,6 +574,12 @@ jobs:
     # comparison. The baseline seed jobs use the same named runner/cache scope.
     runs-on: [self-hosted, linux, benchmark]
 
+    env:
+      # sidar[runtime-gpu] pulls multi-hundred-MB nvidia-*/torch wheels; uv's
+      # 30s default HTTP timeout can time out these individual downloads on a
+      # slower/self-hosted link well before the transfer itself would fail.
+      UV_HTTP_TIMEOUT: "180"
+
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -931,6 +937,10 @@ jobs:
       GPU_BENCH_TTFT_BUDGET: "0.2"
       GPU_BENCH_LATENCY_BUDGET: "0.25"
       RUN_GPU_STRESS: "1"
+      # sidar[runtime-gpu] pulls multi-hundred-MB nvidia-*/torch wheels; uv's
+      # 30s default HTTP timeout can time out these individual downloads on a
+      # slower/self-hosted link well before the transfer itself would fail.
+      UV_HTTP_TIMEOUT: "180"
 
     steps:
       - name: Checkout

@@ -10,7 +10,7 @@ from __future__ import annotations
 import contextlib
 import os
 import shlex
-import subprocess  # nosec B404
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any

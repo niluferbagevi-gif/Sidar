@@ -1,6 +1,6 @@
 {
-  "captured_at": "2026-08-20",
-  "maximum_skipped_tests": 49,
+  "captured_at": "2026-08-28",
+  "maximum_skipped_tests": 40,
   "policy": "Bandit metrics._totals.skipped_tests must exactly match this ratchet; every reduction updates the baseline in the same commit and increases are forbidden.",
   "require_exact_baseline": true,
   "debt_plan": {
@@ -10,10 +10,26 @@
       "scripts/ci/verify_required_checks.py",
       "github_upload.py"
     ],
-    "rule": "Do not bulk-remove suppressions; preserve identifier validation and add focused tests before each removal."
+    "rule": "Do not bulk-remove suppressions; preserve identifier validation and add focused tests before each removal.",
+    "completed_reviews": [
+      {
+        "file": "scripts/ci/verify_required_checks.py",
+        "reviewed_at": "2026-08-30",
+        "outcome": "kept",
+        "reason": "Line 44's B603 subprocess.check_output call only runs with an absolute, shutil.which-resolved git binary and a fixed argv tuple (shell=False, 10s timeout); tests/unit/scripts/test_verify_required_checks.py already pins the exact argv/kwargs (success path) and the fail-closed no-op when git cannot be resolved. Removing the nosec was verified to reproduce a real B603 finding (Bandit flags any non-literal subprocess argv regardless of how it was built), so no code change removes the need for the suppression without dropping the git-remote lookup."
+      },
+      {
+        "file": "github_upload.py",
+        "reviewed_at": "2026-08-30",
+        "outcome": "kept",
+        "reason": "run_command()'s B603 (subprocess.run, line ~111) and reexec_after_external_branch_merge()'s B606 (os.execve, line ~161) both already run with shell=False and either fixed (execve: sys.executable + the script's own resolved path) or caller-validated argv (run_command's only user-supplied call-site value, repo_url, is regex-checked by _is_valid_repo_url before reaching it; branch/tag names passed elsewhere are internally generated timestamps). Both call paths already have focused tests in tests/unit/root/test_github_upload.py. No safe reduction found; run_command's docstring was expanded to record this trust-boundary analysis for future reviewers."
+      }
+    ]
   },
+  "completed_targets": [
+    {"due_date": "2027-01-31", "maximum_skipped_tests": 40, "achieved_at": "2026-08-28"}
+  ],
   "reduction_targets": [
-    {"due_date": "2027-01-31", "maximum_skipped_tests": 40},
     {"due_date": "2027-04-30", "maximum_skipped_tests": 20},
     {"due_date": "2027-07-31", "maximum_skipped_tests": 0}
   ]

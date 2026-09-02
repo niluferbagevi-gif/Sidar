@@ -17,6 +17,7 @@
 - **Lease kontrollü rollback:** Geri alma yolu başka bir kullanıcının yeni remote commit'ini sessizce ezmemek için `--force-with-lease` kullanır.
 - **Push-rejected kurtarma akışı:** `git push` reddedildiğinde (`rejected`/`fetch first`/`non-fast-forward`) güvenli `pull` + merge stratejisi (`--rebase=false --allow-unrelated-histories --no-edit -X ours`) ile senkronizasyon denenir ve push tekrar edilir.
 - **GitHub Push Protection farkındalığı:** secret scanning/push protection hataları algılanır ve kullanıcıya düzeltme yönlendirmesi verilir.
+- **Orijinal dala geri dönüş:** Araç farklı bir daldan çalıştırılırsa akışı sürdürmek için otomatik `main`e geçer (`switch_back_to_original_branch()`). Commit/push'a hiç ulaşmadan biten her erken çıkışta (çözülmemiş çakışma, push-öncesi kalite kapısı hatası, upload dalı oluşturulamaması, dosya stage/commit hatası, "yüklenecek değişiklik yok") kullanıcı otomatik olarak başladığı dala geri döndürülür; böylece kullanıcı fark etmeden `main`de (veya ondan türetilmiş boş bir upload dalında) bırakılmaz. Commit sonrası başarısız olan kalite kapıları bu otomatik geri dönüşün KAPSAMI DIŞINDADIR — orada gerçek çalışma bilerek korunur ve elle geri dönüş talimatı (`describe_post_commit_gate_failure`) verilir.
 
 **Hata Yönetimi:**
 - `subprocess.CalledProcessError` yakalanarak anlaşılır terminal çıktısı üretilir; ağ/auth/çatışma senaryolarında sessiz çökme engellenir.

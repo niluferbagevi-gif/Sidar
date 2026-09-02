@@ -54,6 +54,59 @@ if failed_tests:
 PY_FAILED_NODEIDS
 }
 
+production_compose_failure_diagnostics() {
+  local diagnostics_dir="${PRODUCTION_COMPOSE_DIAGNOSTICS_DIR:-artifacts/production-compose}"
+  python - "${diagnostics_dir}/ps.txt" "${diagnostics_dir}/compose.log" <<'PY_COMPOSE_DIAGNOSTICS'
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+ps_path, log_path = map(Path, sys.argv[1:])
+service = "belirlenemedi"
+error = "compose diagnostics içinde hata özeti bulunamadı"
+
+if ps_path.is_file():
+    rows = [re.split(r"\s{2,}", line.strip()) for line in ps_path.read_text(errors="replace").splitlines()]
+    if rows:
+        header = rows[0]
+        try:
+            service_index = header.index("SERVICE")
+            status_index = header.index("STATUS")
+        except ValueError:
+            pass
+        else:
+            for row in rows[1:]:
+                if len(row) <= max(service_index, status_index):
+                    continue
+                status = row[status_index].lower()
+                if any(marker in status for marker in ("exited", "restarting", "unhealthy", "dead")):
+                    service = row[service_index]
+                    break
+
+if log_path.is_file():
+    lines = log_path.read_text(errors="replace").splitlines()
+    exception_pattern = re.compile(
+        r"(?:PermissionError|FileNotFoundError|RuntimeError|ValueError|OSError|[A-Za-z]+Error):.*"
+    )
+    for line in reversed(lines):
+        if match := exception_pattern.search(line):
+            error = match.group(0).strip()[:500]
+            if service == "belirlenemedi":
+                container = line.split(" | ", maxsplit=1)[0].strip()
+                suffix_map = {"_web": "sidar-web", "_postgres": "postgres", "_redis": "redis"}
+                service = next(
+                    (name for suffix, name in suffix_map.items() if container.endswith(suffix)),
+                    service,
+                )
+            break
+
+print(service)
+print(error)
+PY_COMPOSE_DIAGNOSTICS
+}
+
 format_quality_status() {
   local code="$1"
   local ran="${2:-1}"

@@ -71,7 +71,7 @@ FULL       → tam erişim (shell, git, npm, proje geneli yazma)
 
 #### 5.3.3 Kriptografik Kimlik/Oturum Güvenliği (Güncellendi)
 - Parola doğrulama akışı yeni kayıtlar için `Argon2id`, legacy kayıtlar için `PBKDF2-HMAC-SHA256` + salt + sabit-zamanlı karşılaştırma (`secrets.compare_digest`) ile uygulanır.
-- **[ÖNEMLİ] Kriptografik Güçlendirme:** Parola türetme algoritmasındaki iterasyon sayısının (önceki: `120000`) güncel OWASP standartlarına (min `600000`) uygun hale getirilmesi teknik bir borç olarak işaretlenmiştir. Yeni nesil GPU'ların kırabilme kapasitesine karşı kurumsal sistemlerde bu değerin artırılması zorunludur.
+- **Kriptografik Güçlendirme (Çözüldü):** Parola türetme iterasyon sayısı güncel OWASP standardına (`_PBKDF2_MIN_ITERATIONS = 600000`, [`core/db/auth.py`](../../core/db/auth.py)) yükseltilmiştir; eski `120000` değeri artık yalnızca `_PBKDF2_LEGACY_ITERATIONS` olarak, mevcut kullanıcıların yeniden hash'lenmemiş legacy kayıtlarını doğrulayabilmek için (geriye dönük uyumluluk) tutulmaktadır — yeni hash'lenen/rehash edilen hiçbir kayıt bu değeri kullanmaz. Bir arkadaş kod incelemesi bu maddenin kodda çözülmüş olmasına rağmen burada hâlâ açık teknik borç gibi göründüğünü doğru tespit etti (2026-08-30).
 - Oturum belirteçleri `secrets.token_urlsafe(...)` ile üretilir; kullanıcı/oturum anahtarlarında UUID kullanımı tahmin edilebilirlik riskini azaltır.
 - WebSocket kanalında `auth` handshake zorunludur; geçersiz/eksik token durumunda bağlantı policy violation ile kapatılır.
 
@@ -280,133 +280,145 @@ Bu bölüm, güncel `pyproject.toml`, `requirements-dev.txt`, `environment.yml` 
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Bu bölüm, 2026-03-26 tarihinde `scripts/collect_repo_metrics.sh` ve `scripts/audit_metrics.sh` ile takipli depo içeriği için yeniden üretilen `wc -l` ölçümlerini içerir.
+Bu bölüm, 2026-08-30 tarihinde `scripts/collect_repo_metrics.sh` ve `scripts/audit_metrics.sh` ile takipli depo içeriği için yeniden üretilen `wc -l` ölçümlerini içerir (önceki ölçüm turu 2026-03-26'ydı — bir arkadaş kod incelemesi bu bölümün beş aydır senkronize edilmediğini ve `web_server.py`/`core/db.py`/`core/rag.py` gibi köklü değişmiş yolları hâlâ eski haliyle listelediğini doğru tespit etti).
 
-**Hacimsel özet (yönetici görünümü):** 2026-03-26 ölçümünde takipli depo yüzeyi **408 dosya / 116.053 satır** seviyesindedir (`.py/.js/.css/.html/.md`). Python tarafında üretim kodu **32.936 satır / 70 dosya**, test havuzu **65.729 satır / 213 `test_*.py` modülü**, toplam Python hacmi ise **98.665 satır / 285 dosya** olarak doğrulanmıştır; ayrıca takipli Markdown havuzu **10.148 satır / 102 dosya** ile kurumsal dokümantasyon yükünü net biçimde göstermektedir. `web_ui_react/` altındaki **38** takipli dosya / **10.792** satırlık SPA hacmi ve `web_ui/` altındaki **4.769** satırlık legacy yüzey birlikte değerlendirildiğinde, Coverage/Poyraz ajanlarıyla genişleyen Faz E yüzeyi artık ölçülebilir ürün olgunluğunun parçası haline gelmiştir.
+**Hacimsel özet (yönetici görünümü):** 2026-08-30 ölçümünde takipli depo yüzeyi **803 dosya / 216.925 satır** seviyesindedir (`.py/.js/.css/.html/.md`). Python tarafında üretim kodu **74.801 satır / 334 dosya**, test havuzu **118.756 satır / 302 `tests/*.py` dosyası** (bunun **274**'ü `test_*.py` modülü), toplam Python hacmi ise **193.557 satır / 636 dosya** olarak doğrulanmıştır; ayrıca takipli Markdown havuzu **17.304 satır / 142 dosya** ile kurumsal dokümantasyon yükünü net biçimde göstermektedir. `web_ui_react/` altındaki **98** takipli dosya / **27.432** satırlık SPA hacmi tek frontend yüzeyidir — legacy `web_ui/` dizini kaldırılmıştır (bkz. aşağıdaki 8.4 notu).
 
-- **Test ağırlığı:** Python kod hacminin en büyük payı `tests/` altındaki unit, integration ve enterprise senaryo testlerinden gelir.
+- **Test ağırlığı:** Python kod hacminin en büyük payı `tests/` altındaki unit, integration ve enterprise senaryo testlerinden gelir (üretim kodunun ~1,6 katı).
 - **Backend + Swarm çekirdeği:** `core/`, `agent/`, `managers/` ve giriş dosyaları projenin ana motorunu oluşturan binlerce satırlık Python iş mantığını barındırır.
-- **Modern frontend katmanı:** Legacy `web_ui/` korunurken `web_ui_react/` altındaki React/Vite SPA projeye ek JavaScript/JSX/CSS hacmi kazandırır.
-- **Altyapı ve dokümantasyon:** Helm chart'ları, Docker/Grafana/Prometheus dosyaları, CI akışları ve runbook'lar üretim işletimini kod olarak tanımlar.
+- **Modern frontend katmanı:** `web_ui_react/` altındaki React/Vite/TypeScript SPA artık tek üretim frontend'idir; legacy `web_ui/` (vanilla JS) v5.x'te tamamen kaldırılmıştır.
+- **Altyapı ve dokümantasyon:** Helm chart'ları, `docker_setup/` altındaki Docker/Grafana/Prometheus dosyaları (kök `docker/` bu dizine taşınmıştır), CI akışları ve runbook'lar üretim işletimini kod olarak tanımlar.
 
-**Ölçüm notu (standart):** Kurumsal tekrar üretilebilirlik için satır sayısı raporları `scripts/audit_metrics.sh` ve `scripts/collect_repo_metrics.sh` ile otomatik üretilmelidir. Her iki betik de Git deposu içinde varsayılan olarak yalnızca takipli dosyaları ölçer.
+**Ölçüm notu (standart):** Kurumsal tekrar üretilebilirlik için satır sayısı raporları `scripts/audit_metrics.sh` ve `scripts/collect_repo_metrics.sh` ile otomatik üretilmelidir. Her iki betik de Git deposu içinde varsayılan olarak yalnızca takipli dosyaları ölçer. **Bu bölüm elle senkron tutulur ve otomatik doğrulanmaz** — büyük refactor/dosya taşıma turlarından sonra (örn. bir modülün tek dosyadan pakete bölünmesi) yeniden üretilip senkronize edilmelidir; aksi halde tam da bu bölümün önceki turda düştüğü duruma (5+ ay stale, silinmiş yollara işaret eden bir tablo) geri döner.
 
 ### 8.1 Çekirdek Modüller (Güncel)
 
+`core/db.py` ve `core/rag.py` artık tek dosya değil — ikisi de geriye dönük
+uyumlu package facade'lara bölünmüştür (bkz.
+[`docs/module-notes/core/db.py.md`](../module-notes/core/db.py.md) ve
+[`docs/module-notes/core/rag.py.md`](../module-notes/core/rag.py.md));
+aşağıdaki tabloda paket toplamı olarak listelenir.
+
 | Dosya | Satır |
 |---|---:|
-| `config.py` | 885 |
-| `main.py` | 382 |
-| `cli.py` | 290 |
-| `web_server.py` | 3.213 |
-| `agent/sidar_agent.py` | 689 |
-| `agent/auto_handle.py` | 613 |
-| `agent/definitions.py` | 169 |
-| `agent/tooling.py` | 127 |
-| `agent/base_agent.py` | 112 |
-| `agent/registry.py` | 187 |
-| `agent/swarm.py` | 541 |
-| `core/llm_client.py` | 1.388 |
-| `core/memory.py` | 301 |
-| `core/rag.py` | 1.685 |
-| `core/db.py` | 1.861 |
-| `core/llm_metrics.py` | 282 |
-| `core/agent_metrics.py` | 118 |
-| `core/dlp.py` | 320 |
-| `core/hitl.py` | 287 |
-| `core/judge.py` | 476 |
-| `core/router.py` | 211 |
-| `core/entity_memory.py` | 281 |
-| `core/cache_metrics.py` | 189 |
-| `core/active_learning.py` | 772 |
-| `core/vision.py` | 294 |
-| `core/voice.py` | 310 |
-| `managers/security.py` | 291 |
-| `managers/code_manager.py` | 1.529 |
-| `managers/github_manager.py` | 645 |
-| `managers/system_health.py` | 538 |
-| `managers/web_search.py` | 388 |
-| `managers/package_info.py` | 344 |
-| `managers/todo_manager.py` | 452 |
-| `managers/slack_manager.py` | 234 |
-| `managers/jira_manager.py` | 245 |
-| `managers/teams_manager.py` | 234 |
-| `managers/browser_manager.py` | 718 |
-| `github_upload.py` | 295 |
-| `gui_launcher.py` | 98 |
+| `config.py` | 1.804 |
+| `main.py` | 1.231 |
+| `cli.py` | 465 |
+| `web_server.py` | 2.628 |
+| `agent/sidar_agent.py` | 1.138 |
+| `agent/auto_handle.py` | 676 |
+| `agent/definitions.py` | 205 |
+| `agent/tooling.py` | 251 |
+| `agent/base_agent.py` | 120 |
+| `agent/registry.py` | 507 |
+| `agent/swarm.py` | 1.147 |
+| `core/llm_client.py` | 1.012 |
+| `core/memory.py` | 613 |
+| `core/rag/` *(paket, 27 dosya)* | 4.712 |
+| `core/db/` *(paket, 21 dosya)* | 4.845 |
+| `core/llm_metrics.py` | 298 |
+| `core/agent_metrics.py` | 254 |
+| `core/dlp.py` | 346 |
+| `core/hitl.py` | 307 |
+| `core/judge.py` | 561 |
+| `core/router.py` | 474 |
+| `core/entity_memory.py` | 283 |
+| `core/cache_metrics.py` | 207 |
+| `core/active_learning.py` | 934 |
+| `core/vision.py` | 325 |
+| `core/voice.py` | 428 |
+| `managers/security.py` | 484 |
+| `managers/code_manager.py` | 1.377 |
+| `managers/github_manager.py` | 813 |
+| `managers/system_health.py` | 676 |
+| `managers/web_search.py` | 403 |
+| `managers/package_info.py` | 352 |
+| `managers/todo_manager.py` | 488 |
+| `managers/slack_manager.py` | 258 |
+| `managers/jira_manager.py` | 267 |
+| `managers/teams_manager.py` | 245 |
+| `managers/browser_manager.py` | 1.217 |
+| `github_upload.py` | 1.565 |
+| `gui_launcher.py` | 108 |
 
 ### 8.2 Multi-Agent Çekirdek ve Roller
 
 | Dosya | Satır |
 |---|---:|
-| `agent/core/supervisor.py` | 291 |
-| `agent/core/contracts.py` | 256 |
-| `agent/core/event_stream.py` | 218 |
-| `agent/core/memory_hub.py` | 55 |
-| `agent/core/registry.py` | 30 |
-| `agent/roles/coder_agent.py` | 168 |
-| `agent/roles/researcher_agent.py` | 80 |
-| `agent/roles/reviewer_agent.py` | 707 |
-| `agent/roles/coverage_agent.py` | 262 |
-| `agent/roles/poyraz_agent.py` | 498 |
+| `agent/core/supervisor.py` | 680 |
+| `agent/core/contracts.py` | 595 |
+| `agent/core/event_stream.py` | 825 |
+| `agent/core/memory_hub.py` | 54 |
+| `agent/core/registry.py` | 32 |
+| `agent/roles/coder_agent.py` | 319 |
+| `agent/roles/researcher_agent.py` | 129 |
+| `agent/roles/reviewer_agent.py` | 1.284 |
+| `agent/roles/coverage_agent.py` | 1.206 |
+| `agent/roles/poyraz_agent.py` | 701 |
 
 ### 8.3 Migration / Operasyon / Altyapı
 
+Kök `docker/` dizini `docker_setup/`'a taşınmıştır; `migrations/versions/`
+üç yeni revizyon (0005-0007) kazanmıştır. `scripts/` yalnızca aşağıdaki
+seçili dosyalarla sınırlı değildir — bkz. 8.5'teki dizin toplamı (120 dosya).
+
 | Dosya | Satır |
 |---|---:|
-| `migrations/env.py` | 66 |
-| `migrations/versions/0001_baseline_schema.py` | 99 |
-| `migrations/versions/0002_prompt_registry.py` | 53 |
-| `migrations/versions/0003_audit_trail.py` | 38 |
-| `migrations/versions/0004_faz_e_tables.py` | 144 |
-| `scripts/migrate_sqlite_to_pg.py` | 92 |
-| `scripts/load_test_db_pool.py` | 74 |
-| `scripts/audit_metrics.sh` | 84 |
-| `scripts/collect_repo_metrics.sh` | 35 |
-| `scripts/install_host_sandbox.sh` | 201 |
-| `docker/prometheus/prometheus.yml` | 8 |
-| `docker/grafana/provisioning/datasources/prometheus.yml` | 9 |
-| `docker/grafana/provisioning/dashboards/dashboards.yml` | 11 |
-| `docker/grafana/dashboards/sidar-llm-overview.json` | 1.004 |
-| `runbooks/production-cutover-playbook.md` | 182 |
-| `runbooks/observability_simulation.md` | 87 |
+| `migrations/env.py` | 198 |
+| `migrations/versions/0001_baseline_schema.py` | 134 |
+| `migrations/versions/0002_prompt_registry.py` | 209 |
+| `migrations/versions/0003_audit_trail.py` | 37 |
+| `migrations/versions/0004_faz_e_tables.py` | 162 |
+| `migrations/versions/0005_pgvector_hnsw_index.py` | 146 |
+| `migrations/versions/0006_access_control_schema.py` | 158 |
+| `migrations/versions/0007_faz_e_defaults_parity.py` | 56 |
+| `scripts/migrate_sqlite_to_pg.py` | 139 |
+| `scripts/load_test_db_pool.py` | 165 |
+| `scripts/audit_metrics.sh` | 90 |
+| `scripts/collect_repo_metrics.sh` | 39 |
+| `scripts/install_host_sandbox.sh` | 200 |
+| `docker_setup/prometheus/prometheus.yml` | 33 |
+| `docker_setup/grafana/provisioning/datasources/prometheus.yml` | 8 |
+| `docker_setup/grafana/provisioning/dashboards/dashboards.yml` | 10 |
+| `docker_setup/grafana/dashboards/sidar-llm-overview.json` | 1.175 |
+| `runbooks/production-cutover-playbook.md` | 265 |
+| `runbooks/observability_simulation.md` | 86 |
 | `runbooks/plugin_marketplace_demo.md` | 32 |
-| `runbooks/tenant_rbac_scenarios.md` | 66 |
-| `plugins/crypto_price_agent.py` | 50 |
+| `runbooks/tenant_rbac_scenarios.md` | 65 |
+| `plugins/crypto_price_agent.py` | 49 |
 | `plugins/upload_agent.py` | 11 |
-| `Dockerfile` | 104 |
-| `docker-compose.yml` | 264 |
+| `Dockerfile` | 158 |
+| `docker-compose.yml` | 689 |
 
 ### 8.4 Frontend ve Test Özeti
 
+Legacy `web_ui/` dizini (vanilla JS: `index.html`, `style.css`, `chat.js`,
+`sidebar.js`, `rag.js`, `app.js`) v5.x'te tamamen kaldırılmıştır — `web_server.py`
+artık yalnızca `web_ui_react/dist`'i sunar, legacy fallback yolu yoktur.
+Frontend TypeScript migrasyonu kapsamında `VoiceAssistantPanel.jsx`/
+`useVoiceAssistant.js` de `.tsx`/`.ts`'e taşınmıştır (bkz.
+[`docs/development/frontend-typescript-migration.md`](../development/frontend-typescript-migration.md)).
+
 | Kapsam | Değer |
 |---|---:|
-| `web_ui/index.html` | 640 |
-| `web_ui/style.css` | 1.685 |
-| `web_ui/chat.js` | 711 |
-| `web_ui/sidebar.js` | 413 |
-| `web_ui/rag.js` | 132 |
-| `web_ui/app.js` | 819 |
-| **Web UI Toplamı (`web_ui/` + `web_ui_react/`)** | **15.561** |
-| **Legacy UI (`web_ui/` toplam takipli satır)** | **4.769** |
-| **React UI (`web_ui_react/` toplam takipli satır)** | **10.792** |
-| **Voice UI alt kümesi (`VoiceAssistantPanel.jsx` + `useVoiceAssistant.js`)** | **711** |
-| **Test modülü (`tests/test_*.py`)** | **213** |
-| **`tests/*.py` toplam satır** | **65.729** |
+| **Web UI Toplamı (`web_ui_react/`, `node_modules`/`dist` hariç takipli)** | **27.432** |
+| **Voice UI alt kümesi (`VoiceAssistantPanel.tsx` + `useVoiceAssistant.ts`)** | **890** |
+| **Test modülü (`tests/test_*.py`)** | **274** |
+| **`tests/*.py` toplam satır** (test modülleri + fixture/conftest) | **118.756** |
 
 ### 8.5 Dizin Bazlı Hacim Özeti
 
 | Dizin/Kapsam | Ölçüm | Değer |
 |---|---|---:|
-| `tests/` | `test_*.py` modül sayısı | 213 |
-| `tests/` | `*.py` toplam dosya | 215 |
-| `tests/` | `*.py` toplam satır | 65.729 |
-| `web_ui_react/` | toplam takipli satır | 10.792 |
-| `scripts/` | dosya sayısı | 7 |
-| `scripts/` | toplam satır | 613 |
-| `migrations/` | `.py` dosya sayısı (env.py + 4 versions) | 5 |
-| `migrations/` | `*.py` toplam satır | 396 |
+| `tests/` | `test_*.py` modül sayısı | 274 |
+| `tests/` | `*.py` toplam dosya | 302 |
+| `tests/` | `*.py` toplam satır | 118.756 |
+| `web_ui_react/` | toplam takipli satır (`node_modules`/`dist` hariç) | 27.432 |
+| `scripts/` | dosya sayısı | 120 |
+| `scripts/` | toplam satır | 27.976 |
+| `migrations/` | `.py` dosya sayısı (env.py + 7 versions) | 8 |
+| `migrations/` | `*.py` toplam satır | 1.100 |
 | `helm/sidar/` | şablon dosyası sayısı (templates/ dahil) | 25 |
-| `helm/sidar/` | toplam satır | 913 |
-| `docker/` | metin tabanlı stack dosyası sayısı (`*.yml`, `*.json`) | 4 |
-| `docker/` | ilgili telemetri dosyaları toplam satır | 1.032 |
+| `helm/sidar/` | toplam satır | 1.000 |
+| `docker_setup/` | metin tabanlı stack dosyası sayısı (`*.yml`, `*.json`) | 4 |
+| `docker_setup/` | ilgili telemetri dosyaları toplam satır | 1.226 |

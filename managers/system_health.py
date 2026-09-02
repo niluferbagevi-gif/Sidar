@@ -16,7 +16,7 @@ import logging
 import platform
 import shutil
 import socket
-import subprocess  # nosec B404
+import subprocess
 import threading
 from pathlib import Path
 from typing import Any, cast

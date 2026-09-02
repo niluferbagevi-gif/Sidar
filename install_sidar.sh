@@ -19,6 +19,17 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 set -Eeuo pipefail
 
+# uv (ve varsa cargo) kullanıcı-yerel kurulum dizinlerini PATH'e en baştan
+# ekle. install_uv_cli() zaten aynı export'u yapıyor, ama yalnızca sync-deps
+# fazında çalışıyor; prepare-system/provision-models/smoke gibi diğer alt
+# komutlar install_uv_cli()'ı hiç çağırmadan doğrudan ensure_prerequisites()
+# ile başlıyor. uv disk üzerinde (~/.local/bin/uv) zaten kurulu olsa bile bu
+# fazların PATH'inde bulunmuyorsa "uv bulunamadı" fallback'leri (PostgreSQL
+# dotenv senkronizasyonu, runtime env enjeksiyon kontrolü, RAG metadata seed
+# vb.) sessizce atlanıyordu. Süreç genelinde tek bir export burada, en tepede
+# yapılarak alt komutların hepsi aynı PATH'i miras alır.
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+
 # Tek ERR trap handler'ı: sidar_t/warn/LOG_FILE gibi loglama yardımcıları
 # script'in ilerleyen satırlarına (~300+) kadar tanımlı değildir, bu yüzden
 # bootstrap aşamasında (örn. probe-only fast-path) bu fonksiyonlar henüz
@@ -184,7 +195,7 @@ load_remote_script_checksums() {
 load_remote_script_checksums
 
 SIDAR_INSTALLER_EMBEDDED_SOURCE_REF="main"
-SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="f400a17ec09fa963c1ab548b3f0ffff625b4d413"
+SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="539a8f49db1ebe28ab16f6827f29bc8c9b961144"
 
 sidar_truthy_early_bool() {
     local raw="${1:-}"
@@ -253,7 +264,7 @@ verify_core_install_manifest() {
 
     cat <<'SIDAR_INSTALL_MANIFEST_EOF' > "$manifest_path"
 32bb465e8344f235b5d50b76498466415dda43b03d7e40fa7014aa3d38847e63  core/memory.py
-8da261301210fbeba7d5d55cff37200342d1661cf6aaa52b43c79295ce56ee46  core/multimodal.py
+98c6dc8e5901ced9cb527c9c620e554e706a6481b84f86ba97f7992152f06780  core/multimodal.py
 SIDAR_INSTALL_MANIFEST_EOF
 
     if (cd "$SCRIPT_DIR" && sha256sum -c "$manifest_path" --status); then
@@ -620,26 +631,26 @@ a25095932f256989c1a517bd157c808a548d15cc08a96b56e0a7a312d5aac4e2  scripts/instal
 d5fc907be5f085db23189cc349c01072f34d36fd6313db6ca745edea3e10071b  scripts/install_modules/phases/02_repo.sh
 41d198205629671a12d3d9de44e3ca0a597447c00eb2b93feab40c7a0add98df  scripts/install_modules/phases/03_runtime.sh
 36d89771aece3334013906d55be48ee2d7a357490688e4562fd76684a7523702  scripts/install_modules/phases/03_runtime_ollama.sh
-eb808f0c4775cb1132317fa4f2c9af7f3bd88f15d2b581432560070b1543f9be  scripts/install_modules/phases/03_system.sh
-4ef61725d2c0cf92088b4002e03f36e15354477a37c88fac5f8771a79a5f3e97  scripts/install_modules/phases/04_workspace.sh
+394b31e95b45212da99fde5424c755e30abd96721878e2f025cdf17d4adc9b30  scripts/install_modules/phases/03_system.sh
+459677e00e767f1fc73886f51790472da29d56e75f7917f0a89618525a69cc53  scripts/install_modules/phases/04_workspace.sh
 6beadb2761652016b9d7c4de0d35b53b11837ceb16164c9b31ecd84e5f67f816  scripts/install_modules/phases/05_frontend.sh
-392442f8a5b6dc4f38f21386c7ca440b4126ded4dd8450616850eebcaa326789  scripts/install_modules/phases/06_services.sh
-878756e5a9d6580f47241c7d27d2be8fd441f8cc742afa72f0305e810a075983  scripts/install_modules/phases/07_finish.sh
-7038cbc76155bf5138408b7295c65b5019680743e48b3bbb955dfec0b6eaeeef  scripts/install_modules/phases/08_env.sh
-3c5dbf7687703bcef6e0af4a2acd172b0634fe1ae68718e8894bc9781fd23672  scripts/install_modules/phases/09_ollama_models.sh
-bf1283d9609296eff11579189e7a4f87dfbd82339eeac6aa2fb249caf45cf406  scripts/install_modules/phases/10_validation.sh
-f12a23c2a54609f34604437407dde79da158df1de079424c576d3fd0dbbc4664  scripts/install_modules/phases/11_post_install.sh
-a243dbc96b31e697451b507014d234127eb3fcc2ffe183aa9164027a343aee58  scripts/install_modules/phases/12_alembic.sh
+6d2c3b95654f7309c55341098c426f794b12fa9ca7e62b8cb46ec2fb886ab33c  scripts/install_modules/phases/06_services.sh
+ded3b2dc45c36ab426cbb836a409f82492752498cde19812ec7785bb5eda73c6  scripts/install_modules/phases/07_finish.sh
+639a6d9779a046280344001a8b34dbdd05d59dae4ecf646e745a2a8ea2665242  scripts/install_modules/phases/08_env.sh
+3b70d62dd0cd89c0c6eb5d0093ce5ed84e44bcd794ce0e9533b6523654ff1724  scripts/install_modules/phases/09_ollama_models.sh
+3782f8c8eb4eaf5ab062ce8e5819300ab4102d93fd6673e63b6c26e705bbe111  scripts/install_modules/phases/10_validation.sh
+18ae04c55f1859cb80a8c36fbf141e5b1a1a616c42e16ba0e7673cc19681750f  scripts/install_modules/phases/11_post_install.sh
+bb33eb478334373f0883fa460ae89380e4b460e42eb1e65cf7576a7d22f5d30c  scripts/install_modules/phases/12_alembic.sh
 e1ff202b8ba9470c0a26bb3a8a95b97f05666e328f58e7fd92bb7466ca285027  scripts/install_modules/phases/13_playwright.sh
 ee0bf7637e8b5d303ccfe9c58d50e7e059bcdfcf255946c1cf7e984b5a3340ec  scripts/install_modules/phases/14_react.sh
-8c142eb04f13e86e67a5cc673af9fc79ef8be2f61dd35c3451edc4ddc407fcbb  scripts/install_modules/utils/database_url.sh
+a786d101992ecb1739797afb1471f49cfb776366f0e7b92675ddb12e7bcc83e3  scripts/install_modules/utils/database_url.sh
 642067cac2e051e2e2abcebee3968bb702569d2de4f3261dcc4f62f07227f5c6  scripts/install_modules/utils/db_credentials.sh
 785acd2ba53b282b0232bcc721d793f04bc894035a8c7142c13a276301bc5e52  scripts/install_modules/utils/env_secrets.sh
-2455508c980e8a0a6311fe6e016524aa280d54f1bbe3f06535dde92844467ff5  scripts/install_modules/utils/env_utils.sh
+9449f2e359a9247ed6d09900c5e6cf38f73f362e34b98f9cde17f47a9292b074  scripts/install_modules/utils/env_utils.sh
 35ccbf2eada15a109da48fda65735188ab72e535f92bd255b23e4db44cbf01ea  scripts/install_modules/utils/gpu_utils.sh
-9e1534740edec9c8abfca8bff06ca0e7d48ec6cfa16ba4ac2165f8d12ba72872  scripts/install_modules/utils/install_remediation.sh
+40950fdb5f1e6d704136eee3e6ac82a378c2408b7a5219517df717e10c4e36a8  scripts/install_modules/utils/install_remediation.sh
 95d2664491bc38ff01d7f3951cde14832dc542965aea5e0cdeffef01f0d31b2a  scripts/install_modules/utils/installer_hash_guard.sh
-2b4934ce22b5814a6bfc800e149392def0ebbf7b12a951fcfc443a0431aba585  scripts/install_modules/utils/ollama_models.sh
+0844b400df2bb614195d1d24b4896cc2da9ff3ca4a15490f768cd43956d4cd62  scripts/install_modules/utils/ollama_models.sh
 7563c14d01b8afb608f73a57e7271a8cb495741a7eb4f80e6c69d34b4bff2ba4  scripts/install_modules/utils/playwright_ubuntu_override.sh
 6c8169cd334e256912c26f016fee800cca48f4e3b27fbeb42b57090469be8851  scripts/install_modules/utils/python_env.sh
 8e006705540afec95fdf002ad5ab253b1be67c54b582229fb4a667813ec57a9e  scripts/install_modules/utils/remote_script.sh

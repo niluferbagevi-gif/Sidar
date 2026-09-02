@@ -58,9 +58,10 @@ coverage.json
 coverage-final.json
 .benchmarks/
 
-# Node (yalnızca node_modules hariç — web_ui_react/dist CI'da build edilip
-# COPY . . ile imaja gömülür, bu yüzden dist/build burada HARİÇ TUTULMAZ)
+# Node (production SPA, Dockerfile.production içindeki frontend-builder
+# aşamasında lockfile'dan üretilir; host build çıktısı image'a taşınmaz)
 web_ui_react/node_modules/
+web_ui_react/dist/
 web_ui_react/.eslintcache
 web_ui_react/.parcel-cache/
 web_ui_react/.vite/
@@ -99,11 +100,8 @@ yarn-error.log*
 /redis_data/
 
 # Rapor / yedek / build artifact'leri
-# NOT: "dist/" ve "build/" burada KASITLI OLARAK yok — web_ui_react/dist,
-# release-quality CI'da `npm run build` ile üretilip COPY . . aracılığıyla
-# imaja gömülüyor (web_server.py REACT_DIST_DIR / web_dist_path()).
-# Genel bir "dist/" veya "build/" kuralı bu dizini de build context'inden
-# düşürüp React SPA'yı imajdan kaybettirir.
+# Genel "dist/" veya "build/" kuralı, ileride image içinde üretilmeyen farklı
+# build artifact'lerini yanlışlıkla context dışına itebileceği için kullanılmaz.
 /reports/
 /backups/
 /artifacts/

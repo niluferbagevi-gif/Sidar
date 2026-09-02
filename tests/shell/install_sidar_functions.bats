@@ -24,6 +24,10 @@ run_installer_function() {
     unset DATABASE_URL TEST_DATABASE_URL POSTGRES_PASSWORD
     unset SIDAR_PRODUCTION_READINESS PRODUCTION_READINESS TEST_PROFILE
     unset RUN_BENCHMARKS RUN_FRONTEND_E2E AUTO_OPEN_ARTIFACTS
+    # sidar_ollama_export_runtime_defaults() (09_ollama_models.sh) exports
+    # these during a real install; same inherited-state hazard as the vars
+    # above.
+    unset OLLAMA_NUM_CTX OLLAMA_NUM_BATCH OLLAMA_CODING_NUM_CTX
     set --
     source ./install_sidar.sh
     eval "$test_snippet"
@@ -47,6 +51,47 @@ run_installer_function() {
     [[ -z "${AUTO_OPEN_ARTIFACTS+x}" ]]
   '
   [ "$status" -eq 0 ]
+}
+
+@test "sourcing install_sidar.sh puts ~/.local/bin and ~/.cargo/bin on PATH before any subcommand runs" {
+  # Regresyon: prepare-system/provision-models/smoke alt komutları
+  # install_uv_cli()'ı hiç çağırmadan doğrudan ensure_prerequisites() ile
+  # başlıyordu; PATH'e $HOME/.local/bin eklemek yalnızca install_uv_cli()
+  # içinde (yani yalnız sync-deps fazında) yapılıyordu. Bir arkadaş kod
+  # incelemesi bunu tespit etti: uv diskte kurulu olsa bile diğer alt
+  # komutlarda "uv bulunamadı" fallback'leri sessizce tetikleniyordu.
+  local fake_home
+  fake_home="$(mktemp -d)"
+  export HOME="$fake_home"
+
+  run_installer_function '
+    printf "%s" "$PATH"
+  '
+  rm -rf "$fake_home"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"$fake_home/.local/bin:"* ]]
+  [[ "$output" == *"$fake_home/.cargo/bin:"* ]]
+}
+
+@test "ensure_prerequisites re-applies the ~/.local/bin PATH export as a second line of defense" {
+  # Bu fonksiyon başka bir betikten install_sidar.sh'in üst seviye export'u
+  # olmadan doğrudan source edilirse diye aynı export'u kendi başında da
+  # tekrarlıyor. Ağır git/Docker/WSL kontrollerine girmeden yalnızca bu ilk
+  # satırı doğrulamak için info() ilk çağrısında PATH'i yazdırıp çıkıyor.
+  local fake_home
+  fake_home="$(mktemp -d)"
+  export HOME="$fake_home"
+
+  run_installer_function '
+    PATH="/usr/bin:/bin"
+    step() { :; }
+    info() { printf "%s" "$PATH"; exit 0; }
+    ensure_prerequisites
+  '
+  rm -rf "$fake_home"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"$fake_home/.local/bin:"* ]]
+  [[ "$output" == *"$fake_home/.cargo/bin:"* ]]
 }
 
 @test "normalize_bool maps accepted true/false values and rejects unknown input" {
@@ -901,6 +946,7 @@ ENV
     cat > "$env_file" <<ENV
 DATABASE_URL=postgresql+asyncpg://sidar:${master_pw}@127.0.0.1:5432/sidar?ssl=disable
 POSTGRES_PASSWORD=old_value_that_should_be_replaced
+POSTGRES_DB=sidar
 ENV
     for variant in .env.development .env.test .env.advanced; do
       cat > "$tmpdir/${variant}.example" <<ENV
@@ -909,6 +955,7 @@ DATABASE_URL=postgresql+asyncpg://sidar:example_password@127.0.0.1:5432/sidar
 ENV
       cat > "$tmpdir/$variant" <<ENV
 POSTGRES_PASSWORD=${stale_pw}
+POSTGRES_DB=sidar_${variant#.env.}
 DATABASE_URL=postgresql+asyncpg://sidar:${stale_pw}@127.0.0.1:5432/sidar
 SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:${stale_pw}@postgres:5432/sidar
 ENV
@@ -917,10 +964,16 @@ ENV
     SCRIPT_DIR="$tmpdir"
     sync_postgres_env_with_database_url "$env_file"
 
+    # POSTGRES_USER/PASSWORD ve DSN değerleri credential niteliğinde olduğu
+    # için base .env ile zorunlu senkronize edilir. POSTGRES_DB ise senkronize
+    # EDILMEMELI: her varyantin kendi izole veritabani adi (ornek:
+    # .env.development icin sidar_development), base .env dosyasindaki
+    # POSTGRES_DB=sidar degeriyle ezilmeden korunmalidir (bkz. core/doctor
+    # environment_profile kontrolu).
     for variant in .env.development .env.test .env.advanced; do
       grep -q "^POSTGRES_USER=sidar$" "$tmpdir/$variant"
       grep -q "^POSTGRES_PASSWORD=${master_pw}$" "$tmpdir/$variant"
-      grep -q "^POSTGRES_DB=sidar$" "$tmpdir/$variant"
+      grep -q "^POSTGRES_DB=sidar_${variant#.env.}$" "$tmpdir/$variant"
       grep -q "^DATABASE_URL=postgresql+asyncpg://sidar:${master_pw}@127.0.0.1:5432/sidar?ssl=disable$" "$tmpdir/$variant"
       grep -q "^SIDAR_CONTAINER_DATABASE_URL=postgresql+asyncpg://sidar:${master_pw}@postgres:5432/sidar$" "$tmpdir/$variant"
     done
@@ -1357,6 +1410,119 @@ EOF
   [ "$status" -eq 0 ]
 }
 
+@test "ci-full validation auto-seeds a missing benchmark baseline before production-readiness" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    RUN_CI_FULL_VALIDATION=true
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/Makefile" <<EOF
+production-readiness:
+	@true
+benchmark-seed:
+	@true
+EOF
+    cat > "$tmpdir/bin/make" <<EOF
+#!/usr/bin/env bash
+printf "%s\\n" "\$*" >> "$tmpdir/make.log"
+EOF
+    chmod +x "$tmpdir/bin/make"
+    export PATH="$tmpdir/bin:$PATH"
+    cat > "$tmpdir/run_tests.sh" <<EOF
+#!/usr/bin/env bash
+exit 99
+EOF
+    chmod +x "$tmpdir/run_tests.sh"
+
+    # No .benchmarks/ directory at all: a completely fresh checkout.
+    run_install_ci_full_validation
+
+    [[ "$CI_FULL_VALIDATION_STATUS" == "tamamlandi" ]]
+    [[ "$(cat "$tmpdir/make.log")" == "benchmark-seed
+production-readiness" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *".benchmarks"*"baseline bulunamadı"* ]]
+  [[ "$output" == *"make benchmark-seed"*"otomatik çalıştırılıyor"* ]]
+  [[ "$output" == *"baseline'ı oluşturuldu"* ]]
+}
+
+@test "ci-full validation skips benchmark-seed when a baseline already exists" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    RUN_CI_FULL_VALIDATION=true
+    mkdir -p "$tmpdir/bin"
+    mkdir -p "$tmpdir/.benchmarks/Linux-CPython-3.11-64bit"
+    touch "$tmpdir/.benchmarks/Linux-CPython-3.11-64bit/0001_baseline.json"
+    cat > "$tmpdir/Makefile" <<EOF
+production-readiness:
+	@true
+benchmark-seed:
+	@true
+EOF
+    cat > "$tmpdir/bin/make" <<EOF
+#!/usr/bin/env bash
+printf "%s\\n" "\$*" >> "$tmpdir/make.log"
+EOF
+    chmod +x "$tmpdir/bin/make"
+    export PATH="$tmpdir/bin:$PATH"
+    cat > "$tmpdir/run_tests.sh" <<EOF
+#!/usr/bin/env bash
+exit 99
+EOF
+    chmod +x "$tmpdir/run_tests.sh"
+
+    run_install_ci_full_validation
+
+    [[ "$CI_FULL_VALIDATION_STATUS" == "tamamlandi" ]]
+    [[ "$(cat "$tmpdir/make.log")" == "production-readiness" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"benchmark baseline bulunamadı"* ]]
+  [[ "$output" != *"make benchmark-seed"*"otomatik çalıştırılıyor"* ]]
+}
+
+@test "ci-full validation still attempts production-readiness when benchmark-seed itself fails" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    RUN_CI_FULL_VALIDATION=true
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/Makefile" <<EOF
+production-readiness:
+	@true
+benchmark-seed:
+	@false
+EOF
+    cat > "$tmpdir/bin/make" <<EOF
+#!/usr/bin/env bash
+printf "%s\\n" "\$*" >> "$tmpdir/make.log"
+[[ "\$*" == "benchmark-seed" ]] && exit 1
+exit 0
+EOF
+    chmod +x "$tmpdir/bin/make"
+    export PATH="$tmpdir/bin:$PATH"
+    cat > "$tmpdir/run_tests.sh" <<EOF
+#!/usr/bin/env bash
+exit 99
+EOF
+    chmod +x "$tmpdir/run_tests.sh"
+
+    run_install_ci_full_validation
+
+    [[ "$CI_FULL_VALIDATION_STATUS" == "tamamlandi" ]]
+    [[ "$(cat "$tmpdir/make.log")" == "benchmark-seed
+production-readiness" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"make benchmark-seed"*"başarısız oldu"* ]]
+  [[ "$output" == *"yine de denenecek"* ]]
+}
+
 
 @test "development full validation prompt runs GPU stress full gate when accepted" {
   run_installer_function '
@@ -1737,6 +1903,140 @@ EOF
 
     sidar_phase_workspace_config
     [[ "${events[*]}" == "source:python_env.sh database_url.sh db_credentials.sh env_utils.sh create_directories setup_vscode_workspace setup_env_file" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "create_directories skips the doomed chown 10001 attempt for docker mode when not root" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    SCRIPT_DIR="$tmpdir"
+    REQUIRED_DIRS=(data logs temp sessions)
+    APP_RUNTIME_MODE_SELECTED=docker
+
+    cat > "$tmpdir/bin/id" <<EOF
+#!/usr/bin/env bash
+case "\$1" in
+  -u) echo 1000 ;;
+  -g) echo 1000 ;;
+esac
+EOF
+    cat > "$tmpdir/bin/chown" <<EOF
+#!/usr/bin/env bash
+printf "chown:%s\n" "\$*" >> "$tmpdir/chown.log"
+exit 0
+EOF
+    chmod +x "$tmpdir/bin/id" "$tmpdir/bin/chown"
+    export PATH="$tmpdir/bin:$PATH"
+
+    create_directories
+
+    [[ ! -f "$tmpdir/chown.log" ]]
+    [[ -d "$tmpdir/logs" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "create_directories chowns bind dirs to 10001 for docker mode only when actually running as root" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    SCRIPT_DIR="$tmpdir"
+    REQUIRED_DIRS=(data logs temp sessions)
+    APP_RUNTIME_MODE_SELECTED=docker
+
+    cat > "$tmpdir/bin/id" <<EOF
+#!/usr/bin/env bash
+echo 0
+EOF
+    cat > "$tmpdir/bin/chown" <<EOF
+#!/usr/bin/env bash
+printf "chown:%s\n" "\$*" >> "$tmpdir/chown.log"
+exit 0
+EOF
+    chmod +x "$tmpdir/bin/id" "$tmpdir/bin/chown"
+    export PATH="$tmpdir/bin:$PATH"
+
+    create_directories
+
+    grep -q "^chown:10001:10001 $tmpdir/logs\$" "$tmpdir/chown.log"
+    grep -q "^chown:10001:10001 $tmpdir/data\$" "$tmpdir/chown.log"
+    grep -q "^chown:10001:10001 $tmpdir/temp\$" "$tmpdir/chown.log"
+    grep -q "^chown:10001:10001 $tmpdir/sessions\$" "$tmpdir/chown.log"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "ensure_container_uid_gid_defaults writes host UID/GID to .env for docker mode when not root and unset" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    env_file="$tmpdir/.env"
+    touch "$env_file"
+    APP_RUNTIME_MODE_SELECTED=docker
+
+    cat > "$tmpdir/bin/id" <<EOF
+#!/usr/bin/env bash
+case "\$1" in
+  -u) echo 1001 ;;
+  -g) echo 1002 ;;
+esac
+EOF
+    chmod +x "$tmpdir/bin/id"
+    export PATH="$tmpdir/bin:$PATH"
+
+    ensure_container_uid_gid_defaults "$env_file"
+
+    grep -q "^SIDAR_CONTAINER_UID=1001$" "$env_file"
+    grep -q "^SIDAR_CONTAINER_GID=1002$" "$env_file"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "ensure_container_uid_gid_defaults is a no-op outside docker mode, when root, or when already set" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+
+    cat > "$tmpdir/bin/id" <<EOF
+#!/usr/bin/env bash
+case "\$1" in
+  -u) echo 0 ;;
+  -g) echo 0 ;;
+esac
+EOF
+    chmod +x "$tmpdir/bin/id"
+    export PATH="$tmpdir/bin:$PATH"
+
+    env_file1="$tmpdir/.env.local"
+    touch "$env_file1"
+    APP_RUNTIME_MODE_SELECTED=local
+    ensure_container_uid_gid_defaults "$env_file1"
+    [[ ! -s "$env_file1" ]]
+
+    env_file2="$tmpdir/.env.root"
+    touch "$env_file2"
+    APP_RUNTIME_MODE_SELECTED=docker
+    ensure_container_uid_gid_defaults "$env_file2"
+    [[ ! -s "$env_file2" ]]
+
+    cat > "$tmpdir/bin/id" <<EOF2
+#!/usr/bin/env bash
+case "\$1" in
+  -u) echo 1001 ;;
+  -g) echo 1002 ;;
+esac
+EOF2
+
+    env_file3="$tmpdir/.env.preset"
+    printf "SIDAR_CONTAINER_UID=42\n" > "$env_file3"
+    ensure_container_uid_gid_defaults "$env_file3"
+    [[ "$(cat "$env_file3")" == "SIDAR_CONTAINER_UID=42" ]]
   '
   [ "$status" -eq 0 ]
 }
@@ -2176,6 +2476,7 @@ EOF
 #!/usr/bin/env bash
 printf "venv|%s|%s\n" "\${DATABASE_URL:-}" "\$*" >> "$tmpdir/python.log"
 case "\$*" in
+  "-c import asyncpg") exit 0 ;;
   "-m alembic current --check-heads") exit 2 ;;
   "-m alembic current") echo "  0006_access_control_schema (head)" ;;
   "-m alembic heads") echo "    0006_access_control_schema (head)" ;;
@@ -2191,11 +2492,107 @@ EOF
 
     is_alembic_at_head
 
-    [[ "$(wc -l < "$tmpdir/python.log")" -eq 3 ]]
+    [[ "$(wc -l < "$tmpdir/python.log")" -eq 4 ]]
+    grep -q "^venv||-c import asyncpg$" "$tmpdir/python.log"
     grep -q "^venv|postgresql+asyncpg://sidar:secret@localhost:5432/sidar|-m alembic current --check-heads$" "$tmpdir/python.log"
     grep -q "^venv|postgresql+asyncpg://sidar:secret@localhost:5432/sidar|-m alembic current$" "$tmpdir/python.log"
     grep -q "^venv|postgresql+asyncpg://sidar:secret@localhost:5432/sidar|-m alembic heads$" "$tmpdir/python.log"
     ! grep -q "^system|" "$tmpdir/python.log"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "resolve_alembic_python self-heals a stale venv missing asyncpg via uv sync --extra postgres" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/.venv/bin" "$tmpdir/bin"
+    SCRIPT_DIR="$tmpdir"
+    touch "$tmpdir/uv.lock"
+
+    # Venv python lacks asyncpg until the marker file (written by the fake
+    # `uv sync` below) appears, simulating a stale/incomplete .venv left over
+    # from an earlier install attempt (e.g. a different dependency profile,
+    # or "Tam Docker" mode, which never runs uv sync on the host at all).
+    cat > "$tmpdir/.venv/bin/python" <<EOF
+#!/usr/bin/env bash
+printf "venv:%s\n" "\$*" >> "$tmpdir/python.log"
+if [[ "\$*" == "-c import asyncpg" ]]; then
+  [[ -f "$tmpdir/.venv/.asyncpg-installed" ]] && exit 0 || exit 1
+fi
+EOF
+    cat > "$tmpdir/bin/uv" <<EOF
+#!/usr/bin/env bash
+printf "uv:%s\n" "\$*" >> "$tmpdir/uv.log"
+[[ "\$*" == "sync --frozen --extra postgres" ]] && touch "$tmpdir/.venv/.asyncpg-installed"
+exit 0
+EOF
+    chmod +x "$tmpdir/.venv/bin/python" "$tmpdir/bin/uv"
+    export PATH="$tmpdir/bin:$PATH"
+
+    resolved="$(resolve_alembic_python)"
+
+    [[ "$resolved" == "$tmpdir/.venv/bin/python" ]]
+    [[ -f "$tmpdir/uv.log" ]]
+    grep -q "^uv:sync --frozen --extra postgres$" "$tmpdir/uv.log"
+    [[ "$(wc -l < "$tmpdir/python.log")" -eq 2 ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "resolve_alembic_python warns and still returns the venv when uv sync cannot fix a missing asyncpg" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/.venv/bin" "$tmpdir/bin"
+    SCRIPT_DIR="$tmpdir"
+    touch "$tmpdir/uv.lock"
+
+    cat > "$tmpdir/.venv/bin/python" <<EOF
+#!/usr/bin/env bash
+exit 1
+EOF
+    cat > "$tmpdir/bin/uv" <<EOF
+#!/usr/bin/env bash
+exit 1
+EOF
+    chmod +x "$tmpdir/.venv/bin/python" "$tmpdir/bin/uv"
+    export PATH="$tmpdir/bin:$PATH"
+
+    resolved="$(resolve_alembic_python)"
+    echo "RESOLVED=$resolved"
+
+    [[ "$resolved" == "$tmpdir/.venv/bin/python" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"RESOLVED="*"/.venv/bin/python"* ]]
+  [[ "$output" == *"tamamlanamadı"* ]]
+}
+
+@test "resolve_alembic_python does not touch uv when the venv already has asyncpg" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/.venv/bin" "$tmpdir/bin"
+    SCRIPT_DIR="$tmpdir"
+    touch "$tmpdir/uv.lock"
+
+    cat > "$tmpdir/.venv/bin/python" <<EOF
+#!/usr/bin/env bash
+exit 0
+EOF
+    cat > "$tmpdir/bin/uv" <<EOF
+#!/usr/bin/env bash
+printf "uv should not run\n" >> "$tmpdir/uv.log"
+exit 99
+EOF
+    chmod +x "$tmpdir/.venv/bin/python" "$tmpdir/bin/uv"
+    export PATH="$tmpdir/bin:$PATH"
+
+    resolved="$(resolve_alembic_python)"
+
+    [[ "$resolved" == "$tmpdir/.venv/bin/python" ]]
+    [[ ! -f "$tmpdir/uv.log" ]]
   '
   [ "$status" -eq 0 ]
 }
@@ -2402,7 +2799,7 @@ EOF
 
     sidar_phase_local_migrations_and_models
     sidar_phase_services_and_validation
-    [[ "${events[*]}" == "source:ollama_models.sh prepare_docker_for_migrations ensure_postgres_databases_exist run_migrations seed_rag_metadata_after_migrations download_ollama_models phase06_docker_daemon_gate_or_fail run_pre_service_installer_smoke_gate launch_docker_services run_smoke_tests run_install_integration_api_tests run_install_frontend_quality_validation run_test_artifact_audit" ]]
+    [[ "${events[*]}" == "source:env_utils.sh database_url.sh ollama_models.sh prepare_docker_for_migrations ensure_postgres_databases_exist run_migrations seed_rag_metadata_after_migrations download_ollama_models phase06_docker_daemon_gate_or_fail run_pre_service_installer_smoke_gate launch_docker_services run_smoke_tests run_install_integration_api_tests run_install_frontend_quality_validation run_test_artifact_audit" ]]
   '
   [ "$status" -eq 0 ]
 }
@@ -2433,6 +2830,7 @@ EOF
     prepare_docker_for_migrations() { events+=(unexpected_prepare); return 99; }
     run_migrations() { events+=(unexpected_migration); return 99; }
     download_ollama_models() { events+=(unexpected_models); return 99; }
+    sidar_ensure_ollama_host_port_available_for_docker() { events+=(sidar_ensure_ollama_host_port_available_for_docker); }
     launch_docker_services() { events+=(launch_docker_services); }
     run_smoke_tests() { events+=(unexpected_smoke); return 99; }
     run_install_integration_api_tests() { events+=(unexpected_integration); return 99; }
@@ -2441,11 +2839,66 @@ EOF
 
     sidar_phase_local_migrations_and_models
     sidar_phase_services_and_validation
-    [[ "${events[*]}" == "source:ollama_models.sh phase06_docker_daemon_gate_or_fail launch_docker_services" ]]
+    [[ "${events[*]}" == "source:env_utils.sh database_url.sh ollama_models.sh sidar_ensure_ollama_host_port_available_for_docker phase06_docker_daemon_gate_or_fail launch_docker_services" ]]
     [[ "$MIGRATION_STATUS" == "tam_docker_modu_nedeniyle_atlandi" ]]
     [[ "$SMOKE_TEST_STATUS" == "tam_docker_modu_nedeniyle_atlandi" ]]
     [[ "$INTEGRATION_TEST_STATUS" == "tam_docker_modu_nedeniyle_atlandi" ]]
     [[ "$AUDIT_STATUS" == "tam_docker_modu_nedeniyle_atlandi" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "sidar_compose_up_with_retry succeeds on the first attempt without sleeping" {
+  # A friend's install-log review found `docker compose up -d` was a single
+  # shot with no retry: one transient registry hiccup on ANY image (even one
+  # unrelated to the app, e.g. tecnativa/docker-socket-proxy) dropped the
+  # whole `up -d`, leaving postgres never started and the later Alembic
+  # phase crashing hard.
+  run_installer_function '
+    events=()
+    docker() { events+=("docker:$*"); return 0; }
+    sleep() { events+=("sleep:$*"); }
+    warn() { events+=("warn:$*"); }
+
+    sidar_compose_up_with_retry docker compose up -d
+    [[ "${events[*]}" == "docker:compose up -d" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "sidar_compose_up_with_retry retries with backoff after a transient failure then succeeds" {
+  run_installer_function '
+    events=()
+    call_count=0
+    docker() {
+      call_count=$((call_count + 1))
+      events+=("docker:attempt${call_count}")
+      [[ "$call_count" -ge 2 ]]
+    }
+    sleep() { events+=("sleep:$*"); }
+    warn() { events+=("warn:$*"); }
+
+    sidar_compose_up_with_retry docker compose up -d
+    [[ "${#events[@]}" -eq 4 ]]
+    [[ "${events[0]}" == "docker:attempt1" ]]
+    [[ "${events[1]}" == *"1/3"* ]]
+    [[ "${events[2]}" == "sleep:5" ]]
+    [[ "${events[3]}" == "docker:attempt2" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "sidar_compose_up_with_retry fails after 3 attempts, sleeping only between attempts" {
+  run_installer_function '
+    events=()
+    docker() { events+=(docker); return 1; }
+    sleep() { events+=("sleep:$*"); }
+    warn() { events+=(warn); }
+
+    if sidar_compose_up_with_retry docker compose up -d; then
+      exit 1
+    fi
+    [[ "${events[*]}" == "docker warn sleep:5 docker warn sleep:10 docker" ]]
   '
   [ "$status" -eq 0 ]
 }
@@ -2462,13 +2915,178 @@ EOF
     ensure_postgres_databases_exist() { events+=(unexpected_database_bootstrap); return 99; }
     run_migrations() { events+=(unexpected_migration); return 99; }
     download_ollama_models() { events+=(unexpected_models); return 99; }
+    sidar_ensure_ollama_host_port_available_for_docker() { events+=(sidar_ensure_ollama_host_port_available_for_docker); }
     command() { events+=("unexpected_command:$*"); return 99; }
     info() { events+=("info:$*"); }
 
     sidar_phase_local_migrations_and_models
 
-    [[ "${events[*]}" == "source:ollama_models.sh info:Tam Docker modu: lokal migrasyon/model indirme adımları atlanıyor. info:AUTO_SEED_RAG_DOCKER_WARMUP=false; Docker RAG warmup seed atlandı." ]]
+    [[ "${events[*]}" == "source:env_utils.sh database_url.sh ollama_models.sh info:Tam Docker modu: lokal migrasyon/model indirme adımları atlanıyor. sidar_ensure_ollama_host_port_available_for_docker info:AUTO_SEED_RAG_DOCKER_WARMUP=false; Docker RAG warmup seed atlandı." ]]
     [[ "$MIGRATION_STATUS" == "tam_docker_modu_nedeniyle_atlandi" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "sidar_tcp_port_listening detects a real bound socket and correctly reports a free one" {
+  run_installer_function '
+    sidar_source_install_utils "ollama_models.sh"
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    port_file="$tmpdir/port.txt"
+
+    python3 - "$port_file" <<PY &
+import socket, sys, time
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind(("127.0.0.1", 0))
+s.listen(1)
+with open(sys.argv[1], "w") as f:
+    f.write(str(s.getsockname()[1]))
+time.sleep(6)
+PY
+    listener_pid=$!
+    trap "kill $listener_pid 2>/dev/null || true; rm -rf \"$tmpdir\"" EXIT
+
+    bound_port=""
+    for _ in $(seq 1 30); do
+      if [[ -s "$port_file" ]]; then
+        bound_port="$(cat "$port_file")"
+        break
+      fi
+      sleep 0.2
+    done
+    [[ -n "$bound_port" ]]
+
+    sidar_tcp_port_listening 127.0.0.1 "$bound_port"
+
+    free_port=$((bound_port + 1))
+    for _ in $(seq 1 20); do
+      sidar_tcp_port_listening 127.0.0.1 "$free_port" || break
+      free_port=$((free_port + 1))
+    done
+    ! sidar_tcp_port_listening 127.0.0.1 "$free_port"
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "sidar_find_free_tcp_port scans forward past occupied ports and gives up after the attempt budget" {
+  run_installer_function '
+    sidar_source_install_utils "ollama_models.sh"
+
+    sidar_tcp_port_listening() {
+      [[ "$2" -lt 11437 ]]
+    }
+    result="$(sidar_find_free_tcp_port 11434 127.0.0.1)"
+    [[ "$result" == "11437" ]]
+
+    sidar_tcp_port_listening() { return 0; }
+    ! sidar_find_free_tcp_port 20000 127.0.0.1
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "sidar_ensure_ollama_host_port_available_for_docker is a no-op when the configured port is free" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    SCRIPT_DIR="$tmpdir"
+    printf "OLLAMA_PORT=11434\nOLLAMA_URL=http://localhost:11434/api\n" > "$tmpdir/.env"
+
+    sidar_source_install_utils "env_utils.sh" "database_url.sh" "ollama_models.sh"
+    cat > "$tmpdir/bin/docker" <<EOF
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "$tmpdir/bin/docker"
+    export PATH="$tmpdir/bin:$PATH"
+    sidar_tcp_port_listening() { return 1; }
+    sidar_find_free_tcp_port() { events_marker=called; echo unexpected; return 0; }
+
+    sidar_ensure_ollama_host_port_available_for_docker
+
+    [[ "$(cat "$tmpdir/.env")" == "OLLAMA_PORT=11434
+OLLAMA_URL=http://localhost:11434/api" ]]
+    [[ -z "${events_marker:-}" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "sidar_ensure_ollama_host_port_available_for_docker shifts OLLAMA_PORT/OLLAMA_URL when the configured port is occupied" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    SCRIPT_DIR="$tmpdir"
+    printf "OLLAMA_PORT=11434\nOLLAMA_URL=http://localhost:11434/api\n" > "$tmpdir/.env"
+
+    sidar_source_install_utils "env_utils.sh" "database_url.sh" "ollama_models.sh"
+    cat > "$tmpdir/bin/docker" <<EOF
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "$tmpdir/bin/docker"
+    export PATH="$tmpdir/bin:$PATH"
+    sidar_tcp_port_listening() { return 0; }
+    sidar_find_free_tcp_port() { echo 11450; return 0; }
+
+    sidar_ensure_ollama_host_port_available_for_docker
+
+    grep -q "^OLLAMA_PORT=11450$" "$tmpdir/.env"
+    grep -q "^OLLAMA_URL=http://localhost:11450/api$" "$tmpdir/.env"
+    [[ "$OLLAMA_PORT" == "11450" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "sidar_ensure_ollama_host_port_available_for_docker warns and leaves .env untouched when no free port is found" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    SCRIPT_DIR="$tmpdir"
+    printf "OLLAMA_PORT=11434\n" > "$tmpdir/.env"
+
+    sidar_source_install_utils "env_utils.sh" "database_url.sh" "ollama_models.sh"
+    cat > "$tmpdir/bin/docker" <<EOF
+#!/usr/bin/env bash
+exit 0
+EOF
+    chmod +x "$tmpdir/bin/docker"
+    export PATH="$tmpdir/bin:$PATH"
+    sidar_tcp_port_listening() { return 0; }
+    sidar_find_free_tcp_port() { return 1; }
+
+    if sidar_ensure_ollama_host_port_available_for_docker; then
+      echo "expected non-zero exit" >&2
+      exit 1
+    fi
+
+    [[ "$(cat "$tmpdir/.env")" == "OLLAMA_PORT=11434" ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"boş bir yedek port bulunamadı"* ]]
+}
+
+@test "sidar_ensure_ollama_host_port_available_for_docker is a no-op when docker is unavailable" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    SCRIPT_DIR="$tmpdir"
+    printf "OLLAMA_PORT=11434\n" > "$tmpdir/.env"
+
+    sidar_source_install_utils "env_utils.sh" "database_url.sh" "ollama_models.sh"
+    sidar_tcp_port_listening() { echo unexpected; return 0; }
+    command() {
+      if [[ "$1" == "-v" && "$2" == "docker" ]]; then
+        return 1
+      fi
+      builtin command "$@"
+    }
+
+    sidar_ensure_ollama_host_port_available_for_docker
+
+    [[ "$(cat "$tmpdir/.env")" == "OLLAMA_PORT=11434" ]]
   '
   [ "$status" -eq 0 ]
 }
@@ -2747,6 +3365,99 @@ EOF
   '
   [ "$status" -eq 1 ]
   [[ "$output" == *"PostgreSQL auth başarısız"* ]]
+}
+
+@test "ensure_postgres_databases_exist retries a transient connection failure before succeeding" {
+  # A friend's install-log review found this was a single-shot check: right
+  # after `docker compose up -d` returns, postgres can take a few seconds to
+  # start accepting connections, and one hiccup here used to abort the whole
+  # install via auto-heal's "no applicable self-heal strategy".
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    counter_file="$tmpdir/attempts"
+    echo 0 > "$counter_file"
+    cat > "$tmpdir/psql" <<"EOF"
+#!/usr/bin/env bash
+n=$(cat "__COUNTER__")
+n=$((n + 1))
+echo "$n" > "__COUNTER__"
+if [[ "$*" == *"-tAc SELECT 1 FROM pg_database"* ]]; then
+  if [[ "$n" -lt 3 ]]; then
+    echo "psql: error: connection refused" >&2
+    exit 2
+  fi
+  echo "1"
+  exit 0
+fi
+exit 0
+EOF
+    sed -i "s#__COUNTER__#$counter_file#g" "$tmpdir/psql"
+    chmod +x "$tmpdir/psql"
+    PATH="$tmpdir:$PATH"
+    hash -r
+    sleep() { :; }
+
+    ensure_postgres_databases_exist "127.0.0.1" "5432" "sidar" "super-secret" "sidar"
+    [[ "$(cat "$counter_file")" -ge 3 ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "ensure_postgres_databases_exist points at docker compose up when postgres is not running" {
+  run_installer_function '
+    cat > "$BATS_TEST_TMPDIR/psql" <<"EOF"
+#!/usr/bin/env bash
+echo "psql: error: connection refused" >&2
+exit 2
+EOF
+    chmod +x "$BATS_TEST_TMPDIR/psql"
+    PATH="$BATS_TEST_TMPDIR:$PATH"
+    hash -r
+    sleep() { :; }
+    docker() {
+      if [[ "$1" == "compose" && "$2" == "version" ]]; then
+        return 0
+      fi
+      if [[ "$1" == "compose" && "$2" == "ps" ]]; then
+        return 0
+      fi
+      return 1
+    }
+
+    ensure_postgres_databases_exist "127.0.0.1" "5432" "sidar" "super-secret" "sidar"
+  '
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Docker'da çalışmıyor görünüyor"* ]]
+  [[ "$output" == *"docker compose up -d postgres"* ]]
+}
+
+@test "ensure_postgres_databases_exist points at healthcheck wait when postgres container is already running" {
+  run_installer_function '
+    cat > "$BATS_TEST_TMPDIR/psql" <<"EOF"
+#!/usr/bin/env bash
+echo "psql: error: connection refused" >&2
+exit 2
+EOF
+    chmod +x "$BATS_TEST_TMPDIR/psql"
+    PATH="$BATS_TEST_TMPDIR:$PATH"
+    hash -r
+    sleep() { :; }
+    docker() {
+      if [[ "$1" == "compose" && "$2" == "version" ]]; then
+        return 0
+      fi
+      if [[ "$1" == "compose" && "$2" == "ps" ]]; then
+        echo "fakecontainerid123"
+        return 0
+      fi
+      return 1
+    }
+
+    ensure_postgres_databases_exist "127.0.0.1" "5432" "sidar" "super-secret" "sidar"
+  '
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"çalışıyor ama bağlantı henüz kabul etmiyor"* ]]
 }
 
 @test "sync_pytorch_cuda_wheels has a single definition, not a phases/10_validation.sh shadow copy" {

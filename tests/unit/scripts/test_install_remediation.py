@@ -141,6 +141,14 @@ def test_remote_script_interactive_pin_fails_closed_without_controlling_tty(
             1,
         ),
         (
+            "06_models",
+            "run_coding_model_smoke_prompt",
+            "Coding model JSON smoke testi başarısız: Ollama generate çağrısı yanıt vermedi "
+            "(qwen2.5-coder:7b, HTTP 500). Ollama hata metni: cuda error: out of memory",
+            "coding-model-oom-failure",
+            1,
+        ),
+        (
             "05_frontend",
             "npm install",
             "temporary network timeout",
@@ -286,3 +294,62 @@ def test_install_remediation_uses_structured_failure_codes_and_scoped_venv_clean
         "root-owned-venv",
         "service-cleanup-blocked",
     ]
+
+
+def test_coding_model_oom_failure_gets_concrete_guidance_on_first_occurrence() -> None:
+    """Review bulgusu (e): auto-heal 06_models fazına özel bir strateji tanımıyordu.
+
+    Before this fix, a coding-model smoke-test/OOM failure fell through every
+    specific classifier, took a blind "transient-phase-retry", and only on the
+    *second* (identical) failure did the generic repeated-failure-signature
+    fail-fast kick in - with no guidance beyond "aynı failure imzası
+    tekrarlandı". This asserts sidar_handle_install_failure now recognizes the
+    signature and gives concrete .env guidance on the FIRST occurrence
+    (attempt=0), without ever attempting a phase retry.
+    """
+    script = r"""
+        set -Eeuo pipefail
+        source scripts/install_modules/utils/install_remediation.sh
+        info() { :; }
+        warn() { printf 'WARN:%s\n' "$*"; }
+        sidar_write_remediation_report() { printf 'REPORT:%s|%s|%s\n' "$1" "$2" "$3"; }
+        sidar_resume_after_remediation() { echo "UNEXPECTED-RESUME-CALLED"; exit 1; }
+
+        export SIDAR_CURRENT_INSTALL_PHASE="06_models"
+        export SIDAR_INSTALL_REMEDIATION_ATTEMPT=0
+        unset SIDAR_INSTALL_LAST_FAILURE_PHASE SIDAR_INSTALL_LAST_FAILURE_SIGNATURE || true
+
+        reason="Coding model JSON smoke testi başarısız: Ollama generate çağrısı yanıt vermedi"
+        reason="${reason} (qwen2.5-coder:7b, HTTP 500)."
+        reason="${reason} Ollama hata metni: cuda error: out of memory"
+        reason="${reason} [GPU belleği yetersiz olabilir (OOM). OLLAMA_NUM_BATCH veya"
+        reason="${reason} OLLAMA_CODING_NUM_CTX değerini düşürmeyi ya da eşzamanlı istek sayısını"
+        reason="${reason} (OLLAMA_GPU_REQUEST_POOL_SIZE) azaltmayı deneyin.] .env dosyasında"
+        reason="${reason} OLLAMA_CODING_NUM_CTX=2048 ayarlayıp kurulumu yeniden deneyin."
+
+        rc=0
+        sidar_handle_install_failure 1 148 "run_coding_model_smoke_prompt" "$reason" || rc="$?"
+        printf 'RC:%s\n' "$rc"
+    """
+
+    result = subprocess.run(
+        ["bash", "-c", script],
+        cwd=REPO_ROOT,
+        env={"SIDAR_INSTALL_TEST_MODE": "1", "SIDAR_INSTALL_AUTO_HEAL": "1", **os.environ},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert "UNEXPECTED-RESUME-CALLED" not in result.stdout
+    assert "RC:1" in result.stdout
+    assert (
+        "REPORT:06_models|coding-model-oom-failure|fail-fast;no-retry;manual-fix-required"
+        in result.stdout
+    )
+    assert "OLLAMA_CODING_NUM_CTX=2048" in result.stdout
+    assert "OLLAMA_NUM_BATCH" in result.stdout
+    assert "curl -s http://localhost:11434/api/generate" in result.stdout
+    assert "ollama ps" in result.stdout
+    # This must fire on the FIRST occurrence, not only after a repeated signature.
+    assert "aynı failure imzası tekrarlandı" not in result.stdout

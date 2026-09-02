@@ -113,6 +113,153 @@ def test_production_profile_is_the_compose_service_env_contract() -> None:
     assert "SIDAR_RUNTIME_ENV_FILE=.env.production" in production_env
 
 
+def test_container_name_fields_are_namespaced_by_compose_project_name() -> None:
+    """Regression test: container_name must never be a bare literal again.
+
+    A literal ``container_name: sidar_ollama`` (etc.) is unique per Docker
+    daemon regardless of ``--project-name``/``-p``: two independent Compose
+    stacks sharing the same daemon (a developer's already-running dev stack
+    and scripts/ci/validate_production_compose.sh's isolated
+    "sidar-production-gate" project, or two CI jobs on a self-hosted runner)
+    collide with "Conflict. The container name ... is already in use" the
+    moment both try to create e.g. "sidar_ollama". Every container_name must
+    interpolate ``${COMPOSE_PROJECT_NAME:-sidar}`` so a distinct project name
+    produces distinct container names, while the default (unset
+    COMPOSE_PROJECT_NAME) still resolves to today's plain "sidar_*" names --
+    see test_compose_project_name_isolates_container_names_between_stacks for
+    the real-Compose-interpolation half of this contract.
+    """
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+    container_name_lines = [
+        line for line in compose.splitlines() if line.strip().startswith("container_name:")
+    ]
+    assert container_name_lines, "expected at least one container_name field"
+    for line in container_name_lines:
+        assert "${COMPOSE_PROJECT_NAME:-sidar}_" in line, (
+            f"container_name must be namespaced by COMPOSE_PROJECT_NAME: {line.strip()}"
+        )
+
+
+def test_validate_production_compose_exports_compose_project_name() -> None:
+    """The gate must export COMPOSE_PROJECT_NAME, not just pass --project-name.
+
+    docker-compose.yml's container_name fields interpolate
+    ``${COMPOSE_PROJECT_NAME}``, which reads the environment variable --
+    relying solely on the ``--project-name``/``-p`` CLI flag to populate that
+    interpolation is an undocumented, Compose-version-dependent assumption.
+    """
+    script = Path("scripts/ci/validate_production_compose.sh").read_text(encoding="utf-8")
+    assert 'export COMPOSE_PROJECT_NAME="$project_name"' in script
+    assert script.index('export COMPOSE_PROJECT_NAME="$project_name"') < script.index(
+        'compose=(docker compose --project-name "$project_name"'
+    )
+
+
+def test_validate_production_compose_isolates_postgres_volume() -> None:
+    """The disposable gate must never mount or remove the development database."""
+    script = Path("scripts/ci/validate_production_compose.sh").read_text(encoding="utf-8")
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+
+    assert "name: ${SIDAR_POSTGRES_VOLUME_NAME:-sidar_postgres_data}" in compose
+    expected_volume_name_export = (
+        "export SIDAR_POSTGRES_VOLUME_NAME="
+        '"${SIDAR_POSTGRES_VOLUME_NAME:-${project_name}_postgres_data}"'
+    )
+    assert expected_volume_name_export in script
+    assert "SIDAR_POSTGRES_VOLUME_NAME=$SIDAR_POSTGRES_VOLUME_NAME" in script
+    assert script.index("export SIDAR_POSTGRES_VOLUME_NAME=") < script.index(
+        'compose=(docker compose --project-name "$project_name"'
+    )
+
+
+@pytest.mark.integration
+def test_compose_project_name_isolates_container_names_between_stacks(tmp_path: Path) -> None:
+    """Real Compose interpolation: distinct project names -> distinct container names.
+
+    Reproduces the reported "Conflict. The container name '/sidar_ollama' is
+    already in use" failure mode directly: two ``docker compose config`` runs
+    against the *same* docker-compose.yml, with different project names
+    (mirroring a developer's plain dev stack vs.
+    validate_production_compose.sh's "sidar-production-gate" project running
+    concurrently on the same Docker daemon), must produce non-colliding
+    container names. Also pins the required backward-compat guarantee: the
+    default project name (no ``--project-name`` at all, matching every
+    existing plain ``docker compose up`` invocation) still resolves to
+    today's unprefixed "sidar_*" names, so scripts that hardcode e.g.
+    "sidar_postgres" as their default (06_services.sh's
+    ``SIDAR_POSTGRES_CONTAINER``, scripts/sync_postgres_password.py) stay
+    correct.
+    """
+    docker = shutil.which("docker")
+    if docker is None:
+        pytest.skip("Docker CLI is not installed")
+
+    compose_version = subprocess.run(
+        [docker, "compose", "version"], check=False, capture_output=True, text=True
+    )
+    if compose_version.returncode != 0:
+        pytest.skip("Docker Compose plugin is not installed")
+
+    env_file = tmp_path / "gate.env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "POSTGRES_PASSWORD=compose-name-gate-postgres-password-32",
+                "REDIS_PASSWORD=compose-name-gate-redis-password-32",
+                "GRAFANA_ADMIN_PASSWORD=compose-name-gate-grafana-admin-password-32",
+                "METRICS_TOKEN=compose-name-gate-metrics-token-32-characters",
+                "API_KEY=compose-name-gate-api-key-32-characters",
+                "JWT_SECRET_KEY=compose-name-gate-jwt-secret-key-32-characters",
+                "MEMORY_ENCRYPTION_KEY=MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    # See test_production_override_actually_closes_datastore_ports for why a
+    # clean, minimal env (not the full ambient os.environ) is used here.
+    # SIDAR_RUNTIME_ENV_FILE points sidar-migrate's env_file at the same
+    # disposable secrets (the repo has no top-level .env of its own).
+    clean_env = {
+        "HOME": str(tmp_path),
+        "PATH": os.environ["PATH"],
+        "SIDAR_RUNTIME_ENV_FILE": str(env_file),
+    }
+
+    def compose_container_names(*, project_name: str | None) -> set[str]:
+        command = [docker, "compose"]
+        if project_name is not None:
+            command += ["--project-name", project_name]
+        command += [
+            "--env-file",
+            str(env_file),
+            "-f",
+            "docker-compose.yml",
+            "--profile",
+            "cpu",
+            "config",
+        ]
+        completed = subprocess.run(
+            command, check=False, capture_output=True, text=True, env=clean_env
+        )
+        assert completed.returncode == 0, completed.stderr
+        merged = yaml.safe_load(completed.stdout)
+        return {service["container_name"] for service in merged["services"].values()}
+
+    dev_stack_names = compose_container_names(project_name=None)
+    gate_names = compose_container_names(project_name="sidar-production-gate")
+
+    assert "sidar_ollama" in dev_stack_names
+    assert "sidar_postgres" in dev_stack_names
+    assert "sidar_redis" in dev_stack_names
+    assert dev_stack_names.isdisjoint(gate_names), (
+        "distinct --project-name values must produce non-colliding container names",
+        dev_stack_names,
+        gate_names,
+    )
+    assert all(name.startswith("sidar-production-gate_") for name in gate_names)
+
+
 @pytest.mark.integration
 def test_generated_gate_env_passes_real_compose_config(tmp_path: Path) -> None:
     """Run Compose interpolation against the gate-generated disposable environment."""
@@ -295,7 +442,7 @@ def test_production_override_builds_the_hardened_production_dockerfile() -> None
     """Regression guard: the production gate must never fall back to the dev Dockerfile.
 
     ``docker-compose.yml``'s ``build:`` blocks never set ``dockerfile:``, so they
-    default to the dev-tooling ``Dockerfile`` (build-essential, cargo, git,
+    default to the dev-tooling ``Dockerfile`` (build-essential, git,
     pyright, shellcheck, ...). Without an explicit override here, the
     "production" Compose gate silently ships that dev image instead of the
     minimal, no-dev ``Dockerfile.production``.

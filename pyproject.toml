@@ -69,6 +69,13 @@ dependencies = [
   "rank-bm25==0.2.2",
   "beautifulsoup4~=4.15.0",
   "bleach>=6.4.0,<7.0.0",
+  # CoverageAgent (agent/roles/coverage_agent.py, is_builtin=True) parses pytest
+  # JUnit XML reports with defusedxml.ElementTree at runtime. It must stay a core
+  # runtime dependency, not a dev-only tool: a `production`/`production-minimal`
+  # (--no-dev) install without it breaks `agent.roles` package import entirely
+  # (not just CoverageAgent), taking every other built-in role down with it and
+  # failing the doctor `agent_catalog`/`supervisor_routing` checks.
+  "defusedxml>=0.7.1",
   # Keep NeMo Guardrails on the validated 0.22 minor until the SecurityManager
   # adapter contract is re-run against a newer major/minor API.
   "nemoguardrails>=0.22.0,<0.23.0",
@@ -259,7 +266,8 @@ dev = [
   "pre-commit>=4.0.0,<5.0.0",
   "shellcheck-py>=0.11.0.1,<0.12.0",
   "types-bleach>=6.4.0.20260607",
-  "defusedxml>=0.7.1",
+  # NOTE: defusedxml itself moved to core `dependencies` (CoverageAgent needs it
+  # at runtime); only its type stub package stays a dev-only tool here.
   "types-defusedxml",
   "types-requests",
   "types-PyYAML",
@@ -294,7 +302,7 @@ bleach = "runtime"
 cachetools = "runtime"
 chromadb = "runtime"
 cryptography = "runtime"
-defusedxml = "dev"
+defusedxml = "runtime"
 "detect-secrets" = "security-tool"
 "duckduckgo-search" = "integration"
 fakeredis = "test-double"
@@ -495,6 +503,7 @@ markers = [
   "gpu_stress: uzun/yoğun GPU yük testleri (CI pipeline'ında ayrı job olarak çalıştırılabilir)",
   "pg_stress: PostgreSQL bağlantı havuzu yük testleri (postgres servisi gerektirir)",
   "benchmark: performans baseline testleri",
+  "password_benchmark: parola hash/verify CPU-maliyetli benchmark'lar (yüksek varyans; ayrı karşılaştırma toleransı)",
   "integration: harici sistem entegrasyonları",
   "quality_gate: deterministik kalite kapısı doğrulamaları",
   "shellcheck: shell betikleri için ShellCheck kalite kapısı",
@@ -592,6 +601,13 @@ index-strategy = "first-index"
 environments = ["sys_platform == 'linux'"]
 override-dependencies = ["setuptools>=83.0.0"]
 
+# Linux (the only `environments` target below, and the platform every Docker
+# image builds on) intentionally has no pinned CUDA index: torch's own
+# manylinux wheel on PyPI already declares CUDA 13.x runtime deps
+# (nvidia-cudnn-cu13, cuda-toolkit[...] extras, etc. — see uv.lock) that
+# match the nvidia/cuda:13.0.0 GPU base image, so `uv sync --frozen` resolves
+# a working GPU-capable torch with no extra index at all. Only macOS (CPU-only
+# PyTorch has no CUDA build) needs an explicit alternate index.
 [tool.uv.sources]
 torch = [
   { index = "pytorch-cpu", marker = "platform_system == 'Darwin'" },
@@ -606,11 +622,6 @@ torchaudio = [
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
-explicit = true
-
-[[tool.uv.index]]
-name = "pytorch-cu124"
-url = "https://download.pytorch.org/whl/cu124"
 explicit = true
 
 [tool.setuptools.packages.find]
@@ -692,6 +703,8 @@ exclude = [
   "web_ui",
   "web_ui_react",
   "launcher_gui",
+  "models--*",
+  "actions-runner",
 ]
 
 [tool.ruff.lint]

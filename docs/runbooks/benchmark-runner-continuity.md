@@ -1,5 +1,22 @@
 # Self-hosted benchmark runner süreklilik planı
 
+## Runner host bootstrap ön koşulları
+
+Bu runbook, `[self-hosted, linux, benchmark]` etiketli runner'ın **zaten kurulu ve online**
+olduğunu varsayar (aşağıdaki bölümler kapasite/watchdog/failover ile ilgilenir, ilk kurulumla
+değil). Sıfırdan bir host hazırlarken şu adım atlanırsa `./config.sh` veya runner servisi
+belirsiz bir `libicu`/`.NET Core 6` bağımlılık hatasıyla başarısız olur — bu Sidar'ın kendi
+kodundan değil, GitHub Actions runner ikilisinin (.NET Core 6 tabanlı) kendi gereksinimidir:
+
+```bash
+# actions-runner paketini açtıktan sonra, ./config.sh çalıştırmadan ÖNCE:
+sudo ./bin/installdependencies.sh
+```
+
+Bu betik dağıtıma göre değişen `libicu`/ICU paketlerini ve diğer .NET çalışma zamanı
+bağımlılıklarını kurar. Aynı gereksinim `gpu-runner-continuity.md`'deki
+`[self-hosted, linux, x64, gpu, cuda]` runner için de geçerlidir.
+
 ## Amaç
 
 `Benchmark compare gate`, kararlı latency karşılaştırması için bilinçli olarak

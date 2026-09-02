@@ -99,12 +99,12 @@ def build_hitl_router(
     async def websocket_hitl(websocket: WebSocket) -> Any:
         proto_header = websocket.headers.get("sec-websocket-protocol", "").strip()
         auth_header = websocket.headers.get("authorization", "").strip()
-        bearer_token = ""  # Empty sentinel; populated from Authorization header.  # nosec B105
+        bearer_token: str | None = None
         if auth_header.lower().startswith("bearer "):
-            bearer_token = auth_header[7:].strip()
+            bearer_token = auth_header[7:].strip() or None
         header_token, accept_subprotocol = extract_ws_header_token(proto_header, ws_hitl_protocol)
         if not header_token:
-            header_token = bearer_token
+            header_token = bearer_token or ""
         if accept_subprotocol:
             await websocket.accept(subprotocol=accept_subprotocol)
         else:

@@ -13,7 +13,7 @@ import builtins
 import json
 import os
 import shutil
-import subprocess  # nosec B404
+import subprocess
 from collections.abc import Callable, Mapping
 from types import SimpleNamespace
 from typing import Any

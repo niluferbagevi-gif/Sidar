@@ -180,6 +180,10 @@ metriği yerine yazılmamalıdır.
   ve yerel profilde varsayılan `BENCHMARK_ENFORCE_RESULT=1` ile hard-fail üretir; geçici rapor-only
   araştırma için `BENCHMARK_ENFORCE_RESULT=0` açıkça verilmelidir.
   Benchmark komutu GC'yi kapatır ve kalibrasyon warmup'ını etkinleştirir.
+  Parola hash/verify primitive'lerini ölçen `password-application-path`/`password-primitive`
+  grupları (`@pytest.mark.password_benchmark`) yüksek varyanslı oldukları için ayrı bir
+  pytest oturumunda çalışır ve `BENCHMARK_PASSWORD_COMPARE_FAIL` (varsayılan `mean:30%`)
+  ile değerlendirilir; raporu `artifacts/benchmark/password-benchmark.json`'da tutulur.
 - Yeni baseline üretmek için önerilen komut:
   - `uv run pytest tests/performance/ --benchmark-save=baseline`
 - GPU baseline rebase işlemini yalnız temiz çalışma ağacında, aynı WSL2/driver/Ollama profiliyle ve
@@ -211,8 +215,12 @@ metriği yerine yazılmamalıdır.
   `stddev`, örnek sayısı, donanım/driver profili ve `commit_info.dirty` alanını inceleyin.
   `.benchmarks/` çıktıları kalıcı kaynak dosya değil CI cache/artifact state'i olarak yönetilir;
   donanım/runner profili değiştiğinde cache seed koşusunun artifact'i ayrıca review edilmelidir.
-- Tek metrikteki iyileşme tüm paketin hızlandığı anlamına gelmez. Özellikle auth hash/verify,
-  Parola hash maliyeti nedeniyle bilerek pahalıdır. Argon2id varsayılandır; FIPS/legacy PBKDF2 için `SIDAR_PBKDF2_ITERATIONS` ile iş faktörü
+- Tek metrikteki iyileşme tüm paketin hızlandığı anlamına gelmez. Auth benchmark'ları
+  `password-primitive` (yalnız hash/verify algoritması) ve `password-application-path`
+  (event loop + DB + query + model dönüşümü dahil register/authenticate akışı) gruplarına
+  ayrılır; iki grubun regresyonları birbirinin yerine yorumlanmamalıdır. Her kontrat
+  5 warmup + 30 ölçüm turu kullanır. Parola hash maliyeti bilerek pahalıdır.
+  Argon2id varsayılandır; FIPS/legacy PBKDF2 için `SIDAR_PBKDF2_ITERATIONS` ile iş faktörü
   ortam bazında yükseltilebilir; değer güvenli minimumun altındaysa runtime minimuma
   clamp eder. `SIDAR_AUTH_HASH_SLO_MS` varsayılan `120` ms auth hash/verify SLO uyarı
   eşiğini belirler ve `/metrics` içindeki `sidar_auth_password_hash_*` metrikleriyle
@@ -221,8 +229,8 @@ metriği yerine yazılmamalıdır.
 - 2026-06-22 performans değerlendirmesinde 13 benchmark'ın tamamı başarılı raporlandı ve ilk
   karşılaştırma kaydı `.benchmarks/Linux-CPython-3.11-64bit/0001_baseline.json` olarak seed edildi;
   `test_format_table_handles_large_dataset_quickly` yaklaşık `3.7 ms`,
-  `test_user_authentication_password_hash_cpu_cost[sqlite]` yaklaşık `65 ms`,
-  `test_user_authentication_password_hash_cpu_cost[postgresql]` yaklaşık `74 ms`,
+  `test_user_registration_password_hash_cpu_cost[sqlite]` yaklaşık `65 ms`,
+  `test_user_registration_password_hash_cpu_cost[postgresql]` yaklaşık `74 ms`,
   `test_gpu_concurrent_throughput` yaklaşık `6.96 s` ve
   `test_gpu_vram_peak_under_load` yaklaşık `2.24 s` seviyesinde gözlendi. Bu değerler tek başına
   yeni evrensel eşik değildir; ilgili runner/donanım profili için baseline seed gözlemidir. Sonraki
@@ -320,8 +328,11 @@ metriği yerine yazılmamalıdır.
 
 ### CI quality gate (TTFT + single inference latency)
 
-- GitHub Actions içinde isteğe bağlı bir GPU kalite kapısı tanımlıdır: `gpu-inference-quality-gate`.
-- Bu job yalnızca repo değişkeni `ENABLE_GPU_BENCH_GATE=true` olduğunda çalışır.
+- GitHub Actions içinde repository-variable kontrollü bir GPU kalite kapısı tanımlıdır:
+  `gpu-inference-quality-gate`; bu kapı yerel GPU benchmark sonucuyla ikame edilemez.
+- Job yalnızca repo değişkeni `ENABLE_GPU_BENCH_GATE=true` olduğunda çalışır; ancak merge/release
+  politikası bu değerin `true` olmasını ve aynı commit için gerçek job sonucunun geçmesini zorunlu
+  tuttuğundan değişkenin kapatılması desteklenen bir opt-out değildir.
 - Runner gereksinimi: `self-hosted`, `linux`, `x64`, `gpu`, `cuda` etiketli runner.
 - Quality gate komutu:
   - `bash scripts/ci/run_ttft_quality_gate.sh`

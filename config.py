@@ -243,10 +243,15 @@ def _load_dotenv_into_effective_env(
     )
 
 
-def _dotenv_reload_baseline_environment() -> dict[str, str]:
+def _dotenv_reload_baseline_environment(
+    *,
+    managed_keys: set[str],
+    key_sources: dict[str, dict[str, Any]],
+    plan: "config_dotenv.DotenvReloadPlan",
+) -> dict[str, str]:
     """Return the pre-dotenv baseline for atomic reload without intermediate os.environ pops."""
     return config_dotenv.dotenv_reload_baseline_environment(
-        environ=os.environ, managed_keys=_DOTENV_MANAGED_KEYS
+        environ=os.environ, managed_keys=managed_keys, key_sources=key_sources, plan=plan
     )
 
 
@@ -1163,16 +1168,25 @@ class Config:
         # Below 8 GiB this used to fall through untouched, leaving
         # LLMClientSettings' fixed 8192 default in place for 6 GB-class cards
         # (RTX 2060/3050, 4060 laptop, GTX 1660, ...) — the same context a
-        # 8-16 GiB card gets, with none of its VRAM headroom. The two tiers
-        # below continue the same halving ladder this function already uses
-        # (16384 -> 8192) down to 4096, then floor at 2048 for anything
-        # smaller (including gpu_vram_mb=0, i.e. USE_GPU forced on without a
-        # successful hardware probe) — 2048 mirrors OLLAMA_BATCH_POLICY's own
-        # auto_min, the smallest context this codebase already treats as
-        # meaningful for local Ollama inference.
+        # 8-16 GiB card gets, with none of its VRAM headroom.
+        #
+        # A field report (RTX 3070 Ti Laptop, gpu_vram_mb=8192) then showed
+        # the >=8192 tier itself has the identical problem: a card that
+        # reports *exactly* the tier floor gets that tier's full context with
+        # zero margin for the coding model's own weights (~5 GiB for
+        # qwen2.5-coder:7b q4) plus KV cache plus OS/desktop VRAM overhead,
+        # and the installer's `/api/generate` JSON smoke test failed with
+        # HTTP 500 (VRAM OOM). 8-12 GiB cards (no comfortable headroom over a
+        # ~5 GiB model) now get the same 4096 tier as 4-8 GiB cards; only
+        # 12 GiB+ cards (RTX 3060 12GB, 4070, 3080 10-12GB, ...) keep the
+        # full 8192 window. 16 GiB+ still gets 16384. Floor at 2048 for
+        # anything below 4 GiB (including gpu_vram_mb=0, i.e. USE_GPU forced
+        # on without a successful hardware probe) — 2048 mirrors
+        # OLLAMA_BATCH_POLICY's own auto_min, the smallest context this
+        # codebase already treats as meaningful for local Ollama inference.
         if cls.GPU_VRAM_MB >= 16384:
             cls.OLLAMA_CODING_NUM_CTX = 16384
-        elif cls.GPU_VRAM_MB >= 8192:
+        elif cls.GPU_VRAM_MB >= 12288:
             cls.OLLAMA_CODING_NUM_CTX = 8192
         elif cls.GPU_VRAM_MB >= 4096:
             cls.OLLAMA_CODING_NUM_CTX = 4096
@@ -1591,8 +1605,19 @@ def _reload_dotenv_chain(*, profile: str | None = None) -> None:
     global _LAST_DOTENV_LOAD_CHAIN_SIGNATURE
     with _CONFIG_STATE_LOCK:
         previous_managed_keys = set(_DOTENV_MANAGED_KEYS)
-        effective_env = _dotenv_reload_baseline_environment()
-        plan = _build_dotenv_reload_plan(effective_env, profile=profile)
+        # Snapshot before the globals below are cleared -- needed to decide,
+        # per key, whether its supplying layer is still active this round
+        # (see _dotenv_reload_baseline_environment's docstring).
+        previous_key_sources = {key: dict(value) for key, value in _DOTENV_KEY_SOURCES.items()}
+        # Resolve the plan (SIDAR_SKIP_DEFAULT_DOTENV/DOTENV_FILE/SIDAR_KEYS_FILE)
+        # from the *real*, unmodified process environment -- never from a
+        # baseline that may have already popped a previously dotenv-managed
+        # control variable, or a direct override of one of these three keys
+        # would be invisible to this reload's own plan.
+        plan = _build_dotenv_reload_plan(dict(os.environ), profile=profile)
+        effective_env = _dotenv_reload_baseline_environment(
+            managed_keys=previous_managed_keys, key_sources=previous_key_sources, plan=plan
+        )
         _DOTENV_MANAGED_KEYS.clear()
         _DOTENV_LOAD_EVENTS.clear()
         _DOTENV_KEY_SOURCES.clear()

@@ -10,7 +10,7 @@ import logging
 import os
 import shlex
 import shutil
-import subprocess  # nosec B404
+import subprocess
 import sys
 import tempfile
 import threading
