@@ -460,8 +460,13 @@ protection altında en az şu CI job'ları required check olmalıdır:
 
 Repo metadata veya ayarlarda auto-merge ileride açılırsa, bu required check'ler ve
 production-readiness doğrulaması zorunlu olmadan auto-merge etkinleştirilmemelidir.
-Benchmark baseline missing nedeniyle `test` job'ı kırılırsa PR açıklamasında bu dokümandaki
-bootstrap runbook'una link verin ve seed workflow tamamlanmadan merge onayı vermeyin.
+`benchmark-compare` job'ı erişilebilir hiçbir cache kapsamında baseline bulamazsa artık
+fail-closed kırılmaz; kendi ölçümünü bootstrap baseline olarak üretip PR'ın kendi ref
+kapsamında cache'ler (bkz. `docs/module-notes/tests.md`). Bu koşuda gerçek bir regresyon
+karşılaştırması **yapılmamıştır** — review sırasında job özetindeki (step summary)
+"Bootstrapping" notunu kontrol edin; görürseniz PR'a bir sonraki push'un (aynı `uv.lock`
+ile) gerçek karşılaştırmayı üreteceğini bilin ve mümkünse merge kararını o push'tan sonrasına
+bırakın.
 
 ## CI production-readiness dışsal bağımlılıkları
 
@@ -624,6 +629,20 @@ varyansını yanlış regresyon saymamak için ayrı bir pytest sürecinde
 benchmark oturumu concurrency testini `-k not ...` ile dışlar ve sıkı eşiğini korur;
 I/O raporu `artifacts/benchmark/io-benchmark.json` olarak ayrıca saklanır. Bu eşik
 rapor-only değildir; daha büyük I/O regresyonları yine fail-closed sonuçlanır.
+
+Parola hash/verify (bcrypt/pbkdf2 tarzı) primitive'leri ölçen `password-application-path`
+ve `password-primitive` grupları (`@pytest.mark.password_benchmark`) kasıtlı olarak
+CPU-maliyetli oldukları için diğer CPU testlerinden (`test_format_table_...`) belirgin
+biçimde daha yüksek varyansa sahiptir; paylaşılan CPU zamanına (termal throttling, arka
+planda Docker build, GPU stress, çok-worker'lı xdist) son derece duyarlıdırlar. Bu yüzden
+genel CPU oturumundan ayrı bir pytest sürecinde çalışır ve `BENCHMARK_PASSWORD_COMPARE_FAIL`
+(varsayılan `mean:30%`) ile değerlendirilir; raporu `artifacts/benchmark/password-benchmark.json`
+olarak ayrıca saklanır. Bu eşik de rapor-only değildir; daha büyük parola-benchmark
+regresyonları yine fail-closed sonuçlanır. Yalnız bu grup için gürültü teşhisi:
+
+```bash
+BENCHMARK_PASSWORD_COMPARE_FAIL=mean:40% make production-readiness
+```
 I/O ölçümü 5 warmup sonrasında 50 tur toplar; 25 tura göre örnekleme belirsizliğini azaltır.
 Tur artışı donanım izolasyonunun yerine geçmez: CI compare ve baseline seed işleri yine
 aynı `[self-hosted, linux, benchmark]` runner kontratında çalışmalıdır.

@@ -503,6 +503,7 @@ markers = [
   "gpu_stress: uzun/yoğun GPU yük testleri (CI pipeline'ında ayrı job olarak çalıştırılabilir)",
   "pg_stress: PostgreSQL bağlantı havuzu yük testleri (postgres servisi gerektirir)",
   "benchmark: performans baseline testleri",
+  "password_benchmark: parola hash/verify CPU-maliyetli benchmark'lar (yüksek varyans; ayrı karşılaştırma toleransı)",
   "integration: harici sistem entegrasyonları",
   "quality_gate: deterministik kalite kapısı doğrulamaları",
   "shellcheck: shell betikleri için ShellCheck kalite kapısı",
@@ -703,6 +704,7 @@ exclude = [
   "web_ui_react",
   "launcher_gui",
   "models--*",
+  "actions-runner",
 ]
 
 [tool.ruff.lint]

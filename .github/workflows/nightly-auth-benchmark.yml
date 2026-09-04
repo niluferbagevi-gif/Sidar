@@ -22,6 +22,10 @@ jobs:
       BENCHMARK_ENFORCE_COMPARE: "1"
       BENCHMARK_COMPARE_NAME: "baseline"
       BENCHMARK_COMPARE_FAIL: "mean:10%"
+      # sidar[runtime-gpu] pulls multi-hundred-MB nvidia-*/torch wheels; uv's
+      # 30s default HTTP timeout can time out these individual downloads on a
+      # slower/self-hosted link well before the transfer itself would fail.
+      UV_HTTP_TIMEOUT: "180"
 
     steps:
       - name: Checkout

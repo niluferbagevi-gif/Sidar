@@ -180,6 +180,10 @@ metriği yerine yazılmamalıdır.
   ve yerel profilde varsayılan `BENCHMARK_ENFORCE_RESULT=1` ile hard-fail üretir; geçici rapor-only
   araştırma için `BENCHMARK_ENFORCE_RESULT=0` açıkça verilmelidir.
   Benchmark komutu GC'yi kapatır ve kalibrasyon warmup'ını etkinleştirir.
+  Parola hash/verify primitive'lerini ölçen `password-application-path`/`password-primitive`
+  grupları (`@pytest.mark.password_benchmark`) yüksek varyanslı oldukları için ayrı bir
+  pytest oturumunda çalışır ve `BENCHMARK_PASSWORD_COMPARE_FAIL` (varsayılan `mean:30%`)
+  ile değerlendirilir; raporu `artifacts/benchmark/password-benchmark.json`'da tutulur.
 - Yeni baseline üretmek için önerilen komut:
   - `uv run pytest tests/performance/ --benchmark-save=baseline`
 - GPU baseline rebase işlemini yalnız temiz çalışma ağacında, aynı WSL2/driver/Ollama profiliyle ve
@@ -190,16 +194,25 @@ metriği yerine yazılmamalıdır.
   `backend-quality-trend-artifacts` artifact'iyle review için yükler. Cache/artifact içinde
   `*_baseline.json` bulunduğunda `BENCHMARK_COMPARE_REQUIRED=1`, `BENCHMARK_ENFORCE_COMPARE=1` ve
   `BENCHMARK_COMPARE_FAIL=mean:10%` değerleriyle baseline eksikliği veya `mean` üzerinde `%10`
-  regresyon hard-fail üretir. CI production-readiness gate içinde cache/artifact baseline boşsa
-  koşu seed moduna düşmez; `.benchmarks/*_baseline.json` restore edilmeden kalite kapısı fail-closed
-  sonlanır. GitHub Actions bootstrap yolu manuel **Benchmark baseline seed** workflow'udur:
+  regresyon hard-fail üretir. CI production-readiness gate içinde cache/artifact baseline hiçbir
+  erişilebilir kapsamda bulunamazsa (GitHub Actions cache erişimi yalnız bu run'ın kendi ref'i,
+  PR'ın base branch'i ve repo default branch'iyle sınırlıdır — bir PR'ın **kendi head branch'inde**
+  `workflow_dispatch` ile seed edilmiş bir cache, o PR'ın `pull_request`-tetiklemeli run'larına
+  erişilebilir değildir) `benchmark-compare` job'u artık fail-closed sonlanmaz: bu run'ın kendi
+  ölçümünü `.benchmarks/*_baseline.json` olarak üretip aynı ref+`uv.lock` hash kapsamında cache'e
+  kaydeder (bootstrap modu — bu koşuda regresyon karşılaştırması **yapılmaz**) ve job başarılı
+  sayılır. Aynı PR'a bir sonraki push (aynı `uv.lock` ile) bu bootstrap baseline'ı restore eder ve
+  gerçek bir karşılaştırma yapar. GitHub Actions'ta ayrıca manuel bir **Benchmark baseline seed**
+  workflow'u vardır (özellikle `main`/`master` üzerinde önceden gözden geçirilmiş bir baseline
+  sağlamak için):
   `workflow_dispatch` ile çalıştırılan job `BENCHMARK_COMPARE_REQUIRED=0` ve
   `BENCHMARK_ENFORCE_COMPARE=0` kullanarak `.benchmarks/*_baseline.json` üretir, sonucu
   `benchmark-baseline-${runner.os}-py311-${uv.lock hash}-${branch}-${run_id}` cache key'i ve 30 günlük artifact
   olarak saklar; ayrıca `baseline-seed-manifest.json` içinde üretilen baseline dosyalarını ve
   sonraki sıkı kapı komutunu (`BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1`) kaydeder.
   Ana `CI` workflow'u branch, `main/master` ve genel restore-key zincirinden bu
-  cache'i bulamazsa yine fail-closed kalır; seed artifact'i `mean`, `stddev`, örnek sayısı,
+  cache'i bulamazsa (yukarıdaki kapsam kısıtı nedeniyle bu manuel seed genelde yalnız `main`/`master`
+  push'ları için işe yarar) `benchmark-compare` kendi bootstrap moduna düşer; seed artifact'i `mean`, `stddev`, örnek sayısı,
   donanım/runner profili ve `commit_info.dirty` açısından review edilmeden güvenilir baseline
   kabul edilmemelidir. Cache restore prefix'lerinin tamamı aynı `uv.lock` hash'ini taşır;
   bağımlılık kilidi değiştiğinde eski dependency setine ait baseline restore edilemez. Ayrıca

@@ -339,10 +339,16 @@ else
 fi
 BENCHMARK_DISABLE_GC="${BENCHMARK_DISABLE_GC:-1}"
 BENCHMARK_IO_COMPARE_FAIL="${BENCHMARK_IO_COMPARE_FAIL:-mean:25%}"
+# Parola hash/verify (bcrypt/pbkdf2 tarzı) primitive'leri kasıtlı olarak CPU-maliyetli
+# olduğundan paylaşılan CPU zamanına (termal, arka planda Docker build/GPU stress,
+# çok-worker'lı xdist) diğer CPU testlerinden belirgin biçimde daha duyarlıdır; bu yüzden
+# genel CPU eşiğinden ayrı, daha toleranslı bir karşılaştırma eşiği kullanır.
+BENCHMARK_PASSWORD_COMPARE_FAIL="${BENCHMARK_PASSWORD_COMPARE_FAIL:-mean:30%}"
 BENCHMARK_WARMUP="${BENCHMARK_WARMUP:-on}"
 BENCHMARK_WARMUP_ITERATIONS="${BENCHMARK_WARMUP_ITERATIONS:-100000}"
 BENCHMARK_JSON_OUTPUT="${BENCHMARK_JSON_OUTPUT:-artifacts/benchmark/benchmark.json}"
 BENCHMARK_IO_JSON_OUTPUT="${BENCHMARK_IO_JSON_OUTPUT:-artifacts/benchmark/io-benchmark.json}"
+BENCHMARK_PASSWORD_JSON_OUTPUT="${BENCHMARK_PASSWORD_JSON_OUTPUT:-artifacts/benchmark/password-benchmark.json}"
 BENCHMARK_GPU_TEST_FILE="${BENCHMARK_GPU_TEST_FILE:-${PERFORMANCE_TEST_DIR}/test_gpu_benchmark.py}"
 BENCHMARK_GPU_JSON_OUTPUT="${BENCHMARK_GPU_JSON_OUTPUT:-artifacts/benchmark/gpu-benchmark.json}"
 BENCHMARK_TREND_COMPARE="${BENCHMARK_TREND_COMPARE:-0}"
