@@ -358,9 +358,9 @@ def test_coding_model_oom_failure_gets_concrete_guidance_on_first_occurrence() -
 def test_resume_after_remediation_carries_dependency_profile_across_reexec(
     tmp_path: Path,
 ) -> None:
-    """Review bulgusu: sidar_resume_after_remediation() seçilen bağımlılık
+    """Review bulgusu: sidar_resume_after_remediation() seçilen bağımlılık profilini taşımıyordu.
 
-    profilini (DEPENDENCY_PROFILE / SIDAR_DEPENDENCY_EXTRAS) resume re-exec'ine
+    Fonksiyon, resume re-exec'inde DEPENDENCY_PROFILE / SIDAR_DEPENDENCY_EXTRAS'ı
     taşımıyordu. Bu, resume sonrası select_dependency_profile()'ın "ask"a
     düşmesine (etkileşimsiz ortamlarda sessizce dev-full'a) yol açıyordu.
     Bu test, gerçek `exec env ... "$resume_script"` zincirini çalıştırıp
