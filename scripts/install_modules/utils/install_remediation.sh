@@ -611,6 +611,8 @@ sidar_resume_after_remediation() {
     local resume_runtime_mode_selected="${APP_RUNTIME_MODE_SELECTED:-}"
     local resume_runtime_mode="${APP_RUNTIME_MODE:-}"
     local resume_gpu_available="${GPU_AVAILABLE:-}"
+    local resume_dependency_profile="${DEPENDENCY_PROFILE:-}"
+    local resume_dependency_extras="${SIDAR_DEPENDENCY_EXTRAS:-}"
     local resume_cwd="${SCRIPT_DIR:-${TARGET_DIR:-$PWD}}"
     local resume_failure_signature="${SIDAR_INSTALL_LAST_FAILURE_SIGNATURE:-}"
     local resume_failure_phase="${SIDAR_INSTALL_LAST_FAILURE_PHASE:-}"
@@ -645,6 +647,8 @@ sidar_resume_after_remediation() {
         APP_RUNTIME_MODE_SELECTED="$resume_runtime_mode_selected" \
         APP_RUNTIME_MODE="$resume_runtime_mode" \
         GPU_AVAILABLE="$resume_gpu_available" \
+        DEPENDENCY_PROFILE="$resume_dependency_profile" \
+        SIDAR_DEPENDENCY_EXTRAS="$resume_dependency_extras" \
         SIDAR_INSTALL_LAST_FAILURE_SIGNATURE="$resume_failure_signature" \
         SIDAR_INSTALL_LAST_FAILURE_PHASE="$resume_failure_phase" \
         bash -c 'cd "$SIDAR_INSTALL_RESUME_CWD" && exec "$0" "$@"' \

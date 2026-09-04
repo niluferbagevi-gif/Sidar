@@ -353,3 +353,53 @@ def test_coding_model_oom_failure_gets_concrete_guidance_on_first_occurrence() -
     assert "ollama ps" in result.stdout
     # This must fire on the FIRST occurrence, not only after a repeated signature.
     assert "aynı failure imzası tekrarlandı" not in result.stdout
+
+
+def test_resume_after_remediation_carries_dependency_profile_across_reexec(
+    tmp_path: Path,
+) -> None:
+    """Review bulgusu: sidar_resume_after_remediation() seçilen bağımlılık
+
+    profilini (DEPENDENCY_PROFILE / SIDAR_DEPENDENCY_EXTRAS) resume re-exec'ine
+    taşımıyordu. Bu, resume sonrası select_dependency_profile()'ın "ask"a
+    düşmesine (etkileşimsiz ortamlarda sessizce dev-full'a) yol açıyordu.
+    Bu test, gerçek `exec env ... "$resume_script"` zincirini çalıştırıp
+    sahte bir resume betiğinin bu iki değişkeni gördüğünü doğrular.
+    """
+    fake_installer = tmp_path / "install_sidar.sh"
+    fake_installer.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf 'RESUMED_DEPENDENCY_PROFILE=%s\\n' \"${DEPENDENCY_PROFILE-<unset>}\"\n"
+        "printf 'RESUMED_SIDAR_DEPENDENCY_EXTRAS=%s\\n' \"${SIDAR_DEPENDENCY_EXTRAS-<unset>}\"\n"
+        "printf 'RESUMED_PHASE=%s\\n' \"${SIDAR_INSTALL_RESUME_FROM_PHASE-<unset>}\"\n"
+    )
+    fake_installer.chmod(0o755)
+
+    script = r"""
+        set -Eeuo pipefail
+        source ./scripts/install_modules/utils/install_remediation.sh
+        info() { :; }
+        warn() { :; }
+        fail() { printf 'UNEXPECTED-FAIL:%s\n' "$*"; exit 1; }
+
+        SIDAR_INSTALL_ORIGINAL_ARGS=()
+        export SCRIPT_DIR="$1"
+        export DEPENDENCY_PROFILE="dev-gpu"
+        export SIDAR_DEPENDENCY_EXTRAS="openai anthropic"
+
+        sidar_resume_after_remediation 04_workspace 1
+    """
+
+    result = subprocess.run(
+        ["bash", "-c", script, "_", str(tmp_path)],
+        cwd=REPO_ROOT,
+        env={"SIDAR_INSTALL_TEST_MODE": "1", **os.environ},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert "UNEXPECTED-FAIL" not in result.stdout
+    assert "RESUMED_DEPENDENCY_PROFILE=dev-gpu" in result.stdout
+    assert "RESUMED_SIDAR_DEPENDENCY_EXTRAS=openai anthropic" in result.stdout
+    assert "RESUMED_PHASE=04_workspace" in result.stdout
