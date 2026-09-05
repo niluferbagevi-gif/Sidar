@@ -403,3 +403,97 @@ def test_resume_after_remediation_carries_dependency_profile_across_reexec(
     assert "RESUMED_DEPENDENCY_PROFILE=dev-gpu" in result.stdout
     assert "RESUMED_SIDAR_DEPENDENCY_EXTRAS=openai anthropic" in result.stdout
     assert "RESUMED_PHASE=04_workspace" in result.stdout
+
+
+def _run_uv_sync_remediation(tmp_path: Path, failure_signal: str) -> tuple[str, str]:
+    """Run sidar_remediate_uv_sync_failure() against a fake `uv` and report back.
+
+    Returns (uv_call_log_contents, remediation_report_contents) so callers can
+    assert both what was actually invoked and what action string was recorded.
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    uv_call_log = tmp_path / "uv_calls.log"
+    fake_uv = bin_dir / "uv"
+    fake_uv.write_text('#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$UV_CALL_LOG"\nexit 0\n')
+    fake_uv.chmod(0o755)
+
+    # A present, structurally-valid uv.lock so the function's own `uv lock
+    # --check` (via the fake uv above, which always exits 0) takes the
+    # "lock is fine" branch and reaches the cache-prune decision this test
+    # targets, regardless of what the failure_signal text says.
+    (tmp_path / "uv.lock").write_text("")
+
+    script = r"""
+        set -Eeuo pipefail
+        source ./scripts/install_modules/utils/install_remediation.sh
+        info() { :; }
+        warn() { :; }
+
+        export SCRIPT_DIR="$1"
+        sidar_remediate_uv_sync_failure "$2"
+    """
+
+    subprocess.run(
+        ["bash", "-c", script, "_", str(tmp_path), failure_signal],
+        cwd=REPO_ROOT,
+        env={
+            **os.environ,
+            "SIDAR_INSTALL_TEST_MODE": "1",
+            "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+            "UV_CALL_LOG": str(uv_call_log),
+        },
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    uv_calls = uv_call_log.read_text() if uv_call_log.exists() else ""
+    report_files = sorted((tmp_path / "artifacts/install/remediation").glob("*.log"))
+    report = report_files[-1].read_text() if report_files else ""
+    return uv_calls, report
+
+
+def test_uv_sync_remediation_skips_cache_prune_on_network_timeout_signal(
+    tmp_path: Path,
+) -> None:
+    """Review bulgusu: sidar_remediate_uv_sync_failure() ağ zaman aşımını hiç tanımıyordu.
+
+    Fonksiyon, failure_signal'ın içeriğine hiç bakmadan koşulsuz `uv cache
+    prune` çalıştırıyordu (satır ~445-449) — saf bir "operation timed out"
+    ağ kesintisinde bile. Bu, torch/nvidia-cublas/nvidia-cudnn gibi
+    zaten indirilmiş yüzlerce MB'lık paketleri yerel cache'ten düşürüp
+    resume sonrası yeniden indirilmelerini gerektirebiliyor — ikinci
+    denemenin süresini ve zaman aşımı riskini artırıyordu (kullanıcı
+    log'unda ikinci hatanın farklı bir pakette çıkması bunu destekliyor).
+    Bu test, ağ zaman aşımı imzası taşıyan bir failure_signal'da cache
+    prune'un artık atlandığını doğrular.
+    """
+    failure_signal = (
+        "uv sync --frozen --all-extras openai==2.54.0 için operation timed out (Read timed out)."
+    )
+
+    uv_calls, report = _run_uv_sync_remediation(tmp_path, failure_signal)
+
+    assert "cache prune" not in uv_calls
+    assert "lock --check" in uv_calls
+    assert "action=uv-sync-remediation+cache-prune-skipped-network-timeout" in report
+
+
+def test_uv_sync_remediation_still_prunes_cache_for_non_network_failure(
+    tmp_path: Path,
+) -> None:
+    """A genuine (non-network) uv sync failure still runs `uv cache prune`.
+
+    This is the control case for the network-timeout regression test above:
+    cache prune must remain the default remediation for real lock/venv
+    corruption scenarios, not be skipped across the board.
+    """
+    failure_signal = (
+        "uv sync --frozen --all-extras bağımlılık çözümü başarısız (dependency conflict)"
+    )
+
+    uv_calls, report = _run_uv_sync_remediation(tmp_path, failure_signal)
+
+    assert "cache prune" in uv_calls
+    assert "action=uv-sync-remediation+uv-cache-pruned" in report

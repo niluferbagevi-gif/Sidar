@@ -401,6 +401,19 @@ sidar_fix_pep639_legacy_license_classifier() {
     return 0
 }
 
+sidar_is_uv_network_timeout_signal() {
+    local signal="${1:-}"
+    local normalized=""
+    normalized="$(printf '%s' "$signal" | tr '[:upper:]' '[:lower:]')"
+
+    case "$normalized" in
+        *"timed out"*|*"request failed after"*|*"failed to fetch"*|*"failed to download"*|*"connection reset"*|*"connection refused"*|*"could not resolve host"*|*"temporary failure in name resolution"*)
+            return 0
+            ;;
+    esac
+    return 1
+}
+
 sidar_remediate_uv_sync_failure() {
     local failure_signal="${1:-}"
     local action="uv-sync-remediation"
@@ -442,7 +455,18 @@ sidar_remediate_uv_sync_failure() {
         action="${action}+uv-lock-created"
     fi
 
-    if ! uv cache prune >/tmp/sidar_uv_cache_prune.log 2>&1; then
+    # Review bulgusu: saf bir ağ zaman aşımında (ör. "operation timed out",
+    # "Request failed after N retries") koşulsuz `uv cache prune` çalıştırmak,
+    # torch/nvidia-* gibi yüzlerce MB'lık zaten indirilmiş paketleri yerel
+    # cache'ten düşürüp resume sonrası bunların da yeniden indirilmesini
+    # gerektirebilir — bu da ikinci denemenin süresini ve zaman aşımı
+    # olasılığını artırır (farklı bir paketin timeout'a çarpmasıyla sonuçlanan
+    # tam olarak bu senaryo). Cache prune yalnızca gerçek lock/venv bozulması
+    # senaryosunda anlamlı; ağ zaman aşımı imzasında atlanıp retry'a bırakılır.
+    if sidar_is_uv_network_timeout_signal "$failure_signal"; then
+        info "Auto-heal: hata sinyali ağ zaman aşımı imzası taşıyor (timed out/request failed after/failed to fetch/...); uv cache prune atlanıyor — zaten indirilmiş paketlerin cache'ten düşüp retry'ı ağırlaştırması önleniyor."
+        action="${action}+cache-prune-skipped-network-timeout"
+    elif ! uv cache prune >/tmp/sidar_uv_cache_prune.log 2>&1; then
         warn "Auto-heal: uv cache prune başarısız oldu; sync retry yine de denenecek."
     else
         action="${action}+uv-cache-pruned"
