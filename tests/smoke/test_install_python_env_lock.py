@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import textwrap
 
@@ -626,6 +627,98 @@ def test_install_python_deps_sets_uv_http_timeout_with_override(tmp_path):
         check=True,
     )
     assert "UV_HTTP_TIMEOUT=300" in override_log.read_text(encoding="utf-8")
+
+
+def _run_interactive_profile_probe(tmp_path, script_dir, stdin_input):
+    """Drive select_dependency_profile()'s interactive menu under a real TTY."""
+    probe = tmp_path / "probe.sh"
+    probe.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -Eeuo pipefail\n"
+        "source scripts/install_modules/utils/python_env.sh\n"
+        "info() { :; }\n"
+        "warn() { printf 'WARN:%s\\n' \"$*\"; }\n"
+        "ok() { printf 'OK:%s\\n' \"$*\"; }\n"
+        # install_sidar.sh masks/logs stdout through a process-substitution
+        # pipe, so this exercises the same non-TTY-stdout-but-real-stdin
+        # shape the interactive menu actually runs under.
+        "exec > >(cat) 2>&1\n"
+        "log_pipe_pid=$!\n"
+        'export SCRIPT_DIR="$1"\n'
+        "unset DEPENDENCY_PROFILE SIDAR_DEPENDENCY_PROFILE SIDAR_DEPENDENCY_EXTRAS\n"
+        "unset NO_INTERACTION AUTO_INSTALL RUN_CI_FULL_VALIDATION\n"
+        "select_dependency_profile\n"
+        "printf 'RESULT_PROFILE=%s\\n' \"$DEPENDENCY_PROFILE\"\n"
+        "exec 1>&- 2>&-\n"
+        'wait "$log_pipe_pid"\n',
+        encoding="utf-8",
+    )
+    probe.chmod(0o755)
+
+    return subprocess.run(
+        ["script", "-qec", f"{probe} {script_dir}", "/dev/null"],
+        cwd=os.getcwd(),
+        input=stdin_input,
+        env=_clean_subprocess_env(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_select_dependency_profile_interactive_default_stays_dev_full(tmp_path):
+    """Without prior evidence of a weak connection, the menu default is unchanged."""
+    if shutil.which("script") is None:
+        pytest.skip("util-linux script komutu bu ortamda yok")
+
+    script_dir = tmp_path / "sidar"
+    script_dir.mkdir(parents=True)
+
+    result = _run_interactive_profile_probe(tmp_path, script_dir, "\n")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Seçim [1-7, varsayılan 2]:" in result.stdout
+    assert "RESULT_PROFILE=dev-full" in result.stdout
+    assert "zayıf/kesintili bağlantı" not in result.stdout
+
+
+def test_select_dependency_profile_interactive_recommends_dev_light_after_network_timeout(
+    tmp_path,
+):
+    """Review bulgusu: dev-full menüde her zaman "önerilen"di.
+
+    Önceki bir kurulum denemesi `uv sync`'i ağ zaman aşımıyla kaybettiğinde
+    (bkz. sidar_remediate_uv_sync_failure()'ın "cache-prune-skipped-network-
+    timeout" damgası), menünün varsayılan önerisinin dev-light'a döndüğünü ve
+    bunun sebebini açıklayan bir uyarı gösterdiğini doğrular.
+    """
+    if shutil.which("script") is None:
+        pytest.skip("util-linux script komutu bu ortamda yok")
+
+    script_dir = tmp_path / "sidar"
+    remediation_dir = script_dir / "artifacts" / "install" / "remediation"
+    remediation_dir.mkdir(parents=True)
+    (remediation_dir / "20260101_010101_04_workspace.log").write_text(
+        "phase=04_workspace\n"
+        "reason=uv-sync\n"
+        "action=uv-sync-remediation+cache-prune-skipped-network-timeout\n"
+        "attempt=0\n"
+        "resume_from=04_workspace\n"
+        "log_file=\n",
+        encoding="utf-8",
+    )
+
+    # Confirm the default recommendation switches to dev-light...
+    result_default = _run_interactive_profile_probe(tmp_path, script_dir, "\n")
+    assert result_default.returncode == 0, result_default.stdout + result_default.stderr
+    assert "Seçim [1-7, varsayılan 1]:" in result_default.stdout
+    assert "zayıf/kesintili bağlantı tespit edildiği için" in result_default.stdout
+    assert "RESULT_PROFILE=dev-light" in result_default.stdout
+
+    # ...but an explicit choice of 2 still wins.
+    result_override = _run_interactive_profile_probe(tmp_path, script_dir, "2\n")
+    assert result_override.returncode == 0, result_override.stdout + result_override.stderr
+    assert "RESULT_PROFILE=dev-full" in result_override.stdout
 
 
 def test_pytorch_cuda_sync_uses_gpu_profile_without_all_extras(tmp_path):

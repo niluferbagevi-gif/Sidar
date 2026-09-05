@@ -223,6 +223,21 @@ sidar_fail_unless_known_dependency_profile() {
         fail "Geçersiz dependency profile: ${candidate}. Desteklenen: $(sidar_dependency_profile_usage_hint)"
 }
 
+# Review bulgusu: dev-full (--all-extras) torch/nvidia-cuda/transformers/
+# playwright/whisper dahil HER extra'yı çekiyor (~1.5-2GB); menü bunu
+# "önerilen" olarak sunuyordu ve önceki bir kurulum denemesi zaten uv sync
+# ağ zaman aşımıyla başarısız olmuş olsa bile öneri değişmiyordu. Bu,
+# sidar_remediate_uv_sync_failure()'ın (install_remediation.sh) ağ zaman
+# aşımı imzasında yazdığı "cache-prune-skipped-network-timeout" damgalı
+# remediation raporunu arar — aynı kurulum denemesinde (resume sonrası)
+# veya önceki başarısız bir `./install_sidar.sh` çalıştırmasından kalmış
+# olabilir; her iki durumda da "bu ağ zayıf/kesintili" için somut kanıt.
+sidar_prior_uv_sync_network_timeout_detected() {
+    local remediation_dir="${SCRIPT_DIR:-.}/artifacts/install/remediation"
+    [[ -d "$remediation_dir" ]] || return 1
+    grep -l "^action=.*cache-prune-skipped-network-timeout" "$remediation_dir"/*.log >/dev/null 2>&1
+}
+
 select_dependency_profile() {
     local requested="${DEPENDENCY_PROFILE:-${SIDAR_DEPENDENCY_PROFILE:-ask}}"
     requested="$(normalize_dependency_profile_value "$requested")"
@@ -235,6 +250,18 @@ select_dependency_profile() {
             requested="dev-full"
             info "Etkileşimsiz kurulum: varsayılan tam geliştirici bağımlılık profili seçildi (developer-full, dahili adıyla dev-full)."
         elif [[ -t 0 ]]; then
+            # Zayıf/kesintili bağlantı kanıtı varsa (bkz. yukarıdaki fonksiyon
+            # yorumu) varsayılan öneriyi dev-full yerine dev-light'a çeviriyoruz
+            # — kullanıcı yine de 2'yi seçebilir, bu yalnızca varsayılanı ve
+            # menüdeki uyarıyı değiştirir.
+            local recommended_choice=2
+            local recommended_label="developer-full (dev-full)"
+            local weak_connection_warning=""
+            if sidar_prior_uv_sync_network_timeout_detected; then
+                recommended_choice=1
+                recommended_label="dev-light"
+                weak_connection_warning="⚠️  Önceki kurulum denemesinde 'uv sync' ağ zaman aşımına uğradı; zayıf/kesintili bağlantı tespit edildiği için varsayılan öneri dev-light'a çevrildi (yine de 2'yi seçebilirsin)."
+            fi
             # install_sidar.sh'ın `exec > >(mask_install_log_stream | tee ...) 2>&1`
             # log yönlendirmesi (satır ~386) normal echo/stdout'u asenkron bir
             # pipe üzerinden geçirir; hemen altındaki `read ... 2>/dev/tty` ise
@@ -246,22 +273,26 @@ select_dependency_profile() {
             # kanalını paylaşsın diye tek blok halinde /dev/tty'e yazılıyor.
             {
                 echo
-                echo "Bağımlılık profili seçin:"
-                echo "  1) dev-light (hızlı yerel geliştirme + test araçları)"
-                echo "  2) developer-full (önerilen; tüm extras; CI/tam doğrulama; dahili/log adı: dev-full)"
-                echo "  3) dev-gpu (geliştirici + RAG/GPU runtime; provider extras yok)"
-                echo "  4) production-minimal (dar no-dev runtime)"
-                echo "  5) production (runtime + postgres + telemetry)"
-                echo "  6) gpu-runtime (dar no-dev RAG/GPU runtime)"
+                echo "Bağımlılık profili seçin (yaklaşık indirme boyutu):"
+                echo "  1) dev-light (hızlı yerel geliştirme + test araçları) — küçük"
+                echo "  2) developer-full (tüm extras; CI/tam doğrulama; dahili/log adı: dev-full) — ağır, ~1.5-2GB (torch/CUDA/transformers/playwright/whisper dahil)"
+                echo "  3) dev-gpu (geliştirici + RAG/GPU runtime; provider extras yok) — orta-ağır (torch/CUDA dahil)"
+                echo "  4) production-minimal (dar no-dev runtime) — küçük"
+                echo "  5) production (runtime + postgres + telemetry) — küçük-orta"
+                echo "  6) gpu-runtime (dar no-dev RAG/GPU runtime) — orta-ağır (torch/CUDA dahil)"
                 echo "  7) özel provider seçimi (SIDAR_DEPENDENCY_EXTRAS)"
+                if [[ -n "$weak_connection_warning" ]]; then
+                    echo
+                    echo "$weak_connection_warning"
+                fi
             } &> /dev/tty
             local profile_choice=""
-            if read -r -t "${SIDAR_PROMPT_TIMEOUT:-180}" -p "Seçim [1-7, varsayılan 2]: " profile_choice 2>/dev/tty; then
-                profile_choice="${profile_choice:-2}"
+            if read -r -t "${SIDAR_PROMPT_TIMEOUT:-180}" -p "Seçim [1-7, varsayılan ${recommended_choice}]: " profile_choice 2>/dev/tty; then
+                profile_choice="${profile_choice:-$recommended_choice}"
             else
-                profile_choice="2"
+                profile_choice="$recommended_choice"
                 echo
-                warn "Bağımlılık profili seçimi zaman aşımına uğradı; developer-full (dev-full) seçildi."
+                warn "Bağımlılık profili seçimi zaman aşımına uğradı; ${recommended_label} seçildi."
             fi
             case "$profile_choice" in
                 1) requested="dev-light" ;;
@@ -272,8 +303,11 @@ select_dependency_profile() {
                 6) requested="gpu-runtime" ;;
                 7) requested="custom" ;;
                 *)
-                    warn "Geçersiz bağımlılık profili seçimi (${profile_choice}); developer-full (dev-full) kullanılacak."
-                    requested="dev-full"
+                    warn "Geçersiz bağımlılık profili seçimi (${profile_choice}); ${recommended_label} kullanılacak."
+                    case "$recommended_choice" in
+                        1) requested="dev-light" ;;
+                        *) requested="dev-full" ;;
+                    esac
                     ;;
             esac
         else
