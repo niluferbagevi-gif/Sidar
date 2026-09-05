@@ -325,6 +325,15 @@ install_python_deps() {
     cd "$SCRIPT_DIR" || return 1
     UV_CMD=(uv)
 
+    # Review bulgusu: uv'nin varsayılan HTTP istek zaman aşımı (30sn) --all-extras
+    # gibi ~1.5GB+ indiren profiller için düşük; torch/nvidia-* gibi büyük
+    # wheel'lerde "operation timed out" ile sonuçlanabiliyor. Kullanıcı
+    # SIDAR_UV_HTTP_TIMEOUT ile override edebilsin diye .env/ortam üzerinden
+    # ayarlanabilir; aynı desen self-hosted CI job'larında zaten kullanılıyor
+    # (bkz. ci.yml UV_HTTP_TIMEOUT: "180"), burada installer'ın kendisine de
+    # uygulanıyor.
+    export UV_HTTP_TIMEOUT="${SIDAR_UV_HTTP_TIMEOUT:-120}"
+
     local dependency_profile="${DEPENDENCY_PROFILE:-${SIDAR_DEPENDENCY_PROFILE:-dev-full}}"
     dependency_profile="$(normalize_dependency_profile_value "$dependency_profile")"
     if [[ "$dependency_profile" == "ask" ]]; then
@@ -394,8 +403,37 @@ install_python_deps() {
     if [[ "$dependency_profile" == "production" || "$dependency_profile" == "production-minimal" ]]; then
         warn "Production dependency profili dev/test araçlarını kurmaz; smoke/CI/self-healing için dev-full veya dev-light kullanın."
     fi
-    if ! "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"; then
-        fail "Bağımlılık kurulumu başarısız oldu (${sync_command_label}). Lock dosyası pyproject ile uyumsuzsa bilinçli olarak --upgrade-lock çalıştırın."
+    # Review bulgusu: `uv sync` tek denemeydi; başarısızlıkta doğrudan
+    # sarmalayan 04_workspace fazının baştan resume edilmesine (auto-heal)
+    # bırakılıyordu — install_sidar.sh'ın kendi modül indirme kodu
+    # (SIDAR_INSTALL_MODULE_DOWNLOAD_RETRIES/RETRY_DELAY, satır ~939-1076)
+    # zaten üstel-backoff'lu retry uyguluyorken, en pahalı/en yavaş adım olan
+    # `uv sync` bundan yararlanmıyordu. Aynı failure imzası tekrarlanırsa
+    # install_remediation.sh zaten erken kesiyor (sidar_handle_install_failure
+    # → "aynı failure imzası tekrarlandı"), dolayısıyla bu döngü sonsuz retry
+    # riski taşımıyor — yalnızca geçici ağ kesintilerinde tüm fazı baştan
+    # resume etmeden önce birkaç ucuz deneme hakkı tanıyor.
+    local sync_max_attempts="${SIDAR_UV_SYNC_RETRIES:-3}"
+    local sync_attempt=1
+    local sync_ok=false
+    while (( sync_attempt <= sync_max_attempts )); do
+        if "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"; then
+            sync_ok=true
+            break
+        fi
+        if (( sync_attempt < sync_max_attempts )); then
+            local sync_retry_delay_base="${SIDAR_UV_SYNC_RETRY_DELAY_BASE_SECONDS:-5}"
+            local sync_retry_delay=$((sync_retry_delay_base * (2 ** (sync_attempt - 1))))
+            warn "Auto-heal: ${sync_command_label} başarısız (deneme ${sync_attempt}/${sync_max_attempts}); ${sync_retry_delay}s sonra tekrar denenecek."
+            if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" && "${SIDAR_INSTALL_SKIP_RETRY_SLEEP:-0}" != "1" ]]; then
+                sleep "$sync_retry_delay"
+            fi
+        fi
+        sync_attempt=$((sync_attempt + 1))
+    done
+
+    if [[ "$sync_ok" != true ]]; then
+        fail "Bağımlılık kurulumu başarısız oldu (${sync_command_label}, ${sync_max_attempts} denemeden sonra). Lock dosyası pyproject ile uyumsuzsa bilinçli olarak --upgrade-lock çalıştırın."
     fi
 
     if ! "${UV_CMD[@]}" run python -c "import pydantic, pydantic_settings" >/dev/null 2>&1; then
