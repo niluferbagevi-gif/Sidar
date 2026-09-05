@@ -399,7 +399,14 @@ services:
       - WEB_PORT=7860
       - MEMORY_ENCRYPTION_KEY=${MEMORY_ENCRYPTION_KEY:-}
       - API_KEY=${API_KEY:-}
-      - ENABLE_TRACING=${ENABLE_TRACING:-true}
+      # config.py'nin (ENABLE_TRACING=False) ve .env.advanced.example'ın kendi
+      # belgelenmiş varsayılanıyla eşleşir. `jaeger` yalnızca "observability"
+      # profili altında başlar (bkz. aşağıdaki jaeger servisi); bu değişken
+      # burada true varsayılansaydı, jaeger'sız her cpu/gpu-profilli compose
+      # koşusunda (ör. scripts/ci/validate_production_compose.sh) sidar-web
+      # jaeger:4317'ye OTLP export denemeye çalışıp DEADLINE_EXCEEDED ile
+      # başarısız olur, işlevsel olmayan ama gürültülü boot log'ları üretirdi.
+      - ENABLE_TRACING=${ENABLE_TRACING:-false}
       - OTEL_EXPORTER_ENDPOINT=${OTEL_EXPORTER_ENDPOINT:-http://jaeger:4317}
       - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-sidar-web}
       - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-sidar}:${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-sidar}}
@@ -484,7 +491,14 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
       - MEMORY_ENCRYPTION_KEY=${MEMORY_ENCRYPTION_KEY:-}
       - API_KEY=${API_KEY:-}
-      - ENABLE_TRACING=${ENABLE_TRACING:-true}
+      # config.py'nin (ENABLE_TRACING=False) ve .env.advanced.example'ın kendi
+      # belgelenmiş varsayılanıyla eşleşir. `jaeger` yalnızca "observability"
+      # profili altında başlar (bkz. aşağıdaki jaeger servisi); bu değişken
+      # burada true varsayılansaydı, jaeger'sız her cpu/gpu-profilli compose
+      # koşusunda (ör. scripts/ci/validate_production_compose.sh) sidar-web
+      # jaeger:4317'ye OTLP export denemeye çalışıp DEADLINE_EXCEEDED ile
+      # başarısız olur, işlevsel olmayan ama gürültülü boot log'ları üretirdi.
+      - ENABLE_TRACING=${ENABLE_TRACING:-false}
       - OTEL_EXPORTER_ENDPOINT=${OTEL_EXPORTER_ENDPOINT:-http://jaeger:4317}
       - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-sidar-web-gpu}
       - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-sidar}:${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-sidar}}

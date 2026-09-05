@@ -562,6 +562,92 @@ def test_production_override_actually_closes_datastore_ports(tmp_path: Path) -> 
             }
 
 
+@pytest.mark.integration
+def test_enable_tracing_defaults_to_false_without_the_observability_profile(
+    tmp_path: Path,
+) -> None:
+    """Regression: sidar-web/-gpu must not enable tracing by default.
+
+    A friend's log review of the Production Compose gate found sidar-web
+    retrying OTLP span exports against `jaeger:4317` and failing with
+    DEADLINE_EXCEEDED -- functionally harmless but noisy boot-log spam that
+    burns a few seconds on every boot. Root cause: docker-compose.yml hardcoded
+    `ENABLE_TRACING=${ENABLE_TRACING:-true}` for sidar-web/-gpu, silently
+    overriding config.py's own Python-level default (`ENABLE_TRACING: bool =
+    False`, see core/config_observability.py) and the documented default in
+    docs/project-report/04-teknik-borc-ve-yapilandirma.md ("`ENABLE_TRACING` |
+    `false`"). `jaeger` only starts under `profiles: ["observability"]`, so
+    any compose run with just `--profile cpu`/`gpu` (including
+    scripts/ci/validate_production_compose.sh, and any plain `docker compose
+    up` without also requesting the observability profile) got tracing
+    silently turned on against a collector that was never started.
+    """
+    docker = shutil.which("docker")
+    if docker is None:
+        pytest.skip("Docker CLI is not installed")
+
+    compose_version = subprocess.run(
+        [docker, "compose", "version"], check=False, capture_output=True, text=True
+    )
+    if compose_version.returncode != 0:
+        pytest.skip("Docker Compose plugin is not installed")
+
+    env_file = tmp_path / "gate.env"
+    env_file.write_text(
+        "\n".join(
+            [
+                "POSTGRES_PASSWORD=compose-tracing-gate-postgres-password-32",
+                "REDIS_PASSWORD=compose-tracing-gate-redis-password-32-c",
+                "GRAFANA_ADMIN_PASSWORD=compose-tracing-gate-grafana-admin-pw-32",
+                "METRICS_TOKEN=compose-tracing-gate-metrics-token-32-chars",
+                "API_KEY=compose-tracing-gate-api-key-32-characters",
+                "JWT_SECRET_KEY=compose-tracing-gate-jwt-secret-key-32-chars",
+                "MEMORY_ENCRYPTION_KEY=MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    # A clean, minimal env -- see test_generated_gate_env_passes_real_compose_config
+    # for why the full ambient os.environ is not inherited here.
+    clean_env = {
+        "HOME": str(tmp_path),
+        "PATH": os.environ["PATH"],
+        "SIDAR_RUNTIME_ENV_FILE": str(env_file),
+    }
+
+    for profile, services in (("cpu", ["sidar-web"]), ("gpu", ["sidar-web-gpu"])):
+        completed = subprocess.run(
+            [
+                docker,
+                "compose",
+                "--project-name",
+                f"sidar-tracing-default-gate-{profile}-{tmp_path.name}",
+                "--env-file",
+                str(env_file),
+                "-f",
+                "docker-compose.yml",
+                "--profile",
+                profile,
+                "config",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=clean_env,
+        )
+        assert completed.returncode == 0, completed.stderr
+        merged = yaml.safe_load(completed.stdout)
+        assert "jaeger" not in merged["services"], (
+            f"jaeger must stay opt-in via the observability profile, "
+            f"not run under --profile {profile}"
+        )
+        for service_name in services:
+            assert merged["services"][service_name]["environment"]["ENABLE_TRACING"] == "false", (
+                f"{service_name} must not enable tracing by default when jaeger isn't running"
+            )
+
+
 def test_production_readiness_aggregate_requires_compose_and_minimal_profiles() -> None:
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     aggregate = workflow[
