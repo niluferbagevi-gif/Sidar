@@ -1009,6 +1009,65 @@ def test_apply_gpu_memory_safety_check_second_scale_branch(monkeypatch):
     assert config.Config.GPU_MEMORY_FRACTION == pytest.approx(0.8, rel=1e-3)
 
 
+def test_llm_rag_gpu_memory_fraction_defaults_never_overflow_without_overrides(monkeypatch):
+    """Regression: unset LLM/RAG env vars must not overflow GPU_MEMORY_FRACTION.
+
+    A friend's log review found `_apply_gpu_memory_safety_check()` warning on
+    every boot when `.env` leaves LLM_GPU_MEMORY_FRACTION/RAG_GPU_MEMORY_FRACTION
+    unset (exactly what scripts/ci/validate_production_compose.sh's minimal
+    generated env file does): the old LLM default equaled GPU_MEMORY_FRACTION
+    itself (i.e. ×1.0) while RAG's was GPU_MEMORY_FRACTION×0.35, so the two
+    defaults alone summed to 135% of the safe budget (0.8 -> 1.08), silently
+    triggering a runtime OOM-risk normalization on every single boot with no
+    override present. Both class-attribute defaults (config.py) and
+    core/config_hardware.py's duplicate copy of the same formula (used by
+    check_hardware()'s VRAM-apply path when only one of the two env vars is
+    explicitly set) must split GPU_MEMORY_FRACTION 65/35 so the sum already
+    equals GPU_MEMORY_FRACTION with zero overrides.
+    """
+    monkeypatch.delenv("GPU_MEMORY_FRACTION", raising=False)
+    monkeypatch.delenv("LLM_GPU_MEMORY_FRACTION", raising=False)
+    monkeypatch.delenv("RAG_GPU_MEMORY_FRACTION", raising=False)
+
+    reloaded = importlib.reload(config)
+
+    total = reloaded.Config.LLM_GPU_MEMORY_FRACTION + reloaded.Config.RAG_GPU_MEMORY_FRACTION
+    assert total == pytest.approx(reloaded.Config.GPU_MEMORY_FRACTION, rel=1e-9)
+
+    budget = reloaded.normalize_gpu_memory_fractions(
+        reloaded.Config.LLM_GPU_MEMORY_FRACTION, reloaded.Config.RAG_GPU_MEMORY_FRACTION
+    )
+    assert budget["normalized"] is False, (
+        "default LLM+RAG fractions must not exceed the safe target budget"
+    )
+
+
+def test_apply_gpu_memory_safety_check_does_not_warn_on_unmodified_defaults(monkeypatch, caplog):
+    """`_apply_gpu_memory_safety_check()` must be a no-op at true defaults.
+
+    Companion to the test above: even if the sum happened to match, a stray
+    normalize call could still fire and log the misleading "OOM riskini
+    azaltmak için normalize edildi" warning. Assert the safety check itself
+    makes no changes and logs nothing when Config's own unmodified defaults
+    are used, reproducing the exact boot path a friend's log review flagged.
+    """
+    monkeypatch.delenv("GPU_MEMORY_FRACTION", raising=False)
+    monkeypatch.delenv("LLM_GPU_MEMORY_FRACTION", raising=False)
+    monkeypatch.delenv("RAG_GPU_MEMORY_FRACTION", raising=False)
+    reloaded = importlib.reload(config)
+    llm_before = reloaded.Config.LLM_GPU_MEMORY_FRACTION
+    rag_before = reloaded.Config.RAG_GPU_MEMORY_FRACTION
+    gpu_before = reloaded.Config.GPU_MEMORY_FRACTION
+
+    with caplog.at_level(logging.WARNING, logger="Sidar.Config"):
+        reloaded.Config._apply_gpu_memory_safety_check()
+
+    assert reloaded.Config.LLM_GPU_MEMORY_FRACTION == pytest.approx(llm_before)
+    assert reloaded.Config.RAG_GPU_MEMORY_FRACTION == pytest.approx(rag_before)
+    assert reloaded.Config.GPU_MEMORY_FRACTION == pytest.approx(gpu_before)
+    assert "normalize edildi" not in caplog.text
+
+
 def test_validate_critical_settings_exits_in_production_without_memory_key(monkeypatch):
     monkeypatch.setattr(
         config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None)

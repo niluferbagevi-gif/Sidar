@@ -649,8 +649,17 @@ class Config:
 
     # Embedding ve model yüklemeleri için VRAM fraksiyonu (0.1–0.99 bekleniyor, 1.0 dahil değil)
     GPU_MEMORY_FRACTION: float = get_float_env("GPU_MEMORY_FRACTION", 0.8)
-    # Yerel LLM ve RAG için ayrı bellek bütçeleri (opsiyonel)
-    LLM_GPU_MEMORY_FRACTION: float = get_float_env("LLM_GPU_MEMORY_FRACTION", GPU_MEMORY_FRACTION)
+    # Yerel LLM ve RAG için ayrı bellek bütçeleri (opsiyonel). Varsayılanlar
+    # GPU_MEMORY_FRACTION'ı 65/35 oranında bölüştürür ki hiçbir override
+    # olmadan toplamları zaten GPU_MEMORY_FRACTION'a eşit olsun --
+    # _apply_gpu_memory_safety_check()'in her boot'ta gereksiz yere runtime
+    # normalize etmesini (ve bir OOM-riski uyarısı basmasını) önler. Eskiden
+    # LLM_GPU_MEMORY_FRACTION varsayılanı doğrudan GPU_MEMORY_FRACTION'ın
+    # kendisiydi (yani ×1.0), bu da RAG'ın ×0.35'iyle toplamda her zaman
+    # GPU_MEMORY_FRACTION'ın %135'ini buluyordu (varsayılan 0.8'de: 1.08).
+    LLM_GPU_MEMORY_FRACTION: float = get_float_env(
+        "LLM_GPU_MEMORY_FRACTION", max(0.1, min(0.9, GPU_MEMORY_FRACTION * 0.65))
+    )
     RAG_GPU_MEMORY_FRACTION: float = get_float_env(
         "RAG_GPU_MEMORY_FRACTION", max(0.1, min(0.5, GPU_MEMORY_FRACTION * 0.35))
     )
