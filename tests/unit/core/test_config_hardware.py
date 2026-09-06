@@ -13,6 +13,70 @@ from core.config_gpu_detect import HardwareInfo
 from core.config_hardware import apply_vram_memory_fraction
 
 
+@pytest.mark.parametrize(
+    "environ",
+    [
+        {"USE_GPU": "true"},
+        {"REQUIRE_GPU": "true"},
+        {"COMPOSE_PROFILES": "cpu,gpu"},
+        {"NVIDIA_VISIBLE_DEVICES": "all"},
+        {"CUDA_VISIBLE_DEVICES": "0"},
+    ],
+)
+def test_missing_wsl_cuda_warns_only_for_explicit_gpu_runtime(environ: dict[str, str]) -> None:
+    """A missing CUDA runtime is actionable only when GPU execution was requested."""
+    logger = Mock()
+
+    apply_vram_memory_fraction(
+        HardwareInfo(has_cuda=False, gpu_name="CUDA Bulunamadı"),
+        is_wsl2_runtime=Mock(return_value=True),
+        stable_cuda_wheel_tags=("cu130",),
+        recommended_cuda_install_command="uv sync --all-extras",
+        get_float_env=Mock(),
+        get_bool_env=lambda name, default: environ.get(name, str(default)).lower() == "true",
+        get_int_env=Mock(),
+        normalize_gpu_memory_fractions=Mock(),
+        log_first_load_info=Mock(),
+        logger=logger,
+        environ=environ,
+    )
+
+    logger.warning.assert_called_once()
+    assert "WSL2 — CUDA bulunamadı" in logger.warning.call_args.args[0]
+    logger.debug.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "environ",
+    [
+        {},
+        {"USE_GPU": "false", "REQUIRE_GPU": "false", "COMPOSE_PROFILES": "cpu"},
+        {"NVIDIA_VISIBLE_DEVICES": "none", "CUDA_VISIBLE_DEVICES": "-1"},
+    ],
+)
+def test_missing_wsl_cuda_is_debug_noise_for_cpu_runtime(environ: dict[str, str]) -> None:
+    """CPU production profiles must not emit an actionable CUDA warning."""
+    logger = Mock()
+
+    apply_vram_memory_fraction(
+        HardwareInfo(has_cuda=False, gpu_name="CUDA Bulunamadı"),
+        is_wsl2_runtime=Mock(return_value=True),
+        stable_cuda_wheel_tags=("cu130",),
+        recommended_cuda_install_command="uv sync --all-extras",
+        get_float_env=Mock(),
+        get_bool_env=lambda name, default: environ.get(name, str(default)).lower() == "true",
+        get_int_env=Mock(),
+        normalize_gpu_memory_fractions=Mock(),
+        log_first_load_info=Mock(),
+        logger=logger,
+        environ=environ,
+    )
+
+    logger.warning.assert_not_called()
+    logger.debug.assert_called_once()
+    assert "CPU runtime profili etkin" in logger.debug.call_args.args[0]
+
+
 def test_apply_vram_memory_fraction_handles_torch_import_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

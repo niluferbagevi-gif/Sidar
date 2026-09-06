@@ -75,7 +75,7 @@ function getLanguage(node: HastElement): string {
   return languageClass.replace(/^(language|lang)-/, "").toLowerCase();
 }
 
-function decodeHtmlText(value: unknown): string {
+function decodeHtmlText(value?: unknown): string {
   return String(value || "")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
@@ -85,12 +85,12 @@ function decodeHtmlText(value: unknown): string {
     .replace(/&amp;/g, "&");
 }
 
-function classNamesFromHtml(value: unknown): string[] {
+function classNamesFromHtml(value?: unknown): string[] {
   const match = String(value || "").match(/class="([^"]+)"/);
   return match?.[1]?.split(/\s+/).filter(Boolean) || [];
 }
 
-function highlightHtmlToHastChildren(html: unknown): unknown[] {
+function highlightHtmlToHastChildren(html?: unknown): unknown[] {
   const root: HastRoot = { type: "root", children: [] };
   const stack: Array<HastRoot | HastElement> = [root];
   const tokenPattern = /<span(?:\s+class="[^"]+")?>|<\/span>|[^<]+/g;

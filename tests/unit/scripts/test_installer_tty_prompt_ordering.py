@@ -137,7 +137,7 @@ _GUARDED_PROMPT_SITES = (
     (
         "scripts/install_modules/utils/python_env.sh",
         "} &> /dev/tty",
-        '-p "Seçim [1-7, varsayılan 2]: " profile_choice 2>/dev/tty',
+        '-p "Seçim [1-7, varsayılan ${recommended_choice}]: " profile_choice 2>/dev/tty',
     ),
     (
         "scripts/install_modules/phases/03_system.sh",

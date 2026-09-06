@@ -275,6 +275,16 @@ doğrular, mevcut olabilecek eski `sidar:latest` tag'ine güvenmeyip güncel che
 build eder ve `SIDAR_REQUIRE_PLUGIN_SANDBOX_CONTAINER_TESTS=1` ile herhangi bir altyapı
 eksikliğinin skip olarak gizlenmesini engeller.
 
+İki test (`test_container_timeout_is_enforced_and_cleaned_up_for_a_real_hanging_process` ve
+memory-bomb testi), gerçek bir timeout/OOM-kill sonrası asenkron `docker rm --force`
+temizliğini `_assert_no_orphan_containers` ile 60 saniyeye kadar poll eder — bu bütçe
+`web/plugins/sandbox.py`'deki uygulama kodunun bir hatası değil, CI'da tekrarlanan
+gözlemlere dayanan Docker daemon teardown gecikmesi içindir. WSL2 + Docker Desktop gibi
+kaynak kısıtlı/eşzamanlı yüklü geliştirici makinelerinde 60 saniye yetmiyorsa
+`SIDAR_SANDBOX_TEST_CLEANUP_TIMEOUT_S` ortam değişkeniyle (saniye cinsinden, örn. `120`)
+artırılabilir; `tests/_helpers/docker_sandbox.py::orphan_cleanup_timeout_seconds` boş/geçersiz/
+pozitif olmayan değerlerde sessizce 60 saniye varsayılanına döner.
+
 `tests/integration/web/test_plugin_sandbox_integration.py` yukarıdaki gerçek-container
 matrisinden farklıdır: plugin sandbox backend'i her ortamda varsayılan olarak Docker
 kullandığı için (`web/plugins/sandbox.py:plugin_sandbox_backend`) bu test de gerçek
@@ -450,8 +460,13 @@ protection altında en az şu CI job'ları required check olmalıdır:
 
 Repo metadata veya ayarlarda auto-merge ileride açılırsa, bu required check'ler ve
 production-readiness doğrulaması zorunlu olmadan auto-merge etkinleştirilmemelidir.
-Benchmark baseline missing nedeniyle `test` job'ı kırılırsa PR açıklamasında bu dokümandaki
-bootstrap runbook'una link verin ve seed workflow tamamlanmadan merge onayı vermeyin.
+`benchmark-compare` job'ı erişilebilir hiçbir cache kapsamında baseline bulamazsa artık
+fail-closed kırılmaz; kendi ölçümünü bootstrap baseline olarak üretip PR'ın kendi ref
+kapsamında cache'ler (bkz. `docs/module-notes/tests.md`). Bu koşuda gerçek bir regresyon
+karşılaştırması **yapılmamıştır** — review sırasında job özetindeki (step summary)
+"Bootstrapping" notunu kontrol edin; görürseniz PR'a bir sonraki push'un (aynı `uv.lock`
+ile) gerçek karşılaştırmayı üreteceğini bilin ve mümkünse merge kararını o push'tan sonrasına
+bırakın.
 
 ## CI production-readiness dışsal bağımlılıkları
 
@@ -614,6 +629,20 @@ varyansını yanlış regresyon saymamak için ayrı bir pytest sürecinde
 benchmark oturumu concurrency testini `-k not ...` ile dışlar ve sıkı eşiğini korur;
 I/O raporu `artifacts/benchmark/io-benchmark.json` olarak ayrıca saklanır. Bu eşik
 rapor-only değildir; daha büyük I/O regresyonları yine fail-closed sonuçlanır.
+
+Parola hash/verify (bcrypt/pbkdf2 tarzı) primitive'leri ölçen `password-application-path`
+ve `password-primitive` grupları (`@pytest.mark.password_benchmark`) kasıtlı olarak
+CPU-maliyetli oldukları için diğer CPU testlerinden (`test_format_table_...`) belirgin
+biçimde daha yüksek varyansa sahiptir; paylaşılan CPU zamanına (termal throttling, arka
+planda Docker build, GPU stress, çok-worker'lı xdist) son derece duyarlıdırlar. Bu yüzden
+genel CPU oturumundan ayrı bir pytest sürecinde çalışır ve `BENCHMARK_PASSWORD_COMPARE_FAIL`
+(varsayılan `mean:30%`) ile değerlendirilir; raporu `artifacts/benchmark/password-benchmark.json`
+olarak ayrıca saklanır. Bu eşik de rapor-only değildir; daha büyük parola-benchmark
+regresyonları yine fail-closed sonuçlanır. Yalnız bu grup için gürültü teşhisi:
+
+```bash
+BENCHMARK_PASSWORD_COMPARE_FAIL=mean:40% make production-readiness
+```
 I/O ölçümü 5 warmup sonrasında 50 tur toplar; 25 tura göre örnekleme belirsizliğini azaltır.
 Tur artışı donanım izolasyonunun yerine geçmez: CI compare ve baseline seed işleri yine
 aynı `[self-hosted, linux, benchmark]` runner kontratında çalışmalıdır.

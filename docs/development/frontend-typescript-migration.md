@@ -105,11 +105,35 @@ güncel envanter 6 `.js`, 20 `.jsx`, 19 `.ts`, 22 `.tsx`, ratchet ise
 ilerleme `typescript-migration-baseline.json` içinde hemen sıkılaştırılarak
 kampanyanın geriye gitmesi engellenmiştir.
 
+**2026-10-31 ara hedefine erken varış (bir arkadaş kod incelemesi, 2026-08-30):**
+İnceleme, ratchet'in tam sınırda (untyped=26=maximum_untyped_files) sıfır tolerans
+payıyla durduğunu ve 2026-10-31 hedefinin (en fazla 20 untyped) hâlâ 6 dosyalık bir
+göç gerektirdiğini doğru tespit etti; öneri milestone tarihini beklemeden ilerlemeye
+başlamak, ilk adım olarak da en kolay/en çok kullanılan hook testlerinden
+(`useChatStore.test.js`, `useWebSocket.test.js` gibi) başlamaktı. Aynı gün dört dosya
+taşındı: `hooks/useChatStore.test.ts`, `hooks/useWebSocket.test.ts`,
+`lib/rehypeSidarHighlight.test.ts` ve `test/launcher_script.test.ts` (ikincisi
+`launcher_gui/script.js`'in side-effect import'ladığı globalleri tipleyen bir
+`declare global` bloğu gerektirdi); ardından test altyapısı dosyası `test/setup.ts`
+de aynı turda taşındı. Taşıma sırasında iki üretim tipi somut bir gerçek boşluğu
+kapattı: `useThrottledStream.ts`'in `setPending(text?, requestId?)` imzası `string`
+ile daraltılmıştı ama gövde zaten `String(value || "")` ile keyfi girdiyi tolere
+ediyordu -- bu, `setPendingChunk` test yardımcısının niyet ettiği "string olmayan
+girdiyi normalize et" davranışını test edemez hale getiriyordu; her iki imza da
+`unknown`'a genişletildi (davranış değişmedi, yalnızca tip artık gerçeği
+yansıtıyor). Güncel envanter 1 `.js`, 20 `.jsx`, 24 `.ts`, 27 `.tsx`; ratchet
+21 untyped / 51 typed seviyesine sıkılaştırılmıştır -- 2026-10-31 hedefini
+(20/47) `minimum_typed_files` bakımından şimdiden aşmıştır, `maximum_untyped_files`
+bakımından ise tek dosyaya (`hooks/useVoiceAssistant.test.js`, ~2600 satır) kalmıştır.
+Bu dosya kasıtlı olarak bu turda taşınmadı: boyutu ve mikrofon/WebSocket/ses
+oynatma kuyruğu mock yüzeyinin genişliği, ayrı bir dilim olarak ele alınmayı hak
+ediyor; milestone tarihine (2026-10-31) kadar hâlâ headroom var.
+
 ## Zorunlu ratchet
 
-`typescript-migration-baseline.json`, en fazla 26 untyped (`.js` + `.jsx`) ve en az
-41 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. Envanter ayrıca bu borcu
-`production_untyped=0` ve `test_untyped=26` olarak ayırır; böylece test migrasyonu devam
+`typescript-migration-baseline.json`, en fazla 21 untyped (`.js` + `.jsx`) ve en az
+51 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. Envanter ayrıca bu borcu
+`production_untyped=0` ve `test_untyped=21` olarak ayırır; böylece test migrasyonu devam
 ederken production ağacına yeni JavaScript eklenmesi toplam ratchet içinde gizlenemez.
 `test`, `tests`, `__tests__` dizinleri ile `*.test.*`/`*.spec.*` dosyaları test kaynağı
 sayılır. İlk test dilimi olarak

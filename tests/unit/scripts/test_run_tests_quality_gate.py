@@ -762,6 +762,20 @@ def test_run_tests_uses_profile_aware_benchmark_compare_defaults() -> None:
     assert '-k "not test_multi_user_session_message_workload_scales_with_concurrency"' in script
     assert "I/O-bound DB concurrency benchmarkı ayrı pytest oturumunda" in script
     assert 'benchmark_io_cmd+=(--benchmark-compare-fail="${BENCHMARK_IO_COMPARE_FAIL}")' in script
+    assert (
+        'BENCHMARK_PASSWORD_COMPARE_FAIL="${BENCHMARK_PASSWORD_COMPARE_FAIL:-mean:30%}"' in script
+    )
+    assert (
+        'BENCHMARK_PASSWORD_JSON_OUTPUT="${BENCHMARK_PASSWORD_JSON_OUTPUT:-artifacts/benchmark/password-benchmark.json}"'
+        in script
+    )
+    assert '-m "not password_benchmark"' in script
+    assert '-m "password_benchmark"' in script
+    assert "Parola hash/verify (CPU-maliyetli) benchmarkı ayrı pytest oturumunda" in script
+    assert (
+        'benchmark_password_cmd+=(--benchmark-compare-fail="${BENCHMARK_PASSWORD_COMPARE_FAIL}")'
+        in script
+    )
     assert '--benchmark-warmup="${BENCHMARK_WARMUP}"' in script
     assert '--benchmark-warmup-iterations="${BENCHMARK_WARMUP_ITERATIONS}"' in script
     assert "benchmark_cmd+=(--benchmark-disable-gc)" in script
@@ -906,10 +920,15 @@ def test_postgresql_multi_user_benchmark_warms_pool_and_uses_stable_pedantic_rou
 def test_password_benchmarks_use_noise_resistant_pedantic_rounds() -> None:
     benchmark_test = Path("tests/performance/test_benchmark.py").read_text(encoding="utf-8")
 
-    assert "_PASSWORD_BENCHMARK_WARMUP_ROUNDS = 3" in benchmark_test
-    assert "_PASSWORD_BENCHMARK_ROUNDS = 10" in benchmark_test
-    assert benchmark_test.count("warmup_rounds=_PASSWORD_BENCHMARK_WARMUP_ROUNDS") == 2
-    assert benchmark_test.count("rounds=_PASSWORD_BENCHMARK_ROUNDS") == 2
+    assert "_PASSWORD_BENCHMARK_WARMUP_ROUNDS = 5" in benchmark_test
+    assert "_PASSWORD_BENCHMARK_ROUNDS = 30" in benchmark_test
+    assert benchmark_test.count("warmup_rounds=_PASSWORD_BENCHMARK_WARMUP_ROUNDS") == 4
+    assert benchmark_test.count("rounds=_PASSWORD_BENCHMARK_ROUNDS") == 4
+    assert 'group="password-application-path"' in benchmark_test
+    assert 'group="password-primitive"' in benchmark_test
+    assert (
+        benchmark_test.count("@pytest.mark.password_benchmark\n@pytest.mark.benchmark(group=") == 4
+    )
 
 
 def test_benchmark_docs_require_uv_and_review_before_promoting_latest_baseline() -> None:
@@ -1282,7 +1301,8 @@ def test_ci_workflow_documents_and_seeds_benchmark_baseline() -> None:
         "if: ${{ github.event_name != 'workflow_dispatch' || !inputs.seed_benchmark_baseline }}"
         in ci
     )
-    assert "Benchmark baseline missing" in ci
+    assert "mode=bootstrap" in ci
+    assert "Save bootstrap benchmark baseline cache" in ci
     assert "Run base quality gates (performance isolated)" in ci
     assert "Validate base test summary" in ci
     assert "--mode development --summary artifacts/test-summary.json" in ci
@@ -3665,7 +3685,14 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
         'sidar_source_install_utils "python_env.sh" "database_url.sh" "db_credentials.sh" '
         '"env_utils.sh"' in workspace_phase
     )
-    assert 'sidar_source_install_utils "ollama_models.sh"' in services_phase
+    assert (
+        'sidar_source_install_utils "env_utils.sh" "database_url.sh" "ollama_models.sh"'
+        in services_phase
+    )
+    # Tam Docker modu, host/WSL2'de zaten çalışan bir native Ollama'nın
+    # docker compose up'ın kendi Ollama container'ıyla 11434 port çakışmasına
+    # girmesini önlemek için host portunu kontrol edip gerekirse kaydırmalı.
+    assert "sidar_ensure_ollama_host_port_available_for_docker" in services_phase
     assert "sync_database_passwords_before_smoke_tests" in services_phase
     assert "ensure_env_test_postgres_password_matches_base_before_smoke" in services_phase
     assert "ensure_postgres_volume_reset_before_smoke_tests" in services_phase
@@ -4202,18 +4229,26 @@ def test_create_directories_permission_steps_no_longer_swallow_errors_silently()
     assert "sidar_run_or_warn() {" in workspace_phase
     for expected_call in (
         'sidar_run_or_warn "chmod 755 \\"$SCRIPT_DIR/$dir\\"" chmod 755 "$SCRIPT_DIR/$dir"',
-        'sidar_run_or_warn "chown 10001:10001 \\"$SCRIPT_DIR/$bind_dir\\"" chown 10001:10001'
-        ' "$SCRIPT_DIR/$bind_dir"',
         'sidar_run_or_warn "chmod u+rwx,g+rx,o+rx \\"$SCRIPT_DIR/$bind_dir\\"" chmod'
         ' u+rwx,g+rx,o+rx "$SCRIPT_DIR/$bind_dir"',
-        'sidar_run_or_warn "setfacl -m u:10001:rwx \\"$SCRIPT_DIR/$bind_dir\\"" setfacl -m'
-        ' u:10001:rwx "$SCRIPT_DIR/$bind_dir"',
+        'sidar_run_or_warn "chown 10001:10001 \\"$SCRIPT_DIR/$bind_dir\\"" chown 10001:10001'
+        ' "$SCRIPT_DIR/$bind_dir"',
         'sidar_run_or_warn "chown 10001:10001 \\"$log_file\\"" chown 10001:10001 "$log_file"',
-        'sidar_run_or_warn "setfacl -m u:10001:rw \\"$log_file\\"" setfacl -m u:10001:rw'
-        ' "$log_file"',
+        'sidar_run_or_warn "chown \\"$(id -u):$(id -g)\\" \\"$log_file\\"" chown'
+        ' "$(id -u):$(id -g)" "$log_file"',
         'sidar_run_or_warn "chmod u+rw \\"$log_file\\"" chmod u+rw "$log_file"',
     ):
         assert expected_call in create_directories_block, expected_call
+
+    # chown <başka-uid>, root olmayan bir kullanıcı için POSIX'te her zaman
+    # EPERM ile başarısız olur ve install_sidar.sh root/sudo ile çalıştırılmayı
+    # zaten reddeder (bkz. dosyanın en üstündeki EUID guard'ı) — bu yüzden
+    # sabit 10001 chown'ı yalnızca gerçekten root iken denenmeli. Root
+    # olmayan (asıl/normal) akışta artık chown/setfacl hiç denenmiyor;
+    # bunun yerine ensure_container_uid_gid_defaults() (08_env.sh)
+    # container'ı host kullanıcısının UID/GID'siyle çalıştırıyor.
+    assert 'if [[ "$(id -u)" -eq 0 ]]; then' in create_directories_block
+    assert "setfacl" not in create_directories_block
 
 
 def test_sidar_run_or_warn_surfaces_error_and_stays_non_fatal(tmp_path: Path) -> None:
@@ -5435,7 +5470,9 @@ def test_ci_uses_shared_system_dependency_installer_without_duplicate_apt_step()
     assert 'echo "=== bats ===" && bats --version' in ci_workflow
 
 
-def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profile() -> None:
+def test_ci_bootstraps_benchmark_baseline_when_unreachable_and_nightly_gpu_uses_full_profile() -> (
+    None
+):
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     seed_workflow = Path(".github/workflows/benchmark-baseline-seed.yml").read_text(
         encoding="utf-8"
@@ -5460,7 +5497,8 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "mkdir -p .benchmarks" in ci
     assert 'echo "BENCHMARK_COMPARE_REQUIRED=1" >> "$GITHUB_ENV"' not in ci
     assert 'echo "BENCHMARK_COMPARE_REQUIRED=0" >> "$GITHUB_ENV"' not in ci
-    assert "Benchmark baseline missing" in ci
+    assert "mode=bootstrap" in ci
+    assert "Save bootstrap benchmark baseline cache" in ci
     assert "exit 1" in ci
     assert "benchmark-compare:" in ci
     benchmark_job = ci[
@@ -5481,7 +5519,7 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "TEST_PROFILE=ci RUN_BENCHMARKS=0 RUN_FRONTEND_E2E=1" in ci
     assert "SIDAR_PRODUCTION_READINESS=0 bash run_tests.sh --stage all" in ci
     assert "GITHUB_STEP_SUMMARY" in ci
-    assert "benchmark compare is fail-closed" in ci
+    assert "No regression comparison was performed this run" in ci
     assert "BENCHMARK_BASELINE_FILE: ${{ steps.benchmark-baseline.outputs.compare_file }}" in ci
     assert '--benchmark-compare="${BENCHMARK_BASELINE_FILE}"' in ci
     assert "BENCHMARK_COMPARE_FAIL: mean:10%" in ci
@@ -5493,7 +5531,8 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert 'RUN_GPU_BENCHMARKS: "full"' in nightly_gpu
     assert ".benchmarks/` dizinini repoya commit etmek yerine GitHub Actions cache" in notes
     assert "BENCHMARK_COMPARE_FAIL=mean:10%" in notes
-    assert "koşu seed moduna düşmez" in notes
+    assert "artık fail-closed sonlanmaz" in notes
+    assert "bootstrap modu" in notes
     assert "name: Benchmark baseline seed" in seed_workflow
     assert "workflow_dispatch:" in seed_workflow
     assert "uses: ./.github/workflows/benchmark-baseline-reusable.yml" in seed_workflow
@@ -6728,6 +6767,59 @@ format_backend_failure_reasons() { printf 'none'; }
     assert ci_result.returncode == 1
     assert "Frontend E2E Çıkış Kodu: 1 (enforce=1)" in ci_result.stdout
     assert "Benchmark Çıkış Kodu: 1 (enforce=1)" in ci_result.stdout
+
+
+def test_production_compose_failure_diagnostics_surface_service_and_exception(
+    tmp_path: Path,
+) -> None:
+    """Final diagnostics must make a crashing production service immediately visible."""
+    helpers = Path("scripts/test_gates/summary_helpers.sh").resolve()
+    diagnostics = tmp_path / "production-compose"
+    diagnostics.mkdir()
+    (diagnostics / "ps.txt").write_text(
+        "NAME  IMAGE  COMMAND  SERVICE  CREATED  STATUS  PORTS\n"
+        "sidar-production-gate_web  sidar  cmd  sidar-web  now  Restarting (1) 1 second ago  \n",
+        encoding="utf-8",
+    )
+    (diagnostics / "compose.log").write_text(
+        "sidar-production-gate_web | PermissionError: [Errno 13] Permission denied: "
+        "'/app/web_ui_react/dist/assets'\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; PRODUCTION_COMPOSE_DIAGNOSTICS_DIR="$2"; '
+            "production_compose_failure_diagnostics",
+            "bash",
+            str(helpers),
+            str(diagnostics),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.stdout.splitlines() == [
+        "sidar-web",
+        "PermissionError: [Errno 13] Permission denied: '/app/web_ui_react/dist/assets'",
+    ]
+
+
+def test_final_summary_prints_production_compose_gate_fields() -> None:
+    final_evaluation = _script().split("# 4) Final Durum Değerlendirmesi", maxsplit=1)[1]
+
+    assert "Production Compose Çıkış Kodu: ${PRODUCTION_COMPOSE_EXIT_CODE:-0}" in final_evaluation
+    assert (
+        "Production Compose Durumu: ${PRODUCTION_COMPOSE_DISPLAY_STATUS:-NOT RUN}"
+        in final_evaluation
+    )
+    assert (
+        "Başarısız Servis: ${PRODUCTION_COMPOSE_FAILED_SERVICE:-belirlenemedi}" in final_evaluation
+    )
+    assert "Hata: ${PRODUCTION_COMPOSE_ERROR_SUMMARY" in final_evaluation
 
 
 def test_websocket_mount_status_is_resolved_before_first_paint() -> None:

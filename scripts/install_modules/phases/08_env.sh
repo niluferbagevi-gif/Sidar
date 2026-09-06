@@ -1217,6 +1217,39 @@ ensure_local_service_host_defaults() {
     fi
 }
 
+# "Tam Docker" modunda docker-compose.yml servisleri
+# `user: "${SIDAR_CONTAINER_UID:-10001}:${SIDAR_CONTAINER_GID:-10001}"` ile
+# parametrik bir container kullanıcısı destekler, ama installer bu değişkenleri
+# hiçbir zaman yazmıyordu. `chown <başka-uid> ...`, root olmayan bir kullanıcı
+# için POSIX'te her zaman EPERM ile başarısız olur — ve install_sidar.sh kök
+# seviyede root/sudo ile çalıştırılmayı zaten reddeder (bkz. dosyanın en
+# üstündeki EUID guard'ı) — bu yüzden create_directories()'in host'ta sabit
+# 10001:10001'e chown denemesi pratikte hep sessizce başarısız oluyor, bind-mount
+# dizinleri (logs/data/temp/sessions) host kullanıcısında kalıyor, container
+# UID 10001 olarak yazamıyor ve "Permission denied" ile RAG seed adımı çöküyor.
+# Kök neden düzeltmesi: chown yerine, container'ı host kullanıcısıyla AYNI
+# UID/GID'de çalıştır — bu dizinleri zaten host kullanıcısı `mkdir -p` ile
+# oluşturduğu için hiçbir izin değişikliğine gerek kalmaz.
+ensure_container_uid_gid_defaults() {
+    local env_file="$1"
+    local runtime_mode="${APP_RUNTIME_MODE_SELECTED:-${APP_RUNTIME_MODE:-${AUTO_RUNTIME_MODE:-ask}}}"
+
+    [[ "$runtime_mode" == "docker" ]] || return 0
+
+    # Root/sudo ile çalıştırılan (yalnız test/istisnai) bir senaryoda imaja
+    # gömülü sabit 10001:10001 kullanıcısı host'ta doğrudan chown edilebilir
+    # (bkz. create_directories()); .env override'ına gerek yok.
+    [[ "$(id -u)" -eq 0 ]] && return 0
+
+    local current_uid=""
+    current_uid="$(read_env_value_from_file "SIDAR_CONTAINER_UID" "$env_file" | tr -d '[:space:]')"
+    [[ -n "$current_uid" ]] && return 0
+
+    sidar_write_env_value "$env_file" "SIDAR_CONTAINER_UID" "$(id -u)"
+    sidar_write_env_value "$env_file" "SIDAR_CONTAINER_GID" "$(id -g)"
+    ok ".env: SIDAR_CONTAINER_UID=$(id -u) / SIDAR_CONTAINER_GID=$(id -g) eklendi — docker-compose.yml container'ı host kullanıcısıyla aynı kimlikte çalıştırıp logs/data/temp/sessions bind-mount dizinlerine chown/setfacl olmadan yazabilir."
+}
+
 ensure_sidar_env_default() {
     local env_file="$1"
     local current_env=""

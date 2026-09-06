@@ -19,10 +19,11 @@ def resolve_safe_ps_binary(*, safe_paths: tuple[str, ...] = SAFE_PS_PATHS) -> st
     for candidate in safe_paths:
         try:
             path = Path(candidate)
-            if path.is_file() and os.access(candidate, os.X_OK):
-                return candidate
-        except Exception:  # nosec B112  # invalid candidates are skipped deliberately.
-            continue
+            candidate_is_executable = path.is_file() and os.access(candidate, os.X_OK)
+        except Exception:
+            candidate_is_executable = False
+        if candidate_is_executable:
+            return candidate
     try:
         which_path = shutil.which("ps")
     except Exception:

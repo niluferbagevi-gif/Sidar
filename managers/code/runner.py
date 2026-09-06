@@ -7,7 +7,7 @@ import os
 import re
 import shlex
 import shutil
-import subprocess  # nosec B404
+import subprocess
 from collections.abc import Callable
 from typing import Any, Protocol, cast
 

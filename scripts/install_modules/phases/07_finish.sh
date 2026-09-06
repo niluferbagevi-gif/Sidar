@@ -403,6 +403,13 @@ print_summary() {
         echo ""
     fi
 
+    if ! command -v ffmpeg >/dev/null 2>&1; then
+        echo -e "  ${YELLOW}⚠️  ffmpeg bulunamadı — multimodal video/ses ayrıştırma (frame/ses kanalı çıkarımı) şu an çalışmayacak.${NC}"
+        echo -e "  ${YELLOW}   Kurulum: Debian/Ubuntu → sudo apt-get install ffmpeg; macOS → brew install ffmpeg.${NC}"
+        echo -e "  ${YELLOW}   Kurulum sonrası doğrulama: uv run python -m core.doctor${NC}"
+        echo ""
+    fi
+
     if [[ "$WSL2" == true ]]; then
         local multimodal_val=""
         [[ -f "$SCRIPT_DIR/.env" ]] && multimodal_val=$(read_env_value_from_file "ENABLE_MULTIMODAL" "$SCRIPT_DIR/.env" | tr -d '[:space:]')
@@ -429,6 +436,11 @@ print_summary() {
     echo "    # Eşdeğer: bash run_tests.sh --stage all"
     echo "  production-readiness (yerel ön doğrulama; tek başına merge/release onayı değildir):"
     echo "    make production-readiness"
+    echo -e "  ${YELLOW}ℹ️  'make production-readiness' 'uv'nin PATH'te olmasını gerektirir. install_sidar.sh doğrudan${NC}"
+    echo -e "  ${YELLOW}   çalıştırıldıysa (ör. './install_sidar.sh', 'source' edilmeden), yaptığı PATH güncellemesi${NC}"
+    echo -e "  ${YELLOW}   yalnızca o kurulum sürecine özeldi ve bu terminale geri yansımaz. Yeni bir terminalde${NC}"
+    echo -e "  ${YELLOW}   'command -v uv' boş dönerse: terminali kapatıp yeniden açın veya 'source ~/.bashrc'${NC}"
+    echo -e "  ${YELLOW}   ('~/.zshrc' için zsh) çalıştırıp tekrar deneyin.${NC}"
     echo "  merge/release kararı: PR üzerindeki required GitHub Actions 'Production readiness aggregate' check'i."
     echo "  Backend entegrasyon ana yolu:"
     echo "    bash run_tests.sh --stage integration   # tests/integration/{api,cli,db,managers,web,workflow}"

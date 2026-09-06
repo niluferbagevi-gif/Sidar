@@ -1009,6 +1009,65 @@ def test_apply_gpu_memory_safety_check_second_scale_branch(monkeypatch):
     assert config.Config.GPU_MEMORY_FRACTION == pytest.approx(0.8, rel=1e-3)
 
 
+def test_llm_rag_gpu_memory_fraction_defaults_never_overflow_without_overrides(monkeypatch):
+    """Regression: unset LLM/RAG env vars must not overflow GPU_MEMORY_FRACTION.
+
+    A friend's log review found `_apply_gpu_memory_safety_check()` warning on
+    every boot when `.env` leaves LLM_GPU_MEMORY_FRACTION/RAG_GPU_MEMORY_FRACTION
+    unset (exactly what scripts/ci/validate_production_compose.sh's minimal
+    generated env file does): the old LLM default equaled GPU_MEMORY_FRACTION
+    itself (i.e. ×1.0) while RAG's was GPU_MEMORY_FRACTION×0.35, so the two
+    defaults alone summed to 135% of the safe budget (0.8 -> 1.08), silently
+    triggering a runtime OOM-risk normalization on every single boot with no
+    override present. Both class-attribute defaults (config.py) and
+    core/config_hardware.py's duplicate copy of the same formula (used by
+    check_hardware()'s VRAM-apply path when only one of the two env vars is
+    explicitly set) must split GPU_MEMORY_FRACTION 65/35 so the sum already
+    equals GPU_MEMORY_FRACTION with zero overrides.
+    """
+    monkeypatch.delenv("GPU_MEMORY_FRACTION", raising=False)
+    monkeypatch.delenv("LLM_GPU_MEMORY_FRACTION", raising=False)
+    monkeypatch.delenv("RAG_GPU_MEMORY_FRACTION", raising=False)
+
+    reloaded = importlib.reload(config)
+
+    total = reloaded.Config.LLM_GPU_MEMORY_FRACTION + reloaded.Config.RAG_GPU_MEMORY_FRACTION
+    assert total == pytest.approx(reloaded.Config.GPU_MEMORY_FRACTION, rel=1e-9)
+
+    budget = reloaded.normalize_gpu_memory_fractions(
+        reloaded.Config.LLM_GPU_MEMORY_FRACTION, reloaded.Config.RAG_GPU_MEMORY_FRACTION
+    )
+    assert budget["normalized"] is False, (
+        "default LLM+RAG fractions must not exceed the safe target budget"
+    )
+
+
+def test_apply_gpu_memory_safety_check_does_not_warn_on_unmodified_defaults(monkeypatch, caplog):
+    """`_apply_gpu_memory_safety_check()` must be a no-op at true defaults.
+
+    Companion to the test above: even if the sum happened to match, a stray
+    normalize call could still fire and log the misleading "OOM riskini
+    azaltmak için normalize edildi" warning. Assert the safety check itself
+    makes no changes and logs nothing when Config's own unmodified defaults
+    are used, reproducing the exact boot path a friend's log review flagged.
+    """
+    monkeypatch.delenv("GPU_MEMORY_FRACTION", raising=False)
+    monkeypatch.delenv("LLM_GPU_MEMORY_FRACTION", raising=False)
+    monkeypatch.delenv("RAG_GPU_MEMORY_FRACTION", raising=False)
+    reloaded = importlib.reload(config)
+    llm_before = reloaded.Config.LLM_GPU_MEMORY_FRACTION
+    rag_before = reloaded.Config.RAG_GPU_MEMORY_FRACTION
+    gpu_before = reloaded.Config.GPU_MEMORY_FRACTION
+
+    with caplog.at_level(logging.WARNING, logger="Sidar.Config"):
+        reloaded.Config._apply_gpu_memory_safety_check()
+
+    assert reloaded.Config.LLM_GPU_MEMORY_FRACTION == pytest.approx(llm_before)
+    assert reloaded.Config.RAG_GPU_MEMORY_FRACTION == pytest.approx(rag_before)
+    assert reloaded.Config.GPU_MEMORY_FRACTION == pytest.approx(gpu_before)
+    assert "normalize edildi" not in caplog.text
+
+
 def test_validate_critical_settings_exits_in_production_without_memory_key(monkeypatch):
     monkeypatch.setattr(
         config.Config, "_ensure_hardware_info_loaded", classmethod(lambda cls: None)
@@ -2369,6 +2428,70 @@ def test_reload_environment_skip_default_dotenv_keeps_explicit_and_secret_layers
     assert loaded_labels == ["explicit:DOTENV_FILE", "secret:SIDAR_KEYS_FILE"]
 
 
+@pytest.mark.xdist_group(name="config_dotenv_leak_pair")
+def test_full_module_reload_does_not_leak_dotenv_values_into_real_environment(
+    monkeypatch, tmp_path
+):
+    """Regression test: `importlib.reload(config)` must not pollute the real process env.
+
+    This mirrors test_sidar_keys_file_supports_user_home_and_overrides: it
+    loads a throwaway dotenv file containing a distinctive secret value via a
+    full `importlib.reload(config)`. Unlike monkeypatch.setenv/delenv, the
+    dotenv chain writes straight into the real `os.environ` (python-dotenv's
+    `load_dotenv(override=...)`), which monkeypatch cannot see or revert.
+    Without tests/unit/root/conftest.py's autouse `_isolate_config_dotenv_state`
+    fixture restoring the real environment (and reloading config against it)
+    after every test, this value would leak into whichever test in the same
+    pytest worker happens to run next -- exactly the failure this regression
+    test guards against (see
+    test_reload_environment_skip_default_dotenv_keeps_explicit_and_secret_layers,
+    which previously observed this leaked value instead of its own explicit
+    dotenv layer's value under certain xdist scheduling orders).
+    """
+    keys_file = tmp_path / "sidar_keys.env"
+    keys_file.write_text(
+        "JWT_SECRET_KEY=leaked-secret-must-not-survive-this-test\n", encoding="utf-8"
+    )
+    monkeypatch.delenv("DOTENV_FILE", raising=False)
+    monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+    monkeypatch.setenv("SIDAR_ENV", "development")
+    monkeypatch.setenv("SIDAR_KEYS_FILE", str(keys_file))
+
+    reloaded = importlib.reload(config)
+
+    assert reloaded.Config.JWT_SECRET_KEY == "leaked-secret-must-not-survive-this-test"
+    # The autouse isolation fixture's teardown (which runs after this test
+    # function returns, restoring the pre-test os.environ snapshot and
+    # reloading config against it) is what actually prevents the leak; this
+    # assertion just documents that the dotenv chain wrote the secret
+    # straight into the real environment, which is precisely why that
+    # fixture is required.
+    assert os.environ.get("JWT_SECRET_KEY") == "leaked-secret-must-not-survive-this-test"
+
+
+@pytest.mark.xdist_group(name="config_dotenv_leak_pair")
+def test_next_test_does_not_observe_the_previous_tests_leaked_dotenv_value():
+    """Regression test: must run immediately after the leak-inducing test above.
+
+    Confirms tests/unit/root/conftest.py's autouse `_isolate_config_dotenv_state`
+    fixture actually cleaned up the real `os.environ` and config module state
+    left behind by test_full_module_reload_does_not_leak_dotenv_values_into_real_environment
+    (declared immediately above). Plain declaration order only holds without
+    xdist/randomization; the CI invocation runs `-n auto --dist loadgroup`,
+    so both tests share the `config_dotenv_leak_pair` xdist_group to force
+    them onto the same worker in this same relative order regardless of
+    scheduling.
+    """
+    leaked = "leaked-secret-must-not-survive-this-test"
+
+    assert os.environ.get("JWT_SECRET_KEY") != leaked
+    # A developer/installer-created .env may legitimately make JWT_SECRET_KEY
+    # dotenv-managed again when the isolation fixture reloads config. The
+    # bookkeeping set therefore cannot prove whether the throwaway value
+    # leaked; the effective environment and Config value are the contract.
+    assert config.Config.JWT_SECRET_KEY != leaked
+
+
 def test_config_init_logs_env_status_before_missing_jwt_failure(monkeypatch, caplog):
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
     monkeypatch.delenv("SIDAR_ENV", raising=False)
@@ -2580,21 +2703,30 @@ def test_autoselect_ollama_coding_ctx_window_treats_blank_env_as_unset(monkeypat
 
 
 def test_autoselect_ollama_coding_ctx_window_scales_down_for_low_vram(monkeypatch):
-    """Sub-8-GiB cards must not be left at the same 8192 ctx as 8-16 GiB cards.
+    """Sub-12-GiB cards must not be left at the same 8192 ctx as 16 GiB cards.
 
     Fail-closed regression for a review comment: this used to only have
     >=16384/>=8192 tiers, so a 6 GB card (RTX 2060/3050, 4060 laptop, GTX
     1660, ...) fell through with no branch matching and kept whatever
     OLLAMA_CODING_NUM_CTX already held - LLMClientSettings' fixed 8192
     default - identical to an 8-16 GiB card despite far less VRAM headroom.
+
+    A follow-up field report (RTX 3070 Ti Laptop, 8192 MiB VRAM) then showed
+    the >=8192 tier itself repeats the same problem: a card reporting
+    exactly the tier floor gets that tier's full context with no headroom
+    over the coding model's own weights, and the installer's
+    `/api/generate` JSON smoke test failed with HTTP 500 (VRAM OOM). 8-12
+    GiB cards now share the 4096 tier with 4-8 GiB cards; only 12 GiB+ cards
+    keep the full 8192 window.
     """
     monkeypatch.setenv("OLLAMA_CODING_NUM_CTX", "")
     monkeypatch.setattr(config.Config, "USE_GPU", True)
 
     for vram_mb, expected_ctx in (
         (16384, 16384),
-        (8192, 8192),
-        (6144, 4096),  # the 6 GB class the review comment called out
+        (12288, 8192),
+        (8192, 4096),  # the exact-8GB edge case the field report called out
+        (6144, 4096),  # the 6 GB class the earlier review comment called out
         (4096, 4096),
         (3072, 2048),
         (0, 2048),  # USE_GPU forced on without a successful hardware probe
@@ -2730,6 +2862,82 @@ def test_reload_environment_loads_new_development_profile(monkeypatch, tmp_path)
     assert config.Config.WEB_PORT == 8765
     report = config.get_dotenv_load_report()
     assert any(event["label"] == "environment:development" and event["loaded"] for event in report)
+
+
+def test_reload_environment_refreshes_jwt_algorithm_ttl_and_explicit_flag(monkeypatch, tmp_path):
+    """Regression test: reload_environment() must fully refresh JWT security fields.
+
+    config_security.load_security_settings() derives JWT_ALGORITHM,
+    JWT_TTL_DAYS and _JWT_SECRET_KEY_EXPLICITLY_CONFIGURED alongside
+    JWT_SECRET_KEY at import time, but apply_runtime_env_overrides()
+    (core/config_runtime_env.py) used to only refresh JWT_SECRET_KEY itself
+    on reload. That left the other three stale after a runtime secret
+    rotation: in particular, _JWT_SECRET_KEY_EXPLICITLY_CONFIGURED staying
+    `False` from an earlier auto-generated secret would make
+    get_missing_security_runtime_keys() keep treating a freshly configured,
+    perfectly valid production JWT secret as "not explicitly configured".
+    """
+    monkeypatch.setattr(config.Config, "_ensure_hardware_info_loaded", lambda: None)
+    monkeypatch.setattr(config.Config, "_apply_gpu_memory_safety_check", lambda: None)
+    monkeypatch.delenv("DOTENV_FILE", raising=False)
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+    monkeypatch.setenv("SIDAR_SKIP_DEFAULT_DOTENV", "1")
+    monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+    monkeypatch.setattr(config.Config, "_JWT_SECRET_KEY_EXPLICITLY_CONFIGURED", False)
+    monkeypatch.setattr(config.Config, "JWT_ALGORITHM", "HS256")
+    monkeypatch.setattr(config.Config, "JWT_TTL_DAYS", 7)
+
+    monkeypatch.setenv("JWT_SECRET_KEY", "rotated-explicit-jwt-secret")
+    monkeypatch.setenv("JWT_ALGORITHM", "HS512")
+    monkeypatch.setenv("JWT_TTL_DAYS", "30")
+
+    config.reload_environment()
+
+    assert config.Config.JWT_SECRET_KEY == "rotated-explicit-jwt-secret"
+    assert config.Config._JWT_SECRET_KEY_EXPLICITLY_CONFIGURED is True
+    assert config.Config.JWT_ALGORITHM == "HS512"
+    assert config.Config.JWT_TTL_DAYS == 30
+
+
+def test_reload_environment_preserves_direct_override_of_a_previously_dotenv_managed_key(
+    monkeypatch,
+):
+    """Regression test: a direct os.environ write must survive reload_environment().
+
+    _reload_dotenv_chain()'s baseline used to pop *every* previously
+    dotenv-managed key unconditionally (dotenv_reload_baseline_environment),
+    even when this round's active dotenv sources never get a chance to
+    re-supply it (e.g. SIDAR_SKIP_DEFAULT_DOTENV newly set). A key that was
+    dotenv-managed in an earlier round and then overwritten directly on
+    os.environ since (a runtime secret rotation, monkeypatch.setenv) was
+    silently wiped by the very next reload_environment() call -- exactly the
+    JWT_SECRET_KEY failure this pair mirrors
+    (test_reload_environment_refreshes_jwt_algorithm_ttl_and_explicit_flag),
+    but seeded deterministically here instead of depending on whichever
+    dotenv files happen to be on disk when the suite runs.
+    """
+    monkeypatch.setattr(config.Config, "_ensure_hardware_info_loaded", lambda: None)
+    monkeypatch.setattr(config.Config, "_apply_gpu_memory_safety_check", lambda: None)
+
+    # Simulate: JWT_SECRET_KEY was dotenv-managed by the "base" layer in an
+    # earlier round.
+    config._DOTENV_MANAGED_KEYS.add("JWT_SECRET_KEY")
+    config._DOTENV_KEY_SOURCES["JWT_SECRET_KEY"] = {
+        "label": "base",
+        "path": str(config.BASE_DIR / ".env"),
+        "override": False,
+    }
+
+    # Something now writes the key directly, bypassing dotenv entirely.
+    monkeypatch.setenv("JWT_SECRET_KEY", "rotated-explicit-jwt-secret")
+    monkeypatch.delenv("DOTENV_FILE", raising=False)
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+    monkeypatch.setenv("SIDAR_SKIP_DEFAULT_DOTENV", "1")
+
+    config.reload_environment()
+
+    assert os.environ.get("JWT_SECRET_KEY") == "rotated-explicit-jwt-secret"
+    assert config.Config.JWT_SECRET_KEY == "rotated-explicit-jwt-secret"
 
 
 def test_reload_environment_keeps_os_environ_stable_until_effective_finalize(monkeypatch, tmp_path):

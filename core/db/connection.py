@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, TypeVar, cast
 
 logger = logging.getLogger(__name__)
+_JITTER_RANDOM = random.SystemRandom()
 _T = TypeVar("_T")
 
 
@@ -134,7 +135,7 @@ class DatabaseConnectionMixin:
                     if "database is locked" not in str(exc).lower() or attempt == 3:
                         raise
                     await asyncio.sleep(
-                        0.015 * (2 ** (attempt - 1)) + random.uniform(0.0, 0.01)  # nosec B311  # güvenlik değil jitter/backoff amaçlıdır.
+                        0.015 * (2 ** (attempt - 1)) + _JITTER_RANDOM.uniform(0.0, 0.01)
                     )
                 except Exception:
                     if write:

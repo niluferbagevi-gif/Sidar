@@ -8,7 +8,7 @@ services:
 
   redis:
     image: redis:7.4-alpine
-    container_name: sidar_redis
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_redis
     restart: unless-stopped
     # Local geliştirme modundaki uygulamanın Redis'e erişebilmesi için port
     # yalnız loopback arayüzüne bind edilir; LAN/WSL dışına publish edilmez.
@@ -29,7 +29,7 @@ services:
 
   postgres:
     image: pgvector/pgvector:0.8.1-pg16
-    container_name: sidar_postgres
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_postgres
     restart: unless-stopped
     command: postgres -c max_connections=${POSTGRES_MAX_CONNECTIONS:-300}
     environment:
@@ -60,7 +60,7 @@ services:
     # getirebilir. Diğerleriyle aynı desende belirli bir sürüme pinlendi
     # (Docker Hub'daki en güncel stabil etiket).
     image: ollama/ollama:0.32.14
-    container_name: sidar_ollama
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_ollama
     restart: unless-stopped
     environment:
       - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-4}
@@ -94,7 +94,7 @@ services:
   ollama-gpu:
     profiles: ["gpu"]
     image: ollama/ollama:0.32.14
-    container_name: sidar_ollama
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_ollama
     restart: unless-stopped
     runtime: ${DOCKER_RUNTIME:-nvidia}
     environment:
@@ -125,12 +125,17 @@ services:
   sidar-migrate:
     profiles: ["cpu", "gpu"]
     image: ${SIDAR_DOCKER_IMAGE:-sidar:latest}
+    # `image` never resolves against a registry — it only names the locally
+    # built tag. Without pull_policy, `docker compose up` tries a registry
+    # pull first, fails with a confusing "pull access denied" before falling
+    # back to `build:`. Force straight to the local build instead.
+    pull_policy: build
     build:
       context: .
       args:
         BASE_IMAGE: python:3.11.15-slim
         GPU_ENABLED: "false"
-    container_name: sidar_migrate
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_migrate
     user: "${SIDAR_CONTAINER_UID:-10001}:${SIDAR_CONTAINER_GID:-10001}"
     restart: "no"
     depends_on:
@@ -155,7 +160,7 @@ services:
   docker-socket-proxy:
     profiles: ["cpu", "gpu"]
     image: tecnativa/docker-socket-proxy:0.3.0
-    container_name: sidar_docker_socket_proxy
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_docker_socket_proxy
     restart: unless-stopped
     environment:
       - CONTAINERS=1
@@ -191,12 +196,17 @@ services:
   sidar-ai:
     profiles: ["cpu"]
     image: ${SIDAR_DOCKER_IMAGE:-sidar:latest}
+    # `image` never resolves against a registry — it only names the locally
+    # built tag. Without pull_policy, `docker compose up` tries a registry
+    # pull first, fails with a confusing "pull access denied" before falling
+    # back to `build:`. Force straight to the local build instead.
+    pull_policy: build
     build:
       context: .
       args:
         BASE_IMAGE: python:3.11.15-slim
         GPU_ENABLED: "false"
-    container_name: sidar_agent
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_agent
     user: "${SIDAR_CONTAINER_UID:-10001}:${SIDAR_CONTAINER_GID:-10001}"
     restart: unless-stopped
     cpus: ${SIDAR_CPU_LIMIT:-2.0}
@@ -258,13 +268,23 @@ services:
   sidar-gpu:
     profiles: ["gpu"]
     image: ${SIDAR_GPU_DOCKER_IMAGE:-sidar-gpu:latest}
+    # `image` never resolves against a registry — it only names the locally
+    # built tag. Without pull_policy, `docker compose up` tries a registry
+    # pull first, fails with a confusing "pull access denied" before falling
+    # back to `build:`. Force straight to the local build instead.
+    pull_policy: build
     build:
       context: .
       args:
         BASE_IMAGE: nvidia/cuda:13.0.0-runtime-ubuntu22.04
         GPU_ENABLED: "true"
-        TORCH_INDEX_URL: https://download.pytorch.org/whl/cu130
-    container_name: sidar_agent_gpu
+        # No TORCH_INDEX_URL: the Dockerfile never declares that ARG, and
+        # `uv sync --frozen` installs exactly what uv.lock pins regardless —
+        # torch's manylinux wheel already bundles CUDA 13.x runtime deps
+        # matching this base image (see pyproject.toml's [tool.uv.sources]
+        # comment). A build arg here was previously silently dropped by
+        # Docker with no effect; removed rather than wired up as dead noise.
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_agent_gpu
     user: "${SIDAR_CONTAINER_UID:-10001}:${SIDAR_CONTAINER_GID:-10001}"
     restart: unless-stopped
     cpus: ${SIDAR_GPU_CPU_LIMIT:-4.0}
@@ -336,7 +356,7 @@ services:
       args:
         BASE_IMAGE: python:3.11.15-slim
         GPU_ENABLED: "false"
-    container_name: sidar_web
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_web
     user: "${SIDAR_CONTAINER_UID:-10001}:${SIDAR_CONTAINER_GID:-10001}"
     restart: unless-stopped
     cpus: ${SIDAR_WEB_CPU_LIMIT:-2.0}
@@ -379,7 +399,14 @@ services:
       - WEB_PORT=7860
       - MEMORY_ENCRYPTION_KEY=${MEMORY_ENCRYPTION_KEY:-}
       - API_KEY=${API_KEY:-}
-      - ENABLE_TRACING=${ENABLE_TRACING:-true}
+      # config.py'nin (ENABLE_TRACING=False) ve .env.advanced.example'ın kendi
+      # belgelenmiş varsayılanıyla eşleşir. `jaeger` yalnızca "observability"
+      # profili altında başlar (bkz. aşağıdaki jaeger servisi); bu değişken
+      # burada true varsayılansaydı, jaeger'sız her cpu/gpu-profilli compose
+      # koşusunda (ör. scripts/ci/validate_production_compose.sh) sidar-web
+      # jaeger:4317'ye OTLP export denemeye çalışıp DEADLINE_EXCEEDED ile
+      # başarısız olur, işlevsel olmayan ama gürültülü boot log'ları üretirdi.
+      - ENABLE_TRACING=${ENABLE_TRACING:-false}
       - OTEL_EXPORTER_ENDPOINT=${OTEL_EXPORTER_ENDPOINT:-http://jaeger:4317}
       - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-sidar-web}
       - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-sidar}:${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-sidar}}
@@ -404,8 +431,13 @@ services:
       args:
         BASE_IMAGE: nvidia/cuda:13.0.0-runtime-ubuntu22.04
         GPU_ENABLED: "true"
-        TORCH_INDEX_URL: https://download.pytorch.org/whl/cu130
-    container_name: sidar_web_gpu
+        # No TORCH_INDEX_URL: the Dockerfile never declares that ARG, and
+        # `uv sync --frozen` installs exactly what uv.lock pins regardless —
+        # torch's manylinux wheel already bundles CUDA 13.x runtime deps
+        # matching this base image (see pyproject.toml's [tool.uv.sources]
+        # comment). A build arg here was previously silently dropped by
+        # Docker with no effect; removed rather than wired up as dead noise.
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_web_gpu
     user: "${SIDAR_CONTAINER_UID:-10001}:${SIDAR_CONTAINER_GID:-10001}"
     restart: unless-stopped
     cpus: ${SIDAR_WEB_GPU_CPU_LIMIT:-4.0}
@@ -459,7 +491,14 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
       - MEMORY_ENCRYPTION_KEY=${MEMORY_ENCRYPTION_KEY:-}
       - API_KEY=${API_KEY:-}
-      - ENABLE_TRACING=${ENABLE_TRACING:-true}
+      # config.py'nin (ENABLE_TRACING=False) ve .env.advanced.example'ın kendi
+      # belgelenmiş varsayılanıyla eşleşir. `jaeger` yalnızca "observability"
+      # profili altında başlar (bkz. aşağıdaki jaeger servisi); bu değişken
+      # burada true varsayılansaydı, jaeger'sız her cpu/gpu-profilli compose
+      # koşusunda (ör. scripts/ci/validate_production_compose.sh) sidar-web
+      # jaeger:4317'ye OTLP export denemeye çalışıp DEADLINE_EXCEEDED ile
+      # başarısız olur, işlevsel olmayan ama gürültülü boot log'ları üretirdi.
+      - ENABLE_TRACING=${ENABLE_TRACING:-false}
       - OTEL_EXPORTER_ENDPOINT=${OTEL_EXPORTER_ENDPOINT:-http://jaeger:4317}
       - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-sidar-web-gpu}
       - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-sidar}:${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-sidar}}
@@ -493,7 +532,7 @@ services:
   jaeger:
     profiles: ["observability"]
     image: jaegertracing/all-in-one:1.63.0
-    container_name: sidar_jaeger
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_jaeger
     restart: unless-stopped
     ports:
       - "16686:16686"
@@ -509,7 +548,7 @@ services:
   redis-exporter:
     profiles: ["observability"]
     image: oliver006/redis_exporter:v1.67.0
-    container_name: sidar_redis_exporter
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_redis_exporter
     restart: unless-stopped
     environment:
       - REDIS_ADDR=redis://redis:6379
@@ -527,7 +566,7 @@ services:
   postgres-exporter:
     profiles: ["observability"]
     image: prometheuscommunity/postgres-exporter:v0.15.0
-    container_name: sidar_postgres_exporter
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_postgres_exporter
     restart: unless-stopped
     environment:
       - DATA_SOURCE_NAME=postgresql://${POSTGRES_USER:-sidar}:${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-sidar}?sslmode=disable
@@ -545,7 +584,7 @@ services:
   cadvisor:
     profiles: ["observability"]
     image: gcr.io/cadvisor/cadvisor:v0.49.1
-    container_name: sidar_cadvisor
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_cadvisor
     restart: unless-stopped
     # cAdvisor'ın kendi belgeleri (docs/running.md) `--privileged`'in her
     # zaman şart olmadığını, yalnız bazı kilitli dağıtımlarda (RHEL/CentOS
@@ -585,7 +624,7 @@ services:
   prometheus-token-init:
     profiles: ["observability"]
     image: prom/prometheus:v2.54.1
-    container_name: sidar_prometheus_token_init
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_prometheus_token_init
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -598,7 +637,7 @@ services:
   prometheus:
     profiles: ["observability"]
     image: prom/prometheus:v2.54.1
-    container_name: sidar_prometheus
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_prometheus
     restart: unless-stopped
     ports:
       - "9090:9090"
@@ -625,7 +664,7 @@ services:
   grafana:
     profiles: ["observability"]
     image: grafana/grafana:11.2.0
-    container_name: sidar_grafana
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_grafana
     restart: unless-stopped
     ports:
       - "3000:3000"
@@ -654,7 +693,9 @@ services:
 volumes:
   redis_data:
   postgres_data:
-    name: sidar_postgres_data
+    # Keep the historical development volume by default, while allowing
+    # disposable/parallel stacks to select an isolated PostgreSQL volume.
+    name: ${SIDAR_POSTGRES_VOLUME_NAME:-sidar_postgres_data}
   ollama_data:
   sidar_data_prod:
   sidar_logs_prod:

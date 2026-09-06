@@ -47,6 +47,7 @@ if TYPE_CHECKING:
     from core.llm.ollama import OllamaClient
 
 logger = logging.getLogger(__name__)
+_JITTER_RANDOM = random.SystemRandom()
 _COMPAT_IMPORTED_MODULES = (codecs, importlib)
 
 # Geriye dönük test/yardımcı erişimleri
@@ -106,6 +107,17 @@ _OOM_MARKERS = (
     "insufficient memory",
     "model requires more system memory",
     "not enough memory",
+)
+# Remediation hint appended to an OOM-classified LLMAPIError (see
+# _retry_with_backoff below). Also imported by the installer's coding-model
+# smoke test (scripts/install_modules/phases/09_ollama_models.sh) so an
+# install-time OOM and a runtime OOM point the operator at the same
+# knobs - a review comment flagged the installer as re-deriving its own,
+# separate advice instead of reusing this already-solved text.
+OOM_REMEDIATION_HINT = (
+    "[GPU belleği yetersiz olabilir (OOM). OLLAMA_NUM_BATCH veya "
+    "OLLAMA_CODING_NUM_CTX değerini düşürmeyi ya da eşzamanlı istek "
+    "sayısını (OLLAMA_GPU_REQUEST_POOL_SIZE) azaltmayı deneyin.]"
 )
 # Sağlayıcıdan bağımsız, tüm istemcilerin system prompt'una enjekte ettiği standart JSON talimatı
 SIDAR_TOOL_JSON_INSTRUCTION: str = (
@@ -281,9 +293,22 @@ def _is_context_limit_error(exc: Exception) -> bool:
     return any(marker in detail for marker in _CONTEXT_LIMIT_MARKERS)
 
 
-def _is_oom_error(exc: Exception) -> bool:
-    detail = _format_exception_message(exc).lower()
+def _text_contains_oom_marker(text: str) -> bool:
+    """Check raw text (not just an exception) against _OOM_MARKERS.
+
+    Split out of _is_oom_error() so the installer's coding-model smoke test
+    (scripts/install_modules/phases/09_ollama_models.sh) can shell out to
+    this exact same marker list against Ollama's raw HTTP response body,
+    instead of maintaining its own separate, driftable keyword list in
+    bash - a review comment flagged that duplication (see
+    _sidar_ollama_smoke_looks_like_vram_pressure in that file).
+    """
+    detail = (text or "").lower()
     return any(marker in detail for marker in _OOM_MARKERS)
+
+
+def _is_oom_error(exc: Exception) -> bool:
+    return _text_contains_oom_marker(_format_exception_message(exc))
 
 
 def _is_retryable_exception(exc: Exception, provider: str = "") -> tuple[bool, int | None]:
@@ -348,17 +373,15 @@ async def _retry_with_backoff(
             if (not retryable) or attempt >= max_retries:
                 message = f"{retry_hint}: {err_detail}"
                 if _is_oom_error(exc):
-                    message += (
-                        " [GPU belleği yetersiz olabilir (OOM). OLLAMA_NUM_BATCH veya "
-                        "OLLAMA_CODING_NUM_CTX değerini düşürmeyi ya da eşzamanlı istek "
-                        "sayısını (OLLAMA_GPU_REQUEST_POOL_SIZE) azaltmayı deneyin.]"
-                    )
+                    message += f" {OOM_REMEDIATION_HINT}"
                 raise LLMAPIError(
                     provider, message, status_code=status_code, retryable=retryable
                 ) from exc
 
             jitter_cap = min(0.5, base_delay)
-            delay = min(max_delay, base_delay * (2**attempt)) + random.uniform(0, jitter_cap)  # nosec B311  # güvenlik değil jitter/backoff amaçlıdır.
+            delay = min(max_delay, base_delay * (2**attempt)) + _JITTER_RANDOM.uniform(
+                0, jitter_cap
+            )
             attempt += 1
             logger.warning(
                 "%s geçici hata (%s). %d/%d yeniden deneme %.2fs sonra yapılacak.",

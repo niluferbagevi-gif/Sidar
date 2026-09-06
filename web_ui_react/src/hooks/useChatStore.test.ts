@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { __chatStoreTestUtils, useChatStore } from "./useChatStore.js";
+import type { ChatTelemetryEvent } from "./useChatStore.js";
 
 // Her testten önce store'u sıfırla
 beforeEach(() => {
@@ -33,8 +34,6 @@ describe("useChatStore — başlangıç durumu", () => {
   });
 });
 
-
-
 describe("useChatStore — environment fallbacks", () => {
   it("falls back to Math.random id generation when crypto is unavailable", async () => {
     const originalCrypto = globalThis.crypto;
@@ -53,7 +52,7 @@ describe("useChatStore — environment fallbacks", () => {
       expect(randomSpy).toHaveBeenCalled();
     } finally {
       if (originalCrypto === undefined) {
-        delete globalThis.crypto;
+        Reflect.deleteProperty(globalThis, "crypto");
       } else {
         Object.defineProperty(globalThis, "crypto", {
           value: originalCrypto,
@@ -84,7 +83,7 @@ describe("useChatStore — environment fallbacks", () => {
       expect(() => fallbackStore.getState().setDisplayName("Demo Kullanıcı")).not.toThrow();
     } finally {
       if (originalLocalStorage === undefined) {
-        delete globalThis.localStorage;
+        Reflect.deleteProperty(globalThis, "localStorage");
       } else {
         Object.defineProperty(globalThis, "localStorage", {
           value: originalLocalStorage,
@@ -373,7 +372,11 @@ describe("useChatStore — hydrateRoom", () => {
   });
 
   it("hydrates telemetry and participants successfully when arrays are provided", () => {
-    const telemetry = [{ id: "t1", content: "test" }];
+    // Deliberately incomplete telemetry fixture (only `id`/`content`) --
+    // hydrateRoom stores whatever array it's given as-is (see its own
+    // Array.isArray guard), so the cast below documents "intentionally
+    // partial input", not a type-safety gap in the store itself.
+    const telemetry = [{ id: "t1", content: "test" }] as ChatTelemetryEvent[];
     const participants = [{ id: "p1", name: "User" }];
     useChatStore.getState().hydrateRoom({ telemetry, participants });
 

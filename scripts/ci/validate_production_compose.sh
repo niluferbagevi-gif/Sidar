@@ -40,7 +40,54 @@ PY
 project_name="${PRODUCTION_COMPOSE_PROJECT_NAME:-sidar-production-gate}"
 env_file="${PRODUCTION_COMPOSE_ENV_FILE:-.env.production.compose-gate}"
 web_port="${PRODUCTION_COMPOSE_WEB_PORT:-17860}"
+
+# This gate generates its own isolated secrets/config below and writes them to
+# $env_file. Docker Compose's variable substitution gives a real shell
+# environment variable precedence over --env-file
+# (https://docs.docker.com/compose/how-tos/environment-variables/envvars-precedence/),
+# so any of these names surviving in the *calling* shell's environment --
+# e.g. run_tests.sh's load_test_database_password_env exports POSTGRES_PASSWORD
+# (the sidar_test DB password) to sync it into psql/ALTER ROLE, then never
+# unsets it before later invoking this script via `bash
+# scripts/ci/validate_production_compose.sh` as a child process that inherits
+# it -- silently bakes a stale/foreign value into interpolated fields like
+# DATABASE_URL at `compose config` time, while the container's own
+# POSTGRES_PASSWORD (injected via `env_file:`, which is not subject to this
+# precedence) keeps the correct, freshly generated value. That mismatch is
+# exactly what core/config_postgres.py::postgres_password_drift_messages()
+# then correctly (fail-closed) rejects at boot as "DATABASE_URL parolası
+# POSTGRES_PASSWORD ile senkron değil", crash-looping sidar-web/sidar-migrate
+# for a reason that has nothing to do with this run's actual Compose config.
+# Start every run from a clean slate for every name this script itself
+# populates, so no caller's ambient environment -- run_tests.sh's test-DB
+# password export, a developer's shell, or a sourced .env -- can leak in.
+# (SIDAR_RUNTIME_ENV_FILE/SIDAR_POSTGRES_VOLUME_NAME are deliberately exempt:
+# they are this script's own override knobs, read via `${VAR:-default}`
+# immediately below.)
+unset -v SIDAR_ENV APP_RUNTIME_MODE AI_PROVIDER CODING_MODEL \
+  POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD REDIS_PASSWORD \
+  GRAFANA_ADMIN_PASSWORD METRICS_TOKEN API_KEY JWT_SECRET_KEY \
+  AUTONOMY_WEBHOOK_SECRET SWARM_FEDERATION_SHARED_SECRET GITHUB_WEBHOOK_SECRET \
+  MEMORY_ENCRYPTION_KEY GUARDRAILS_REQUIRED DB_DEGRADED_MODE_ON_POSTGRES_FAILURE \
+  RAG_REQUIRED_FOR_READINESS WEB_PORT SIDAR_DATA_MOUNT SIDAR_LOGS_MOUNT \
+  SIDAR_TEMP_MOUNT DATABASE_URL SIDAR_CONTAINER_DATABASE_URL
+
 export SIDAR_RUNTIME_ENV_FILE="${SIDAR_RUNTIME_ENV_FILE:-$env_file}"
+# The base Compose file intentionally keeps the historical sidar_postgres_data
+# name for normal development. The production evidence gate must not attach to
+# that persistent database: doing so leaks state into migrations/readiness and
+# lets `down --volumes` delete developer data. Namespace the gate volume with
+# the same independently configurable project name as its containers.
+export SIDAR_POSTGRES_VOLUME_NAME="${SIDAR_POSTGRES_VOLUME_NAME:-${project_name}_postgres_data}"
+# docker-compose.yml's container_name fields interpolate ${COMPOSE_PROJECT_NAME:-sidar}
+# (see docker-compose.yml) so this isolated gate stack never collides with a
+# developer's already-running dev stack (both would otherwise be literally
+# "sidar_ollama" etc. on the same Docker daemon -- "Conflict. The container
+# name ... is already in use"). --project-name alone already threads through
+# to this interpolation on the Compose versions this repo has been verified
+# against, but exporting COMPOSE_PROJECT_NAME explicitly keeps that from being
+# an undocumented, version-dependent assumption.
+export COMPOSE_PROJECT_NAME="$project_name"
 compose=(docker compose --project-name "$project_name" --env-file "$env_file" -f docker-compose.yml -f docker-compose.production.yml --profile cpu)
 
 cleanup() {
@@ -63,6 +110,7 @@ if [[ "${PRODUCTION_COMPOSE_ENV_FILE:-}" == "" ]]; then
 SIDAR_ENV=production
 APP_RUNTIME_MODE=production
 SIDAR_RUNTIME_ENV_FILE=$env_file
+SIDAR_POSTGRES_VOLUME_NAME=$SIDAR_POSTGRES_VOLUME_NAME
 AI_PROVIDER=ollama
 CODING_MODEL=qwen2.5-coder:7b
 POSTGRES_DB=sidar

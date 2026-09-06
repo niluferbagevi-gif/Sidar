@@ -33,11 +33,13 @@ def test_bandit_suppression_baseline_matches_current_scan_and_quality_gates() ->
     local_gate = (root / "scripts/test_gates/backend_helpers.sh").read_text(encoding="utf-8")
     ci = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
-    assert baseline["maximum_skipped_tests"] == 49
+    assert baseline["maximum_skipped_tests"] == 40
     assert [target["maximum_skipped_tests"] for target in baseline["reduction_targets"]] == [
-        40,
         20,
         0,
+    ]
+    assert baseline["completed_targets"] == [
+        {"due_date": "2027-01-31", "maximum_skipped_tests": 40, "achieved_at": "2026-08-28"}
     ]
     assert suppression_baseline._reduction_targets(root / "bandit-suppression-baseline.json")
     assert suppression_baseline._requires_exact_baseline(root / "bandit-suppression-baseline.json")
@@ -73,7 +75,10 @@ def test_nosec_comments_keep_explanatory_prose_outside_bandit_directive() -> Non
     root = Path(__file__).resolve().parents[2]
     offenders = []
     for path in root.rglob("*.py"):
-        if any(part in {".git", ".venv", "node_modules", "web_ui_react"} for part in path.parts):
+        if any(
+            part in {".git", ".venv", "node_modules", "web_ui_react", "actions-runner"}
+            for part in path.parts
+        ):
             continue
         for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
             if _INLINE_NOSEC_PROSE.search(line):
@@ -88,7 +93,7 @@ def test_production_nosec_directives_always_name_bandit_rules() -> None:
     offenders: list[str] = []
     for path in root.rglob("*.py"):
         if any(
-            part in {".git", ".venv", "node_modules", "tests", "web_ui_react"}
+            part in {".git", ".venv", "node_modules", "tests", "web_ui_react", "actions-runner"}
             for part in path.parts
         ):
             continue
@@ -133,7 +138,7 @@ def test_all_b608_suppressions_include_reviewable_rationale() -> None:
     root = Path(__file__).resolve().parents[2]
     offenders: list[str] = []
     for path in root.rglob("*.py"):
-        if any(part in {".git", ".venv", "node_modules"} for part in path.parts):
+        if any(part in {".git", ".venv", "node_modules", "actions-runner"} for part in path.parts):
             continue
         if path == Path(__file__).resolve():
             continue

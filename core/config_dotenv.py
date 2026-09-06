@@ -346,13 +346,45 @@ def load_dotenv_into_effective_env(
     return dotenv_path
 
 
+def _dotenv_layer_active_for_label(label: str, plan: DotenvReloadPlan) -> bool:
+    """Return whether the dotenv layer that recorded `label` will be (re)read this round."""
+    if label in {"base", "advanced"} or label.startswith("environment:"):
+        return not plan.skip_default_layers
+    if label == "explicit:DOTENV_FILE":
+        return bool(plan.explicit_path)
+    if label == "secret:SIDAR_KEYS_FILE":
+        return bool(plan.sidar_keys_file)
+    return False
+
+
 def dotenv_reload_baseline_environment(
-    *, environ: MutableMapping[str, str], managed_keys: set[str]
+    *,
+    environ: MutableMapping[str, str],
+    managed_keys: set[str],
+    key_sources: dict[str, dict[str, Any]],
+    plan: DotenvReloadPlan,
 ) -> dict[str, str]:
-    """Return the pre-dotenv baseline for atomic reload without intermediate os.environ pops."""
+    """Return the pre-dotenv baseline for atomic reload without intermediate os.environ pops.
+
+    A previously dotenv-managed key is only stripped from the baseline when the
+    exact layer that supplied it (base/advanced/environment/explicit/secret) is
+    still part of *this* reload's active chain -- i.e. it is about to be
+    re-read, so a fresh value (or its absence) legitimately reflects the
+    source's current content. When the supplying layer is not active this
+    round (e.g. SIDAR_SKIP_DEFAULT_DOTENV newly set, or DOTENV_FILE/
+    SIDAR_KEYS_FILE newly emptied), that layer never gets a chance to say
+    anything about the key, so it must not be evicted: something may have
+    written directly to `environ` for that key since the previous round (a
+    runtime secret rotation, a test's monkeypatch.setenv), and that value has
+    to survive the reload. A key with no recorded source (or an unrecognized
+    label) is treated as inactive -- the safe default is to preserve it.
+    """
     effective_env = dict(environ)
     for key in tuple(managed_keys):
-        effective_env.pop(key, None)
+        source = key_sources.get(key)
+        label = source.get("label", "") if source else ""
+        if _dotenv_layer_active_for_label(label, plan):
+            effective_env.pop(key, None)
     return effective_env
 
 

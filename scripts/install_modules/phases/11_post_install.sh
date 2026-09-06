@@ -2,6 +2,34 @@
 set -Eeuo pipefail
 # Sidar installer phase: post-install service launch, runtime mode and subcommand helpers.
 
+# `docker compose up -d` çeşitli imajları (bazıları — redis/postgres/ollama/
+# docker-socket-proxy — registry'den, bazıları yerel `build:` hedefinden)
+# tek komutta çekip başlatır. Bunlardan herhangi birinde tek seferlik bir
+# geçici ağ hatası (DNS hıçkırığı, TLS EOF, registry rate-limit) TÜM `up -d`
+# komutunu düşürür — bu, `sidar:latest` gibi imajlarla hiç ilgisi olmayan bir
+# servis (ör. tecnativa/docker-socket-proxy) için bile geçerlidir ve
+# postgres'in hiç ayağa kalkmamasına, ardından Alembic migrasyon fazının
+# sert şekilde çökmesine yol açar. ollama_models.sh'deki model indirme retry
+# deseniyle (backoff = deneme * 5sn, 3 deneme) tutarlı şekilde `up -d`'yi
+# tekrar dene.
+sidar_compose_up_with_retry() {
+    local -a compose_cmd=("$@")
+    local max_attempts=3
+    local attempt=0
+
+    for attempt in 1 2 3; do
+        if "${compose_cmd[@]}"; then
+            return 0
+        fi
+        if [[ "$attempt" -lt "$max_attempts" ]]; then
+            local backoff=$((attempt * 5))
+            warn "Docker Compose 'up -d' başarısız oldu [deneme ${attempt}/${max_attempts}]; geçici bir registry/ağ hatası olabilir. ${backoff}s sonra yeniden denenecek..."
+            sleep "$backoff"
+        fi
+    done
+    return 1
+}
+
 # ── Docker Servislerini Başlatma ──────────────────────────────────────────────
 launch_docker_services() {
     local docker_compose_cmd=()
@@ -91,18 +119,18 @@ launch_docker_services() {
                     info "Host Ollama healthy tespit edildi; Docker Ollama konteyneri başlatılmayacak."
                     log_host_ollama_runtime_diagnostics "$env_file"
                 fi
-                if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d "${infra_services[@]}"; then
+                if COMPOSE_PROFILES="$compose_profiles" sidar_compose_up_with_retry "${docker_compose_cmd[@]}" up -d "${infra_services[@]}"; then
                     ok "Altyapı Docker servisleri başarıyla başlatıldı (${infra_services[*]})."
                 else
-                    warn "Altyapı Docker servisleri başlatılamadı. Port çakışması veya Docker kapalı olabilir."
+                    warn "Altyapı Docker servisleri başlatılamadı (3 deneme sonrası). Port çakışması veya Docker kapalı olabilir."
                 fi
             else
                 info "Seçilen çalışma modu: docker (tüm servisler Docker)"
                 info "Docker Compose profili: $compose_profiles"
-                if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d; then
+                if COMPOSE_PROFILES="$compose_profiles" sidar_compose_up_with_retry "${docker_compose_cmd[@]}" up -d; then
                     ok "Docker servisleri başarıyla başlatıldı."
                 else
-                    warn "Docker servisleri başlatılamadı. Port çakışması veya Docker kapalı olabilir."
+                    warn "Docker servisleri başlatılamadı (3 deneme sonrası). Port çakışması veya Docker kapalı olabilir."
                 fi
             fi
             ;;

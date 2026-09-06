@@ -22,7 +22,7 @@ import fcntl
 import json
 import logging
 import os
-import subprocess  # nosec B404
+import subprocess
 import sys
 from collections.abc import Iterator
 from pathlib import Path
