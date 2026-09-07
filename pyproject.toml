@@ -85,7 +85,7 @@ dependencies = [
   "websockets>=16.1.1,<17.0",
   "pillow>=12.2.0,<14.0.0",
   "pyttsx3~=2.98",
-  "chromadb~=0.5.5",
+  "chromadb>=0.5.5,<1.6.0",
   "langchain-core>=1.0.0,<2.0.0",
   "langchain-community>=0.3.0,<2.0.0",
   "langchain-text-splitters>=1.1.2,<2.0.0",
@@ -170,7 +170,7 @@ telemetry = [
   "opentelemetry-exporter-otlp-proto-grpc>=1.29.0",
 ]
 rag = [
-  "chromadb~=0.5.5",
+  "chromadb>=0.5.5,<1.6.0",
   "posthog<6.0.0",
   # Torch 2.13.0 is the first GHSA-rrmf-rvhw-rf47 / CVE-2025-3000 patched release.
   # Keep torch/torchvision on the compatible 2.13/0.28 release family.
