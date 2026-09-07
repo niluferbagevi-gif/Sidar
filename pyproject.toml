@@ -78,7 +78,7 @@ dependencies = [
   "defusedxml>=0.7.1",
   # Keep NeMo Guardrails on the validated 0.22 minor until the SecurityManager
   # adapter contract is re-run against a newer major/minor API.
-  "nemoguardrails>=0.22.0,<0.25.0",
+  "nemoguardrails>=0.22.0,<0.23.0",
   # ── Harici entegrasyonlar ─────────────────────────────────────────────
   "PyGithub~=2.4.0",
   "duckduckgo-search~=6.2.13",
@@ -535,6 +535,15 @@ filterwarnings = [
   # file); production and tests intentionally stay on httpx, so silence
   # starlette's testclient nudge instead of adding the extra dependency back.
   "ignore:Using .httpx. with .starlette\\.testclient. is deprecated; install .httpx2. instead\\.:starlette.exceptions.StarletteDeprecationWarning",
+  # anyio has no pinned upper bound (see dependencies comment above) and 4.9+
+  # deprecated the anyio.abc.BlockingPortal alias in favor of
+  # anyio.from_thread.BlockingPortal. starlette==1.6.0 (the validated security
+  # baseline pin, see dependencies comment) still imports the old alias from
+  # its testclient module, so any test importing fastapi/starlette's
+  # TestClient trips this warning during collection. Silence it here rather
+  # than loosening the starlette pin or capping anyio; drop this once
+  # starlette ships a release that stops using the deprecated alias.
+  "ignore:The anyio\\.abc\\.BlockingPortal alias is deprecated, use anyio\\.from_thread\\.BlockingPortal instead\\.:DeprecationWarning",
 ]
 log_cli = false
 log_cli_level = "INFO"
