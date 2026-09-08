@@ -492,7 +492,7 @@ eksikliği tek başına readiness HTTP kodunu başarısız yapmaz.
 bir runner üzerinde çalışır. Uygun runner çevrimdışı veya meşgulse GitHub Actions job'ı
 çalışmaya başlamadan kuyrukta kalır; workflow içindeki `timeout-minutes` değeri queued süreyi
 sınırlamaz. Job bir runner tarafından alındıktan sonraki kurulum ve benchmark çalışması
-`timeout-minutes: 45` ile sınırlıdır. Bu durumda `gpu-inference-policy-gate` ve onu bekleyen `production-readiness`
+`timeout-minutes: 90` ile sınırlıdır. Bu durumda `gpu-inference-policy-gate` ve onu bekleyen `production-readiness`
 aggregate job'ı da tamamlanamaz.
 
 Bu etiketler workflow'daki `runs-on` scheduler sözleşmesidir.
