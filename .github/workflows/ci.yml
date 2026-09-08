@@ -960,7 +960,12 @@ jobs:
     # Bounds execution after a runner accepts the job. GitHub does not apply
     # timeout-minutes while a self-hosted job is still queued/offline; the
     # operator runbook documents that separate availability failure mode.
-    timeout-minutes: 45
+    # 45m was too tight for a runner's first cold uv/pip cache fill (multi-GB
+    # torch/nvidia-cu13 wheels) over a slower link — a brand-new standby
+    # runner hit this exact timeout mid-download and got cancelled before
+    # ever reaching the actual benchmark. 90m gives enough headroom for a
+    # cold cache without materially weakening the fail-closed timeout.
+    timeout-minutes: 90
     needs: test
 
     env:
