@@ -2914,7 +2914,7 @@ def test_gpu_gate_timeout_and_benchmark_cache_keepalive_are_fail_closed() -> Non
         ci.index("  gpu-inference-quality-gate:") : ci.index("  gpu-inference-policy-gate:")
     ]
     assert "runs-on: [self-hosted, linux, x64, gpu, cuda]" in gpu_job
-    assert "timeout-minutes: 90" in gpu_job
+    assert "timeout-minutes: 180" in gpu_job
     assert 'cron: "17 5 * * 1,4"' in keepalive
     assert "uses: actions/cache/restore@v6" in keepalive
     assert "Require reviewed baseline evidence" in keepalive
@@ -2923,7 +2923,7 @@ def test_gpu_gate_timeout_and_benchmark_cache_keepalive_are_fail_closed() -> Non
     assert "benchmark-save" not in keepalive
     assert "no benchmark was executed and no baseline was regenerated" in keepalive
     assert "queued süreyi" in testing
-    assert "timeout-minutes: 90" in testing
+    assert "timeout-minutes: 180" in testing
     assert "benchmark-baseline-keepalive.yml" in testing
     assert "benchmark çalıştırmaz, baseline üretmez" in testing
 
