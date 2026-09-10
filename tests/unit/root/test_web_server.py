@@ -4258,17 +4258,24 @@ def test_list_child_ollama_pids_ps_fallback_handles_malformed_and_failures(monke
     # and test_list_child_ollama_pids_psutil_success_path above) is robust
     # regardless of prior import state.
     monkeypatch.setitem(sys.modules, "psutil", _Psutil)
+    # process_lifecycle._list_processes_via_ps() now runs the `ps` invocation
+    # through core.utils.trusted_subprocess.run_trusted_command() (see that
+    # module's docstring: centralizes the unavoidable Bandit B603 suppression
+    # for internally-trusted subprocess calls), which process_lifecycle
+    # imports by name -- so the fake belongs on that imported name, not on a
+    # stand-in `subprocess` module (run_trusted_command wraps the *real*
+    # subprocess.run internally; replacing process_lifecycle.subprocess here
+    # wouldn't intercept it).
     monkeypatch.setattr(
         web_server.process_lifecycle,
-        "subprocess",
-        SimpleNamespace(
-            DEVNULL=object(),
-            check_output=lambda *args, **kwargs: (
+        "run_trusted_command",
+        lambda *args, **kwargs: SimpleNamespace(
+            stdout=(
                 b"broken-line-without-columns\n"
                 b" abc 77 ollama ollama serve\n"
                 b" 13 xyz ollama ollama serve\n"
                 b" 15 77 ollama ollama serve\n"
-            ),
+            )
         ),
     )
 
@@ -4276,11 +4283,8 @@ def test_list_child_ollama_pids_ps_fallback_handles_malformed_and_failures(monke
 
     monkeypatch.setattr(
         web_server.process_lifecycle,
-        "subprocess",
-        SimpleNamespace(
-            DEVNULL=object(),
-            check_output=lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("ps failed")),
-        ),
+        "run_trusted_command",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("ps failed")),
     )
     assert web_server._list_child_ollama_pids() == []
 
