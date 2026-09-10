@@ -16,8 +16,8 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 > sayıyı görür ve baseline aynı PR'da `--update` ile aşağı çekilmeden geçmez.
 > `--update` borcu yükseltemez.
 
-- **Toplam kaynak dosya (tests dahil):** 379
-- **Tests dışı dosya sayısı (ayrı not üretilen):** 80
+- **Toplam kaynak dosya (tests dahil):** 380
+- **Tests dışı dosya sayısı (ayrı not üretilen):** 81
 - **Tests dosya sayısı (tek notta özetlenen, `tests/**/*.py`):** 299
 
 ## Not dosyaları
@@ -71,6 +71,7 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `core/llm_metrics.py` → `docs/module-notes/core/llm_metrics.py.md`
 - `core/memory.py` → `docs/module-notes/core/memory.py.md`
 - `core/rag/` → `docs/module-notes/core/rag.py.md`
+- `core/utils/trusted_subprocess.py` → `docs/module-notes/core/utils/trusted_subprocess.py.md`
 - `data/.gitkeep` → `docs/module-notes/data/gitkeep.md`
 - `docker-compose.yml` → `docs/module-notes/docker-compose.yml.md`
 - `docker_setup/grafana/dashboards/sidar-llm-overview.json` → `docs/module-notes/docker_setup/grafana/dashboards/sidar-llm-overview.json.md`
