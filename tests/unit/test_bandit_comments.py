@@ -33,13 +33,13 @@ def test_bandit_suppression_baseline_matches_current_scan_and_quality_gates() ->
     local_gate = (root / "scripts/test_gates/backend_helpers.sh").read_text(encoding="utf-8")
     ci = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
-    assert baseline["maximum_skipped_tests"] == 23
+    assert baseline["maximum_skipped_tests"] == 15
     assert [target["maximum_skipped_tests"] for target in baseline["reduction_targets"]] == [
-        20,
         0,
     ]
     assert baseline["completed_targets"] == [
-        {"due_date": "2027-01-31", "maximum_skipped_tests": 40, "achieved_at": "2026-08-28"}
+        {"due_date": "2027-01-31", "maximum_skipped_tests": 40, "achieved_at": "2026-08-28"},
+        {"due_date": "2027-04-30", "maximum_skipped_tests": 20, "achieved_at": "2026-09-10"},
     ]
     assert suppression_baseline._reduction_targets(root / "bandit-suppression-baseline.json")
     assert suppression_baseline._requires_exact_baseline(root / "bandit-suppression-baseline.json")
@@ -51,6 +51,8 @@ def test_bandit_suppression_baseline_matches_current_scan_and_quality_gates() ->
         "scripts/tools/update_install_module_hash_manifest.py",
         "web/routes/project_ops.py",
         "core/utils/trusted_subprocess.py",
+        "web/plugins/sandbox.py",
+        "managers/code/docker_lifecycle.py",
     )
     for relative_path in review_order:
         assert "# nosec" in (root / relative_path).read_text(encoding="utf-8")

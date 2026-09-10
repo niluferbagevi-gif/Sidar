@@ -21,6 +21,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from agent.base_agent import BaseAgent
+from core.utils.trusted_subprocess import run_trusted_command
 from managers.code.docker import (
     DOCKER_CPUS_RE,
     DOCKER_MEMORY_RE,
@@ -211,7 +212,7 @@ class DockerPluginSandboxBackend:
         container_id = ""
         cleanup_failed = False
         try:
-            created = subprocess.run(  # nosec B603
+            created = run_trusted_command(
                 self._create_command(),
                 capture_output=True,
                 text=True,
@@ -229,7 +230,7 @@ class DockerPluginSandboxBackend:
         if not container_id:
             raise PluginSandboxError("Plugin sandbox container kimliği doğrulanamadı.")
         try:
-            completed = subprocess.run(  # nosec B603
+            completed = run_trusted_command(
                 [docker, "start", "--attach", "--interactive", container_id],
                 input=json.dumps(envelope),
                 capture_output=True,
@@ -242,7 +243,7 @@ class DockerPluginSandboxBackend:
             raise PluginSandboxError("Plugin worker zaman aşımına uğradı.") from exc
         finally:
             try:
-                removed = subprocess.run(  # nosec B603
+                removed = run_trusted_command(
                     [docker, "rm", "--force", container_id],
                     capture_output=True,
                     text=True,
