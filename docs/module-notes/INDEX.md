@@ -10,14 +10,14 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 > `docs/module-notes/inventory-debt-baseline.json`'daki ratchet tavanını
 > aşmadığını kontrol eder. Sayılar aşağıda elle güncellenir; script'in kendisi
 > bunları otomatik doğrulamaz.
-> Baseline tarihli 100 → 50 → 0 azaltma hedefleri taşır (150 hedefi
-> 2026-08-30'da erken karşılandı ve listeden çıkarıldı — script kesin azalan
-> bir sıra zorunlu kılar); yeni bir note eklendiğinde CI daha düşük gerçek
-> sayıyı görür ve baseline aynı PR'da `--update` ile aşağı çekilmeden geçmez.
-> `--update` borcu yükseltemez.
+> Baseline tarihli 50 → 0 azaltma hedefleri taşır (150 hedefi 2026-08-30'da,
+> 100 hedefi 2026-09-10'da erken karşılandı ve listeden çıkarıldı — script
+> kesin azalan bir sıra zorunlu kılar); yeni bir note eklendiğinde CI daha
+> düşük gerçek sayıyı görür ve baseline aynı PR'da `--update` ile aşağı
+> çekilmeden geçmez. `--update` borcu yükseltemez.
 
-- **Toplam kaynak dosya (tests dahil):** 397
-- **Tests dışı dosya sayısı (ayrı not üretilen):** 98
+- **Toplam kaynak dosya (tests dahil):** 445
+- **Tests dışı dosya sayısı (ayrı not üretilen):** 146
 - **Tests dosya sayısı (tek notta özetlenen, `tests/**/*.py`):** 299
 
 ## Not dosyaları
@@ -64,13 +64,42 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `config.py` → `docs/module-notes/config.py.md`
 - `core/__init__.py` → `docs/module-notes/core/__init__.py.md`
 - `core/cache/` → `docs/module-notes/core/cache.md`
+- `core/config_app.py` → `docs/module-notes/core/config_app.py.md`
+- `core/config_dirs.py` → `docs/module-notes/core/config_dirs.py.md`
+- `core/config_dotenv.py` → `docs/module-notes/core/config_dotenv.py.md`
+- `core/config_env_helpers.py` → `docs/module-notes/core/config_env_helpers.py.md`
+- `core/config_event_bus.py` → `docs/module-notes/core/config_event_bus.py.md`
+- `core/config_gpu_detect.py` → `docs/module-notes/core/config_gpu_detect.py.md`
+- `core/config_hardware.py` → `docs/module-notes/core/config_hardware.py.md`
+- `core/config_logging_setup.py` → `docs/module-notes/core/config_logging_setup.py.md`
+- `core/config_observability.py` → `docs/module-notes/core/config_observability.py.md`
+- `core/config_orchestrator.py` → `docs/module-notes/core/config_orchestrator.py.md`
+- `core/config_postgres.py` → `docs/module-notes/core/config_postgres.py.md`
+- `core/config_rag_store.py` → `docs/module-notes/core/config_rag_store.py.md`
+- `core/config_rate_limit.py` → `docs/module-notes/core/config_rate_limit.py.md`
+- `core/config_runtime_env.py` → `docs/module-notes/core/config_runtime_env.py.md`
+- `core/config_runtime_paths.py` → `docs/module-notes/core/config_runtime_paths.py.md`
+- `core/config_sandbox.py` → `docs/module-notes/core/config_sandbox.py.md`
+- `core/config_scoped_settings.py` → `docs/module-notes/core/config_scoped_settings.py.md`
 - `core/config_secret_hardening.py` → `docs/module-notes/core/config_secret_hardening.py.md`
 - `core/config_secrets.py` → `docs/module-notes/core/config_secrets.py.md`
+- `core/config_validators.py` → `docs/module-notes/core/config_validators.py.md`
 - `core/db/` → `docs/module-notes/core/db.py.md`
 - `core/db_components/` → `docs/module-notes/core/db_components.md`
 - `core/distributed_lock.py` → `docs/module-notes/core/distributed_lock.py.md`
 - `core/dlp.py` → `docs/module-notes/core/dlp.py.md`
+- `core/doctor/__init__.py` → `docs/module-notes/core/doctor/__init__.py.md`
+- `core/doctor/__main__.py` → `docs/module-notes/core/doctor/__main__.py.md`
+- `core/doctor/checks/__init__.py` → `docs/module-notes/core/doctor/checks/__init__.py.md`
+- `core/doctor/checks/database.py` → `docs/module-notes/core/doctor/checks/database.py.md`
+- `core/doctor/checks/gpu.py` → `docs/module-notes/core/doctor/checks/gpu.py.md`
 - `core/doctor/checks/media.py` → `docs/module-notes/core/doctor/checks/media.py.md`
+- `core/doctor/checks/rag.py` → `docs/module-notes/core/doctor/checks/rag.py.md`
+- `core/doctor/checks/redis.py` → `docs/module-notes/core/doctor/checks/redis.py.md`
+- `core/doctor/checks/security.py` → `docs/module-notes/core/doctor/checks/security.py.md`
+- `core/doctor/launcher_preflight.py` → `docs/module-notes/core/doctor/launcher_preflight.py.md`
+- `core/doctor/models.py` → `docs/module-notes/core/doctor/models.py.md`
+- `core/doctor/reporting.py` → `docs/module-notes/core/doctor/reporting.py.md`
 - `core/hitl.py` → `docs/module-notes/core/hitl.py.md`
 - `core/judge.py` → `docs/module-notes/core/judge.py.md`
 - `core/llm/` → `docs/module-notes/core/llm.md`
@@ -90,11 +119,27 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `github_upload.py` → `docs/module-notes/github_upload.py.md`
 - `gui_launcher.py` → `docs/module-notes/gui_launcher.py.md`
 - `install_sidar.sh` → `docs/module-notes/install_sidar.sh.md`
+- `launcher/__init__.py` → `docs/module-notes/launcher/__init__.py.md`
+- `launcher/doctor.py` → `docs/module-notes/launcher/doctor.py.md`
+- `launcher/process.py` → `docs/module-notes/launcher/process.py.md`
+- `launcher/selection.py` → `docs/module-notes/launcher/selection.py.md`
+- `launcher/ui.py` → `docs/module-notes/launcher/ui.py.md`
 - `main.py` → `docs/module-notes/main.py.md`
 - `managers/__init__.py` → `docs/module-notes/managers/__init__.py.md`
+- `managers/code/__init__.py` → `docs/module-notes/managers/code/__init__.py.md`
+- `managers/code/docker.py` → `docs/module-notes/managers/code/docker.py.md`
+- `managers/code/docker_lifecycle.py` → `docs/module-notes/managers/code/docker_lifecycle.py.md`
 - `managers/code/file_io_security.py` → `docs/module-notes/managers/code/file_io_security.py.md`
+- `managers/code/git_validation.py` → `docs/module-notes/managers/code/git_validation.py.md`
+- `managers/code/linter_runners.py` → `docs/module-notes/managers/code/linter_runners.py.md`
+- `managers/code/lsp.py` → `docs/module-notes/managers/code/lsp.py.md`
+- `managers/code/patcher.py` → `docs/module-notes/managers/code/patcher.py.md`
+- `managers/code/platform.py` → `docs/module-notes/managers/code/platform.py.md`
+- `managers/code/pytest_parser.py` → `docs/module-notes/managers/code/pytest_parser.py.md`
+- `managers/code/runner.py` → `docs/module-notes/managers/code/runner.py.md`
 - `managers/code/security_adapter.py` → `docs/module-notes/managers/code/security_adapter.py.md`
 - `managers/code/shell_sandbox.py` → `docs/module-notes/managers/code/shell_sandbox.py.md`
+- `managers/code/test_runner_orchestrator.py` → `docs/module-notes/managers/code/test_runner_orchestrator.py.md`
 - `managers/code_manager.py` → `docs/module-notes/managers/code_manager.py.md`
 - `managers/github_manager.py` → `docs/module-notes/managers/github_manager.py.md`
 - `managers/jira_manager.py` → `docs/module-notes/managers/jira_manager.py.md`
@@ -120,6 +165,9 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `web/middleware/access_policy.py` → `docs/module-notes/web/middleware/access_policy.py.md`
 - `web/middleware/cors.py` → `docs/module-notes/web/middleware/cors.py.md`
 - `web/middleware/ratelimit.py` → `docs/module-notes/web/middleware/ratelimit.py.md`
+- `web/plugins/__init__.py` → `docs/module-notes/web/plugins/__init__.py.md`
+- `web/plugins/sandbox.py` → `docs/module-notes/web/plugins/sandbox.py.md`
+- `web/plugins/worker.py` → `docs/module-notes/web/plugins/worker.py.md`
 - `web/routes/auth_admin.py` → `docs/module-notes/web/routes/auth_admin.py.md`
 - `web/security.py` → `docs/module-notes/web/security.py.md`
 - `web_server.py` → `docs/module-notes/web_server.py.md`
