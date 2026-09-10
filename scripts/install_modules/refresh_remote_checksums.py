@@ -10,7 +10,6 @@ import sys
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
 
 from core.utils.trusted_urlopen import urlopen_trusted_request
 
@@ -44,7 +43,7 @@ def fetch_remote_bytes(url: str) -> bytes:
         },
     )
     with urlopen_trusted_request(request, timeout=60) as response:
-        return cast(bytes, response.read())
+        return response.read()
 
 
 def replace_pin(content: str, env_var: str, sha256: str) -> str:

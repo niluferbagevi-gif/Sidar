@@ -10,14 +10,14 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 > `docs/module-notes/inventory-debt-baseline.json`'daki ratchet tavanını
 > aşmadığını kontrol eder. Sayılar aşağıda elle güncellenir; script'in kendisi
 > bunları otomatik doğrulamaz.
-> Baseline tarihli 50 → 0 azaltma hedefleri taşır (150 hedefi 2026-08-30'da,
-> 100 hedefi 2026-09-10'da erken karşılandı ve listeden çıkarıldı — script
-> kesin azalan bir sıra zorunlu kılar); yeni bir note eklendiğinde CI daha
-> düşük gerçek sayıyı görür ve baseline aynı PR'da `--update` ile aşağı
-> çekilmeden geçmez. `--update` borcu yükseltemez.
+> Baseline tarihli 0 azaltma hedefi taşır (150 hedefi 2026-08-30'da, 100 ve 50
+> hedefleri 2026-09-10'da aynı gün içinde iki ayrı fazda erken karşılandı ve
+> listeden çıkarıldı — script kesin azalan bir sıra zorunlu kılar); yeni bir
+> note eklendiğinde CI daha düşük gerçek sayıyı görür ve baseline aynı PR'da
+> `--update` ile aşağı çekilmeden geçmez. `--update` borcu yükseltemez.
 
-- **Toplam kaynak dosya (tests dahil):** 445
-- **Tests dışı dosya sayısı (ayrı not üretilen):** 146
+- **Toplam kaynak dosya (tests dahil):** 504
+- **Tests dışı dosya sayısı (ayrı not üretilen):** 205
 - **Tests dosya sayısı (tek notta özetlenen, `tests/**/*.py`):** 299
 
 ## Not dosyaları
@@ -35,9 +35,12 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `agent/__init__.py` → `docs/module-notes/agent/__init__.py.md`
 - `agent/auto_handle.py` → `docs/module-notes/agent/auto_handle.py.md`
 - `agent/base_agent.py` → `docs/module-notes/agent/base_agent.py.md`
+- `agent/bootstrap.py` → `docs/module-notes/agent/bootstrap.py.md`
 - `agent/core/__init__.py` → `docs/module-notes/agent/core/__init__.py.md`
 - `agent/autonomy/` → `docs/module-notes/agent/autonomy.md`
+- `agent/core/circuit_breaker.py` → `docs/module-notes/agent/core/circuit_breaker.py.md`
 - `agent/core/contracts.py` → `docs/module-notes/agent/core/contracts.py.md`
+- `agent/core/contracts_fallback.py` → `docs/module-notes/agent/core/contracts_fallback.py.md`
 - `agent/core/event_backends/` → `docs/module-notes/agent/core/event_backends.md`
 - `agent/core/event_stream.py` → `docs/module-notes/agent/core/event_stream.py.md`
 - `agent/core/memory_hub.py` → `docs/module-notes/agent/core/memory_hub.py.md`
@@ -51,7 +54,11 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `agent/roles/coder_agent.py` → `docs/module-notes/agent/roles/coder_agent.py.md`
 - `agent/roles/coverage/` → `docs/module-notes/agent/roles/coverage.md`
 - `agent/roles/coverage_agent.py` → `docs/module-notes/agent/roles/coverage_agent.py.md`
+- `agent/roles/poyraz_agent.py` → `docs/module-notes/agent/roles/poyraz_agent.py.md`
+- `agent/roles/qa_agent.py` → `docs/module-notes/agent/roles/qa_agent.py.md`
 - `agent/roles/researcher_agent.py` → `docs/module-notes/agent/roles/researcher_agent.py.md`
+- `agent/roles/reviewer/__init__.py` → `docs/module-notes/agent/roles/reviewer/__init__.py.md`
+- `agent/roles/reviewer/judge.py` → `docs/module-notes/agent/roles/reviewer/judge.py.md`
 - `agent/roles/reviewer_agent.py` → `docs/module-notes/agent/roles/reviewer_agent.py.md`
 - `agent/registry.py` → `docs/module-notes/agent/registry.py.md`
 - `agent/self_heal/` → `docs/module-notes/agent/self_heal.md`
@@ -59,11 +66,16 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `agent/swarm.py` → `docs/module-notes/agent/swarm.py.md`
 - `agent/sidar_agent.py` → `docs/module-notes/agent/sidar_agent.py.md`
 - `agent/tooling.py` → `docs/module-notes/agent/tooling.py.md`
+- `agent/triggers.py` → `docs/module-notes/agent/triggers.py.md`
 - `alembic.ini` → `docs/module-notes/alembic.ini.md`
 - `cli.py` → `docs/module-notes/cli.py.md`
 - `config.py` → `docs/module-notes/config.py.md`
 - `core/__init__.py` → `docs/module-notes/core/__init__.py.md`
+- `core/active_learning.py` → `docs/module-notes/core/active_learning.py.md`
+- `core/agent_metrics.py` → `docs/module-notes/core/agent_metrics.py.md`
 - `core/cache/` → `docs/module-notes/core/cache.md`
+- `core/cache_metrics.py` → `docs/module-notes/core/cache_metrics.py.md`
+- `core/ci_remediation.py` → `docs/module-notes/core/ci_remediation.py.md`
 - `core/config_app.py` → `docs/module-notes/core/config_app.py.md`
 - `core/config_dirs.py` → `docs/module-notes/core/config_dirs.py.md`
 - `core/config_dotenv.py` → `docs/module-notes/core/config_dotenv.py.md`
@@ -88,6 +100,8 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `core/db_components/` → `docs/module-notes/core/db_components.md`
 - `core/distributed_lock.py` → `docs/module-notes/core/distributed_lock.py.md`
 - `core/dlp.py` → `docs/module-notes/core/dlp.py.md`
+- `core/embeddings.py` → `docs/module-notes/core/embeddings.py.md`
+- `core/entity_memory.py` → `docs/module-notes/core/entity_memory.py.md`
 - `core/doctor/__init__.py` → `docs/module-notes/core/doctor/__init__.py.md`
 - `core/doctor/__main__.py` → `docs/module-notes/core/doctor/__main__.py.md`
 - `core/doctor/checks/__init__.py` → `docs/module-notes/core/doctor/checks/__init__.py.md`
@@ -105,11 +119,22 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `core/llm/` → `docs/module-notes/core/llm.md`
 - `core/llm_client.py` → `docs/module-notes/core/llm_client.py.md`
 - `core/llm_metrics.py` → `docs/module-notes/core/llm_metrics.py.md`
+- `core/llm_pricing.py` → `docs/module-notes/core/llm_pricing.py.md`
+- `core/logging_config.py` → `docs/module-notes/core/logging_config.py.md`
 - `core/memory.py` → `docs/module-notes/core/memory.py.md`
+- `core/models.py` → `docs/module-notes/core/models.py.md`
+- `core/multimodal.py` → `docs/module-notes/core/multimodal.py.md`
 - `core/rag/` → `docs/module-notes/core/rag.py.md`
 - `core/router.py` → `docs/module-notes/core/router.py.md`
+- `core/test_fixture_policy.py` → `docs/module-notes/core/test_fixture_policy.py.md`
+- `core/utils/__init__.py` → `docs/module-notes/core/utils/__init__.py.md`
+- `core/utils/json_repair.py` → `docs/module-notes/core/utils/json_repair.py.md`
+- `core/utils/network_validation.py` → `docs/module-notes/core/utils/network_validation.py.md`
+- `core/utils/token_counter.py` → `docs/module-notes/core/utils/token_counter.py.md`
 - `core/utils/trusted_subprocess.py` → `docs/module-notes/core/utils/trusted_subprocess.py.md`
 - `core/utils/trusted_urlopen.py` → `docs/module-notes/core/utils/trusted_urlopen.py.md`
+- `core/vision.py` → `docs/module-notes/core/vision.py.md`
+- `core/voice.py` → `docs/module-notes/core/voice.py.md`
 - `data/.gitkeep` → `docs/module-notes/data/gitkeep.md`
 - `docker-compose.yml` → `docs/module-notes/docker-compose.yml.md`
 - `docker_setup/grafana/dashboards/sidar-llm-overview.json` → `docs/module-notes/docker_setup/grafana/dashboards/sidar-llm-overview.json.md`
@@ -162,13 +187,47 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `scripts/install_host_sandbox.sh` → `docs/module-notes/scripts/install_host_sandbox.sh.md`
 - `scripts/load_test_db_pool.py` → `docs/module-notes/scripts/load_test_db_pool.py.md`
 - `scripts/migrate_sqlite_to_pg.py` → `docs/module-notes/scripts/migrate_sqlite_to_pg.py.md`
+- `web/__init__.py` → `docs/module-notes/web/__init__.py.md`
+- `web/app_factory.py` → `docs/module-notes/web/app_factory.py.md`
+- `web/autonomy_bridge.py` → `docs/module-notes/web/autonomy_bridge.py.md`
+- `web/bootstrap.py` → `docs/module-notes/web/bootstrap.py.md`
+- `web/cli.py` → `docs/module-notes/web/cli.py.md`
+- `web/collaboration_service.py` → `docs/module-notes/web/collaboration_service.py.md`
+- `web/middleware/__init__.py` → `docs/module-notes/web/middleware/__init__.py.md`
 - `web/middleware/access_policy.py` → `docs/module-notes/web/middleware/access_policy.py.md`
 - `web/middleware/cors.py` → `docs/module-notes/web/middleware/cors.py.md`
 - `web/middleware/ratelimit.py` → `docs/module-notes/web/middleware/ratelimit.py.md`
 - `web/plugins/__init__.py` → `docs/module-notes/web/plugins/__init__.py.md`
 - `web/plugins/sandbox.py` → `docs/module-notes/web/plugins/sandbox.py.md`
 - `web/plugins/worker.py` → `docs/module-notes/web/plugins/worker.py.md`
+- `web/process_lifecycle.py` → `docs/module-notes/web/process_lifecycle.py.md`
+- `web/routes/__init__.py` → `docs/module-notes/web/routes/__init__.py.md`
+- `web/routes/agent.py` → `docs/module-notes/web/routes/agent.py.md`
 - `web/routes/auth_admin.py` → `docs/module-notes/web/routes/auth_admin.py.md`
+- `web/routes/autonomy.py` → `docs/module-notes/web/routes/autonomy.py.md`
+- `web/routes/collaboration.py` → `docs/module-notes/web/routes/collaboration.py.md`
+- `web/routes/coverage_ops.py` → `docs/module-notes/web/routes/coverage_ops.py.md`
+- `web/routes/federation.py` → `docs/module-notes/web/routes/federation.py.md`
+- `web/routes/health.py` → `docs/module-notes/web/routes/health.py.md`
+- `web/routes/health_runtime.py` → `docs/module-notes/web/routes/health_runtime.py.md`
+- `web/routes/hitl.py` → `docs/module-notes/web/routes/hitl.py.md`
+- `web/routes/integrations.py` → `docs/module-notes/web/routes/integrations.py.md`
+- `web/routes/memory_feedback.py` → `docs/module-notes/web/routes/memory_feedback.py.md`
+- `web/routes/metrics.py` → `docs/module-notes/web/routes/metrics.py.md`
+- `web/routes/operations.py` → `docs/module-notes/web/routes/operations.py.md`
+- `web/routes/operations_models.py` → `docs/module-notes/web/routes/operations_models.py.md`
+- `web/routes/orchestration.py` → `docs/module-notes/web/routes/orchestration.py.md`
+- `web/routes/plugin_marketplace.py` → `docs/module-notes/web/routes/plugin_marketplace.py.md`
+- `web/routes/project_ops.py` → `docs/module-notes/web/routes/project_ops.py.md`
+- `web/routes/rag.py` → `docs/module-notes/web/routes/rag.py.md`
+- `web/routes/request_models.py` → `docs/module-notes/web/routes/request_models.py.md`
+- `web/routes/serialization.py` → `docs/module-notes/web/routes/serialization.py.md`
+- `web/routes/static.py` → `docs/module-notes/web/routes/static.py.md`
+- `web/routes/vision.py` → `docs/module-notes/web/routes/vision.py.md`
+- `web/routes/webhooks.py` → `docs/module-notes/web/routes/webhooks.py.md`
+- `web/routes/ws_chat.py` → `docs/module-notes/web/routes/ws_chat.py.md`
+- `web/routes/ws_lifecycle.py` → `docs/module-notes/web/routes/ws_lifecycle.py.md`
+- `web/routes/ws_voice.py` → `docs/module-notes/web/routes/ws_voice.py.md`
 - `web/security.py` → `docs/module-notes/web/security.py.md`
 - `web_server.py` → `docs/module-notes/web_server.py.md`
 - `tests/*` → `docs/module-notes/tests.md`

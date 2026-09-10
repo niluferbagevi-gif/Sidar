@@ -43,14 +43,16 @@ def _repo_from_git_remote() -> str:
         return ""
     command = [git_binary, *_GIT_REMOTE_COMMAND[1:]]
     try:
-        remote = run_trusted_command(
-            command,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            timeout=10,
-            check=True,
-        ).stdout.strip()
+        remote = str(
+            run_trusted_command(
+                command,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                timeout=10,
+                check=True,
+            ).stdout
+        ).strip()
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return ""
     if remote.endswith(".git"):
