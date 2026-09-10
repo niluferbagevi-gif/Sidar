@@ -16,8 +16,8 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 > sayıyı görür ve baseline aynı PR'da `--update` ile aşağı çekilmeden geçmez.
 > `--update` borcu yükseltemez.
 
-- **Toplam kaynak dosya (tests dahil):** 381
-- **Tests dışı dosya sayısı (ayrı not üretilen):** 82
+- **Toplam kaynak dosya (tests dahil):** 397
+- **Tests dışı dosya sayısı (ayrı not üretilen):** 98
 - **Tests dosya sayısı (tek notta özetlenen, `tests/**/*.py`):** 299
 
 ## Not dosyaları
@@ -56,6 +56,7 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `agent/registry.py` → `docs/module-notes/agent/registry.py.md`
 - `agent/self_heal/` → `docs/module-notes/agent/self_heal.md`
 - `agent/services/` → `docs/module-notes/agent/services.md`
+- `agent/swarm.py` → `docs/module-notes/agent/swarm.py.md`
 - `agent/sidar_agent.py` → `docs/module-notes/agent/sidar_agent.py.md`
 - `agent/tooling.py` → `docs/module-notes/agent/tooling.py.md`
 - `alembic.ini` → `docs/module-notes/alembic.ini.md`
@@ -63,14 +64,21 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `config.py` → `docs/module-notes/config.py.md`
 - `core/__init__.py` → `docs/module-notes/core/__init__.py.md`
 - `core/cache/` → `docs/module-notes/core/cache.md`
+- `core/config_secret_hardening.py` → `docs/module-notes/core/config_secret_hardening.py.md`
+- `core/config_secrets.py` → `docs/module-notes/core/config_secrets.py.md`
 - `core/db/` → `docs/module-notes/core/db.py.md`
 - `core/db_components/` → `docs/module-notes/core/db_components.md`
+- `core/distributed_lock.py` → `docs/module-notes/core/distributed_lock.py.md`
+- `core/dlp.py` → `docs/module-notes/core/dlp.py.md`
 - `core/doctor/checks/media.py` → `docs/module-notes/core/doctor/checks/media.py.md`
+- `core/hitl.py` → `docs/module-notes/core/hitl.py.md`
+- `core/judge.py` → `docs/module-notes/core/judge.py.md`
 - `core/llm/` → `docs/module-notes/core/llm.md`
 - `core/llm_client.py` → `docs/module-notes/core/llm_client.py.md`
 - `core/llm_metrics.py` → `docs/module-notes/core/llm_metrics.py.md`
 - `core/memory.py` → `docs/module-notes/core/memory.py.md`
 - `core/rag/` → `docs/module-notes/core/rag.py.md`
+- `core/router.py` → `docs/module-notes/core/router.py.md`
 - `core/utils/trusted_subprocess.py` → `docs/module-notes/core/utils/trusted_subprocess.py.md`
 - `core/utils/trusted_urlopen.py` → `docs/module-notes/core/utils/trusted_urlopen.py.md`
 - `data/.gitkeep` → `docs/module-notes/data/gitkeep.md`
@@ -84,6 +92,9 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `install_sidar.sh` → `docs/module-notes/install_sidar.sh.md`
 - `main.py` → `docs/module-notes/main.py.md`
 - `managers/__init__.py` → `docs/module-notes/managers/__init__.py.md`
+- `managers/code/file_io_security.py` → `docs/module-notes/managers/code/file_io_security.py.md`
+- `managers/code/security_adapter.py` → `docs/module-notes/managers/code/security_adapter.py.md`
+- `managers/code/shell_sandbox.py` → `docs/module-notes/managers/code/shell_sandbox.py.md`
 - `managers/code_manager.py` → `docs/module-notes/managers/code_manager.py.md`
 - `managers/github_manager.py` → `docs/module-notes/managers/github_manager.py.md`
 - `managers/jira_manager.py` → `docs/module-notes/managers/jira_manager.py.md`
@@ -106,6 +117,11 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `scripts/install_host_sandbox.sh` → `docs/module-notes/scripts/install_host_sandbox.sh.md`
 - `scripts/load_test_db_pool.py` → `docs/module-notes/scripts/load_test_db_pool.py.md`
 - `scripts/migrate_sqlite_to_pg.py` → `docs/module-notes/scripts/migrate_sqlite_to_pg.py.md`
+- `web/middleware/access_policy.py` → `docs/module-notes/web/middleware/access_policy.py.md`
+- `web/middleware/cors.py` → `docs/module-notes/web/middleware/cors.py.md`
+- `web/middleware/ratelimit.py` → `docs/module-notes/web/middleware/ratelimit.py.md`
+- `web/routes/auth_admin.py` → `docs/module-notes/web/routes/auth_admin.py.md`
+- `web/security.py` → `docs/module-notes/web/security.py.md`
 - `web_server.py` → `docs/module-notes/web_server.py.md`
 - `tests/*` → `docs/module-notes/tests.md`
 
