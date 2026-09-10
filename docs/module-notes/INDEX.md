@@ -16,8 +16,8 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 > note eklendiğinde CI daha düşük gerçek sayıyı görür ve baseline aynı PR'da
 > `--update` ile aşağı çekilmeden geçmez. `--update` borcu yükseltemez.
 
-- **Toplam kaynak dosya (tests dahil):** 504
-- **Tests dışı dosya sayısı (ayrı not üretilen):** 205
+- **Toplam kaynak dosya (tests dahil):** 506
+- **Tests dışı dosya sayısı (ayrı not üretilen):** 207
 - **Tests dosya sayısı (tek notta özetlenen, `tests/**/*.py`):** 299
 
 ## Not dosyaları
@@ -137,6 +137,8 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `core/voice.py` → `docs/module-notes/core/voice.py.md`
 - `data/.gitkeep` → `docs/module-notes/data/gitkeep.md`
 - `docker-compose.yml` → `docs/module-notes/docker-compose.yml.md`
+- `docker-compose.gpu.yml` → `docs/module-notes/docker-compose.gpu.yml.md`
+- `docker-compose.observability.yml` → `docs/module-notes/docker-compose.observability.yml.md`
 - `docker_setup/grafana/dashboards/sidar-llm-overview.json` → `docs/module-notes/docker_setup/grafana/dashboards/sidar-llm-overview.json.md`
 - `docker_setup/grafana/provisioning/dashboards/dashboards.yml` → `docs/module-notes/docker_setup/grafana/provisioning/dashboards/dashboards.yml.md`
 - `docker_setup/grafana/provisioning/datasources/prometheus.yml` → `docs/module-notes/docker_setup/grafana/provisioning/datasources/prometheus.yml.md`

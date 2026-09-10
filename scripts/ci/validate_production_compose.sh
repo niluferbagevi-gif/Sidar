@@ -88,7 +88,13 @@ export SIDAR_POSTGRES_VOLUME_NAME="${SIDAR_POSTGRES_VOLUME_NAME:-${project_name}
 # against, but exporting COMPOSE_PROJECT_NAME explicitly keeps that from being
 # an undocumented, version-dependent assumption.
 export COMPOSE_PROJECT_NAME="$project_name"
-compose=(docker compose --project-name "$project_name" --env-file "$env_file" -f docker-compose.yml -f docker-compose.production.yml --profile cpu)
+# docker-compose.production.yml carries override-only blocks (no image/build)
+# for ollama-gpu/sidar-web-gpu, whose base definitions live in
+# docker-compose.gpu.yml -- that file must always be included alongside the
+# production overlay, even for this --profile cpu run, or Compose refuses the
+# merge ("service ollama-gpu has neither an image nor a build context").
+# --profile cpu still means gpu services are defined but never started.
+compose=(docker compose --project-name "$project_name" --env-file "$env_file" -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.production.yml --profile cpu)
 
 cleanup() {
   local status=$?

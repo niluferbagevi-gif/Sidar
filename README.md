@@ -579,9 +579,11 @@ Release kalite kapıları `.github/workflows/release-quality.yml` içinde Helm l
 # CPU modu
 docker compose up --build sidar-web
 
-# GPU modu (NVIDIA)
-OLLAMA_NUM_PARALLEL=4 docker compose up --build sidar-web-gpu
+# GPU modu (NVIDIA) — GPU servisleri docker-compose.gpu.yml'de, -f ile eklenmeli
+OLLAMA_NUM_PARALLEL=4 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build sidar-web-gpu
 ```
+
+> **Compose dosya yapısı:** `docker-compose.yml` yalnızca temel (core) servisleri taşır (redis, postgres, ollama, sidar-migrate, docker-socket-proxy, sidar-ai, sidar-web). GPU servisleri (`ollama-gpu`, `sidar-gpu`, `sidar-web-gpu`) `docker-compose.gpu.yml`'de, observability servisleri (jaeger, exporter'lar, cadvisor, prometheus, grafana) `docker-compose.observability.yml`'dedir — her ikisi de `-f` ile core dosyayla birleştirilir (`docker-compose.production.yml` zaten aynı deseni kullanır). Örnekler: `docker compose -f docker-compose.yml -f docker-compose.observability.yml --profile cpu --profile observability up`, `docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.observability.yml --profile gpu --profile observability up`.
 
 Production ortamında host izin (uid/gid/chown) sorunlarını azaltmak için bind mount yerine named volume kullanabilirsiniz:
 
@@ -1117,7 +1119,9 @@ Sidar/
 ├── grafana/                # Semantic cache / LLM overview dashboard varlıkları
 ├── config.py               # Merkezi yapılandırma; runtime sürümü `v5.2.0`
 ├── web_server.py           # 86 REST endpoint + `/ws/chat` + `/ws/voice`
-├── docker-compose.yml      # redis, postgres, sidar-web, sidar-web-gpu, sidar-ai, sidar-gpu, docker-socket-proxy, jaeger, prometheus, grafana
+├── docker-compose.yml      # Core: redis, postgres, ollama, sidar-migrate, docker-socket-proxy, sidar-ai, sidar-web
+├── docker-compose.gpu.yml  # GPU profili: ollama-gpu, sidar-gpu, sidar-web-gpu (-f ile core'a eklenir)
+├── docker-compose.observability.yml  # jaeger, exporter'lar, cadvisor, prometheus, grafana (-f ile core'a eklenir)
 ├── README.md               # Ürün ve kurulum rehberi
 └── docs/                   # Mimari, denetim, runbook ve modül notu belgeleri (115 md dosyası)
     ├── ARCHITECTURE.md      # Aktif v5.2.0 mimari doğruluk kaynağı
