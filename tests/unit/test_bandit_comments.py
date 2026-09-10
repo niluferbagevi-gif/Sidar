@@ -33,7 +33,7 @@ def test_bandit_suppression_baseline_matches_current_scan_and_quality_gates() ->
     local_gate = (root / "scripts/test_gates/backend_helpers.sh").read_text(encoding="utf-8")
     ci = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
-    assert baseline["maximum_skipped_tests"] == 39
+    assert baseline["maximum_skipped_tests"] == 30
     assert [target["maximum_skipped_tests"] for target in baseline["reduction_targets"]] == [
         20,
         0,
@@ -50,6 +50,7 @@ def test_bandit_suppression_baseline_matches_current_scan_and_quality_gates() ->
         "github_upload.py",
         "scripts/tools/update_install_module_hash_manifest.py",
         "web/routes/project_ops.py",
+        "core/utils/trusted_subprocess.py",
     )
     for relative_path in review_order:
         assert "# nosec" in (root / relative_path).read_text(encoding="utf-8")
