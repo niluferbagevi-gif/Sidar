@@ -1,19 +1,20 @@
 {
   "captured_at": "2026-09-10",
-  "maximum_skipped_tests": 15,
+  "maximum_skipped_tests": 8,
   "policy": "Bandit metrics._totals.skipped_tests must exactly match this ratchet; every reduction updates the baseline in the same commit and increases are forbidden.",
   "require_exact_baseline": true,
   "debt_plan": {
     "classification": "P2 planned security debt",
     "owner": "security-review",
     "review_order": [
-      "scripts/ci/verify_required_checks.py",
       "github_upload.py",
-      "scripts/tools/update_install_module_hash_manifest.py",
-      "web/routes/project_ops.py",
       "core/utils/trusted_subprocess.py",
       "web/plugins/sandbox.py",
-      "managers/code/docker_lifecycle.py"
+      "managers/code/docker_lifecycle.py",
+      "core/utils/trusted_urlopen.py",
+      "core/active_learning.py",
+      "scripts/ci/check_gpu_runner_capacity.py",
+      "scripts/ci/check_benchmark_runner_capacity.py"
     ],
     "rule": "Do not bulk-remove suppressions; preserve identifier validation and add focused tests before each removal.",
     "completed_reviews": [
@@ -76,6 +77,42 @@
         "reviewed_at": "2026-09-10",
         "outcome": "fixed",
         "reason": "GITHUB_SMART_PR_NO_TOKEN_MESSAGE (a plain user-facing Turkish error string, \"GitHub token bulunamadı\", never a real credential) tripped B105 (hardcoded_password_string) purely because its identifier contained \"TOKEN\" -- Bandit's B105 check matches variable names against a keyword list (password/secret/token/etc.), not string content. Same class of false positive as the project's own prior `redis_password_set` -> `redis_credential_set` precedent (see CHANGELOG). Renamed to GITHUB_SMART_PR_NO_AUTH_MESSAGE across all 5 referencing files (agent/github/smart_pr.py, agent/github/__init__.py's re-export, agent/sidar_agent.py's re-export, and both tests/unit/agent/test_sidar_agent.py and tests/unit/agent/github/test_smart_pr.py) -- verified empirically the B105 finding disappears after the rename (bandit on the file alone: 0 issues) and the full test suite (including both files asserting the exact message text) passes unchanged. core/db/auth.py's _PASSWORD_HASH_ALGORITHM_ENV (also B105, same root cause) was deliberately NOT renamed in this pass -- wider blast radius (also re-exported through core/db/monolith.py, 5 usages across tests/unit/core/test_db.py) and touches password-hashing configuration naming; left as a candidate for a future, more carefully scoped rename rather than rushed through alongside this batch."
+      },
+      {
+        "file": "scripts/ci/verify_required_checks.py / web/routes/project_ops.py / scripts/tools/update_install_module_hash_manifest.py / github_upload.py",
+        "reviewed_at": "2026-09-10",
+        "outcome": "fixed",
+        "reason": "Revisited per the user's request to push the ratchet from 15 toward 5. Each of these four files was previously reviewed and 'kept' (their B603/check_output call sites already used fixed/validated argv, Bandit's suspicion was unavoidable at the call site itself) -- but 'unavoidable at the call site' never meant 'not migratable to the centralizing wrapper', it only meant no code change at that site alone would drop the suppression. All four now route through core/utils/trusted_subprocess.py's run_trusted_command(), collapsing 4 individual suppressions into the wrapper's already-existing 2 (net -4, wrapper count unchanged). Three used subprocess.check_output() (returns bytes directly, not exposed by the wrapper) and needed the same real behavior-preserving rewrite established in Phase 2 for web/process_lifecycle.py: run_trusted_command(..., stdout=PIPE, stderr=..., timeout=..., check=True).stdout. github_upload.py's run_command() used plain subprocess.run() and needed only a straight swap. Verified against each file's existing tests, including several that mocked subprocess.check_output specifically (tests/unit/scripts/test_verify_required_checks.py, tests/unit/web/routes/test_project_ops_helpers.py, and five more mock sites discovered in tests/unit/root/test_web_server.py duplicating project_ops.py/process_lifecycle.py coverage) -- all fixed to mock the imported run_trusted_command name instead of subprocess.check_output, since the wrapper never calls check_output internally. github_upload.py's separate B606 (os.execve) is untouched and still kept -- not a subprocess.run/Popen call, out of this wrapper's scope. Two of tests/unit/root/test_github_upload.py's tests fail in this specific sandboxed session only, both before and after this change (confirmed via git stash), because the session's ambient GITHUB_TOKEN=proxy-injected env var (set for this environment's own GitHub tool auth) wins over the test's mocked cfg.GITHUB_TOKEN='tok' -- pre-existing environment leakage unrelated to this migration; the full suite passes cleanly with GITHUB_TOKEN/GH_TOKEN unset."
+      },
+      {
+        "file": "core/utils/trusted_urlopen.py",
+        "reviewed_at": "2026-09-10",
+        "outcome": "kept",
+        "reason": "New shared wrapper (urlopen_trusted_request()), the same centralizing pattern as trusted_subprocess.py but for B310 (urllib_urlopen) instead of B603 -- Bandit flags any urlopen call regardless of URL construction since it can't statically prove the scheme excludes file://ftp://etc. Every current B310 call site already targets a fixed https:// origin. Centralizes the unavoidable suppression to one reviewed line (kept) plus a real, tested safety net (reject any non-http(s) scheme outright). Migrated 2 call sites: github_upload.py's open_upload_pull_request() helper and scripts/install_modules/refresh_remote_checksums.py's fetch_remote_bytes() (net -2, verified via tests/unit/root/test_github_upload.py's existing gu.urllib.request.urlopen mocks -- same shared-module-attribute mechanism proven throughout this migration -- and tests/unit/scripts/test_refresh_remote_checksums.py). 100% covered by tests/unit/core/test_trusted_urlopen.py (scheme rejection before any urlopen call, happy-path forwarding -- mocked, not a real socket, per this repo's unit-test network guard in tests/unit/conftest.py). scripts/ci/check_gpu_runner_capacity.py and scripts/ci/check_benchmark_runner_capacity.py's B310 sites were deliberately NOT migrated -- see their own review entries below; both are architecturally different from refresh_remote_checksums.py (whose workflow does run uv sync) in a way that matters here."
+      },
+      {
+        "file": "scripts/ci/check_gpu_runner_capacity.py / scripts/ci/check_benchmark_runner_capacity.py",
+        "reviewed_at": "2026-09-10",
+        "outcome": "kept",
+        "reason": "Both B310 sites already target a fixed https://api.github.com origin with a caller-supplied repository path (not otherwise attacker-controlled) -- same unavoidable-Bandit-suspicion class as every other reviewed call site. Deliberately NOT migrated to core/utils/trusted_urlopen.py despite that wrapper now existing, unlike every other file in this ratchet reduction: both scripts' real production workflows (.github/workflows/gpu-runner-capacity-watchdog.yml, benchmark-runner-capacity-watchdog.yml) run them as bare `python scripts/ci/check_*.py` with only actions/checkout + actions/setup-python -- no astral-sh/setup-uv, no `uv sync`, the project's own dependencies (including core/) are never installed. Both scripts are intentionally dependency-free (stdlib-only imports: argparse/json/os/sys/urllib), a deliberate architectural choice for a bare, unattended, hourly-scheduled capacity monitor. Verified empirically that a direct `python <script>` invocation cannot resolve `import core` (the script's own directory lands on sys.path[0], not the repo root, and there is no installed package to fall back on) -- the same failure mode already fixed properly (with a sys.path bootstrap) for tools/audit_imports.py, but here the deeper problem is that core/ has never been installed at all in this execution context, which a sys.path bootstrap alone cannot fix. Making these two scripts depend on core/ would create a standing invariant (every module core/__init__.py transitively imports at module level must forever stay lazy/stdlib-only) that nothing in CI currently tests for, silently breaking an unattended production monitor the moment that invariant is violated -- not worth 2 suppressions. No safe reduction found without either accepting that risk or duplicating a local, unshared urlopen wrapper in each file (which would not reduce Bandit's count at all -- the suppression still has to live somewhere Bandit can see it)."
+      },
+      {
+        "file": "core/active_learning.py",
+        "reviewed_at": "2026-09-10",
+        "outcome": "fixed",
+        "reason": "Both B615 (huggingface_unsafe_download) sites investigated individually. AutoModelForCausalLM.from_pretrained(self.base_model, **model_kwargs): model_kwargs already included a real, correct revision=self.model_revision pin, but passed via a **dict spread Bandit's B615 plugin cannot trace -- it only recognizes a literal `revision=` keyword at the call site itself. Fixed by moving revision out of the dict and passing it as an explicit literal keyword alongside **model_kwargs (same runtime value, now statically visible) -- B615 no longer fires for this call, confirmed via bandit on the file alone. load_dataset('json', data_files=dataset_path, split='train'): dataset_path is always a local JSON file (data_files=), never a Hugging Face Hub dataset id, so there is genuinely no remote revision to pin -- a real false positive, not a gap. Verified empirically before accepting the nosec rather than assuming: unlike the from_pretrained case, passing an explicit literal `revision=None` (datasets.load_dataset's own default, and the semantically honest value for 'no revision applies') did NOT silence B615 in the real file (it did in an isolated dummy-function test, but not against the real datasets.load_dataset import -- Bandit's plugin treats a None revision as 'still unpinned', which is the correct call for an actual Hub download, just not applicable here) -- kept, with a `# nosec B615` explaining why no literal fix exists. Net -1 (2 -> 1) for this file. Verified against tests/unit/core/test_active_learning.py (37 tests, unchanged) and full mypy --strict."
+      },
+      {
+        "file": "core/db/auth.py",
+        "reviewed_at": "2026-09-10",
+        "outcome": "fixed",
+        "reason": "Same root cause as the agent/github/smart_pr.py B105 review above, flagged there as deliberately deferred -- revisited now to push toward 5. _PASSWORD_HASH_ALGORITHM_ENV (a Python identifier naming an *environment variable name string*, 'SIDAR_PASSWORD_HASH_ALGORITHM' -- never a real password) tripped B105 purely because it contains 'PASSWORD'. Renamed to _CREDENTIAL_HASH_ALGORITHM_ENV across all 3 referencing files (core/db/auth.py, core/db/monolith.py's re-export, tests/unit/core/test_db.py's 5 usages) -- the string *value* 'SIDAR_PASSWORD_HASH_ALGORITHM' (the real, user-facing env var name operators may already have set) is untouched, only the Python identifier changed. Verified empirically the B105 finding disappears (bandit on the file alone: 0 issues) and tests/unit/core/test_db.py (142 tests) passes unchanged."
+      },
+      {
+        "file": "scripts/install_modules/refresh_remote_checksums.py",
+        "reviewed_at": "2026-09-10",
+        "outcome": "fixed",
+        "reason": "Migrated to core/utils/trusted_urlopen.py's urlopen_trusted_request(). Unlike scripts/ci/check_gpu_runner_capacity.py and check_benchmark_runner_capacity.py (see their review entry for why they were NOT migrated), this script's real workflow (.github/workflows/refresh-remote-checksums.yml) runs `astral-sh/setup-uv` + `uv sync --extra dev` before invoking it via `uv run python scripts/install_modules/refresh_remote_checksums.py` -- the project (including core/) is genuinely installed and importable in its actual execution context, verified empirically both via a direct import probe and a real `uv run python scripts/install_modules/refresh_remote_checksums.py --help` invocation. Net -1. Verified against tests/unit/scripts/test_refresh_remote_checksums.py (unchanged, does not mock urlopen)."
       }
     ]
   },

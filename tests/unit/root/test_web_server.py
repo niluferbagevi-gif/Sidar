@@ -2826,20 +2826,20 @@ def test_verify_hmac_signature_and_git_run_paths(monkeypatch):
 
     calls = []
 
-    def _fake_check_output(*args, **kwargs):
+    def _fake_run_trusted_command(*args, **kwargs):
         calls.append((args, kwargs))
-        return b"main\n"
+        return SimpleNamespace(stdout=b"main\n")
 
-    monkeypatch.setattr(project_ops.subprocess, "check_output", _fake_check_output)
+    monkeypatch.setattr(project_ops, "run_trusted_command", _fake_run_trusted_command)
     assert web_server._git_run(["git"], ".") == "main"
-    assert calls[0][1]["shell"] is False
+    assert calls[0][1]["stderr"] == project_ops.subprocess.DEVNULL
     assert web_server._git_run(["git", "status"], ".") == ""
     assert len(calls) == 1
 
     def _raise(*_args, **_kwargs):
         raise OSError("boom")
 
-    monkeypatch.setattr(project_ops.subprocess, "check_output", _raise)
+    monkeypatch.setattr(project_ops, "run_trusted_command", _raise)
     assert web_server._git_run(["git"], ".") == ""
 
 
@@ -3272,7 +3272,9 @@ async def test_git_and_branch_endpoints(monkeypatch):
     invalid = await web_server.set_branch(_JsonRequest({"branch": "bad name"}))
     assert invalid.status_code == 400
 
-    monkeypatch.setattr(project_ops.subprocess, "check_output", lambda *a, **k: b"")
+    monkeypatch.setattr(
+        project_ops, "run_trusted_command", lambda *a, **k: SimpleNamespace(stdout=b"")
+    )
     ok = await web_server.set_branch(_JsonRequest({"branch": "feature/x"}))
     assert ok.status_code == 200
 
@@ -7952,7 +7954,7 @@ async def test_set_branch_empty_and_checkout_error_paths(monkeypatch):
         )
 
     monkeypatch.setattr(web_server.asyncio, "to_thread", _inline_to_thread)
-    monkeypatch.setattr(project_ops.subprocess, "check_output", _raise_checkout)
+    monkeypatch.setattr(project_ops, "run_trusted_command", _raise_checkout)
     failed = await web_server.set_branch(_JsonRequest({"branch": "feature/x"}))
     assert failed.status_code == 400
     assert b"checkout failed" in failed.body
@@ -9193,7 +9195,9 @@ def test_list_child_ollama_pids_ps_fallback_skips_non_matching_rows(monkeypatch)
         b"502 500 python python app.py\n"  # comm ve args ollama degil -> atlanmali
     )
     monkeypatch.setattr(
-        web_server.process_lifecycle.subprocess, "check_output", lambda *_args, **_kwargs: ps_output
+        web_server.process_lifecycle,
+        "run_trusted_command",
+        lambda *_args, **_kwargs: SimpleNamespace(stdout=ps_output),
     )
 
     assert web_server._list_child_ollama_pids() == []

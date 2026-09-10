@@ -33,7 +33,7 @@ def test_bandit_suppression_baseline_matches_current_scan_and_quality_gates() ->
     local_gate = (root / "scripts/test_gates/backend_helpers.sh").read_text(encoding="utf-8")
     ci = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
-    assert baseline["maximum_skipped_tests"] == 15
+    assert baseline["maximum_skipped_tests"] == 8
     assert [target["maximum_skipped_tests"] for target in baseline["reduction_targets"]] == [
         0,
     ]
@@ -46,13 +46,14 @@ def test_bandit_suppression_baseline_matches_current_scan_and_quality_gates() ->
     owner, review_order = suppression_baseline._debt_plan(root / "bandit-suppression-baseline.json")
     assert owner == "security-review"
     assert review_order == (
-        "scripts/ci/verify_required_checks.py",
         "github_upload.py",
-        "scripts/tools/update_install_module_hash_manifest.py",
-        "web/routes/project_ops.py",
         "core/utils/trusted_subprocess.py",
         "web/plugins/sandbox.py",
         "managers/code/docker_lifecycle.py",
+        "core/utils/trusted_urlopen.py",
+        "core/active_learning.py",
+        "scripts/ci/check_gpu_runner_capacity.py",
+        "scripts/ci/check_benchmark_runner_capacity.py",
     )
     for relative_path in review_order:
         assert "# nosec" in (root / relative_path).read_text(encoding="utf-8")

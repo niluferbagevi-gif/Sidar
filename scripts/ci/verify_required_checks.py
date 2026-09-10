@@ -16,6 +16,8 @@ from urllib.parse import quote, urlsplit
 
 import yaml
 
+from core.utils.trusted_subprocess import run_trusted_command
+
 DEFAULT_RELEASE_JOB_IDS = (
     "test",
     "installer-smoke",
@@ -41,13 +43,14 @@ def _repo_from_git_remote() -> str:
         return ""
     command = [git_binary, *_GIT_REMOTE_COMMAND[1:]]
     try:
-        remote = subprocess.check_output(  # nosec B603  # absolute git; exact argv allowlist
+        remote = run_trusted_command(
             command,
             text=True,
+            stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
-            shell=False,
             timeout=10,
-        ).strip()
+            check=True,
+        ).stdout.strip()
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return ""
     if remote.endswith(".git"):

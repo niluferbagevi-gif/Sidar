@@ -5,9 +5,10 @@ import argparse
 import hashlib
 import re
 import shutil
-import subprocess
 import sys
 from pathlib import Path
+
+from core.utils.trusted_subprocess import run_trusted_command
 
 ROOT = Path(__file__).resolve().parents[2]
 MODULES_DIR = ROOT / "scripts/install_modules"
@@ -38,7 +39,7 @@ def sha256sum_git_show(commit: str, rel_path: str) -> str | None:
     git_binary = shutil.which("git")
     if not git_binary or not Path(git_binary).is_absolute():
         return None
-    result = subprocess.run(  # nosec B603  # absolute git (shutil.which-resolved); fixed argv; shell=False.
+    result = run_trusted_command(
         [git_binary, "-C", str(ROOT), "show", f"{commit}:{rel_path}"],
         capture_output=True,
         check=False,
