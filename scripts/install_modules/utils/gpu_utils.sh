@@ -96,7 +96,20 @@ detect_pytorch_runtime_cuda_version() {
     local python_cmd=()
 
     if command -v uv &>/dev/null; then
-        python_cmd=(uv run python)
+        # --no-sync is essential here: bare `uv run python` implicitly syncs the
+        # project's environment (base deps, which include torch via
+        # sentence-transformers) before running the inline script. detect_gpu()
+        # runs before the dependency-sync phase, so on a fresh checkout this
+        # single diagnostic probe was silently triggering the first, full
+        # `uv sync` — a multi-hundred-MB-to-GB download hidden behind the
+        # "GPU Tespiti" step, with no visible progress (stderr redirected below)
+        # and no relation to the step's actual (near-instant, nvidia-smi-only)
+        # purpose. --no-sync makes this check use whatever environment already
+        # exists (nothing on a fresh clone -> import fails instantly, already
+        # handled by the try/except below) instead of provisioning one.
+        # Verified empirically: ~0.1s either way (missing venv or already-synced
+        # venv), vs. minutes-to-an-hour on a slow/contended link without it.
+        python_cmd=(uv run --no-sync python)
     elif command -v python3 &>/dev/null; then
         python_cmd=(python3)
     elif command -v python &>/dev/null; then
