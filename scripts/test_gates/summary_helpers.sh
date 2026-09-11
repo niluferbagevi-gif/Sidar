@@ -81,6 +81,14 @@ if ps_path.is_file():
                 if len(row) <= max(service_index, status_index):
                     continue
                 status = row[status_index].lower()
+                # "Exited (0)" is the expected terminal state of a one-shot
+                # init container (e.g. sidar-migrate running its migrations
+                # to completion), not a failure. Treating any "exited" status
+                # as evidence of a crash falsely blames that container for an
+                # unrelated failure elsewhere in the stack and buries the
+                # real culprit. Only a non-zero exit code counts as a crash.
+                if "exited (0)" in status:
+                    continue
                 if any(marker in status for marker in ("exited", "restarting", "unhealthy", "dead")):
                     service = row[service_index]
                     break

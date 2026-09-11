@@ -6808,6 +6808,92 @@ def test_production_compose_failure_diagnostics_surface_service_and_exception(
     ]
 
 
+def test_production_compose_failure_diagnostics_ignores_expected_migrate_exit(
+    tmp_path: Path,
+) -> None:
+    """A one-shot init container exiting 0 must never be blamed for the failure.
+
+    sidar-migrate runs its migrations to completion and exits successfully as
+    part of every passing run; "Exited (0)" is its normal terminal state, not
+    a crash. If the diagnostics naively match any "exited" status, they smear
+    an innocent, correctly-behaving service while the real failure elsewhere
+    goes unreported.
+    """
+    helpers = Path("scripts/test_gates/summary_helpers.sh").resolve()
+    diagnostics = tmp_path / "production-compose"
+    diagnostics.mkdir()
+    (diagnostics / "ps.txt").write_text(
+        "NAME  IMAGE  COMMAND  SERVICE  CREATED  STATUS  PORTS\n"
+        "sidar-production-gate_migrate  sidar  cmd  sidar-migrate  now  Exited (0) 1 minute ago  \n"
+        "sidar-production-gate_web  sidar  cmd  sidar-web  now  Up 1 minute (healthy)  \n",
+        encoding="utf-8",
+    )
+    (diagnostics / "compose.log").write_text(
+        "sidar-production-gate_migrate | Running upgrade -> head\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; PRODUCTION_COMPOSE_DIAGNOSTICS_DIR="$2"; '
+            "production_compose_failure_diagnostics",
+            "bash",
+            str(helpers),
+            str(diagnostics),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.stdout.splitlines() == [
+        "belirlenemedi",
+        "compose diagnostics içinde hata özeti bulunamadı",
+    ]
+
+
+def test_production_compose_failure_diagnostics_finds_real_failure_past_expected_migrate_exit(
+    tmp_path: Path,
+) -> None:
+    """A genuinely crashed service must still be surfaced past a healthy migrate exit."""
+    helpers = Path("scripts/test_gates/summary_helpers.sh").resolve()
+    diagnostics = tmp_path / "production-compose"
+    diagnostics.mkdir()
+    (diagnostics / "ps.txt").write_text(
+        "NAME  IMAGE  COMMAND  SERVICE  CREATED  STATUS  PORTS\n"
+        "sidar-production-gate_migrate  sidar  cmd  sidar-migrate  now  Exited (0) 1 minute ago  \n"
+        "sidar-production-gate_web  sidar  cmd  sidar-web  now  Restarting (1) 1 second ago  \n",
+        encoding="utf-8",
+    )
+    (diagnostics / "compose.log").write_text(
+        "sidar-production-gate_web | PermissionError: [Errno 13] Permission denied: "
+        "'/app/web_ui_react/dist/assets'\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; PRODUCTION_COMPOSE_DIAGNOSTICS_DIR="$2"; '
+            "production_compose_failure_diagnostics",
+            "bash",
+            str(helpers),
+            str(diagnostics),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.stdout.splitlines() == [
+        "sidar-web",
+        "PermissionError: [Errno 13] Permission denied: '/app/web_ui_react/dist/assets'",
+    ]
+
+
 def test_final_summary_prints_production_compose_gate_fields() -> None:
     final_evaluation = _script().split("# 4) Final Durum Değerlendirmesi", maxsplit=1)[1]
 
