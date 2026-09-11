@@ -66,7 +66,9 @@ def installer_contract_sources() -> str:
 def test_grafana_operator_guidance_uses_generated_secret_not_default_credentials() -> None:
     """Installer and primary docs must match Docker Compose's fail-closed credential contract."""
     installer = Path("scripts/install_modules/phases/07_finish.sh").read_text(encoding="utf-8")
-    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+    # grafana lives in docker-compose.observability.yml (split out of
+    # docker-compose.yml -- see that file's header comment).
+    compose = Path("docker-compose.observability.yml").read_text(encoding="utf-8")
     primary_docs = "\n".join(
         Path(path).read_text(encoding="utf-8")
         for path in (
@@ -2914,7 +2916,7 @@ def test_gpu_gate_timeout_and_benchmark_cache_keepalive_are_fail_closed() -> Non
         ci.index("  gpu-inference-quality-gate:") : ci.index("  gpu-inference-policy-gate:")
     ]
     assert "runs-on: [self-hosted, linux, x64, gpu, cuda]" in gpu_job
-    assert "timeout-minutes: 45" in gpu_job
+    assert "timeout-minutes: 180" in gpu_job
     assert 'cron: "17 5 * * 1,4"' in keepalive
     assert "uses: actions/cache/restore@v6" in keepalive
     assert "Require reviewed baseline evidence" in keepalive
@@ -2923,7 +2925,7 @@ def test_gpu_gate_timeout_and_benchmark_cache_keepalive_are_fail_closed() -> Non
     assert "benchmark-save" not in keepalive
     assert "no benchmark was executed and no baseline was regenerated" in keepalive
     assert "queued süreyi" in testing
-    assert "timeout-minutes: 45" in testing
+    assert "timeout-minutes: 180" in testing
     assert "benchmark-baseline-keepalive.yml" in testing
     assert "benchmark çalıştırmaz, baseline üretmez" in testing
 
@@ -7632,7 +7634,14 @@ def test_docker_compose_redis_has_healthcheck_and_healthy_dependencies() -> None
     assert "timeout: 3s" in redis_block
     assert "retries: 20" in redis_block
     assert "redis:\n        condition: service_started" not in compose
-    assert compose.count("redis:\n        condition: service_healthy") >= 4
+
+    # sidar-ai/sidar-web depend on redis from core docker-compose.yml;
+    # sidar-gpu/sidar-web-gpu (same dependency) split into
+    # docker-compose.gpu.yml -- see that file's header comment.
+    gpu_compose = Path("docker-compose.gpu.yml").read_text(encoding="utf-8")
+    assert "redis:\n        condition: service_started" not in gpu_compose
+    combined = compose + gpu_compose
+    assert combined.count("redis:\n        condition: service_healthy") >= 4
 
 
 def test_docker_compose_redis_requires_password_and_is_bound_to_loopback() -> None:

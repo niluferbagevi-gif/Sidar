@@ -63,6 +63,28 @@ sidar_normalize_compose_project_name() {
     printf '%s' "$raw"
 }
 
+# docker-compose.yml (core) yalnızca redis/postgres/ollama/sidar-migrate/
+# docker-socket-proxy/sidar-ai/sidar-web'i taşır; GPU servisleri (ollama-gpu,
+# sidar-gpu, sidar-web-gpu) docker-compose.gpu.yml'de, observability servisleri
+# (jaeger, exporter'lar, cadvisor, prometheus, grafana) docker-compose.observability.yml'de
+# ayrı dosyalardadır (bkz. docker-compose.yml'nin kendi başlık yorumu). Bu
+# yardımcı, verilen COMPOSE_PROFILES değerine (virgülle ayrılmış, ör. "gpu"
+# veya "cpu,observability") göre gereken tüm `-f` argümanlarını hesaplayıp
+# ikinci argüman olarak verilen array değişkenine yazar; installer'ın
+# `docker compose ...` çağıran her yerinin hangi profilin aktif olduğuna göre
+# doğru dosya kombinasyonunu kullanmasını sağlar.
+sidar_compose_file_args_for_profiles() {
+    local profiles="${1:-}"
+    local -n _sidar_compose_file_args_out="$2"
+    _sidar_compose_file_args_out=(-f "${SCRIPT_DIR}/docker-compose.yml")
+    if [[ ",${profiles}," == *",gpu,"* ]]; then
+        _sidar_compose_file_args_out+=(-f "${SCRIPT_DIR}/docker-compose.gpu.yml")
+    fi
+    if [[ ",${profiles}," == *",observability,"* ]]; then
+        _sidar_compose_file_args_out+=(-f "${SCRIPT_DIR}/docker-compose.observability.yml")
+    fi
+}
+
 sidar_volume_name_matches_suffix() {
     local docker_volume_name="$1"
     local volume_suffix="$2"
@@ -923,14 +945,17 @@ seed_rag_in_docker_after_startup() {
         seed_service="sidar-web-gpu"
     fi
 
+    local -a compose_file_args=()
+    sidar_compose_file_args_for_profiles "$compose_profiles" compose_file_args
+
     info "RAG seed servisi aktif profillere göre seçildi: ${seed_service} (COMPOSE_PROFILES=${compose_profiles:-cpu})."
     info "Tam Docker modu: ilk açılış gecikmesini azaltmak için RAG/GraphRAG seed adımı çalıştırılıyor..."
-    if (cd "$SCRIPT_DIR" && "${compose_cmd[@]}" run --rm --no-deps --entrypoint "" "$seed_service" uv run python -m scripts.seed_rag); then
+    if (cd "$SCRIPT_DIR" && "${compose_cmd[@]}" "${compose_file_args[@]}" run --rm --no-deps --entrypoint "" "$seed_service" uv run python -m scripts.seed_rag); then
         ok "Docker RAG/GraphRAG seed adımı tamamlandı."
     else
         warn "Docker RAG/GraphRAG seed adımı başarısız. Geçici container temizliği deneniyor..."
-        (cd "$SCRIPT_DIR" && "${compose_cmd[@]}" rm -f -s "$seed_service" >/dev/null 2>&1) || true
-        warn "Docker RAG/GraphRAG seed adımı başarısız. Manuel: ${compose_cmd[*]} run --rm --no-deps --entrypoint \"\" ${seed_service} uv run python -m scripts.seed_rag"
+        (cd "$SCRIPT_DIR" && "${compose_cmd[@]}" "${compose_file_args[@]}" rm -f -s "$seed_service" >/dev/null 2>&1) || true
+        warn "Docker RAG/GraphRAG seed adımı başarısız. Manuel: ${compose_cmd[*]} ${compose_file_args[*]} run --rm --no-deps --entrypoint \"\" ${seed_service} uv run python -m scripts.seed_rag"
     fi
 }
 

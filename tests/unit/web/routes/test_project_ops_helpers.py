@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -68,7 +69,14 @@ def test_git_run_logs_called_process_errors(monkeypatch: pytest.MonkeyPatch) -> 
     def _raise_called_process_error(*_args: Any, **_kwargs: Any) -> bytes:
         raise CalledProcessError(7, "git")
 
-    monkeypatch.setattr("subprocess.check_output", _raise_called_process_error)
+    # _execute_allowed_git_command() runs the git invocation through
+    # core.utils.trusted_subprocess.run_trusted_command() (centralizes the
+    # unavoidable Bandit B603 suppression -- see that module's docstring),
+    # which project_ops imports by name, so the fake belongs on that
+    # imported name rather than on subprocess.check_output
+    # (run_trusted_command wraps the real subprocess.run internally, not
+    # check_output).
+    monkeypatch.setattr("web.routes.project_ops.run_trusted_command", _raise_called_process_error)
 
     assert _git_run(["git"], ".", logger=logger) == ""
     assert warnings
@@ -81,8 +89,8 @@ def test_git_run_requires_absolute_executable_resolution(monkeypatch: pytest.Mon
     calls: list[list[str]] = []
     monkeypatch.setattr("web.routes.project_ops.shutil.which", lambda _name: "relative/git")
     monkeypatch.setattr(
-        "web.routes.project_ops.subprocess.check_output",
-        lambda command, **_kwargs: calls.append(command) or b"unexpected",
+        "web.routes.project_ops.run_trusted_command",
+        lambda command, **_kwargs: calls.append(command) or SimpleNamespace(stdout=b"unexpected"),
     )
 
     assert _git_run(["git"], ".") == ""
@@ -97,15 +105,24 @@ def test_git_run_executes_resolved_git_with_exact_allowlisted_args(
     calls: list[tuple[list[str], dict[str, Any]]] = []
     monkeypatch.setattr("web.routes.project_ops.shutil.which", lambda _name: "/safe/bin/git")
 
-    def _check_output(command: list[str], **kwargs: Any) -> bytes:
+    def _run_trusted_command(command: list[str], **kwargs: Any) -> SimpleNamespace:
         calls.append((command, kwargs))
-        return b"main\n"
+        return SimpleNamespace(stdout=b"main\n")
 
-    monkeypatch.setattr("web.routes.project_ops.subprocess.check_output", _check_output)
+    monkeypatch.setattr("web.routes.project_ops.run_trusted_command", _run_trusted_command)
 
     assert _git_run(["git", "rev-parse", "--abbrev-ref", "HEAD"], "/repo") == "main"
     assert calls[0][0] == ["/safe/bin/git", "rev-parse", "--abbrev-ref", "HEAD"]
-    assert calls[0][1]["shell"] is False
+    # shell=False is enforced inside run_trusted_command itself (see its
+    # docstring/tests), not passed by this call site -- assert the kwargs
+    # _execute_allowed_git_command() does pass instead.
+    assert calls[0][1] == {
+        "cwd": "/repo",
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.DEVNULL,
+        "timeout": 10,
+        "check": True,
+    }
 
 
 @pytest.mark.parametrize(
@@ -311,7 +328,10 @@ async def test_project_git_branch_handlers_validate_and_report_checkout_errors(
         await exports["set_branch"](_JsonRequest({"branch": "-upload-pack=evil"}))
     ).status_code == 400
 
-    monkeypatch.setattr("subprocess.check_output", lambda *_args, **_kwargs: b"")
+    monkeypatch.setattr(
+        "web.routes.project_ops.run_trusted_command",
+        lambda *_args, **_kwargs: SimpleNamespace(stdout=b""),
+    )
     assert _json_body(await exports["set_branch"](_JsonRequest({"branch": "feature"}))) == {
         "success": True,
         "branch": "feature",
@@ -320,7 +340,7 @@ async def test_project_git_branch_handlers_validate_and_report_checkout_errors(
     def _checkout_error(*_args: Any, **_kwargs: Any) -> Any:
         raise __import__("subprocess").CalledProcessError(1, "git", output=b"missing branch")
 
-    monkeypatch.setattr("subprocess.check_output", _checkout_error)
+    monkeypatch.setattr("web.routes.project_ops.run_trusted_command", _checkout_error)
     failed = await exports["set_branch"](_JsonRequest({"branch": "missing"}))
     assert failed.status_code == 400
     assert _json_body(failed)["error"] == "missing branch"

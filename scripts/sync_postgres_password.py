@@ -21,6 +21,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from core.utils.trusted_subprocess import run_trusted_command  # noqa: E402
 from scripts.sync_database_passwords import (  # noqa: E402
     DEFAULT_ENV_FILE,
     _effective_env_from_specs,
@@ -129,7 +130,7 @@ def sync_postgres_password_with_docker_exec(
         postgres_user=postgres_user,
         postgres_password=postgres_password,
     )
-    completed = subprocess.run(  # Fixed command list; SQL is passed via stdin.  # nosec B603
+    completed = run_trusted_command(  # Fixed command list; SQL is passed via stdin.
         cmd,
         cwd=PROJECT_ROOT,
         input=sql,

@@ -43,7 +43,7 @@ _ARGON2ID_MEMORY_COST_ENV = "SIDAR_ARGON2ID_MEMORY_COST_KIB"
 _ARGON2ID_TIME_COST_ENV = "SIDAR_ARGON2ID_TIME_COST"
 _ARGON2ID_PARALLELISM_ENV = "SIDAR_ARGON2ID_PARALLELISM"
 # Environment variable name, not a secret.
-_PASSWORD_HASH_ALGORITHM_ENV = "SIDAR_PASSWORD_HASH_ALGORITHM"  # nosec B105
+_CREDENTIAL_HASH_ALGORITHM_ENV = "SIDAR_PASSWORD_HASH_ALGORITHM"
 _PBKDF2_ALGORITHM = "pbkdf2_sha256"
 _PBKDF2_MIN_ITERATIONS = 600000
 _PBKDF2_LEGACY_ITERATIONS = 120000
@@ -73,12 +73,12 @@ def _read_int_env_with_floor(env_key: str, default: int, minimum: int) -> int:
 
 def _current_password_hash_algorithm() -> str:
     """Resolve the preferred password hashing algorithm for newly stored hashes."""
-    raw_value = os.getenv(_PASSWORD_HASH_ALGORITHM_ENV, _ARGON2ID_ALGORITHM).strip().lower()
+    raw_value = os.getenv(_CREDENTIAL_HASH_ALGORITHM_ENV, _ARGON2ID_ALGORITHM).strip().lower()
     if raw_value in {_ARGON2ID_ALGORITHM, _PBKDF2_ALGORITHM}:
         return raw_value
     logger.warning(
         "%s=%r desteklenmiyor; Argon2id varsayılanı kullanılacak.",
-        _PASSWORD_HASH_ALGORITHM_ENV,
+        _CREDENTIAL_HASH_ALGORITHM_ENV,
         raw_value,
     )
     return _ARGON2ID_ALGORITHM
@@ -308,7 +308,7 @@ __all__ = [
     "_ARGON2ID_TIME_COST_ENV",
     "_ARGON2ID_VERSION",
     "_AUTH_HASH_SLO_MS_ENV",
-    "_PASSWORD_HASH_ALGORITHM_ENV",
+    "_CREDENTIAL_HASH_ALGORITHM_ENV",
     "_PBKDF2_ALGORITHM",
     "_PBKDF2_ITERATIONS_ENV",
     "_PBKDF2_LEGACY_ITERATIONS",

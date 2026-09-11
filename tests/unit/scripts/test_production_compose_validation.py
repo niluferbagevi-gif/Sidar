@@ -106,7 +106,13 @@ def test_generated_gate_env_secrets_satisfy_production_entropy_policy() -> None:
 
 def test_production_profile_is_the_compose_service_env_contract() -> None:
     """CLI interpolation and container injection must use one production file."""
-    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+    # sidar-migrate/sidar-ai/sidar-web (core) + sidar-gpu/sidar-web-gpu (GPU
+    # profile, split into docker-compose.gpu.yml -- see that file's header
+    # comment and docker-compose.yml's own split-rationale header).
+    compose = "\n".join(
+        Path(path).read_text(encoding="utf-8")
+        for path in ("docker-compose.yml", "docker-compose.gpu.yml")
+    )
     production_env = Path(".env.production.example").read_text(encoding="utf-8")
 
     assert compose.count("- ${SIDAR_RUNTIME_ENV_FILE:-.env}") == 5
@@ -278,6 +284,7 @@ def test_generated_gate_env_passes_real_compose_config(tmp_path: Path) -> None:
 
     for relative_path in (
         "docker-compose.yml",
+        "docker-compose.gpu.yml",
         "docker-compose.production.yml",
         "scripts/ci/validate_production_compose.sh",
     ):
@@ -380,6 +387,7 @@ def test_ambient_postgres_password_does_not_leak_into_resolved_database_url(
 
     for relative_path in (
         "docker-compose.yml",
+        "docker-compose.gpu.yml",
         "docker-compose.production.yml",
         "scripts/ci/validate_production_compose.sh",
         "scripts/secret_strength.py",
@@ -527,6 +535,8 @@ def test_production_override_actually_closes_datastore_ports(tmp_path: Path) -> 
                 "-f",
                 "docker-compose.yml",
                 "-f",
+                "docker-compose.gpu.yml",
+                "-f",
                 "docker-compose.production.yml",
                 "--profile",
                 profile,
@@ -617,6 +627,11 @@ def test_enable_tracing_defaults_to_false_without_the_observability_profile(
     }
 
     for profile, services in (("cpu", ["sidar-web"]), ("gpu", ["sidar-web-gpu"])):
+        compose_file_args = ["-f", "docker-compose.yml"]
+        if profile == "gpu":
+            # sidar-web-gpu's base definition lives in docker-compose.gpu.yml
+            # (split out of docker-compose.yml -- see that file's header).
+            compose_file_args += ["-f", "docker-compose.gpu.yml"]
         completed = subprocess.run(
             [
                 docker,
@@ -625,8 +640,7 @@ def test_enable_tracing_defaults_to_false_without_the_observability_profile(
                 f"sidar-tracing-default-gate-{profile}-{tmp_path.name}",
                 "--env-file",
                 str(env_file),
-                "-f",
-                "docker-compose.yml",
+                *compose_file_args,
                 "--profile",
                 profile,
                 "config",

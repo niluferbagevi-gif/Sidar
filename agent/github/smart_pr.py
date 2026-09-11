@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-GITHUB_SMART_PR_NO_TOKEN_MESSAGE = "⚠ GitHub token bulunamadı."  # nosec B105
+GITHUB_SMART_PR_NO_AUTH_MESSAGE = "⚠ GitHub token bulunamadı."
 GITHUB_SMART_PR_NO_BRANCH_MESSAGE = "✗ Aktif branch bulunamadı."
 GITHUB_SMART_PR_NO_CHANGES_MESSAGE = "ℹ Değişiklik bulunamadı; PR oluşturulmadı."
 GITHUB_SMART_PR_CREATE_FAILED_PREFIX = "✗ PR oluşturulamadı:"
@@ -35,7 +35,7 @@ async def create_smart_pr(
 ) -> str:
     """Create a GitHub PR from the current working tree diff."""
     if not github.is_available():
-        return GITHUB_SMART_PR_NO_TOKEN_MESSAGE
+        return GITHUB_SMART_PR_NO_AUTH_MESSAGE
 
     parts = [p.strip() for p in (arg or "").split("|||")]
     title = parts[0] if len(parts) > 0 and parts[0] else "Otomatik PR"

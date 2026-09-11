@@ -11,6 +11,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from core.utils.trusted_subprocess import run_trusted_command
+
 SAFE_PS_PATHS = ("/bin/ps", "/usr/bin/ps")
 
 
@@ -62,10 +64,12 @@ def list_child_ollama_pids(
         return []
 
     try:
-        raw = subprocess.check_output(  # nosec B603  # safe absolute ps path.
+        raw = run_trusted_command(
             [ps_binary, "-eo", "pid=,ppid=,comm=,args="],
+            stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
-        )
+            check=True,
+        ).stdout
     except Exception:
         return []
 

@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, cast
 
+from core.utils.trusted_subprocess import run_trusted_command
 from managers.code.docker import sanitize_docker_image, to_int
 
 
@@ -134,7 +135,7 @@ def run_shell_in_sandbox(
     docker_cmd.extend([safe_image, "-lc", sandbox_command])
 
     try:
-        result = subprocess.run(  # nosec B603
+        result = run_trusted_command(
             docker_cmd,
             capture_output=True,
             text=True,

@@ -16,7 +16,9 @@ Bu dosya, Sidar projesinin derleme, çalıştırma, test ve kodlama standartlar�
 - **Hızlı Web Başlatma:** `python main.py --quick web --host 0.0.0.0 --port 7860`
 - **Hızlı CLI Başlatma:** `python main.py --quick cli`
 - **Doğrudan Web Sunucu:** `python web_server.py --host 0.0.0.0 --port 7860`
-- **Docker ile Ayağa Kaldır:** `docker compose up --build`
+- **Docker ile Ayağa Kaldır (core/cpu):** `docker compose up --build`
+- **Docker GPU profili:** `docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile gpu up --build` (bkz. `docker-compose.gpu.yml`)
+- **Docker observability profili:** `docker compose -f docker-compose.yml -f docker-compose.observability.yml --profile cpu --profile observability up` (bkz. `docker-compose.observability.yml`)
 
 ### Test ve Denetim
 - **Tüm Testleri Çalıştır:** `pytest`

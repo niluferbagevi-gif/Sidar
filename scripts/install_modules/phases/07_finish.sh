@@ -354,9 +354,9 @@ print_summary() {
     if [[ "${APP_RUNTIME_MODE_SELECTED:-docker}" == "local" ]]; then
         echo "       Çalışma modu: Geliştirici (uygulama local, altyapı Docker)."
         echo "       Altyapı servisleri: docker compose up -d postgres redis"
-        echo "       İzleme gerekiyorsa: COMPOSE_PROFILES=observability docker compose up -d jaeger prometheus grafana"
+        echo "       İzleme gerekiyorsa: docker compose -f docker-compose.yml -f docker-compose.observability.yml --profile cpu --profile observability up -d jaeger prometheus grafana"
         echo "       (Host Ollama yoksa ayrıca: docker compose up -d ollama)"
-        echo "       Durdurma: docker compose stop postgres redis jaeger prometheus grafana ollama"
+        echo "       Durdurma: docker compose stop postgres redis ollama; docker compose -f docker-compose.yml -f docker-compose.observability.yml stop jaeger prometheus grafana"
     else
         echo "       Çalışma modu: Tam Docker (web/agent dahil)."
     echo "       Servisleri manuel yönetmek isterseniz: docker compose up -d / docker compose down"
@@ -486,11 +486,11 @@ print_summary() {
     if [[ "$SKIP_MODELS" == true ]]; then
         echo "  ollama pull <model_adi>   — model indirmeleri atlandı, sonradan manuel indirin"
     fi
-    echo "  docker compose up sidar-gpu     — Docker GPU modu"
+    echo "  docker compose -f docker-compose.yml -f docker-compose.gpu.yml up sidar-gpu     — Docker GPU modu"
     echo "  Not: Docker GPU için nvidia-container-toolkit kurulu olmalıdır."
     echo ""
     echo -e "${BOLD}Gözlemlenebilirlik (Telemetry)${NC}"
-    echo "  İzleme servislerini başlat: COMPOSE_PROFILES=observability docker compose up -d jaeger prometheus grafana"
+    echo "  İzleme servislerini başlat: docker compose -f docker-compose.yml -f docker-compose.observability.yml --profile cpu --profile observability up -d jaeger prometheus grafana"
     echo "  Grafana paneli    : http://localhost:3000"
     echo "  Grafana girişi    : kullanıcı admin; parola .env içinde installer tarafından üretilen GRAFANA_ADMIN_PASSWORD"
     echo "  Prometheus paneli : http://localhost:9090"

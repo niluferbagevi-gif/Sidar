@@ -3676,7 +3676,7 @@ esac
 SMI
     cat > "$tmpdir/uv" <<UV
 #!/usr/bin/env bash
-if [[ "\${1:-} \${2:-}" == "run python" ]]; then
+if [[ "\${1:-} \${2:-} \${3:-}" == "run --no-sync python" ]]; then
   echo "13.0"
 fi
 UV
@@ -3711,6 +3711,25 @@ ENV
   [[ "$output" == *"NVIDIA Windows Driver : 610.62"* ]]
   [[ "$output" == *"WSL CUDA Passthrough : bilinmiyor"* ]]
   [[ "$output" == *"PyTorch Runtime CUDA : 13.0"* ]]
+}
+
+@test "detect_pytorch_runtime_cuda_version invokes uv run with --no-sync to avoid a hidden dependency sync" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf -- \"$tmpdir\"" EXIT
+    cat > "$tmpdir/uv" <<UV
+#!/usr/bin/env bash
+echo "\$*" >> "$tmpdir/uv-argv.log"
+cat >/dev/null
+UV
+    chmod +x "$tmpdir/uv"
+    export PATH="$tmpdir:$PATH"
+
+    output="$(detect_pytorch_runtime_cuda_version)"
+    [[ -z "$output" ]]
+    grep -q -- "--no-sync" "$tmpdir/uv-argv.log"
+  '
+  [ "$status" -eq 0 ]
 }
 
 @test "detect_gpu reuses WSL preflight GPU facts when available" {

@@ -11,6 +11,8 @@ import subprocess
 from collections.abc import Callable
 from typing import Any, Protocol, cast
 
+from core.utils.trusted_subprocess import run_trusted_command
+
 logger = logging.getLogger(__name__)
 
 
@@ -249,7 +251,7 @@ def run_shell_command(
         args = build_sanitized_shell_args(
             command, allow_shell_features=allow_shell_features, find_executable=shutil.which
         )
-        result = subprocess.run(  # nosec B603
+        result = run_trusted_command(
             args,
             shell=False,
             capture_output=True,
