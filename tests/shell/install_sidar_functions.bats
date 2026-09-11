@@ -3720,12 +3720,7 @@ ENV
     cat > "$tmpdir/uv" <<UV
 #!/usr/bin/env bash
 echo "\$*" >> "$tmpdir/uv-argv.log"
-if [[ "\$1" == "run" ]]; then
-  shift
-  [[ "\$1" == "--no-sync" ]] || { echo "MISSING --no-sync" >&2; exit 1; }
-  shift
-  exec "\$@"
-fi
+cat >/dev/null
 UV
     chmod +x "$tmpdir/uv"
     export PATH="$tmpdir:$PATH"
