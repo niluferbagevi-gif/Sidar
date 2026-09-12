@@ -56,14 +56,14 @@ PY_FAILED_NODEIDS
 
 production_compose_failure_diagnostics() {
   local diagnostics_dir="${PRODUCTION_COMPOSE_DIAGNOSTICS_DIR:-artifacts/production-compose}"
-  python - "${diagnostics_dir}/ps.txt" "${diagnostics_dir}/compose.log" <<'PY_COMPOSE_DIAGNOSTICS'
+  python - "${diagnostics_dir}/ps.txt" "${diagnostics_dir}/compose.log" "${diagnostics_dir}/failure.txt" <<'PY_COMPOSE_DIAGNOSTICS'
 from __future__ import annotations
 
 import re
 import sys
 from pathlib import Path
 
-ps_path, log_path = map(Path, sys.argv[1:])
+ps_path, log_path, failure_path = map(Path, sys.argv[1:])
 service = "belirlenemedi"
 error = "compose diagnostics içinde hata özeti bulunamadı"
 
@@ -109,6 +109,29 @@ if log_path.is_file():
                     service,
                 )
             break
+
+# A crashing container's traceback is the most specific signal when one
+# exists, but several of this gate's own checks (health-loop status,
+# migration head/current parity, restart-persistence marker, shutdown
+# exit-code) are plain bash `[[ ... ]]` assertions in
+# scripts/ci/validate_production_compose.sh: nothing crashes and nothing logs
+# a Python exception when one of those fails. That script's own ERR trap
+# records the failing line/command to failure.txt before teardown runs, so
+# fall back to it whenever ps.txt/compose.log had nothing actionable.
+if error == "compose diagnostics içinde hata özeti bulunamadı" and failure_path.is_file():
+    breadcrumb: dict[str, str] = {}
+    for line in failure_path.read_text(errors="replace").splitlines():
+        key, sep, value = line.partition("=")
+        if sep:
+            breadcrumb[key] = value
+    command = breadcrumb.get("command", "").strip()
+    if command:
+        line_no = breadcrumb.get("line", "").strip()
+        location = f":{line_no}" if line_no else ""
+        error = f"scripts/ci/validate_production_compose.sh{location}: {command}"[:500]
+        if service == "belirlenemedi":
+            service_hints = ("sidar-migrate", "sidar-web", "postgres", "redis")
+            service = next((name for name in service_hints if name in command), service)
 
 print(service)
 print(error)

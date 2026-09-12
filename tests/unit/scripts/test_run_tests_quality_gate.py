@@ -6896,6 +6896,93 @@ def test_production_compose_failure_diagnostics_finds_real_failure_past_expected
     ]
 
 
+def test_production_compose_failure_diagnostics_falls_back_to_error_trap_breadcrumb(
+    tmp_path: Path,
+) -> None:
+    """Real regression: a passing health-loop with a failing bash assertion.
+
+    scripts/ci/validate_production_compose.sh's migration head/current parity,
+    restart-persistence marker, and shutdown exit-code checks are plain
+    `[[ ... ]]` tests -- a healthy `docker compose ps` (no exited/restarting/
+    unhealthy/dead service) and container logs with no Python traceback,
+    which used to leave this function reporting the unhelpful defaults
+    ("belirlenemedi" / "compose diagnostics içinde hata özeti bulunamadı")
+    even though the gate script's own ERR trap recorded exactly which line
+    and command failed. That breadcrumb (failure.txt) must be the fallback.
+    """
+    helpers = Path("scripts/test_gates/summary_helpers.sh").resolve()
+    diagnostics = tmp_path / "production-compose"
+    diagnostics.mkdir()
+    (diagnostics / "ps.txt").write_text(
+        "NAME  IMAGE  COMMAND  SERVICE  CREATED  STATUS  PORTS\n"
+        "sidar-production-gate_web  sidar  cmd  sidar-web  now  Up 2 minutes (healthy)  \n",
+        encoding="utf-8",
+    )
+    (diagnostics / "compose.log").write_text(
+        'sidar-production-gate_web | INFO:     127.0.0.1:1 - "GET /healthz HTTP/1.1" 200 OK\n',
+        encoding="utf-8",
+    )
+    (diagnostics / "failure.txt").write_text(
+        'exit_code=1\nline=157\ncommand=[[ -n "$heads" && "$current" == *"${heads%% *}"* ]]\n',
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; PRODUCTION_COMPOSE_DIAGNOSTICS_DIR="$2"; '
+            "production_compose_failure_diagnostics",
+            "bash",
+            str(helpers),
+            str(diagnostics),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.stdout.splitlines() == [
+        "belirlenemedi",
+        'scripts/ci/validate_production_compose.sh:157: [[ -n "$heads" '
+        '&& "$current" == *"${heads%% *}"* ]]',
+    ]
+
+
+def test_production_compose_failure_diagnostics_infers_service_from_breadcrumb_command(
+    tmp_path: Path,
+) -> None:
+    """When ps.txt/compose.log name no service, guess it from the failing command."""
+    helpers = Path("scripts/test_gates/summary_helpers.sh").resolve()
+    diagnostics = tmp_path / "production-compose"
+    diagnostics.mkdir()
+    (diagnostics / "failure.txt").write_text(
+        "exit_code=1\n"
+        "line=163\n"
+        'command=[[ "$("${compose[@]}" exec -T sidar-web cat /app/data/.marker)" == "$marker" ]]\n',
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; PRODUCTION_COMPOSE_DIAGNOSTICS_DIR="$2"; '
+            "production_compose_failure_diagnostics",
+            "bash",
+            str(helpers),
+            str(diagnostics),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    stdout_lines = result.stdout.splitlines()
+    assert stdout_lines[0] == "sidar-web"
+    assert stdout_lines[1].startswith("scripts/ci/validate_production_compose.sh:163: ")
+
+
 def test_final_summary_prints_production_compose_gate_fields() -> None:
     final_evaluation = _script().split("# 4) Final Durum Değerlendirmesi", maxsplit=1)[1]
 
