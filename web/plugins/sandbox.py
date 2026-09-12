@@ -422,6 +422,33 @@ def validate_plugin_source(source_code: str) -> None:
         "__globals__",
         "__mro__",
         "__subclasses__",
+        # __traceback__ is the entry point of the frame-walking escape below --
+        # ban it alongside the other dunders it belongs with.
+        "__traceback__",
+        # Frame/generator-state escape: none of these are dunders, so none
+        # were denylisted, yet each hands out a live frame object exactly as
+        # __class__/__globals__ etc. do. A plugin that never writes a single
+        # previously-banned name could still reach this module's real,
+        # unrestricted globals (actual os/subprocess, not the restricted
+        # plugin namespace) with e.g.:
+        #   try:
+        #       1 / 0
+        #   except Exception as e:
+        #       e.__traceback__.tb_frame.f_back.f_globals["os"].popen(...)
+        # -- verified as a full sandbox bypass (confirmed real command
+        # execution as the exec'ing process) before this fix. Deny the whole
+        # frame/traceback/generator-state attribute surface, not just this
+        # one chain: any single name below already exposes a frame (or the
+        # code object it runs), from which the rest is reachable the same way.
+        "tb_frame",
+        "tb_next",
+        "f_back",
+        "f_globals",
+        "f_locals",
+        "f_code",
+        "gi_frame",
+        "cr_frame",
+        "ag_frame",
     }
 
     def _attribute_root_name(expr: ast.AST) -> str:
