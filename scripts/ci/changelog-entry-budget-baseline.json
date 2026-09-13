@@ -1,0 +1,6 @@
+{
+  "captured_at": "2026-09-10",
+  "maximum_words_per_entry": 70,
+  "owner": "docs/CHANGELOG bakım ekibi",
+  "policy": "one-way; her yeni [Unreleased] maddesi 2-3 cümleyle (yaklaşık 70 kelime) sınırlı kalmalıdır. Kök-neden analizi, reddedilen alternatifler ve ayrıntılı test referansları docs/archive/ altına taşınmalıdır (bkz. docs/archive/unreleased_root_cause_detail.md). Bu, tek bir büyüyen sayı değil madde-başına sabit bir bütçedir; gerçekten uzun bir madde, bütçeyi yükseltme sebebi değil, ayrıntının arşive taşınması gerektiğinin işaretidir."
+}

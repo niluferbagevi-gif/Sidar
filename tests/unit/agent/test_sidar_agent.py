@@ -1935,7 +1935,7 @@ async def test_tool_subtask_validation_fallback_success(
 async def test_tool_github_smart_pr_requires_token(sidar_agent_factory) -> None:
     agent = sidar_agent_factory()
     agent.github = types.SimpleNamespace(is_available=lambda: False)
-    assert await agent._tool_github_smart_pr("x") == sidar_agent.GITHUB_SMART_PR_NO_TOKEN_MESSAGE
+    assert await agent._tool_github_smart_pr("x") == sidar_agent.GITHUB_SMART_PR_NO_AUTH_MESSAGE
 
 
 async def test_tool_github_smart_pr_success_path(sidar_agent_factory) -> None:

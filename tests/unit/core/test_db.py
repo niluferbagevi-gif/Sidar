@@ -303,13 +303,13 @@ def test_helper_functions_basic_contracts() -> None:
 def test_password_hash_algorithm_defaults_to_argon2id_and_allows_pbkdf2(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv(core_db._PASSWORD_HASH_ALGORITHM_ENV, raising=False)
+    monkeypatch.delenv(core_db._CREDENTIAL_HASH_ALGORITHM_ENV, raising=False)
     assert core_db._current_password_hash_algorithm() == core_db._ARGON2ID_ALGORITHM
 
-    monkeypatch.setenv(core_db._PASSWORD_HASH_ALGORITHM_ENV, core_db._PBKDF2_ALGORITHM)
+    monkeypatch.setenv(core_db._CREDENTIAL_HASH_ALGORITHM_ENV, core_db._PBKDF2_ALGORITHM)
     assert core_db._current_password_hash_algorithm() == core_db._PBKDF2_ALGORITHM
 
-    monkeypatch.setenv(core_db._PASSWORD_HASH_ALGORITHM_ENV, "unknown")
+    monkeypatch.setenv(core_db._CREDENTIAL_HASH_ALGORITHM_ENV, "unknown")
     assert core_db._current_password_hash_algorithm() == core_db._ARGON2ID_ALGORITHM
 
 
@@ -355,7 +355,7 @@ def test_hash_password_uses_configured_iterations_and_records_latency(
         ) -> None:
             calls.append((operation, status, duration_s, slo_ms))
 
-    monkeypatch.setenv(db_auth._PASSWORD_HASH_ALGORITHM_ENV, db_auth._PBKDF2_ALGORITHM)
+    monkeypatch.setenv(db_auth._CREDENTIAL_HASH_ALGORITHM_ENV, db_auth._PBKDF2_ALGORITHM)
     monkeypatch.setenv("SIDAR_PBKDF2_ITERATIONS", "700000")
     monkeypatch.setenv("SIDAR_AUTH_HASH_SLO_MS", "150")
     monkeypatch.setattr(db_auth, "_pbkdf2_sha256", lambda *_args: "digest")
@@ -381,7 +381,7 @@ def test_hash_password_uses_argon2id_by_default_and_records_latency(
         ) -> None:
             calls.append((operation, status, duration_s, slo_ms))
 
-    monkeypatch.delenv(db_auth._PASSWORD_HASH_ALGORITHM_ENV, raising=False)
+    monkeypatch.delenv(db_auth._CREDENTIAL_HASH_ALGORITHM_ENV, raising=False)
     monkeypatch.setenv("SIDAR_AUTH_HASH_SLO_MS", "125")
     monkeypatch.setattr(db_auth, "_argon2id_hash", lambda *_args, **_kwargs: "argon2digest")
     monkeypatch.setattr("core.agent_metrics.get_agent_metrics_collector", lambda: Collector())
@@ -3026,7 +3026,7 @@ def test_hash_password_records_error_latency_when_hashing_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     records: list[tuple[str, str]] = []
-    monkeypatch.setenv(db_auth._PASSWORD_HASH_ALGORITHM_ENV, db_auth._PBKDF2_ALGORITHM)
+    monkeypatch.setenv(db_auth._CREDENTIAL_HASH_ALGORITHM_ENV, db_auth._PBKDF2_ALGORITHM)
     monkeypatch.setattr(db_auth, "_current_pbkdf2_iterations", lambda: 700000)
     monkeypatch.setattr(
         db_auth,

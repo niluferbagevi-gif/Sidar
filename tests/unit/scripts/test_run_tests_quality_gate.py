@@ -66,7 +66,9 @@ def installer_contract_sources() -> str:
 def test_grafana_operator_guidance_uses_generated_secret_not_default_credentials() -> None:
     """Installer and primary docs must match Docker Compose's fail-closed credential contract."""
     installer = Path("scripts/install_modules/phases/07_finish.sh").read_text(encoding="utf-8")
-    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+    # grafana lives in docker-compose.observability.yml (split out of
+    # docker-compose.yml -- see that file's header comment).
+    compose = Path("docker-compose.observability.yml").read_text(encoding="utf-8")
     primary_docs = "\n".join(
         Path(path).read_text(encoding="utf-8")
         for path in (
@@ -6808,6 +6810,179 @@ def test_production_compose_failure_diagnostics_surface_service_and_exception(
     ]
 
 
+def test_production_compose_failure_diagnostics_ignores_expected_migrate_exit(
+    tmp_path: Path,
+) -> None:
+    """A one-shot init container exiting 0 must never be blamed for the failure.
+
+    sidar-migrate runs its migrations to completion and exits successfully as
+    part of every passing run; "Exited (0)" is its normal terminal state, not
+    a crash. If the diagnostics naively match any "exited" status, they smear
+    an innocent, correctly-behaving service while the real failure elsewhere
+    goes unreported.
+    """
+    helpers = Path("scripts/test_gates/summary_helpers.sh").resolve()
+    diagnostics = tmp_path / "production-compose"
+    diagnostics.mkdir()
+    (diagnostics / "ps.txt").write_text(
+        "NAME  IMAGE  COMMAND  SERVICE  CREATED  STATUS  PORTS\n"
+        "sidar-production-gate_migrate  sidar  cmd  sidar-migrate  now  Exited (0) 1 minute ago  \n"
+        "sidar-production-gate_web  sidar  cmd  sidar-web  now  Up 1 minute (healthy)  \n",
+        encoding="utf-8",
+    )
+    (diagnostics / "compose.log").write_text(
+        "sidar-production-gate_migrate | Running upgrade -> head\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; PRODUCTION_COMPOSE_DIAGNOSTICS_DIR="$2"; '
+            "production_compose_failure_diagnostics",
+            "bash",
+            str(helpers),
+            str(diagnostics),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.stdout.splitlines() == [
+        "belirlenemedi",
+        "compose diagnostics içinde hata özeti bulunamadı",
+    ]
+
+
+def test_production_compose_failure_diagnostics_finds_real_failure_past_expected_migrate_exit(
+    tmp_path: Path,
+) -> None:
+    """A genuinely crashed service must still be surfaced past a healthy migrate exit."""
+    helpers = Path("scripts/test_gates/summary_helpers.sh").resolve()
+    diagnostics = tmp_path / "production-compose"
+    diagnostics.mkdir()
+    (diagnostics / "ps.txt").write_text(
+        "NAME  IMAGE  COMMAND  SERVICE  CREATED  STATUS  PORTS\n"
+        "sidar-production-gate_migrate  sidar  cmd  sidar-migrate  now  Exited (0) 1 minute ago  \n"
+        "sidar-production-gate_web  sidar  cmd  sidar-web  now  Restarting (1) 1 second ago  \n",
+        encoding="utf-8",
+    )
+    (diagnostics / "compose.log").write_text(
+        "sidar-production-gate_web | PermissionError: [Errno 13] Permission denied: "
+        "'/app/web_ui_react/dist/assets'\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; PRODUCTION_COMPOSE_DIAGNOSTICS_DIR="$2"; '
+            "production_compose_failure_diagnostics",
+            "bash",
+            str(helpers),
+            str(diagnostics),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.stdout.splitlines() == [
+        "sidar-web",
+        "PermissionError: [Errno 13] Permission denied: '/app/web_ui_react/dist/assets'",
+    ]
+
+
+def test_production_compose_failure_diagnostics_falls_back_to_error_trap_breadcrumb(
+    tmp_path: Path,
+) -> None:
+    """Real regression: a passing health-loop with a failing bash assertion.
+
+    scripts/ci/validate_production_compose.sh's migration head/current parity,
+    restart-persistence marker, and shutdown exit-code checks are plain
+    `[[ ... ]]` tests -- a healthy `docker compose ps` (no exited/restarting/
+    unhealthy/dead service) and container logs with no Python traceback,
+    which used to leave this function reporting the unhelpful defaults
+    ("belirlenemedi" / "compose diagnostics içinde hata özeti bulunamadı")
+    even though the gate script's own ERR trap recorded exactly which line
+    and command failed. That breadcrumb (failure.txt) must be the fallback.
+    """
+    helpers = Path("scripts/test_gates/summary_helpers.sh").resolve()
+    diagnostics = tmp_path / "production-compose"
+    diagnostics.mkdir()
+    (diagnostics / "ps.txt").write_text(
+        "NAME  IMAGE  COMMAND  SERVICE  CREATED  STATUS  PORTS\n"
+        "sidar-production-gate_web  sidar  cmd  sidar-web  now  Up 2 minutes (healthy)  \n",
+        encoding="utf-8",
+    )
+    (diagnostics / "compose.log").write_text(
+        'sidar-production-gate_web | INFO:     127.0.0.1:1 - "GET /healthz HTTP/1.1" 200 OK\n',
+        encoding="utf-8",
+    )
+    (diagnostics / "failure.txt").write_text(
+        'exit_code=1\nline=157\ncommand=[[ -n "$heads" && "$current" == *"${heads%% *}"* ]]\n',
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; PRODUCTION_COMPOSE_DIAGNOSTICS_DIR="$2"; '
+            "production_compose_failure_diagnostics",
+            "bash",
+            str(helpers),
+            str(diagnostics),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.stdout.splitlines() == [
+        "belirlenemedi",
+        'scripts/ci/validate_production_compose.sh:157: [[ -n "$heads" '
+        '&& "$current" == *"${heads%% *}"* ]]',
+    ]
+
+
+def test_production_compose_failure_diagnostics_infers_service_from_breadcrumb_command(
+    tmp_path: Path,
+) -> None:
+    """When ps.txt/compose.log name no service, guess it from the failing command."""
+    helpers = Path("scripts/test_gates/summary_helpers.sh").resolve()
+    diagnostics = tmp_path / "production-compose"
+    diagnostics.mkdir()
+    (diagnostics / "failure.txt").write_text(
+        "exit_code=1\n"
+        "line=163\n"
+        'command=[[ "$("${compose[@]}" exec -T sidar-web cat /app/data/.marker)" == "$marker" ]]\n',
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; PRODUCTION_COMPOSE_DIAGNOSTICS_DIR="$2"; '
+            "production_compose_failure_diagnostics",
+            "bash",
+            str(helpers),
+            str(diagnostics),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    stdout_lines = result.stdout.splitlines()
+    assert stdout_lines[0] == "sidar-web"
+    assert stdout_lines[1].startswith("scripts/ci/validate_production_compose.sh:163: ")
+
+
 def test_final_summary_prints_production_compose_gate_fields() -> None:
     final_evaluation = _script().split("# 4) Final Durum Değerlendirmesi", maxsplit=1)[1]
 
@@ -7546,7 +7721,14 @@ def test_docker_compose_redis_has_healthcheck_and_healthy_dependencies() -> None
     assert "timeout: 3s" in redis_block
     assert "retries: 20" in redis_block
     assert "redis:\n        condition: service_started" not in compose
-    assert compose.count("redis:\n        condition: service_healthy") >= 4
+
+    # sidar-ai/sidar-web depend on redis from core docker-compose.yml;
+    # sidar-gpu/sidar-web-gpu (same dependency) split into
+    # docker-compose.gpu.yml -- see that file's header comment.
+    gpu_compose = Path("docker-compose.gpu.yml").read_text(encoding="utf-8")
+    assert "redis:\n        condition: service_started" not in gpu_compose
+    combined = compose + gpu_compose
+    assert combined.count("redis:\n        condition: service_healthy") >= 4
 
 
 def test_docker_compose_redis_requires_password_and_is_bound_to_loopback() -> None:
