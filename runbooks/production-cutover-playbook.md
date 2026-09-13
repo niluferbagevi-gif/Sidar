@@ -244,9 +244,13 @@ kubectl rollout status deploy/sidar-ai-worker
 
 ### 11.2 Docker Compose ile VPS deploy
 
+`jaeger`/`prometheus`/`grafana` `docker-compose.observability.yml`'dedir;
+`.env.production`'daki `COMPOSE_FILE` bunu içermiyorsa `-f` ile ekleyin
+(bkz. `docker-compose.yml`'nin başlık yorumu):
+
 ```bash
-docker compose pull
-docker compose up -d postgres redis jaeger prometheus grafana sidar-web
+docker compose -f docker-compose.yml -f docker-compose.production.yml -f docker-compose.observability.yml --profile cpu --profile observability pull
+docker compose -f docker-compose.yml -f docker-compose.production.yml -f docker-compose.observability.yml --profile cpu --profile observability up -d postgres redis jaeger prometheus grafana sidar-web
 docker compose ps
 ```
 

@@ -20,7 +20,10 @@ modüllerden beslenir:
   dotenv zinciri, type-safe env okuma ve reload-time override akışları.
 - `core/config_dirs.py`, `core/config_secrets.py`, `core/config_validators.py`,
   `core/config_observability.py`, `core/config_postgres.py`: dizin, secret,
-  validasyon, telemetry ve PostgreSQL yardımcıları.
+  validasyon, telemetry ve PostgreSQL yardımcıları. `core/config_observability.py`
+  artık yalnızca ayar yükleme değil, `Config.init_telemetry()`'nin gerçek
+  OpenTelemetry enstrümantasyon mantığını da barındırır (bkz. aşağıdaki
+  "Devam eden konsolidasyon" bölümü).
 - `core/config_scoped_settings.py`: `config_llm.py` ve `config_quality.py`'nin
   paylaştığı, dotenv'e scoped `BaseSettings` alt sınıfı üreten `build_scoped_settings_type()`
   helper'ı — mypy `--strict` altında pydantic-settings'in `_env_file=...` dinamik
@@ -32,6 +35,32 @@ modüllerden beslenir:
 > değildir. `config.py` facade yüzeyi büyük kalabilir; refactor başarısı eski import
 > path'lerinin kırılmaması ve domain helper'larının testlerle korunması üzerinden
 > değerlendirilmelidir.
+
+## Devam eden konsolidasyon: kalan büyük mantık blokları (P2)
+
+`config.py`'nin `Config.FOO` alias yüzeyi (yüzlerce satırlık class attribute
+tanımı) kasıtlı olarak burada kalır — yukarıdaki not bunun bir mimari borç
+olmadığını açıkça belirtir. Ama sınıfın bazı metodları hâlâ gerçek,
+`core/config_*.py`'ye taşınabilecek iş mantığı taşıyordu; bunlar
+`core/config_dotenv.py`/`core/config_hardware.py`/vb.'nin zaten kurduğu
+desenle (saf fonksiyon + `cls.FOO` değerlerini açık keyword argüman olarak
+geçiren ince `classmethod` sarmalayıcı) tek tek taşınıyor:
+
+- ✅ **Taşındı:** `Config.init_telemetry()` (~95 satır) →
+  `core/config_observability.init_telemetry()`. `Config.init_telemetry`
+  artık yalnızca `cls.ENABLE_TRACING`/`cls.OTEL_*` değerlerini (testlerin
+  doğrudan monkeypatch ettiği canlı class attribute'lar) çözüp saf
+  fonksiyona geçiren ~20 satırlık bir sarmalayıcı.
+- ⏳ **Henüz taşınmadı (düşük öncelikli, biriktiğinde maliyetli bir sonraki
+  iş kalemi):** `Config.validate_critical_settings()` (~126 satır — provider/
+  secret/GPU/memory-encryption doğrulaması), `Config._reload_dotenv_chain()`
+  ve `Config._log_dotenv_load_status()` (~60'ar satır — muhtemel hedef:
+  `core/config_dotenv.py`), `Config._autoselect_ollama_coding_ctx_window()`
+  (~46 satır), `Config.get_system_info()`/`Config.print_config_summary()`
+  (~40'ar satır). Her biri `cls`'e (dolayısıyla testlerin monkeypatch ettiği
+  canlı `Config.FOO` attribute'larına) bağımlı olduğu için aynı desen
+  gerektirir: saf fonksiyon + değerleri açıkça geçiren ince sarmalayıcı,
+  `cls`'in kendisini asla alt modüle sızdırmadan.
 
 ## God object değil, compatibility facade
 

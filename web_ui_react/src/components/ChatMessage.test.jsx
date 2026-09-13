@@ -58,6 +58,16 @@ describe("ChatMessage — kullanıcı mesajı", () => {
 });
 
 describe("ChatMessage — asistan mesajı", () => {
+  // ChatMessage.tsx's LazyChatMarkdownRenderer is a module-scoped React.lazy():
+  // its dynamic import() only starts on first render and resolves on a later
+  // microtask. A test that renders an assistant message and returns without
+  // waiting for that resolution lets afterEach's cleanup() unmount the
+  // component while the import is still in flight; when it later settles,
+  // React updates an already-unmounted Suspense boundary outside any test's
+  // act() scope, logging "A suspended resource finished loading inside a
+  // test, but the event was not wrapped in act(...)". Every test below that
+  // renders an assistant message therefore awaits the markdown testid before
+  // finishing, same as the first test already did.
   it("renders assistant content through the lazy Markdown renderer", async () => {
     const msg = makeMsg({ role: "assistant", content: "**Kalın metin**" });
     render(<ChatMessage message={msg} />);
@@ -65,19 +75,22 @@ describe("ChatMessage — asistan mesajı", () => {
     expect(await screen.findByTestId("markdown")).toHaveTextContent("**Kalın metin**");
   });
 
-  it("shows default author 'SİDAR' for assistant role", () => {
+  it("shows default author 'SİDAR' for assistant role", async () => {
     render(<ChatMessage message={makeMsg({ role: "assistant" })} />);
     expect(screen.getByText("SİDAR")).toBeInTheDocument();
+    await screen.findByTestId("markdown");
   });
 
-  it("shows 🤖 avatar icon for assistant", () => {
+  it("shows 🤖 avatar icon for assistant", async () => {
     render(<ChatMessage message={makeMsg({ role: "assistant" })} />);
     expect(screen.getByText("🤖")).toBeInTheDocument();
+    await screen.findByTestId("markdown");
   });
 
-  it("applies message--assistant CSS class", () => {
+  it("applies message--assistant CSS class", async () => {
     const { container } = render(<ChatMessage message={makeMsg({ role: "assistant" })} />);
     expect(container.querySelector(".message--assistant")).toBeInTheDocument();
+    await screen.findByTestId("markdown");
   });
 
   it("wraps markdown code blocks in .code-block-wrapper", async () => {
@@ -109,16 +122,23 @@ describe("ChatMessage — sistem mesajı", () => {
 });
 
 describe("ChatMessage — isStreaming prop", () => {
-  it("shows blinking cursor when isStreaming is true", () => {
+  // Same module-scoped lazy-import race as "ChatMessage — asistan mesajı"
+  // above (assistant role here too) -- await the markdown testid so cleanup()
+  // never unmounts while the import is still in flight, regardless of
+  // whether this describe block happens to run before that one (e.g. `-t`
+  // filtering or `.only`).
+  it("shows blinking cursor when isStreaming is true", async () => {
     const msg = makeMsg({ role: "assistant" });
     const { container } = render(<ChatMessage message={msg} isStreaming />);
     expect(container.querySelector(".message--streaming")).toBeInTheDocument();
     expect(screen.getByText("▊")).toBeInTheDocument();
+    await screen.findByTestId("markdown");
   });
 
-  it("does NOT show cursor when isStreaming is false", () => {
+  it("does NOT show cursor when isStreaming is false", async () => {
     const msg = makeMsg({ role: "assistant" });
     render(<ChatMessage message={msg} isStreaming={false} />);
     expect(screen.queryByText("▊")).not.toBeInTheDocument();
+    await screen.findByTestId("markdown");
   });
 });

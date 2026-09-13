@@ -12,6 +12,7 @@ from typing import Any, cast
 from fastapi import Depends, Request
 from fastapi.responses import JSONResponse
 
+from core.utils.trusted_subprocess import run_trusted_command
 from managers.code.git_validation import is_valid_git_ref_name
 from web.routes import LegacyExportRouter
 
@@ -77,9 +78,9 @@ def _execute_allowed_git_command(
         return False, ""
     safe_cmd = [git_executable, *cmd[1:]]
     try:
-        output = subprocess.check_output(  # nosec B603  # absolute git; audited argv; shell=False
-            safe_cmd, cwd=cwd, stderr=stderr, shell=False, timeout=10
-        )
+        output = run_trusted_command(
+            safe_cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=stderr, timeout=10, check=True
+        ).stdout
         return True, output.decode().strip()
     except subprocess.CalledProcessError as exc:
         detail = exc.output.decode().strip() if exc.output else ""

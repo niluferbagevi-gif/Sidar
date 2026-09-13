@@ -252,6 +252,70 @@ def test_validate_plugin_source_allows_safe_imports_and_non_name_call_shapes() -
     validate_plugin_source("('literal').safe()\n")
 
 
+def test_validate_plugin_source_rejects_frame_and_traceback_escape_attrs() -> None:
+    """Regression: a full sandbox bypass via non-dunder frame/traceback attrs.
+
+    __globals__/__class__/etc. were already denylisted, but plain (non-dunder)
+    frame/traceback/generator-state attribute names were not, even though each
+    hands out the exact same kind of live frame object. Verified as a real,
+    working bypass before this fix -- with SIDAR_ENABLE_IN_PROCESS_PLUGINS=1,
+    this exact source reached this module's real, unrestricted globals (the
+    actual `os` module, not the plugin's restricted namespace) and ran a real
+    shell command:
+
+        try:
+            1 / 0
+        except Exception as e:
+            e.__traceback__.tb_frame.f_back.f_globals["os"].popen("id").read()
+
+    None of tb_frame/f_back/f_globals/f_locals/f_code/tb_next/gi_frame/
+    cr_frame/ag_frame are dunders, so the AST validator's denylist -- and
+    __traceback__ itself, the entry point above -- must all be checked
+    explicitly.
+    """
+    for source in (
+        "e = ValueError()\nt = e.__traceback__\n",
+        "e = ValueError()\nt = e.__traceback__\nf = t.tb_frame\n",
+        "e = ValueError()\nt = e.__traceback__\nn = t.tb_next\n",
+        "def gen():\n    yield\ng = gen()\nnext(g)\nf = g.gi_frame\n",
+        "async def agen():\n    yield\nag = agen()\nf = ag.ag_frame\n",
+        "async def coro():\n    pass\nc = coro()\nf = c.cr_frame\n",
+        "frame = None\nb = frame.f_back\n",
+        "frame = None\ng = frame.f_globals\n",
+        "frame = None\nl = frame.f_locals\n",
+        "frame = None\nc = frame.f_code\n",
+    ):
+        with pytest.raises(HTTPException) as exc:
+            validate_plugin_source(source)
+        assert exc.value.status_code == 400, source
+
+
+def test_run_plugin_source_in_process_blocks_the_frame_walking_escape(monkeypatch) -> None:
+    """End-to-end regression for the same escape through the real execution path."""
+    monkeypatch.setenv("SIDAR_ENV", "development")
+    monkeypatch.setenv("SIDAR_ENABLE_IN_PROCESS_PLUGINS", "1")
+
+    payload = (
+        "try:\n"
+        "    1 / 0\n"
+        "except Exception as e:\n"
+        "    tb = e.__traceback__\n"
+        "    frame = tb.tb_frame\n"
+        "    caller_frame = frame.f_back\n"
+        "    real_globals = caller_frame.f_globals\n"
+        '    PROOF = real_globals["os"].popen("id").read()\n'
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        run_plugin_source_in_process(payload, "escape_attempt")
+
+    # The validator's HTTPException propagates as-is (run_plugin_source_in_process
+    # re-raises HTTPException unwrapped); only a non-HTTPException validator
+    # failure gets the generic "doğrulanamadı" wrapper.
+    assert exc.value.status_code == 400
+    assert "tehlikeli introspection erişimi engellendi" in exc.value.detail
+
+
 def test_restricted_plugin_import_rejects_relative_import() -> None:
     with pytest.raises(ImportError, match="relative import engellendi"):
         restricted_plugin_import("sibling", fromlist=("thing",), level=1)

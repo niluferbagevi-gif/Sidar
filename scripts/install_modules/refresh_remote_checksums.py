@@ -10,7 +10,8 @@ import sys
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+
+from core.utils.trusted_urlopen import urlopen_trusted_request
 
 
 @dataclass(frozen=True)
@@ -41,8 +42,8 @@ def fetch_remote_bytes(url: str) -> bytes:
             "User-Agent": "Sidar remote checksum refresh/1.0",
         },
     )
-    with urllib.request.urlopen(request, timeout=60) as response:  # nosec B310  # pinned installer refresh utility
-        return cast(bytes, response.read())
+    with urlopen_trusted_request(request, timeout=60) as response:
+        return response.read()
 
 
 def replace_pin(content: str, env_var: str, sha256: str) -> str:

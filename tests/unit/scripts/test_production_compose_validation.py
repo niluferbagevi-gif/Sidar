@@ -106,7 +106,13 @@ def test_generated_gate_env_secrets_satisfy_production_entropy_policy() -> None:
 
 def test_production_profile_is_the_compose_service_env_contract() -> None:
     """CLI interpolation and container injection must use one production file."""
-    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+    # sidar-migrate/sidar-ai/sidar-web (core) + sidar-gpu/sidar-web-gpu (GPU
+    # profile, split into docker-compose.gpu.yml -- see that file's header
+    # comment and docker-compose.yml's own split-rationale header).
+    compose = "\n".join(
+        Path(path).read_text(encoding="utf-8")
+        for path in ("docker-compose.yml", "docker-compose.gpu.yml")
+    )
     production_env = Path(".env.production.example").read_text(encoding="utf-8")
 
     assert compose.count("- ${SIDAR_RUNTIME_ENV_FILE:-.env}") == 5
@@ -278,6 +284,7 @@ def test_generated_gate_env_passes_real_compose_config(tmp_path: Path) -> None:
 
     for relative_path in (
         "docker-compose.yml",
+        "docker-compose.gpu.yml",
         "docker-compose.production.yml",
         "scripts/ci/validate_production_compose.sh",
     ):
@@ -380,6 +387,7 @@ def test_ambient_postgres_password_does_not_leak_into_resolved_database_url(
 
     for relative_path in (
         "docker-compose.yml",
+        "docker-compose.gpu.yml",
         "docker-compose.production.yml",
         "scripts/ci/validate_production_compose.sh",
         "scripts/secret_strength.py",
@@ -527,6 +535,8 @@ def test_production_override_actually_closes_datastore_ports(tmp_path: Path) -> 
                 "-f",
                 "docker-compose.yml",
                 "-f",
+                "docker-compose.gpu.yml",
+                "-f",
                 "docker-compose.production.yml",
                 "--profile",
                 profile,
@@ -617,6 +627,11 @@ def test_enable_tracing_defaults_to_false_without_the_observability_profile(
     }
 
     for profile, services in (("cpu", ["sidar-web"]), ("gpu", ["sidar-web-gpu"])):
+        compose_file_args = ["-f", "docker-compose.yml"]
+        if profile == "gpu":
+            # sidar-web-gpu's base definition lives in docker-compose.gpu.yml
+            # (split out of docker-compose.yml -- see that file's header).
+            compose_file_args += ["-f", "docker-compose.gpu.yml"]
         completed = subprocess.run(
             [
                 docker,
@@ -625,8 +640,7 @@ def test_enable_tracing_defaults_to_false_without_the_observability_profile(
                 f"sidar-tracing-default-gate-{profile}-{tmp_path.name}",
                 "--env-file",
                 str(env_file),
-                "-f",
-                "docker-compose.yml",
+                *compose_file_args,
                 "--profile",
                 profile,
                 "config",
@@ -689,3 +703,111 @@ def test_production_override_builds_the_hardened_production_dockerfile() -> None
     # The dev command syntax (main.py's `--quick web ...` CLI) is invalid against
     # Dockerfile.production's `uvicorn web_server:app` ENTRYPOINT and must be reset.
     assert 'command: ["--host", "0.0.0.0", "--port", "7860"]' in override
+
+
+def _extract_error_trap_harness(script: str) -> str:
+    """Slice out this gate's real diagnostics_dir/on_error/cleanup wiring.
+
+    Returns the exact production code (not a reimplementation) from
+    ``diagnostics_dir=...`` through ``trap cleanup EXIT``, so a regression in
+    the real script (e.g. removing the write-once guard) fails this test.
+    """
+    start_marker = 'diagnostics_dir="${PRODUCTION_COMPOSE_DIAGNOSTICS_DIR'
+    end_marker = "trap cleanup EXIT"
+    start = script.index(start_marker)
+    end = script.index(end_marker, start) + len(end_marker)
+    return script[start:end]
+
+
+def test_on_error_trap_records_the_genuine_failing_line_and_command(
+    tmp_path: Path,
+) -> None:
+    """The ERR trap breadcrumb must name the real failing assertion.
+
+    Regression for run_tests.sh's final summary reporting "Başarısız Servis:
+    belirlenemedi" / "Hata: compose diagnostics içinde hata özeti bulunamadı"
+    even when this gate script's own migration head/current, restart-marker,
+    or shutdown-exit-code `[[ ... ]]` assertions are exactly what failed --
+    none of those crash a container or log a Python traceback for
+    scripts/test_gates/summary_helpers.sh's production_compose_failure_diagnostics()
+    to find in `docker compose ps`/`logs`.
+    """
+    script = Path("scripts/ci/validate_production_compose.sh").read_text(encoding="utf-8")
+    harness = _extract_error_trap_harness(script)
+
+    probe = tmp_path / "probe.sh"
+    probe.write_text(
+        "set -Eeuo pipefail\n"
+        # cleanup() below references these two; the real script defines them
+        # earlier than this harness's start marker. `true` keeps its
+        # `"${compose[@]}" ps/logs/down` calls harmless no-ops.
+        'env_file=".env.production.compose-gate"\n'
+        "compose=(true)\n" + harness + "\n\n"
+        'heads="0007_head"\n'
+        'current="0006_old"\n'
+        # Same shape as the real gate's migration head/current parity check.
+        '[[ -n "$heads" && "$current" == *"${heads%% *}"* ]]\n'
+        'echo "unreachable"\n',
+        encoding="utf-8",
+    )
+
+    completed = subprocess.run(
+        ["bash", str(probe)],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert completed.returncode != 0
+    failure_file = tmp_path / "artifacts" / "production-compose" / "failure.txt"
+    assert failure_file.is_file(), completed.stderr
+    breadcrumb = dict(
+        line.split("=", maxsplit=1)
+        for line in failure_file.read_text(encoding="utf-8").splitlines()
+    )
+    assert breadcrumb["exit_code"] == "1"
+    assert breadcrumb["command"] == '[[ -n "$heads" && "$current" == *"${heads%% *}"* ]]'
+    # The real regression: without the write-once guard, cleanup()'s own
+    # `return "$status"` re-triggers this same ERR trap under `set -e` with a
+    # corrupted $LINENO (observed: reset to "1"), silently overwriting the
+    # genuine breadcrumb. Assert the real failing line survives, not "1".
+    probe_lines = probe.read_text(encoding="utf-8").splitlines()
+    expected_line = next(i + 1 for i, text in enumerate(probe_lines) if text.startswith("[[ -n "))
+    assert breadcrumb["line"] == str(expected_line)
+
+
+def test_on_error_trap_only_records_the_first_failure(tmp_path: Path) -> None:
+    """cleanup()'s `return "$status"` must not clobber an already-recorded breadcrumb."""
+    script = Path("scripts/ci/validate_production_compose.sh").read_text(encoding="utf-8")
+    harness = _extract_error_trap_harness(script)
+
+    probe = tmp_path / "probe.sh"
+    probe.write_text(
+        "set -Eeuo pipefail\n"
+        'env_file=".env.production.compose-gate"\n'
+        "compose=(true)\n" + harness + "\n\n"
+        "false\n"
+        'echo "unreachable"\n',
+        encoding="utf-8",
+    )
+    # Pre-seed the diagnostics file as if an earlier, real failure already
+    # recorded it -- the guard must leave this untouched.
+    failure_file = tmp_path / "artifacts" / "production-compose" / "failure.txt"
+    failure_file.parent.mkdir(parents=True)
+    failure_file.write_text("exit_code=1\nline=42\ncommand=pre-existing\n", encoding="utf-8")
+
+    completed = subprocess.run(
+        ["bash", str(probe)],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert completed.returncode != 0
+    assert (
+        failure_file.read_text(encoding="utf-8") == "exit_code=1\nline=42\ncommand=pre-existing\n"
+    )

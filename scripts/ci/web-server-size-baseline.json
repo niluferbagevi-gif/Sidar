@@ -1,0 +1,6 @@
+{
+  "captured_at": "2026-09-10",
+  "maximum_lines": 2635,
+  "owner": "web/platform bakım ekibi",
+  "policy": "one-way; web_server.py büyümemelidir. Yeni route/middleware/plugin mantığı web/routes/* altına yeni veya var olan bir modüle eklenmeli; web_server.py yalnızca FastAPI app kurulumunu ve geriye dönük uyumlu ince sarmalayıcıları barındırmalıdır (bkz. docs/module-notes/web_server.py.md). Gerçek bir satır azaltımı sonrası (mantık web/routes/*'a taşındığında) bu değer düşürülebilir; incelemesiz asla yükseltilmemelidir."
+}

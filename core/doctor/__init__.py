@@ -34,6 +34,7 @@ from core.doctor.models import (
 )
 from core.doctor.reporting import build_doctor_report, write_doctor_report
 from core.rag.readiness import build_readiness_report
+from core.utils.trusted_subprocess import run_trusted_command
 from sidar_assets.paths import migrations_path
 
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -54,7 +55,7 @@ WEAK_SECRET_VALUES = set(DEFAULT_WEAK_SECRET_VALUES)
 
 def _run_command(cmd: list[str], *, timeout: int = 20) -> tuple[int, str]:
     try:
-        proc = subprocess.run(  # nosec B603  # noqa: S603 - command list is internally constructed.
+        proc = run_trusted_command(
             cmd,
             cwd=BASE_DIR,
             text=True,
@@ -1459,7 +1460,7 @@ def _docker_image_exists_local(image: str) -> bool:
     if not docker_bin:
         return False
     try:
-        result = subprocess.run(  # Executable path and argument list are controlled.  # nosec B603
+        result = run_trusted_command(  # Executable path and argument list are controlled.
             [docker_bin, "image", "inspect", safe_image],
             capture_output=True,
             text=True,

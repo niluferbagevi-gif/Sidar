@@ -4,7 +4,6 @@ Sürüm: `sidar_version.PRODUCT_VERSION` üzerinden merkezi olarak çözülür.
 Açıklama: Sistem ayarları, donanım tespiti, dizin yönetimi ve loglama altyapısı.
 """
 
-import contextlib
 import logging
 import os
 import sys
@@ -21,6 +20,7 @@ import config_quality
 import config_rag_defaults
 import core.config_hardware as config_hardware
 import core.config_logging_setup as config_logging_setup
+import core.config_observability as config_observability
 from config_security import load_security_settings
 from core import config_dotenv, config_gpu_detect, config_postgres
 from core.config_app import load_app_runtime_settings
@@ -389,7 +389,9 @@ def _configure_noisy_dependency_loggers(*, verbose_http: bool = _VERBOSE_HTTP_LO
     )
 
 
-_DEPENDENCY_AUTO = object()
+# Shared identity with core.config_observability.init_telemetry's default
+# parameter values -- see Config.init_telemetry's delegation below.
+_DEPENDENCY_AUTO = config_observability.DEPENDENCY_AUTO
 
 
 def _log_once_env(
@@ -1490,85 +1492,24 @@ class Config:
         httpx_instrumentor_cls: Any = _DEPENDENCY_AUTO,
     ) -> bool:
         """OpenTelemetry tracing + opsiyonel FastAPI/HTTPX enstrümantasyonunu başlat."""
-        log = logger_obj or logger
-        if not cls.ENABLE_TRACING:
-            return False
-
-        if (
-            trace_module is None
-            or otlp_exporter_cls is None
-            or tracer_provider_cls is None
-            or resource_cls is None
-            or batch_span_processor_cls is None
-        ):
-            log.warning("ENABLE_TRACING açık fakat OpenTelemetry bağımlılıkları yüklenemedi.")
-            return False
-
-        try:
-            if trace_module is _DEPENDENCY_AUTO:
-                from opentelemetry import trace as imported_trace_module
-
-                trace_module = imported_trace_module
-            if otlp_exporter_cls is _DEPENDENCY_AUTO:
-                from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
-                    OTLPSpanExporter as imported_otlp_exporter_cls,
-                )
-
-                otlp_exporter_cls = imported_otlp_exporter_cls
-            if tracer_provider_cls is _DEPENDENCY_AUTO:
-                from opentelemetry.sdk.trace import TracerProvider as imported_tracer_provider_cls
-
-                tracer_provider_cls = imported_tracer_provider_cls
-            if resource_cls is _DEPENDENCY_AUTO:
-                from opentelemetry.sdk.resources import Resource as imported_resource_cls
-
-                resource_cls = imported_resource_cls
-            if batch_span_processor_cls is _DEPENDENCY_AUTO:
-                from opentelemetry.sdk.trace.export import (
-                    BatchSpanProcessor as imported_batch_span_processor_cls,
-                )
-
-                batch_span_processor_cls = imported_batch_span_processor_cls
-        except Exception:
-            log.warning("ENABLE_TRACING açık fakat OpenTelemetry bağımlılıkları yüklenemedi.")
-            return False
-
-        try:
-            svc_name = service_name or cls.OTEL_SERVICE_NAME or "sidar"
-            resource = resource_cls.create({"service.name": svc_name})
-            provider = tracer_provider_cls(resource=resource)
-            exporter = otlp_exporter_cls(endpoint=cls.OTEL_EXPORTER_ENDPOINT, insecure=True)
-            provider.add_span_processor(batch_span_processor_cls(exporter))
-            trace_module.set_tracer_provider(provider)
-
-            if fastapi_app is not None and cls.OTEL_INSTRUMENT_FASTAPI:
-                if fastapi_instrumentor_cls is _DEPENDENCY_AUTO:
-                    from opentelemetry.instrumentation.fastapi import (
-                        FastAPIInstrumentor as imported_fastapi_instrumentor_cls,
-                    )
-
-                    fastapi_instrumentor_cls = imported_fastapi_instrumentor_cls
-                fastapi_instrumentor_cls.instrument_app(fastapi_app)
-
-            if cls.OTEL_INSTRUMENT_HTTPX:
-                if httpx_instrumentor_cls is _DEPENDENCY_AUTO:
-                    try:
-                        from opentelemetry.instrumentation.httpx import (
-                            HTTPXClientInstrumentor as imported_httpx_instrumentor_cls,
-                        )
-
-                        httpx_instrumentor_cls = imported_httpx_instrumentor_cls
-                    except Exception:
-                        httpx_instrumentor_cls = None
-                if httpx_instrumentor_cls is not None:
-                    with contextlib.suppress(Exception):
-                        httpx_instrumentor_cls().instrument()
-
-            log.info(localized_log_message("otel_active"), cls.OTEL_EXPORTER_ENDPOINT)
-            return True
-        except Exception as exc:
-            log.warning(localized_log_message("otel_failed"), exc)
-            return False
+        return config_observability.init_telemetry(
+            enable_tracing=cls.ENABLE_TRACING,
+            otel_service_name=cls.OTEL_SERVICE_NAME,
+            otel_exporter_endpoint=cls.OTEL_EXPORTER_ENDPOINT,
+            otel_instrument_fastapi=cls.OTEL_INSTRUMENT_FASTAPI,
+            otel_instrument_httpx=cls.OTEL_INSTRUMENT_HTTPX,
+            logger_obj=logger_obj or logger,
+            localized_log_message=localized_log_message,
+            service_name=service_name,
+            fastapi_app=fastapi_app,
+            trace_module=trace_module,
+            otlp_exporter_cls=otlp_exporter_cls,
+            tracer_provider_cls=tracer_provider_cls,
+            resource_cls=resource_cls,
+            batch_span_processor_cls=batch_span_processor_cls,
+            fastapi_instrumentor_cls=fastapi_instrumentor_cls,
+            httpx_instrumentor_cls=httpx_instrumentor_cls,
+        )
 
     @classmethod
     def print_config_summary(cls) -> None:

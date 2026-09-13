@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -euo pipefail
+set -Eeuo pipefail
 
 # Generates a disposable secret that actually passes the fail-closed policy in
 # scripts/secret_strength.py::is_weak_secret (also used at runtime via
@@ -88,14 +88,49 @@ export SIDAR_POSTGRES_VOLUME_NAME="${SIDAR_POSTGRES_VOLUME_NAME:-${project_name}
 # against, but exporting COMPOSE_PROJECT_NAME explicitly keeps that from being
 # an undocumented, version-dependent assumption.
 export COMPOSE_PROJECT_NAME="$project_name"
-compose=(docker compose --project-name "$project_name" --env-file "$env_file" -f docker-compose.yml -f docker-compose.production.yml --profile cpu)
+# docker-compose.production.yml carries override-only blocks (no image/build)
+# for ollama-gpu/sidar-web-gpu, whose base definitions live in
+# docker-compose.gpu.yml -- that file must always be included alongside the
+# production overlay, even for this --profile cpu run, or Compose refuses the
+# merge ("service ollama-gpu has neither an image nor a build context").
+# --profile cpu still means gpu services are defined but never started.
+compose=(docker compose --project-name "$project_name" --env-file "$env_file" -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.production.yml --profile cpu)
+
+diagnostics_dir="${PRODUCTION_COMPOSE_DIAGNOSTICS_DIR:-artifacts/production-compose}"
+
+# Not every failure here is a crashing container: the health-loop, migration
+# head/current parity check, restart-persistence marker, and shutdown
+# exit-code assertions below are plain `[[ ... ]]` tests. When one of those
+# fails, `set -e` ends the script without any container crash or Python
+# traceback for scripts/test_gates/summary_helpers.sh's
+# production_compose_failure_diagnostics() to grep out of `docker compose
+# logs` -- leaving run_tests.sh's final summary stuck reporting "belirlenemedi"
+# / "hata özeti bulunamadı" even though this script knows exactly which line
+# failed. Record that breadcrumb here, before cleanup's teardown runs, so the
+# summary can surface it instead.
+on_error() {
+  local exit_code=$? line_no="$1" command="$2"
+  # Write-once guard: cleanup()'s own `return "$status"` below re-triggers
+  # this same ERR trap under `set -e` (a known bash trap/errexit interaction)
+  # with a corrupted $LINENO (observed: reset to 1) while keeping the correct
+  # $BASH_COMMAND -- silently overwriting the real breadcrumb with a
+  # misleading line number. Only the first, genuine failure matters.
+  [[ -f "$diagnostics_dir/failure.txt" ]] && return "$exit_code"
+  mkdir -p "$diagnostics_dir"
+  {
+    echo "exit_code=$exit_code"
+    echo "line=$line_no"
+    echo "command=$command"
+  } >"$diagnostics_dir/failure.txt"
+}
+trap 'on_error "$LINENO" "$BASH_COMMAND"' ERR
 
 cleanup() {
   local status=$?
   if [[ "$status" -ne 0 ]]; then
-    mkdir -p artifacts/production-compose
-    "${compose[@]}" ps --all | tee artifacts/production-compose/ps.txt 2>&1 || true
-    "${compose[@]}" logs --no-color 2>&1 | tee artifacts/production-compose/compose.log || true
+    mkdir -p "$diagnostics_dir"
+    "${compose[@]}" ps --all | tee "$diagnostics_dir/ps.txt" 2>&1 || true
+    "${compose[@]}" logs --no-color 2>&1 | tee "$diagnostics_dir/compose.log" || true
   fi
   "${compose[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
   if [[ "${PRODUCTION_COMPOSE_ENV_FILE:-}" == "" ]]; then

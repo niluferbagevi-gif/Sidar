@@ -19,6 +19,27 @@ def _read(relative_path: str) -> str:
     return (ROOT / relative_path).read_text()
 
 
+# docker-compose.yml (core) + docker-compose.gpu.yml (profiles: ["gpu"]) +
+# docker-compose.observability.yml (profiles: ["observability"]) are always
+# combined via `docker compose -f ... -f ... -f ...` at runtime (see
+# docker-compose.yml's own header comment for the split rationale) -- no
+# service name repeats across the three files, so a plain dict union below
+# reflects the same merged service set Compose itself would resolve.
+COMPOSE_FILES = (
+    "docker-compose.yml",
+    "docker-compose.gpu.yml",
+    "docker-compose.observability.yml",
+)
+
+
+def _merged_compose_services() -> dict:
+    services: dict = {}
+    for relative_path in COMPOSE_FILES:
+        document = yaml.safe_load((ROOT / relative_path).read_text())
+        services.update(document.get("services") or {})
+    return services
+
+
 def test_main_dockerfile_defaults_to_python_311_runtime():
     dockerfile = _read("Dockerfile")
 
@@ -216,11 +237,11 @@ def test_compose_gpu_builds_have_no_dead_torch_index_url_arg():
     `uv sync --frozen` would ignore it even if wired up — it installs
     exactly what uv.lock pins, not whatever an index-url arg points at.
     """
-    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+    services = _merged_compose_services()
     dockerfile = _read("Dockerfile")
 
     for service_name in ("sidar-gpu", "sidar-web-gpu"):
-        build_args = compose["services"][service_name]["build"]["args"]
+        build_args = services[service_name]["build"]["args"]
         assert "TORCH_INDEX_URL" not in build_args
     assert "ARG TORCH_INDEX_URL" not in dockerfile
 
@@ -342,8 +363,7 @@ def test_helm_chart_rejects_inline_postgresql_password_generation():
 
 
 def test_observability_compose_pins_tracing_and_exports_infra_metrics():
-    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
-    services = compose["services"]
+    services = _merged_compose_services()
 
     assert services["redis"]["image"] == "redis:7.4-alpine"
     assert services["postgres"]["image"] == "pgvector/pgvector:0.8.1-pg16"
@@ -400,8 +420,7 @@ def test_observability_profile_services_have_resource_limits():
     Docker daemon to verify wget/curl/shell exist in each third-party image,
     and a wrong guess produces a permanently-misleading "unhealthy" status).
     """
-    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
-    services = compose["services"]
+    services = _merged_compose_services()
 
     for service_name in (
         "jaeger",
@@ -444,8 +463,11 @@ def test_prometheus_scrape_of_authenticated_sidar_endpoints_carries_a_bearer_tok
         assert "bearer_token_file" not in jobs[job_name]
         assert "bearer_token" not in jobs[job_name]
 
-    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
-    services = compose["services"]
+    services = _merged_compose_services()
+    # Volume declarations stay centralized in docker-compose.yml (core) even
+    # though prometheus-token-init/prometheus live in
+    # docker-compose.observability.yml -- see that file's header comment.
+    core_compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
 
     init_service = services["prometheus-token-init"]
     assert init_service["profiles"] == ["observability"]
@@ -453,7 +475,7 @@ def test_prometheus_scrape_of_authenticated_sidar_endpoints_carries_a_bearer_tok
     assert {"prometheus_secrets:/etc/prometheus-secrets"} <= set(init_service["volumes"])
 
     assert "prometheus_secrets:/etc/prometheus-secrets:ro" in services["prometheus"]["volumes"]
-    assert "prometheus_secrets" in compose["volumes"]
+    assert "prometheus_secrets" in core_compose["volumes"]
 
 
 def test_postgres_and_ollama_ports_bind_to_loopback_like_redis():
@@ -465,8 +487,7 @@ def test_postgres_and_ollama_ports_bind_to_loopback_like_redis():
     reachable from the LAN/WSL even with a strong POSTGRES_PASSWORD, and
     Ollama's API has no authentication of its own at all.
     """
-    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
-    services = compose["services"]
+    services = _merged_compose_services()
 
     assert services["postgres"]["ports"] == ["127.0.0.1:${POSTGRES_PORT:-5432}:5432"]
     assert services["ollama"]["ports"] == ["127.0.0.1:${OLLAMA_PORT:-11434}:11434"]
@@ -486,8 +507,7 @@ def test_ollama_services_have_a_healthcheck_and_dependents_wait_for_it():
     (`ollama list`, which itself talks to the local API and fails until the
     server is up) instead of redis/postgres's curl/pg_isready style.
     """
-    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
-    services = compose["services"]
+    services = _merged_compose_services()
 
     for service_name in ("ollama", "ollama-gpu"):
         healthcheck = services[service_name]["healthcheck"]
@@ -510,8 +530,7 @@ def test_ollama_image_is_pinned_not_latest():
     behavior/API surface on the next `docker compose pull` with no diff in
     this repo to review.
     """
-    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
-    services = compose["services"]
+    services = _merged_compose_services()
 
     for service_name in ("ollama", "ollama-gpu"):
         image = services[service_name]["image"]
@@ -558,8 +577,7 @@ def test_cli_sandbox_services_use_docker_socket_proxy_not_raw_host_socket():
     through docker-socket-proxy, which only exposes the container
     create/start/stop/logs operations CodeManager actually needs.
     """
-    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
-    services = compose["services"]
+    services = _merged_compose_services()
 
     proxy = services["docker-socket-proxy"]
     assert proxy["volumes"] == ["/var/run/docker.sock:/var/run/docker.sock:ro"]

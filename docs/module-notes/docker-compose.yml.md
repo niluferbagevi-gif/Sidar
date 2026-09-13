@@ -2,7 +2,19 @@
 
 - **Kaynak dosya:** `docker-compose.yml`
 - **Not dosyası:** `docs/module-notes/docker-compose.yml.md`
-- **Amaç:** Servis orkestrasyonu için docker-compose tanımı.
+- **Amaç:** Core stack servis orkestrasyonu — `redis`, `postgres`, `ollama`
+  (cpu profili), `sidar-migrate`, `docker-socket-proxy`, `sidar-ai`
+  (CLI, cpu), `sidar-web` (cpu). Ayrıca tüm named volume tanımlarını
+  (`redis_data`, `postgres_data`, `ollama_data`, `sidar_data_prod`,
+  `sidar_logs_prod`, `sidar_temp_prod`, `prometheus_secrets`) merkezi olarak
+  taşır — `-f` ile birleştirilen `docker-compose.gpu.yml`/
+  `docker-compose.observability.yml`'deki servisler bu volume'leri referans
+  eder, ama tanımları burada kalır (compose çok-dosya `volumes:` birleşimi
+  buna izin verir).
+- **Bölünme (P3):** Eskiden 20 servisi tek dosyada taşıyordu (690+ satır);
+  okunabilirlik için GPU profili servisleri `docker-compose.gpu.yml`'e,
+  observability profili servisleri `docker-compose.observability.yml`'e
+  taşındı — dosyanın kendi başlık yorumuna bakın. Üç dosya da
+  `docker-compose.production.yml`'nin zaten kullandığı `-f` çok-dosya
+  birleştirme deseniyle bir araya gelir.
 - **Durum:** İncelendi ve `docs/module-notes` altında dokümante edildi.
-
-- **Observability güncellemesi:** Jaeger image'i manifesti yayınlanmış `jaegertracing/all-in-one:1.63.0` olarak pinlenir; Redis `redis:7.4-alpine`, PostgreSQL+pgvector `pgvector/pgvector:0.8.1-pg16`, Prometheus `prom/prometheus:v2.54.1` ve Grafana `grafana/grafana:11.2.0` sürümlerine sabitlenir; Redis/PostgreSQL/cAdvisor exporter servisleri Prometheus tarafından scrape edilecek şekilde compose topolojisine eklenir ve Grafana için `/api/health` healthcheck'i tanımlanır.
