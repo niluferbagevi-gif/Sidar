@@ -10,14 +10,17 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 > `docs/module-notes/inventory-debt-baseline.json`'daki ratchet tavanını
 > aşmadığını kontrol eder. Sayılar aşağıda elle güncellenir; script'in kendisi
 > bunları otomatik doğrulamaz.
-> Baseline tarihli 0 azaltma hedefi taşır (150 hedefi 2026-08-30'da, 100 ve 50
-> hedefleri 2026-09-10'da aynı gün içinde iki ayrı fazda erken karşılandı ve
-> listeden çıkarıldı — script kesin azalan bir sıra zorunlu kılar); yeni bir
-> note eklendiğinde CI daha düşük gerçek sayıyı görür ve baseline aynı PR'da
-> `--update` ile aşağı çekilmeden geçmez. `--update` borcu yükseltemez.
+> Baseline, 178 → 150 → 117 → 69 → 10 → **0** şeklinde art arda düşürülerek
+> 2026-09-13'te dokümante edilmemiş production modül borcu tamamen
+> sıfırlandı; tarihli azaltma hedefleri (`reduction_targets`) bu yüzden
+> artık boş bir listedir — script borç sıfırken boş listeye izin verir.
+> Yeni, notsuz bir production dosyası eklenirse CI bu ratchet'i (0) aşan
+> sayıyı tespit eder; katkı, dosya için `docs/module-notes/` altına bir not
+> ekleyip burada referanslamalıdır. `--update` borcu yükseltemez, yalnızca
+> gerçek sayı 0'ın altına inemeyeceği için mevcut halinde tutar.
 
-- **Toplam kaynak dosya (tests dahil):** 506
-- **Tests dışı dosya sayısı (ayrı not üretilen):** 207
+- **Toplam kaynak dosya (tests dahil):** 520
+- **Tests dışı dosya sayısı (ayrı not üretilen):** 221
 - **Tests dosya sayısı (tek notta özetlenen, `tests/**/*.py`):** 299
 
 ## Not dosyaları
@@ -153,6 +156,7 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `launcher/ui.py` → `docs/module-notes/launcher/ui.py.md`
 - `main.py` → `docs/module-notes/main.py.md`
 - `managers/__init__.py` → `docs/module-notes/managers/__init__.py.md`
+- `managers/browser_manager.py` → `docs/module-notes/managers/browser_manager.py.md`
 - `managers/code/__init__.py` → `docs/module-notes/managers/code/__init__.py.md`
 - `managers/code/docker.py` → `docs/module-notes/managers/code/docker.py.md`
 - `managers/code/docker_lifecycle.py` → `docs/module-notes/managers/code/docker_lifecycle.py.md`
@@ -169,17 +173,26 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `managers/code/test_runner_orchestrator.py` → `docs/module-notes/managers/code/test_runner_orchestrator.py.md`
 - `managers/code_manager.py` → `docs/module-notes/managers/code_manager.py.md`
 - `managers/github_manager.py` → `docs/module-notes/managers/github_manager.py.md`
+- `managers/image_resolver.py` → `docs/module-notes/managers/image_resolver.py.md`
 - `managers/jira_manager.py` → `docs/module-notes/managers/jira_manager.py.md`
 - `managers/package_info.py` → `docs/module-notes/managers/package_info.py.md`
 - `managers/security.py` → `docs/module-notes/managers/security.py.md`
 - `managers/slack_manager.py` → `docs/module-notes/managers/slack_manager.py.md`
+- `managers/social_media_manager.py` → `docs/module-notes/managers/social_media_manager.py.md`
 - `managers/system_health.py` → `docs/module-notes/managers/system_health.py.md`
 - `managers/teams_manager.py` → `docs/module-notes/managers/teams_manager.py.md`
 - `managers/todo_manager.py` → `docs/module-notes/managers/todo_manager.py.md`
 - `managers/web_search.py` → `docs/module-notes/managers/web_search.py.md`
+- `managers/youtube_manager.py` → `docs/module-notes/managers/youtube_manager.py.md`
 - `migrations/env.py` → `docs/module-notes/migrations/env.py.md`
 - `migrations/script.py.mako` → `docs/module-notes/migrations/script.py.mako.md`
 - `migrations/versions/0001_baseline_schema.py` → `docs/module-notes/migrations/versions/0001_baseline_schema.py.md`
+- `plugins/__init__.py` → `docs/module-notes/plugins/__init__.py.md`
+- `plugins/aws_management_agent.py` → `docs/module-notes/plugins/aws_management_agent.py.md`
+- `plugins/crypto_price_agent.py` → `docs/module-notes/plugins/crypto_price_agent.py.md`
+- `plugins/manifest.py` → `docs/module-notes/plugins/manifest.py.md`
+- `plugins/slack_notification_agent.py` → `docs/module-notes/plugins/slack_notification_agent.py.md`
+- `plugins/upload_agent.py` → `docs/module-notes/plugins/upload_agent.py.md`
 - `pyproject.toml` → `docs/module-notes/pyproject.toml.md`
 - `run_tests.sh` → `docs/module-notes/run_tests.sh.md`
 - `runbooks/production-cutover-playbook.md` → `docs/module-notes/runbooks/production-cutover-playbook.md.md`
