@@ -187,8 +187,49 @@ done
 curl --fail --silent --show-error "http://127.0.0.1:${web_port}/healthz" >/dev/null
 curl --fail --silent --show-error "http://127.0.0.1:${web_port}/readyz" >/dev/null
 
-heads="$("${compose[@]}" run --rm --no-deps sidar-migrate uv run alembic heads | sed '/^[[:space:]]*$/d' | tail -1)"
-current="$("${compose[@]}" run --rm --no-deps sidar-migrate uv run alembic current | sed '/^[[:space:]]*$/d' | tail -1)"
+# Capture each alembic probe's own exit status explicitly (not implicitly via
+# the `heads="$(... | tail -1)"` pipeline's pipefail result) so a failure is
+# attributed to the actual `docker compose run` invocation instead of to
+# "tail -1": under `set -Eeuo pipefail`, the ERR trap's $BASH_COMMAND for a
+# failing pipeline names the last pipe stage, not the command that actually
+# returned non-zero, which left run_tests.sh's summary reporting the
+# misleading breadcrumb "scripts/ci/validate_production_compose.sh:190:
+# tail -1" with no trace of the real docker compose/alembic failure. On
+# failure, write the same failure.txt breadcrumb on_error() would (naming the
+# real command) plus the raw stdout/stderr into $diagnostics_dir, so the next
+# occurrence is actually diagnosable instead of "belirlenemedi".
+heads_raw="$(mktemp)"
+current_raw="$(mktemp)"
+
+if ! "${compose[@]}" run --rm --no-deps sidar-migrate uv run alembic heads >"$heads_raw" 2>&1; then
+  mkdir -p "$diagnostics_dir"
+  cp "$heads_raw" "$diagnostics_dir/alembic-heads.log"
+  [[ -f "$diagnostics_dir/failure.txt" ]] || {
+    echo "exit_code=1"
+    echo "line=$LINENO"
+    echo "command=docker compose run --rm --no-deps sidar-migrate uv run alembic heads"
+  } >"$diagnostics_dir/failure.txt"
+  cat "$heads_raw" >&2
+  rm -f "$heads_raw" "$current_raw"
+  exit 1
+fi
+
+if ! "${compose[@]}" run --rm --no-deps sidar-migrate uv run alembic current >"$current_raw" 2>&1; then
+  mkdir -p "$diagnostics_dir"
+  cp "$current_raw" "$diagnostics_dir/alembic-current.log"
+  [[ -f "$diagnostics_dir/failure.txt" ]] || {
+    echo "exit_code=1"
+    echo "line=$LINENO"
+    echo "command=docker compose run --rm --no-deps sidar-migrate uv run alembic current"
+  } >"$diagnostics_dir/failure.txt"
+  cat "$current_raw" >&2
+  rm -f "$heads_raw" "$current_raw"
+  exit 1
+fi
+
+heads="$(sed '/^[[:space:]]*$/d' "$heads_raw" | tail -1)"
+current="$(sed '/^[[:space:]]*$/d' "$current_raw" | tail -1)"
+rm -f "$heads_raw" "$current_raw"
 [[ -n "$heads" && "$current" == *"${heads%% *}"* ]]
 
 marker="production-compose-$RANDOM-$RANDOM"
