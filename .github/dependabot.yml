@@ -22,6 +22,15 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    ignore:
+      # nemoguardrails is intentionally pinned to the validated 0.22 minor
+      # (see pyproject.toml + tests/unit/scripts/test_dependency_version_guards.py)
+      # until the SecurityManager adapter contract is re-run against a newer
+      # major/minor API. Bump it only via a deliberate, standalone PR.
+      - dependency-name: "nemoguardrails"
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-major"
 
   - package-ecosystem: "npm"
     directory: "/web_ui_react"
