@@ -17,7 +17,7 @@
 services:
   ollama-gpu:
     profiles: ["gpu"]
-    image: ollama/ollama:0.32.14
+    image: ollama/ollama:0.34.0
     container_name: ${COMPOSE_PROJECT_NAME:-sidar}_ollama
     restart: unless-stopped
     runtime: ${DOCKER_RUNTIME:-nvidia}
