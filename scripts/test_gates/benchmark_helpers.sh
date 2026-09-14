@@ -206,6 +206,14 @@ elif [ -d "${PERFORMANCE_TEST_DIR}" ]; then
   fi
 
   if [ "${BENCHMARK_EXIT_CODE}" -eq 0 ]; then
+    if [ "${#benchmark_io_cmd[@]}" -gt 0 ] || [ "${#benchmark_password_cmd[@]}" -gt 0 ]; then
+      # pytest'in az sonra basacağı "N deselected" sayısı kafa karıştırabilir:
+      # bu testler atlanmıyor, kasıtlı olarak aşağıdaki ayrı '💾' ve '🔐'
+      # oturumlarında kendi (daha toleranslı) regresyon eşikleriyle çalıştırılıyor
+      # -- bkz. bu dosyadaki -k/-m filtre bloğu ve BENCHMARK_IO_COMPARE_FAIL /
+      # BENCHMARK_PASSWORD_COMPARE_FAIL.
+      echo "ℹ️ Bu ilk oturumdaki \"N deselected\" beklenen bir durumdur: I/O-bağımlı DB concurrency ve parola (CPU-maliyetli) testleri atlanmıyor, aşağıdaki ayrı pytest oturumlarında kendi regresyon eşikleriyle çalıştırılacak."
+    fi
     echo "📊 CPU/DB benchmarkları GPU oturumundan önce ve izole çalıştırılıyor..."
     echo "➡️ Çalıştırılan komut: ${benchmark_cmd[*]}"
     run_checked "${benchmark_cmd[@]}"
