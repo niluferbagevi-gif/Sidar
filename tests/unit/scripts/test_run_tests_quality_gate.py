@@ -5452,7 +5452,7 @@ def test_ci_enables_uv_dependency_cache_for_main_test_job() -> None:
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 
     test_job = ci_workflow[ci_workflow.index("  test:\n") :]
-    setup_uv_marker = "uses: astral-sh/setup-uv@v4"
+    setup_uv_marker = "uses: astral-sh/setup-uv@v6"
     first_idx = test_job.find(setup_uv_marker)
     assert first_idx != -1
     block = test_job[first_idx : first_idx + 500]
