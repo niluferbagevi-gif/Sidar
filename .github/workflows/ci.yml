@@ -611,6 +611,19 @@ jobs:
           # multi-GB wheel downloads seconds apart on the same runner.
           enable-cache: false
 
+      - name: Pin uv cache to persistent host disk
+        # setup-uv unconditionally exports UV_CACHE_DIR pointing at
+        # $RUNNER_TEMP/setup-uv-cache regardless of enable-cache -- and
+        # RUNNER_TEMP (_work/_temp) is scratch space the runner clears
+        # between jobs, even on this persistent self-hosted host. That
+        # alone (independent of the actions/cache wrapping disabled above)
+        # meant this job and gpu-inference-quality-gate could never share
+        # a uv cache: each got its own empty _work/_temp and re-downloaded
+        # the same multi-GB wheels. Re-point it at the host's real,
+        # never-cleared home directory so both self-hosted jobs share one
+        # cache on disk.
+        run: echo "UV_CACHE_DIR=$HOME/.cache/uv" >> "$GITHUB_ENV"
+
       - name: Install system dependencies
         run: bash scripts/install_ci_system_deps.sh
 
@@ -1016,6 +1029,15 @@ jobs:
           # benchmark job's and caused redundant re-downloads of the same
           # multi-GB nvidia-cu13/torch wheels moments apart.
           enable-cache: false
+
+      - name: Pin uv cache to persistent host disk
+        # See the comment on benchmark-compare's identical step: setup-uv
+        # unconditionally exports UV_CACHE_DIR under $RUNNER_TEMP
+        # (_work/_temp), which the runner clears between jobs even on this
+        # persistent host, regardless of enable-cache. Without this
+        # override this job and benchmark-compare each got their own empty
+        # _work/_temp and could never share a uv cache.
+        run: echo "UV_CACHE_DIR=$HOME/.cache/uv" >> "$GITHUB_ENV"
 
       - name: Cache APT packages (PortAudio)
         uses: awalsh128/cache-apt-pkgs-action@v1.6.3
