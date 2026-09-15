@@ -588,9 +588,14 @@ jobs:
       # uv's default of 50 in-flight concurrent downloads can saturate this
       # operator's home internet link during a cold cache fill, which is
       # what triggered the WSL2 broker disconnects documented in
-      # docs/runbooks/gpu-runner-continuity.md. Capping it trades a little
-      # wall-clock time for a link that doesn't get hammered into dropping.
-      UV_CONCURRENT_DOWNLOADS: "10"
+      # docs/runbooks/gpu-runner-continuity.md. uv has no byte/bandwidth-size
+      # throttle (only this count-based knob -- see astral-sh/uv#1205 and
+      # astral-sh/uv#10570), so serializing to one download at a time is the
+      # only way to bound peak simultaneous throughput without adding an
+      # external bandwidth-limiting tool. This trades wall-clock time on a
+      # cold fill (rare -- only after an explicit `uv cache clean`) for a
+      # link that never has more than one multi-hundred-MB transfer open.
+      UV_CONCURRENT_DOWNLOADS: "1"
 
     steps:
       - name: Checkout
@@ -1015,7 +1020,7 @@ jobs:
       UV_HTTP_TIMEOUT: "180"
       # Same operator-link rationale as benchmark-compare's identical env var
       # -- see its comment.
-      UV_CONCURRENT_DOWNLOADS: "10"
+      UV_CONCURRENT_DOWNLOADS: "1"
 
     steps:
       - name: Checkout
