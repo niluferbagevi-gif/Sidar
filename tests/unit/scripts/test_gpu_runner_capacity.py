@@ -16,7 +16,7 @@ def test_watchdog_workflow_guards_gate_variable_and_runner_capacity() -> None:
 
     assert "GPU_BENCH_GATE_ENABLED: ${{ vars.ENABLE_GPU_BENCH_GATE }}" in workflow
     assert '[[ "${GPU_BENCH_GATE_ENABLED}" != "true" ]]' in workflow
-    assert "--minimum-online 2" in workflow
+    assert "--minimum-online 1" in workflow
     assert "--minimum-idle 1" in workflow
     assert "types: [requested]" in workflow
     assert "actions/github-script@v8" in workflow
@@ -73,6 +73,23 @@ def test_main_fails_closed_with_one_runner_and_passes_with_two(tmp_path, capsys)
         )
     )
     assert capacity.main(["--fixture", str(fixture)]) == 0
+    assert "primary" in capsys.readouterr().out
+
+
+def test_main_permits_single_runner_when_explicitly_configured(tmp_path, capsys) -> None:
+    """--minimum-online 1 is how operators who accept single-host risk opt in.
+
+    The default (no flag) stays fail-closed at 2; only an explicit override
+    lowers the floor -- see docs/runbooks/gpu-runner-continuity.md.
+    """
+    fixture = tmp_path / "runners.json"
+    labels = ("self-hosted", "linux", "x64", "gpu", "cuda")
+    fixture.write_text(json.dumps({"runners": [_runner("primary", labels=labels)]}))
+
+    assert capacity.main(["--fixture", str(fixture), "--minimum-online", "1"]) == 0
+    assert "primary" in capsys.readouterr().out
+
+    assert capacity.main(["--fixture", str(fixture), "--minimum-online", "0"]) == 0
     assert "primary" in capsys.readouterr().out
 
 

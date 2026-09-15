@@ -26,7 +26,7 @@ def test_watchdog_workflow_uses_hosted_control_plane_and_checks_capacity() -> No
     assert "uses: actions/checkout@v7" in workflow
     assert "BENCHMARK_RUNNER_MONITOR_TOKEN" in workflow
     assert "check_benchmark_runner_capacity.py" in workflow
-    assert "--minimum-online 2" in workflow
+    assert "--minimum-online 1" in workflow
     assert "--minimum-idle 1" in workflow
     assert "types: [requested]" in workflow
     assert "actions/github-script@v8" in workflow
@@ -82,6 +82,23 @@ def test_main_fails_closed_without_redundancy_and_passes_with_two(tmp_path, caps
     assert "primary" in capsys.readouterr().out
 
 
+def test_main_permits_single_runner_when_explicitly_configured(tmp_path, capsys) -> None:
+    """--minimum-online 1 is how operators who accept single-host risk opt in.
+
+    The default (no flag) stays fail-closed at 2; only an explicit override
+    lowers the floor -- see docs/runbooks/benchmark-runner-continuity.md.
+    """
+    fixture = tmp_path / "runners.json"
+    labels = ("self-hosted", "linux", "benchmark")
+    fixture.write_text(json.dumps({"runners": [_runner("stable", labels=labels)]}))
+
+    assert capacity.main(["--fixture", str(fixture), "--minimum-online", "1"]) == 0
+    assert "stable" in capsys.readouterr().out
+
+    assert capacity.main(["--fixture", str(fixture), "--minimum-online", "0"]) == 0
+    assert "stable" in capsys.readouterr().out
+
+
 def test_main_fails_when_redundant_runners_are_all_busy(tmp_path, capsys) -> None:
     fixture = tmp_path / "runners.json"
     labels = ("self-hosted", "linux", "benchmark")
@@ -108,4 +125,4 @@ def test_runbook_keeps_compare_and_baseline_evidence_fail_closed() -> None:
     assert "Watchdog yalnız kapasite erken uyarısıdır" in runbook
     assert "compare kapısı gevşetilmemeli" in runbook
     assert "Host başına baseline hazırlığı" in runbook
-    assert "--minimum-online 2" in runbook
+    assert "--minimum-online 1" in runbook
