@@ -156,10 +156,16 @@ def reexec_after_external_branch_merge() -> None:
     """
     if os.environ.get("SIDAR_GITHUB_UPLOAD_REEXEC_AFTER_MERGE") == "1":
         return
-    script = Path(__file__).resolve()
+    # Bandit'in nosec eşlemesi satır bazlıdır: `str(script)` çağrısı aynı satırda
+    # kalırsa Bandit bu satırdaki ikinci Call node'u (str) B606 testiyle eşleştirip
+    # "nosec encountered (B606), but no failed test" diye yanlış pozitif uyarı
+    # basar (gerçek execve bulgusu yine de doğru şekilde bastırılır; bu yalnızca
+    # kozmetik/gürültülü bir Bandit log satırıdır). script_path'i ayrı satırda
+    # önceden hesaplayarak nosec satırında tek Call node (execve) bırakıyoruz.
+    script_path = str(Path(__file__).resolve())
     env = _build_subprocess_env()
     env["SIDAR_GITHUB_UPLOAD_REEXEC_AFTER_MERGE"] = "1"
-    os.execve(sys.executable, [sys.executable, str(script)], env)  # nosec B606  # sabit argümanlar, shell yok; B603 ile aynı güvenli desen.
+    os.execve(sys.executable, [sys.executable, script_path], env)  # nosec B606  # sabit argümanlar, shell yok; B603 ile aynı güvenli desen.
 
 
 def _is_valid_repo_url(url: str) -> bool:
