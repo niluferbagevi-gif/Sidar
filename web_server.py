@@ -5,6 +5,13 @@ FastAPI + WebSocket ile asenkron (async) çift yönlü akış destekli chat aray
 Başlatmak için:
     python web_server.py
     python web_server.py --host 0.0.0.0 --port 7860
+
+Büyüme politikası: Bu dosya ince, geriye dönük uyumlu bir sarmalayıcı kalmalı;
+yeni route/middleware/plugin mantığı buraya değil ``web/routes/`` altındaki
+yeni veya var olan bir modüle eklenmelidir. Bu artık
+``scripts/ci/check_web_server_size_baseline.py`` ile (CI'da ``Base quality
+gates`` job'ının parçası) tek yönlü bir satır bütçesi olarak zorlanır --
+bkz. ``docs/module-notes/web_server.py.md``.
 """
 
 from __future__ import annotations

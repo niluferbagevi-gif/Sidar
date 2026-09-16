@@ -62,6 +62,13 @@ launch_docker_services() {
         compose_profiles="${compose_profiles},observability"
     fi
 
+    # docker-compose.yml (core) yalnızca cpu-profilli servisleri taşır; GPU
+    # (docker-compose.gpu.yml) ve observability (docker-compose.observability.yml)
+    # servisleri ayrı dosyalardadır ve yalnızca aktif profile göre -f ile eklenir.
+    local -a compose_file_args=()
+    sidar_compose_file_args_for_profiles "$compose_profiles" compose_file_args
+    docker_compose_cmd+=("${compose_file_args[@]}")
+
     if [[ "$runtime_mode" == "ask" ]]; then
         runtime_mode="docker"
         APP_RUNTIME_MODE="$runtime_mode"
@@ -136,9 +143,9 @@ launch_docker_services() {
             ;;
         *)
             if [[ "$runtime_mode" == "local" ]]; then
-                info "Docker servislerinin başlatılması atlandı. (Manuel: docker compose up -d ${infra_services[*]}; gözlemlenebilirlik için: COMPOSE_PROFILES=observability docker compose up -d jaeger prometheus grafana)"
+                info "Docker servislerinin başlatılması atlandı. (Manuel: ${docker_compose_cmd[*]} up -d ${infra_services[*]}; gözlemlenebilirlik için: docker compose -f docker-compose.yml -f docker-compose.observability.yml --profile observability up -d jaeger prometheus grafana)"
             else
-                info "Docker servislerinin başlatılması atlandı. (Manuel: COMPOSE_PROFILES=$compose_profiles docker compose up -d; gözlemlenebilirlik için profile'a observability ekleyin)"
+                info "Docker servislerinin başlatılması atlandı. (Manuel: COMPOSE_PROFILES=$compose_profiles ${docker_compose_cmd[*]} up -d; gözlemlenebilirlik için profile'a observability ekleyin ve docker-compose.observability.yml'i -f ile ekleyin)"
             fi
             ;;
     esac

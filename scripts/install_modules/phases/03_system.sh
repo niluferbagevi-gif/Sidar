@@ -781,7 +781,7 @@ ensure_prerequisites() {
             fi
             info "Docker şu anda WSL içinde doğrulanamadı; Docker Desktop entegrasyon kontrolüne geçiliyor."
         else
-            warn "Docker bulunamadı veya çalıştırılamıyor. Docker komutları (örn. docker compose up sidar-gpu) çalışmayacaktır."
+            warn "Docker bulunamadı veya çalıştırılamıyor. Docker komutları (örn. docker compose -f docker-compose.yml -f docker-compose.gpu.yml up sidar-gpu) çalışmayacaktır."
         fi
     fi
 

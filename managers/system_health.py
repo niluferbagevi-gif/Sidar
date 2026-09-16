@@ -16,13 +16,13 @@ import logging
 import platform
 import shutil
 import socket
-import subprocess
 import threading
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlparse
 
 from config import Config
+from core.utils.trusted_subprocess import run_trusted_command
 
 logger = logging.getLogger(__name__)
 
@@ -362,13 +362,13 @@ class SystemHealthManager:
         # WSL2 fallback: nvidia-smi subprocess ile sürücü sürümünü al
         try:
             nvidia_smi_bin = shutil.which("nvidia-smi") or "nvidia-smi"
-            result = subprocess.run(
+            result = run_trusted_command(
                 [nvidia_smi_bin, "--query-gpu=driver_version", "--format=csv,noheader"],
                 capture_output=True,
                 text=True,
                 timeout=5,
-            )  # nosec B603  # sabit ve kullanıcı girdisi içermeyen komut.
-            version = result.stdout.strip().split("\n")[0]
+            )
+            version = str(result.stdout).strip().split("\n")[0]
             if version:
                 return version
             # Çıktı boş → GPU yok veya sürücü raporlamıyor (WSL2'de beklenen)

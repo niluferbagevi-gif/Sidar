@@ -28,6 +28,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, cast
 
+from core.utils.trusted_subprocess import run_trusted_command
 from launcher import doctor as launcher_doctor
 from launcher import process as launcher_process
 from launcher import selection as launcher_selection
@@ -459,7 +460,7 @@ def _maybe_bootstrap_development_env() -> bool:
 
     cmd = ["uv", "run", "python", "-m", "scripts.bootstrap_env", "--profile", "development"]
     try:
-        completed = subprocess.run(  # nosec B603  # sabit komut listesi, kullanıcı girdisi eklenmez.
+        completed = run_trusted_command(
             cmd, check=False, cwd=_project_base_dir(), env=_launcher_child_env()
         )
     except OSError as exc:
@@ -561,7 +562,7 @@ def _run_doctor_auto_fix_command(auto_fix: str) -> bool:
     cmd = _launcher_auto_fix_command(cmd)
     print(f"{CYAN}   • Auto-fix çalışıyor: {_format_cmd(cmd)}{RESET}")
     try:
-        completed = subprocess.run(  # nosec B603  # Doctor auto_fix komutu list olarak çalıştırılır, shell kullanılmaz.
+        completed = run_trusted_command(
             cmd, check=False, cwd=_project_base_dir(), env=_launcher_child_env()
         )
     except OSError as exc:
@@ -1065,7 +1066,7 @@ def execute_command(
                 print(f"\n{RED}Program hata ile sonlandı (Çıkış Kodu: {return_code}){RESET}")
             return return_code
 
-        subprocess.run(  # nosec B603  # komut listesi launcher tarafından güvenli şekilde üretilir.
+        run_trusted_command(
             cmd, check=True, cwd=os.path.dirname(__file__) or ".", env=_launcher_child_env()
         )
         return 0

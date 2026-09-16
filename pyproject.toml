@@ -33,7 +33,7 @@ dependencies = [
   # ile takip edilir.
   # ── Temel altyapı ──────────────────────────────────────────────────────
   "packaging~=26.3",
-  "python-dotenv==1.2.2",
+  "python-dotenv==1.2.3",
   "pyyaml~=6.0.2",
   # HTTP client policy: production imports use httpx only; the old httpx2
   # migration candidate was retired to keep the runtime dependency graph smaller.
@@ -65,7 +65,7 @@ dependencies = [
   "requests>=2.32.5",
   "tenacity>=8.0.0,<10.0.0",
   # ── İçerik işleme ─────────────────────────────────────────────────────
-  "tiktoken~=0.13.0",
+  "tiktoken>=0.13,<0.15",
   "rank-bm25==0.2.2",
   "beautifulsoup4~=4.15.0",
   "bleach>=6.4.0,<7.0.0",
@@ -197,11 +197,11 @@ gui = [
   "eel>=0.16.0",
 ]
 slack = [
-  "slack-sdk~=3.43.0",
+  "slack-sdk>=3.43,<3.45",
 ]
 browser = [
   "playwright>=1.62.0,<1.63",
-  "selenium~=4.46.0",
+  "selenium>=4.46,<4.50",
 ]
 voice = [
   "SpeechRecognition~=3.10.4",
@@ -254,7 +254,7 @@ dev = [
   "pytest-xdist>=3.6.1",
   "freezegun>=1.5.1",
   "pytest-cov~=5.0.0",
-  "pytest-benchmark~=5.2.3",
+  "pytest-benchmark>=5.2.3,<5.4.0",
   "pytest-mock>=3.14.0",
   "hypothesis>=6.165.2",
   "respx>=0.21.1",
@@ -535,6 +535,15 @@ filterwarnings = [
   # file); production and tests intentionally stay on httpx, so silence
   # starlette's testclient nudge instead of adding the extra dependency back.
   "ignore:Using .httpx. with .starlette\\.testclient. is deprecated; install .httpx2. instead\\.:starlette.exceptions.StarletteDeprecationWarning",
+  # anyio has no pinned upper bound (see dependencies comment above) and 4.9+
+  # deprecated the anyio.abc.BlockingPortal alias in favor of
+  # anyio.from_thread.BlockingPortal. starlette==1.6.0 (the validated security
+  # baseline pin, see dependencies comment) still imports the old alias from
+  # its testclient module, so any test importing fastapi/starlette's
+  # TestClient trips this warning during collection. Silence it here rather
+  # than loosening the starlette pin or capping anyio; drop this once
+  # starlette ships a release that stops using the deprecated alias.
+  "ignore:The anyio\\.abc\\.BlockingPortal alias is deprecated, use anyio\\.from_thread\\.BlockingPortal instead\\.:DeprecationWarning",
 ]
 log_cli = false
 log_cli_level = "INFO"

@@ -20,6 +20,7 @@ from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from core.hitl import get_hitl_gate
+from core.utils.trusted_subprocess import popen_trusted_command, run_trusted_command
 from managers.code import docker as docker_helpers
 from managers.code import file_io_security, linter_runners, runner, test_runner_orchestrator
 from managers.code.docker import (
@@ -574,7 +575,7 @@ class CodeManager:
             python_bin = (
                 sys.executable or shutil.which("python3") or shutil.which("python") or "python"
             )
-            result = subprocess.run(  # nosec B603
+            result = run_trusted_command(
                 [python_bin, tmp_path],
                 capture_output=True,
                 text=True,
@@ -934,7 +935,7 @@ class CodeManager:
 
         payload = b"".join(_encode_lsp_message(msg) for msg in messages)
         try:
-            proc = subprocess.Popen(  # nosec B603
+            proc = popen_trusted_command(
                 command,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
