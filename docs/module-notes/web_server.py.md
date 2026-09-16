@@ -1,4 +1,30 @@
-# 3.4 `web_server.py` — FastAPI Web Sunucusu (1.376 satır)
+# 3.4 `web_server.py` — FastAPI Web Sunucusu (2.635 satır)
+
+## Büyüme Politikası (Zorunlu — CI'da Denetlenir)
+
+`web/app_factory.py` ve `web/routes/plugin_marketplace.py`'nin kendi
+docstring'leri `web_server.py`'nin ince, geriye dönük uyumlu bir sarmalayıcı
+kalması gerektiğini belgeler — ama daha önce bunu zorlayan hiçbir mekanizma
+yoktu ve dosya sessizce büyümeye devam etti (1.376 → 2.628 satır). Bu artık
+`scripts/ci/check_web_server_size_baseline.py` ile (CI'da `Base quality
+gates` job'ının parçası) tek yönlü bir bütçe olarak zorlanır:
+`scripts/ci/web-server-size-baseline.json`'daki `maximum_lines` değeri
+aşılırsa CI kırmızı olur. Bu notun kendisi ve `web_server.py`'nin tepesindeki
+politika paragrafı ilk kez eklendiğinde dosya 2.628 → 2.635 satıra çıktı;
+bu istisnai artış bilinçli, incelenmiş bir dokümantasyon eklemesidir —
+budget aynı commit'te bu yeni gerçek sayıya ayarlanmıştır.
+
+**Kural:** Yeni route/middleware/plugin mantığı `web_server.py`'ye değil,
+`web/routes/` altındaki yeni veya var olan bir modüle eklenmelidir
+(`web/routes/*.py` zaten iyi modülerleştirilmiştir — bkz. o dizindeki her
+dosyanın kendi notu). `web_server.py` yalnızca FastAPI app kurulumunu,
+geriye dönük uyumlu ince sarmalayıcıları (ör. eski `_read_plugin_marketplace_state`
+gibi isimleri hâlâ monkeypatch eden testler için) ve gerçekten tek bir
+yerde yaşaması gereken üst düzey orkestrasyonu barındırmalıdır. Baseline'ı
+yükseltmek yalnızca dosyadan gerçekten mantık çıkarılamayan, incelenmiş bir
+istisna durumunda yapılmalıdır — script bunu otomatik ratchetlemez (bkz.
+`check_web_server_size_baseline.py`'nin kendi docstring'i); gerçek bir
+azaltım sonrası ise değer elle düşürülmelidir.
 
 ## Rapor İçeriği (Taşınan Bölüm)
 

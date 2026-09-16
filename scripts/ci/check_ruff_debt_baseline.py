@@ -5,12 +5,13 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import subprocess
 import sys
 import tomllib
 from collections import Counter
 from pathlib import Path
 from typing import Any
+
+from core.utils.trusted_subprocess import run_trusted_command
 
 ROOT = Path(__file__).resolve().parents[2]
 RUFF_DEBT_CODES = (
@@ -51,7 +52,7 @@ def _run_ruff_json(codes: tuple[str, ...]) -> list[dict[str, Any]]:
         "--output-format",
         "json",
     ]
-    completed = subprocess.run(  # nosec B603  # command list is internally constructed, shell=False.
+    completed = run_trusted_command(
         command,
         cwd=ROOT,
         check=False,

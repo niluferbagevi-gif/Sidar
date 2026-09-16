@@ -1384,10 +1384,22 @@ async def test_document_store_add_document_and_search_helpers(tmp_path: Path) ->
 
 async def test_document_store_add_document_from_url_success_and_failure(
     respx_mock_router,
+    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     httpx = pytest.importorskip("httpx")
     store = _make_store_stub(tmp_path)
+    # _validate_url_safe(resolve_dns=True) yapıyor gerçek bir socket.getaddrinfo() çağrısı --
+    # respx yalnızca httpx transport'unu mock'lar, ham DNS çözümlemesini değil. Ağı/DNS'i
+    # izole (veya kısıtlı) ortamlarda testin sağlamlığı için burada da sabitliyoruz (bkz.
+    # test_document_store_add_document_from_url_redirect_error_paths'teki aynı desen).
+    monkeypatch.setattr(
+        rag.socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [
+            (rag.socket.AF_INET, rag.socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))
+        ],
+    )
 
     async def _fake_add(
         title: str, content: str, source: str, tags: list[str] | None, session_id: str
@@ -1469,12 +1481,22 @@ async def test_document_store_add_document_from_url_redirect_error_paths(
 )
 async def test_document_store_add_document_from_url_handles_httpx_transport_errors(
     respx_mock_router,
+    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     exc_name: str,
     expected_hint: str,
 ) -> None:
     httpx = pytest.importorskip("httpx")
     store = _make_store_stub(tmp_path)
+    # respx httpx transport'unu mock'lar ama _validate_url_safe(resolve_dns=True) ham
+    # socket.getaddrinfo() çağırır -- gerçek DNS/ağı gerektirmemesi için sabitliyoruz.
+    monkeypatch.setattr(
+        rag.socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [
+            (rag.socket.AF_INET, rag.socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))
+        ],
+    )
     request = httpx.Request("GET", "https://example.com/docs")
     if exc_name == "TimeoutException":
         side_effect: Exception = httpx.TimeoutException(expected_hint)
@@ -2651,6 +2673,16 @@ async def test_document_store_url_file_delete_and_graph_branches(
 ) -> None:
     store = _make_store_stub(tmp_path)
     store._write_lock = threading.Lock()
+    # _validate_url_safe(resolve_dns=True) ham socket.getaddrinfo() çağırır -- burada
+    # httpx tamamen sys.modules üzerinden stub'landığı için respx da devrede değil,
+    # bu yüzden gerçek DNS/ağı gerektirmemesi için ayrıca sabitliyoruz.
+    monkeypatch.setattr(
+        rag.socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [
+            (rag.socket.AF_INET, rag.socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))
+        ],
+    )
 
     # add_document_from_url: title dolu ise regex dalı atlanır
     async def _fake_add(*_args, **_kwargs):

@@ -201,7 +201,7 @@ slack = [
 ]
 browser = [
   "playwright>=1.62.0,<1.63",
-  "selenium>=4.46,<4.49",
+  "selenium>=4.46,<4.50",
 ]
 voice = [
   "SpeechRecognition~=3.10.4",
