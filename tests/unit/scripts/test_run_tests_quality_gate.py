@@ -66,7 +66,9 @@ def installer_contract_sources() -> str:
 def test_grafana_operator_guidance_uses_generated_secret_not_default_credentials() -> None:
     """Installer and primary docs must match Docker Compose's fail-closed credential contract."""
     installer = Path("scripts/install_modules/phases/07_finish.sh").read_text(encoding="utf-8")
-    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+    # grafana lives in docker-compose.observability.yml (split out of
+    # docker-compose.yml -- see that file's header comment).
+    compose = Path("docker-compose.observability.yml").read_text(encoding="utf-8")
     primary_docs = "\n".join(
         Path(path).read_text(encoding="utf-8")
         for path in (
@@ -1301,7 +1303,8 @@ def test_ci_workflow_documents_and_seeds_benchmark_baseline() -> None:
         "if: ${{ github.event_name != 'workflow_dispatch' || !inputs.seed_benchmark_baseline }}"
         in ci
     )
-    assert "Benchmark baseline missing" in ci
+    assert "mode=bootstrap" in ci
+    assert "Save bootstrap benchmark baseline cache" in ci
     assert "Run base quality gates (performance isolated)" in ci
     assert "Validate base test summary" in ci
     assert "--mode development --summary artifacts/test-summary.json" in ci
@@ -2913,7 +2916,7 @@ def test_gpu_gate_timeout_and_benchmark_cache_keepalive_are_fail_closed() -> Non
         ci.index("  gpu-inference-quality-gate:") : ci.index("  gpu-inference-policy-gate:")
     ]
     assert "runs-on: [self-hosted, linux, x64, gpu, cuda]" in gpu_job
-    assert "timeout-minutes: 45" in gpu_job
+    assert "timeout-minutes: 180" in gpu_job
     assert 'cron: "17 5 * * 1,4"' in keepalive
     assert "uses: actions/cache/restore@v6" in keepalive
     assert "Require reviewed baseline evidence" in keepalive
@@ -2922,7 +2925,7 @@ def test_gpu_gate_timeout_and_benchmark_cache_keepalive_are_fail_closed() -> Non
     assert "benchmark-save" not in keepalive
     assert "no benchmark was executed and no baseline was regenerated" in keepalive
     assert "queued süreyi" in testing
-    assert "timeout-minutes: 45" in testing
+    assert "timeout-minutes: 180" in testing
     assert "benchmark-baseline-keepalive.yml" in testing
     assert "benchmark çalıştırmaz, baseline üretmez" in testing
 
@@ -5469,7 +5472,9 @@ def test_ci_uses_shared_system_dependency_installer_without_duplicate_apt_step()
     assert 'echo "=== bats ===" && bats --version' in ci_workflow
 
 
-def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profile() -> None:
+def test_ci_bootstraps_benchmark_baseline_when_unreachable_and_nightly_gpu_uses_full_profile() -> (
+    None
+):
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     seed_workflow = Path(".github/workflows/benchmark-baseline-seed.yml").read_text(
         encoding="utf-8"
@@ -5494,7 +5499,8 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "mkdir -p .benchmarks" in ci
     assert 'echo "BENCHMARK_COMPARE_REQUIRED=1" >> "$GITHUB_ENV"' not in ci
     assert 'echo "BENCHMARK_COMPARE_REQUIRED=0" >> "$GITHUB_ENV"' not in ci
-    assert "Benchmark baseline missing" in ci
+    assert "mode=bootstrap" in ci
+    assert "Save bootstrap benchmark baseline cache" in ci
     assert "exit 1" in ci
     assert "benchmark-compare:" in ci
     benchmark_job = ci[
@@ -5515,7 +5521,7 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert "TEST_PROFILE=ci RUN_BENCHMARKS=0 RUN_FRONTEND_E2E=1" in ci
     assert "SIDAR_PRODUCTION_READINESS=0 bash run_tests.sh --stage all" in ci
     assert "GITHUB_STEP_SUMMARY" in ci
-    assert "benchmark compare is fail-closed" in ci
+    assert "No regression comparison was performed this run" in ci
     assert "BENCHMARK_BASELINE_FILE: ${{ steps.benchmark-baseline.outputs.compare_file }}" in ci
     assert '--benchmark-compare="${BENCHMARK_BASELINE_FILE}"' in ci
     assert "BENCHMARK_COMPARE_FAIL: mean:10%" in ci
@@ -5527,7 +5533,8 @@ def test_ci_requires_restored_benchmark_baseline_and_nightly_gpu_uses_full_profi
     assert 'RUN_GPU_BENCHMARKS: "full"' in nightly_gpu
     assert ".benchmarks/` dizinini repoya commit etmek yerine GitHub Actions cache" in notes
     assert "BENCHMARK_COMPARE_FAIL=mean:10%" in notes
-    assert "koşu seed moduna düşmez" in notes
+    assert "artık fail-closed sonlanmaz" in notes
+    assert "bootstrap modu" in notes
     assert "name: Benchmark baseline seed" in seed_workflow
     assert "workflow_dispatch:" in seed_workflow
     assert "uses: ./.github/workflows/benchmark-baseline-reusable.yml" in seed_workflow
@@ -6398,18 +6405,18 @@ def test_frontend_security_dependencies_are_patched_in_package_lock() -> None:
     assert "artifacts/frontend-bundle-budget.json" in bundle_budget_script
     assert "Top ${topChunks.length} JS chunks" in bundle_budget_script
     assert "hasInstallScript" not in locked_root
-    assert dev_deps["@playwright/test"] == ">=1.60.0 <1.62.0"
-    assert dev_deps["vite"] == "^8.0.16"
-    assert dev_deps["ws"] == "^8.21.0"
-    assert locked_root_deps["@playwright/test"] == ">=1.60.0 <1.62.0"
-    assert locked_root_deps["vite"] == "^8.0.16"
-    assert locked_root_deps["ws"] == "^8.21.0"
-    assert locked_packages["node_modules/@playwright/test"]["version"].startswith("1.61.")
-    assert locked_packages["node_modules/playwright"]["version"].startswith("1.61.")
-    assert locked_packages["node_modules/vite"]["version"] == "8.0.16"
-    assert locked_packages["node_modules/ws"]["version"] == "8.21.0"
-    assert locked_packages["node_modules/vite"]["dependencies"]["postcss"] == "^8.5.15"
-    assert locked_packages["node_modules/vite"]["dependencies"]["rolldown"] == "1.0.3"
+    assert dev_deps["@playwright/test"] == ">=1.60.0 <1.63.0"
+    assert dev_deps["vite"] == "^8.2.2"
+    assert dev_deps["ws"] == "^8.21.3"
+    assert locked_root_deps["@playwright/test"] == ">=1.60.0 <1.63.0"
+    assert locked_root_deps["vite"] == "^8.2.2"
+    assert locked_root_deps["ws"] == "^8.21.3"
+    assert locked_packages["node_modules/@playwright/test"]["version"].startswith("1.62.")
+    assert locked_packages["node_modules/playwright"]["version"].startswith("1.62.")
+    assert locked_packages["node_modules/vite"]["version"] == "8.2.2"
+    assert locked_packages["node_modules/ws"]["version"] == "8.21.3"
+    assert locked_packages["node_modules/vite"]["dependencies"]["postcss"] == "^8.5.26"
+    assert locked_packages["node_modules/vite"]["dependencies"]["rolldown"] == "~1.2.4"
     assert locked_packages["node_modules/vite"]["dependencies"]["tinyglobby"] == "^0.2.17"
 
 
@@ -6801,6 +6808,179 @@ def test_production_compose_failure_diagnostics_surface_service_and_exception(
         "sidar-web",
         "PermissionError: [Errno 13] Permission denied: '/app/web_ui_react/dist/assets'",
     ]
+
+
+def test_production_compose_failure_diagnostics_ignores_expected_migrate_exit(
+    tmp_path: Path,
+) -> None:
+    """A one-shot init container exiting 0 must never be blamed for the failure.
+
+    sidar-migrate runs its migrations to completion and exits successfully as
+    part of every passing run; "Exited (0)" is its normal terminal state, not
+    a crash. If the diagnostics naively match any "exited" status, they smear
+    an innocent, correctly-behaving service while the real failure elsewhere
+    goes unreported.
+    """
+    helpers = Path("scripts/test_gates/summary_helpers.sh").resolve()
+    diagnostics = tmp_path / "production-compose"
+    diagnostics.mkdir()
+    (diagnostics / "ps.txt").write_text(
+        "NAME  IMAGE  COMMAND  SERVICE  CREATED  STATUS  PORTS\n"
+        "sidar-production-gate_migrate  sidar  cmd  sidar-migrate  now  Exited (0) 1 minute ago  \n"
+        "sidar-production-gate_web  sidar  cmd  sidar-web  now  Up 1 minute (healthy)  \n",
+        encoding="utf-8",
+    )
+    (diagnostics / "compose.log").write_text(
+        "sidar-production-gate_migrate | Running upgrade -> head\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; PRODUCTION_COMPOSE_DIAGNOSTICS_DIR="$2"; '
+            "production_compose_failure_diagnostics",
+            "bash",
+            str(helpers),
+            str(diagnostics),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.stdout.splitlines() == [
+        "belirlenemedi",
+        "compose diagnostics içinde hata özeti bulunamadı",
+    ]
+
+
+def test_production_compose_failure_diagnostics_finds_real_failure_past_expected_migrate_exit(
+    tmp_path: Path,
+) -> None:
+    """A genuinely crashed service must still be surfaced past a healthy migrate exit."""
+    helpers = Path("scripts/test_gates/summary_helpers.sh").resolve()
+    diagnostics = tmp_path / "production-compose"
+    diagnostics.mkdir()
+    (diagnostics / "ps.txt").write_text(
+        "NAME  IMAGE  COMMAND  SERVICE  CREATED  STATUS  PORTS\n"
+        "sidar-production-gate_migrate  sidar  cmd  sidar-migrate  now  Exited (0) 1 minute ago  \n"
+        "sidar-production-gate_web  sidar  cmd  sidar-web  now  Restarting (1) 1 second ago  \n",
+        encoding="utf-8",
+    )
+    (diagnostics / "compose.log").write_text(
+        "sidar-production-gate_web | PermissionError: [Errno 13] Permission denied: "
+        "'/app/web_ui_react/dist/assets'\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; PRODUCTION_COMPOSE_DIAGNOSTICS_DIR="$2"; '
+            "production_compose_failure_diagnostics",
+            "bash",
+            str(helpers),
+            str(diagnostics),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.stdout.splitlines() == [
+        "sidar-web",
+        "PermissionError: [Errno 13] Permission denied: '/app/web_ui_react/dist/assets'",
+    ]
+
+
+def test_production_compose_failure_diagnostics_falls_back_to_error_trap_breadcrumb(
+    tmp_path: Path,
+) -> None:
+    """Real regression: a passing health-loop with a failing bash assertion.
+
+    scripts/ci/validate_production_compose.sh's migration head/current parity,
+    restart-persistence marker, and shutdown exit-code checks are plain
+    `[[ ... ]]` tests -- a healthy `docker compose ps` (no exited/restarting/
+    unhealthy/dead service) and container logs with no Python traceback,
+    which used to leave this function reporting the unhelpful defaults
+    ("belirlenemedi" / "compose diagnostics içinde hata özeti bulunamadı")
+    even though the gate script's own ERR trap recorded exactly which line
+    and command failed. That breadcrumb (failure.txt) must be the fallback.
+    """
+    helpers = Path("scripts/test_gates/summary_helpers.sh").resolve()
+    diagnostics = tmp_path / "production-compose"
+    diagnostics.mkdir()
+    (diagnostics / "ps.txt").write_text(
+        "NAME  IMAGE  COMMAND  SERVICE  CREATED  STATUS  PORTS\n"
+        "sidar-production-gate_web  sidar  cmd  sidar-web  now  Up 2 minutes (healthy)  \n",
+        encoding="utf-8",
+    )
+    (diagnostics / "compose.log").write_text(
+        'sidar-production-gate_web | INFO:     127.0.0.1:1 - "GET /healthz HTTP/1.1" 200 OK\n',
+        encoding="utf-8",
+    )
+    (diagnostics / "failure.txt").write_text(
+        'exit_code=1\nline=157\ncommand=[[ -n "$heads" && "$current" == *"${heads%% *}"* ]]\n',
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; PRODUCTION_COMPOSE_DIAGNOSTICS_DIR="$2"; '
+            "production_compose_failure_diagnostics",
+            "bash",
+            str(helpers),
+            str(diagnostics),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.stdout.splitlines() == [
+        "belirlenemedi",
+        'scripts/ci/validate_production_compose.sh:157: [[ -n "$heads" '
+        '&& "$current" == *"${heads%% *}"* ]]',
+    ]
+
+
+def test_production_compose_failure_diagnostics_infers_service_from_breadcrumb_command(
+    tmp_path: Path,
+) -> None:
+    """When ps.txt/compose.log name no service, guess it from the failing command."""
+    helpers = Path("scripts/test_gates/summary_helpers.sh").resolve()
+    diagnostics = tmp_path / "production-compose"
+    diagnostics.mkdir()
+    (diagnostics / "failure.txt").write_text(
+        "exit_code=1\n"
+        "line=163\n"
+        'command=[[ "$("${compose[@]}" exec -T sidar-web cat /app/data/.marker)" == "$marker" ]]\n',
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; PRODUCTION_COMPOSE_DIAGNOSTICS_DIR="$2"; '
+            "production_compose_failure_diagnostics",
+            "bash",
+            str(helpers),
+            str(diagnostics),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    stdout_lines = result.stdout.splitlines()
+    assert stdout_lines[0] == "sidar-web"
+    assert stdout_lines[1].startswith("scripts/ci/validate_production_compose.sh:163: ")
 
 
 def test_final_summary_prints_production_compose_gate_fields() -> None:
@@ -7541,7 +7721,14 @@ def test_docker_compose_redis_has_healthcheck_and_healthy_dependencies() -> None
     assert "timeout: 3s" in redis_block
     assert "retries: 20" in redis_block
     assert "redis:\n        condition: service_started" not in compose
-    assert compose.count("redis:\n        condition: service_healthy") >= 4
+
+    # sidar-ai/sidar-web depend on redis from core docker-compose.yml;
+    # sidar-gpu/sidar-web-gpu (same dependency) split into
+    # docker-compose.gpu.yml -- see that file's header comment.
+    gpu_compose = Path("docker-compose.gpu.yml").read_text(encoding="utf-8")
+    assert "redis:\n        condition: service_started" not in gpu_compose
+    combined = compose + gpu_compose
+    assert combined.count("redis:\n        condition: service_healthy") >= 4
 
 
 def test_docker_compose_redis_requires_password_and_is_bound_to_loopback() -> None:

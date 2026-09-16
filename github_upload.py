@@ -27,6 +27,8 @@ from datetime import datetime
 from pathlib import Path
 
 from config import Config
+from core.utils.trusted_subprocess import run_trusted_command
+from core.utils.trusted_urlopen import urlopen_trusted_request
 from managers.code.git_validation import is_valid_git_ref_name
 from sidar_version import PRODUCT_VERSION
 
@@ -120,9 +122,8 @@ def run_command(
         env = _build_subprocess_env()
         if extra_env:
             env.update(extra_env)
-        result = subprocess.run(  # nosec B603  # shell=False; argv çağıran tarafta sabit/doğrulanmış (bkz. docstring).
+        result = run_trusted_command(
             args,
-            shell=False,
             check=True,
             capture_output=True,
             text=True,
@@ -296,7 +297,7 @@ def _github_api_request(
         headers["Content-Type"] = "application/json"
     request = urllib.request.Request(url, data=data, headers=headers, method=normalized_method)
     # URL origin'i yukarıdaki allowlist ile doğrulanır; tek denetlenmiş ağ sink'i budur.
-    with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310
+    with urlopen_trusted_request(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
 
 

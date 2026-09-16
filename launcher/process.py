@@ -15,6 +15,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from core.utils.trusted_subprocess import popen_trusted_command
+
 # Terminal renkleri (ANSI). main.py'nin kendi CYAN/GREEN/RESET sabitleriyle
 # birebir aynı, sabit/asla değişmeyen literal değerler olduğu için burada
 # bağımsız olarak tutuluyor — main.py'ye geri import etmek gereksiz bir
@@ -109,7 +111,7 @@ def run_with_streaming(
     directly in tests, and main.py's own directory (not this module's, which
     now lives one level down in launcher/) as the child process cwd.
     """
-    process = subprocess.Popen(  # nosec B603  # komut listesi launcher tarafından güvenli şekilde üretilir.
+    process = popen_trusted_command(
         cmd,
         cwd=cwd or ".",
         stdout=subprocess.PIPE,

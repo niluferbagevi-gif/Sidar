@@ -82,7 +82,11 @@ def apply_vram_memory_fraction(
         return
 
     legacy_frac = get_float_env("GPU_MEMORY_FRACTION", 0.8)
-    llm_frac = get_float_env("LLM_GPU_MEMORY_FRACTION", legacy_frac)
+    # Kept in sync with config.py's Config.LLM_GPU_MEMORY_FRACTION/
+    # RAG_GPU_MEMORY_FRACTION default formula: a 65/35 split of legacy_frac so
+    # neither default alone (nor together, when only one of the two env vars
+    # below is explicitly set) overflows the safe VRAM budget.
+    llm_frac = get_float_env("LLM_GPU_MEMORY_FRACTION", max(0.1, min(0.9, legacy_frac * 0.65)))
     rag_frac = get_float_env("RAG_GPU_MEMORY_FRACTION", max(0.1, min(0.5, legacy_frac * 0.35)))
     if "LLM_GPU_MEMORY_FRACTION" in environ or "RAG_GPU_MEMORY_FRACTION" in environ:
         vram_budget = normalize_gpu_memory_fractions(llm_frac, rag_frac)

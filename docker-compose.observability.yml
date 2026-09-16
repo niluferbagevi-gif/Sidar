@@ -1,0 +1,187 @@
+# Observability profil servisleri: Jaeger tracing, Redis/Postgres exporter'ları,
+# cAdvisor, Prometheus, Grafana — hepsi `profiles: ["observability"]` ile
+# etiketli. docker-compose.yml (core) ile birlikte -f ile birleştirilir; tek
+# başına yeterli değildir (redis/postgres gibi izlenen servisler core dosyada
+# kalır — redis-exporter/postgres-exporter onlara `depends_on` ile bağlanır).
+#
+# Kullanım:
+#   docker compose -f docker-compose.yml -f docker-compose.observability.yml --profile observability up
+#   # cpu/gpu ile birlikte tracing + metrik toplamak için (ör. observability + cpu):
+#   docker compose -f docker-compose.yml -f docker-compose.observability.yml --profile cpu --profile observability up
+#
+# Bu dosyadaki sidecar'lara (jaeger, exporter'lar, cadvisor, prometheus)
+# bilinçli olarak curl/wget tabanlı bir healthcheck EKLENMEDİ: bir kod
+# incelemesi bunların hiçbirinde healthcheck olmadığını işaret etti, ancak bu
+# sandbox'ta canlı bir Docker daemon olmadığından (yalnızca CLI var) imajların
+# içeriği (shell/wget/curl var mı) doğrulanamadı — ör. Jaeger'ın `all-in-one`
+# imajı ve bazı exporter varyantları minimal/`scratch` tabanlı olup hiç shell
+# içermeyebilir; yanlış bir healthcheck komutu "unhealthy"yi hiçbir zaman
+# geçmeyen, gerçek bir soruna işaret etmeyen kalıcı bir yanlış alarma
+# dönüşür (hiçbir servis bunlara `condition: service_healthy` ile bağımlı
+# değil, yani bunu yanlış yapmak başlangıç sırasını bozmaz ama yanıltıcı bir
+# sağlık durumu üretir). Bunun yerine, aşağıda gerçekten doğrulanabilen ve
+# risksiz olan kaynak limiti uygulandı; healthcheck eklemek gerçek bir Docker
+# ortamında her imajın içeriği doğrulanarak ayrı bir değişiklik olarak
+# yapılmalı.
+
+services:
+  jaeger:
+    profiles: ["observability"]
+    image: jaegertracing/all-in-one:1.63.0
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_jaeger
+    restart: unless-stopped
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+    cpus: 1.0
+    mem_limit: 512m
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  redis-exporter:
+    profiles: ["observability"]
+    image: oliver006/redis_exporter:v1.67.0
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_redis_exporter
+    restart: unless-stopped
+    environment:
+      - REDIS_ADDR=redis://redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?Set a strong REDIS_PASSWORD in .env; empty/default passwords are refused}
+    depends_on:
+      - redis
+    cpus: 0.25
+    mem_limit: 128m
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+
+  postgres-exporter:
+    profiles: ["observability"]
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_postgres_exporter
+    restart: unless-stopped
+    environment:
+      - DATA_SOURCE_NAME=postgresql://${POSTGRES_USER:-sidar}:${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-sidar}?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    cpus: 0.25
+    mem_limit: 128m
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+
+  cadvisor:
+    profiles: ["observability"]
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_cadvisor
+    restart: unless-stopped
+    # cAdvisor'ın kendi belgeleri (docs/running.md) `--privileged`'in her
+    # zaman şart olmadığını, yalnız bazı kilitli dağıtımlarda (RHEL/CentOS
+    # tarzı) gerekli olduğunu ve daha dar bir alternatif olarak
+    # `--device=/dev/kmsg` + özel bir seccomp profiliyle de çalışabileceğini
+    # belirtiyor. Burada zaten `/dev/kmsg` device'ı ayrıca mount ediliyor
+    # (aşağıda) — bu da privileged'i teorik olarak gereksiz kılabilir. Ama bu
+    # sandbox'ta gerçek bir host/kernel üzerinde doğrulama imkanı yok ve
+    # yanlış giderse cadvisor'ın bazı host konfigürasyonlarında (özellikle
+    # cgroup v1/v2 karışık ortamlar) container metriklerini sessizce
+    # toplayamaz hale gelmesi riski var; bu yüzden cadvisor'ın kendi
+    # varsayılan/önerilen duruşu korunuyor, yalnızca gerekçesi belgelendi.
+    privileged: true
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    cpus: 1.0
+    mem_limit: 512m
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  # prometheus.yml, sidar-web/sidar-gpu job'ları için bearer_token_file ile
+  # METRICS_TOKEN okur (bkz. dosyadaki not — bu uçlar zaten her zaman
+  # Authorization: Bearer ister). prometheus.yml statik bir dosya olduğundan
+  # token'ı doğrudan içeremez; bu tek-seferlik servis METRICS_TOKEN'ı
+  # prometheus'un salt-okunur config mount'undan ayrı, yazılabilir bir named
+  # volume'e dosya olarak yazar. METRICS_TOKEN boşsa fail-closed durur —
+  # prometheus onsuz zaten hiçbir sidar-web/-gpu metriği toplayamaz.
+  prometheus-token-init:
+    profiles: ["observability"]
+    image: prom/prometheus:v2.54.1
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_prometheus_token_init
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        printf '%s' "${METRICS_TOKEN:?Set a METRICS_TOKEN in .env; sidar-web/-gpu metrics endpoints always require Authorization: Bearer and Prometheus cannot scrape them without it}" > /etc/prometheus-secrets/metrics_token
+        chmod 400 /etc/prometheus-secrets/metrics_token
+    volumes:
+      - prometheus_secrets:/etc/prometheus-secrets
+
+  prometheus:
+    profiles: ["observability"]
+    image: prom/prometheus:v2.54.1
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker_setup/prometheus:/etc/prometheus:ro
+      - prometheus_secrets:/etc/prometheus-secrets:ro
+    depends_on:
+      redis-exporter:
+        condition: service_started
+      postgres-exporter:
+        condition: service_started
+      cadvisor:
+        condition: service_started
+      prometheus-token-init:
+        condition: service_completed_successfully
+    cpus: 1.0
+    mem_limit: 1g
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+
+  grafana:
+    profiles: ["observability"]
+    image: grafana/grafana:11.2.0
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?Set a strong GRAFANA_ADMIN_PASSWORD in .env; default admin/admin is refused}
+    volumes:
+      - ./docker_setup/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./docker_setup/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:3000/api/health >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    depends_on:
+      - prometheus
+    cpus: 0.5
+    mem_limit: 512m
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M

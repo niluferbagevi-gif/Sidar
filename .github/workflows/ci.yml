@@ -189,6 +189,12 @@ jobs:
       - name: Check module-notes documentation inventory
         run: uv run python scripts/ci/check_module_notes_inventory.py
 
+      - name: Check web_server.py size budget
+        run: uv run python scripts/ci/check_web_server_size_baseline.py
+
+      - name: Check CHANGELOG.md entry budget
+        run: uv run python scripts/ci/check_changelog_entry_budget.py
+
       - name: Run Python format check gate (ruff format)
         run: uv run ruff format --check .
 
@@ -579,6 +585,17 @@ jobs:
       # 30s default HTTP timeout can time out these individual downloads on a
       # slower/self-hosted link well before the transfer itself would fail.
       UV_HTTP_TIMEOUT: "180"
+      # uv's default of 50 in-flight concurrent downloads can saturate this
+      # operator's home internet link during a cold cache fill, which is
+      # what triggered the WSL2 broker disconnects documented in
+      # docs/runbooks/gpu-runner-continuity.md. uv has no byte/bandwidth-size
+      # throttle (only this count-based knob -- see astral-sh/uv#1205 and
+      # astral-sh/uv#10570), so serializing to one download at a time is the
+      # only way to bound peak simultaneous throughput without adding an
+      # external bandwidth-limiting tool. This trades wall-clock time on a
+      # cold fill (rare -- only after an explicit `uv cache clean`) for a
+      # link that never has more than one multi-hundred-MB transfer open.
+      UV_CONCURRENT_DOWNLOADS: "1"
 
     steps:
       - name: Checkout
@@ -593,8 +610,30 @@ jobs:
         uses: astral-sh/setup-uv@v4
         with:
           version: "0.12.0"
-          enable-cache: true
-          cache-dependency-glob: '**/uv.lock'
+          # This is a persistent self-hosted host, not an ephemeral VM: uv's
+          # own default cache directory already lives on local disk and
+          # survives across every job for free. setup-uv's enable-cache
+          # wraps that same directory in an actions/cache save/restore round
+          # trip -- upstream's own "auto" default disables it on self-hosted
+          # runners for exactly this reason. This job used to override that
+          # default to `true`, which produced mismatched/racy cache keys
+          # between this job and gpu-inference-quality-gate's own
+          # (differently-configured) setup-uv step and caused redundant
+          # multi-GB wheel downloads seconds apart on the same runner.
+          enable-cache: false
+
+      - name: Pin uv cache to persistent host disk
+        # setup-uv unconditionally exports UV_CACHE_DIR pointing at
+        # $RUNNER_TEMP/setup-uv-cache regardless of enable-cache -- and
+        # RUNNER_TEMP (_work/_temp) is scratch space the runner clears
+        # between jobs, even on this persistent self-hosted host. That
+        # alone (independent of the actions/cache wrapping disabled above)
+        # meant this job and gpu-inference-quality-gate could never share
+        # a uv cache: each got its own empty _work/_temp and re-downloaded
+        # the same multi-GB wheels. Re-point it at the host's real,
+        # never-cleared home directory so both self-hosted jobs share one
+        # cache on disk.
+        run: echo "UV_CACHE_DIR=$HOME/.cache/uv" >> "$GITHUB_ENV"
 
       - name: Install system dependencies
         run: bash scripts/install_ci_system_deps.sh
@@ -623,17 +662,31 @@ jobs:
           benchmark_compare_name="${BENCHMARK_COMPARE_NAME:-baseline}"
           compare_file="$(find .benchmarks -type f -name "*_${benchmark_compare_name}.json" -print 2>/dev/null | sort -V | tail -n 1)"
           if [[ -z "$compare_file" ]]; then
-            echo "::error title=Benchmark baseline missing::No cached benchmark baseline found for ${benchmark_compare_name}. Base quality gates run separately, but production readiness is fail-closed until a benchmark baseline exists."
+            # No baseline is visible in any cache scope this run can reach. This is
+            # expected the first time a PR touches uv.lock: GitHub Actions cache
+            # access for a pull_request-triggered run is limited to this run's own
+            # ref (refs/pull/<n>/merge), the PR's base branch, and the repo default
+            # branch -- a baseline seeded on the PR's *head* branch (e.g. via
+            # workflow_dispatch) is out of scope and never restorable here, and a
+            # baseline seeded on the base branch only matches when uv.lock is
+            # identical to the base branch's, which a dependency-touching PR breaks.
+            # Bootstrap instead of failing closed: generate this run's own baseline
+            # and save it under this run's ref scope so the *next* push to this PR
+            # restores it and gets a real regression comparison.
+            echo "mode=bootstrap" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Benchmark baseline::No cached baseline found for ${benchmark_compare_name} in a reachable cache scope; bootstrapping one from this run instead of failing closed."
             {
               echo "### Benchmark baseline"
-              echo "- No cached baseline found for \`${benchmark_compare_name}\`; benchmark compare is fail-closed."
-              echo "- Base quality gates are independent and still run in the \`test\` job."
-              echo "- Seed via GitHub Actions → CI → Run workflow → \`seed_benchmark_baseline=true\`, then rerun normal CI / production-readiness."
+              echo "- No cached baseline found for \`${benchmark_compare_name}\` in a scope this run can access."
+              echo "- Bootstrapping: this run generates and saves a fresh \`${benchmark_compare_name}\` under this PR's own cache scope. **No regression comparison was performed this run.**"
+              echo "- The next push to this PR (same \`uv.lock\`) will restore this bootstrap baseline and perform a real comparison."
+              echo "- To review-gate a curated baseline for \`main\`/\`master\` instead, run: GitHub Actions → CI → Run workflow → \`seed_benchmark_baseline=true\`."
             } >> "$GITHUB_STEP_SUMMARY"
-            exit 1
+          else
+            echo "mode=compare" >> "$GITHUB_OUTPUT"
+            echo "compare_file=$compare_file" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Benchmark baseline::Using ${compare_file} for compare gate."
           fi
-          echo "compare_file=$compare_file" >> "$GITHUB_OUTPUT"
-          echo "::notice title=Benchmark baseline::Using ${compare_file} for compare gate."
 
       - name: Run benchmark compare gate
         env:
@@ -643,6 +696,7 @@ jobs:
           BENCHMARK_COMPARE_FAIL: mean:10%
           BENCHMARK_IO_COMPARE_FAIL: mean:25%
           BENCHMARK_BASELINE_FILE: ${{ steps.benchmark-baseline.outputs.compare_file }}
+          BENCHMARK_MODE: ${{ steps.benchmark-baseline.outputs.mode }}
         run: |
           set -o pipefail
           mkdir -p artifacts/benchmark
@@ -651,23 +705,32 @@ jobs:
           import os
           from pathlib import Path
 
-          baseline = Path(os.environ["BENCHMARK_BASELINE_FILE"])
-          metadata = {
-              "baseline_file": str(baseline),
-              "baseline_exists": baseline.exists(),
-              "baseline_size_bytes": baseline.stat().st_size if baseline.exists() else 0,
-          }
+          mode = os.environ["BENCHMARK_MODE"]
+          metadata = {"mode": mode}
+          if mode == "compare":
+              baseline = Path(os.environ["BENCHMARK_BASELINE_FILE"])
+              metadata.update(
+                  baseline_file=str(baseline),
+                  baseline_exists=baseline.exists(),
+                  baseline_size_bytes=baseline.stat().st_size if baseline.exists() else 0,
+              )
           Path("artifacts/benchmark/baseline-metadata.json").write_text(
               json.dumps(metadata, indent=2, sort_keys=True),
               encoding="utf-8",
           )
           PY
+          if [[ "${BENCHMARK_MODE}" == "bootstrap" ]]; then
+            compare_args=(--benchmark-save=baseline)
+            io_compare_args=(--benchmark-save=baseline)
+          else
+            compare_args=(--benchmark-compare="${BENCHMARK_BASELINE_FILE}" --benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}")
+            io_compare_args=(--benchmark-compare="${BENCHMARK_BASELINE_FILE}" --benchmark-compare-fail="${BENCHMARK_IO_COMPARE_FAIL}")
+          fi
           uv run python -m pytest -c pyproject.toml -v tests/performance -n 0 --no-cov \
             --ignore=tests/performance/test_gpu_benchmark.py \
             -k "not test_multi_user_session_message_workload_scales_with_concurrency" \
             --benchmark-json="${BENCHMARK_JSON_OUTPUT}" \
-            --benchmark-compare="${BENCHMARK_BASELINE_FILE}" \
-            --benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}" \
+            "${compare_args[@]}" \
             --benchmark-warmup=on \
             --benchmark-warmup-iterations=100000 \
             --benchmark-disable-gc \
@@ -678,8 +741,7 @@ jobs:
             uv run python -m pytest -c pyproject.toml -v tests/performance/test_benchmark.py -n 0 --no-cov \
               -k "test_multi_user_session_message_workload_scales_with_concurrency" \
               --benchmark-json="${BENCHMARK_IO_JSON_OUTPUT}" \
-              --benchmark-compare="${BENCHMARK_BASELINE_FILE}" \
-              --benchmark-compare-fail="${BENCHMARK_IO_COMPARE_FAIL}" \
+              "${io_compare_args[@]}" \
               --benchmark-warmup=on \
               --benchmark-warmup-iterations=100000 \
               --benchmark-disable-gc \
@@ -692,6 +754,13 @@ jobs:
               > artifacts/benchmark/failure.json
           }
           exit "$status"
+
+      - name: Save bootstrap benchmark baseline cache
+        if: steps.benchmark-baseline.outputs.mode == 'bootstrap'
+        uses: actions/cache/save@v6
+        with:
+          path: .benchmarks
+          key: benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
 
       - name: Upload benchmark compare artifacts
         if: always()
@@ -930,7 +999,15 @@ jobs:
     # Bounds execution after a runner accepts the job. GitHub does not apply
     # timeout-minutes while a self-hosted job is still queued/offline; the
     # operator runbook documents that separate availability failure mode.
-    timeout-minutes: 45
+    # 45m was too tight for a runner's first cold uv/pip cache fill (multi-GB
+    # torch/nvidia-cu13 wheels) over a slower link — a brand-new standby
+    # runner hit this exact timeout mid-download and got cancelled before
+    # ever reaching the actual benchmark. 90m still wasn't enough on this
+    # operator's actual link speed (individual nvidia-cu13-* wheels alone
+    # took 5-13m each on a cold cache); 180m gives real headroom for a slow
+    # connection's cold cache fill without materially weakening the
+    # fail-closed timeout.
+    timeout-minutes: 180
     needs: test
 
     env:
@@ -941,6 +1018,9 @@ jobs:
       # 30s default HTTP timeout can time out these individual downloads on a
       # slower/self-hosted link well before the transfer itself would fail.
       UV_HTTP_TIMEOUT: "180"
+      # Same operator-link rationale as benchmark-compare's identical env var
+      # -- see its comment.
+      UV_CONCURRENT_DOWNLOADS: "1"
 
     steps:
       - name: Checkout
@@ -955,7 +1035,23 @@ jobs:
         uses: astral-sh/setup-uv@v4
         with:
           version: "0.12.0"
-          enable-cache: true
+          # Same persistent self-hosted host as benchmark-compare -- see the
+          # comment on that job's "Set up uv" step. uv's own local disk
+          # cache already survives across jobs here; routing it through
+          # actions/cache (enable-cache: true, previously without even a
+          # cache-dependency-glob) produced a different cache key than the
+          # benchmark job's and caused redundant re-downloads of the same
+          # multi-GB nvidia-cu13/torch wheels moments apart.
+          enable-cache: false
+
+      - name: Pin uv cache to persistent host disk
+        # See the comment on benchmark-compare's identical step: setup-uv
+        # unconditionally exports UV_CACHE_DIR under $RUNNER_TEMP
+        # (_work/_temp), which the runner clears between jobs even on this
+        # persistent host, regardless of enable-cache. Without this
+        # override this job and benchmark-compare each got their own empty
+        # _work/_temp and could never share a uv cache.
+        run: echo "UV_CACHE_DIR=$HOME/.cache/uv" >> "$GITHUB_ENV"
 
       - name: Cache APT packages (PortAudio)
         uses: awalsh128/cache-apt-pkgs-action@v1.6.3
