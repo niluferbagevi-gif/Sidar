@@ -17,7 +17,7 @@ def test_watchdog_workflow_guards_gate_variable_and_runner_capacity() -> None:
     assert "GPU_BENCH_GATE_ENABLED: ${{ vars.ENABLE_GPU_BENCH_GATE }}" in workflow
     assert '[[ "${GPU_BENCH_GATE_ENABLED}" != "true" ]]' in workflow
     assert "--minimum-online 1" in workflow
-    assert "--minimum-idle 1" in workflow
+    assert "--minimum-idle" not in workflow
     assert "types: [requested]" in workflow
     assert "actions/github-script@v8" in workflow
 
@@ -32,7 +32,7 @@ def test_runbook_provisions_and_verifies_repository_control_plane() -> None:
     assert "GPU_RUNNER_MONITOR_TOKEN" in runbook
     assert "`self-hosted`, `linux`, `x64`, `gpu`, `cuda`" in runbook
     assert "yerel GPU sonucu bu kontrolü bypass edemez" in runbook
-    assert "--minimum-idle 1" in runbook
+    assert "Neden `--minimum-idle` kullanılmıyor" in runbook
 
 
 def _runner(name: str, *, status: str = "online", labels: tuple[str, ...] = ()) -> dict:

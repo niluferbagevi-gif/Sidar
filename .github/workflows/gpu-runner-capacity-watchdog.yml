@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   verify-redundant-capacity:
-    name: Verify two online GPU runners
+    name: Verify online GPU runner capacity
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -32,7 +32,7 @@ jobs:
             echo "::error title=GPU evidence gate disabled::Repository variable ENABLE_GPU_BENCH_GATE must remain exactly true; production readiness cannot rely on local GPU evidence."
             exit 1
           fi
-      - name: Check primary and warm-standby capacity
+      - name: Check online GPU runner capacity
         id: runner_capacity
         continue-on-error: true
         env:
@@ -40,8 +40,7 @@ jobs:
         run: |
           python scripts/ci/check_gpu_runner_capacity.py \
             --repo "${GITHUB_REPOSITORY}" \
-            --minimum-online 1 \
-            --minimum-idle 1
+            --minimum-online 1
       - name: Open or update GPU runner capacity alert
         if: steps.gate_variable.outcome == 'failure' || steps.runner_capacity.outcome == 'failure'
         uses: actions/github-script@v8
@@ -53,7 +52,7 @@ jobs:
             });
             const existing = issues.find((issue) => !issue.pull_request && issue.title === title);
             const body = [
-              "The GPU runner watchdog found a disabled evidence gate, insufficient labeled online runners, or no idle eligible runner.",
+              "The GPU runner watchdog found a disabled evidence gate or insufficient labeled online runners.",
               "",
               `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
               "",

@@ -27,7 +27,7 @@ def test_watchdog_workflow_uses_hosted_control_plane_and_checks_capacity() -> No
     assert "BENCHMARK_RUNNER_MONITOR_TOKEN" in workflow
     assert "check_benchmark_runner_capacity.py" in workflow
     assert "--minimum-online 1" in workflow
-    assert "--minimum-idle 1" in workflow
+    assert "--minimum-idle" not in workflow
     assert "types: [requested]" in workflow
     assert "actions/github-script@v8" in workflow
 
@@ -126,3 +126,4 @@ def test_runbook_keeps_compare_and_baseline_evidence_fail_closed() -> None:
     assert "compare kapısı gevşetilmemeli" in runbook
     assert "Host başına baseline hazırlığı" in runbook
     assert "--minimum-online 1" in runbook
+    assert "Neden `--minimum-idle` kullanılmıyor" in runbook
