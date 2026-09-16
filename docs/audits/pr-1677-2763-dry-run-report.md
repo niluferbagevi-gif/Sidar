@@ -4,7 +4,7 @@ Snapshot time: **2026-09-16 UTC**. Repository: `niluferbagevi-gif/Sidar`.
 
 ## Safety contract
 
-This is a **dry-run artifact**. No pull request was closed, merged, approved, rebased, or otherwise mutated. PRs #2739, #2794, and #2808 were explicitly left unmerged.
+The triage classifications remain a **dry-run artifact**. In the later controlled update-branch pass, only #2706, #2737, #2768, #2793, #2795, #2796, and #2805 were updated through GitHub's update-branch API. No pull request was closed, merged, approved, or commented on, and no PR was changed beyond those seven branch updates. PRs #2739, #2794, and #2808 were not touched.
 
 ## Authentication and authorization
 
@@ -58,19 +58,23 @@ The CSV was checked against a fresh live `OPEN` query, not only against the earl
 
 #1942, #2069, #2696
 
-## Requested live status snapshot
+## Controlled update-branch result
 
-For all seven requested PRs below, every completed required/observed check is successful; only the expected `Seed benchmark baseline cache` and `Publish Standalone Installer Bundle` jobs are skipped. GitHub reports no submitted review decision (`reviewDecision` is empty), `MERGEABLE`, and `BEHIND`.
+Before the operation, all seven authorized PRs were `OPEN`, non-draft, based on `main`, `MERGEABLE`, `BEHIND`, and had no submitted `reviewDecision`. Each update used GitHub's `PUT /repos/niluferbagevi-gif/Sidar/pulls/{number}/update-branch` endpoint with the observed head SHA as `expected_head_sha`; no check was bypassed. GitHub accepted all seven requests with `Updating pull request branch.`
 
-| PR | Check summary | `reviewDecision` | `mergeable` | `mergeStateStatus` |
-|---|---|---|---|---|
-| #2706 | 17 success, 2 skipped, 0 failed | none | `MERGEABLE` | `BEHIND` |
-| #2737 | 17 success, 2 skipped, 0 failed | none | `MERGEABLE` | `BEHIND` |
-| #2768 | 15 success, 2 skipped, 0 failed | none | `MERGEABLE` | `BEHIND` |
-| #2793 | 15 success, 2 skipped, 0 failed | none | `MERGEABLE` | `BEHIND` |
-| #2795 | 15 success, 2 skipped, 0 failed | none | `MERGEABLE` | `BEHIND` |
-| #2796 | 15 success, 2 skipped, 0 failed | none | `MERGEABLE` | `BEHIND` |
-| #2805 | 17 success, 2 skipped, 0 failed | none | `MERGEABLE` | `BEHIND` |
+The workflow was then polled until all required checks completed. The common set of 11 required checks passed on every updated head: `PostgreSQL Connection Pool Stress Test`, `Production readiness aggregate`, `GPU Inference Required Evidence Gate`, `Required release checks audit`, `Installer manifest and smoke gate`, `Production-minimal runtime validation`, `migration-and-pool-checks`, `Production Compose runtime validation`, `Analyze (python)`, `Analyze (javascript-typescript)`, and `Base quality gates (lint, smoke, unit, coverage, frontend)`.
+
+| PR | State | Draft | Base | Head SHA before → after | `mergeable` | `mergeStateStatus` | `reviewDecision` | Required checks | All checks |
+|---|---|---|---|---|---|---|---|---|---|
+| #2706 | `OPEN` | false | `main` | `e4726b6` → `f0277c4` | `MERGEABLE` | `CLEAN` | none | 11 passed | 15 success, 2 skipped, 0 failed/pending |
+| #2737 | `OPEN` | false | `main` | `0ab78d7` → `dd91429` | `MERGEABLE` | `CLEAN` | none | 11 passed | 15 success, 2 skipped, 0 failed/pending |
+| #2768 | `OPEN` | false | `main` | `2db8d02` → `81a0789` | `MERGEABLE` | `CLEAN` | none | 11 passed | 15 success, 2 skipped, 0 failed/pending |
+| #2793 | `OPEN` | false | `main` | `aa00803` → `a874148` | `MERGEABLE` | `CLEAN` | none | 11 passed | 15 success, 2 skipped, 0 failed/pending |
+| #2795 | `OPEN` | false | `main` | `82839c0` → `8e76c12` | `MERGEABLE` | `CLEAN` | none | 11 passed | 15 success, 2 skipped, 0 failed/pending |
+| #2796 | `OPEN` | false | `main` | `1ebe239` → `4c8c4a8` | `MERGEABLE` | `CLEAN` | none | 11 passed | 15 success, 2 skipped, 0 failed/pending |
+| #2805 | `OPEN` | false | `main` | `66cffeb` → `bdad082` | `MERGEABLE` | `CLEAN` | none | 11 passed | 16 success, 2 skipped, 0 failed/pending |
+
+No merge was performed. No required check was bypassed. The 234 historical close candidates were neither closed nor commented on.
 
 ## Explicit no-merge guard
 
