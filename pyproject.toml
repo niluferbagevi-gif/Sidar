@@ -81,7 +81,7 @@ dependencies = [
   "nemoguardrails>=0.22.0,<0.23.0",
   # ── Harici entegrasyonlar ─────────────────────────────────────────────
   "PyGithub~=2.4.0",
-  "duckduckgo-search~=6.2.13",
+  "duckduckgo-search>=6.2.13,<8.2.0",
   "websockets>=16.1.1,<17.0",
   "pillow>=12.2.0,<14.0.0",
   "pyttsx3~=2.98",
