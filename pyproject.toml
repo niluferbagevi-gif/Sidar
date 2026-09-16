@@ -53,7 +53,7 @@ dependencies = [
   # ── Veritabanı ─────────────────────────────────────────────────────────
   "aiosqlite~=0.22.1",
   "SQLAlchemy~=2.0.36",
-  "alembic~=1.19.1",
+  "alembic>=1.19.1,<1.21.0",
   # ── Güvenlik / Kimlik doğrulama ────────────────────────────────────────
   "cryptography>=46.0.6",
   "argon2-cffi>=25.1.0,<26.0.0",
