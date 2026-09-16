@@ -585,6 +585,17 @@ jobs:
       # 30s default HTTP timeout can time out these individual downloads on a
       # slower/self-hosted link well before the transfer itself would fail.
       UV_HTTP_TIMEOUT: "180"
+      # uv's default of 50 in-flight concurrent downloads can saturate this
+      # operator's home internet link during a cold cache fill, which is
+      # what triggered the WSL2 broker disconnects documented in
+      # docs/runbooks/gpu-runner-continuity.md. uv has no byte/bandwidth-size
+      # throttle (only this count-based knob -- see astral-sh/uv#1205 and
+      # astral-sh/uv#10570), so serializing to one download at a time is the
+      # only way to bound peak simultaneous throughput without adding an
+      # external bandwidth-limiting tool. This trades wall-clock time on a
+      # cold fill (rare -- only after an explicit `uv cache clean`) for a
+      # link that never has more than one multi-hundred-MB transfer open.
+      UV_CONCURRENT_DOWNLOADS: "1"
 
     steps:
       - name: Checkout
@@ -599,8 +610,30 @@ jobs:
         uses: astral-sh/setup-uv@v4
         with:
           version: "0.12.0"
-          enable-cache: true
-          cache-dependency-glob: '**/uv.lock'
+          # This is a persistent self-hosted host, not an ephemeral VM: uv's
+          # own default cache directory already lives on local disk and
+          # survives across every job for free. setup-uv's enable-cache
+          # wraps that same directory in an actions/cache save/restore round
+          # trip -- upstream's own "auto" default disables it on self-hosted
+          # runners for exactly this reason. This job used to override that
+          # default to `true`, which produced mismatched/racy cache keys
+          # between this job and gpu-inference-quality-gate's own
+          # (differently-configured) setup-uv step and caused redundant
+          # multi-GB wheel downloads seconds apart on the same runner.
+          enable-cache: false
+
+      - name: Pin uv cache to persistent host disk
+        # setup-uv unconditionally exports UV_CACHE_DIR pointing at
+        # $RUNNER_TEMP/setup-uv-cache regardless of enable-cache -- and
+        # RUNNER_TEMP (_work/_temp) is scratch space the runner clears
+        # between jobs, even on this persistent self-hosted host. That
+        # alone (independent of the actions/cache wrapping disabled above)
+        # meant this job and gpu-inference-quality-gate could never share
+        # a uv cache: each got its own empty _work/_temp and re-downloaded
+        # the same multi-GB wheels. Re-point it at the host's real,
+        # never-cleared home directory so both self-hosted jobs share one
+        # cache on disk.
+        run: echo "UV_CACHE_DIR=$HOME/.cache/uv" >> "$GITHUB_ENV"
 
       - name: Install system dependencies
         run: bash scripts/install_ci_system_deps.sh
@@ -985,6 +1018,9 @@ jobs:
       # 30s default HTTP timeout can time out these individual downloads on a
       # slower/self-hosted link well before the transfer itself would fail.
       UV_HTTP_TIMEOUT: "180"
+      # Same operator-link rationale as benchmark-compare's identical env var
+      # -- see its comment.
+      UV_CONCURRENT_DOWNLOADS: "1"
 
     steps:
       - name: Checkout
@@ -999,7 +1035,23 @@ jobs:
         uses: astral-sh/setup-uv@v4
         with:
           version: "0.12.0"
-          enable-cache: true
+          # Same persistent self-hosted host as benchmark-compare -- see the
+          # comment on that job's "Set up uv" step. uv's own local disk
+          # cache already survives across jobs here; routing it through
+          # actions/cache (enable-cache: true, previously without even a
+          # cache-dependency-glob) produced a different cache key than the
+          # benchmark job's and caused redundant re-downloads of the same
+          # multi-GB nvidia-cu13/torch wheels moments apart.
+          enable-cache: false
+
+      - name: Pin uv cache to persistent host disk
+        # See the comment on benchmark-compare's identical step: setup-uv
+        # unconditionally exports UV_CACHE_DIR under $RUNNER_TEMP
+        # (_work/_temp), which the runner clears between jobs even on this
+        # persistent host, regardless of enable-cache. Without this
+        # override this job and benchmark-compare each got their own empty
+        # _work/_temp and could never share a uv cache.
+        run: echo "UV_CACHE_DIR=$HOME/.cache/uv" >> "$GITHUB_ENV"
 
       - name: Cache APT packages (PortAudio)
         uses: awalsh128/cache-apt-pkgs-action@v1.6.3

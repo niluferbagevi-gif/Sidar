@@ -31,7 +31,7 @@ def test_dependabot_config_uses_weekly_grouped_prs_with_labels() -> None:
         assert entry["schedule"]["interval"] == "weekly"
         assert entry["schedule"]["day"] == "monday"
         assert entry["schedule"]["timezone"] == "Etc/UTC"
-        assert entry["open-pull-requests-limit"] == 5
+        assert entry["open-pull-requests-limit"] == 2
         assert "dependencies" in entry["labels"]
         assert entry["commit-message"]["prefix"] == "deps"
         assert entry["commit-message"]["include"] == "scope"
