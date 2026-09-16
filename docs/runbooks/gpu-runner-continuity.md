@@ -30,16 +30,26 @@ bir cloud GPU host'unda** (farklı güç/ağ/elektrik kaynağı) kurulmalı ve a
 
 `GPU Runner Capacity Watchdog` workflow'u saatlik olarak önce repository variable
 `ENABLE_GPU_BENCH_GATE` değerinin tam olarak `true` kaldığını doğrular, ardından GitHub runner
-API'sini sorgular; yapılandırılan asgari sayıda uygun online runner veya kuyruktaki yeni işi
-alabilecek en az bir idle runner bulunmadığında kırmızı olur. Her `CI` workflow'u requested
-durumuna geçtiğinde de aynı kontrol hemen tetiklenir; böylece label/service/kapasite sorunu
-saatlik schedule beklemez. Repository secret olarak runner metadata
-okuma yetkili, dar kapsamlı `GPU_RUNNER_MONITOR_TOKEN` tanımlanmalıdır. Yerel/fixture kontrolü:
+API'sini sorgular; yapılandırılan asgari sayıda uygun online runner bulunmadığında kırmızı olur.
+Her `CI` workflow'u requested durumuna geçtiğinde de aynı kontrol hemen tetiklenir; böylece
+label/service/kapasite sorunu saatlik schedule beklemez.
+
+> **Neden `--minimum-idle` kullanılmıyor:** Betik hâlâ bir `--minimum-idle` bayrağını destekler
+> (gelecekte gerçek çoklu-host redundancy kurulursa kullanılabilir), ama tek host'ta watchdog
+> bunu geçirmez. `workflow_run: types: [requested]` tetikleyicisi, yeni bir CI işi kuyruğa girer
+> girmez ateşlenir — tek runner o anda önceki işi bitirmekte olabilir (`busy=true`), bu sağlıksız
+> değildir, sadece işini yapıyordur. `--minimum-idle 1` dayatmak, runner meşgulken (yani normal
+> kullanımda sürekli) sahte kırmızı üretir — tam olarak bu PR'ın çözdüğü #2764 tipi issue-spam'i
+> yeniden yaratır. `--minimum-online 1` yeterlidir: runner'ın erişilebilir olduğunu garanti eder,
+> kuyruklama GitHub'ın kendi iş sırasına bırakılır.
+
+Repository secret olarak runner metadata okuma yetkili, dar kapsamlı `GPU_RUNNER_MONITOR_TOKEN`
+tanımlanmalıdır. Yerel/fixture kontrolü:
 
 ```bash
 uv run python scripts/ci/check_gpu_runner_capacity.py \
   --repo owner/Sidar --token "$GPU_RUNNER_MONITOR_TOKEN" \
-  --minimum-online 1 --minimum-idle 1
+  --minimum-online 1
 ```
 
 Bu watchdog merge kanıtının yerine geçmez; arızayı GPU işi kuyrukta süresiz beklemeden önce

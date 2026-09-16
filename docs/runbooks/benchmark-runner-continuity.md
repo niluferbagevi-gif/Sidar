@@ -35,17 +35,23 @@ bağımsız bir cloud host'ta** (farklı güç/ağ kaynağı) kurulmalı ve ayn�
 `benchmark` etiketlerini taşımalıdır; o noktada watchdog `--minimum-online 2`'ye geri alınmalı.
 
 Saatlik `Benchmark Runner Capacity Watchdog`, yapılandırılan asgari sayıda uygun online runner
-ve yeni işi alabilecek en az bir idle runner bulunmadığını bildirir. Her `CI` workflow'u
-requested olduğunda da kontrol hemen çalışır; queue sorunu bir sonraki saatlik schedule'ı
-beklemez. GitHub runner metadata okuma yetkili, dar kapsamlı `BENCHMARK_RUNNER_MONITOR_TOKEN`
+bulunmadığını bildirir. Her `CI` workflow'u requested olduğunda da kontrol hemen çalışır; queue
+sorunu bir sonraki saatlik schedule'ı beklemez.
+
+> **Neden `--minimum-idle` kullanılmıyor:** Betik `--minimum-idle` bayrağını hâlâ destekler
+> (gerçek çoklu-host redundancy kurulursa kullanılabilir), ama tek host'ta watchdog bunu
+> geçirmez — `types: [requested]` tetikleyicisi yeni iş kuyruğa girer girmez ateşlenir ve tek
+> runner o anda başka bir işi bitiriyor olabilir; bu sağlıksız değildir. `--minimum-idle 1`
+> dayatmak, runner meşgulken (aktif CI trafiğinde sürekli) sahte kırmızı/issue-spam üretir.
+
+GitHub runner metadata okuma yetkili, dar kapsamlı `BENCHMARK_RUNNER_MONITOR_TOKEN`
 repository secret'ı tanımlanmalıdır. Yerel veya fixture doğrulaması:
 
 ```bash
 uv run python scripts/ci/check_benchmark_runner_capacity.py \
   --repo niluferbagevi-gif/Sidar \
   --token "$BENCHMARK_RUNNER_MONITOR_TOKEN" \
-  --minimum-online 1 \
-  --minimum-idle 1
+  --minimum-online 1
 ```
 
 Watchdog yalnız kapasite erken uyarısıdır; benchmark compare sonucunun veya incelenmiş baseline
