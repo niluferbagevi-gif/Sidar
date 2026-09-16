@@ -4,7 +4,7 @@ Snapshot time: **2026-09-16 UTC**. Repository: `niluferbagevi-gif/Sidar`.
 
 ## Safety contract
 
-The triage classifications remain a **dry-run artifact**. In the later controlled update-branch pass, only #2706, #2737, #2768, #2793, #2795, #2796, and #2805 were updated through GitHub's update-branch API. No pull request was closed, merged, approved, or commented on, and no PR was changed beyond those seven branch updates. PRs #2739, #2794, and #2808 were not touched.
+The triage classifications remain a **dry-run artifact**. A first controlled pass updated only #2706, #2737, #2768, #2793, #2795, #2796, and #2805 through GitHub's update-branch API. In the later authorized sequential merge operation, #2805 was updated again and merged; processing then stopped fail-closed when GitHub rejected #2706's required update-branch request. No pull request was closed, approved, or commented on. PRs #2739, #2794, and #2808 were not touched.
 
 ## Authentication and authorization
 
@@ -74,7 +74,27 @@ The workflow was then polled until all required checks completed. The common set
 | #2796 | `OPEN` | false | `main` | `1ebe239` → `4c8c4a8` | `MERGEABLE` | `CLEAN` | none | 11 passed | 15 success, 2 skipped, 0 failed/pending |
 | #2805 | `OPEN` | false | `main` | `66cffeb` → `bdad082` | `MERGEABLE` | `CLEAN` | none | 11 passed | 16 success, 2 skipped, 0 failed/pending |
 
-No merge was performed. No required check was bypassed. The 234 historical close candidates were neither closed nor commented on.
+No merge was performed during that earlier update-only pass. No required check was bypassed. The 234 historical close candidates were neither closed nor commented on.
+
+## Authorized sequential merge operation
+
+Operation time: **2026-09-16 UTC**. Authorized order: #2805, #2706, #2737, #2768, #2793, #2795, #2796. Authentication was revalidated as `niluferbagevi-gif` with `ADMIN` repository permission. The repository's ordinary merge-commit method was used without `--admin` or any branch-protection/check bypass.
+
+#2805 was re-evaluated from scratch after #2817 merged. It was `OPEN`, non-draft, based on `main`, `MERGEABLE`, and `BEHIND`, with no review decision. GitHub accepted an update-branch request protected by `expected_head_sha=bdad082feb38b0fe31a929bf4967282405c1b9fe`; the new head was `7008d3f79fa4fa3de4d429d4b903185fd91152d7`. Only checks attached to that new head were used. All 11 required checks passed, every observed check completed without failure/cancellation/timeout/action-required/stale status, and the final gate was `MERGEABLE` / `CLEAN`. #2805 was merged with the normal merge-commit method, producing `c0fc691853c4669bde66d653f4c12096ac26669b`; its final state is `MERGED`.
+
+Main changed after that merge, so #2706 was re-evaluated from scratch. It remained `OPEN`, non-draft, based on `main`, `MERGEABLE`, and `BEHIND`, with head `f0277c42182c8db3ac6803925954cb5538992bad` and no review decision. Its required update-branch request was rejected with HTTP 403 because the active personal access token lacks the `workflow` scope needed to update `.github/workflows/release-quality.yml`. No new head was created, prior `CLEAN` or check results were not reused, and #2706 was not merged. Per the fail-closed stop rule, #2737, #2768, #2793, #2795, and #2796 were not processed or mutated.
+
+| PR | Old head | New head | Update-branch result | Required checks used for merge | Merge method | Merge commit | Final result |
+|---|---|---|---|---|---|---|---|
+| #2805 | `bdad082feb38b0fe31a929bf4967282405c1b9fe` | `7008d3f79fa4fa3de4d429d4b903185fd91152d7` | accepted | 11/11 passed on new head; 0 bad/pending | merge commit (`--merge`, no `--admin`) | `c0fc691853c4669bde66d653f4c12096ac26669b` | `MERGED` |
+| #2706 | `f0277c42182c8db3ac6803925954cb5538992bad` | none | rejected: HTTP 403, token lacks `workflow` scope | not reused/evaluated for merge | none | none | `OPEN`, `BEHIND`; operation stopped |
+| #2737 | `dd91429fd6810c7726e27a03adaf93033ebc69ac` | none | not attempted after stop | not evaluated | none | none | `OPEN`; not processed |
+| #2768 | `81a078967f5b4cb73620404f5f94f761f1d80809` | none | not attempted after stop | not evaluated | none | none | `OPEN`; not processed |
+| #2793 | `a87414854cb2ee02ea3f9d2bce38223b0ae8089f` | none | not attempted after stop | not evaluated | none | none | `OPEN`; not processed |
+| #2795 | `8e76c12b97bf863321c2baf2380e43e3b8bef0e1` | none | not attempted after stop | not evaluated | none | none | `OPEN`; not processed |
+| #2796 | `4c8c4a8d66e359bb1a8f65f065f130ec16d4d368` | none | not attempted after stop | not evaluated | none | none | `OPEN`; not processed |
+
+No required check or branch protection was bypassed. #2739, #2794, #2808, and the 234 historical close candidates were not mutated or commented on.
 
 ## Explicit no-merge guard
 
