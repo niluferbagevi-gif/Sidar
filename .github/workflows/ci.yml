@@ -106,7 +106,7 @@ jobs:
           python-version: '3.11.15'
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v10.1.0
         with:
           version: "0.12.0"
           # Cache uv's wheel/download store so large wheels like pyarrow do not
@@ -523,7 +523,7 @@ jobs:
           python-version: '3.11.15'
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v10.1.0
         with:
           version: "0.12.0"
           enable-cache: true
@@ -607,7 +607,7 @@ jobs:
           python-version: '3.11.15'
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v10.1.0
         with:
           version: "0.12.0"
           # This is a persistent self-hosted host, not an ephemeral VM: uv's
@@ -857,7 +857,7 @@ jobs:
           python-version: '3.11.15'
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v10.1.0
         with:
           version: "0.12.0"
           enable-cache: false
@@ -961,7 +961,7 @@ jobs:
           python-version: '3.11.15'
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v10.1.0
         with:
           version: "0.12.0"
           enable-cache: true
@@ -1032,7 +1032,7 @@ jobs:
           python-version: '3.11.15'
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v10.1.0
         with:
           version: "0.12.0"
           # Same persistent self-hosted host as benchmark-compare -- see the
@@ -1119,7 +1119,7 @@ jobs:
           python-version: '3.11.15'
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v10.1.0
         with:
           version: "0.12.0"
           enable-cache: false
