@@ -51,7 +51,7 @@ services:
       retries: 20
 
   postgres:
-    image: pgvector/pgvector:0.8.1-pg16
+    image: pgvector/pgvector:0.8.6-pg16
     container_name: ${COMPOSE_PROJECT_NAME:-sidar}_postgres
     restart: unless-stopped
     command: postgres -c max_connections=${POSTGRES_MAX_CONNECTIONS:-300}
@@ -82,7 +82,7 @@ services:
     # `docker compose pull` sonrası sessizce farklı davranış/API değişikliği
     # getirebilir. Diğerleriyle aynı desende belirli bir sürüme pinlendi
     # (Docker Hub'daki en güncel stabil etiket).
-    image: ollama/ollama:0.32.14
+    image: ollama/ollama:0.34.1
     container_name: ${COMPOSE_PROJECT_NAME:-sidar}_ollama
     restart: unless-stopped
     environment:
@@ -155,7 +155,7 @@ services:
   # proxy'ye salt-okunur mount edilir ve proxy host'a hiçbir port açmaz.
   docker-socket-proxy:
     profiles: ["cpu", "gpu"]
-    image: tecnativa/docker-socket-proxy:0.3.0
+    image: tecnativa/docker-socket-proxy:v0.5.0
     container_name: ${COMPOSE_PROJECT_NAME:-sidar}_docker_socket_proxy
     restart: unless-stopped
     environment:
