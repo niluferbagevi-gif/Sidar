@@ -110,7 +110,13 @@ def main(argv: list[str] | None = None) -> int:
 
     eligible = eligible_online_runners(payload)
     idle = eligible_idle_runners(payload)
-    minimum = max(2, args.minimum_online)
+    # Floor of 1 (not 2): the caller (CI) explicitly declares its required
+    # redundancy level via --minimum-online. A hardcoded floor of 2 here would
+    # silently re-impose two-host redundancy even for operators who have
+    # deliberately accepted single-host operation (see
+    # docs/runbooks/benchmark-runner-continuity.md). We still never allow 0,
+    # which would defeat the check entirely.
+    minimum = max(1, args.minimum_online)
     if len(eligible) < minimum:
         print(
             f"Benchmark runner capacity is insufficient: online={len(eligible)}, "
