@@ -88,8 +88,13 @@ fi
 
 case "$MANAGER" in
   apt)
-    "${SUDO[@]}" apt-get update
-    "${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${MISSING_PACKAGES[@]}"
+    # -o DPkg::Lock::Timeout: taze açılmış Ubuntu/WSL2 makinelerinde
+    # unattended-upgrades/apt.systemd.daily'nin dpkg kilidini tuttuğu ilk
+    # dakikalar son derece yaygındır; bu seçenek olmadan apt-get kilit
+    # tutulduğu an rc=100 ile anında başarısız olur (bkz.
+    # scripts/install_modules/install_helpers.sh: sidar_apt_get).
+    "${SUDO[@]}" apt-get -o DPkg::Lock::Timeout=180 -o Acquire::Retries=3 update
+    "${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=180 -o Acquire::Retries=3 install -y --no-install-recommends "${MISSING_PACKAGES[@]}"
     ;;
   dnf)
     "${SUDO[@]}" dnf install -y "${MISSING_PACKAGES[@]}"

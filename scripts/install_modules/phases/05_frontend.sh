@@ -49,7 +49,7 @@ setup_wsl2_audio() {
             dpkg -l "$pkg" &>/dev/null 2>&1 || pa_pkgs_needed+=("$pkg")
         done
         if [[ ${#pa_pkgs_needed[@]} -gt 0 ]]; then
-            if sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "${pa_pkgs_needed[@]}" >/dev/null 2>&1; then
+            if sidar_apt_get install -y "${pa_pkgs_needed[@]}" >/dev/null 2>&1; then
                 ok "PulseAudio paketleri kuruldu: ${pa_pkgs_needed[*]}"
             else
                 warn "Bazı PulseAudio paketleri kurulamadı: ${pa_pkgs_needed[*]}"
