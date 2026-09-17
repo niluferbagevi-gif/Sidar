@@ -366,12 +366,12 @@ def test_observability_compose_pins_tracing_and_exports_infra_metrics():
     services = _merged_compose_services()
 
     assert services["redis"]["image"] == "redis:7.4-alpine"
-    assert services["postgres"]["image"] == "pgvector/pgvector:0.8.1-pg16"
+    assert services["postgres"]["image"] == "pgvector/pgvector:0.8.6-pg16"
 
-    assert services["jaeger"]["image"] == "jaegertracing/all-in-one:1.63.0"
+    assert services["jaeger"]["image"] == "jaegertracing/all-in-one:1.76.0"
     assert ":latest" not in services["jaeger"]["image"]
 
-    assert services["redis-exporter"]["image"] == "oliver006/redis_exporter:v1.67.0"
+    assert services["redis-exporter"]["image"] == "oliver006/redis_exporter:v1.91.1"
     redis_exporter_env = services["redis-exporter"]["environment"]
     assert "REDIS_ADDR=redis://redis:6379" in redis_exporter_env
     assert any(str(item).startswith("REDIS_PASSWORD=") for item in redis_exporter_env)
@@ -380,7 +380,7 @@ def test_observability_compose_pins_tracing_and_exports_infra_metrics():
     assert "--requirepass" in services["redis"]["command"]
 
     postgres_exporter = services["postgres-exporter"]
-    assert postgres_exporter["image"] == "prometheuscommunity/postgres-exporter:v0.15.0"
+    assert postgres_exporter["image"] == "prometheuscommunity/postgres-exporter:v0.20.1"
     assert any(
         item.startswith("DATA_SOURCE_NAME=postgresql://")
         for item in postgres_exporter["environment"]
@@ -388,7 +388,7 @@ def test_observability_compose_pins_tracing_and_exports_infra_metrics():
     assert postgres_exporter["depends_on"]["postgres"]["condition"] == "service_healthy"
 
     cadvisor = services["cadvisor"]
-    assert cadvisor["image"] == "gcr.io/cadvisor/cadvisor:v0.49.1"
+    assert cadvisor["image"] == "gcr.io/cadvisor/cadvisor:v0.55.1"
     assert cadvisor["privileged"] is True
     assert "/var/lib/docker:/var/lib/docker:ro" in cadvisor["volumes"]
 
