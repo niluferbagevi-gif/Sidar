@@ -1025,7 +1025,7 @@ ENV
   grep -q "bash run_tests.sh --stage all" "$root/scripts/install_modules/phases/07_finish.sh"
   grep -q "bash run_tests.sh --stage integration" "$root/scripts/install_modules/phases/07_finish.sh"
   grep -q "bash run_tests.sh --stage e2e" "$root/scripts/install_modules/phases/07_finish.sh"
-  grep -q "RUN_BENCHMARKS=required bash run_tests.sh" "$root/scripts/install_modules/phases/07_finish.sh"
+  grep -q "bash run_tests.sh --stage benchmark" "$root/scripts/install_modules/phases/07_finish.sh"
   grep -q "./install_sidar.sh --ci-full" "$root/scripts/install_modules/phases/10_validation.sh"
   grep -q "📊 Kurulum doğrulama kapsamı" "$root/scripts/install_modules/phases/10_validation.sh"
   grep -q "scripts/install_modules/phases/07_finish.sh" "$root/install_sidar.sh"
