@@ -3273,7 +3273,7 @@ def test_ci_publishes_standalone_installer_bundle() -> None:
     assert "dist/install_sidar.sh" in ci_workflow
     assert "dist/MODULE_HASHES.txt" in ci_workflow
     assert "dist/INSTALLER_USAGE.md" in ci_workflow
-    assert "softprops/action-gh-release@v2" in ci_workflow
+    assert "softprops/action-gh-release@v3" in ci_workflow
     assert "github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')" in ci_workflow
     assert (
         "tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || "
