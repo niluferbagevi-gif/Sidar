@@ -3,9 +3,47 @@ set -Eeuo pipefail
 # shellcheck disable=SC2034  # sentinel read indirectly by sidar_source_install_utils.
 SIDAR_INSTALL_UTIL_PYTHON_ENV_SH_LOADED=1
 
+_sidar_toolchain_file="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)/scripts/toolchain.env"
+if [[ -f "$_sidar_toolchain_file" ]]; then
+    # shellcheck source=scripts/toolchain.env
+    source "$_sidar_toolchain_file"
+fi
+SIDAR_TOOLCHAIN_PYTHON_VERSION="${PYTHON_VERSION:-3.11.15}"
+SIDAR_TOOLCHAIN_UV_VERSION="${UV_VERSION:-0.12.0}"
+
 # uv-only Python environment helpers for the phase-based Sidar installer.
 # Package resolution and environment synchronization intentionally go through
 # uv venv / uv sync; legacy environment and tool-install fallbacks are not used.
+
+_sidar_install_uv_via_official_script() {
+    local uv_install_script=""
+    if [[ "$OFFLINE_MODE" == true ]]; then
+        info "Çevrimdışı paketlerden uv kurulacak (hedef sürüm: ${SIDAR_TOOLCHAIN_UV_VERSION})."
+        uv_install_script="$(resolve_offline_package_file "uv/install.sh" || true)"
+        [[ -z "$uv_install_script" ]] && uv_install_script="$(resolve_offline_package_file "uv_install.sh" || true)"
+        [[ -z "$uv_install_script" ]] && uv_install_script="$(resolve_offline_package_file "install_uv.sh" || true)"
+        [[ -n "$uv_install_script" ]] || fail "Çevrimdışı mod: offline_packages altında uv kurulum betiği bulunamadı (uv/install.sh, uv_install.sh, install_uv.sh)."
+    else
+        info "Resmi kurulum betiği ile uv indiriliyor (hedef sürüm: ${SIDAR_TOOLCHAIN_UV_VERSION})..."
+        DOWNLOADED_SCRIPT_FILE=""
+        download_verified_script \
+            "https://astral.sh/uv/install.sh" \
+            "${UV_INSTALL_SHA256:-}" \
+            "uv_install"
+        validate_downloaded_script_file "$DOWNLOADED_SCRIPT_FILE" "uv_install"
+        uv_install_script="$DOWNLOADED_SCRIPT_FILE"
+    fi
+
+    UV_VERSION="$SIDAR_TOOLCHAIN_UV_VERSION" sh "$uv_install_script"
+    [[ "$uv_install_script" == "${DOWNLOADED_SCRIPT_FILE:-}" ]] && rm -f "$DOWNLOADED_SCRIPT_FILE"
+    if [[ -f "$HOME/.cargo/env" ]]; then
+        # shellcheck source=/dev/null
+        # shellcheck disable=SC1090,SC1091
+        source "$HOME/.cargo/env"
+    fi
+    # Yeni kurulumlarda terminal yeniden başlatılmadan uv bulunabilsin
+    export PATH="$HOME/.local/bin:$PATH"
+}
 
 install_uv_cli() {
     step "uv CLI Paket Yöneticisi"
@@ -13,44 +51,64 @@ install_uv_cli() {
     export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
     if ! command -v uv &>/dev/null; then
-        local uv_install_script=""
-        if [[ "$OFFLINE_MODE" == true ]]; then
-            info "uv bulunamadı — çevrimdışı paketlerden kurulacak."
-            uv_install_script="$(resolve_offline_package_file "uv/install.sh" || true)"
-            [[ -z "$uv_install_script" ]] && uv_install_script="$(resolve_offline_package_file "uv_install.sh" || true)"
-            [[ -z "$uv_install_script" ]] && uv_install_script="$(resolve_offline_package_file "install_uv.sh" || true)"
-            [[ -n "$uv_install_script" ]] || fail "Çevrimdışı mod: offline_packages altında uv kurulum betiği bulunamadı (uv/install.sh, uv_install.sh, install_uv.sh)."
-        else
-            info "uv bulunamadı — resmi kurulum betiği ile indiriliyor..."
-            DOWNLOADED_SCRIPT_FILE=""
-            download_verified_script \
-                "https://astral.sh/uv/install.sh" \
-                "${UV_INSTALL_SHA256:-}" \
-                "uv_install"
-            validate_downloaded_script_file "$DOWNLOADED_SCRIPT_FILE" "uv_install"
-            uv_install_script="$DOWNLOADED_SCRIPT_FILE"
-        fi
-
-        sh "$uv_install_script"
-        [[ "$uv_install_script" == "${DOWNLOADED_SCRIPT_FILE:-}" ]] && rm -f "$DOWNLOADED_SCRIPT_FILE"
-        if [[ -f "$HOME/.cargo/env" ]]; then
-            # shellcheck source=/dev/null
-            # shellcheck disable=SC1090,SC1091
-            source "$HOME/.cargo/env"
-        fi
-        # Yeni kurulumlarda terminal yeniden başlatılmadan uv bulunabilsin
-        export PATH="$HOME/.local/bin:$PATH"
+        _sidar_install_uv_via_official_script
     fi
 
     if ! command -v uv &>/dev/null; then
         fail "uv kurulumu başarısız oldu. Lütfen PATH ayarlarını ve kurulum çıktısını kontrol edin."
     fi
+
+    local expected_uv_version="$SIDAR_TOOLCHAIN_UV_VERSION"
+    local detected_uv_version
+    detected_uv_version="$(uv --version | awk '{print $2}')"
+
+    if [[ "$detected_uv_version" != "$expected_uv_version" ]]; then
+        # Kullanıcının makinesinde daha önce kurulmuş (ör. `uv self update` ile
+        # güncellenmiş veya başka bir projeden kalma) farklı sürümlü bir uv,
+        # scripts/toolchain.env sözleşmesiyle çakışabilir. Kurulumu doğrudan
+        # durdurmak yerine önce sözleşmedeki sürüme kendiliğinden hizalamayı dene.
+        warn "uv toolchain drift: beklenen ${expected_uv_version}, bulunan ${detected_uv_version}. scripts/toolchain.env sözleşmesine göre otomatik hizalanıyor..."
+        # `uv self update`'in hedef sürümü ALDIĞI yer bir `--version` bayrağı
+        # değil, konumsal (positional) bir argümandır:
+        #   Usage: uv self update [OPTIONS] [TARGET_VERSION]
+        # `--version` verilirse uv "error: unexpected argument '--version'
+        # found" ile exit code 2 döndürür (canlı doğrulandı) — yani bu dal
+        # daha önce HİÇBİR ZAMAN gerçekten çalışmıyordu, `&>/dev/null` +
+        # `if ... &&` zinciri hatayı sessizce yutup her seferinde doğrudan
+        # aşağıdaki (daha ağır, ağ/offline-paket gerektiren) resmi kurulum
+        # betiği fallback'ine düşülüyordu. Bu, "beklenen 0.12.0, bulunan
+        # 0.12.5" gibi bir sürüm uyuşmazlığının fallback'in kendisi de (ör.
+        # offline paket eksikliği, ağ kısıtlaması) başarısız olduğu
+        # ortamlarda kalıcı hale gelmesini açıklıyor.
+        if [[ "$OFFLINE_MODE" != true ]]; then
+            # Çıktı artık `&>/dev/null` ile tamamen atılmıyor: `uv self
+            # update` apt/pipx/brew gibi bir paket yöneticisiyle kurulmuş bir
+            # uv'de rutin olarak reddedilir (uv bunu desteklemez) ve bu,
+            # kullanıcının GÖRMESİ gereken, teşhis değeri olan bir çıktıdır —
+            # aksi halde resmi kurulum betiği fallback'i de (ör. ağ/offline
+            # paket eksikliği) başarısız olduğunda kullanıcı elinde hiçbir
+            # ipucu olmadan kalır.
+            local self_update_output
+            if self_update_output="$(uv self update "$expected_uv_version" 2>&1)"; then
+                info "uv self update ile ${expected_uv_version} sürümüne hizalandı."
+            else
+                info "uv self update başarısız (uv büyük olasılıkla apt/pipx/brew ile kurulmuş ve self-update desteklemiyor); resmi kurulum betiğine düşülüyor. uv çıktısı: ${self_update_output}"
+                _sidar_install_uv_via_official_script
+            fi
+        else
+            _sidar_install_uv_via_official_script
+        fi
+        detected_uv_version="$(uv --version | awk '{print $2}')"
+        [[ "$detected_uv_version" == "$expected_uv_version" ]] || fail \
+            "uv toolchain drift otomatik onarılamadı: beklenen ${expected_uv_version}, bulunan ${detected_uv_version}. Manuel düzeltme: uv self update ${expected_uv_version} (uv, apt/pipx/brew gibi bir paket yöneticisiyle kuruldu ise onu kaldırıp installer'ı tekrar çalıştırın)."
+    fi
+
     ok "uv $(uv --version | cut -d' ' -f2)"
 }
 
 create_uv_venv() {
     step "uv venv Ortamı"
-    local expected_python_version="3.11"
+    local expected_python_version="$SIDAR_TOOLCHAIN_PYTHON_VERSION"
     local requested_python_version="${PYTHON_VERSION:-$expected_python_version}"
     if [[ -n "${PYTHON_VERSION:-}" && "$requested_python_version" != "$expected_python_version" ]]; then
         warn "PYTHON_VERSION=${requested_python_version} algılandı; runtime için ${expected_python_version} zorunlu."
@@ -66,9 +124,12 @@ create_uv_venv() {
     if [[ -d "$VENV_DIR" ]]; then
         info "Mevcut uv venv bulundu: $VENV_DIR"
         local detected_python_version=""
-        detected_python_version="$("$VENV_DIR/bin/python" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || true)"
+        # Tekrarlanabilir installer sözleşmesi major.minor.micro ile sabitlenir.
+        # Yalnız major.minor okumak, doğru patch sürümündeki bir ortamı her
+        # installer çalışmasında hatalı biçimde yeniden oluşturur.
+        detected_python_version="$("$VENV_DIR/bin/python" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")' 2>/dev/null || true)"
         if [[ -z "$detected_python_version" && -f "$VENV_DIR/pyvenv.cfg" ]]; then
-            detected_python_version="$(awk -F'= *' '/^version[[:space:]]*=/{print $2; exit}' "$VENV_DIR/pyvenv.cfg" 2>/dev/null | awk -F. '{print $1"."$2}' || true)"
+            detected_python_version="$(awk -F'= *' '/^version[[:space:]]*=/{print $2; exit}' "$VENV_DIR/pyvenv.cfg" 2>/dev/null || true)"
         fi
         if [[ "$detected_python_version" == "$PYTHON_VERSION" ]]; then
             ok ".venv mevcut sürümle uyumlu: $detected_python_version"
@@ -127,6 +188,56 @@ normalize_dependency_profile_value() {
     esac
 }
 
+# Kanonik dependency-profile listesi ve "Desteklenen: ..." metni: bu, dört
+# ayrı case bloğunda (install_cli.sh, python_env.sh içinde üç yerde) elle
+# tekrarlanan bir listeydi — bir kod incelemesi bunu DRY ihlali olarak
+# işaretledi. Yeni bir profil eklendiğinde hepsinin manuel güncellenmesi
+# gerekiyordu; biri unutulursa aynı profil bir yerde geçerli, başka yerde
+# "Geçersiz dependency profile" sayılabilirdi. Her çağrı yeri hâlâ kendi
+# case bloğunu koruyor (her dalın gerçek iş mantığı — SYNC_ARGS seçimi vb. —
+# farklı ve merkezi bir case ifadesine indirgenemez), ama artık hepsi aynı
+# "hangi isimler geçerli" listesini ve aynı hata metnini kullanıyor.
+readonly SIDAR_KNOWN_DEPENDENCY_PROFILES=(dev-light dev-full dev-gpu gpu-runtime production-minimal production custom)
+
+sidar_is_known_dependency_profile() {
+    local candidate="${1:-}"
+    local profile
+    for profile in "${SIDAR_KNOWN_DEPENDENCY_PROFILES[@]}"; do
+        [[ "$candidate" == "$profile" ]] && return 0
+    done
+    return 1
+}
+
+sidar_dependency_profile_usage_hint() {
+    local IFS='|'
+    printf '%s' "${SIDAR_KNOWN_DEPENDENCY_PROFILES[*]}"
+}
+
+sidar_fail_unless_known_dependency_profile() {
+    local candidate="${1:-}"
+    local allow_ask="${2:-false}"
+    if [[ "$allow_ask" == true && "$candidate" == "ask" ]]; then
+        return 0
+    fi
+    sidar_is_known_dependency_profile "$candidate" || \
+        fail "Geçersiz dependency profile: ${candidate}. Desteklenen: $(sidar_dependency_profile_usage_hint)"
+}
+
+# Review bulgusu: dev-full (--all-extras) torch/nvidia-cuda/transformers/
+# playwright/whisper dahil HER extra'yı çekiyor (~1.5-2GB); menü bunu
+# "önerilen" olarak sunuyordu ve önceki bir kurulum denemesi zaten uv sync
+# ağ zaman aşımıyla başarısız olmuş olsa bile öneri değişmiyordu. Bu,
+# sidar_remediate_uv_sync_failure()'ın (install_remediation.sh) ağ zaman
+# aşımı imzasında yazdığı "cache-prune-skipped-network-timeout" damgalı
+# remediation raporunu arar — aynı kurulum denemesinde (resume sonrası)
+# veya önceki başarısız bir `./install_sidar.sh` çalıştırmasından kalmış
+# olabilir; her iki durumda da "bu ağ zayıf/kesintili" için somut kanıt.
+sidar_prior_uv_sync_network_timeout_detected() {
+    local remediation_dir="${SCRIPT_DIR:-.}/artifacts/install/remediation"
+    [[ -d "$remediation_dir" ]] || return 1
+    grep -l "^action=.*cache-prune-skipped-network-timeout" "$remediation_dir"/*.log >/dev/null 2>&1
+}
+
 select_dependency_profile() {
     local requested="${DEPENDENCY_PROFILE:-${SIDAR_DEPENDENCY_PROFILE:-ask}}"
     requested="$(normalize_dependency_profile_value "$requested")"
@@ -134,27 +245,54 @@ select_dependency_profile() {
     if [[ "$requested" == "ask" ]]; then
         if [[ "${RUN_CI_FULL_VALIDATION:-false}" == true ]]; then
             requested="dev-full"
-            info "Tam CI/production-readiness doğrulaması seçildi; bağımlılık profili developer-full olarak ayarlandı."
+            info "Tam CI/production-readiness doğrulaması seçildi; bağımlılık profili developer-full (dev-full) olarak ayarlandı."
         elif [[ "${NO_INTERACTION:-false}" == true || "${AUTO_INSTALL:-false}" == true ]]; then
             requested="dev-full"
-            info "Etkileşimsiz kurulum: varsayılan tam geliştirici bağımlılık profili seçildi (developer-full)."
+            info "Etkileşimsiz kurulum: varsayılan tam geliştirici bağımlılık profili seçildi (developer-full, dahili adıyla dev-full)."
         elif [[ -t 0 ]]; then
-            echo
-            echo "Bağımlılık profili seçin:"
-            echo "  1) dev-light (hızlı yerel geliştirme + test araçları)"
-            echo "  2) developer-full (önerilen; tüm extras; CI/tam doğrulama)"
-            echo "  3) dev-gpu (geliştirici + RAG/GPU runtime; provider extras yok)"
-            echo "  4) production-minimal (dar no-dev runtime)"
-            echo "  5) production (runtime + postgres + telemetry)"
-            echo "  6) gpu-runtime (dar no-dev RAG/GPU runtime)"
-            echo "  7) özel provider seçimi (SIDAR_DEPENDENCY_EXTRAS)"
-            local profile_choice=""
-            if read -r -t "${SIDAR_PROMPT_TIMEOUT:-180}" -p "Seçim [1-7, varsayılan 2]: " profile_choice 2>/dev/tty; then
-                profile_choice="${profile_choice:-2}"
-            else
-                profile_choice="2"
+            # Zayıf/kesintili bağlantı kanıtı varsa (bkz. yukarıdaki fonksiyon
+            # yorumu) varsayılan öneriyi dev-full yerine dev-light'a çeviriyoruz
+            # — kullanıcı yine de 2'yi seçebilir, bu yalnızca varsayılanı ve
+            # menüdeki uyarıyı değiştirir.
+            local recommended_choice=2
+            local recommended_label="developer-full (dev-full)"
+            local weak_connection_warning=""
+            if sidar_prior_uv_sync_network_timeout_detected; then
+                recommended_choice=1
+                recommended_label="dev-light"
+                weak_connection_warning="⚠️  Önceki kurulum denemesinde 'uv sync' ağ zaman aşımına uğradı; zayıf/kesintili bağlantı tespit edildiği için varsayılan öneri dev-light'a çevrildi (yine de 2'yi seçebilirsin)."
+            fi
+            # install_sidar.sh'ın `exec > >(mask_install_log_stream | tee ...) 2>&1`
+            # log yönlendirmesi (satır ~386) normal echo/stdout'u asenkron bir
+            # pipe üzerinden geçirir; hemen altındaki `read ... 2>/dev/tty` ise
+            # kasıtlı olarak bu pipe'ı atlayıp doğrudan terminale yazar (stdout
+            # ayrıca bir dosyaya yönlendirilmiş olsa bile prompt'un görünür
+            # kalması için). İki farklı kanal, yavaş fork'lu ortamlarda (WSL2)
+            # sıralamayı bozabilir: prompt, üstündeki menü satırlarından önce
+            # görünebilir. Menü de aynı `read`'in kullandığı senkron /dev/tty
+            # kanalını paylaşsın diye tek blok halinde /dev/tty'e yazılıyor.
+            {
                 echo
-                warn "Bağımlılık profili seçimi zaman aşımına uğradı; developer-full seçildi."
+                echo "Bağımlılık profili seçin (yaklaşık indirme boyutu):"
+                echo "  1) dev-light (hızlı yerel geliştirme + test araçları) — küçük"
+                echo "  2) developer-full (tüm extras; CI/tam doğrulama; dahili/log adı: dev-full) — ağır, ~1.5-2GB (torch/CUDA/transformers/playwright/whisper dahil)"
+                echo "  3) dev-gpu (geliştirici + RAG/GPU runtime; provider extras yok) — orta-ağır (torch/CUDA dahil)"
+                echo "  4) production-minimal (dar no-dev runtime) — küçük"
+                echo "  5) production (runtime + postgres + telemetry) — küçük-orta"
+                echo "  6) gpu-runtime (dar no-dev RAG/GPU runtime) — orta-ağır (torch/CUDA dahil)"
+                echo "  7) özel provider seçimi (SIDAR_DEPENDENCY_EXTRAS)"
+                if [[ -n "$weak_connection_warning" ]]; then
+                    echo
+                    echo "$weak_connection_warning"
+                fi
+            } &> /dev/tty
+            local profile_choice=""
+            if read -r -t "${SIDAR_PROMPT_TIMEOUT:-180}" -p "Seçim [1-7, varsayılan ${recommended_choice}]: " profile_choice 2>/dev/tty; then
+                profile_choice="${profile_choice:-$recommended_choice}"
+            else
+                profile_choice="$recommended_choice"
+                echo
+                warn "Bağımlılık profili seçimi zaman aşımına uğradı; ${recommended_label} seçildi."
             fi
             case "$profile_choice" in
                 1) requested="dev-light" ;;
@@ -165,13 +303,16 @@ select_dependency_profile() {
                 6) requested="gpu-runtime" ;;
                 7) requested="custom" ;;
                 *)
-                    warn "Geçersiz bağımlılık profili seçimi (${profile_choice}); developer-full kullanılacak."
-                    requested="dev-full"
+                    warn "Geçersiz bağımlılık profili seçimi (${profile_choice}); ${recommended_label} kullanılacak."
+                    case "$recommended_choice" in
+                        1) requested="dev-light" ;;
+                        *) requested="dev-full" ;;
+                    esac
                     ;;
             esac
         else
             requested="dev-full"
-            info "TTY yok; varsayılan tam geliştirici bağımlılık profili seçildi (developer-full)."
+            info "TTY yok; varsayılan tam geliştirici bağımlılık profili seçildi (developer-full, dahili adıyla dev-full)."
         fi
     fi
 
@@ -186,10 +327,7 @@ select_dependency_profile() {
         [[ -n "${SIDAR_DEPENDENCY_EXTRAS:-}" ]] || fail "custom dependency profile seçildi ancak extras listesi boş."
     fi
 
-    case "$requested" in
-        dev-light|dev-full|dev-gpu|gpu-runtime|production-minimal|production|custom) ;;
-        *) fail "Geçersiz dependency profile: ${requested}. Desteklenen: dev-light|dev-full|dev-gpu|gpu-runtime|production-minimal|production|custom" ;;
-    esac
+    sidar_fail_unless_known_dependency_profile "$requested"
 
     DEPENDENCY_PROFILE="$requested"
     export DEPENDENCY_PROFILE SIDAR_DEPENDENCY_EXTRAS
@@ -220,6 +358,15 @@ install_python_deps() {
 
     cd "$SCRIPT_DIR" || return 1
     UV_CMD=(uv)
+
+    # Review bulgusu: uv'nin varsayılan HTTP istek zaman aşımı (30sn) --all-extras
+    # gibi ~1.5GB+ indiren profiller için düşük; torch/nvidia-* gibi büyük
+    # wheel'lerde "operation timed out" ile sonuçlanabiliyor. Kullanıcı
+    # SIDAR_UV_HTTP_TIMEOUT ile override edebilsin diye .env/ortam üzerinden
+    # ayarlanabilir; aynı desen self-hosted CI job'larında zaten kullanılıyor
+    # (bkz. ci.yml UV_HTTP_TIMEOUT: "180"), burada installer'ın kendisine de
+    # uygulanıyor.
+    export UV_HTTP_TIMEOUT="${SIDAR_UV_HTTP_TIMEOUT:-120}"
 
     local dependency_profile="${DEPENDENCY_PROFILE:-${SIDAR_DEPENDENCY_PROFILE:-dev-full}}"
     dependency_profile="$(normalize_dependency_profile_value "$dependency_profile")"
@@ -262,7 +409,7 @@ install_python_deps() {
             sync_command_label="uv sync --frozen --extra production-minimal --no-dev"
             ;;
         *)
-            fail "Geçersiz dependency profile: ${dependency_profile}. Desteklenen: dev-light|dev-full|dev-gpu|gpu-runtime|production-minimal|production|custom"
+            fail "Geçersiz dependency profile: ${dependency_profile}. Desteklenen: $(sidar_dependency_profile_usage_hint)"
             ;;
     esac
     export DEPENDENCY_PROFILE="$dependency_profile"
@@ -290,8 +437,37 @@ install_python_deps() {
     if [[ "$dependency_profile" == "production" || "$dependency_profile" == "production-minimal" ]]; then
         warn "Production dependency profili dev/test araçlarını kurmaz; smoke/CI/self-healing için dev-full veya dev-light kullanın."
     fi
-    if ! "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"; then
-        fail "Bağımlılık kurulumu başarısız oldu (${sync_command_label}). Lock dosyası pyproject ile uyumsuzsa bilinçli olarak --upgrade-lock çalıştırın."
+    # Review bulgusu: `uv sync` tek denemeydi; başarısızlıkta doğrudan
+    # sarmalayan 04_workspace fazının baştan resume edilmesine (auto-heal)
+    # bırakılıyordu — install_sidar.sh'ın kendi modül indirme kodu
+    # (SIDAR_INSTALL_MODULE_DOWNLOAD_RETRIES/RETRY_DELAY, satır ~939-1076)
+    # zaten üstel-backoff'lu retry uyguluyorken, en pahalı/en yavaş adım olan
+    # `uv sync` bundan yararlanmıyordu. Aynı failure imzası tekrarlanırsa
+    # install_remediation.sh zaten erken kesiyor (sidar_handle_install_failure
+    # → "aynı failure imzası tekrarlandı"), dolayısıyla bu döngü sonsuz retry
+    # riski taşımıyor — yalnızca geçici ağ kesintilerinde tüm fazı baştan
+    # resume etmeden önce birkaç ucuz deneme hakkı tanıyor.
+    local sync_max_attempts="${SIDAR_UV_SYNC_RETRIES:-3}"
+    local sync_attempt=1
+    local sync_ok=false
+    while (( sync_attempt <= sync_max_attempts )); do
+        if "${UV_CMD[@]}" sync "${SYNC_ARGS[@]}"; then
+            sync_ok=true
+            break
+        fi
+        if (( sync_attempt < sync_max_attempts )); then
+            local sync_retry_delay_base="${SIDAR_UV_SYNC_RETRY_DELAY_BASE_SECONDS:-5}"
+            local sync_retry_delay=$((sync_retry_delay_base * (2 ** (sync_attempt - 1))))
+            warn "Auto-heal: ${sync_command_label} başarısız (deneme ${sync_attempt}/${sync_max_attempts}); ${sync_retry_delay}s sonra tekrar denenecek."
+            if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" && "${SIDAR_INSTALL_SKIP_RETRY_SLEEP:-0}" != "1" ]]; then
+                sleep "$sync_retry_delay"
+            fi
+        fi
+        sync_attempt=$((sync_attempt + 1))
+    done
+
+    if [[ "$sync_ok" != true ]]; then
+        fail "Bağımlılık kurulumu başarısız oldu (${sync_command_label}, ${sync_max_attempts} denemeden sonra). Lock dosyası pyproject ile uyumsuzsa bilinçli olarak --upgrade-lock çalıştırın."
     fi
 
     if ! "${UV_CMD[@]}" run python -c "import pydantic, pydantic_settings" >/dev/null 2>&1; then
@@ -426,7 +602,7 @@ sync_pytorch_cuda_wheels() {
             sync_profile_label="custom + gpu-runtime"
             ;;
         *)
-            fail "Geçersiz dependency profile: ${dependency_profile}. Desteklenen: dev-light|dev-full|dev-gpu|gpu-runtime|production-minimal|production|custom"
+            fail "Geçersiz dependency profile: ${dependency_profile}. Desteklenen: $(sidar_dependency_profile_usage_hint)"
             ;;
     esac
 
@@ -443,6 +619,7 @@ sync_pytorch_cuda_wheels() {
 }
 
 verify_torch_cuda() {
+    # shellcheck disable=SC2153  # GPU_AVAILABLE is sourced from earlier hardware detection phases.
     if [[ "$GPU_AVAILABLE" == true ]]; then
         step "PyTorch CUDA Doğrulaması"
         if python -c "import torch; exit(0 if torch.cuda.is_available() else 1)" >/dev/null 2>&1; then

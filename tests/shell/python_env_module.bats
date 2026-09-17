@@ -25,7 +25,6 @@ run_python_env_module() {
     SCRIPT_DIR="$tmpdir"
     UPGRADE_LOCK=false
     DEPENDENCY_PROFILE=dev-full
-    PYTHON_VERSION="3.11"
     touch "$tmpdir/uv.lock"
     step() { :; }
     info() { :; }
@@ -66,7 +65,8 @@ STUB
     trap "rm -rf \"$tmpdir\"" EXIT
     mkdir -p "$tmpdir/bin" "$tmpdir/.venv/bin"
     SCRIPT_DIR="$tmpdir"
-    PYTHON_VERSION="3.11"
+    source ./scripts/toolchain.env
+    expected_python_version="$PYTHON_VERSION"
     step() { :; }
     info() { :; }
     ok() { :; }
@@ -79,10 +79,10 @@ STUB
     cat > "$tmpdir/bin/uv" <<STUB
 #!/usr/bin/env bash
 printf "%s\n" "\$*" >> "$tmpdir/uv.log"
-if [[ "\$*" == "python install 3.11" ]]; then
+if [[ "\$*" == "python install $expected_python_version" ]]; then
   exit 0
 fi
-if [[ "\$*" == "venv --python 3.11 $tmpdir/.venv" ]]; then
+if [[ "\$*" == "venv --python $expected_python_version $tmpdir/.venv" ]]; then
   mkdir -p "$tmpdir/.venv/bin"
   cat > "$tmpdir/.venv/bin/activate" <<ACTIVATE
 #!/usr/bin/env bash
@@ -90,7 +90,7 @@ export VIRTUAL_ENV="$tmpdir/.venv"
 ACTIVATE
   cat > "$tmpdir/.venv/bin/python" <<PYTHON
 #!/usr/bin/env bash
-printf "3.11\\n"
+printf "$expected_python_version\\n"
 PYTHON
   chmod +x "$tmpdir/.venv/bin/python"
   exit 0
@@ -103,10 +103,10 @@ STUB
 
     create_uv_venv
 
-    grep -q "^python install 3.11$" "$tmpdir/uv.log"
-    grep -q "^venv --python 3.11 $tmpdir/.venv$" "$tmpdir/uv.log"
-    [[ "$("$tmpdir/.venv/bin/python")" == "3.11" ]]
-    grep -q "zorunlu sürüm 3.11" "$tmpdir/warn.log"
+    grep -q "^python install ${expected_python_version}$" "$tmpdir/uv.log"
+    grep -q "^venv --python ${expected_python_version} $tmpdir/.venv$" "$tmpdir/uv.log"
+    [[ "$("$tmpdir/.venv/bin/python")" == "$expected_python_version" ]]
+    grep -q "zorunlu sürüm $expected_python_version" "$tmpdir/warn.log"
   '
   [ "$status" -eq 0 ]
 }
@@ -117,7 +117,8 @@ STUB
     trap "rm -rf \"$tmpdir\"" EXIT
     mkdir -p "$tmpdir/bin"
     SCRIPT_DIR="$tmpdir"
-    PYTHON_VERSION="3.12"
+    source ./scripts/toolchain.env
+    expected_python_version="$PYTHON_VERSION"
     step() { :; }
     info() { :; }
     ok() { :; }
@@ -126,10 +127,10 @@ STUB
     cat > "$tmpdir/bin/uv" <<STUB
 #!/usr/bin/env bash
 printf "%s\n" "\$*" >> "$tmpdir/uv.log"
-if [[ "\$*" == "python install 3.11" ]]; then
+if [[ "\$*" == "python install $expected_python_version" ]]; then
   exit 0
 fi
-if [[ "\$*" == "venv --python 3.11 $tmpdir/.venv" ]]; then
+if [[ "\$*" == "venv --python $expected_python_version $tmpdir/.venv" ]]; then
   mkdir -p "$tmpdir/.venv/bin"
   cat > "$tmpdir/.venv/bin/activate" <<ACTIVATE
 #!/usr/bin/env bash
@@ -137,7 +138,7 @@ export VIRTUAL_ENV="$tmpdir/.venv"
 ACTIVATE
   cat > "$tmpdir/.venv/bin/python" <<PYTHON
 #!/usr/bin/env bash
-printf "Python 3.11.9\n"
+printf "Python $expected_python_version\n"
 PYTHON
   chmod +x "$tmpdir/.venv/bin/python"
   exit 0
@@ -148,14 +149,15 @@ STUB
     chmod +x "$tmpdir/bin/uv"
     export PATH="$tmpdir/bin:$PATH"
     source ./scripts/install_modules/utils/python_env.sh
+    PYTHON_VERSION="3.12"
 
     create_uv_venv
 
-    grep -q "^python install 3.11$" "$tmpdir/uv.log"
-    grep -q "^venv --python 3.11 $tmpdir/.venv$" "$tmpdir/uv.log"
+    grep -q "^python install ${expected_python_version}$" "$tmpdir/uv.log"
+    grep -q "^venv --python ${expected_python_version} $tmpdir/.venv$" "$tmpdir/uv.log"
     ! grep -q "3.12" "$tmpdir/uv.log"
-    [[ "$("$tmpdir/.venv/bin/python" --version)" == "Python 3.11.9" ]]
-    grep -q "PYTHON_VERSION=3.12 algılandı; runtime için 3.11 zorunlu." "$tmpdir/warn.log"
+    [[ "$("$tmpdir/.venv/bin/python" --version)" == "Python $expected_python_version" ]]
+    grep -q "PYTHON_VERSION=3.12 algılandı; runtime için $expected_python_version zorunlu." "$tmpdir/warn.log"
   '
   [ "$status" -eq 0 ]
 }

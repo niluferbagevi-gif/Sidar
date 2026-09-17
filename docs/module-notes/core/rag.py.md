@@ -1,6 +1,16 @@
-# 3.10 `core/rag.py` — RAG Motoru (783 satır)
+# 3.10 `core/rag.py` — RAG Motoru (783 satır, artık `core/rag/` paketi)
 
-## Rapor İçeriği (Taşınan Bölüm)
+> ⚠️ **Bayat içerik uyarısı:** Bu not, `core/rag.py`'nin tek dosyalık 783 satırlık bir
+> monolit olduğu döneme aittir. O dosya artık yok; kaynak `core/rag/` altında 25+
+> dosyaya (`facade.py`, `document_store.py`, `chunking.py`, `graph.py`,
+> `backends/{chroma,bm25,keyword,pgvector}.py`, `retrieval/`, vb.) bölünmüş bir
+> paket. Güncel paket yapısı için bkz. `docs/module-notes/modularization.md`
+> ("RAG" bölümü) ve `core/rag/__init__.py`. Aşağıdaki içerik yalnızca **tarihsel
+> bağlam** için korunmuştur; RRF/BM25/session-izolasyonu gibi kavramsal
+> davranışlar büyük ölçüde geçerliliğini korusa da, tam metod/dosya haritası
+> güncel değildir.
+
+## Rapor İçeriği (Taşınan Bölüm, tarihsel — `core/rag.py` tek dosyayken)
 
 **Amaç:** ChromaDB (vektör) + BM25 + Keyword hibrit belge deposu. v3.0 ile birlikte **RRF birleştirme**, **oturum izolasyonu** ve disk tabanlı BM25 altyapısı birlikte çalışır.
 

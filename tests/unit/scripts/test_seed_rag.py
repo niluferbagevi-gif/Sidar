@@ -109,6 +109,8 @@ def test_seed_files_can_skip_existing_source_when_append_mode(tmp_path: Path) ->
 
 
 def test_default_seed_patterns_include_curated_code_context() -> None:
+    assert "docs/ARCHITECTURE.md" in seed_rag.DEFAULT_INCLUDE_PATTERNS
+    assert "docs/project-report/*.md" in seed_rag.DEFAULT_INCLUDE_PATTERNS
     assert "core/rag.py" in seed_rag.DEFAULT_INCLUDE_PATTERNS
     assert "agent/sidar_agent.py" in seed_rag.DEFAULT_INCLUDE_PATTERNS
     assert "run_tests.sh" in seed_rag.DEFAULT_INCLUDE_PATTERNS
@@ -192,6 +194,22 @@ def test_seed_rag_summary_only_outputs_counts_without_verbose_lists(
     assert output["skipped_count"] == 1
 
 
+def test_metadata_only_seed_explains_intentional_vector_skip(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    doc = tmp_path / "README.md"
+    doc.write_text("Sidar", encoding="utf-8")
+    monkeypatch.setattr(seed_rag, "discover_seed_files", lambda *_args, **_kwargs: [doc])
+    monkeypatch.setattr(seed_rag, "_resolve_rag_dir", lambda _raw: tmp_path / "rag")
+    monkeypatch.setattr(seed_rag, "_build_store", lambda *_args, **_kwargs: seed_rag.DryRunStore())
+
+    assert seed_rag.run(metadata_only=True, summary_only=True) == 0
+
+    captured = capsys.readouterr()
+    assert "metadata-only seed mode" in captured.err
+    assert "intentionally skipped" in captured.err
+
+
 def test_wait_for_pgvector_readiness_retries_until_extension_visible(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -246,3 +264,56 @@ def test_wait_for_pgvector_readiness_retries_until_extension_visible(
 
     assert state["calls"] == 3
     assert sleep_calls == [0.1, 0.1]
+
+
+def test_wait_for_pgvector_readiness_drops_async_driver_for_sync_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The async driver must be stripped, or the sync probe always raises `MissingGreenlet`."""
+
+    class _FakeConn:
+        def execute(self, _query: object) -> object:
+            return type("_Result", (), {"scalar": lambda self: True})()
+
+        def __enter__(self) -> _FakeConn:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    class _FakeEngine:
+        def connect(self) -> _FakeConn:
+            return _FakeConn()
+
+        def dispose(self) -> None:
+            return None
+
+    seen_urls: list[str] = []
+    fake_config = type(
+        "_Cfg",
+        (),
+        {
+            "RAG_VECTOR_BACKEND": "pgvector",
+            "DATABASE_URL": "postgresql+asyncpg://sidar:pw@postgres:5432/sidar",
+        },
+    )
+    monkeypatch.setitem(sys.modules, "config", type("_Mod", (), {"Config": fake_config})())
+
+    def _fake_create_engine(url: str, **_kwargs: object) -> _FakeEngine:
+        seen_urls.append(url)
+        return _FakeEngine()
+
+    from types import SimpleNamespace
+
+    monkeypatch.setitem(
+        sys.modules,
+        "sqlalchemy",
+        SimpleNamespace(create_engine=_fake_create_engine, text=lambda q: q),
+    )
+    monkeypatch.setenv("SEED_RAG_PGVECTOR_MAX_RETRIES", "5")
+    monkeypatch.setenv("SEED_RAG_PGVECTOR_RETRY_DELAY_SEC", "0.1")
+    monkeypatch.setattr(seed_rag.time, "sleep", lambda _s: None)
+
+    seed_rag._wait_for_pgvector_readiness()
+
+    assert seen_urls == ["postgresql://sidar:pw@postgres:5432/sidar"]

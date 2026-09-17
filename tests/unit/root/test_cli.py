@@ -621,6 +621,27 @@ def test_main_doctor_subcommand_parses_output_and_exits(monkeypatch):
     assert calls == ["custom.json"]
 
 
+def test_main_doctor_subcommand_forwards_opt_in_fix(monkeypatch):
+    cli = _load_cli_module_with_stubbed_agent(monkeypatch)
+    calls = []
+    monkeypatch.setattr(
+        cli,
+        "_run_doctor_command",
+        lambda output, *, fix=False: calls.append((output, fix)) or 0,
+    )
+    monkeypatch.setattr(
+        cli.sys,
+        "argv",
+        ["cli.py", "doctor", "--output", "custom.json", "--fix"],
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main()
+
+    assert exc.value.code == 0
+    assert calls == [("custom.json", True)]
+
+
 def test_main_doctor_subcommand_rejects_invalid_arguments(monkeypatch, capsys):
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
     monkeypatch.setattr(cli.sys, "argv", ["cli.py", "doctor", "--unknown"])

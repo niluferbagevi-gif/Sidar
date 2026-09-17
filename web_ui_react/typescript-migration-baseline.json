@@ -1,0 +1,48 @@
+{
+  "captured_at": "2026-08-30",
+  "owner": "Frontend bakım ekibi",
+  "maximum_untyped_files": 21,
+  "maximum_production_untyped_files": 0,
+  "maximum_test_untyped_files": 21,
+  "minimum_typed_files": 51,
+  "milestones": [
+    {
+      "deadline": "2026-10-31",
+      "maximum_untyped_files": 20,
+      "minimum_typed_files": 47
+    },
+    {
+      "deadline": "2027-01-31",
+      "maximum_untyped_files": 10,
+      "minimum_typed_files": 57
+    },
+    {
+      "deadline": "2027-03-31",
+      "maximum_untyped_files": 0,
+      "minimum_typed_files": 67
+    }
+  ],
+  "allowed_untyped_test_files": [
+    "src/App.chat-status.test.jsx",
+    "src/App.lazyFallback.test.jsx",
+    "src/App.test.jsx",
+    "src/components/AgentManagerPanel.test.jsx",
+    "src/components/ChatInput.test.jsx",
+    "src/components/ChatMessage.test.jsx",
+    "src/components/ChatPanel.test.jsx",
+    "src/components/ChatWindow.test.jsx",
+    "src/components/OperationsQaPanel.test.jsx",
+    "src/components/P2PDialoguePanel.test.jsx",
+    "src/components/PanelErrorBoundary.test.jsx",
+    "src/components/PluginMarketplacePanel.test.jsx",
+    "src/components/PromptAdminPanel.test.jsx",
+    "src/components/StatusBar.test.jsx",
+    "src/components/SwarmFlowPanel.helpers.test.jsx",
+    "src/components/SwarmFlowPanel.test.jsx",
+    "src/components/TenantAdminPanel.test.jsx",
+    "src/components/VoiceAssistantPanel.test.jsx",
+    "src/hooks/useVoiceAssistant.test.js",
+    "src/lib/routerShim.test.jsx",
+    "src/main.test.jsx"
+  ]
+}

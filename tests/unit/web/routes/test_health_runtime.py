@@ -33,9 +33,37 @@ class _Health:
         return {"name": "test-gpu"}
 
 
+class _Docs:
+    def __init__(self, *, ready: bool = True, metadata_seeded: bool = True) -> None:
+        self.ready = ready
+        self.metadata_seeded = metadata_seeded
+
+    def runtime_readiness_report(self) -> dict[str, object]:
+        return {
+            "ready": self.ready,
+            "metadata_seeded": self.metadata_seeded,
+            "components": {
+                "rag_vector": {
+                    "healthy": self.ready,
+                    "status": "healthy" if self.ready else "unavailable",
+                },
+                "rag_bm25": {"healthy": True, "status": "healthy"},
+            },
+        }
+
+
+class _FailingDocs:
+    def runtime_readiness_report(self) -> dict[str, object]:
+        raise RuntimeError("rag-readiness-secret")
+
+
 @pytest.mark.asyncio
 async def test_build_health_response_adds_dependency_status() -> None:
-    agent = SimpleNamespace(cfg=SimpleNamespace(AI_PROVIDER="openai"), health=_Health())
+    agent = SimpleNamespace(
+        cfg=SimpleNamespace(AI_PROVIDER="openai", RAG_REQUIRED_FOR_READINESS=True),
+        health=_Health(),
+        docs=_Docs(),
+    )
 
     async def resolve_agent() -> object:
         return agent
@@ -53,6 +81,130 @@ async def test_build_health_response_adds_dependency_status() -> None:
     assert payload["status"] == "ok"
     assert payload["dependencies"] == {"postgres": {"healthy": True}}
     assert isinstance(payload["uptime_seconds"], int)
+
+
+@pytest.mark.asyncio
+async def test_liveness_reports_degraded_rag_but_readiness_fails_when_required() -> None:
+    agent = SimpleNamespace(
+        cfg=SimpleNamespace(AI_PROVIDER="openai", RAG_REQUIRED_FOR_READINESS=True),
+        health=_Health(),
+        docs=_Docs(ready=False, metadata_seeded=True),
+    )
+
+    async def resolve_agent() -> object:
+        return agent
+
+    liveness = await health_runtime.build_health_response(
+        require_dependencies=False,
+        resolve_agent_instance=resolve_agent,
+        expose_details=lambda: False,
+        logger=_Logger(),
+        start_time=0.0,
+    )
+    readiness = await health_runtime.build_health_response(
+        require_dependencies=True,
+        resolve_agent_instance=resolve_agent,
+        expose_details=lambda: False,
+        logger=_Logger(),
+        start_time=0.0,
+    )
+
+    assert liveness.status_code == 200
+    liveness_payload = json.loads(liveness.body)
+    assert liveness_payload["status"] == "degraded"
+    assert liveness_payload["rag"]["metadata_seeded"] is True
+    assert liveness_payload["components"]["rag_vector"]["status"] == "unavailable"
+    assert liveness_payload["components"]["rag_bm25"]["status"] == "healthy"
+    assert readiness.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_optional_rag_keeps_readiness_200_with_degraded_component_payload() -> None:
+    agent = SimpleNamespace(
+        cfg=SimpleNamespace(AI_PROVIDER="openai", RAG_REQUIRED_FOR_READINESS=False),
+        health=_Health(),
+        docs=_Docs(ready=False),
+    )
+
+    async def resolve_agent() -> object:
+        return agent
+
+    response = await health_runtime.build_health_response(
+        require_dependencies=True,
+        resolve_agent_instance=resolve_agent,
+        expose_details=lambda: False,
+        logger=_Logger(),
+        start_time=0.0,
+    )
+
+    assert response.status_code == 200
+    assert json.loads(response.body)["status"] == "degraded"
+
+
+@pytest.mark.asyncio
+async def test_rag_runtime_readiness_exception_fails_closed() -> None:
+    agent = SimpleNamespace(
+        cfg=SimpleNamespace(AI_PROVIDER="openai", RAG_REQUIRED_FOR_READINESS=True),
+        health=_Health(),
+        docs=_FailingDocs(),
+    )
+
+    async def resolve_agent() -> object:
+        return agent
+
+    logger = _Logger()
+    response = await health_runtime.build_health_response(
+        require_dependencies=True,
+        resolve_agent_instance=resolve_agent,
+        expose_details=lambda: False,
+        logger=logger,
+        start_time=0.0,
+    )
+
+    assert response.status_code == 503
+    payload = json.loads(response.body)
+    assert payload["status"] == "degraded"
+    assert payload["rag"]["ready"] is False
+    assert payload["rag"]["metadata_seeded"] is False
+    assert payload["components"]["rag_vector"] == {
+        "healthy": False,
+        "status": "unavailable",
+    }
+    assert payload["components"]["rag_bm25"] == {
+        "healthy": False,
+        "status": "unavailable",
+    }
+    assert "detail" not in payload["rag"]
+    assert len(logger.messages) == 1
+    log_message, log_args = logger.messages[0]
+    assert log_message == "RAG runtime readiness sorgusu başarısız oldu: %s"
+    assert len(log_args) == 1
+    assert isinstance(log_args[0], RuntimeError)
+    assert str(log_args[0]) == "rag-readiness-secret"
+
+
+@pytest.mark.asyncio
+async def test_rag_runtime_readiness_exception_exposes_detail_when_enabled() -> None:
+    agent = SimpleNamespace(
+        cfg=SimpleNamespace(AI_PROVIDER="openai", RAG_REQUIRED_FOR_READINESS=True),
+        health=_Health(),
+        docs=_FailingDocs(),
+    )
+
+    async def resolve_agent() -> object:
+        return agent
+
+    response = await health_runtime.build_health_response(
+        require_dependencies=True,
+        resolve_agent_instance=resolve_agent,
+        expose_details=lambda: True,
+        logger=_Logger(),
+        start_time=0.0,
+    )
+
+    assert response.status_code == 503
+    payload = json.loads(response.body)
+    assert payload["rag"]["detail"] == "rag-readiness-secret"
 
 
 @pytest.mark.asyncio

@@ -11,6 +11,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from core.utils.trusted_subprocess import run_trusted_command
+
 SAFE_PS_PATHS = ("/bin/ps", "/usr/bin/ps")
 
 
@@ -19,10 +21,11 @@ def resolve_safe_ps_binary(*, safe_paths: tuple[str, ...] = SAFE_PS_PATHS) -> st
     for candidate in safe_paths:
         try:
             path = Path(candidate)
-            if path.is_file() and os.access(candidate, os.X_OK):
-                return candidate
-        except Exception:  # nosec B112  # invalid candidates are skipped deliberately.
-            continue
+            candidate_is_executable = path.is_file() and os.access(candidate, os.X_OK)
+        except Exception:
+            candidate_is_executable = False
+        if candidate_is_executable:
+            return candidate
     try:
         which_path = shutil.which("ps")
     except Exception:
@@ -61,10 +64,12 @@ def list_child_ollama_pids(
         return []
 
     try:
-        raw = subprocess.check_output(  # nosec B603  # safe absolute ps path.
+        raw = run_trusted_command(
             [ps_binary, "-eo", "pid=,ppid=,comm=,args="],
+            stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
-        )
+            check=True,
+        ).stdout
     except Exception:
         return []
 

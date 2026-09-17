@@ -2,7 +2,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW_DIR = ROOT / ".github" / "workflows"
-PYTHON_MAJOR_MINOR = "3.11"
+PYTHON_MAJOR_MINOR = "3.11.15"
 PINNED_WORKFLOWS = [
     "ci.yml",
     "migration-cutover-checks.yml",
@@ -42,6 +42,29 @@ def test_required_workflows_pin_setup_python_to_311():
         assert versions == [PYTHON_MAJOR_MINOR] * len(versions)
 
 
+def test_codeql_covers_both_languages_with_security_extended_queries() -> None:
+    """Guard the CodeQL semantic SAST workflow's coverage/cadence.
+
+    A friend code review flagged that no semantic/dataflow SAST (CodeQL,
+    Semgrep, ...) existed for either Python or JS/TS -- Bandit is
+    pattern/AST-based and Python-only, npm audit is dependency-only. This
+    was already closed by adding .github/workflows/codeql.yml; this test
+    pins its language/query/cadence contract so it can't silently regress
+    (e.g. someone drops the javascript-typescript matrix entry or narrows
+    the query suite back to the low-recall default).
+    """
+    workflow = (WORKFLOW_DIR / "codeql.yml").read_text(encoding="utf-8")
+
+    assert "language: python" in workflow
+    assert "language: javascript-typescript" in workflow
+    assert "queries: security-extended" in workflow
+    assert "push:" in workflow
+    assert "pull_request:" in workflow
+    assert "schedule:" in workflow
+    assert "github/codeql-action/init@v3" in workflow
+    assert "github/codeql-action/analyze@v3" in workflow
+
+
 def test_workflows_do_not_reintroduce_python_312_or_multi_version_matrix():
     for workflow_path in WORKFLOW_DIR.glob("*.yml"):
         text = workflow_path.read_text()
@@ -73,11 +96,53 @@ def test_nightly_auth_benchmark_requires_cached_baseline_compare():
 
     assert 'BENCHMARK_COMPARE_REQUIRED: "1"' in workflow
     assert 'BENCHMARK_ENFORCE_COMPARE: "1"' in workflow
+    assert "runs-on: [self-hosted, linux, benchmark]" in workflow
     assert "Restore auth benchmark baseline cache" in workflow
-    assert "auth-benchmark-baseline-${{ runner.os }}-py311-" in workflow
+    assert "auth-benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-" in workflow
     assert '--benchmark-compare="${compare_file}"' in workflow
     assert '--benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}"' in workflow
     assert "BENCHMARK_COMPARE_REQUIRED=1 ancak .benchmarks" in workflow
+
+
+def test_benchmark_seed_uses_reusable_workflow_and_keepalive_alerts() -> None:
+    """Keep bootstrap logic canonical and missing baseline evidence visible."""
+    seed_workflow = (WORKFLOW_DIR / "benchmark-baseline-seed.yml").read_text(encoding="utf-8")
+    ci_workflow = (WORKFLOW_DIR / "ci.yml").read_text(encoding="utf-8")
+    reusable = (WORKFLOW_DIR / "benchmark-baseline-reusable.yml").read_text(encoding="utf-8")
+    keepalive = (WORKFLOW_DIR / "benchmark-baseline-keepalive.yml").read_text(encoding="utf-8")
+    docs = Path("docs/CI_REQUIRED_CHECKS.md").read_text(encoding="utf-8")
+
+    reusable_call = "uses: ./.github/workflows/benchmark-baseline-reusable.yml"
+    assert reusable_call in seed_workflow
+    assert reusable_call in ci_workflow
+    assert "workflow_call:" in reusable
+    assert "actions/cache/save@v6" in reusable
+    assert "baseline-seed-manifest.json" in reusable
+    assert "compare_name" in seed_workflow
+    assert "seed_benchmark_baseline:" in ci_workflow
+    assert "Open or update missing baseline alert" in keepalive
+    assert "actions/github-script@v8" in keepalive
+    assert "Ortak reusable seed workflow" in docs
+
+
+def test_workflows_use_node24_github_action_majors() -> None:
+    """Prevent reintroducing action majors backed by deprecated Node runtimes."""
+    workflow_text = "\n".join(
+        path.read_text(encoding="utf-8") for path in WORKFLOW_DIR.glob("*.yml")
+    )
+
+    assert "actions/checkout@v4" not in workflow_text
+    assert "actions/checkout@v5" not in workflow_text
+    assert "actions/setup-python@v5" not in workflow_text
+    assert "actions/setup-python@v6" not in workflow_text
+    assert "actions/upload-artifact@v4" not in workflow_text
+    assert "actions/cache@v4" not in workflow_text
+    assert "actions/cache/restore@v4" not in workflow_text
+    assert "actions/cache/save@v4" not in workflow_text
+    assert "actions/checkout@v7" in workflow_text
+    assert "actions/setup-python@v7" in workflow_text
+    assert "actions/upload-artifact@v7" in workflow_text
+    assert "actions/cache@v6" in workflow_text
 
 
 def test_ci_has_required_installer_manifest_smoke_gate() -> None:
@@ -216,3 +281,20 @@ def test_release_quality_runs_benchmark_coverage_trend_gate():
     assert "--coverage-xml artifacts/benchmark-coverage-trend/coverage.xml" in workflow
     assert "--history-json artifacts/benchmark-coverage-trend/history.json" in workflow
     assert "--max-regression-pct 15" in workflow
+
+
+def test_release_quality_requires_reviewed_benchmark_comparison():
+    workflow = (WORKFLOW_DIR / "release-quality.yml").read_text()
+    job = workflow[
+        workflow.index("  release-benchmark-compare:") : workflow.index("  helm-validate:")
+    ]
+
+    assert "runs-on: [self-hosted, linux, benchmark]" in job
+    assert 'BENCHMARK_COMPARE_FAIL: "mean:10%"' in job
+    assert 'BENCHMARK_IO_COMPARE_FAIL: "mean:25%"' in job
+    assert "benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-" in job
+    assert "Resolve reviewed baseline (fail closed)" in job
+    assert '--benchmark-compare="${BENCHMARK_BASELINE_FILE}"' in job
+    assert '--benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}"' in job
+    assert '--benchmark-compare-fail="${BENCHMARK_IO_COMPARE_FAIL}"' in job
+    assert "--ignore=tests/performance/test_gpu_benchmark.py" in job

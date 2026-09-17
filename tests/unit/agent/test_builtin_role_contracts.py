@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from tests._helpers.source_contracts import expanded_bash_source
+
 
 def _repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
@@ -217,7 +219,10 @@ def test_agents_documentation_covers_self_healing_loop_contract() -> None:
 
 
 def test_run_tests_mypy_self_heal_is_explicit_opt_in() -> None:
-    script = (_repo_root() / "run_tests.sh").read_text(encoding="utf-8")
+    script = expanded_bash_source(
+        _repo_root() / "run_tests.sh",
+        root=_repo_root(),
+    )
 
     assert 'AUTO_HEAL_ON_FAILURE="${AUTO_HEAL_ON_FAILURE:-0}"' in script
     assert 'AUTO_HEAL_MAX_ATTEMPTS="${AUTO_HEAL_MAX_ATTEMPTS:-2}"' in script
@@ -229,7 +234,10 @@ def test_run_tests_mypy_self_heal_is_explicit_opt_in() -> None:
 
 
 def test_autonomous_loop_contains_complete_coverage_agent_gate() -> None:
-    script = (_repo_root() / "autonomous_loop.sh").read_text(encoding="utf-8")
+    script = expanded_bash_source(
+        _repo_root() / "autonomous_loop.sh",
+        root=_repo_root(),
+    )
 
     assert "@@ -" not in script
     assert "async def _review_with_reviewer_agent" in script
@@ -417,6 +425,27 @@ def test_sidar_uv_qwen_development_contract() -> None:
     for rel_path, text in text_by_file.items():
         for term in forbidden_terms:
             assert term not in text, f"{term!r} should not appear in {rel_path}"
+
+
+def test_agents_md_documents_scoped_lock_upgrade_standard() -> None:
+    """AGENTS.md must steer contributors to scoped lock upgrades over broad ones.
+
+    A broad `uv lock --upgrade` changes a large slice of the dependency graph in one
+    commit, making it hard to isolate which package caused a regression when one
+    surfaces (see the setuptools security-floor test incident this guidance was added
+    after). Dependabot already handles routine, isolated updates; AGENTS.md's claim
+    about that config must match the real file.
+    """
+    root = _repo_root()
+    agents_md = (root / "AGENTS.md").read_text(encoding="utf-8")
+    dependabot_config = (root / ".github" / "dependabot.yml").read_text(encoding="utf-8")
+
+    assert "uv lock --upgrade-package <paket>" in agents_md
+    assert "rutin geliştirme akışında çalıştırılmamalıdır" in agents_md
+    assert ".github/dependabot.yml" in agents_md
+
+    for ecosystem in ("uv", "npm", "github-actions", "docker", "docker-compose"):
+        assert f'package-ecosystem: "{ecosystem}"' in dependabot_config
 
 
 @pytest.mark.parametrize(

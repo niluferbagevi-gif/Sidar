@@ -16,20 +16,21 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
-          python-version: "3.11"
+          python-version: "3.11.15"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v10.1.0
         with:
+          version: "0.12.0"
           enable-cache: true
 
       - name: Cache APT packages (PortAudio)
-        uses: awalsh128/cache-apt-pkgs-action@v1.4.3
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.3
         with:
           packages: portaudio19-dev
           version: ci-portaudio-v1
@@ -54,7 +55,7 @@ jobs:
 
       - name: Upload mutation artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mutmut-weekly-report
           path: |
@@ -69,12 +70,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version-file: web_ui_react/.nvmrc
           cache: "npm"
           cache-dependency-path: web_ui_react/package-lock.json
 

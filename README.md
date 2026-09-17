@@ -22,7 +22,9 @@
 
 > **Güncel Ürün Durumu:** Repo artık `v5.2.0` ürün baseline'ında çalışmaktadır ve Faz A + Faz B teslimleri ürünleşmiş durumdadır. React tabanlı `web_ui_react/` deneyimi varsayılan arayüz, legacy `web_ui/` geriye dönük fallback, PostgreSQL + `pgvector` + Alembic veri katmanı ise standart kurumsal omurga olmaya devam eder. Bunun üzerine **WebSocket tabanlı gerçek zamanlı sesli asistan**, **Playwright öncelikli dinamik tarayıcı otomasyonu**, **LSP destekli anlamsal kod denetimi**, multimodal medya hattı ve proaktif webhook/cron tetikleyicileri repo içinde ürünleşmiş Faz A kazanımları olarak çalışmaktadır. Faz A ve Faz B teslimleri tamamlanmıştır: GraphRAG'in Reviewer akışına bağlanması, tam duplex voice-to-voice iletişim, dış olay korelasyonu ve Swarm karar akışının canlı operasyon yüzeyine dönüşmesi repo içinde aktif hale gelmiştir. Resmî sonraki odak artık **Faz C**: proaktif remediation/self-healing, daha derin browser decisioning ve istemci tarafı ses deneyiminin daha da deterministik hale getirilmesidir.
 
-> **v5.0 Vizyonu:** AI Co-Worker seviyesindeki ileri otonomi hedefleri, video/ses işleme, browser automation, GraphRAG, proaktif webhook ajanları ve görsel swarm karar grafiği önerileriyle [`docs/SIDAR_v5_0_MIMARI_RAPORU.md`](docs/SIDAR_v5_0_MIMARI_RAPORU.md) içinde ayrıntılandırılmıştır.
+> **Mimari belgeler:** Aktif v5.2.0 bileşen ve sahiplik haritası
+> [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) dosyasındadır. v5.0/v5.1 adlı raporlar
+> tarihsel vizyon ve faz evrim kayıtlarıdır; güncel dosya/API doğruluk kaynağı değildir.
 
 ### v5.0 Co-Worker Öne Çıkan Özellikler
 
@@ -83,7 +85,8 @@
 - **Otonom Cron Tetikleyiciler:** `web_server.py` içindeki `_autonomous_cron_loop`, sistemin belirli aralıklarla kendi kendini uyandırıp bekleyen iş/sinyal fırsatlarını taramasını sağlar.
 
 ### GPU Hızlandırma (v2.6.0+)
-- PyTorch CUDA 12.4 desteği (RTX / Ampere serisi)
+- Kilitli PyTorch sürümünün desteklediği CUDA runtime ile RTX/Ampere hızlandırma
+  (v5.2.0 `uv.lock` ortamında PyTorch CUDA 13.0)
 - FP16 mixed precision embedding (`GPU_MIXED_PRECISION=true`)
 - VRAM fraksiyonu kontrolü (`GPU_MEMORY_FRACTION`)
 - Çoklu GPU desteği (`MULTI_GPU=true`)
@@ -177,6 +180,10 @@
 - **Uyum / Denetim:** Tenant RBAC kararları `audit_logs` trail’ine kullanıcı, tenant, kaynak, IP ve allow/deny sonucu ile yazılır.
 - **Admin Paneli:** Sistem kullanımını, aktif kullanıcıları ve global kotaları izleyebileceğiniz Web UI yönetim arayüzü.
 - **Gözlemlenebilirlik (Observability):** Grafana ve Prometheus üzerinden anlık token tüketimi, USD maliyet ve LLM gecikme (latency) takibi.
+
+> **Grafana girişi:** Kullanıcı adı `admin`'dir; parola installer'ın `.env` içinde
+> ürettiği `GRAFANA_ADMIN_PASSWORD` değeridir. Güvensiz `admin/admin` varsayılanı
+> Docker Compose tarafından reddedilir.
 
 ### ✅ TodoManager ile Görev Takibi
 
@@ -392,10 +399,20 @@ Kurulum artık tek parça siyah kutu olarak çalışmak zorunda değildir. Hata 
 ./install_sidar.sh provision-models    # Ollama model varlığı, pull ve coding JSON smoke testi
 ./install_sidar.sh smoke               # migrasyon + smoke test + doctor raporu
 ./install_sidar.sh doctor              # sadece doctor raporu
+./install_sidar.sh doctor --fix        # izinli DATABASE_URL onarımını uygula ve yeniden denetle
 sidar doctor                           # artifacts/install/doctor.json üretir
 ```
 
-`sidar doctor`; `uv`, `uv.lock`, Prometheus runtime bağımlılığı (`prometheus-client`), veritabanı güvenlik ayarları, PostgreSQL bağlantı smoke testi, RAG/GraphRAG hazır oluşu, Alembic head durumu, AgentCatalog rolleri, Supervisor intent yönlendirmeleri, websocket route hazır oluşu, GPU algılama ve coding model JSON smoke durumunu `artifacts/install/doctor.json` dosyasına yazar. Veritabanı kontrolü `DATABASE_URL`, `SIDAR_CONTAINER_DATABASE_URL`, `POSTGRES_USER`, `POSTGRES_PASSWORD` ve `POSTGRES_DB` değerlerini hem ortak `POSTGRES_*` değişkenlerine hem de local/container DSN'leri arasında karşılaştırır; parola drift'i varsa `fail`, yalnız veritabanı adı drift'i varsa `warn` üretir. PostgreSQL erişilemezse doctor raporu `docker compose ps postgres` önerisiyle SQLite degraded mode ve pgvector→BM25 fallback riskini işaretler; auth hatasında eski Docker volume parolası ihtimalini ayrıca gösterip `ALTER USER <POSTGRES_USER> WITH PASSWORD '<POSTGRES_PASSWORD>';` veya yalnız geliştirme ortamında volume reset seçeneklerini önerir. RAG kontrolü de belge sayısı `0` veya GraphRAG entity belleği boşsa bunu ayrı `rag_readiness` uyarısı olarak gösterir; indeks boşsa repo dokümantasyonunu tek adımda yüklemek için `uv run python -m scripts.seed_rag`, dış kaynak eklemek için `uv run python cli.py -c "belge ekle <url>"` komutlarını önerir. `scripts.seed_rag`, README/AGENTS ve seçili `docs/*.md` kaynaklarını aynı `DocumentStore` yoluyla index, BM25, opsiyonel Chroma/pgvector ve `entity_graph.json` GraphRAG projection'ına yazar; hızlı/offline metadata doğrulaması için `--metadata-only`, özel kaynaklar için tekrarlanabilir `--include <repo-göreli-yol-veya-glob>` kullanılabilir. GPU tespit edilirse kurulum/test akışında `RUN_GPU_STRESS=1` otomatik etkinleştirilir.
+`./install_sidar.sh doctor --fix`, Doctor'ın izinli ve shell-free veritabanı ortam onarımını aynı rapor akışında çalıştırır. Varsayılan geliştirici kurulumunda başarılı migrasyonun ardından `AUTO_SEED_RAG_METADATA=true` ile hafif RAG/GraphRAG metadata seed'i; tam Docker kurulumunda ayrıca `AUTO_SEED_RAG_DOCKER_WARMUP=true` ile container içi warmup seed'i otomatik uygulanır. Her iki otomasyon açıkça `false` verilerek kapatılabilir; tam vektör seed veya yeniden oluşturma için `uv run python -m scripts.seed_rag` kullanılabilir. Ayrıntılı başlangıç, doğrulama ve pgvector→BM25 fallback teşhisi için [RAG onboarding rehberine](docs/RAG_ONBOARDING.md) bakın. `sidar doctor`; `uv`, `uv.lock`, Prometheus runtime bağımlılığı (`prometheus-client`), veritabanı güvenlik ayarları, PostgreSQL bağlantı smoke testi, RAG/GraphRAG hazır oluşu, Alembic head durumu, AgentCatalog rolleri, Supervisor intent yönlendirmeleri, websocket route hazır oluşu, GPU algılama ve coding model JSON smoke durumunu `artifacts/install/doctor.json` dosyasına yazar. Veritabanı kontrolü `DATABASE_URL`, `SIDAR_CONTAINER_DATABASE_URL`, `POSTGRES_USER`, `POSTGRES_PASSWORD` ve `POSTGRES_DB` değerlerini hem ortak `POSTGRES_*` değişkenlerine hem de local/container DSN'leri arasında karşılaştırır; parola drift'i varsa `fail`, yalnız veritabanı adı drift'i varsa `warn` üretir. PostgreSQL erişilemezse doctor raporu `docker compose ps postgres` önerisiyle SQLite degraded mode ve pgvector→BM25 fallback riskini işaretler; auth hatasında eski Docker volume parolası ihtimalini ayrıca gösterip `ALTER USER <POSTGRES_USER> WITH PASSWORD '<POSTGRES_PASSWORD>';` veya yalnız geliştirme ortamında volume reset seçeneklerini önerir. RAG kontrolü de belge sayısı `0` veya GraphRAG entity belleği boşsa bunu ayrı `rag_readiness` uyarısı olarak gösterir; indeks boşsa repo dokümantasyonunu tek adımda yüklemek için `uv run python -m scripts.seed_rag`, dış kaynak eklemek için `uv run python cli.py -c "belge ekle <url>"` komutlarını önerir. `scripts.seed_rag`, README/AGENTS ve seçili `docs/*.md` kaynaklarını aynı `DocumentStore` yoluyla index, BM25, opsiyonel Chroma/pgvector ve `entity_graph.json` GraphRAG projection'ına yazar; hızlı/offline metadata doğrulaması için `--metadata-only`, özel kaynaklar için tekrarlanabilir `--include <repo-göreli-yol-veya-glob>` kullanılabilir. GPU tespit edilirse kurulum/test akışında `RUN_GPU_STRESS=1` otomatik etkinleştirilir.
+
+> **`database_env` ve üst shell önceliği:** Doctor, `DATABASE_URL` veya
+> `SIDAR_CONTAINER_DATABASE_URL` değerinin parent/üst shell'den miras kaldığını ve
+> dotenv zincirinden farklı olduğunu doğru biçimde raporlayabilir; ancak `--fix` çalışan
+> prosesin ebeveyn shell ortamını değiştiremez. Bu durumda önce `unset DATABASE_URL
+> SIDAR_CONTAINER_DATABASE_URL` çalıştırın (veya terminal/launcher oturumunu yeniden
+> başlatın), ardından `./install_sidar.sh doctor --fix` ve `./install_sidar.sh doctor`
+> komutlarını yeniden çalıştırın. Kalıcı değer gerekiyorsa shell profilini değil,
+> seçili `.env`/`DOTENV_FILE` kaynağını güncelleyin.
 
 ### Alternatif: Aktive etmeden `uv` ile çalıştırma
 
@@ -438,10 +455,17 @@ SQLite → PostgreSQL geçiş adımları için: `runbooks/production-cutover-pla
 
 Not: `migrations/env.py`, sırasıyla `-x database_url=...` ve `DATABASE_URL` environment variable değerlerini `alembic.ini` içindeki lokal geliştirme varsayılan URL'sinin önüne geçirir. `SIDAR_ENV=production` iken bu lokal fallback bilinçli olarak reddedilir; üretim/CI/container migration çalıştırmalarında güçlü kimlik bilgileriyle `DATABASE_URL` veya `-x database_url=...` verilmelidir.
 
-> **Not:** GPU desteği için `torch` ve `torchvision` kurulumunda CUDA wheel kullanacaksanız kurulumdan önce
-> `PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu124` değişkenini tanımlayın. CPU-only kurulumlarda
+> **Not:** GPU desteği için `torch` ve `torchvision` CUDA wheel seçimini `install_sidar.sh`
+> algılanan driver CUDA capability ve compute capability değerlerine göre yapar; tek bir eski
+> CUDA wheel kanalını kalıcı olarak sabitlemeyin. Gerektiğinde desteklenen bir kanalı
+> `PYTORCH_CUDA_WHEEL_TAG` veya tam index'i `PYTORCH_CUDA_INDEX_URL` ile bilinçli olarak
+> override edebilirsiniz. v5.2.0 lock ortamının doğrulanan PyTorch runtime'ı CUDA 13.0'dır.
+> CPU-only kurulumlarda
 > varsayılan `REQUIRE_GPU=false` kalır; `ENABLE_GPU_TESTS` değeri verilmezse `run_tests.sh` GPU donanımını
-> otomatik algılar ve yalnız `nvidia-smi`/`nvidia-smi.exe` bulunduğunda GPU testlerini etkinleştirir.
+> otomatik algılar ve yalnız `nvidia-smi`/`nvidia-smi.exe` bulunduğunda GPU testlerini etkinleştirir. **GPU'lu geliştirme
+> makinesinde hızlı bir varsayılan döngü isteyen geliştiriciler** için bu otomatik algılama bilinçli bir tasarım
+> kararıdır (GPU testleri sessizce atlanmasın diye), fakat `ENABLE_GPU_TESTS=0 bash run_tests.sh` ile açıkça
+> devre dışı bırakılabilir — `auto` değerini geçersiz kılar ve `nvidia-smi` bulunsa bile GPU testlerini atlar.
 
 ### Çevre Değişkenleri
 
@@ -561,9 +585,11 @@ Release kalite kapıları `.github/workflows/release-quality.yml` içinde Helm l
 # CPU modu
 docker compose up --build sidar-web
 
-# GPU modu (NVIDIA)
-OLLAMA_NUM_PARALLEL=4 docker compose up --build sidar-web-gpu
+# GPU modu (NVIDIA) — GPU servisleri docker-compose.gpu.yml'de, -f ile eklenmeli
+OLLAMA_NUM_PARALLEL=4 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build sidar-web-gpu
 ```
+
+> **Compose dosya yapısı:** `docker-compose.yml` yalnızca temel (core) servisleri taşır (redis, postgres, ollama, sidar-migrate, docker-socket-proxy, sidar-ai, sidar-web). GPU servisleri (`ollama-gpu`, `sidar-gpu`, `sidar-web-gpu`) `docker-compose.gpu.yml`'de, observability servisleri (jaeger, exporter'lar, cadvisor, prometheus, grafana) `docker-compose.observability.yml`'dedir — her ikisi de `-f` ile core dosyayla birleştirilir (`docker-compose.production.yml` zaten aynı deseni kullanır). Örnekler: `docker compose -f docker-compose.yml -f docker-compose.observability.yml --profile cpu --profile observability up`, `docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.observability.yml --profile gpu --profile observability up`.
 
 Production ortamında host izin (uid/gid/chown) sorunlarını azaltmak için bind mount yerine named volume kullanabilirsiniz:
 
@@ -756,6 +782,13 @@ ekler ve bunları merge öncesi sinyal olarak kullanır:
 - frontend `npm run lint`, `npm run typecheck`, `npm audit --audit-level=high` ve
   Playwright Chromium smoke hazırlığı/raporu;
 - Bandit ve `pip-audit` SAST/bağımlılık güvenlik kapıları;
+- Bandit `# nosec` borcu için exact ratchet: güncel 59 suppression üst sınır değil,
+  eşleşmesi zorunlu baseline'dır. Her kaldırma aynı commit'te baseline'ı düşürür;
+  yeniden artış yasaktır. Tarihli hedefler sırasıyla `<=50`, `<=40`, `<=20`, `0`'dır;
+- ayrı `.github/workflows/codeql.yml`: Python ve JS/TS için CodeQL semantic/dataflow
+  SAST taraması (push/PR/haftalık zamanlanmış), bulgular Security sekmesinde alert
+  olarak raporlanır — Bandit'in aksine fonksiyon/modül sınırları arası taint-tracking
+  yapar ve tek gerçek JS/TS güvenlik taramasıdır;
 - izole PostgreSQL test DB hazırlığı, Alembic upgrade, kritik smoke import gates ve
   installer/runtime smoke testleri;
 - `run_tests.sh` tam kalite kapısı: coverage ratchet, frontend E2E, benchmark JSON/trend
@@ -808,10 +841,19 @@ make production-readiness
 
 > Geliştirici makinelerinde `pre-commit` ve `pre-push` hook'larının ikisi de
 > kurulmalıdır. `.pre-commit-config.yaml` içindeki `check-core-install-manifest`
-> ve `check-install-module-hashes` kontrolleri her iki aşamada installer manifest drift'ini;
+> ve `check-install-module-hashes` kontrolleri pre-commit aşamasında çalışma ağacı
+> manifest drift'ini; `check-install-module-pin` ise pre-push aşamasında, iki fazlı
+> fixup commit'i oluşturulduktan sonra pinlenen commit bütünlüğünü;
 > `pytest-meta-contracts` ise pre-push aşamasında hızlı script/config
-> sözleşme regresyonlarını yakalar. Hook kurulumu yapılmadıysa aynı koruma yalnızca
-> CI/branch protection tarafında kalır.
+> sözleşme regresyonlarını yakalar. `detect-secrets` her commit'te diff'i
+> `.secrets.baseline`'a karşı tarar (yeni bir gerçek sızıntıyı fail-closed
+> yakalar; bilinen false positive'ler `pragma: allowlist secret` ile
+> işaretlenip baseline'a eklenir — `uv run detect-secrets scan --baseline
+> .secrets.baseline --update .secrets.baseline` ile yeniden üretilir);
+> `frontend-eslint`/`frontend-typecheck` yalnızca `web_ui_react/` altında
+> değişiklik varsa tetiklenip aynı `npm run lint`/`npm run typecheck`
+> komutlarını CI'dan önce yerel olarak çalıştırır. Hook kurulumu yapılmadıysa
+> aynı koruma yalnızca CI/branch protection tarafında kalır.
 
 Normal kullanıcı, temiz kurulum, kurumsal/offline veya interneti kısıtlı ortamlar için
 öncelikle tek parçalık monolitik Release bundle artefaktını kullanın; bu dosya
@@ -1134,11 +1176,17 @@ Sidar/
 ├── grafana/                # Semantic cache / LLM overview dashboard varlıkları
 ├── config.py               # Merkezi yapılandırma; runtime sürümü `v5.2.0`
 ├── web_server.py           # 86 REST endpoint + `/ws/chat` + `/ws/voice`
-├── docker-compose.yml      # redis, postgres, sidar-web, sidar-web-gpu, sidar-ai, sidar-gpu, docker-socket-proxy, jaeger, prometheus, grafana
+├── docker-compose.yml      # Core: redis, postgres, ollama, sidar-migrate, docker-socket-proxy, sidar-ai, sidar-web
+├── docker-compose.gpu.yml  # GPU profili: ollama-gpu, sidar-gpu, sidar-web-gpu (-f ile core'a eklenir)
+├── docker-compose.observability.yml  # jaeger, exporter'lar, cadvisor, prometheus, grafana (-f ile core'a eklenir)
 ├── README.md               # Ürün ve kurulum rehberi
-├── PROJE_RAPORU.md         # Mimari + kalite raporu
-├── AUDIT_REPORT_v5.0.md    # Güvenlik, coverage ve denetim raporu
-└── TEKNIK_REFERANS.md      # Operasyonel/uygulama seviyesi sözleşmeler
+└── docs/                   # Mimari, denetim, runbook ve modül notu belgeleri (115 md dosyası)
+    ├── ARCHITECTURE.md      # Aktif v5.2.0 mimari doğruluk kaynağı
+    ├── PROJE_RAPORU.md      # Bölümlenmiş kapsamlı rapor indeksi
+    ├── project-report/      # Konu bazlı proje raporu bölümleri (6 dosya)
+    ├── AUDIT_REPORT_v5.0.md # Güvenlik/coverage denetim raporu (tarihsel snapshot, ARŞİV NOTU ile işaretli)
+    ├── module-notes/        # Modül bazlı geliştirici notları (77 dosya)
+    └── TEKNIK_REFERANS.md   # Operasyonel/uygulama seviyesi sözleşmeler
 ```
 
 ---
@@ -1161,7 +1209,7 @@ bash run_tests.sh
 uv run --with mutmut mutmut run --max-children 8
 cd web_ui_react && npm run test:critical
 bash scripts/ci/flaky_scan.sh
-uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost or password_verify_cpu_cost" --benchmark-json=artifacts/auth-benchmark/benchmark.json
+uv run pytest -q tests/performance/test_benchmark.py -k "password_ and cpu_cost" --benchmark-json=artifacts/auth-benchmark/benchmark.json
 ```
 
 > Not: `bash run_tests.sh` ve çalıştırma izni verilmiş checkout'larda `./run_tests.sh`
@@ -1187,7 +1235,18 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > ortamında eksik proje imajını kalite kapısından önce otomatik hazırlamak için
 > `AUTO_BUILD_DOCKER_TEST_IMAGE=1 DOCKER_TEST_IMAGE=sidar:latest bash run_tests.sh` kullanın.
 > Farklı context gerekiyorsa `DOCKER_TEST_IMAGE_BUILD_CONTEXT` değerini açıkça verin.
+> `make dev-full`/`make base-quality-gates` (dolayısıyla `make production-readiness`/`make
+> ci-parity`) bunu zaten kendi tarifinde otomatik yapar; yukarıdaki elle env-var kombinasyonu
+> yalnızca `bash run_tests.sh`'i `make` olmadan doğrudan çalıştıranlar için gereklidir.
 >
+> ⚠️ **Bu aynı `DOCKER_TEST_IMAGE`/`sidar:latest`'in iki bağımsız tüketicisi var.** Yukarıdaki
+> `CodeManager` Docker REPL/code-exec sandbox'ının (`managers/code_manager.py`) yanı sıra,
+> plugin marketplace sandbox'ı (`web/plugins/sandbox.py`, `SEC-PLUGIN-001`) da her ortamda
+> varsayılan olarak aynı imajı kullanır — `tests/integration/web/test_plugin_sandbox_*.py`
+> bu ikinci yolu doğrular. İkisi aynı env değişkenlerini paylaştığı için bu imajı elle
+> build etmek her iki alt sistemi de kapsar; ayrıntı ve `make plugin-sandbox-security`/
+> `SIDAR_REQUIRE_PLUGIN_SANDBOX_CONTAINER_TESTS` için bkz.
+> [`docs/TESTING.md`](docs/TESTING.md#make-hedefleriyle-cilocal-komut-paritesi).
 >
 > Image vs Container (kısa açıklama):
 > - **Image** (`sidar:latest`): read-only şablondur; uv/pytest ve proje bağımlılıklarını bunun içine kurarsınız.
@@ -1207,7 +1266,11 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_hash_cpu_cost 
 > iş akışı aynı kritik test setini 5 tekrar (`pytest -n auto -q --maxfail=1`) koşturup
 > `artifacts/flaky/report.md` raporu üretir.
 > Kimlik doğrulama benchmark varyansı için `Nightly Auth Benchmark` iş akışı parola
-> hash/verify testlerini izole CPU pinleme ile çalıştırır; P95/P99 eşiklerini
+> benchmark'larını izole CPU pinleme ile çalıştırır. Sonuçlar iki ayrı kontrat olarak
+> raporlanır: `password-primitive` yalnız hash/verify CPU maliyetini,
+> `password-application-path` ise event loop + veritabanı + model dönüşümü dahil tam
+> register/authenticate yolunu ölçer. Her iki kontrat 5 warmup ve 30 ölçüm turu kullanır;
+> P95/P99 eşiklerini
 > (`AUTH_BENCH_P95_BUDGET_MS`, `AUTH_BENCH_P99_BUDGET_MS`) aşarsa alarm/fail üretir.
 > SQLite/PostgreSQL karşılaştırmalı workload trendi için release tetiklemeli
 > `Release DB Benchmark Trend` iş akışı benchmark JSON + `trend.md` artifact üretir.
@@ -1344,8 +1407,10 @@ böylece temel/production `POSTGRES_DB=sidar` verisiyle aynı veritabanına yazm
 Ollama + `qwen2.5-coder:7b` kullanımında CPU-only geliştirme şablonu `USE_GPU=false` / `REQUIRE_GPU=false`
 ile başlar; `install_sidar.sh` yalnız GPU tespit ettiğinde oluşturulan `.env` dosyasında bu değerleri
 `true` yapar. `.env.development` içindeki `GPU_MEMORY_FRACTION`, `LLM_GPU_MEMORY_FRACTION` ve
-`RAG_GPU_MEMORY_FRACTION` değerleri VRAM bütçesini belirler; LLM+RAG toplamı 1.0'ı
-aşarsa Sidar güvenli 0.8 toplamına normalize eder, fakat WSL2/düşük VRAM ortamında
+`RAG_GPU_MEMORY_FRACTION` değerleri VRAM bütçesini belirler; LLM+RAG toplamı güvenli
+0.8 hedefini aşarsa (0.8–1.0 arasındaki gri bölge dahil) Sidar oranları koruyarak
+0.8 toplamına normalize eder. Güncel geliştirme şablonu doğrudan güvenli
+`0.53 + 0.27 = 0.8` bütçesiyle başlar; WSL2/düşük VRAM ortamında
 toplu RAG yüklemeden önce bu limitleri donanımınıza göre düşürmeniz önerilir. Gerçek API
 tokenlarını ise `.env` veya tercihen repo dışında `~/.sidar_keys.env` içinde tutun;
 `.env.advanced` yalnız referans/override şablonudur ve güncel anahtar şablonu
@@ -1409,6 +1474,8 @@ Bu proje Sidar ekosisteminin bir parçasıdır.
 
 ## 🧹 Depo Hijyeni
 
-- Kök dizindeki geçici Ar-Ge not dosyası (`.note`) kaldırıldı; kalıcı mimari kararları için `PROJE_RAPORU.md` ve `RFC-MultiAgent.md` kullanılmalıdır.
+- Kök dizindeki geçici Ar-Ge not dosyası (`.note`) kaldırıldı; güncel mimari kararları
+  için `docs/ARCHITECTURE.md` ve `docs/RFC-MultiAgent.md`, ayrıntılı tarihsel bağlam için
+  bölümlenmiş `docs/PROJE_RAPORU.md` indeksi kullanılmalıdır.
 - CI pipeline artık boş test artifact dosyalarını otomatik tespit eder (`find tests -type f -size 0`).
 - Proje satır/dosya metrikleri tek komutla `scripts/audit_metrics.sh` üzerinden (JSON/Markdown) standart olarak üretilir.

@@ -1,3 +1,26 @@
+# Core stack: redis, postgres, ollama (cpu), sidar-migrate, docker-socket-proxy,
+# sidar-ai (CLI), sidar-web. Her zaman gerekli, temel servisler burada; GPU ve
+# observability servisleri okunabilirlik için ayrı dosyalara taşındı:
+#
+#   docker-compose.gpu.yml           — ollama-gpu, sidar-gpu, sidar-web-gpu
+#                                       (profiles: ["gpu"])
+#   docker-compose.observability.yml — jaeger, exporter'lar, cadvisor,
+#                                       prometheus, grafana
+#                                       (profiles: ["observability"])
+#   docker-compose.production.yml    — production sertleştirme overlay'i
+#                                       (mevcut, değişmedi)
+#
+# Kullanım:
+#   docker compose up --build                                    # yalnız core (cpu profili)
+#   docker compose --profile cpu up --build                      # aynısı, açık
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile gpu up
+#   docker compose -f docker-compose.yml -f docker-compose.observability.yml --profile cpu --profile observability up
+#
+# `-f` ile birleştirilen dosyalar (compose-spec çok-dosya merge): her dosya
+# yeni servisler ekler veya var olanları override eder; hangi dosyanın hangi
+# servisi tanımladığı önemli değildir, tümü tek bir mantıksal stack'e
+# birleşir. Bu, docker-compose.production.yml'nin zaten kullandığı aynı
+# desendir.
 services:
   # Not: Development'ta varsayılan bind-mount kullanılır.
   # Production'ta host permission/chown sorunlarını azaltmak için aşağıdaki
@@ -8,7 +31,7 @@ services:
 
   redis:
     image: redis:7.4-alpine
-    container_name: sidar_redis
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_redis
     restart: unless-stopped
     # Local geliştirme modundaki uygulamanın Redis'e erişebilmesi için port
     # yalnız loopback arayüzüne bind edilir; LAN/WSL dışına publish edilmez.
@@ -28,21 +51,18 @@ services:
       retries: 20
 
   postgres:
-    image: pgvector/pgvector:0.8.1-pg16
-    container_name: sidar_postgres
+    image: pgvector/pgvector:0.8.6-pg16
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_postgres
     restart: unless-stopped
     command: postgres -c max_connections=${POSTGRES_MAX_CONNECTIONS:-300}
     environment:
       - POSTGRES_DB=${POSTGRES_DB:-sidar}
       - POSTGRES_USER=${POSTGRES_USER:-sidar}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env; default passwords are refused}
-    # Redis'teki gibi port yalnız loopback arayüzüne bind edilir; LAN/internete
-    # publish edilmez. Diğer compose servisleri buna zaten Docker'ın dahili
-    # ağı üzerinden `postgres:5432` adresiyle erişir, host port publish'i
-    # yalnız hosttan `psql`/araç bağlantısı için var. Uzak/başka host'tan
-    # erişim gerekiyorsa .env'de POSTGRES_PORT ile birlikte bilinçli bir
-    # reverse proxy/SSH tüneli veya ayrı bir bind adresi kullanın; bu
-    # docker-compose.yml varsayılanını 0.0.0.0'a genişletmeyin.
+    # Redis'teki gibi: local geliştirme modundaki uygulamanın (POSTGRES_HOST=127.0.0.1)
+    # erişebilmesi için port yalnız loopback arayüzüne bind edilir; LAN/WSL dışına
+    # publish edilmez — aksi halde host'a erişebilen herhangi bir istemci güçlü bir
+    # parola olsa bile portu tarayıp Postgres'e karşı brute-force/DoS deneyebilirdi.
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
@@ -57,70 +77,61 @@ services:
 
   ollama:
     profiles: ["cpu"]
-    # ollama/ollama:latest kasıtlı olarak deterministik değildir (mutable tag).
-    # Production'da OLLAMA_DOCKER_IMAGE ile incelenmiş bir digest'e pinleyin, örn.
-    #   OLLAMA_DOCKER_IMAGE=ollama/ollama@sha256:<İNCELENMİŞ-DIGEST>
-    # Digest'i üretmek için (image'ı çekip inceledikten sonra):
-    #   docker pull ollama/ollama:<sürüm>
-    #   docker inspect --format='{{index .RepoDigests 0}}' ollama/ollama:<sürüm>
-    image: ${OLLAMA_DOCKER_IMAGE:-ollama/ollama:latest}
-    container_name: sidar_ollama
+    # Diğer tüm servisler (redis, postgres, jaeger, exporter'lar) belirli bir
+    # sürüme pinli; yalnız Ollama :latest kullanıyordu — bir upstream sürüm
+    # `docker compose pull` sonrası sessizce farklı davranış/API değişikliği
+    # getirebilir. Diğerleriyle aynı desende belirli bir sürüme pinlendi
+    # (Docker Hub'daki en güncel stabil etiket).
+    image: ollama/ollama:0.34.1
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_ollama
     restart: unless-stopped
     environment:
       - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-4}
       - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-30m}
       - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-8192}
       - OLLAMA_NUM_BATCH=${OLLAMA_NUM_BATCH:-2048}
-    # Postgres'teki gibi port yalnız loopback arayüzüne bind edilir; diğer
-    # compose servisleri buna Docker'ın dahili ağı üzerinden ollama[-gpu]:11434
-    # adresiyle erişir. Ollama API kimlik doğrulaması yapmaz; bu portu
-    # 0.0.0.0'a genişletmek ağdaki/internetteki herkese kimliksiz inference
-    # erişimi ve GPU/VRAM tüketimi verir.
+    # Ollama'nın kendi API'sinde kimlik doğrulama yoktur; port tüm arayüzlere açık
+    # kalırsa LAN/WSL dışından erişebilen herhangi bir istemci modelleri sorgulayabilir,
+    # GPU/CPU kaynağını tüketebilir veya model yönetim uçlarına (pull/delete) erişebilir.
+    # Redis/Postgres'teki gibi yalnız loopback arayüzüne bind edilir.
     ports:
-      - "127.0.0.1:11434:11434"
+      - "127.0.0.1:${OLLAMA_PORT:-11434}:11434"
     volumes:
       - ollama_data:/root/.ollama
+    # Ollama'nın resmi imajının son runtime aşamasında curl/wget yok (yalnız
+    # ca-certificates/libvulkan1/libopenblas0 kurulu) — bu yüzden
+    # redis/postgres'teki gibi bir curl healthcheck'i "command not found" ile
+    # her zaman unhealthy döner. İmajda zaten var olan `ollama` binary'si
+    # `ollama list` ile yerel API'ye bağlanır; sunucu ayağa kalkmadan
+    # başarısız olur. Önceden yalnız `condition: service_started` vardı —
+    # container process'i başlaması API'nin istek almaya hazır olduğu
+    # anlamına gelmiyordu, bağımlı servisler (sidar-web) ilk isteklerinde
+    # bağlantı hatası alabiliyordu.
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
 
-  ollama-gpu:
-    profiles: ["gpu"]
-    # ollama'daki gibi production'da OLLAMA_DOCKER_IMAGE ile digest'e pinleyin.
-    image: ${OLLAMA_DOCKER_IMAGE:-ollama/ollama:latest}
-    container_name: sidar_ollama
-    restart: unless-stopped
-    runtime: ${DOCKER_RUNTIME:-nvidia}
-    environment:
-      - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-4}
-      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-30m}
-      - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-8192}
-      - OLLAMA_NUM_BATCH=${OLLAMA_NUM_BATCH:-2048}
-    # Postgres'teki gibi port yalnız loopback arayüzüne bind edilir; diğer
-    # compose servisleri buna Docker'ın dahili ağı üzerinden ollama[-gpu]:11434
-    # adresiyle erişir. Ollama API kimlik doğrulaması yapmaz; bu portu
-    # 0.0.0.0'a genişletmek ağdaki/internetteki herkese kimliksiz inference
-    # erişimi ve GPU/VRAM tüketimi verir.
-    ports:
-      - "127.0.0.1:11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-
-
+  # GPU profil servisleri (ollama-gpu, sidar-gpu, sidar-web-gpu) artık
+  # docker-compose.gpu.yml'de: docker compose -f docker-compose.yml
+  # -f docker-compose.gpu.yml --profile gpu up
 
   sidar-migrate:
     profiles: ["cpu", "gpu"]
     image: ${SIDAR_DOCKER_IMAGE:-sidar:latest}
+    # `image` never resolves against a registry — it only names the locally
+    # built tag. Without pull_policy, `docker compose up` tries a registry
+    # pull first, fails with a confusing "pull access denied" before falling
+    # back to `build:`. Force straight to the local build instead.
+    pull_policy: build
     build:
       context: .
       args:
-        BASE_IMAGE: python:3.11-slim
+        BASE_IMAGE: python:3.11.15-slim
         GPU_ENABLED: "false"
-    container_name: sidar_migrate
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_migrate
     user: "${SIDAR_CONTAINER_UID:-10001}:${SIDAR_CONTAINER_GID:-10001}"
     restart: "no"
     depends_on:
@@ -129,7 +140,7 @@ services:
     environment:
       - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-sidar}:${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-sidar}}
     env_file:
-      - .env
+      - ${SIDAR_RUNTIME_ENV_FILE:-.env}
     entrypoint: []
     command: ["uv", "run", "alembic", "upgrade", "head"]
 
@@ -144,8 +155,8 @@ services:
   # proxy'ye salt-okunur mount edilir ve proxy host'a hiçbir port açmaz.
   docker-socket-proxy:
     profiles: ["cpu", "gpu"]
-    image: tecnativa/docker-socket-proxy:0.3.0
-    container_name: sidar_docker_socket_proxy
+    image: tecnativa/docker-socket-proxy:v0.5.0
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_docker_socket_proxy
     restart: unless-stopped
     environment:
       - CONTAINERS=1
@@ -181,12 +192,17 @@ services:
   sidar-ai:
     profiles: ["cpu"]
     image: ${SIDAR_DOCKER_IMAGE:-sidar:latest}
+    # `image` never resolves against a registry — it only names the locally
+    # built tag. Without pull_policy, `docker compose up` tries a registry
+    # pull first, fails with a confusing "pull access denied" before falling
+    # back to `build:`. Force straight to the local build instead.
+    pull_policy: build
     build:
       context: .
       args:
-        BASE_IMAGE: python:3.11-slim
+        BASE_IMAGE: python:3.11.15-slim
         GPU_ENABLED: "false"
-    container_name: sidar_agent
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_agent
     user: "${SIDAR_CONTAINER_UID:-10001}:${SIDAR_CONTAINER_GID:-10001}"
     restart: unless-stopped
     cpus: ${SIDAR_CPU_LIMIT:-2.0}
@@ -204,7 +220,7 @@ services:
       postgres:
         condition: service_healthy
       ollama:
-        condition: service_started
+        condition: service_healthy
       sidar-migrate:
         condition: service_completed_successfully
       docker-socket-proxy:
@@ -213,6 +229,9 @@ services:
     environment:
       - ACCESS_LEVEL=sandbox
       - AI_PROVIDER=${AI_PROVIDER:-ollama}
+      # Host-odaklı OLLAMA_URL (örn. .env'deki http://localhost:11434/api)
+      # container'ı asla gölgelemesin diye DATABASE_URL'deki
+      # SIDAR_CONTAINER_DATABASE_URL deseniyle aynı ayrı değişken kullanılıyor.
       - OLLAMA_URL=${SIDAR_CONTAINER_OLLAMA_URL:-http://ollama:11434/api}
       - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-sidar}:${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-sidar}}
       - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
@@ -225,7 +244,7 @@ services:
       - DOCKER_HOST=tcp://docker-socket-proxy:2375
 
     env_file:
-      - .env
+      - ${SIDAR_RUNTIME_ENV_FILE:-.env}
 
     volumes:
       - ${SIDAR_DATA_MOUNT:-./data}:/app/data
@@ -238,85 +257,8 @@ services:
     stdin_open: true
     tty: true
 
-  # ── CLI Modu — GPU (NVIDIA) ────────────────────────────────────
-  # Kullanım: docker compose up sidar-gpu
-  # Gereksinim: NVIDIA Container Toolkit kurulu olmalı.
-  #   https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
-  # WSL2 notu: WSL2 üzerinde Docker GPU desteği için önce Windows tarafında
-  #   NVIDIA Driver (>=595.x) kurulmalı; WSL2 içinde ayrıca nvidia-ctk kurulumu gerekir:
-  #   sudo apt-get install -y nvidia-container-toolkit && sudo nvidia-ctk runtime configure --runtime=docker
-  sidar-gpu:
-    profiles: ["gpu"]
-    image: ${SIDAR_GPU_DOCKER_IMAGE:-sidar-gpu:latest}
-    build:
-      context: .
-      args:
-        BASE_IMAGE: nvidia/cuda:13.0.0-runtime-ubuntu22.04
-        GPU_ENABLED: "true"
-        TORCH_INDEX_URL: https://download.pytorch.org/whl/cu130
-    container_name: sidar_agent_gpu
-    user: "${SIDAR_CONTAINER_UID:-10001}:${SIDAR_CONTAINER_GID:-10001}"
-    restart: unless-stopped
-    cpus: ${SIDAR_GPU_CPU_LIMIT:-4.0}
-    mem_limit: ${SIDAR_GPU_MEM_LIMIT:-8g}
-
-    # NVIDIA GPU çalışma zamanı (Docker Compose v2 sözdizimi)
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all          # Tüm GPU'ları bağla; belirli sayı için: count: 1
-              capabilities: [gpu]
-        limits:
-          cpus: '4.0'
-          memory: 8G
-
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-      ollama-gpu:
-        condition: service_started
-      sidar-migrate:
-        condition: service_completed_successfully
-      docker-socket-proxy:
-        condition: service_started
-
-    environment:
-      - ACCESS_LEVEL=sandbox
-      - AI_PROVIDER=${AI_PROVIDER:-ollama}
-      - OLLAMA_URL=${SIDAR_CONTAINER_OLLAMA_GPU_URL:-http://ollama-gpu:11434/api}
-      - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-sidar}:${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-sidar}}
-      - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
-      - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS:-100}
-      # Dockerfile'ın gömülü REDIS_URL varsayılanını (parolasız) ve .env'deki
-      # bare-metal SIDAR_REDIS_URL değerini (host makine adresi) geçersiz
-      # kılarak container'ın her zaman parolalı, network-içi redis'e bağlanmasını sağlar.
-      - SIDAR_REDIS_URL=redis://:${REDIS_PASSWORD:?Set a strong REDIS_PASSWORD in .env; empty/default passwords are refused}@redis:6379/0
-      - USE_GPU=true
-      - GPU_DEVICE=${GPU_DEVICE:-0}
-      - GPU_MEMORY_FRACTION=${GPU_MEMORY_FRACTION:-0.8}
-      - GPU_MIXED_PRECISION=${GPU_MIXED_PRECISION:-true}   # Ampere+ (RTX 30xx/40xx) FP16 destekler; eski GPU için .env'de false yapın
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-      # Ham host socket'i yerine kısıtlı docker-socket-proxy'e bağlan (bkz. servis notu).
-      - DOCKER_HOST=tcp://docker-socket-proxy:2375
-
-    env_file:
-      - .env
-
-    volumes:
-      - ${SIDAR_DATA_MOUNT:-./data}:/app/data
-      - ${SIDAR_LOGS_MOUNT:-./logs}:/app/logs
-      - ${SIDAR_TEMP_MOUNT:-./temp}:/app/temp
-
-    extra_hosts:
-      - "host.docker.internal:${HOST_GATEWAY:-host-gateway}"
-
-    stdin_open: true
-    tty: true
+  # sidar-gpu (CLI Modu — GPU) artık docker-compose.gpu.yml'de:
+  # docker compose -f docker-compose.yml -f docker-compose.gpu.yml up sidar-gpu
 
   # ── Web Arayüzü — CPU ──────────────────────────────────────────
   sidar-web:
@@ -324,9 +266,9 @@ services:
     build:
       context: .
       args:
-        BASE_IMAGE: python:3.11-slim
+        BASE_IMAGE: python:3.11.15-slim
         GPU_ENABLED: "false"
-    container_name: sidar_web
+    container_name: ${COMPOSE_PROJECT_NAME:-sidar}_web
     user: "${SIDAR_CONTAINER_UID:-10001}:${SIDAR_CONTAINER_GID:-10001}"
     restart: unless-stopped
     cpus: ${SIDAR_WEB_CPU_LIMIT:-2.0}
@@ -347,16 +289,20 @@ services:
           cpus: '2.0'
           memory: 4G
 
+    # jaeger artık docker-compose.observability.yml'de tanımlı; buradaki
+    # soft (required: false) depends_on kaldırıldı — cross-file bir servise
+    # referans vermek, o dosya -f ile eklenmediğinde "depends on undefined
+    # service" hatası verirdi. Bu yalnızca başlangıç sırası için bir
+    # optimizasyondu (ENABLE_TRACING zaten varsayılan false'tur ve jaeger
+    # ulaşılamazsa bağlantı hatası zaten gracefully ele alınır), kaldırılması
+    # davranışı değiştirmez.
     depends_on:
       redis:
         condition: service_healthy
       postgres:
         condition: service_healthy
-      jaeger:
-        condition: service_started
-        required: false
       ollama:
-        condition: service_started
+        condition: service_healthy
       sidar-migrate:
         condition: service_completed_successfully
 
@@ -374,13 +320,20 @@ services:
       - WEB_PORT=7860
       - MEMORY_ENCRYPTION_KEY=${MEMORY_ENCRYPTION_KEY:-}
       - API_KEY=${API_KEY:-}
-      - ENABLE_TRACING=${ENABLE_TRACING:-true}
+      # config.py'nin (ENABLE_TRACING=False) ve .env.advanced.example'ın kendi
+      # belgelenmiş varsayılanıyla eşleşir. `jaeger` yalnızca "observability"
+      # profili altında başlar (bkz. aşağıdaki jaeger servisi); bu değişken
+      # burada true varsayılansaydı, jaeger'sız her cpu/gpu-profilli compose
+      # koşusunda (ör. scripts/ci/validate_production_compose.sh) sidar-web
+      # jaeger:4317'ye OTLP export denemeye çalışıp DEADLINE_EXCEEDED ile
+      # başarısız olur, işlevsel olmayan ama gürültülü boot log'ları üretirdi.
+      - ENABLE_TRACING=${ENABLE_TRACING:-false}
       - OTEL_EXPORTER_ENDPOINT=${OTEL_EXPORTER_ENDPOINT:-http://jaeger:4317}
       - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-sidar-web}
       - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-sidar}:${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-sidar}}
 
     env_file:
-      - .env
+      - ${SIDAR_RUNTIME_ENV_FILE:-.env}
 
     volumes:
       - ${SIDAR_DATA_MOUNT:-./data}:/app/data
@@ -390,175 +343,22 @@ services:
     extra_hosts:
       - "host.docker.internal:${HOST_GATEWAY:-host-gateway}"
 
-  # ── Web Arayüzü — GPU ─────────────────────────────────────────
-  # Kullanım: docker compose up sidar-web-gpu
-  sidar-web-gpu:
-    profiles: ["gpu"]
-    build:
-      context: .
-      args:
-        BASE_IMAGE: nvidia/cuda:13.0.0-runtime-ubuntu22.04
-        GPU_ENABLED: "true"
-        TORCH_INDEX_URL: https://download.pytorch.org/whl/cu130
-    container_name: sidar_web_gpu
-    user: "${SIDAR_CONTAINER_UID:-10001}:${SIDAR_CONTAINER_GID:-10001}"
-    restart: unless-stopped
-    cpus: ${SIDAR_WEB_GPU_CPU_LIMIT:-4.0}
-    mem_limit: ${SIDAR_WEB_GPU_MEM_LIMIT:-8g}
-    command: --quick web --host 0.0.0.0 --port 7860
+  # sidar-web-gpu (Web Arayüzü — GPU) artık docker-compose.gpu.yml'de:
+  # docker compose -f docker-compose.yml -f docker-compose.gpu.yml up sidar-web-gpu
 
-    # WEB_BIND_ADDR'de sidar-web ile aynı davranış/gerekçe geçerlidir.
-    ports:
-      - "${WEB_BIND_ADDR:-0.0.0.0}:${WEB_GPU_PORT:-7861}:7860"
-
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-        limits:
-          cpus: '4.0'
-          memory: 8G
-
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-      jaeger:
-        condition: service_started
-        required: false
-      ollama-gpu:
-        condition: service_started
-      sidar-migrate:
-        condition: service_completed_successfully
-
-    environment:
-      - ACCESS_LEVEL=sandbox
-      - AI_PROVIDER=${AI_PROVIDER:-ollama}
-      - OLLAMA_URL=${SIDAR_CONTAINER_OLLAMA_GPU_URL:-http://ollama-gpu:11434/api}
-      - DB_POOL_SIZE=${DB_POOL_SIZE:-10}
-      - REDIS_MAX_CONNECTIONS=${REDIS_MAX_CONNECTIONS:-100}
-      # Dockerfile'ın gömülü REDIS_URL varsayılanını (parolasız) ve .env'deki
-      # bare-metal SIDAR_REDIS_URL değerini (host makine adresi) geçersiz
-      # kılarak container'ın her zaman parolalı, network-içi redis'e bağlanmasını sağlar.
-      - SIDAR_REDIS_URL=redis://:${REDIS_PASSWORD:?Set a strong REDIS_PASSWORD in .env; empty/default passwords are refused}@redis:6379/0
-      - WEB_HOST=0.0.0.0
-      - WEB_PORT=7860
-      - USE_GPU=true
-      - GPU_DEVICE=${GPU_DEVICE:-0}
-      - GPU_MEMORY_FRACTION=${GPU_MEMORY_FRACTION:-0.8}
-      - GPU_MIXED_PRECISION=${GPU_MIXED_PRECISION:-true}   # Ampere+ (RTX 30xx/40xx) FP16 destekler; eski GPU için .env'de false yapın
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-      - MEMORY_ENCRYPTION_KEY=${MEMORY_ENCRYPTION_KEY:-}
-      - API_KEY=${API_KEY:-}
-      - ENABLE_TRACING=${ENABLE_TRACING:-true}
-      - OTEL_EXPORTER_ENDPOINT=${OTEL_EXPORTER_ENDPOINT:-http://jaeger:4317}
-      - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-sidar-web-gpu}
-      - DATABASE_URL=${SIDAR_CONTAINER_DATABASE_URL:-postgresql+asyncpg://${POSTGRES_USER:-sidar}:${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-sidar}}
-
-    env_file:
-      - .env
-
-    volumes:
-      - ${SIDAR_DATA_MOUNT:-./data}:/app/data
-      - ${SIDAR_LOGS_MOUNT:-./logs}:/app/logs
-      - ${SIDAR_TEMP_MOUNT:-./temp}:/app/temp
-
-    extra_hosts:
-      - "host.docker.internal:${HOST_GATEWAY:-host-gateway}"
-
-
-  jaeger:
-    profiles: ["observability"]
-    image: jaegertracing/all-in-one:1.63.0
-    container_name: sidar_jaeger
-    restart: unless-stopped
-    ports:
-      - "16686:16686"
-      - "4317:4317"
-
-  redis-exporter:
-    profiles: ["observability"]
-    image: oliver006/redis_exporter:v1.67.0
-    container_name: sidar_redis_exporter
-    restart: unless-stopped
-    environment:
-      - REDIS_ADDR=redis://redis:6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD:?Set a strong REDIS_PASSWORD in .env; empty/default passwords are refused}
-    depends_on:
-      - redis
-
-  postgres-exporter:
-    profiles: ["observability"]
-    image: prometheuscommunity/postgres-exporter:v0.15.0
-    container_name: sidar_postgres_exporter
-    restart: unless-stopped
-    environment:
-      - DATA_SOURCE_NAME=postgresql://${POSTGRES_USER:-sidar}:${POSTGRES_PASSWORD:?Set a strong POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-sidar}?sslmode=disable
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  cadvisor:
-    profiles: ["observability"]
-    image: gcr.io/cadvisor/cadvisor:v0.49.1
-    container_name: sidar_cadvisor
-    restart: unless-stopped
-    privileged: true
-    devices:
-      - /dev/kmsg
-    volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:ro
-      - /sys:/sys:ro
-      - /var/lib/docker:/var/lib/docker:ro
-      - /dev/disk:/dev/disk:ro
-
-  prometheus:
-    profiles: ["observability"]
-    image: prom/prometheus:v2.54.1
-    container_name: sidar_prometheus
-    restart: unless-stopped
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./docker_setup/prometheus:/etc/prometheus:ro
-    depends_on:
-      - redis-exporter
-      - postgres-exporter
-      - cadvisor
-
-  grafana:
-    profiles: ["observability"]
-    image: grafana/grafana:11.2.0
-    container_name: sidar_grafana
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?Set a strong GRAFANA_ADMIN_PASSWORD in .env; default admin/admin is refused}
-    volumes:
-      - ./docker_setup/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./docker_setup/grafana/dashboards:/var/lib/grafana/dashboards:ro
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://localhost:3000/api/health >/dev/null 2>&1 || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 6
-      start_period: 30s
-    depends_on:
-      - prometheus
+  # Observability profil servisleri (jaeger, redis-exporter, postgres-exporter,
+  # cadvisor, prometheus-token-init, prometheus, grafana) artık
+  # docker-compose.observability.yml'de: docker compose -f docker-compose.yml
+  # -f docker-compose.observability.yml --profile observability up
 
 volumes:
   redis_data:
   postgres_data:
-    name: sidar_postgres_data
+    # Keep the historical development volume by default, while allowing
+    # disposable/parallel stacks to select an isolated PostgreSQL volume.
+    name: ${SIDAR_POSTGRES_VOLUME_NAME:-sidar_postgres_data}
   ollama_data:
   sidar_data_prod:
   sidar_logs_prod:
   sidar_temp_prod:
+  prometheus_secrets:

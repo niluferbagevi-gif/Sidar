@@ -34,8 +34,14 @@ metriği yerine yazılmamalıdır.
   gibi kullanılmamalıdır. Unit ağırlığı yüksek olduğu için refactor PR'larında yalnız unit coverage'a güvenilmez; `web_server.py`
   ve `core/db/__init__.py` gibi facade taşımalarında en az bir integration sahnesi de eklenir.
 - `run_tests.sh` Aşama 1 unit fazı artık pytest-xdist mevcutsa `PYTEST_WORKERS` ve
-  `PYTEST_DIST_MODE=loadgroup` ile yüksek paralellikte çalışır. Aşama 2 integration/smoke/e2e fazı
-  ise `INTEGRATION_PYTEST_WORKERS` varsayılanı ile sınırlı paralellik kullanır; bu nedenle "Faz 1
+  `PYTEST_DIST_MODE=loadgroup` ile yüksek paralellikte (varsayılan `auto`, CI runner'da
+  çekirdek sayısı kadar) çalışır. Aşama 2 integration/smoke/e2e fazı ise
+  `INTEGRATION_PYTEST_WORKERS` varsayılan **2** ile kasıtlı olarak sınırlı paralellik
+  kullanır: bu fazdaki testler CI'da tek, paylaşılan bir PostgreSQL servisine
+  (`DATABASE_URL=.../sidar_test`, worker başına izole değil) bağlanır — unit fazının
+  mock/izole state'inin aksine, yüksek paralellik aynı tabloları/satırları paylaşan
+  testler arasında sahte-flaky race condition riski taşır (bkz.
+  `scripts/test_gates/coverage_helpers.sh`'daki gerekçe yorumu). Bu nedenle "Faz 1
   paralel değil" tespiti güncel script için geçerli değildir.
 - Backend pytest fazları artık CI/test özeti için faz bazlı JUnit çıktıları üretir:
   - `artifacts/pytest/backend-unit.xml`
@@ -174,6 +180,10 @@ metriği yerine yazılmamalıdır.
   ve yerel profilde varsayılan `BENCHMARK_ENFORCE_RESULT=1` ile hard-fail üretir; geçici rapor-only
   araştırma için `BENCHMARK_ENFORCE_RESULT=0` açıkça verilmelidir.
   Benchmark komutu GC'yi kapatır ve kalibrasyon warmup'ını etkinleştirir.
+  Parola hash/verify primitive'lerini ölçen `password-application-path`/`password-primitive`
+  grupları (`@pytest.mark.password_benchmark`) yüksek varyanslı oldukları için ayrı bir
+  pytest oturumunda çalışır ve `BENCHMARK_PASSWORD_COMPARE_FAIL` (varsayılan `mean:30%`)
+  ile değerlendirilir; raporu `artifacts/benchmark/password-benchmark.json`'da tutulur.
 - Yeni baseline üretmek için önerilen komut:
   - `uv run pytest tests/performance/ --benchmark-save=baseline`
 - GPU baseline rebase işlemini yalnız temiz çalışma ağacında, aynı WSL2/driver/Ollama profiliyle ve
@@ -184,16 +194,25 @@ metriği yerine yazılmamalıdır.
   `backend-quality-trend-artifacts` artifact'iyle review için yükler. Cache/artifact içinde
   `*_baseline.json` bulunduğunda `BENCHMARK_COMPARE_REQUIRED=1`, `BENCHMARK_ENFORCE_COMPARE=1` ve
   `BENCHMARK_COMPARE_FAIL=mean:10%` değerleriyle baseline eksikliği veya `mean` üzerinde `%10`
-  regresyon hard-fail üretir. CI production-readiness gate içinde cache/artifact baseline boşsa
-  koşu seed moduna düşmez; `.benchmarks/*_baseline.json` restore edilmeden kalite kapısı fail-closed
-  sonlanır. GitHub Actions bootstrap yolu manuel **Benchmark baseline seed** workflow'udur:
+  regresyon hard-fail üretir. CI production-readiness gate içinde cache/artifact baseline hiçbir
+  erişilebilir kapsamda bulunamazsa (GitHub Actions cache erişimi yalnız bu run'ın kendi ref'i,
+  PR'ın base branch'i ve repo default branch'iyle sınırlıdır — bir PR'ın **kendi head branch'inde**
+  `workflow_dispatch` ile seed edilmiş bir cache, o PR'ın `pull_request`-tetiklemeli run'larına
+  erişilebilir değildir) `benchmark-compare` job'u artık fail-closed sonlanmaz: bu run'ın kendi
+  ölçümünü `.benchmarks/*_baseline.json` olarak üretip aynı ref+`uv.lock` hash kapsamında cache'e
+  kaydeder (bootstrap modu — bu koşuda regresyon karşılaştırması **yapılmaz**) ve job başarılı
+  sayılır. Aynı PR'a bir sonraki push (aynı `uv.lock` ile) bu bootstrap baseline'ı restore eder ve
+  gerçek bir karşılaştırma yapar. GitHub Actions'ta ayrıca manuel bir **Benchmark baseline seed**
+  workflow'u vardır (özellikle `main`/`master` üzerinde önceden gözden geçirilmiş bir baseline
+  sağlamak için):
   `workflow_dispatch` ile çalıştırılan job `BENCHMARK_COMPARE_REQUIRED=0` ve
   `BENCHMARK_ENFORCE_COMPARE=0` kullanarak `.benchmarks/*_baseline.json` üretir, sonucu
   `benchmark-baseline-${runner.os}-py311-${uv.lock hash}-${branch}-${run_id}` cache key'i ve 30 günlük artifact
   olarak saklar; ayrıca `baseline-seed-manifest.json` içinde üretilen baseline dosyalarını ve
   sonraki sıkı kapı komutunu (`BENCHMARK_COMPARE_REQUIRED=1 BENCHMARK_ENFORCE_COMPARE=1`) kaydeder.
   Ana `CI` workflow'u branch, `main/master` ve genel restore-key zincirinden bu
-  cache'i bulamazsa yine fail-closed kalır; seed artifact'i `mean`, `stddev`, örnek sayısı,
+  cache'i bulamazsa (yukarıdaki kapsam kısıtı nedeniyle bu manuel seed genelde yalnız `main`/`master`
+  push'ları için işe yarar) `benchmark-compare` kendi bootstrap moduna düşer; seed artifact'i `mean`, `stddev`, örnek sayısı,
   donanım/runner profili ve `commit_info.dirty` açısından review edilmeden güvenilir baseline
   kabul edilmemelidir. Cache restore prefix'lerinin tamamı aynı `uv.lock` hash'ini taşır;
   bağımlılık kilidi değiştiğinde eski dependency setine ait baseline restore edilemez. Ayrıca
@@ -205,8 +224,12 @@ metriği yerine yazılmamalıdır.
   `stddev`, örnek sayısı, donanım/driver profili ve `commit_info.dirty` alanını inceleyin.
   `.benchmarks/` çıktıları kalıcı kaynak dosya değil CI cache/artifact state'i olarak yönetilir;
   donanım/runner profili değiştiğinde cache seed koşusunun artifact'i ayrıca review edilmelidir.
-- Tek metrikteki iyileşme tüm paketin hızlandığı anlamına gelmez. Özellikle auth hash/verify,
-  Parola hash maliyeti nedeniyle bilerek pahalıdır. Argon2id varsayılandır; FIPS/legacy PBKDF2 için `SIDAR_PBKDF2_ITERATIONS` ile iş faktörü
+- Tek metrikteki iyileşme tüm paketin hızlandığı anlamına gelmez. Auth benchmark'ları
+  `password-primitive` (yalnız hash/verify algoritması) ve `password-application-path`
+  (event loop + DB + query + model dönüşümü dahil register/authenticate akışı) gruplarına
+  ayrılır; iki grubun regresyonları birbirinin yerine yorumlanmamalıdır. Her kontrat
+  5 warmup + 30 ölçüm turu kullanır. Parola hash maliyeti bilerek pahalıdır.
+  Argon2id varsayılandır; FIPS/legacy PBKDF2 için `SIDAR_PBKDF2_ITERATIONS` ile iş faktörü
   ortam bazında yükseltilebilir; değer güvenli minimumun altındaysa runtime minimuma
   clamp eder. `SIDAR_AUTH_HASH_SLO_MS` varsayılan `120` ms auth hash/verify SLO uyarı
   eşiğini belirler ve `/metrics` içindeki `sidar_auth_password_hash_*` metrikleriyle
@@ -215,8 +238,8 @@ metriği yerine yazılmamalıdır.
 - 2026-06-22 performans değerlendirmesinde 13 benchmark'ın tamamı başarılı raporlandı ve ilk
   karşılaştırma kaydı `.benchmarks/Linux-CPython-3.11-64bit/0001_baseline.json` olarak seed edildi;
   `test_format_table_handles_large_dataset_quickly` yaklaşık `3.7 ms`,
-  `test_user_authentication_password_hash_cpu_cost[sqlite]` yaklaşık `65 ms`,
-  `test_user_authentication_password_hash_cpu_cost[postgresql]` yaklaşık `74 ms`,
+  `test_user_registration_password_hash_cpu_cost[sqlite]` yaklaşık `65 ms`,
+  `test_user_registration_password_hash_cpu_cost[postgresql]` yaklaşık `74 ms`,
   `test_gpu_concurrent_throughput` yaklaşık `6.96 s` ve
   `test_gpu_vram_peak_under_load` yaklaşık `2.24 s` seviyesinde gözlendi. Bu değerler tek başına
   yeni evrensel eşik değildir; ilgili runner/donanım profili için baseline seed gözlemidir. Sonraki
@@ -272,6 +295,9 @@ metriği yerine yazılmamalıdır.
   4. Benchmark ölçümünde schema init/bağlantı aç-kapat maliyetini workload dışında tutarak
      gerçek mesajlaşma throughput'unu ayrı izleyin.
 - Doğrulama notu:
+  - I/O concurrency benchmarkı 5 warmup + 50 ölçüm turu kullanır. Daha geniş örneklem
+    kısa süreli jitter etkisini azaltır; sabit self-hosted donanım ve aynı-runner
+    baseline zorunluluğunun yerine geçmez.
   - SQLite tarafında WAL modu ve `messages(session_id)` indeksinin varlığı
     `tests/unit/core/test_db.py` içinde güvence altına alınmıştır.
 
@@ -299,17 +325,24 @@ metriği yerine yazılmamalıdır.
   quantization, mimari, driver, `GPU_BENCH_NUM_BATCH`, `GPU_BENCH_NUM_CTX`,
   `GPU_BENCH_NUM_PREDICT` ve `OLLAMA_KEEP_ALIVE` değerlerini içerir. Bu ayarlardan biri
   değişirse önce yeni profil baseline'ı oluşturulur; eski profil yanlış pozitif alarm üretmez.
-- Trend alarm yönleri metrik semantiğine göre ayrıdır: TTFT/VRAM artışı ve token/sn düşüşü
-  regresyondur. TTFT/VRAM düşüşü veya token/sn artışı iyileşme sayılır ve alarm üretmez.
+- Trend alarm yönleri metrik semantiğine göre ayrıdır: TTFT, VRAM tepe kullanımı ve
+  `test_gpu_vram_peak_under_load` mean süresi artışı ile token/sn düşüşü regresyondur.
+  GPU trend geçmişi VRAM stres testinin mean süresini `vram_load_mean_ms` olarak ayrıca
+  kaydeder ve eşik altındaki küçük sapmaları da loglar; böylece tek koşu alarm üretmeden
+  birkaç eşdeğer production/nightly koşusundaki aynı yön izlenebilir. TTFT/VRAM/mean süre
+  düşüşü veya token/sn artışı iyileşme sayılır ve alarm üretmez.
 - Örnek başlatma komutları:
   - Host/WSL2: `OLLAMA_NUM_PARALLEL=4 ollama serve`
   - Docker Compose: `OLLAMA_NUM_PARALLEL=4 docker compose up ollama`
 
 ### CI quality gate (TTFT + single inference latency)
 
-- GitHub Actions içinde isteğe bağlı bir GPU kalite kapısı tanımlıdır: `gpu-inference-quality-gate`.
-- Bu job yalnızca repo değişkeni `ENABLE_GPU_BENCH_GATE=true` olduğunda çalışır.
-- Runner gereksinimi: `self-hosted`, `linux`, `gpu` etiketli runner.
+- GitHub Actions içinde repository-variable kontrollü bir GPU kalite kapısı tanımlıdır:
+  `gpu-inference-quality-gate`; bu kapı yerel GPU benchmark sonucuyla ikame edilemez.
+- Job yalnızca repo değişkeni `ENABLE_GPU_BENCH_GATE=true` olduğunda çalışır; ancak merge/release
+  politikası bu değerin `true` olmasını ve aynı commit için gerçek job sonucunun geçmesini zorunlu
+  tuttuğundan değişkenin kapatılması desteklenen bir opt-out değildir.
+- Runner gereksinimi: `self-hosted`, `linux`, `x64`, `gpu`, `cuda` etiketli runner.
 - Quality gate komutu:
   - `bash scripts/ci/run_ttft_quality_gate.sh`
 - Baseline referansı (2026-04):

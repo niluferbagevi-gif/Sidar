@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from urllib.error import HTTPError
+from types import SimpleNamespace
 
 import pytest
 
@@ -30,16 +30,64 @@ def _workflow(path: Path) -> Path:
     return path
 
 
+def test_repo_from_git_remote_uses_allowlisted_absolute_git(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        audit.shutil, "which", lambda name: "/usr/bin/git" if name == "git" else None
+    )
+
+    # _repo_from_git_remote() runs the git invocation through
+    # core.utils.trusted_subprocess.run_trusted_command() (centralizes the
+    # unavoidable Bandit B603 suppression -- see that module's docstring),
+    # which verify_required_checks imports by name, so the fake belongs on
+    # that imported name rather than on audit.subprocess.check_output
+    # (run_trusted_command wraps the real subprocess.run internally, not
+    # check_output).
+    def fake_run_trusted_command(command, **kwargs):  # noqa: ANN001 - subprocess argv test double.
+        captured["command"] = command
+        captured.update(kwargs)
+        return SimpleNamespace(stdout="git@github.com:owner/repo.git\n")
+
+    monkeypatch.setattr(audit, "run_trusted_command", fake_run_trusted_command)
+
+    assert audit._repo_from_git_remote() == "owner/repo"
+    assert captured == {
+        "command": ["/usr/bin/git", "remote", "get-url", "origin"],
+        "text": True,
+        "stdout": audit.subprocess.PIPE,
+        "stderr": audit.subprocess.DEVNULL,
+        "timeout": 10,
+        "check": True,
+    }
+
+
+def test_repo_from_git_remote_fails_closed_without_absolute_git(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(audit.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(
+        audit,
+        "run_trusted_command",
+        lambda *_args, **_kwargs: pytest.fail("subprocess must not run without resolved git"),
+    )
+
+    assert audit._repo_from_git_remote() == ""
+
+
 def test_audit_required_checks_accepts_all_release_contexts(tmp_path: Path) -> None:
     workflow = _workflow(tmp_path / "ci.yml")
     expected_contexts = {
-        "CI / Base quality gates",
-        "CI / Installer manifest and smoke gate",
-        "CI / Production-minimal runtime validation",
-        "CI / GPU Inference Required Evidence Gate",
-        "CI / Production readiness aggregate",
-        "CI / PostgreSQL Connection Pool Stress Test",
-        "CI / Extra non-release check",
+        "Base quality gates",
+        "Installer manifest and smoke gate",
+        "Production-minimal runtime validation",
+        "GPU Inference Required Evidence Gate",
+        "Production readiness aggregate",
+        "PostgreSQL Connection Pool Stress Test",
+        "Extra non-release check",
+        "Required release checks audit",
     }
 
     expected, missing = audit.audit_required_checks(
@@ -49,12 +97,13 @@ def test_audit_required_checks_accepts_all_release_contexts(tmp_path: Path) -> N
     )
 
     assert expected == [
-        "CI / Base quality gates",
-        "CI / Installer manifest and smoke gate",
-        "CI / Production-minimal runtime validation",
-        "CI / GPU Inference Required Evidence Gate",
-        "CI / Production readiness aggregate",
-        "CI / PostgreSQL Connection Pool Stress Test",
+        "Base quality gates",
+        "Installer manifest and smoke gate",
+        "Production-minimal runtime validation",
+        "GPU Inference Required Evidence Gate",
+        "Production readiness aggregate",
+        "PostgreSQL Connection Pool Stress Test",
+        "Required release checks audit",
     ]
     assert missing == []
 
@@ -66,15 +115,16 @@ def test_audit_required_checks_reports_missing_release_context(tmp_path: Path) -
         workflow_path=workflow,
         job_ids=audit.DEFAULT_RELEASE_JOB_IDS,
         required_contexts={
-            "CI / Base quality gates",
-            "CI / Installer manifest and smoke gate",
-            "CI / Production-minimal runtime validation",
-            "CI / GPU Inference Required Evidence Gate",
-            "CI / Production readiness aggregate",
+            "Base quality gates",
+            "Installer manifest and smoke gate",
+            "Production-minimal runtime validation",
+            "GPU Inference Required Evidence Gate",
+            "Production readiness aggregate",
+            "Required release checks audit",
         },
     )
 
-    assert missing == ["CI / PostgreSQL Connection Pool Stress Test"]
+    assert missing == ["PostgreSQL Connection Pool Stress Test"]
 
 
 def test_extract_required_contexts_supports_legacy_contexts_and_checks() -> None:
@@ -93,62 +143,209 @@ def test_extract_required_contexts_supports_legacy_contexts_and_checks() -> None
     }
 
 
-def test_fetch_required_contexts_uses_github_api_headers(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: dict[str, object] = {}
+def test_audit_merge_safety_accepts_fail_closed_protection() -> None:
+    payload = {
+        "required_status_checks": {"strict": True, "checks": []},
+        "required_pull_request_reviews": {"required_approving_review_count": 1},
+        "enforce_admins": {"enabled": True},
+        "allow_force_pushes": {"enabled": False},
+        "allow_deletions": {"enabled": False},
+    }
 
-    class FakeResponse:
-        def __enter__(self) -> FakeResponse:
-            return self
+    assert audit.audit_merge_safety(payload) == []
 
-        def __exit__(self, *_args: object) -> None:
-            return None
 
-        def read(self) -> bytes:
-            return json.dumps(
-                {"checks": [{"context": "CI / Installer manifest and smoke gate"}]}
-            ).encode()
+def test_audit_merge_safety_reports_each_unsafe_control() -> None:
+    payload = {
+        "required_status_checks": {"strict": False, "checks": []},
+        "enforce_admins": {"enabled": False},
+        "allow_force_pushes": {"enabled": True},
+        "allow_deletions": {"enabled": True},
+    }
 
-    def fake_urlopen(request, timeout):  # noqa: ANN001 - urllib Request type differs by Python minor.
-        captured["url"] = request.full_url
-        captured["timeout"] = timeout
-        captured["authorization"] = request.headers.get("Authorization")
-        captured["api_version"] = request.headers.get("X-github-api-version")
-        return FakeResponse()
+    assert audit.audit_merge_safety(payload) == [
+        "Require branches to be up to date before merging is disabled",
+        "Require a pull request before merging is disabled",
+        "Administrator enforcement is disabled",
+        "Force pushes are allowed or could not be verified as disabled",
+        "Branch deletion is allowed or could not be verified as disabled",
+    ]
 
-    monkeypatch.setattr(audit, "urlopen", fake_urlopen)
 
-    contexts = audit._fetch_required_contexts(
-        api_url="https://api.github.test",
-        repo="owner/repo",
-        branch="main",
-        token="token-123",
-        timeout=3.0,
-    )
+def test_extract_protection_required_contexts_uses_nested_payload() -> None:
+    payload = {
+        "required_status_checks": {"checks": [{"context": "CI / Production readiness aggregate"}]}
+    }
 
-    assert contexts == {"CI / Installer manifest and smoke gate"}
-    assert captured == {
-        "url": "https://api.github.test/repos/owner/repo/branches/main/protection/required_status_checks",
-        "timeout": 3.0,
-        "authorization": "Bearer token-123",
-        "api_version": "2022-11-28",
+    assert audit._extract_protection_required_contexts(payload) == {
+        "CI / Production readiness aggregate"
     }
 
 
-def test_fetch_required_contexts_wraps_http_errors(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_urlopen(_request, timeout):  # noqa: ANN001 - urllib Request type differs by Python minor.
-        assert timeout == 3.0
-        raise HTTPError("https://api.github.test", 404, "Not Found", hdrs=None, fp=None)
+def test_fetch_branch_protection_uses_complete_protection_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    payload = {
+        "required_status_checks": {"strict": True, "checks": []},
+        "required_pull_request_reviews": {},
+        "enforce_admins": {"enabled": True},
+        "allow_force_pushes": {"enabled": False},
+        "allow_deletions": {"enabled": False},
+    }
 
-    monkeypatch.setattr(audit, "urlopen", fake_urlopen)
+    class FakeResponse:
+        status = 200
+        reason = "OK"
+
+        def read(self) -> bytes:
+            return json.dumps(payload).encode()
+
+    class FakeConnection:
+        def __init__(self, host, port, timeout):  # noqa: ANN001 - protocol test double.
+            captured.update(host=host, port=port, timeout=timeout)
+
+        def request(self, method, path, headers):  # noqa: ANN001 - protocol test double.
+            captured.update(method=method, path=path, headers=headers)
+
+        def getresponse(self):  # noqa: ANN201 - protocol test double.
+            return FakeResponse()
+
+        def close(self) -> None:
+            captured["closed"] = True
+
+    monkeypatch.setattr(audit.http.client, "HTTPSConnection", FakeConnection)
+
+    assert (
+        audit._fetch_branch_protection(
+            api_url="https://api.github.test",
+            repo="owner/repo",
+            branch="main",
+            token="token-123",
+            timeout=3.0,
+        )
+        == payload
+    )
+    assert captured == {
+        "host": "api.github.test",
+        "port": None,
+        "timeout": 3.0,
+        "method": "GET",
+        "path": "/repos/owner/repo/branches/main/protection",
+        "headers": {
+            "Accept": "application/vnd.github+json",
+            "Authorization": "Bearer token-123",
+            "User-Agent": "sidar-required-check-audit",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+        "closed": True,
+    }
+
+
+@pytest.mark.parametrize(
+    "api_url",
+    ["http://api.github.test", "https://user:secret@api.github.test", "file:///tmp/api"],
+)
+def test_fetch_branch_protection_rejects_unsafe_api_urls(api_url: str) -> None:
+    with pytest.raises(audit.RequiredCheckAuditError, match="must be an HTTPS"):
+        audit._fetch_branch_protection(
+            api_url=api_url, repo="owner/repo", branch="main", token="token", timeout=3.0
+        )
+
+
+def test_fetch_branch_protection_wraps_http_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeResponse:
+        status = 404
+        reason = "Not Found"
+
+        def read(self) -> bytes:
+            return b"{}"
+
+    class FakeConnection:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def request(self, *_args, **_kwargs):
+            pass
+
+        def getresponse(self):
+            return FakeResponse()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(audit.http.client, "HTTPSConnection", FakeConnection)
 
     with pytest.raises(audit.RequiredCheckAuditError, match="HTTP 404"):
-        audit._fetch_required_contexts(
+        audit._fetch_branch_protection(
             api_url="https://api.github.test",
             repo="owner/repo",
             branch="main",
             token=None,
             timeout=3.0,
         )
+
+
+def test_fetch_branch_protection_explains_403_admin_token_requirement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ForbiddenResponse:
+        status = 403
+        reason = "Forbidden"
+
+        def read(self) -> bytes:
+            return b"{}"
+
+    class FakeConnection:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def request(self, *_args, **_kwargs):
+            pass
+
+        def getresponse(self):
+            return ForbiddenResponse()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(audit.http.client, "HTTPSConnection", FakeConnection)
+
+    with pytest.raises(audit.RequiredCheckAuditError) as exc_info:
+        audit._fetch_branch_protection(
+            api_url="https://api.github.test",
+            repo="owner/repo",
+            branch="main",
+            token="insufficient-token",
+            timeout=3.0,
+        )
+
+    message = str(exc_info.value)
+    assert "HTTP 403" in message
+    assert "BRANCH_PROTECTION_AUDIT_TOKEN" in message
+    assert "Administration: read" in message
+    assert "Merge safety could not be verified" in message
+
+
+def test_cli_prefers_branch_protection_audit_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BRANCH_PROTECTION_AUDIT_TOKEN", "admin-read-token")
+    monkeypatch.setenv("GITHUB_TOKEN", "default-actions-token")
+
+    args = audit._parse_args([])
+
+    assert args.token == "admin-read-token"
+
+
+def test_audit_workflow_injects_dedicated_admin_read_token() -> None:
+    workflow = Path(".github/workflows/branch-protection-audit.yml").read_text(encoding="utf-8")
+
+    assert "BRANCH_PROTECTION_AUDIT_TOKEN: ${{ secrets.BRANCH_PROTECTION_AUDIT_TOKEN }}" in workflow
+    assert "pull_request_target:" in workflow
+    assert "branches: [main]" in workflow
+    assert "issues: write" in workflow
+    assert "actions/github-script@v8" in workflow
+    assert "if: steps.audit.outcome == 'failure'" in workflow
+    assert "GITHUB_TOKEN: ${{ github.token }}" in workflow
 
 
 def test_cli_offline_mode_fails_when_context_is_missing(
@@ -161,10 +358,10 @@ def test_cli_offline_mode_fails_when_context_is_missing(
             "--workflow",
             str(workflow),
             "--required-context",
-            "CI / Base quality gates",
+            "Base quality gates",
         ]
     )
 
     captured = capsys.readouterr()
     assert exit_code == 1
-    assert "CI / Installer manifest and smoke gate" in captured.err
+    assert "Installer manifest and smoke gate" in captured.err

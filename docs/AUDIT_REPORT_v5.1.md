@@ -48,8 +48,8 @@ Bu denetim revizyonu, kod tabanının Faz D teslimatlarını, `main.py` launcher
 | Yüzey | Ölçüm |
 |---|---:|
 | `web_ui_react/` toplam satır | 4.393 |
-| `PluginMarketplacePanel.jsx` | 155 |
-| `AgentManagerPanel.jsx` | 132 |
+| `PluginMarketplacePanel.tsx` | 155 |
+| `AgentManagerPanel.tsx` | 132 |
 | `useWebSocket.js` | 188 |
 | `tests/test_plugin_marketplace_hot_reload.py` | 67 |
 | `tests/test_collaboration_workspace.py` | 131 |
@@ -70,11 +70,11 @@ Bu denetim revizyonu, kod tabanının Faz D teslimatlarını, `main.py` launcher
 ## 3. Faz D/Faz E Denetim Bulguları
 
 ### 3.1 Plugin Marketplace ve Sıcak Yükleme
-- `web_ui_react/src/components/PluginMarketplacePanel.jsx`, çalışma zamanında ajan eklentilerini listeleyen ve etkinleştiren React paneliyle plugin pazarını görünür kılar.
+- `web_ui_react/src/components/PluginMarketplacePanel.tsx`, çalışma zamanında ajan eklentilerini listeleyen ve etkinleştiren React paneliyle plugin pazarını görünür kılar.
 - `tests/test_plugin_marketplace_hot_reload.py`, sistem durmadan yeni ajanların kayıt defterine girip görev akışına katılabildiğini doğrular.
 
 ### 3.2 Multiplayer Collaboration Workspace
-- `AgentManagerPanel.jsx` ve `useWebSocket.js`, aynı orkestrasyon yüzeyinin birden fazla operatör tarafından paylaşılabildiği durum güncelleme kanalını taşır.
+- `AgentManagerPanel.tsx` ve `useWebSocket.js`, aynı orkestrasyon yüzeyinin birden fazla operatör tarafından paylaşılabildiği durum güncelleme kanalını taşır.
 - `tests/test_collaboration_workspace.py`, çok kullanıcılı state senkronizasyonunu ve birlikte çalışma davranışını regressionsuz biçimde korur.
 
 ### 3.3 Nightly Memory Maintenance ve Kaos Mühendisliği

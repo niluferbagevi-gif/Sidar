@@ -5,6 +5,12 @@ Görsel olarak zenginleştirilmiş etkileşimli menüler ile
 argparse tabanlı, ön kontrollü (preflight) akıllı başlatıcı.
 Kullanım: python main.py
 Hızlı Kullanım: python main.py --quick web --provider ollama --level full
+
+Not (isimlendirme): Bu dosya ajan REPL'i değildir -- yalnızca sihirbaz/preflight
+akışını çalıştırıp sonuçta `build_command()`/`execute_command()` ile `cli.py`
+(CLI REPL) veya `web_server.py`'yi alt süreçte başlatır. Gerçek ajan giriş
+noktası `cli.py`'dir; `python cli.py` ile bu sihirbazı hiç atlayarak doğrudan
+çalıştırılabilir. Bkz. `docs/module-notes/main.py.md`/`cli.py.md`.
 """
 
 from __future__ import annotations
@@ -16,15 +22,17 @@ import fcntl
 import json
 import logging
 import os
-import subprocess  # nosec B404
+import subprocess
 import sys
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, cast
 
+from core.utils.trusted_subprocess import run_trusted_command
 from launcher import doctor as launcher_doctor
 from launcher import process as launcher_process
 from launcher import selection as launcher_selection
+from launcher import ui as launcher_ui
 
 LAUNCHER_SESSION_FILENAME = ".sidar_session.json"
 LAUNCHER_SESSION_VERSION = 1
@@ -125,19 +133,7 @@ BASE_DIR = str(getattr(cfg, "BASE_DIR", BASE_DIR))
 
 def print_banner() -> None:
     """Etkileşimli menü için renkli karşılama ekranı."""
-    banner = f"""{CYAN}{BOLD}
- ╔══════════════════════════════════════════════╗
- ║  ███████╗██╗██████╗  █████╗ ██████╗          ║
- ║  ██╔════╝██║██╔══██╗██╔══██╗██╔══██╗         ║
- ║  ███████╗██║██║  ██║███████║██████╔╝         ║
- ║  ╚════██║██║██║  ██║██╔══██║██╔══██╗         ║
- ║  ███████║██║██████╔╝██║  ██║██║  ██║         ║
- ║  ╚══════╝╚═╝╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝         ║
- ║         SİDAR AKILLI BAŞLATICI               ║
- ╚══════════════════════════════════════════════╝{RESET}
-    """
-    print(banner)
-    print(f"{GREEN}Hoş geldiniz! Lütfen Sidar'ı nasıl başlatmak istediğinizi seçin.{RESET}\n")
+    launcher_ui.print_banner(cyan=CYAN, bold=BOLD, reset=RESET, green=GREEN)
 
 
 def ask_choice(
@@ -148,46 +144,47 @@ def ask_choice(
     default_badge: str | None = None,
 ) -> str:
     """Kullanıcıya seçenekler sunar ve güvenli bir şekilde girdiyi alır."""
-    print(f"{YELLOW}{BOLD}{prompt}{RESET}")
-
-    for key, (desc, _value) in options.items():
-        if key == default_key:
-            badge = default_badge or "Varsayılan"
-            is_default = f" {GREEN}({badge}){RESET}"
-        else:
-            is_default = ""
-        print(f"  {CYAN}[{key}]{RESET} {desc}{is_default}")
-
-    while True:
-        choice = input(f"\n{BOLD}Seçiminiz [{'/'.join(options.keys())}]: {RESET}").strip()
-
-        if not choice:
-            return options[default_key][1]
-
-        if choice in options:
-            return options[choice][1]
-
-        print(f"{MAGENTA}Geçersiz seçim. Lütfen tekrar deneyin.{RESET}")
+    return launcher_ui.ask_choice(
+        prompt,
+        options,
+        default_key,
+        default_badge=default_badge,
+        input_fn=input,
+        yellow=YELLOW,
+        bold=BOLD,
+        reset=RESET,
+        cyan=CYAN,
+        green=GREEN,
+        magenta=MAGENTA,
+    )
 
 
 def ask_text(prompt: str, default: str = "", *, default_badge: str | None = None) -> str:
     """Kullanıcıdan metin girdisi alır."""
-    if default:
-        badge = f" {GREEN}({default_badge}){RESET}" if default_badge else ""
-        suffix = f" {CYAN}[{default}]{RESET}{badge}"
-    else:
-        suffix = ""
-    raw = input(f"{YELLOW}{BOLD}{prompt}{RESET}{suffix}: ").strip()
-    return raw or default
+    return launcher_ui.ask_text(
+        prompt,
+        default,
+        default_badge=default_badge,
+        input_fn=input,
+        yellow=YELLOW,
+        bold=BOLD,
+        reset=RESET,
+        cyan=CYAN,
+        green=GREEN,
+    )
 
 
 def confirm(prompt: str, default_yes: bool = True) -> bool:
     """Kullanıcıdan Evet/Hayır onayı alır."""
-    hint = "[Y/n]" if default_yes else "[y/N]"
-    raw = input(f"\n{YELLOW}{BOLD}{prompt}{RESET} {CYAN}{hint}{RESET}: ").strip().lower()
-    if not raw:
-        return default_yes
-    return raw in {"y", "yes", "e", "evet"}
+    return launcher_ui.confirm(
+        prompt,
+        default_yes,
+        input_fn=input,
+        yellow=YELLOW,
+        bold=BOLD,
+        reset=RESET,
+        cyan=CYAN,
+    )
 
 
 def validate_runtime_dependencies(mode: str) -> tuple[bool, str | None]:
@@ -463,7 +460,7 @@ def _maybe_bootstrap_development_env() -> bool:
 
     cmd = ["uv", "run", "python", "-m", "scripts.bootstrap_env", "--profile", "development"]
     try:
-        completed = subprocess.run(  # nosec B603  # sabit komut listesi, kullanıcı girdisi eklenmez.
+        completed = run_trusted_command(
             cmd, check=False, cwd=_project_base_dir(), env=_launcher_child_env()
         )
     except OSError as exc:
@@ -565,7 +562,7 @@ def _run_doctor_auto_fix_command(auto_fix: str) -> bool:
     cmd = _launcher_auto_fix_command(cmd)
     print(f"{CYAN}   • Auto-fix çalışıyor: {_format_cmd(cmd)}{RESET}")
     try:
-        completed = subprocess.run(  # nosec B603  # Doctor auto_fix komutu list olarak çalıştırılır, shell kullanılmaz.
+        completed = run_trusted_command(
             cmd, check=False, cwd=_project_base_dir(), env=_launcher_child_env()
         )
     except OSError as exc:
@@ -1069,7 +1066,7 @@ def execute_command(
                 print(f"\n{RED}Program hata ile sonlandı (Çıkış Kodu: {return_code}){RESET}")
             return return_code
 
-        subprocess.run(  # nosec B603  # komut listesi launcher tarafından güvenli şekilde üretilir.
+        run_trusted_command(
             cmd, check=True, cwd=os.path.dirname(__file__) or ".", env=_launcher_child_env()
         )
         return 0

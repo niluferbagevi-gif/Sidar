@@ -14,6 +14,7 @@ def _summary_args(output_path: Path, junit_dir: Path) -> list[str]:
         "passed",  # integration
         "skipped",  # e2e
         "passed",  # frontend_lint
+        "passed",  # frontend_audit
         "passed",  # frontend_typecheck
         "passed",  # frontend_coverage
         "skipped",  # frontend_bundle_budget
@@ -46,6 +47,10 @@ def _summary_args(output_path: Path, junit_dir: Path) -> list[str]:
         "artifacts/benchmark/benchmark.json",
         "smoke",
         "test:e2e:smoke",
+        "false",  # local_readiness_passed
+        "failed",  # ruff_status
+        "failed",  # aggregate_status
+        "not_run",  # production_compose_boot
     ]
 
 
@@ -76,6 +81,12 @@ def test_summary_helper_writes_run_tests_payload_and_failed_backend_tests(tmp_pa
     assert summary.main(_summary_args(output_path, junit_dir)) == 0
 
     payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert payload["ruff"] == "failed"
+    assert payload["aggregate"] == "failed"
+    assert payload["code_quality_ready"] is False
+    assert payload["integration_ready"] is False
+    assert payload["production_compose_boot"] == "not_run"
+    assert payload["frontend_audit"] == "passed"
     assert payload["production_readiness_detail"] == {
         "status": "partial_stage",
         "reason": "selected stage set does not cover the full production readiness gate",
@@ -91,6 +102,20 @@ def test_summary_helper_writes_run_tests_payload_and_failed_backend_tests(tmp_pa
     assert payload["benchmark_baseline"]["local_seed_command"] == (
         "BENCHMARK_COMPARE_REQUIRED=0 RUN_BENCHMARKS=required bash run_tests.sh --stage all"
     )
+    assert payload["gpu_inference_evidence"] == {
+        "included": False,
+        "status": "not_run",
+        "scope": "external_ci_required_check",
+        "quality_gate": "GPU Inference Quality Gate (TTFT<=200ms, latency<=250ms)",
+        "policy_gate": "GPU Inference Required Evidence Gate",
+        "required_variable": "ENABLE_GPU_BENCH_GATE=true",
+        "required_runner_labels": ["self-hosted", "linux", "x64", "gpu", "cuda"],
+        "ttft_budget_ms": 200,
+        "latency_budget_ms": 250,
+    }
+    assert payload["local_readiness_passed"] is False
+    assert payload["release_evidence_complete"] is False
+    assert payload["release_ready"] is False
     assert payload["backend_failed_tests"] == [
         "tests/unit/root/test_config.py::test_failure",
         "tests/unit/root/test_config.py::test_error",
@@ -109,7 +134,29 @@ def test_summary_helper_rejects_wrong_argument_count(tmp_path: Path, capsys) -> 
     assert summary.main([str(tmp_path / "test-summary.json")]) == 2
 
     captured = capsys.readouterr()
-    assert "expected 37 arguments" in captured.err
+    assert "expected 42 arguments" in captured.err
+
+
+def test_summary_separates_local_readiness_from_external_release_evidence(tmp_path: Path) -> None:
+    args = _summary_args(tmp_path / "test-summary.json", tmp_path / "pytest")
+    args[-4] = "true"
+    args[11] = "true"
+
+    payload = summary.build_summary(args)
+
+    assert payload["local_readiness_passed"] is True
+    assert payload["production_ready"] is True
+    assert payload["release_evidence_complete"] is False
+    assert payload["release_ready"] is False
+
+
+def test_summary_preserves_failed_frontend_audit_result(tmp_path: Path) -> None:
+    args = _summary_args(tmp_path / "test-summary.json", tmp_path / "pytest")
+    args[5] = "failed"
+
+    payload = summary.build_summary(args)
+
+    assert payload["frontend_audit"] == "failed"
 
 
 def test_summary_helper_skips_malicious_backend_junit_xml(tmp_path: Path) -> None:

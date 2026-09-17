@@ -34,6 +34,7 @@ from core.config_env_helpers import (
 )
 
 logger = logging.getLogger(__name__)
+_SAMPLING_RANDOM = random.SystemRandom()
 
 # ─── Sabitler ────────────────────────────────────────────────────────────────
 
@@ -212,7 +213,7 @@ class LLMJudge:
 
     def _should_evaluate(self) -> bool:
         """Örnekleme oranına göre değerlendirme yapılıp yapılmayacağını belirle."""
-        return self.enabled and random.random() < self.sample_rate  # nosec B311  # güvenlik değil örnekleme oranı amaçlıdır.
+        return self.enabled and _SAMPLING_RANDOM.random() < self.sample_rate
 
     def should_evaluate(self) -> bool:
         """Dış çağrılar için public örnekleme kararı."""

@@ -1,0 +1,826 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { renderHook, act } from "@testing-library/react";
+import { useWebSocket } from "./useWebSocket.js";
+import {
+  setStoredToken,
+  TOKEN_CHANGE_EVENT,
+  TOKEN_KEY,
+  TOKEN_STORAGE_MODE_KEY,
+} from "../lib/api.js";
+
+// This suite swaps `globalThis.WebSocket` for a hand-rolled double -- a plain
+// object with just the members useWebSocket.ts actually touches (readyState,
+// send, close, on{message,error,close}), not the full DOM WebSocket surface
+// (binaryType, bufferedAmount, extensions, protocol, url, event-target
+// methods, ...). MockWebSocketInstance/MockWebSocketCtor describe that
+// double's real shape; the handful of `as unknown as typeof WebSocket` casts
+// below are the single, well-contained seam where the double stands in for
+// the real global.
+type MockWebSocketMessageEvent = { data: unknown };
+type MockWebSocketCloseEvent = { code?: number; reason?: string };
+
+interface MockWebSocketInstance {
+  readyState: number;
+  send: ReturnType<typeof vi.fn>;
+  close: ReturnType<typeof vi.fn>;
+  onmessage: ((event: MockWebSocketMessageEvent) => void) | null;
+  onerror: (() => void) | null;
+  onclose: ((event?: MockWebSocketCloseEvent) => void) | null;
+}
+
+type MockWebSocketCtor = ReturnType<typeof vi.fn<(...args: unknown[]) => MockWebSocketInstance>> & {
+  CONNECTING: number;
+  OPEN: number;
+  CLOSING: number;
+  CLOSED: number;
+};
+
+// WebSocket mock factory
+function makeWsMock(): MockWebSocketInstance {
+  return {
+    readyState: WebSocket.CONNECTING,
+    send: vi.fn(),
+    close: vi.fn(),
+    onmessage: null,
+    onerror: null,
+    onclose: null,
+  };
+}
+
+function makeWebSocketCtor(
+  instanceFactory: (...args: unknown[]) => MockWebSocketInstance,
+): MockWebSocketCtor {
+  // A regular `function` (not an arrow function) so `new WebSocket(...)`
+  // inside the hook can actually invoke it as a constructor.
+  const ctor = vi.fn(function webSocketCtorProxy(...args: unknown[]) {
+    return instanceFactory(...args);
+  }) as MockWebSocketCtor;
+  ctor.CONNECTING = 0;
+  ctor.OPEN = 1;
+  ctor.CLOSING = 2;
+  ctor.CLOSED = 3;
+  return ctor;
+}
+
+function installWebSocketCtor(ctor: MockWebSocketCtor): void {
+  globalThis.WebSocket = ctor as unknown as typeof WebSocket;
+}
+
+function currentWebSocketCtor(): MockWebSocketCtor {
+  return globalThis.WebSocket as unknown as MockWebSocketCtor;
+}
+
+// Always (re)assigned in beforeEach before any test body runs.
+let wsMockInstance!: MockWebSocketInstance;
+
+beforeEach(() => {
+  vi.restoreAllMocks();
+  // localStorage stub
+  const store: Record<string, string> = {};
+  vi.spyOn(Storage.prototype, "getItem").mockImplementation((key) => store[key] ?? null);
+  vi.spyOn(Storage.prototype, "setItem").mockImplementation((key, val) => { store[key] = val; });
+  vi.spyOn(Storage.prototype, "removeItem").mockImplementation((key) => { delete store[key]; });
+
+  // api.js holds the access token in a module-scoped variable; reset it between
+  // tests, then opt the test fixture into "local" storage mode so the direct
+  // localStorage.setItem(TOKEN_KEY, ...) calls below are honored by getStoredToken().
+  setStoredToken("");
+  localStorage.setItem(TOKEN_STORAGE_MODE_KEY, "local");
+
+  // WebSocket global stub
+  wsMockInstance = makeWsMock();
+  installWebSocketCtor(makeWebSocketCtor(() => wsMockInstance));
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe("useWebSocket — bağlantı kurulumu", () => {
+  it("attempts to connect on mount when token exists", () => {
+    localStorage.setItem("sidar_access_token", "test-token");
+    renderHook(() => useWebSocket("session-1", { roomId: "ws:test" }));
+    expect(currentWebSocketCtor()).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the connection stable when callback references change between renders", () => {
+    localStorage.setItem("sidar_access_token", "test-token");
+    const errors: string[] = [];
+    const { rerender } = renderHook(({ renderId }: { renderId: string }) => useWebSocket("session-1", {
+      roomId: "ws:test",
+      onError: (message) => errors.push(`${renderId}:${message}`),
+    }), { initialProps: { renderId: "first" } });
+
+    rerender({ renderId: "second" });
+
+    expect(currentWebSocketCtor()).toHaveBeenCalledTimes(1);
+    expect(wsMockInstance.close).not.toHaveBeenCalled();
+
+    act(() => {
+      wsMockInstance.onerror?.();
+    });
+    expect(errors).toEqual(["second:WebSocket bağlantı hatası."]);
+  });
+
+  it("sets status to unauthenticated when no token", () => {
+    const onError = vi.fn();
+    const { result } = renderHook(() =>
+      useWebSocket("session-1", { onError })
+    );
+    expect(result.current.status).toBe("unauthenticated");
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("does NOT create WebSocket when no token", () => {
+    renderHook(() => useWebSocket("session-1", {}));
+    expect(currentWebSocketCtor()).not.toHaveBeenCalled();
+  });
+
+  it("reports a closed connection only after an explicit send without a token", () => {
+    const onError = vi.fn();
+    const { result } = renderHook(() => useWebSocket("session-1", { onError }));
+
+    expect(onError).not.toHaveBeenCalled();
+
+    act(() => {
+      result.current.send("Merhaba");
+    });
+
+    expect(onError).toHaveBeenCalledWith("Bağlantı kapalı.");
+  });
+
+  it("treats a whitespace-only token as unauthenticated", () => {
+    localStorage.setItem("sidar_access_token", "   ");
+    const { result } = renderHook(() => useWebSocket("session-1", {}));
+    expect(result.current.status).toBe("unauthenticated");
+    expect(currentWebSocketCtor()).not.toHaveBeenCalled();
+  });
+
+  it("sets status to connecting when token exists", () => {
+    localStorage.setItem("sidar_access_token", "tok");
+    const { result } = renderHook(() => useWebSocket("s1", {}));
+    expect(result.current.status).toBe("connecting");
+  });
+});
+
+describe("useWebSocket — token değişimi", () => {
+  it("restarts the connection when the stored token changes in the same window", () => {
+    localStorage.setItem(TOKEN_KEY, "eski-token");
+    const firstSocket = wsMockInstance;
+    const secondSocket = makeWsMock();
+    const sockets = [firstSocket, secondSocket];
+    installWebSocketCtor(makeWebSocketCtor(() => sockets.shift() as MockWebSocketInstance));
+
+    renderHook(() => useWebSocket("s1", {}));
+
+    act(() => {
+      setStoredToken("yeni-token");
+    });
+
+    expect(firstSocket.close).toHaveBeenCalledTimes(1);
+    expect(firstSocket.onclose).toBeNull();
+    expect(firstSocket.onerror).toBeNull();
+    expect(firstSocket.onmessage).toBeNull();
+    expect(currentWebSocketCtor()).toHaveBeenNthCalledWith(2, expect.any(String), ["yeni-token"]);
+  });
+
+  it("starts a connection on token-change events when no previous socket exists", () => {
+    renderHook(() => useWebSocket("s1", {}));
+    expect(currentWebSocketCtor()).not.toHaveBeenCalled();
+
+    localStorage.setItem(TOKEN_KEY, "ilk-token");
+
+    act(() => {
+      window.dispatchEvent(new Event(TOKEN_CHANGE_EVENT));
+    });
+
+    expect(currentWebSocketCtor()).toHaveBeenCalledTimes(1);
+    expect(currentWebSocketCtor()).toHaveBeenNthCalledWith(1, expect.any(String), ["ilk-token"]);
+  });
+
+  it("cleans up an open previous socket before restarting for the token-change event", () => {
+    localStorage.setItem(TOKEN_KEY, "eski-token");
+    const firstSocket = wsMockInstance;
+    const secondSocket = makeWsMock();
+    const sockets = [firstSocket, secondSocket];
+    installWebSocketCtor(makeWebSocketCtor(() => sockets.shift() as MockWebSocketInstance));
+
+    renderHook(() => useWebSocket("s1", {}));
+    firstSocket.readyState = WebSocket.OPEN;
+    localStorage.setItem(TOKEN_KEY, "yeni-token");
+
+    act(() => {
+      window.dispatchEvent(new Event(TOKEN_CHANGE_EVENT));
+    });
+
+    expect(firstSocket.close).toHaveBeenCalledTimes(1);
+    expect(firstSocket.onclose).toBeNull();
+    expect(firstSocket.onerror).toBeNull();
+    expect(firstSocket.onmessage).toBeNull();
+    expect(currentWebSocketCtor()).toHaveBeenNthCalledWith(2, expect.any(String), ["yeni-token"]);
+  });
+
+  it("restarts the connection for a cross-tab storage event affecting the token", () => {
+    localStorage.setItem(TOKEN_KEY, "eski-token");
+    const firstSocket = wsMockInstance;
+    const secondSocket = makeWsMock();
+    const sockets = [firstSocket, secondSocket];
+    installWebSocketCtor(makeWebSocketCtor(() => sockets.shift() as MockWebSocketInstance));
+
+    renderHook(() => useWebSocket("s1", {}));
+    localStorage.setItem(TOKEN_KEY, "sekme-token");
+
+    act(() => {
+      window.dispatchEvent(new StorageEvent("storage", { key: TOKEN_KEY }));
+    });
+
+    expect(firstSocket.close).toHaveBeenCalledTimes(1);
+    expect(currentWebSocketCtor()).toHaveBeenNthCalledWith(2, expect.any(String), ["sekme-token"]);
+  });
+
+  it("ignores cross-tab storage events for unrelated keys", () => {
+    localStorage.setItem(TOKEN_KEY, "mevcut-token");
+    const firstSocket = wsMockInstance;
+    const secondSocket = makeWsMock();
+    const sockets = [firstSocket, secondSocket];
+    installWebSocketCtor(makeWebSocketCtor(() => sockets.shift() as MockWebSocketInstance));
+
+    renderHook(() => useWebSocket("s1", {}));
+    localStorage.setItem(TOKEN_KEY, "degismemeli-token");
+
+    act(() => {
+      window.dispatchEvent(new StorageEvent("storage", { key: "other-key" }));
+    });
+
+    expect(firstSocket.close).not.toHaveBeenCalled();
+    expect(currentWebSocketCtor()).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("useWebSocket — auth_ok sonrası bağlı durum", () => {
+  it("sets status to connected after auth_ok message", () => {
+    localStorage.setItem("sidar_access_token", "tok");
+    const { result } = renderHook(() => useWebSocket("s1", { roomId: "ws:demo" }));
+
+    act(() => {
+      wsMockInstance.readyState = WebSocket.OPEN;
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ auth_ok: true }) });
+    });
+
+    expect(result.current.status).toBe("connected");
+  });
+});
+
+describe("useWebSocket — mesaj işleme", () => {
+  const setup = (callbacks: Record<string, unknown> = {}) => {
+    localStorage.setItem("sidar_access_token", "tok");
+    const { result } = renderHook(() =>
+      useWebSocket("s1", { roomId: "ws:demo", ...callbacks })
+    );
+    act(() => {
+      wsMockInstance.readyState = WebSocket.OPEN;
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ auth_ok: true }) });
+    });
+    return result;
+  };
+
+  it("calls onRoomState for room_state message", () => {
+    const onRoomState = vi.fn();
+    setup({ onRoomState });
+    const participants = [{ id: "user-1" }];
+    const messages = [{ id: "message-1", content: "Merhaba" }];
+    const telemetry = [{ kind: "status", content: "Hazır" }];
+    act(() => {
+      wsMockInstance.onmessage?.({
+        data: JSON.stringify({
+          type: "room_state",
+          room_id: "ws:demo",
+          participants,
+          messages,
+          telemetry,
+        }),
+      });
+    });
+    expect(onRoomState).toHaveBeenCalledWith(expect.objectContaining({
+      room_id: "ws:demo",
+      participants,
+      messages,
+      telemetry,
+    }));
+  });
+
+  it("calls onPresence for presence message", () => {
+    const onPresence = vi.fn();
+    setup({ onPresence });
+    act(() => {
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "presence", participants: [{ id: 1 }] }) });
+    });
+    expect(onPresence).toHaveBeenCalledWith([{ id: 1 }]);
+  });
+
+  it("calls onRoomMessage for room_message", () => {
+    const onRoomMessage = vi.fn();
+    setup({ onRoomMessage });
+    act(() => {
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "room_message", message: { id: "m1" } }) });
+    });
+    expect(onRoomMessage).toHaveBeenCalledWith({ id: "m1" });
+  });
+
+  it("calls onAssistantStart for assistant_stream_start", () => {
+    const onAssistantStart = vi.fn();
+    setup({ onAssistantStart });
+    act(() => {
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "assistant_stream_start", request_id: "req-1" }) });
+    });
+    expect(onAssistantStart).toHaveBeenCalledWith("req-1");
+  });
+
+  it("calls onChunk for assistant_chunk message", () => {
+    const onChunk = vi.fn();
+    setup({ onChunk });
+    act(() => {
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "assistant_chunk", chunk: "parça metin", request_id: "req-1" }) });
+    });
+    expect(onChunk).toHaveBeenCalledWith("parça metin", "req-1");
+  });
+
+  it("calls onDone for assistant_done message", () => {
+    const onDone = vi.fn();
+    setup({ onDone });
+    act(() => {
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "assistant_done", message: { id: "m1" }, request_id: "r1" }) });
+    });
+    expect(onDone).toHaveBeenCalledWith({ id: "m1" }, "r1");
+  });
+
+  it("calls onError for room_error message", () => {
+    const onError = vi.fn();
+    setup({ onError });
+    act(() => {
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "room_error", error: "bir hata" }) });
+    });
+    expect(onError).toHaveBeenCalledWith("bir hata");
+  });
+
+  it("routes collaboration_event kinds to status/tool/thought callbacks", () => {
+    const onRoomEvent = vi.fn();
+    const onStatus = vi.fn();
+    const onToolCall = vi.fn();
+    const onThought = vi.fn();
+    setup({ onRoomEvent, onStatus, onToolCall, onThought });
+
+    act(() => {
+      wsMockInstance.onmessage?.({
+        data: JSON.stringify({
+          type: "collaboration_event",
+          event: { kind: "status", source: "supervisor", content: "Plan hazır" },
+        }),
+      });
+    });
+    act(() => {
+      wsMockInstance.onmessage?.({
+        data: JSON.stringify({
+          type: "collaboration_event",
+          event: { kind: "tool_call", source: "reviewer", content: "repo_search" },
+        }),
+      });
+    });
+    act(() => {
+      wsMockInstance.onmessage?.({
+        data: JSON.stringify({
+          type: "collaboration_event",
+          event: { kind: "thought", source: "coder", content: "Refactor gerekli" },
+        }),
+      });
+    });
+
+    expect(onRoomEvent).toHaveBeenCalledTimes(3);
+    expect(onStatus).toHaveBeenCalledWith("supervisor: Plan hazır");
+    expect(onToolCall).toHaveBeenCalledWith("repo_search");
+    expect(onThought).toHaveBeenCalledWith("Refactor gerekli");
+  });
+
+  it("handles legacy status/tool_call/thought fields and done fallback", () => {
+    const onStatus = vi.fn();
+    const onToolCall = vi.fn();
+    const onThought = vi.fn();
+    const onDone = vi.fn();
+    setup({ onStatus, onToolCall, onThought, onDone });
+
+    act(() => {
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ status: "işleniyor" }) });
+    });
+    act(() => {
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ tool_call: "fs.read" }) });
+    });
+    act(() => {
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ thought: "hipotez" }) });
+    });
+    act(() => {
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ done: true, content: "tamam" }) });
+    });
+
+    expect(onStatus).toHaveBeenCalledWith("işleniyor");
+    expect(onToolCall).toHaveBeenCalledWith("fs.read");
+    expect(onThought).toHaveBeenCalledWith("hipotez");
+    expect(onDone).toHaveBeenCalledWith("tamam");
+  });
+
+
+  it("handles generic chunk and error payloads outside main message types", () => {
+    const onChunk = vi.fn();
+    const onError = vi.fn();
+    setup({ onChunk, onError });
+
+    act(() => {
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ chunk: "legacy chunk" }) });
+    });
+    act(() => {
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ error: "legacy error" }) });
+    });
+
+    expect(onChunk).toHaveBeenCalledWith("legacy chunk");
+    expect(onError).toHaveBeenCalledWith("legacy error");
+  });
+
+  it("prefers legacy content fields for generic chunk and error payloads", () => {
+    const onChunk = vi.fn();
+    const onError = vi.fn();
+    setup({ onChunk, onError });
+
+    act(() => {
+      wsMockInstance.onmessage?.({
+        data: JSON.stringify({ type: "chunk", chunk: "fallback", content: "content chunk" }),
+      });
+      wsMockInstance.onmessage?.({
+        data: JSON.stringify({ type: "error", error: "fallback", content: "content error" }),
+      });
+    });
+
+    expect(onChunk).toHaveBeenCalledWith("content chunk");
+    expect(onError).toHaveBeenCalledWith("content error");
+  });
+
+  it("normalizes non-string frames and empty legacy fields", () => {
+    const onChunk = vi.fn();
+    const onError = vi.fn();
+    setup({ onChunk, onError });
+
+    act(() => {
+      wsMockInstance.onmessage?.({ data: { toString: () => JSON.stringify({ chunk: "binary-like" }) } });
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "chunk", chunk: null }) });
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "error", error: null }) });
+      wsMockInstance.onmessage?.({ data: JSON.stringify([]) });
+    });
+
+    expect(onChunk).toHaveBeenCalledWith("binary-like");
+    expect(onChunk).toHaveBeenCalledWith("");
+    expect(onError).toHaveBeenCalledWith("");
+    expect(onChunk).toHaveBeenCalledWith("[]");
+  });
+
+  it("routes standalone tool_call and thought payloads", () => {
+    const onToolCall = vi.fn();
+    const onThought = vi.fn();
+    setup({ onToolCall, onThought });
+
+    act(() => {
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ tool_call: "python.exec" }) });
+    });
+    act(() => {
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ thought: "analysis note" }) });
+    });
+
+    expect(onToolCall).toHaveBeenCalledWith("python.exec");
+    expect(onThought).toHaveBeenCalledWith("analysis note");
+  });
+
+  it("buffers raw text when JSON parsing fails and flushes on [DONE]", () => {
+    const onChunk = vi.fn();
+    const onDone = vi.fn();
+    setup({ onChunk, onDone });
+
+    act(() => {
+      wsMockInstance.onmessage?.({ data: "ham metin" });
+    });
+    act(() => {
+      wsMockInstance.onmessage?.({ data: " ikinci" });
+    });
+    act(() => {
+      wsMockInstance.onmessage?.({ data: "[DONE]" });
+    });
+
+    expect(onChunk).toHaveBeenNthCalledWith(1, "ham metin");
+    expect(onChunk).toHaveBeenNthCalledWith(2, " ikinci");
+    expect(onDone).toHaveBeenCalledWith("ham metin ikinci");
+  });
+  it("calls onChunk for raw non-JSON text", () => {
+    const onChunk = vi.fn();
+    setup({ onChunk });
+    act(() => {
+      wsMockInstance.onmessage?.({ data: "ham metin" });
+    });
+    expect(onChunk).toHaveBeenCalledWith("ham metin");
+  });
+
+  it("calls onDone for [DONE] signal", () => {
+    const onDone = vi.fn();
+    setup({ onDone });
+    act(() => {
+      wsMockInstance.onmessage?.({ data: "[DONE]" });
+    });
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("useWebSocket — onerror / onclose", () => {
+  it("sets status to error on WebSocket error", () => {
+    localStorage.setItem("sidar_access_token", "tok");
+    const onError = vi.fn();
+    const { result } = renderHook(() => useWebSocket("s1", { onError }));
+
+    act(() => {
+      wsMockInstance.onerror?.();
+    });
+
+    expect(result.current.status).toBe("error");
+    expect(onError).toHaveBeenCalledWith("WebSocket bağlantı hatası.");
+  });
+
+  it("sets status to reconnecting on WebSocket close", () => {
+    localStorage.setItem("sidar_access_token", "tok");
+    const { result } = renderHook(() => useWebSocket("s1", {}));
+
+    act(() => {
+      wsMockInstance.onclose?.();
+    });
+
+    expect(result.current.status).toBe("reconnecting");
+  });
+
+  it("sets status to unauthenticated on auth-policy close (1008) instead of reconnecting", () => {
+    vi.useFakeTimers();
+    localStorage.setItem("sidar_access_token", "tok");
+    const { result } = renderHook(() => useWebSocket("s1", {}));
+
+    expect(currentWebSocketCtor()).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      wsMockInstance.onclose?.({ code: 1008, reason: "Invalid or expired token" });
+    });
+
+    expect(result.current.status).toBe("unauthenticated");
+
+    act(() => {
+      vi.advanceTimersByTime(20_000);
+    });
+
+    expect(currentWebSocketCtor()).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it("triggers reconnect timer callback and calls connectRef.current (Satır 56)", () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    localStorage.setItem("sidar_access_token", "tok");
+    renderHook(() => useWebSocket("s1", {}));
+
+    act(() => {
+      wsMockInstance.onclose?.();
+    });
+
+    expect(currentWebSocketCtor()).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      vi.advanceTimersByTime(800);
+    });
+
+    expect(currentWebSocketCtor()).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+});
+
+describe("useWebSocket — send", () => {
+  it("sends JSON payload when connection is open", () => {
+    localStorage.setItem("sidar_access_token", "tok");
+    const { result } = renderHook(() =>
+      useWebSocket("s1", { roomId: "ws:demo", displayName: "Test" })
+    );
+
+    act(() => {
+      wsMockInstance.readyState = WebSocket.OPEN;
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ auth_ok: true }) });
+    });
+
+    // auth_ok sonrası joinRoom da bir send() çağrısı yapar; onu sıfırla
+    wsMockInstance.send.mockClear();
+
+    act(() => {
+      result.current.send("merhaba");
+    });
+
+    expect(wsMockInstance.send).toHaveBeenCalledTimes(1);
+    const payload = JSON.parse(wsMockInstance.send.mock.calls[0][0]);
+    expect(payload.action).toBe("message");
+    expect(payload.message).toBe("merhaba");
+  });
+
+  it("calls onError when connection is not open", () => {
+    localStorage.setItem("sidar_access_token", "tok");
+    const onError = vi.fn();
+    const { result } = renderHook(() => useWebSocket("s1", { onError }));
+
+    act(() => {
+      result.current.send("bağlantısız mesaj");
+    });
+
+    expect(onError).toHaveBeenCalledWith("Bağlantı kapalı.");
+  });
+});
+
+describe("useWebSocket — disconnect", () => {
+  it("closes the WebSocket on disconnect", () => {
+    localStorage.setItem("sidar_access_token", "tok");
+    const { result } = renderHook(() => useWebSocket("s1", {}));
+
+    act(() => {
+      result.current.disconnect();
+    });
+
+    expect(wsMockInstance.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not schedule reconnect after manual disconnect onclose", () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    localStorage.setItem("sidar_access_token", "tok");
+    const { result } = renderHook(() => useWebSocket("s1", {}));
+
+    expect(currentWebSocketCtor()).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      result.current.disconnect();
+      wsMockInstance.onclose?.();
+      vi.advanceTimersByTime(800);
+    });
+
+    expect(currentWebSocketCtor()).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+});
+
+describe("useWebSocket — eksik branch testleri (100% Coverage için)", () => {
+  it("uses wss:// when protocol is https: (Satır 4)", () => {
+    const originalLocation = globalThis.location;
+    Reflect.deleteProperty(globalThis, "location");
+    globalThis.location = { protocol: "https:", host: "localhost" } as unknown as Location;
+
+    localStorage.setItem("sidar_access_token", "tok");
+    renderHook(() => useWebSocket("s1", {}));
+
+    expect(currentWebSocketCtor()).toHaveBeenCalledWith("wss://localhost/ws/chat", ["tok"]);
+
+    globalThis.location = originalLocation;
+  });
+
+  it("does not reconnect if already OPEN (Satır 44)", () => {
+    localStorage.setItem("sidar_access_token", "tok");
+    const { result } = renderHook(() => useWebSocket("s1", {}));
+
+    currentWebSocketCtor().mockClear();
+
+    act(() => {
+      wsMockInstance.readyState = WebSocket.OPEN;
+      result.current.connect();
+    });
+
+    expect(currentWebSocketCtor()).not.toHaveBeenCalled();
+  });
+
+  it("handles joinRoom edge cases and fallbacks (Satır 33-36)", () => {
+    localStorage.setItem("sidar_access_token", "tok");
+    const { result } = renderHook(() => useWebSocket("s1", {}));
+
+    act(() => {
+      wsMockInstance.readyState = WebSocket.OPEN;
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ auth_ok: true }) });
+    });
+
+    wsMockInstance.send.mockClear();
+
+    act(() => {
+      result.current.joinRoom("new_room", null as unknown as string);
+    });
+
+    const payload = JSON.parse(wsMockInstance.send.mock.calls[0][0]);
+    expect(payload.display_name).toBe("Operatör");
+  });
+
+  it("handles missing optional fields in incoming WS messages (Satır 76-113)", () => {
+    localStorage.setItem("sidar_access_token", "tok");
+    const onRoomState = vi.fn();
+    const onChunk = vi.fn();
+    const onDone = vi.fn();
+    const onStatus = vi.fn();
+    const onRoomMessage = vi.fn();
+
+    renderHook(() => useWebSocket("s1", {
+      onRoomState,
+      onChunk,
+      onDone,
+      onStatus,
+      onRoomMessage,
+    }));
+
+    act(() => {
+      wsMockInstance.readyState = WebSocket.OPEN;
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ auth_ok: true }) });
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "room_state" }) });
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "room_message" }) });
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "assistant_chunk" }) });
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "assistant_done" }) });
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "collaboration_event", event: {} }) });
+    });
+
+    expect(onRoomState).toHaveBeenCalled();
+    expect(onRoomMessage).not.toHaveBeenCalled();
+    expect(onChunk).toHaveBeenCalledWith("", "");
+    expect(onDone).toHaveBeenCalledWith(null, "");
+    expect(onStatus).toHaveBeenCalledWith("room: ");
+  });
+
+  it("sends an object payload directly instead of a string (Satır 174)", () => {
+    localStorage.setItem("sidar_access_token", "tok");
+    const { result } = renderHook(() => useWebSocket("s1", { roomId: "ws:demo", displayName: "Test" }));
+
+    act(() => {
+      wsMockInstance.readyState = WebSocket.OPEN;
+    });
+
+    wsMockInstance.send.mockClear();
+
+    act(() => {
+      result.current.send({ action: "custom_ping", customValue: 123 });
+    });
+
+    const payload = JSON.parse(wsMockInstance.send.mock.calls[0][0]);
+    expect(payload.action).toBe("custom_ping");
+    expect(payload.customValue).toBe(123);
+    expect(payload.room_id).toBe("ws:demo");
+  });
+
+  it("covers collaboration/tool/thought and room_error fallback branches", () => {
+    localStorage.setItem("sidar_access_token", "tok");
+    const onToolCall = vi.fn();
+    const onThought = vi.fn();
+    const onError = vi.fn();
+
+    renderHook(() => useWebSocket("s1", { onToolCall, onThought, onError }));
+
+    act(() => {
+      wsMockInstance.readyState = WebSocket.OPEN;
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ auth_ok: true }) });
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "collaboration_event", event: { kind: "tool_call" } }) });
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "collaboration_event", event: { kind: "thought" } }) });
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "room_error" }) });
+    });
+
+    expect(onToolCall).toHaveBeenCalledWith("");
+    expect(onThought).toHaveBeenCalledWith("");
+    expect(onError).toHaveBeenCalledWith("Ortak çalışma alanı hatası.");
+  });
+
+  it("covers done fallback when buffer and content are empty", () => {
+    localStorage.setItem("sidar_access_token", "tok");
+    const onDone = vi.fn();
+
+    renderHook(() => useWebSocket("s1", { onDone }));
+
+    act(() => {
+      wsMockInstance.readyState = WebSocket.OPEN;
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ auth_ok: true }) });
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "done" }) });
+    });
+
+    expect(onDone).toHaveBeenCalledWith("");
+  });
+
+  it("covers presence and assistant_start fallback branches", () => {
+    localStorage.setItem("sidar_access_token", "tok");
+    const onPresence = vi.fn();
+    const onAssistantStart = vi.fn();
+
+    renderHook(() => useWebSocket("s1", { onPresence, onAssistantStart }));
+
+    act(() => {
+      wsMockInstance.readyState = WebSocket.OPEN;
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ auth_ok: true }) });
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "presence" }) });
+      wsMockInstance.onmessage?.({ data: JSON.stringify({ type: "assistant_stream_start" }) });
+    });
+
+    expect(onPresence).toHaveBeenCalledWith([]);
+    expect(onAssistantStart).toHaveBeenCalledWith("");
+  });
+});

@@ -6,8 +6,9 @@ import ast
 import json
 import logging
 import shutil
-import subprocess
 from pathlib import Path
+
+from core.utils.trusted_subprocess import run_trusted_command
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,7 @@ def post_process_written_file(target: Path) -> None:
     if not ruff_bin:
         return
     try:
-        subprocess.run(  # nosec B603
+        run_trusted_command(
             [ruff_bin, "format", str(target)],
             check=False,
             capture_output=True,

@@ -11,12 +11,91 @@ permissions:
   packages: write
 
 jobs:
+  release-benchmark-compare:
+    name: Release benchmark baseline comparison
+    # Release comparisons must run on the same stable pool used to create the
+    # reviewed baseline; GitHub-hosted runners are too noisy for this gate.
+    runs-on: [self-hosted, linux, benchmark]
+    env:
+      BENCHMARK_COMPARE_NAME: baseline
+      BENCHMARK_COMPARE_FAIL: "mean:10%"
+      BENCHMARK_IO_COMPARE_FAIL: "mean:25%"
+      # sidar[runtime-gpu] pulls multi-hundred-MB nvidia-*/torch wheels; uv's
+      # 30s default HTTP timeout can time out these individual downloads on a
+      # slower/self-hosted link well before the transfer itself would fail.
+      UV_HTTP_TIMEOUT: "180"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11.15'
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          version: "0.12.0"
+          enable-cache: true
+          cache-dependency-glob: '**/uv.lock'
+      - name: Install system dependencies
+        run: bash scripts/install_ci_system_deps.sh
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras
+      - name: Restore reviewed benchmark baseline
+        uses: actions/cache@v6
+        with:
+          path: .benchmarks
+          key: benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-main-
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-master-
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-
+      - name: Resolve reviewed baseline (fail closed)
+        id: baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          compare_file="$(find .benchmarks -type f -name "*_${BENCHMARK_COMPARE_NAME}.json" -print 2>/dev/null | sort -V | tail -n 1)"
+          if [[ -z "${compare_file}" ]]; then
+            echo "::error title=Release benchmark baseline missing::A release cannot proceed without the reviewed ${BENCHMARK_COMPARE_NAME} baseline."
+            exit 1
+          fi
+          echo "compare_file=${compare_file}" >> "${GITHUB_OUTPUT}"
+      - name: Compare release candidate against baseline
+        env:
+          BENCHMARK_BASELINE_FILE: ${{ steps.baseline.outputs.compare_file }}
+        run: |
+          mkdir -p artifacts/release-benchmark
+          uv run pytest -c pyproject.toml -v tests/performance -n 0 --no-cov \
+            --ignore=tests/performance/test_gpu_benchmark.py \
+            -k "not test_multi_user_session_message_workload_scales_with_concurrency" \
+            --benchmark-json=artifacts/release-benchmark/benchmark.json \
+            --benchmark-compare="${BENCHMARK_BASELINE_FILE}" \
+            --benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}" \
+            --benchmark-warmup=on \
+            --benchmark-disable-gc \
+            --junitxml=artifacts/release-benchmark/junit.xml
+          uv run pytest -c pyproject.toml -v tests/performance/test_benchmark.py -n 0 --no-cov \
+            -k "test_multi_user_session_message_workload_scales_with_concurrency" \
+            --benchmark-json=artifacts/release-benchmark/io-benchmark.json \
+            --benchmark-compare="${BENCHMARK_BASELINE_FILE}" \
+            --benchmark-compare-fail="${BENCHMARK_IO_COMPARE_FAIL}" \
+            --benchmark-warmup=on \
+            --benchmark-disable-gc \
+            --junitxml=artifacts/release-benchmark/io-junit.xml
+      - name: Upload release benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-benchmark-compare
+          path: artifacts/release-benchmark/
+          if-no-files-found: warn
+          retention-days: 30
+
   helm-validate:
     name: Helm lint and template
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: azure/setup-helm@v4
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5
         with:
           version: v3.15.4
       - name: Helm lint
@@ -38,15 +117,15 @@ jobs:
     name: SBOM and signing gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: anchore/sbom-action/download-syft@v0.17.9
-      - uses: sigstore/cosign-installer@v3.7.0
+      - uses: actions/checkout@v7
+      - uses: anchore/sbom-action/download-syft@v0.24.2
+      - uses: sigstore/cosign-installer@v4.1.2
       - name: Generate CycloneDX SBOM
         run: syft dir:. -o cyclonedx-json=artifacts/sbom/sidar.cdx.json
       - name: Sign SBOM with keyless cosign
         run: cosign sign-blob --yes --bundle artifacts/sbom/sidar.cdx.bundle artifacts/sbom/sidar.cdx.json
       - name: Upload SBOM artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sidar-sbom-and-signature
           path: artifacts/sbom/
@@ -55,13 +134,13 @@ jobs:
     name: Wheel clean install smoke
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
-          python-version: '3.11'
-      - uses: actions/setup-node@v4
+          python-version: '3.11.15'
+      - uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version-file: web_ui_react/.nvmrc
           cache: npm
           cache-dependency-path: web_ui_react/package-lock.json
       - name: Build React dist assets
@@ -70,8 +149,9 @@ jobs:
           npm --prefix web_ui_react run audit:high
           npm --prefix web_ui_react run build
           test -d web_ui_react/dist
-      - uses: astral-sh/setup-uv@v4
+      - uses: astral-sh/setup-uv@v10.1.0
         with:
+          version: "0.12.0"
           enable-cache: true
       - name: Build wheel
         run: uv build --wheel
@@ -82,7 +162,7 @@ jobs:
           /tmp/sidar-wheel-smoke/bin/sidar doctor --output /tmp/sidar-wheel-doctor.json
           test -s /tmp/sidar-wheel-doctor.json
       - name: Upload wheel
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sidar-wheel
           path: dist/*.whl
@@ -91,11 +171,11 @@ jobs:
     name: Docker image clean smoke
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build Docker image
         run: docker build -t sidar:${{ github.sha }} .
-      - uses: anchore/sbom-action/download-syft@v0.17.9
-      - uses: sigstore/cosign-installer@v3.7.0
+      - uses: anchore/sbom-action/download-syft@v0.24.2
+      - uses: sigstore/cosign-installer@v4.1.2
       - name: Generate Docker image SBOM
         run: syft sidar:${{ github.sha }} -o cyclonedx-json=artifacts/sbom/sidar-image.cdx.json
       - name: Sign Docker image SBOM
@@ -110,24 +190,50 @@ jobs:
             -e SIDAR_ENV=development \
             sidar:${{ github.sha }} --status
       - name: Upload Docker SBOM artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sidar-docker-sbom-and-signature
           path: artifacts/sbom/
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11.15'
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          version: "0.12.0"
+          enable-cache: true
+      - name: Cache APT packages (PortAudio)
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.3
+        with:
+          packages: portaudio19-dev
+          version: ci-portaudio-v1
+      - name: Install system dependencies
+        run: bash scripts/install_ci_system_deps.sh
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras
+      # SEC-PLUGIN-001 (docs/REFACTOR_PLAN.md): release-gate container
+      # escape/integration matrix against the just-built release candidate
+      # image, not the dev-profile sidar:latest that ci.yml auto-builds.
+      - name: Plugin sandbox container escape/integration matrix
+        env:
+          SIDAR_PLUGIN_SANDBOX_IMAGE: sidar:${{ github.sha }}
+        run: >-
+          uv run pytest -q --no-cov -m docker
+          tests/integration/web/test_plugin_sandbox_container_escape.py
 
   benchmark-coverage-trend:
     name: Benchmark and coverage trend gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
-          python-version: '3.11'
-      - uses: astral-sh/setup-uv@v4
+          python-version: '3.11.15'
+      - uses: astral-sh/setup-uv@v10.1.0
         with:
+          version: "0.12.0"
           enable-cache: true
       - name: Restore benchmark coverage trend history
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: artifacts/benchmark-coverage-trend/history.json
           key: benchmark-coverage-trend-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}
@@ -136,7 +242,7 @@ jobs:
             benchmark-coverage-trend-${{ runner.os }}-py311-main-
             benchmark-coverage-trend-${{ runner.os }}-py311-
       - name: Cache APT packages (PortAudio)
-        uses: awalsh128/cache-apt-pkgs-action@v1.4.3
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.3
         with:
           packages: portaudio19-dev
           version: ci-portaudio-v1
@@ -166,7 +272,7 @@ jobs:
             --max-regression-pct 15
       - name: Upload benchmark coverage trend artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: benchmark-coverage-trend
           path: artifacts/benchmark-coverage-trend/

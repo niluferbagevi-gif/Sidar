@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { PluginMarketplacePanel } from "./PluginMarketplacePanel.jsx";
+import { PluginMarketplacePanel } from "./PluginMarketplacePanel.js";
 
 const { fetchJson } = vi.hoisted(() => ({ fetchJson: vi.fn() }));
 
@@ -141,6 +141,26 @@ describe("PluginMarketplacePanel", () => {
     expect(await screen.findByText("Henüz marketplace girdisi bulunamadı.")).toBeInTheDocument();
   });
 
+  it("filters malformed catalog entries and normalizes non-Error failures", async () => {
+    const user = userEvent.setup();
+    fetchJson
+      .mockResolvedValueOnce({
+        items: [
+          null,
+          { plugin_id: 42, name: "Invalid" },
+          { plugin_id: "missing-name" },
+          { plugin_id: "invalid-name", name: 42 },
+        ],
+      })
+      .mockRejectedValueOnce("network failure");
+
+    render(<PluginMarketplacePanel />);
+    expect(await screen.findByText("Henüz marketplace girdisi bulunamadı.")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Yenile" }));
+    expect(await screen.findByText("Plugin kataloğu yüklenemedi.")).toBeInTheDocument();
+  });
+
   it("handles missing capabilities and mixed boolean states for installed/live_registered", async () => {
     // 47. ve 121. Satırları çözer: Eksik boolean (||) eşleşmeleri ve boş capabilities
     const edgeCatalog = {
@@ -155,7 +175,6 @@ describe("PluginMarketplacePanel", () => {
         {
           plugin_id: "partial-2",
           name: "Partial Install 2",
-          category: "test",
           installed: false,
           live_registered: true, // Sadece live_registered true
           capabilities: null,    // 121. Satır (item.capabilities || [])
@@ -168,6 +187,7 @@ describe("PluginMarketplacePanel", () => {
 
     expect(await screen.findByText("Partial Install 1")).toBeInTheDocument();
     expect(await screen.findByText("Partial Install 2")).toBeInTheDocument();
+    expect(screen.getByText("Partial Install 2").previousElementSibling).toBeEmptyDOMElement();
     
     // "installed || live_registered" şartı sağlandığı için ikisi de "Canlı" pill'ine sahip olmalı
     expect(screen.getAllByText("Canlı")).toHaveLength(2);

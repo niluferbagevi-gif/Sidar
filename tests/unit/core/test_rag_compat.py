@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from core import rag
 from core.rag import DocumentStore, _pgvector_failure_action_message, document_store
 from core.rag.backends import BM25BackendMixin, KeywordBackendMixin
 from core.rag.backends.pgvector import _pgvector_failure_action_message as pgvector_message
@@ -50,3 +51,32 @@ def test_document_store_facade_status_embedding_and_cache_helpers(
         document_store, "embed_texts_for_semantic_cache", lambda *_args, **_kwargs: [[0.5]]
     )
     assert document_store.embed_texts_for_cache(["one"]) == [[0.5]]
+
+
+def test_document_store_pgvector_runtime_status_delegates_to_backend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = DocumentStore.__new__(DocumentStore)
+    expected = {"backend": "pgvector", "available": False, "degraded": True}
+    calls: list[DocumentStore] = []
+    monkeypatch.setattr(
+        rag.pgvector_backend,
+        "pgvector_runtime_status",
+        lambda received: calls.append(received) or expected,
+    )
+
+    assert store.pgvector_runtime_status() is expected
+    assert calls == [store]
+
+
+def test_document_store_status_label_includes_degraded_operation() -> None:
+    store = SimpleNamespace(
+        status=lambda: "RAG hazır",
+        _vector_backend="pgvector",
+        _pgvector_available=False,
+        _pgvector_degraded_operation="search",
+    )
+
+    assert document_store.build_store_status_label(store) == (
+        "RAG hazır | pgvector (pasif) | pgvector degraded:search"
+    )

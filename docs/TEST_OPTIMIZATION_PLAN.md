@@ -35,7 +35,7 @@ Bu belge, ulaşılan %100 line/branch coverage seviyesini korumak ve yeni geliş
 ### Proje Ekibine Aksiyon Notu (2026-04-08)
 
 - Test yazarken `%100` geneline odaklanarak sprint kapasitesini tüketmeyin; modül bazlı kademeli hedefleri takip edin (`%70 -> %80 -> %90+`).
-- `pyproject.toml` içinde `omit` edilen dosyalar (örn. `core/vision.py`, `core/voice.py`) için coverage artırma işi açmayın; yalnızca fonksiyonel/regresyon ihtiyacı varsa test ekleyin.
+- `pyproject.toml` içindeki `[tool.coverage.run].omit` glob'larıyla eşleşen dosyalar (örn. `migrations/*`, `web_ui_react/*`, `tests/*`) için coverage artırma işi açmayın; yalnızca fonksiyonel/regresyon ihtiyacı varsa test ekleyin. `core/vision.py`/`core/voice.py` bu listede **değildir** (bir önceki `pyproject.toml` sürümünde omit edilmişlerdi, sonradan kaldırıldı) — ikisi de tam `%100` gate'ine dahildir ve `tests/unit/core/test_vision.py`/`test_voice.py` tarafından kapsanır.
 - Sprint başında hedef modül listesi oluşturun, sprint sonunda sadece bu modüller için line/branch ilerleme raporu çıkarın.
 
 ### Testleri sıfırdan yazma (greenfield) yaklaşımı
@@ -77,7 +77,7 @@ Parçalanmayı önleme kuralları (zorunlu):
    - Unit (hızlı, yoğun mock)
    - Integration (in-memory DB / local adapter)
    - E2E (az sayıda kritik uçtan uca akış)
-6. **Kapsam dışı modül farkındalığı**: `pyproject.toml` içinde `omit` edilen dosyalar (örn. `core/vision.py`, `core/voice.py`, `web_ui_react/*`, `migrations/*`) için coverage artışı hedefi konmaz; sadece fonksiyonel/regresyon ihtiyacı varsa test yazılır.
+6. **Kapsam dışı modül farkındalığı**: `pyproject.toml`'daki `[tool.coverage.run].omit` içindeki dosyalar (örn. `web_ui_react/*`, `migrations/*`, `tests/*`) için coverage artışı hedefi konmaz; sadece fonksiyonel/regresyon ihtiyacı varsa test yazılır. `core/vision.py`/`core/voice.py` artık bu listede değildir, tam gate kapsamındadır.
 
 ### 1.1 Mevcut güçlü mimari yapı (korunacak pratikler)
 

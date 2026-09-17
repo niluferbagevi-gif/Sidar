@@ -218,7 +218,16 @@ sidar_resolve_wsl_integration_fields() {
 
     if [[ -n "$docker_settings_json" ]]; then
         if command -v jq &>/dev/null; then
-            enable_default="$(printf '%s' "$docker_settings_json" | jq -r '.EnableIntegrationWithDefaultWslDistro // .enableIntegrationWithDefaultWslDistro // .wslEngineEnabled // .integration.wslEngineEnabled // empty' 2>/dev/null || true)"
+            enable_default="$(printf '%s' "$docker_settings_json" | jq -r '
+                [
+                    .EnableIntegrationWithDefaultWslDistro,
+                    .enableIntegrationWithDefaultWslDistro,
+                    .wslEngineEnabled,
+                    .integration.wslEngineEnabled
+                ]
+                | map(select(. != null))
+                | if length > 0 then .[0] else empty end
+            ' 2>/dev/null || true)"
             integrated_csv="$(printf '%s' "$docker_settings_json" | jq -r '
                 (
                     .IntegratedWslDistros

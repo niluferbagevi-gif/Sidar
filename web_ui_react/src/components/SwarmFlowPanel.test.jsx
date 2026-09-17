@@ -9,7 +9,7 @@ import {
   prettifyReason,
   prettifyRole,
   toDetailEntries,
-} from "./SwarmFlowPanel.jsx";
+} from "./SwarmFlowPanel.js";
 
 const { fetchJson } = vi.hoisted(() => ({ fetchJson: vi.fn() }));
 const { telemetryState } = vi.hoisted(() => ({
@@ -74,6 +74,14 @@ describe("SwarmFlowPanel", () => {
     ];
   });
 
+  it("renders non-Error loader failures", async () => {
+    fetchJson.mockRejectedValue("swarm ham hata");
+
+    render(<SwarmFlowPanel />);
+
+    expect(await screen.findByText("swarm ham hata")).toBeInTheDocument();
+  });
+
   it("loads autonomy activity and pending approvals, then refreshes activity on demand", async () => {
     const user = userEvent.setup();
     fetchJson
@@ -102,6 +110,11 @@ describe("SwarmFlowPanel", () => {
     expect(await screen.findByText(/Pending HITL 1/)).toBeInTheDocument();
     expect(screen.getAllByText("nightly_scan").length).toBeGreaterThan(0);
     expect(screen.getByText(/İnceleme bekliyor/)).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByRole("combobox"), "pipeline");
+    expect(screen.getByRole("combobox")).toHaveValue("pipeline");
+    await user.selectOptions(screen.getByRole("combobox"), "parallel");
+    expect(screen.getByRole("combobox")).toHaveValue("parallel");
 
     await user.click(screen.getByRole("button", { name: "Aktiviteyi Yenile" }));
 
@@ -699,6 +712,7 @@ describe("SwarmFlowPanel", () => {
     await user.keyboard("[Enter]");
 
     await user.click(screen.getByRole("button", { name: "Swarm Başlat" }));
+    expect(screen.getByRole("button", { name: "Çalışıyor…" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Run node" })).toBeDisabled();
 
     resolveSwarm({ results: [] });

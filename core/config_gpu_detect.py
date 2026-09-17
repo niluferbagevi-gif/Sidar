@@ -53,7 +53,7 @@ def normalize_gpu_memory_fractions(
             "original_total": round(total, 4),
             "normalized": True,
         }
-    if total <= 1.0:
+    if total <= safe_total:
         return {
             "llm": round(llm, 4),
             "rag": round(rag, 4),

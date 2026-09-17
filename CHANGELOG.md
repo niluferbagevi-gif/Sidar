@@ -1,1093 +1,198 @@
 
 # Sürüm Geçmişi (Changelog)
 
-> **Not:** Bu dosya yalnızca sürümler arası farkları, kısa düzeltme notlarını ve teknik borç kapanışı özetlerini içerir. Ayrıntılı çözüm geçmişi `docs/archive/` altında tutulur.
+> **Not:** Bu dosya yalnızca sürümler arası farkları, kısa düzeltme notlarını ve teknik borç kapanışı özetlerini içerir. Ayrıntılı çözüm geçmişi `docs/archive/` altında tutulur. **Madde bütçesi:** Her yeni madde 2-3 cümleyle (sorun + kök neden/çözüm özeti) sınırlı tutulur; kök-neden analizi, reddedilen alternatifler ve test referansları gibi ayrıntılar doğrudan `docs/archive/` altına (sürüm kapanışında `docs/archive/resolved_issues_v3.md`'nin bir sonraki fazına, kapanmamış `[Unreleased]` maddeleri için `docs/archive/unreleased_root_cause_detail.md`'ye) yazılır. Bu bütçe `scripts/ci/check_changelog_entry_budget.py` ile CI'da zorunlu kılınır.
 
 ---
 
 ## [Unreleased]
 
+> Bu bölümdeki maddelerin tam kök-neden analizi, araştırma süreci ve test referansları için bkz. [`docs/archive/unreleased_root_cause_detail.md`](docs/archive/unreleased_root_cause_detail.md) (2026-09-10 tarihli P3 bulgusu sonrası arşivlendi).
+
+### Düzeltmeler
+- **`tests/unit/core/test_rag.py`'deki üç `add_document_from_url` testi, ağ/DNS'i kısıtlı bir geliştirici makinesinde başarısız oluyordu:** Kök neden `_validate_url_safe(resolve_dns=True)`'nin (SSRF koruması) `example.com` için gerçek bir `socket.getaddrinfo()` çağrısı yapması — `respx` yalnızca httpx transport'unu mock'lar, ham DNS'i değil. Komşu testteki mevcut desen izlenerek `rag.socket.getaddrinfo` sabitlendi; artık gerçek ağ/DNS gerektirmiyor.
+- **`docs/module-notes/` dokümantasyon borç ratchet'i son 10 modülde sabitti:** `managers/{browser,image_resolver,social_media,youtube}_manager.py` ve `plugins/` paketinin tamamı (6 dosya) için gerçek kaynağı okunarak yazılmış notlar eklendi. Dokümante edilmemiş production modül sayısı 10 → **0**; baseline `--update` ile sıkılaştırıldı, artık geçersiz olan 0-hedefli roadmap boşaltıldı. `test_committed_inventory_roadmap_and_registry_note_are_ratchet_protected` yeni değerlere güncellendi.
+- **`detect_gpu()`'nun "GPU Tespiti" adımı, bir operatörün kendi kurulumunda 40+ dakika görünürde donmuş kalıyordu:** Kök neden `detect_pytorch_runtime_cuda_version()`'ın çıplak `uv run python` çağrısı — taze bir checkout'ta bu, gizli bir tam `uv sync`'i (sentence-transformers → torch) tetikliyordu. `uv run --no-sync`'e geçirildi; artık venv boşsa anında (~0.1sn) `ModuleNotFoundError` ile devam ediyor.
+- **`docker-compose.yml` 20 servis/690+ satırdan 3 dosyaya bölündü (P3):** GPU profili servisleri `docker-compose.gpu.yml`'e, observability profili servisleri `docker-compose.observability.yml`'e taşındı; üç dosya `-f` ile birleştiriliyor. Installer'ın bare `docker compose` çağrıları ve `.env*` şablonları yeni dosya setini kapsayacak şekilde güncellendi; detay: `docs/archive/unreleased_root_cause_detail.md`.
+- **`config.py` 1813 → 1754 satır: `init_telemetry()` `core/config_observability.py`'ye taşındı (P2):** ~95 satırlık OpenTelemetry/FastAPI/HTTPX kurulum mantığı mevcut `core/config_*.py` deseni izlenerek saf bir fonksiyona dönüştürüldü; `Config.init_telemetry` yalnızca canlı `cls.ENABLE_TRACING`/`cls.OTEL_*` değerlerini çözen ~20 satırlık ince bir sarmalayıcı olarak kaldı.
+- **`web_server.py` boyut bütçesi eklendi (P2):** Dosyanın "ince sarmalayıcı kalmalı" dokümantasyonunu zorlayan hiçbir mekanizma yoktu ve sessizce 2.628 satıra çıkmıştı. Yeni `scripts/ci/check_web_server_size_baseline.py` + baseline JSON bunu CI'da tek yönlü bir satır bütçesi olarak zorluyor (manuel, `--update` yok).
+- **Module-notes dokümantasyon borcu 133'ten 117'ye indirildi (P2, `docs/module-notes/inventory-debt-baseline.json`):** En riskli/en çok kullanılan 16 production modülüne (güvenlik/auth, DLP/HITL, swarm/judge/router) gerçek, dosyaya özgü notlar eklendi; `check_module_notes_inventory.py --update` ile baseline aynı commit'te sıkılaştırıldı.
+- **Bandit suppression ratchet'i 15'ten 5'e indirme hedefi kondu; gerçekçi analiz sonucu 8'de sağlam bir zemine oturdu (15 → 8):** 4 dosya daha `core.utils.trusted_subprocess`'e taşındı, yeni `core/utils/trusted_urlopen.py` B310 için aynı deseni uyguladı, iki B615/B105 bulgusu gerçekten düzeltildi. Kalan 8 suppression tek tek incelenip belgelendi (irreducible by design); `skipped_tests` ratchet'i 8'e sıkılaştırıldı.
+- **Faz 2 — merkezi subprocess wrapper migrasyonu devam etti (30 → 23):** 6 orta riskli dosya (`managers/code/*`, `system_health.py`, `web/process_lifecycle.py`) `core.utils.trusted_subprocess`'e taşındı; bir `check_output()` çağrısı davranış-koruyan biçimde yeniden yazıldı, gerçek bir mypy-strict regresyonu düzeltildi.
+- **Bandit suppression ratchet'ini 15'e indirme hedefi kondu (39 → 30, Faz 1):** Merkezi, denetlenmiş `core/utils/trusted_subprocess.py` (`run_trusted_command()`/`popen_trusted_command()`) oluşturuldu; en düşük riskli 8 dosya buna taşındı, wrapper %100 kapsamla test edildi.
+- **Bandit suppression ratchet tam tavanda duruyordu (skipped_tests=40=maximum); `debt_plan.review_order` yalnızca 2 dosyayı kapsıyordu (40 → 39):** İki dosya daha incelendi; `update_install_module_hash_manifest.py`'nin çıplak `"git"` argv[0]'ı `shutil.which("git")` + mutlak yol zorunluluğuna taşınarak gerçek bir B607 boşluğu kapatıldı.
+- **Faz 3 — merkezi subprocess wrapper migrasyonu tamamlandı, 15 hedefine ulaşıldı (23 → 15):** En yüksek riskli iki dosya (`web/plugins/sandbox.py`, `managers/code/docker_lifecycle.py`) taşındı; `tools/audit_imports.py`'a sys.path bootstrap eklenerek suppression'ı tamamen kalktı, bir B105 yanlış-pozitifi (mesaj adındaki "TOKEN" kelimesi) yeniden adlandırılarak giderildi. Kalan tek hedef 2027-07-31'e kadar 0.
+- **Bağımlılık profili menüsü `dev-full` (`--all-extras`) profilini her zaman "önerilen" gösteriyordu; ~1.5-2GB indirme ağırlığı hakkında uyarı yoktu:** Menüye yaklaşık indirme ağırlığı eklendi; önceki bir denemede ağ zaman aşımı tespit edilirse varsayılan öneri otomatik olarak daha hafif `dev-light`'a çevriliyor.
+- **`install_python_deps()`'teki `uv sync` çağrısının retry/backoff'u yoktu, `uv`'nin varsayılan HTTP timeout'u (30sn) hiç ayarlanmıyordu:** `UV_HTTP_TIMEOUT` (varsayılan 120) ve üstel-backoff'lu 3 denemelik bir retry döngüsü eklendi.
+- **`sidar_remediate_uv_sync_failure()`, saf bir ağ zaman aşımında bile koşulsuz `uv cache prune` çalıştırıp zaten indirilmiş yüzlerce MB'lık paketleri düşürüyordu:** Yeni `sidar_is_uv_network_timeout_signal()` ağ zaman aşımı imzalarını tespit edip bu durumda cache prune'u atlıyor.
+- **`sidar_resume_after_remediation()`, auto-heal resume re-exec'inde seçilen bağımlılık profilini taşımıyordu:** `DEPENDENCY_PROFILE`/`SIDAR_DEPENDENCY_EXTRAS`, resume `exec env` çağrısına diğer resume-kritik değişkenlerle aynı desende eklendi.
+- **`Run SAST gates` adımı yeni yayınlanan bir `nltk` CVE'si (`PYSEC-2026-3740`) yüzünden kırmızıydı:** first-party kod hiç `import nltk` etmiyor (mevcut bir önceki istisnayla aynı gerekçe); `security/pip-audit-ignores.tsv`'ye tarihli bir istisna eklendi.
+- **`pg-stress` CI job'ı gerçekten çalıştığı her seferde "0 selected" ile başarısız oluyordu — `pg_stress` marker'ını taşıyan hiçbir test yoktu:** Yeni `tests/integration/db/test_pg_connection_pool_stress.py` üç gerçek eşzamanlılık/toparlanma/tutarlılık testi ekliyor; `DATABASE_URL` yoksa nazikçe skip, `CI` set edilmişse fail-closed.
+- **`Benchmark compare gate`, `uv.lock`'a dokunan hiçbir PR'da hiçbir seed yoluyla yeşile dönemiyordu (GitHub Actions cache-scope kısıtı):** Erişilebilir kapsamda baseline bulunamadığında artık fail-closed durmuyor; `mode=bootstrap` kendi ölçümünü kaydedip cache'liyor, bir sonraki push gerçek karşılaştırma yapıyor (bu koşuda regresyon karşılaştırması yapılmaz — bilinçli trade-off).
+- **`tests/unit/test_bandit_comments.py`'nin repo-genelinde `rglob` taramaları `actions-runner/` dizinini hariç tutmuyordu:** Self-hosted runner kurulu bir repo kökünde bu, üçüncü taraf fixture dosyalarında `UnicodeDecodeError` ile push-öncesi testleri durduruyordu. Üç tarama döngüsünün hariç tutma kümesine `"actions-runner"` eklendi.
+- **`npm audit`, `browserslist` paketindeki iki yüksek-önemli açık nedeniyle başarısız oluyordu:** `npm audit fix` ile `browserslist` 4.28.8'e yükseltildi, `package.json`'da değişiklik gerekmedi.
+- **`actions-runner/` .gitignore/ruff exclude listelerine hiç eklenmemişti:** Bir operatör bu kurulumu repo kökünde yaptığında `ruff format --check` içindeki kasıtlı-bozuk bir üçüncü-taraf TOML fixture'ı parse edemeyip push'u engelliyordu. İki katmanlı koruma (`.gitignore` + `pyproject.toml` ruff exclude) eklendi.
+- **Self-hosted GPU/benchmark job'ları büyük CUDA wheel indirmelerinde tekrarlayan ağ zaman aşımlarıyla başarısız oluyordu:** `uv`'nin varsayılan 30sn HTTP timeout'u bu ölçekteki indirmelere yetmiyordu. `UV_HTTP_TIMEOUT=180` tüm ilgili self-hosted job'lara eklendi.
+- **`COMPOSE_PROFILES` hiçbir `.env*.example` şablonunda yoktu, CI'daki env-parity kontrolü kırmızıydı:** Gerçek, kullanıcı yüzeyli bir docker-compose değişkeni olduğu doğrulandı; `.env.development.example`/`.env.advanced.example`'a belgelenmiş şekilde eklendi.
+- **Frontend JS bundle bütçesi %94 doluluğa ulaştı:** İncelendi — `budgetWarnRatio=0.9` mekanizması tasarlandığı gibi fail etmeden uyarıyor; kaldırılabilecek gereksiz plugin bulunamadı, bütçe bilinçli olarak büyütülmedi (ratchet disiplini).
+- **Parola hash/verify benchmark'ları genel CPU regresyon eşiğine takılıp false-positive üretiyordu:** Yüksek varyanslı dört parola testi yeni `password_benchmark` marker'ıyla izole edilip kendi (daha toleranslı) `BENCHMARK_PASSWORD_COMPARE_FAIL` eşiğiyle koşuluyor.
+- **`github_upload.py`, "main"e otomatik geçiş sonrası hiçbir erken çıkış yolunda kullanıcıyı başladığı dala geri döndürmüyordu:** Yeni `switch_back_to_original_branch()` commit/push öncesi tüm erken çıkışlara eklendi; commit-sonrası kalite kapısı hataları kasıtlı olarak dokunulmadı (mevcut kurtarma talimatı korunuyor).
+- **`agent/roles/coverage_agent.py`, `dev`-only sınıflandırılmış `defusedxml`'i koşulsuz import ediyordu:** `--no-dev` kurulumlarda tüm `agent.roles` paketinin (coder hariç) kayıt dışı kalmasına yol açıyordu. `defusedxml` çekirdek runtime bağımlılığına taşındı.
+- **`test_docker_test_image_is_info_in_development_when_auto_build_is_deferred`, production-readiness ortam sızıntısı yüzünden yerelde kırılıyordu:** Kardeş testte zaten var olan `SIDAR_PRODUCTION_READINESS` delenv izolasyonu bu teste de eklendi.
+- **`AGENTS.md`, geniş kapsamlı `uv lock --upgrade` kullanımına karşı açık bir standart taşımıyordu:** Repo'nun zaten örtük olarak izlediği izole `--upgrade-package` deseni artık "Lock güncelleme standardı" olarak açıkça belgelendi.
+- **`docs/module-notes/INDEX.md` taşınmış/silinmiş kaynaklara işaret eden bayat bir liste haline gelmişti:** Tüm girdiler gerçek dosya sistemine göre düzeltildi; yeni `scripts/ci/check_module_notes_inventory.py` dört sözleşmeyi (var olma, orphan-yok, borç ratchet'i) CI'da zorunlu kılıyor.
+- **`github_upload.py`'nin push-öncesi kalite kapısı, sıradan bir test hatasında bile kullanıcıyı yarım kalmış bir dalda bırakıyordu:** Kapı `run_pre_commit_fast_gate()` (commit öncesi) ve `run_post_commit_integrity_gate()` (commit sonrası) olarak ikiye ayrıldı; ikinci kapı hatasında kurtarma komutları açıkça yazdırılıyor.
+- **CI'daki tek kırmızı check (`GPU Inference Required Evidence Gate`) tekrar gündeme geldi:** Kod değil, repository-kontrol-düzlemi (runner/variable) meselesi olduğu doğrulandı; `check_gpu_evidence.sh` artık üç red dalında da Job Summary'ye net bir özet yazıyor.
+- **Pin damgalama sonrası `.secrets.baseline` sistemik olarak bayatlıyor, `detect-secrets` kapısını her seferinde kırıyordu:** `stamp_install_manifest_pin_after_commit()` artık pini damgaladıktan sonra baseline'ı otomatik yeniden tarayıp fixup commit'ine dahil ediyor.
+- **`install_uv_cli()`'nin `uv self update` çağrısı stderr'i tamamen atıyordu:** apt/pipx/brew ile kurulmuş bir `uv`'de sessizce başarısız olabiliyordu; çıktı artık yakalanıp başarısızlıkta gösteriliyor.
+- **`detect_environment()`, WSL1'i de WSL2 sanıyordu:** WSL1 kullanıcıları GPU passthrough kontrollerinin hepsi fail ederken yanıltıcı bir hata görüyordu; "standard" alt-dizgisi ile ayrım eklendi, `SIDAR_OSRELEASE_PATH` test edilebilirlik için eklendi.
+- **`RUN_GPU_STRESS`, VRAM'e bakılmaksızın otomatik açılıyor ve belgelenmiyordu:** Etkinleştirme mesajına tespit edilen VRAM ve kapatma talimatı eklendi; `.env.development.example`'a belgelendi.
+- **`sync_pytorch_cuda_wheels()`/`verify_torch_cuda()` iki dosyada birebir aynı tanıma sahipti (ölü kopya):** Sessizce farklılaşmış (bir shellcheck yorumu eksik) ölü kopya kaldırıldı, eksik yorum canlı kopyaya taşındı.
+- **Bağımlılık profili listesi 4 ayrı yerde elle kopyalanmıştı:** Kanonik `SIDAR_KNOWN_DEPENDENCY_PROFILES` dizisi + yardımcı fonksiyonlar eklendi; dört çağrı yeri aynı listeyi/hata metnini paylaşıyor.
+- **`make production-readiness` yerelde `DATABASE_URL parolası POSTGRES_PASSWORD ile senkron değil` hatasıyla patlıyordu:** Kök neden `run_tests.sh`'in sızdırdığı ambient `POSTGRES_PASSWORD` idi; `validate_production_compose.sh`'a savunma amaçlı `unset -v` sanitizasyonu eklendi.
+- **`LLM_GPU_MEMORY_FRACTION`/`RAG_GPU_MEMORY_FRACTION` varsayılanları toplamda `GPU_MEMORY_FRACTION`'ı aşıyordu:** Her boot'ta gereksiz runtime normalize/uyarı tetikliyordu; varsayılan formül 65/35 oranını koruyacak şekilde düzeltildi (`config.py` ve `core/config_hardware.py`).
+- **`docker-compose.yml`, `ENABLE_TRACING`'i varsayılan `true` yapıyordu; `jaeger` başlamayan profillerde OTLP export hatası boot log'larını kirletiyordu:** Container-seviyesi varsayılan `config.py`'nin kendi `false` varsayılanıyla hizalandı.
+- **`npm audit`, `@humanfs/node`'daki bir moderate path-traversal bulgusunu (`audit:high` eşiğinin altında) rapor ediyordu:** `npm audit fix` ile güncellendi, `package.json` değişmedi.
+- **Kurulum promptları iki farklı kanaldan yazılıyordu; yavaş fork'lu ortamlarda (WSL2) satır sırası karışabilirdi:** Gerçek pty testiyle doğrulandı; 6 çağrı noktası yeni senkron `tty_notice()`/`&> /dev/tty` desenine taşındı.
+- **`test_sync_env_chain_marks_effective_password_drift_warnings_critical`, ambient `REDIS_URL` sızıntısı yüzünden CI'da kırılıyordu:** Kardeş testin deseni izlenerek `REDIS_URL`/`SIDAR_REDIS_URL` delenv'i eklendi.
+- **Bağımlılık profili menüsü "developer-full" gösterirken loglar "dev-full" yazıyordu (davranış doğru, isimlendirme kafa karıştırıcı):** Menü ve mesajlar artık her iki adı bir arada gösteriyor.
+- **`validate_production_compose.sh`'ın ürettiği disposable secret'lar production'ın zayıf-secret politikasını geçemiyordu:** `secrets.token_urlsafe` + retry tabanlı `random_secret()` eklendi; eksik webhook/federation secret anahtarları da tamamlandı.
+- **PR-first upload başarı çıktısı dal push'u ile `main` güncellemesini ayırt etmiyordu:** Başarılı akış artık PR URL'sini gösterip merge sonrası `main`'e geçeceğini açıkça bildiriyor.
+- **PR-first uploader `gh` CLI kurulu olmadığında dalı push ettikten sonra duruyordu:** PR oluşturma artık `gh` yoksa doğrulanmış GitHub HTTPS API'ye fail-closed geçiyor.
+- **`OLLAMA_NUM_BATCH`, `OLLAMA_CODING_NUM_CTX`'in aksine düşük VRAM'de küçültülmüyordu:** İncelendi — llama.cpp'nin batch/context kısıtları zıt yönde çekiyor, gerçek donanımda doğrulama gerektiriyor; sayısal varsayılanlar değiştirilmeden gerekçe koda yorum olarak eklendi.
+- **`OLLAMA_TIMEOUT` üç yerde üç farklı varsayılana sahipti:** `check_ollama()`'nın sağlık probu yanlışlıkla 600sn'lik inference timeout'unu kullanıyordu; özel `OLLAMA_HEALTH_CHECK_TIMEOUT=5` eklendi, ölü kopyalar tek kaynağa birleştirildi.
+- **OOM hataları genel geçici hatalarla aynı retry mantığına tabiydi:** Yeni `_is_oom_error()` VRAM tükenmesini retry-dışı sayıp eyleme geçirilebilir bir ipucu ekliyor.
+- **RAG embedding GPU→CPU fallback'i kalıcı sanılıyordu (`lru_cache`'e bağlanmıştı):** Teşhis yanlış çıktı — asıl neden `DocumentStore` singleton'ının embedding fonksiyonunu bir kez inşa etmesi; gerçek düzeltim kapsam dışı bırakıldı, kök neden docstring'e not edildi.
+- **`core/llm_client.py`/`core/llm_metrics.py`'de senkronize edilmeyen iki ayrı fiyat kataloğu vardı:** Değerler değiştirilmeden ortak `core/llm_pricing.py`'ye taşındı; kasıtlı farklılıkları docstring belgeliyor.
+- **`core/llm/ollama.py`'deki 10 forwarding fonksiyonu beş sağlayıcı adaptöründe birebir tekrarlanıyordu:** Tekrar kasıtlı (bağımsız monkeypatch yüzeyi) olduğu için taşınmadı; gerekçe koda yorum olarak eklendi.
+- **Ollama servislerinde healthcheck yoktu:** `ollama list` tabanlı bir healthcheck eklendi, dört bağımlı servisin `depends_on`'u `service_healthy`'e geçirildi.
+- **`ollama/ollama:latest` compose'daki tek pinlenmemiş imajdı:** `0.32.14`'e pinlendi; Helm chart'ın uyuşmayan redis/pgvector/jaeger pinleri de hizalandı.
+- **Observability profilindeki servislerde kaynak limiti yoktu:** `sidar-web`'in kullandığı `cpus`/`mem_limit` deseniyle tüm servislere limit eklendi.
+- **`.pre-commit-config.yaml`'da secret-scanning/frontend lint hook'u eksik iddiası:** İncelendi ve doğrulanamadı — önceki bir turda zaten eklenmişti, değişiklik yapılmadı.
+- **`check_gpu_evidence.sh`'ın `ENABLE_GPU_BENCH_GATE=false` mesajı istisna varmış gibi yanıltıyordu:** Mesaj artık bunun repository-admin aksiyonu olduğunu ve hiçbir istisnası olmadığını açıkça belirtiyor.
+- **`brace-expansion` GHSA istisnası son tarihe yaklaşıyordu:** Script'in beklediği patched sürüm sabiti güncel `1.1.18`'e hizalandı (istisna şu an tetiklenmiyor, gelecekteki reaktivasyon için düzeltildi).
+- **`react-markdown` bir majör sürüm geride kalmıştı:** Tek breaking change (`className` kaldırması) DOM-eşdeğeri bir sarmalayıcıyla telafi edilip `10.1.0`'a yükseltildi.
+- **`make dev-full`'un GPU stress testlerini sessizce açması kaçırılması kolaydı:** `run_tests.sh`'e erken, göze çarpan bir ön-izleme banner'ı eklendi.
+- **`.nvmrc` yalnız majör Node sürümünü pinliyordu, kardeş araçlar tam sürüm pinliydi:** Tutarsızlık giderilip `NODE_VERSION=20.20.2`'ye pinlendi.
+- **`install_sidar.sh`'in alt komutları, `uv` diskte kurulu olsa bile PATH tutarsızlığı yüzünden "uv bulunamadı" diyerek güvenlik adımlarını sessizce atlıyordu:** Kök nedenin PATH'in yalnızca `sync-deps` fazında ayarlanması olduğu doğrulandı; `set -Eeuo pipefail`'in hemen ardından tek kaynaktan `export PATH=...` eklendi.
+
+### Refactor
+- **`test_plugin_sandbox_integration.py`'nin gerçek-Docker yolunda skip guard'ı yoktu:** Kardeş modülün paylaşılan `tests/_helpers/docker_sandbox.py` sözleşmesi bu modüle de eklendi; asıl güvence hâlâ `make dev-full`'un imajı garanti build etmesi.
+- **`CodeManager` LSP facade'ı pure protokol/presentation mantığını taşımaya devam ediyordu:** İlgili mantık `managers/code/lsp.py`'ye taşındı; mevcut private metotlar geriye dönük uyumlu ince delegeler olarak korundu.
+- **Frontend TypeScript migrasyonunda kalan 29 untyped dosya test yüzeyiyle sınırlıydı:** `useFormState.test.js` `.test.ts`'e taşındı; envanter ratchet'i 28 untyped/39 typed'a sıkılaştırıldı.
+- **Frontend branch coverage %99.77'de üç dal eksikti:** Eksik davranış testleri eklendi, ratchet %100'e yükseltildi.
+- **Frontend gzip bundle'ı 170 KB limitine yaklaşırken highlight zinciri ayrı izlenmiyordu:** `SIDAR_HIGHLIGHT_CHUNK_BUDGET_KB=40` bağımsız gate'i eklendi.
+- **TypeScript envanter ratchet'i sıkılaştırılırken proje raporu eski değerlerde kalmıştı:** Rapor güncel baseline'a (28/39) eşlendi.
+- **Installer frontend QA fixture'ı eski hard-coded E2E metnini bekliyordu:** Fixture yeni `frontend_e2e_scope`/`frontend_e2e_script` alanlarına güncellendi.
+- **Docker plugin sandbox açıklaması `.env.example`'ı 50 satır ratchet'inin üzerine çıkarmıştı:** Uzman açıklaması `.env.advanced.example`'a taşındı, minimal şablon 50 satıra döndü.
+- **Plugin RPC worker testleri Docker worker'ın execution boundary'sini modellemiyordu:** Test modülü artık `test + in_process` opt-in sözleşmesini açıkça kuruyor; production politikası değişmedi.
+
+### Installer
+- **`install_uv_cli()`, farklı sürümlü kurulu bir `uv` bulunca kurulumu doğrudan durduruyordu (self-heal stratejisi yoktu):** `uv self update`/resmi kurulum betiği ile iki otomatik onarım denemesi eklendi; ikisi de başarısız olursa manuel komut gösteriliyor.
+- **Kurulum özeti frontend E2E kapsamını sabit `smoke` raporluyordu:** Özet artık `test-summary.json`'daki gerçek alanları okuyor; `dev-full` açıklaması CI-parity iddiasından çıkarıldı.
+- **Test gate mesajları local-full ile CI-parity kapsamını karıştırıyordu:** `run_tests.sh` artık doğrulama sınıfını açıkça basıyor; frontend mesajları etkin script'e göre doğru kapsamı gösteriyor.
+- **Test env-var yazım hataları sessizce varsayılana düşüyordu:** Yeni `scripts.test_gates.env_schema` bilinen isim yüzeyini tutuyor; yazım hataları varsayılan olarak fail-fast.
+
+### Düzeltmeler
+- **`.env.example`'daki `SIDAR_REDIS_URL` parolasız görünüyordu (host+Docker senaryosu):** İncelendi — `resolve_redis_url()` zaten parolayı otomatik ekliyor; yalnızca dokümantasyon netleştirildi.
+
 ### Güvenlik
-- **`pip-audit` production-readiness kapısı `pyasn1` 0.6.3 üzerindeki CVE-2026-59885/CVE-2026-59886 nedeniyle bloke oluyordu:** `google-genai` extra'sının transitive bağımlılığı olan `google-auth` → `pyasn1-modules` → `pyasn1` zincirinde hiç pin edilmemiş `pyasn1` 0.6.3'e kilitleniyordu; bu sürümde iki yeni CVE vardı ve `security/pip-audit-ignores.tsv`'deki mevcut torch/nltk istisnaları bunları kapsamıyordu (`--all-extras` senkronize edilmeden, örn. yalnızca `--extra dev` ile, `pyasn1` sorunu üretilmiyor — CI paritesi için `uv sync --frozen --all-extras` şart). `pyproject.toml`'a `pyasn1>=0.6.4` floor pin'i eklendi (mevcut `langsmith`/`starlette` transitive-floor desenine uygun), `uv.lock` `pyasn1` 0.6.3→0.6.4'e güncellendi ve `tool.sidar.dependency_inventory.labels`'a `pyasn1 = "runtime"` etiketi eklendi. `torch`/`nltk` istisnaları (sırasıyla 2026-09-15/2026-10-01'e kadar) hâlâ geçerli ve değiştirilmedi.
-- **Repo kökünde `.dockerignore` eksikti — secret dosyaları Docker build context'i üzerinden image katmanlarına sızabiliyordu:** `Dockerfile` ve `Dockerfile.production` `COPY . .` kullanıyor; `.gitignore` yalnız git'i etkilediği için `install_sidar.sh` sonrası kökte oluşan `.env` / `.env.production` / `.env.test` gibi dosyalar (rotasyon runbook'unun kapsadığı `API_KEY`, `JWT_SECRET_KEY`, `MEMORY_ENCRYPTION_KEY` vb. 8 secret dahil — bkz. `runbooks/production-cutover-playbook.md` §1.5) `docker build .` çalıştırıldığında build context'e dahil olup image katmanlarına gömülebiliyordu. Kök dizine `.dockerignore` eklendi; `.env*` (örnek dosyalar hariç), `secrets/`, `credentials/`, anahtar/sertifika uzantıları, `.git/`, sanal ortamlar/cache'ler, `node_modules/` ve runtime veri dizinleri (`data/`, `logs/`, `sessions/`, `chroma_db/` vb.) build context'inden çıkarıldı. `web_ui_react/dist` (release-quality CI'da `npm run build` ile üretilip `web_server.py`'nin sunduğu React SPA çıktısı) bilinçli olarak dışarıda bırakılmadı. `docs/AUDIT_REPORT_v5.1_COMPREHENSIVE.md` bu dosyayı zaten "✅" olarak listeliyordu ancak arşivlenmiş/güncel-olmayan bir snapshot olduğu için gerçek durumu yansıtmıyordu — gerçek kontrol reponun kökünde dosyanın **bulunmadığını** doğruladı.
-- **Kurulum betiği, Microsoft'un veri bozulması riski nedeniyle varsayılan kapalı tuttuğu deneysel WSL `sparseVhd` özelliğini her kurulumda zorla açıyordu:** Arkadaşınızın incelemesi doğru tespit etti — `scripts/install_modules/phases/05_frontend.sh` içindeki `.wslconfig` otomatik yapılandırma adımı `target_sparse_vhd="true"` sabit değerini her WSL2 kurulumunda `[experimental] sparseVhd=true` olarak yazıyordu. WSL, bu deneysel VHD sıkıştırma özelliğini geçmişte rapor edilen veri bozulması vakaları yüzünden varsayılan olarak kapalı tutar ve `wsl --manage <Dağıtım> --set-sparse true` ile etkinleştirilmeye çalışıldığında "Sparse VHD support is disabled due to data corruption" uyarısını verir — bu bir kurulum hatası değildir, ancak Sidar'ın bu ayarı sessizce zorlaması kullanıcıları gereksiz yere bu deneysel/riskli davranışa sokuyordu. `target_sparse_vhd` artık `SIDAR_WSL_SPARSE_VHD` ortam değişkeninden okunuyor ve varsayılanı `false` (WSL'in kendi normal VHD davranışı); yalnızca kullanıcı açıkça `SIDAR_WSL_SPARSE_VHD=true` verirse özellik etkinleştirilir ve installer veri bozulması riskini ve `--allow-unsafe` kullanılmaması gerektiğini konsola uyarı olarak basar. `README.md`'ye `.wslconfig sparseVhd notu` eklendi.
-- **`--docker-only` kullanılsa bile host'a gereksiz Ollama kuruluyor ve `ollama-gpu`/`ollama` Docker servisiyle port çakışması riski oluşuyordu:** Arkadaşınızın ikinci tespiti de doğruydu — `scripts/install_modules/phases/03_system.sh:ensure_prerequisites()` zaten `DOCKER_ONLY` bayrağına göre Redis/psql host kurulumunu atlıyordu, ancak aynı fonksiyonun sonundaki `_ollama_install_step` çağrısı bu kontrolden muaftı ve her zaman çalışıyordu. Sonuç: (1) `--docker-only` ile kurulum yapan kullanıcının Ubuntu'suna gereksiz yere Ollama kuruluyordu, (2) host Ollama servisi `11434` portunu bağlıyordu, (3) `docker-compose.yml`'daki `ollama`/`ollama-gpu` servisleri de aynı `11434:11434` portunu yayınladığından (özellikle `--runtime-mode=docker` ile `docker compose up -d` tüm servisleri tek seferde başlatırken; `launch_docker_services()`'ın `local` moddaki host-healthy-ise-container-başlatma kontrolü bu dalda uygulanmıyor) port çakışması yaşanabiliyordu, (4) `_ollama_install_step` boş `OLLAMA_INSTALL_SHA256` durumunda `download_verified_script`'in fail-closed davranışına takılıp `--docker-only` kurulumunu erkenden durdurabiliyordu — halbuki bu kullanıcı host Ollama'ya hiç ihtiyaç duymuyordu (model provisioning zaten `OLLAMA_BASE_URL` üzerinden HTTP API ile çalışıyor, host CLI'a bağımlı değil). `ensure_prerequisites()` artık `_ollama_install_step`'i yalnızca `DOCKER_ONLY == false && APP_RUNTIME_MODE != docker` iken çağırıyor; `--docker-only` ile bu adım tamamen atlanıp bilgilendirme mesajı basılıyor. Takip incelemesinde arkadaşınız `APP_RUNTIME_MODE_SELECTED` kontrolü önerdi; bu değişken `select_runtime_mode()` tarafından set edilir ve `ensure_prerequisites()` bu fonksiyondan ÖNCE çalışır (bkz. `sidar_phase_runtime_prerequisites()` `03_runtime.sh`), yani o noktada henüz atanmamış olurdu — literal öneri bu haliyle asla tetiklenmeyecek ölü koşul üretirdi. Bunun yerine CLI'dan erkenden çözülen ham `APP_RUNTIME_MODE` (`--runtime-mode=docker` açıkça verildiğinde "docker") kontrol ediliyor; interaktif "ask" akışında kullanıcı sonradan tam Docker modunu seçerse bu erken aşamada zaten bilinemeyeceği için bu adım yine çalışır (mevcut faz sıralamasının bir sınırı, bilinçli olarak dokunulmadı). `--docker-only` CLI yardım metni (İngilizce/Türkçe) Ollama'yı da kapsayacak şekilde güncellendi. `tests/unit/scripts/test_run_tests_quality_gate.py::test_docker_only_skips_host_ollama_install` regresyon testi eklendi.
-- **WSL2'de GPU desteği için gereksiz `nvidia-ctk runtime configure` / apt kurulum yolu çalışıyordu:** Arkadaşınızın tespiti doğruydu — Docker Desktop, WSL2'ye GPU desteğini kendi ayrı motoru üzerinden sağlar; NVIDIA'nın Windows sürücüsü `libcuda.so` aracılığıyla WSL2'ye zaten aktarılır. `scripts/install_modules/phases/03_system.sh:setup_nvidia_docker()` WSL2'de de doğrudan `nvidia-container-toolkit`i apt ile kurup `sudo nvidia-ctk runtime configure --runtime=docker` ile `/etc/docker/daemon.json`'ı değiştirmeyi deniyordu — ama bu Ubuntu distro'daki `docker` CLI yalnızca Docker Desktop'ın ayrı motoruna bağlanan bir istemci olduğundan, düzenlenen `daemon.json` o motorun kullandığı dosya değildi; bu adım hem gereksizdi hem de yanlış hedefi düzenliyordu. `setup_nvidia_docker()` artık WSL2 + GPU_AVAILABLE durumunda önce `docker run --rm --gpus all <cuda-image> nvidia-smi` ile passthrough'u ampirik olarak doğruluyor; başarılıysa apt/nvidia-ctk yolu tamamen atlanıyor, başarısızsa Windows sürücüsü/Docker Desktop GPU desteğini kontrol etmeye yönlendiren net bir hata ile kurulum durduruluyor (sessizce bozuk bir GPU moduna devam edilmiyor). `tests/unit/scripts/test_run_tests_quality_gate.py::test_wsl2_verifies_gpu_passthrough_before_nvidia_ctk_install` regresyon testi eklendi.
-- **Web arayüzü portları (`7860`/`7861`) production'da doğrudan ağa/internete açık kalabiliyordu, bind adresi için override yoktu:** Postgres/Ollama'nın aksine web arayüzü kullanıcıların doğrudan tarayıcıdan erişmesi gereken bir servis olduğundan varsayılanı loopback'e değiştirmek mevcut `docker compose up sidar-web` hızlı başlangıç akışını (LAN'dan/başka cihazdan erişim) kırardı; bunun yerine yeni `WEB_BIND_ADDR` (varsayılan `0.0.0.0`, davranış değişmedi) env değişkeni eklendi. Production'da `.env`'de `WEB_BIND_ADDR=127.0.0.1` verilip önüne TLS sonlandıran bir Nginx/Caddy reverse proxy konulması README'de ve `.env.advanced.example`'da (`WEB_HOST`/`WEB_PORT`/`WEB_GPU_PORT` notlarının yanına) belgelendi. `tests/unit/scripts/test_run_tests_quality_gate.py::test_docker_compose_web_ports_use_configurable_bind_addr` regresyon testi eklendi.
-- **`ollama/ollama:latest` deterministik olmayan (mutable) bir image tag'iydi:** Arkadaşınızın önerdiği gibi, `ollama`/`ollama-gpu` servisleri artık `${OLLAMA_DOCKER_IMAGE:-ollama/ollama:latest}` kullanıyor; varsayılan davranış değişmedi (hâlâ `:latest`), ancak production kurulumları `.env`'de `OLLAMA_DOCKER_IMAGE=ollama/ollama@sha256:<incelenmiş-digest>` vererek incelenmiş bir sürümü pinleyebilir. Sidar bu digest'i üretmez/sabitlemez (bu ortamda registry'ye ağ erişimi yoktu ve gerçek bir digest doğrulanamadan uydurulamazdı) — diğer SHA-256 kurulum pinleri gibi TOFU sorumluluğu operatördedir; digest üretme adımları README ve `.env.advanced.example`'da belgelendi. `tests/unit/scripts/test_run_tests_quality_gate.py::test_docker_compose_ollama_image_is_pinnable_not_bare_latest` regresyon testi eklendi.
-- **GPU Docker Compose profili `ollama-gpu` servisine bağımlıydı ama `OLLAMA_URL` varsayılanı hâlâ `ollama` (CPU servis adı) olarak ayarlıydı — ve gerçek etki, arkadaşınızın raporladığından daha büyük çıktı:** `sidar-gpu`/`sidar-web-gpu` servisleri `depends_on: ollama-gpu` kullanıyor, ama `environment: OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434/api}` satırındaki fallback GPU profilinde hiç çalışmayan `ollama` compose servis adını hedefliyordu. `docker compose --profile gpu config` ile doğrulandı: `ollama` hostname GPU profilinde network'te mevcut değil (yalnızca `ollama-gpu` çalışıyor), dolayısıyla bağlantı çözümlenemezdi. Daha kritik ikinci bulgu: bu fallback zaten pratikte hiç devreye girmiyordu — `.env`/`.env.example` şablonlarındaki `OLLAMA_URL=http://localhost:11434/api` (host/local-mode için doğru host-odaklı varsayılan) Docker Compose'un kendi `${OLLAMA_URL:-...}` değişken ikamesi tarafından proje kökündeki `.env`'den otomatik okunup fallback'in önüne geçiyordu (`docker compose --profile gpu config` ile doğrulandı: container'a enjekte edilen gerçek değer GPU/CPU fark etmeksizin `http://localhost:11434/api` çıkıyordu — container'ın kendi loopback'i, hiçbir Ollama'ya ulaşmıyor). Bu, `DATABASE_URL`'in zaten çözdüğü aynı sınıf sorun: host-odaklı `DATABASE_URL` değişkeni container'lar için ayrı `SIDAR_CONTAINER_DATABASE_URL` override'ıyla gölgelenmiyor. `docker-compose.yml`'daki 4 `OLLAMA_URL` satırı artık CPU servislerinde `${SIDAR_CONTAINER_OLLAMA_URL:-http://ollama:11434/api}`, GPU servislerinde ise ayrı `${SIDAR_CONTAINER_OLLAMA_GPU_URL:-http://ollama-gpu:11434/api}` değişkenini kullanıyor — ikisi de varsayılan olarak `.env` şablonlarında tanımlı değil, böylece host-odaklı `OLLAMA_URL` artık container varsayılanlarını gölgelemiyor ve cpu/gpu profilleri arasında geçişte bir override diğerini ezmiyor; yalnızca container'ların harici bir Ollama uç noktasına bağlanması gerektiğinde ilgili değişken bilinçli olarak tanımlanır (bkz. `.env.advanced.example`). `docker compose --profile gpu/cpu config` ile doğrulanan doğru çözümleme: GPU → `http://ollama-gpu:11434/api`, CPU → `http://ollama:11434/api`. `README.md`'ye "GPU Compose Ollama adresi notu" eklendi.
-- **PostgreSQL (`5432`) ve Ollama (`11434`) portları docker-compose.yml'de tüm ağ arayüzlerinde yayınlanıyordu; yalnızca Redis loopback'e bağlıydı:** Arkadaşınızın dördüncü tespiti doğruydu. `postgres`, `ollama` ve `ollama-gpu` servislerinin `ports:` tanımları `"${POSTGRES_PORT:-5432}:5432"` / `"11434:11434"` biçimindeydi — Redis'in zaten kullandığı `127.0.0.1:${REDIS_PORT:-6379}:6379` loopback-bind desenine uymuyordu. Diğer compose servisleri Postgres/Ollama'ya zaten Docker'ın dahili ağı üzerinden servis adıyla (`postgres:5432`, `ollama[-gpu]:11434`) erişiyor; host port publish'i yalnızca hosttan doğrudan araç bağlantısı (örn. `psql`, `ollama` CLI) içindi ve bu amaç için tüm arayüzlere açık olmasına gerek yoktu. Bir sunucu/production kabulünde bu, parola korumalı olsa bile PostgreSQL'i ağdaki herkese (brute-force/parmak izi yüzeyi) ve — daha ciddisi — kimlik doğrulaması olmayan Ollama API'sini ağdaki/internetteki herkese (kimliksiz inference + GPU/VRAM tüketimi) açık bırakıyordu. Üç servis de artık Redis ile aynı deseni kullanıyor: `"127.0.0.1:${POSTGRES_PORT:-5432}:5432"` ve `"127.0.0.1:11434:11434"` (hem `ollama` hem `ollama-gpu`). `docker compose --profile gpu config` ile `host_ip: 127.0.0.1` olarak doğrulandı. `tests/unit/scripts/test_run_tests_quality_gate.py::test_docker_compose_postgres_and_ollama_are_bound_to_loopback` regresyon testi eklendi.
-- **Repo `/mnt/c` gibi Windows dosya sistemine klonlandığında hiçbir uyarı verilmiyordu:** Docker'ın resmi WSL önerisi kaynak kodun WSL'nin kendi Linux dosya sisteminde (`$HOME` altında) tutulmasıdır; `/mnt/c` gibi Windows sürücüleri WSL2 içinde 9p/DrvFs üzerinden erişildiği için kayda değer ölçüde yavaş olabilir ve dosya izni/symlink davranışı farklılık gösterebilir. `install_sidar.sh` bunu hiç kontrol etmiyordu — kullanıcı repoyu `/mnt/c/Users/.../Sidar` altına klonlayıp kuruluma başlarsa sessizce devam edip yalnızca yavaş/tutarsız davranışla karşılaşırdı. `scripts/install_modules/phases/01_context.sh`'e yeni `sidar_warn_if_repo_on_windows_mount()` eklendi; `sidar_phase_initialize_context()` içinde `detect_environment` hemen sonrasında çalışır, WSL2'de `SCRIPT_DIR` `/mnt/*` altındaysa uyarır ve `cd "$HOME" && git clone ...` ile Linux dosya sisteminden yeniden kurulum önerir (hard-fail değil — bilinçli olarak devam edilebilir bir best-practice uyarısı). `tests/unit/scripts/test_run_tests_quality_gate.py::test_wsl2_warns_when_repo_checked_out_on_windows_mount` regresyon testi eklendi.
+- **Kurulum betiği WSL2'nin deneysel `sparseVhd` özelliğini (Microsoft'un veri bozulması riski nedeniyle varsayılan kapalı tuttuğu) her kurulumda zorla açıyordu:** `05_frontend.sh`'deki `target_sparse_vhd` artık yeni `SIDAR_WSL_SPARSE_VHD` ortam değişkeninden okunuyor, varsayılanı `false`; yalnızca açık opt-in ile etkinleşiyor ve installer riski konsola uyarı olarak basıyor.
+- **`--docker-only`/`--runtime-mode=docker` kurulumları host'a gereksiz Ollama kurup 11434 portunda Docker `ollama`/`ollama-gpu` servisiyle çakışabiliyordu:** `ensure_prerequisites()` artık `_ollama_install_step`'i yalnızca tam Docker modu seçilmediğinde çağırıyor; `--docker-only`'de adım atlanıp bilgilendirme mesajı basılıyor.
+- **WSL2'de `setup_nvidia_docker()` Linux NVIDIA sürücüsü/`nvidia-ctk runtime configure` kurmaya çalışıp Docker Desktop'ın ayrı motorunun kullanmadığı yanlış `daemon.json`'ı düzenliyordu:** Artık önce `docker run --rm --gpus all ... nvidia-smi` ile passthrough ampirik doğrulanıyor; başarılıysa apt/nvidia-ctk yolu tamamen atlanıyor, değilse net bir hatayla durduruluyor.
+- **GPU compose servisleri (`sidar-gpu`/`sidar-web-gpu`) `OLLAMA_URL` fallback'i yanlış `ollama` (CPU) host adını hedefliyordu ve bare `${OLLAMA_URL:-...}` host-odaklı `.env` değeriyle gölgeleniyordu:** `DATABASE_URL` deseniyle aynı, ayrı `SIDAR_CONTAINER_OLLAMA_URL`/`SIDAR_CONTAINER_OLLAMA_GPU_URL` değişkenleri eklendi.
+- **Repo `/mnt/c` gibi bir Windows sürücüsüne klonlandığında (WSL2'de yavaş/tutarsız 9p/DrvFs erişimi) hiçbir uyarı verilmiyordu:** Yeni `sidar_warn_if_repo_on_windows_mount()` WSL2'de `SCRIPT_DIR` `/mnt/*` altındaysa uyarıp Linux dosya sistemine yeniden klonlamayı öneriyor (hard-fail değil).
+- **Web arayüzü portları (7860/7861) production'da doğrudan ağa açık kalabiliyordu, bind adresi için override yoktu:** Yeni `WEB_BIND_ADDR` (varsayılan `0.0.0.0`, davranış değişmedi) env değişkeni eklendi; production'da `127.0.0.1` + reverse proxy önerilir.
+- **`rotate_production_secrets.py`, `POSTGRES_PASSWORD`/`REDIS_PASSWORD`'ü kapsamıyordu; Redis için senkronizasyon aracı da yoktu:** İkisi `ROTATION_KEYS`'e eklendi, `--apply` artık gömülü URL'leri de güncelliyor; yeni `scripts/sync_redis_password.py` eklendi.
+- **`prometheus.yml`, `METRICS_TOKEN`'ın istediği bearer-token alanını içermiyordu:** Daha ciddisi, Sidar'ın auth middleware'i zaten tüm scrape isteklerini reddediyordu. Yeni `prometheus-token-init` servisi token'ı yazılabilir bir volume'e yazıyor; `prometheus.yml`'e `bearer_token_file` eklendi.
+- **`.pre-commit-config.yaml`'da secret-sızıntı taraması ve frontend lint/typecheck hook'u hiç yoktu:** `detect-secrets` + `frontend-eslint`/`frontend-typecheck` hook'ları eklendi; 254 bilinen false-positive baseline'a alındı.
+
+### Düzeltmeler
+- **`Config._autoselect_ollama_coding_ctx_window()`, 8 GB altı VRAM'de hiç küçültme yapmıyordu:** İki yeni kademe (`>=4096`→4096, aksi halde 2048) eklendi.
+- **`install_uv_cli()`'nin self-heal'i `uv self update`'i yanlış CLI sözdizimiyle (bayrak yerine pozisyonel argüman) çağırıyordu, hiç çalışmıyordu:** Doğru pozisyonel çağrıya düzeltildi; bash hash-cache teorisi araştırılıp çürütüldü.
+- **GPU stres testi mock config yüzünden fiilen concurrency=1'e düşüyor, üretimin VRAM korumasını atlıyordu:** Yeni `_real_ollama_gpu_pool_size()` üretimin kullanacağı adaptif havuz boyutunu hesaplayıp teste geçiriyor.
+
+### Güvenlik
+- **`docker-compose.production.yml`, GPU servislerini hiç sertleştirmiyordu; `ports: []` girdileri hiçbir zaman işe yaramıyordu:** Compose'un `!reset []` merge tag'i kullanıldı; `sidar-web-gpu`'ya `sidar-web` ile simetrik sertleştirme eklendi.
+- **Postgres/Ollama portları tüm arayüzlere açıktı, yalnız Redis loopback'e bindliydi:** Her ikisi de `127.0.0.1`'e bind edilecek şekilde düzeltildi (production zaten etkilenmiyordu).
+- **Production gate hâlâ geliştirme imajını build ediyordu; hardened `Dockerfile.production` hiç devreye girmiyordu:** `sidar-web` servisine `dockerfile: Dockerfile.production` ve doğru `command`/`BASE_IMAGE` eklendi.
+- **`github_upload.py` artık PR-first ve rollback lease kontrollüdür:** Doğrudan `main` yerine zaman damgalı dal + PR açılıyor; rollback `--force-with-lease` kullanıyor.
+- **Plugin RPC deadline'ı Docker teardown süresinden ayrıldı:** Ayrı worker/cleanup timeout'ları (`SIDAR_PLUGIN_SANDBOX_TIMEOUT`/`_CLEANUP_TIMEOUT`) eklendi.
+- **KRİTİK — plugin sandbox izolasyonu, düşürülmüş `net.ipv4.ip_unprivileged_port_start` sysctl'i olan host'larda ayrıcalıklı port bind'ini engellemiyordu:** CI'daki ilk gerçek container-escape testinde canlı yakalandı; `--sysctl=net.ipv4.ip_unprivileged_port_start=1024` eklendi.
+- **KRİTİK — plugin RPC worker'ının stdout'u root logging handler'ıyla paylaşıldığından gerçek Docker çağrılarında JSON bozulabiliyordu:** `worker.py` artık stdout'u loglanabilir herhangi bir import'tan önce stderr'e yönlendirip RPC yanıtını ayrı tutuyor.
+- **KRİTİK — plugin sandbox container'ı hiçbir gerçek isteği çalıştıramıyordu (in-process execution guard'ı container içinde de reddediyordu):** `_isolation_argv()`'ye yalnızca container'a scope'lu `SIDAR_ENABLE_IN_PROCESS_PLUGINS=1`/`SIDAR_ENV=development` eklendi.
+- **Plugin sandbox'ın 256m/64 bellek/pids varsayılanları gerçek bir `BaseAgent` çalıştırmaya yetmiyordu (OOM-kill):** Varsayılanlar 512m/128'e yükseltildi (yalnız plugin sandbox).
+- **`_assert_no_orphan_containers`'ın 15sn poll penceresi cgroup OOM-kill senaryosunda da yetersiz kaldı:** Pencere 30sn'ye genişletildi.
+- **Aynı kök nedenin üçüncü belirtisi — sabit 10sn RPC timeout'u worker başarıyla tamamlansa bile `docker run`'ın dönüşünü beklemeye yetmiyordu:** `SIDAR_PLUGIN_SANDBOX_TIMEOUT` 30sn'ye, orphan-container poll penceresi 60sn'ye yükseltildi.
+- **Dynamic SQL B608 suppression envanteri ratchet olmadan büyüyebiliyordu:** İki elle-yazılmış SQL yeri SQLAlchemy bind-parameter'a taşındı; suppression sayısı 23'ten 20'ye indirildi, ratchet eklendi.
+- **Torch CVE incelemesi hedeften önce tamamlandı:** `GHSA-rrmf-rvhw-rf47` için `torch`/`torchvision` sınırları yükseltildi, dated pip-audit istisnası kaldırıldı.
+- **GPU production-readiness kontrol düzlemi drift'ini saatlik izlemiyordu:** Watchdog artık `ENABLE_GPU_BENCH_GATE` sözleşmesini de saatlik doğruluyor.
+- **Plugin sandbox artık her ortamda (dev/test dahil) Docker'ı varsayılan kullanıyor:** Host process'te çalıştırma yalnız açık çift opt-in ile mümkün; `make plugin-sandbox-security` artık skip'leri fail-closed hataya çeviriyor.
+- **Semantic/dataflow SAST yoktu (ne Python ne JS/TS için):** Yeni `.github/workflows/codeql.yml`, `security-extended` sorgu setiyle Python + JS/TS için CodeQL çalıştırıyor.
+- **`pip-audit`, `pyasn1` 0.6.3 üzerindeki iki CVE nedeniyle bloke oluyordu:** `pyasn1>=0.6.4` floor pin'i eklendi, lock güncellendi.
+- **Repo kökünde `.dockerignore` eksikti — secret dosyaları build context'i üzerinden image katmanlarına sızabiliyordu:** `.env*`/`secrets/`/sertifika uzantıları vb. build context'inden çıkaran `.dockerignore` eklendi.
+- **`# nosec B608` kullanımının `core/router.py`/`pgvector.py`'de güvenli olduğu incelemesi doğrulandı:** Ek regresyon testi eklendi; diğer B608 kullanımları farklı ama meşru güvenli desenler kullandığından kapsam dışı bırakıldı.
+- **`js-yaml` 4.3.0 üzerindeki CVE-2026-59870 nedeniyle frontend audit gate'i bloke oluyordu:** `overrides.js-yaml` `4.3.1`'e güncellendi; `audit:high` artık temiz.
+- **KRİTİK — plugin sandbox'ın production Docker backend'i hiç çalışmıyordu (argv, imajın ENTRYPOINT'i tarafından yutuluyordu):** `--entrypoint=python` eklendi; container-escape matrisinin ilk gerçek çalışması bunu yakaladı.
+- **`SEC-PLUGIN-001` — plugin sandbox izolasyonu gerçek bir container'a karşı hiç doğrulanmıyordu:** Yeni 6 testlik `tests/integration/web/test_plugin_sandbox_container_escape.py` matrisi eklendi; `--memory-swap` her üç Docker sandbox yolunda pinlendi.
+- **`install_sidar.sh`'in log maskeleme allowlist'inde 5 gerçek secret anahtarı eksikti:** `REDIS_PASSWORD`/`JIRA_API_TOKEN`/`META_GRAPH_API_TOKEN` ve iki tesadüfi-eşleşen anahtar doğru allowlist'e eklendi.
 
 ### Düzeltmeler (Fixed)
-- **`core.doctor`'daki `database_env` kontrolü, dosya tabanlı auto-fix'in düzeltemeyeceği bir uyarıyı sonsuza dek tekrarlıyordu ("alarm yorgunluğu"):** Kök neden, arkadaşınızın önerdiği "reload timing" teorisi değil, farklı bir mekanizma çıktı — `tests/unit/core/test_doctor.py::test_database_env_derives_urls_when_missing_but_postgres_password_present` zaten kanıtlıyor ki DATABASE_URL/SIDAR_CONTAINER_DATABASE_URL hiç explicit tanımlı değilken (yalnızca POSTGRES_* parçalarından türetildiğinde) bu uyarı asla oluşamıyor — her ikisi de aynı anda aynı canlı `POSTGRES_DB` değerinden türetiliyor. Gerçek tetikleyici: `DATABASE_URL`/`SIDAR_CONTAINER_DATABASE_URL` process ortamında set ama Sidar'ın kendi dotenv zincirindeki (`.env`, `.env.advanced`, `.env.$SIDAR_ENV`, `DOTENV_FILE`, `SIDAR_KEYS_FILE`) HİÇBİR dosyaya ait değil — örn. eski bir shell `export`'u, ya da `docker-compose.yml`'nin `environment:`/`env_file: .env` ile container'a enjekte ettiği, host `.env`'in POSTGRES_DB'sinden türetilmiş bir DATABASE_URL, `SIDAR_ENV=development` container içinde `.env.development`'ı (farklı POSTGRES_DB ile) override etse bile değişmiyor. `scripts/sync_database_passwords.py --remove-explicit-urls` yalnızca dotenv DOSYALARINI düzenleyebildiği için bu durumda hiçbir şey bulamıyor (`"changed": false`), ve launcher'ın (`main.py`) auto-fix sonrası reload zinciri de yalnızca dotenv'den yüklenen anahtarları yeniden uyguladığından bu "hayalet" değeri asla temizleyemiyor — döngü sonsuza kadar tekrarlanıyor. `core/doctor/__init__.py:check_database_env()` artık `DATABASE_URL`/`SIDAR_CONTAINER_DATABASE_URL`'in Sidar'ın kendi dotenv kaynak raporunda (`_dotenv_source_report`) hiç görünmediği bu durumu tespit edip uyarı mesajına net bir açıklama ekliyor (dosya tabanlı auto-fix'in düzeltemeyeceğini, parent shell/Docker Compose ortamının kontrol edilmesi gerektiğini belirtiyor) ve `database_url_source_unattributed`/`container_database_url_source_unattributed` detay alanlarını ekliyor. `tests/unit/core/test_doctor.py`'a regresyon testi eklendi.
-- **Docker sandbox runtime allowlist uyarısı her sandbox çağrısında gereksiz yere tekrarlanıyordu:** `managers/code/docker_lifecycle.py:resolve_runtime()` `DOCKER_RUNTIME` hiç ayarlanmamışken (`runtime == ""`) bile allowlist kontrolüne giriyor, `"" not in DOCKER_ALLOWED_RUNTIMES"` olduğu için (kurulum `.env.advanced`'e `DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime` yazıyor — boş string dahil değil, ve `core/config_env_helpers.py:get_list_env` zaten CSV'deki boş öğeleri her zaman filtreliyor) her sandbox kod çalıştırmada "Docker runtime '' izinli listede değil" uyarısı basıyordu. Kontrolün fiilen bir uygulama etkisi yoktu: her iki durumda da `""` dönüyor ve `code_manager.py` `runtime` kwarg'ını yalnızca dolu olduğunda set ediyor. `resolve_runtime()` artık allowlist kontrolünü yalnızca `runtime` boş değilken çalıştırıyor; açıkça ayarlanmış ama izinli olmayan bir runtime hâlâ uyarıp varsayılana düşüyor (davranış değişmedi, yalnızca log gürültüsü kalktı). `tests/unit/managers/test_code_manager.py`'ye regresyon testi eklendi.
-- **GPU, development kurulumunda sessizce devre dışı kalıyordu:** `scripts/install_modules/phases/08_env.sh` GPU tespit edilince `USE_GPU=true`/`REQUIRE_GPU=true`/`GPU_MIXED_PRECISION=true`/`COMPOSE_PROFILES=gpu` değerlerini yalnızca `.env` dosyasına yazıyordu; `.env.development` (ve `.env.advanced`) `.env.development.example` şablonundan `USE_GPU=false` ile kopyalandığı ve hiç güncellenmediği için, `config.py`'deki dotenv zinciri `SIDAR_ENV=development` (kurulumdaki varsayılan) için `.env.development`'ı `override=True` ile en son yükleyip `.env`'deki GPU ayarını sessizce eziyordu. Ayrıca mevcut bir `.env` üzerinde kurulumu tekrar çalıştırmak GPU bloğunu hiç tetiklemiyordu. Yeni `configure_gpu_env_defaults`/`propagate_gpu_settings_to_env_variants` fonksiyonları GPU ayarlarını hem ilk kurulumda hem yeniden çalıştırmada `.env` ile birlikte `.env.development`/`.env.advanced`'e de yayıyor (`.env.production` kasıtlı olarak hariç — production GPU etkinleştirme gate'i geçmeden manuel kalmalı). `tests/shell/install_sidar_functions.bats` içine regresyon testleri eklendi.
-- **`INSTALL_REMOTE_MODULES` fallback indirme listesi `install_cli.sh`/`install_dispatcher.sh` modüllerini atlıyordu:** `install_sidar.sh` yerel repo yokken (örn. `wget install_sidar.sh` + boş dizin) fallback modülleri `INSTALL_REMOTE_MODULES` dizisine göre indiriyor; bu dizi `install_cli.sh` ve `install_dispatcher.sh`'ı içermiyordu (embedded `EMBEDDED_MODULE_HASHES_MANIFEST`'te hash'leri olmasına ve script sonradan bu modülleri `source` etmesine rağmen). Sonuç: bu iki dosya hiç indirilmiyor, ardından hash doğrulama adımı "dosya yok" hatasıyla kurulumu durduruyordu. `install_sidar.sh:511-517` düzeltildi; `tests/shell/install_sidar_remote_modules.bats` içindeki "INSTALL_REMOTE_MODULES covers every module in the embedded hash manifest" testi artık doğrulanıyor.
-- **Host paket kurulum listesi `pkg-config` içermiyordu; `Dockerfile`'ın referans build ortamıyla parite bozuktu:** `Dockerfile` `uv sync --all-extras` ile kurulan Rust/C tabanlı paketlerin (örn. `tokenizers`) hedef platform için önceden derlenmiş wheel bulunamadığında kaynaktan derlenebilmesi için `cargo`/`pkg-config` içeriyor; `scripts/install_modules/phases/03_system.sh:install_system_dependencies()` (host/WSL2 kurulum yolu) ise `pkg-config` içermiyordu. `install_system_dependencies()`'in APT paket listesine `pkg-config` eklendi (`build-essential`'ın hemen yanına). `tests/unit/scripts/test_run_tests_quality_gate.py::test_ci_system_dependency_installer_provisions_shell_test_tools` güncellendi.
-
-### Teknik Borç Kapanışı
-- **`agent/self_heal/executor.py` coverage'ı %89.58'de kalmıştı (proje geneli %99.95):** En son eklenen mekanik autofix short-circuit'ının (`execute_mechanical_autofix()`) 4 hata/erken-çıkış dalı test kapsamı dışındaydı: `validation_commands` boşken `blocked` dönüşü (70-72), backup okuma döngüsünde tek dosyanın okunamayıp döngünün devam etmesi (82→80), `scope_paths` verilip hiçbir dosya okunamadığında `blocked` dönüşü (85-90), ve autofix komutunun (doğrulama değil, komutun kendisinin) döngü ortasında başarısız olup `reverted` dönüşü (96-100). Yeni `tests/unit/agent/self_heal/test_executor.py` hafif bir stub `_CodeManagerLike` ile bu 4 dalı hedefliyor (mevcut `tests/integration/workflow/test_self_heal_e2e.py` sandbox stack'i gerektirmeden); `agent/self_heal/executor.py` artık `test_executor.py` + `test_self_heal_e2e.py` + `test_sidar_agent.py` birlikte çalıştırıldığında %100 dal kapsamına ulaşıyor.
+- **`make dev-full`/`make base-quality-gates`, fresh checkout'ta plugin sandbox integration testini deterministik kırıyordu:** İkisi de artık CI'yı yansıtarak `AUTO_BUILD_DOCKER_TEST_IMAGE=1` ile çalışıyor.
+- **`ci-parity` hedefi `TEST_PROFILE=ci` ayarlamıyordu, `dev-full` ile fonksiyonel olarak aynıydı:** `ci-parity` artık `TEST_PROFILE=ci`/`FRONTEND_E2E_NPM_SCRIPT=test:e2e`'yi doğru iletiyor.
+- **CI'da yalnızca `test:e2e:smoke` (1 spec) çalışıyordu; 7 panel-özel Playwright spec'i hiç tetiklenmiyordu:** CI artık tam `test:e2e` kullanıyor; bu geçiş iki gerçek, önceden yakalanmamış bug ortaya çıkardı (voice mock getter-only accessor'ı, interruption ack'inin state'i ezmesi) — ikisi de düzeltildi.
+- **Bir önceki maddenin yan etkisi: `test_run_tests_summary_uses_phase_specific_backend_statuses` ambient env sızıntısı yüzünden kırıldı:** Test kendi `FRONTEND_E2E_NPM_SCRIPT`'ini artık açıkça set ediyor.
+- **`benchmark-baseline-keepalive.yml` kurulduğundan beri hiç çalışmamıştı (yanlış runner + cache key):** `[self-hosted, linux, benchmark]`'a taşındı, gerçek cache-key formatını kullanıyor.
+- **SQLite bootstrap şeması ile Alembic migration zinciri arasında otomatik senkron kontrolü yoktu, 9 `server_default` sessizce sapmıştı:** Yeni migration defaults'ları hizaladı; entegrasyon testi artık `nullable`/`default` değerlerini de karşılaştırıyor.
+- **Frontend ESLint kapsamı `.js`/`.jsx` ile sınırlıydı; 22 `.tsx` dosyası (a11y dahil) hiç lint edilmiyordu:** `typescript-eslint` + `src/**/*.{ts,tsx}` kural bloğu eklendi.
+- **`config.py` importu taze kurulumda `OLLAMA_CODING_NUM_CTX` için boş-string pydantic hatasıyla çöküyordu:** `LLMClientSettings`'e `env_ignore_empty=True` eklendi; auto-tune kontrolü de boş değeri "ayarlanmamış" sayacak şekilde düzeltildi.
+- **RAG Doctor kontrolleri, bileşenlerden türetilen güvenli PostgreSQL DSN'ini görmezden gelip yanlış blokaj üretiyordu:** Aggregate kontrol ortak `_resolved_database_urls()` çözücüsüne taşındı.
+- **P2 süreç güvenliği somut kapılara bağlandı:** Installer'ın en riskli fazları için BATS senaryoları, GPU CI watchdog + runbook, ve TypeScript kampanyası için ara hedefler eklendi.
+- **LLM/RAG VRAM bütçesindeki %80–%100 gri bölge sessizce kabul ediliyordu:** Normalizasyon artık `0.8` hedefini geçtiği anda oranları koruyarak uygulanıyor; başlangıç değerleri güvenli hedefe hizalandı.
+- **Self-heal planlama sınırı ayrıştırıldı:** Kaynak snapshot/batch/LLM patch-plan akışı yeni `agent/self_heal/planner.py`'ye taşındı; `SidarAgent` ince delegate metotları koruyor.
+- **`core.doctor`'daki `websocket_routes` kontrolü gerçek FastAPI kurulumunda her zaman fail veriyordu (`_IncludedRouter` sarmalaması taranmıyordu):** Yeni `_iter_effective_routes()` bu şekli özyinelemeli dolaşıyor.
+- **`database_connectivity` kontrolü geçersiz bir `?ssl=disable` parametresini yanlışlıkla TLS sertifika sorunu sanıyordu:** Yeni `invalid_ssl_query_param` dalı doğru kök nedeni ve auto-fix'i işaret ediyor.
+- **`gpu_memory_config` kontrolü GPU'lu makinelerde kendisiyle çelişen bir rapor üretiyordu:** Kontrol artık alanları okumadan önce donanım probunu zorluyor.
+- **`redis` kontrolü yalnızca `SIDAR_REDIS_URL` set olan kurulumlarda yanlış uyarı veriyordu:** Kontrol artık gerçek çözücüyle aynı öncelik sırasını (`SIDAR_REDIS_URL` önce) kullanıyor.
+- **`database_env` kontrolü, dosya tabanlı auto-fix'in düzeltemeyeceği bir uyarıyı sonsuza dek tekrarlıyordu ("alarm yorgunluğu"):** Kök neden ambient/Docker-enjekte edilmiş bir DATABASE_URL'in Sidar'ın dotenv zincirine ait olmamasıydı; uyarı artık bunu net açıklıyor.
+- **Docker sandbox runtime allowlist uyarısı her sandbox çağrısında gereksiz tekrarlanıyordu:** Kontrol yalnızca `runtime` boş olmadığında çalışacak şekilde düzeltildi (davranış değişmedi).
+- **GPU, development kurulumunda sessizce devre dışı kalıyordu (`.env.development` `.env`'i eziyordu):** GPU ayarları artık tüm ilgili env dosyalarına yayılıyor.
+- **`INSTALL_REMOTE_MODULES` fallback listesi `install_cli.sh`/`install_dispatcher.sh`'ı atlıyordu:** Liste düzeltildi.
+- **Frontend node_modules eksikken 3 yeni test `github_upload.py`'nin hızlı push-öncesi kapısını kırıyordu:** Yeni `_skip_unless_frontend_dependencies_installed()` bu testleri fail yerine skip ediyor.
 
 ### Dokümantasyon
-- **Coverage ratchet metrik senkronizasyonu:** Release öncesi kalite sözleşmesi güncellendi; ölçülen `%100` günlük local/CI coverage baseline olarak commitlenir, ratchet bu değeri düşürmez ve sonraki `%99.x` regresyonları fail-closed engellenir.
-- **Kurulum öncesi Windows/WSL2 Docker Desktop durumunu manuel doğrulamak için bir PowerShell kontrol listesi dokümante edilmemişti:** `install_sidar.sh` `docker-desktop` backend kaydını ve WSL Integration durumunu zaten otomatik doğruluyor (`scripts/install_modules/phases/03_runtime.sh`), ancak kullanıcıların kuruluma başlamadan önce veya bir installer hatasını yorumlarken kendi başlarına çalıştırabilecekleri `wsl --version`/`wsl --status`/`wsl --list --verbose` tabanlı bir ön-kontrol listesi README'de yoktu. `README.md`'ye "Windows Ön Kontrol / PowerShell Doğrulaması" notu eklendi: beklenen `wsl --list --verbose` çıktısı, yeni Docker Desktop kurulumlarında ayrı `docker-desktop-data` dağıtımının bulunmayabileceği (tek başına hata değil) açıklaması ve `docker-desktop` gerçekten eksikse (Reset to factory defaults → yeniden kurulum → WSL Integration'ı tekrar açma) izlenecek adımlar; mevcut "`wsl --unregister docker-desktop` kullanmayın" uyarısına çapraz referans verildi.
-- **"Ubuntu temel hazırlığı" için önerilen manuel paket listesinin çoğu zaten `install_sidar.sh` tarafından otomatik kurulduğu README'de belgelenmemişti:** Arkadaşınızın önerdiği `ca-certificates`/`curl`/`git`/`jq`/`make`/`build-essential`/`pkg-config`/`zstd`/`shellcheck`/`bats` paketlerinin neredeyse tamamı zaten `install_system_dependencies()` (`scripts/install_modules/phases/03_system.sh`, `02_repo.sh`'ten koşulsuz çağrılır) tarafından APT ile otomatik kuruluyordu (`ffmpeg`/`portaudio19-dev` ayrı adımda). Bunu ve installer'ın bilinçli olarak YAPMADIĞI iki şeyi (sistem çapında `apt-get full-upgrade` zorlamamak; kullanıcının global `git config`'ini değiştirmemek — ikisi de bir uygulama kurulumunun kapsamı dışında kabul edildi) ve WSL2'de Docker Desktop kullanılırken `docker-ce`/`docker.io` yerine yalnızca Docker CLI'ın (ve yalnızca açıkça istendiğinde) kurulduğunu açıklayan "Ubuntu temel paket hazırlığı notu" README'ye eklendi.
-- **WSL2/Docker/GPU (örn. RTX 3070 Ti) ön doğrulaması için Ubuntu tarafında çalıştırılabilecek bir kontrol listesi dokümante edilmemişti:** Bu kontrol listesinin en kritik adımı — `docker run --rm --gpus all nvidia/cuda:...-runtime-ubuntu22.04 nvidia-smi` ile GPU passthrough doğrulaması ve başarısız olursa kuruluma geçmeme — zaten `setup_nvidia_docker()`'a (bkz. yukarıdaki "WSL2'de gereksiz nvidia-ctk" düzeltmesi) otomatik olarak eklenmişti; eksik olan, kullanıcıların kuruluma başlamadan önce bu doğrulamayı elle çalıştırıp yorumlayabilecekleri dokümante bir sürümüydü. `README.md`'ye "WSL2/Docker/GPU ön doğrulaması" notu eklendi: `/etc/os-release`/`uname`/`WSL_DISTRO_NAME`, `nvidia-smi`, `docker version`/`compose version`/`info`, `docker run hello-world` ve `docker run --gpus all ... nvidia-smi` GPU smoke adımları; ayrıca WSL2 içine Linux NVIDIA ekran sürücüsü kurulmaması gerektiği ve installer'ın bunu asla denemediği (yalnızca gerektiğinde `nvidia-container-toolkit` — bir ekran sürücüsü değil, container runtime hook'u — kurduğu) açıklandı.
-
----
-
-## [v5.2.0-post2] - 2026-06-20
-
-### Güvenlik
-- **GHSA-4xgf-cpjx-pc3j (pydantic-settings 2.14.1):** Bağımlılık `>=2.14.2` taban sınırına çekildi.
-  Sidar `secrets_dir`/`secrets_nested_subdir` yüzeyini kullanmıyor; risk teorik, bulgu yine de kapatıldı.
-- **GHSA-f4xh-w4cj-qxq8 (langsmith 0.8.5):** Transitive `langsmith` paketine `>=0.8.18` floor eklendi.
-  `TracingMiddleware` Sidar'da instance edilmediği için runtime etkisi yok; audit gate temizlendi.
-
----
-
-## [v5.2.0-post1] - 2026-06-18
-
-> Post-release patch notu: `install_sidar.sh` Ollama/uv kurulum betiği SHA-256 doğrulama akışı için auto-heal davranış düzeltmesi. Paket sürümü `5.2.0` olarak korundu (lock dosyası bütünlüğünü kırmamak için); değişiklik yalnız kurulum/remediation katmanını etkiler.
-
-### Düzeltmeler (Fixed)
-- **Auto-heal yanlış sınıflandırması (uzak betik checksum metadata eksikliği):** `install_sidar.sh` Ollama/uv kurulum betiğini SHA-256 olmadan indirmeyi reddettiğinde (`download_verified_script` → `fail`), `scripts/install_modules/utils/install_remediation.sh:283` `*"ollama_install"*` pattern'ine takılıp transient sayıyordu ve auto-heal 3 kez aynı duvara çarpıyordu. Artık `sidar_is_deterministic_failure_signal` ve `sidar_is_remote_script_checksum_missing` checksum-missing kök nedenini deterministik olarak işaretliyor, retry bütçesi 1'e iniyor ve operatöre TOFU yönergesi ile birlikte (`OLLAMA_INSTALL_SHA256` / `UV_INSTALL_SHA256` ve betik URL'i) `remote-script-checksum-missing` raporu yazılıyor.
-
-### İyileştirmeler (Improved)
-- **`sidar_emit_remediation_guidance` faz kapsamı genişledi:** Daha önce yalnız `04_workspace` için checksum-missing rehberini basıyordu; artık `03_runtime` (Ollama) dahil tüm fazlarda otomatik tespit ediyor, ilgili betik URL'ini ve değişken adını rehberle birlikte üretiyor.
-- **`remote_script_checksum_hint` mesajı netleşti:** Operatöre auto-heal'in retry yapmayacağı, kök nedenin deterministik olduğu ve TOFU akışının nasıl koşulacağı tek adımda gösteriliyor.
+- **`docs/project-report/02-...` bir çözülmüş güvenlik maddesini açık borç gibi gösteriyordu; §8 satır-sayısı tablosu 5+ aydır güncellenmemişti:** PBKDF2 maddesi "Çözüldü" işaretlendi; tüm tablo gerçek `wc -l` ile yeniden üretildi, var olmayan üç yol düzeltildi.
 
 ### Teknik Borç Kapanışı
-- Yeni regresyon testleri: `tests/unit/scripts/test_run_tests_quality_gate.py` içine `test_install_sidar_remote_script_checksum_missing_is_classified_deterministic`, `test_install_sidar_runtime_phase_skips_retry_when_remote_script_checksum_missing`, `test_install_sidar_remote_script_checksum_guidance_covers_runtime_phase`, `test_install_sidar_remote_script_checksum_hint_warns_about_deterministic_wall` eklendi; mevcut transient ollama_install retry akışı (`sudo: timed out`) ve test budgesi (`3/2/1/1/transient`) korunuyor.
+- **`docs/REFACTOR_PLAN.md`'nin hotspot snapshot'ı bir aylık drift taşıyordu; `SEC-PLUGIN-001`'in hedef tarihi sessizce geçmişti:** Satır sayıları güncellendi; 3 kabul kriteri kod incelemesiyle doğrulanıp işaretlendi, yeni 2026-09-15 ara checkpoint'i eklendi.
+- **Bandit suppression ratchet tavanda duruyordu; iki dosyadaki B603/B606 suppression'ları teker teker incelendi:** Üçü de zaten test korumalı ve güvenle kaldırılamıyor; ratchet bilinçli olarak korundu, gerekçe belgelendi.
+- **`docs/module-notes/` borcu sıfır azalmayla 174'te sabit duruyordu:** 12 yeni not eklendi, borç 174'ten 133'e indi; roadmap bir sonraki hedefe (2027-02-28/100) güncellendi.
+- **Frontend TypeScript ratchet tam sınırda duruyordu (untyped=26=max):** 5 dosya taşındı, iki gerçek tip boşluğu kapatıldı; ratchet 21 untyped/51 typed'a sıkılaştırıldı.
+- **4 admin panelinde load/error/refresh state boilerplate'i tekrarlanmıştı:** Yeni `useAsyncStatus` hook'u 3 panele uygulandı; `TenantAdminPanel` kendi abort/debounce akışı nedeniyle bilinçli olarak taşınmadı.
+- **`useAsyncStatus`'un kapatmadığı bir sonraki katman (data+mount+reload iskeleti) hâlâ elle kuruluyordu:** Yeni `useAsyncResource` hook'u 3 panele uygulandı.
+- **Bundle bütçe kapısı yalnızca React DOM chunk'ına özel tavan koyuyordu; `ChatMarkdownRenderer` izlenmiyordu:** `namedChunkBudgets` genelleştirildi; yeni bağımsız markdown-chunk gate'i ve ayrı `rehype-sidar-highlight` chunk'ı eklendi.
+- **Aynı "hata mesajı çıkar" helper'ı 6 dosyada 3 farklı imzayla kopyalanmıştı:** Ortak `src/lib/errors.ts::errorMessage()` tek imzada üçünü de karşılıyor.
+- **`config_llm.py`/`config_quality.py`'de aynı metaprogramlama bloğu birebir kopyalanmıştı:** Yeni `core/config_scoped_settings.py::build_scoped_settings_type()` tek yere indirdi.
+- **`agent/self_heal/executor.py` coverage'ı %89.58'de kalmıştı:** 4 eksik hata/erken-çıkış dalı için hedefli testler eklendi; dosya artık %100 dal kapsamında.
+
+### Dokümantasyon
+- **README'nin Docker test imajı bölümü ikinci bir tüketiciyi (plugin sandbox) hiç anlatmıyordu:** README ve `docs/TESTING.md`'ye çapraz referans eklendi.
+- **`docs/TEST_OPTIMIZATION_PLAN.md`, artık geçerli olmayan coverage-omit örnekleri veriyordu:** Güncel `pyproject.toml` omit glob'larıyla düzeltildi.
+- **`INTEGRATION_PYTEST_WORKERS`'ın neden sabit 2'ye kilitli olduğu belgelenmemişti:** Paylaşılan PostgreSQL servisi nedeniyle race-condition riski; gerekçe yorum olarak eklendi.
+- **Coverage ratchet metrik senkronizasyonu:** %100 günlük baseline olarak commitlendi; ratchet regresyonu engelliyor.
+- **Doküman şişkinliği incelemesi (115 markdown dosyası):** Mimarinin zaten kasıtlı/arşivlenmiş olduğu doğrulandı; README'nin depo ağacı diyagramındaki 5 yanlış kök-seviye referansı düzeltildi.
+- **`main.py`/`cli.py` isimlendirmesi kafa karıştırıcıydı:** Yeniden adlandırma riskli bulunup yapılmadı; her iki dosyanın docstring'ine açık çapraz referans eklendi.
+- **"config.py ve config sprawl" incelemesi (4 alt madde):** Tutarsız `os.getenv` deseni `REFACTOR_PLAN.md`'ye sıradaki adım olarak eklendi; diğer üç alt-iddia önceki turlarda zaten kapatılmış veya doğrulanamadı.
+- **"web_server.py — kısmen tamamlanmış plugin marketplace extraction" incelemesi:** Wrapper'ların üretim yoluna bağlı olduğu doğrulandı; silme önerisi `SEC-PLUGIN-001` önceliğiyle çeliştiği için bu turda uygulanmadı, plan'a somut sıradaki-adım eklendi.
+- **"core/db/monolith.py şema drift riski" incelemesi:** Risk bu incelemenin erken bir maddesinde zaten kapatılmıştı; doğrulama raporlandı.
+- **"core/doctor/__init__.py — sahte checks/ alt paketi" incelemesi:** Bulgu önceki bir turda zaten `REFACTOR_PLAN.md`'ye eklenmişti; eksik kalan tek şey (regresyon assertion'ı) eklendi.
+- **"core/ci_remediation.py — güvenlik-kritik allowlist genel planla iç içe" incelemesi:** Hedef modül adı `command_safety.py`'ye netleştirildi; extraction'ın kendisi henüz yapılmadı.
+- **"install_sidar.sh + install_modules/ — çift-kaynak hash manifesti" incelemesi (2 alt madde):** Pre-commit hook'u iddiası doğrulanamadı (zaten var); remote-fetch bloğunun ayrı dosyaya çıkarılması zaten planlıydı, nüans eklendi.
+- **"run_tests.sh — büyük env-var yüzeyi, yazım hatası koruması yok" incelemesi:** `--help` iddiası doğrulanamadı; şema-doğrulama önerisi somut bir false-positive nedeniyle ertelendi, gerekçe belgelendi.
+- **"Benchmark gate — tek nokta arıza riski" incelemesi (3 alt madde):** Keepalive sorunu önceki turda zaten kapatılmıştı; periyodik re-seed ve iki workflow'un birleştirilmesi bu ortamda doğrulanamadığından ertelendi, `docs/CI_REQUIRED_CHECKS.md`'ye follow-up olarak eklendi.
+- **"GPU-gated testler; `ENABLE_GPU_TESTS=0` belgelenmemiş" incelemesi:** Tasarım doğru bulundu; override README'ye eklendi.
+- **"CodeQL eksik" incelemesi:** Bulgu önceki bir maddede zaten kapatılmıştı; eksik kalan regresyon testi eklendi.
+- **"TypeScript migrasyonu — anlatım eski" incelemesi:** Kalan tüm `.js`/`.jsx` dosyalarının test dosyası olduğu doğrulandı; `tsconfig.json` yorumu ve migration doc güncel duruma göre düzeltildi.
+- **"ESLint kapsam hatası — a11y kuralları çalışmıyor" incelemesi (P0 işaretlenmişti):** Bulgu bu PR'ın ilk commit'inde zaten kapatılmıştı; eksik kalan regresyon testi eklendi.
+- **"CI'da yalnızca smoke E2E çalışıyor" incelemesi:** Bulgu bu incelemenin erken bir maddesinde zaten kapatılmıştı; dangling test-referansı düzeltilip eksik regresyon testi eklendi.
 
----
-
-## [v5.2.0] - 2026-03-26
-
-### Düzeltmeler (Fixed)
-- **openai sürüm sınırı:** `openai>=1.68.2` → `openai>=1.68.2,<2.0.0` — üst sınır eksikliği nedeniyle OpenAI SDK v2 kuruluyordu; v2 breaking changes içerdiğinden kırılmaya neden oluyordu.
-- **asyncpg çift tanımlama:** `asyncpg` hem `dependencies` hem `postgres` extras içinde tanımlıydı; core `dependencies`'ten kaldırıldı — sadece `postgres` extras'ta kalması gerekir.
-- **pgvector çift tanımlama:** `pgvector` hem `dependencies` hem `postgres` extras'ta bulunuyordu; `postgres` extras'tan kaldırıldı.
-- **rag extras torch uyumsuzluğu:** `torch~=2.4.1` sabit pin'i kaldırıldı (`torch>=2.4.1` olarak güncellendi); `torchvision~=0.19.1` çıkarıldı — `openai-whisper` ve `sentence-transformers` zaten torch 2.11.x çekiyor, 0.19.1 ile uyumsuzluk yaratıyordu.
-- **telemetry extras eski versiyon pinleri:** `opentelemetry-*~=1.29.0` ve `~=0.50b0` pinleri `>=` kısıtlamalarına dönüştürüldü — chromadb'nin çektiği 1.40.0 / 0.61b0 ile çakışma önlendi.
-
-### Teknik Borç Kapanışı
-- `requirements.txt` ve `requirements-dev.txt` güncel `pyproject.toml` kısıtlamalarına göre yeniden üretildi (`openai==1.109.1`, v1.x garantili).
-
----
-
-## [v5.2.0-alpha] - 2026-03-21
-Faz E otonom iş ekosistemi ajanları kod tabanına ve üst seviye raporlara resmi olarak işlendi.
-
-### Eklenenler (Added)
-- **CoverageAgent entegrasyonu:** `agent/roles/coverage_agent.py` ile otonom pytest analizi, coverage bulgusu kaydı ve eksik test üretim/yazım akışı sisteme eklendi.
-- **PoyrazAgent entegrasyonu:** `agent/roles/poyraz_agent.py` ile sosyal medya paylaşımı, landing page oluşturma, WhatsApp entegrasyonu, video içgörüsü ingest'i ve kampanya yönetimi araçları devreye alındı.
-- **Faz E rapor senkronizasyonu:** `PROJE_RAPORU.md`, `docs/SIDAR_v5_1_MIMARI_RAPORU.md` ve `AUDIT_REPORT_v5.1.md` Coverage/Poyraz ajanları, güncel repo metrikleri ve `core/db.py` Faz E yardımcılarıyla uyumlu hale getirildi.
-
-### İyileştirmeler (Improved)
-- **Mimari anlatı güncellemesi:** Faz E artık yol haritası diliyle değil, aktif ajan davranışları, tool kayıtları ve veritabanı yüzeyleriyle belgeleniyor.
-
-### Teknik Borç Kapanışı
-- Coverage ve pazarlama/operasyon otomasyonu artık yalnızca vizyon başlığı altında değil; kod, audit ve mimari raporlar arasında senkronize edilen fiili teslimat olarak izleniyor.
-
----
-
-## [v5.1.3-alpha] - 2026-03-21
-Swarm orkestrasyonu ile Active Learning yüzeyleri, production cutover ve coverage kalite kapıları içinde daha görünür ve hedefli bir regresyon dilimi olarak sabitlendi.
-
-### İyileştirmeler (Improved)
-- **CI coverage guard netleştirmesi:** `.github/workflows/ci.yml` içine `tests/test_swarm_orchestrator.py` ve `tests/test_active_learning.py` odaklı ayrı bir regresyon adımı eklenerek, `%99` local/CI ratchet gate ve opt-in `%100` campaign kontrolü öncesinde Swarm + Active Learning omurgasının açık isimli bir kalite kapısından geçmesi sağlandı.
-- **Production cutover doğrulama genişlemesi:** `.github/workflows/migration-cutover-checks.yml` artık PostgreSQL migration + pool smoke zincirine ek olarak aynı Swarm + Active Learning dilimini ve workflow guard testini çalıştırarak cutover provasını yalnızca veri katmanı ile sınırlamıyor.
-
-### Teknik Borç Kapanışı
-- Coverage/cutover anlatısındaki örtük bağımlılık azaltıldı; Swarm koordinasyonu ile geri bildirim tabanlı öğrenme hattı artık CI ve production rehearsal katmanlarında isimli, testle doğrulanan bir operasyon yüzeyi olarak izleniyor.
-
----
-
-## [v5.1.2-alpha] - 2026-03-21
-Sürekli öğrenme (Continuous Learning) altyapısının temelleri atıldı, Akıllı Başlatıcı (Launcher) validasyonları ve asenkron ajan kilitleri (lock) sertleştirildi.
-
-### Eklenenler (Added)
-- **Continuous Learning (v6.0 hazırlığı):** `config.py` içine `ENABLE_CONTINUOUS_LEARNING`, bekleme süreleri, veri seti limitleri ve SFT formatı (`alpaca`) yapılandırmaları eklendi.
-- **Port ve tip doğrulaması:** `main.py` içindeki `--port` argümanına tam sayı ve mantıksal aralık (`1-65535`) doğrulama adımları eklendi; kullanıcıya net hata mesajları sunulması sağlandı.
-
-### İyileştirmeler (Improved)
-- **Asenkron kilit (lock) yönetimi:** `agent/sidar_agent.py` içindeki `_autonomy_lock` ve `_nightly_maintenance_lock` objeleri, event-loop hatalarını engellemek amacıyla lazy initialization (ihtiyaç anında oluşturma) prensibiyle dokümantasyona işlendi.
-- **Güvenli proaktif tetikleme (autonomy history):** Dış sistemlerden (Webhook/Cron) gelen tetiklemelerin `_append_autonomy_history` etrafındaki otonomi akışları thread-safe/autonomy-safe koruma modeliyle belgelerde netleştirildi.
-
----
-
-## [v5.1.1-docs] - 2026-03-21
-Kurumsal raporlar, `main.py` launcher sertleştirmeleri ve %100 coverage baseline'ını koruyan son edge-case test modülü ile yeniden senkronize edildi.
-
-### Eklenenler (Added)
-- **%100 coverage kapanışı:** `tests/test_missing_edge_case_coverage_final.py` eklenerek Redis fallback, `WebSocketDisconnect` kaynaklı async cancel, `tempfile.mkdtemp` hata yolu ile GitHub API 400/503 kenar durumları izole mock testleriyle coverage campaign/regresyon kalite kapısı içine alındı.
-
-### İyileştirmeler (Improved)
-- **Ultimate Launcher sertleştirmesi:** `main.py` içinde `--port` argümanı için `1-65535` aralık doğrulaması, `validate_runtime_dependencies` kontrolü ve child process stdout/stderr akışını bellek dostu biçimde yazdıran güvenli stream loglama yolu dokümantasyon baseline'ına işlendi.
-- **Audit metriği yenilemesi:** `scripts/collect_repo_metrics.sh` ve `scripts/audit_metrics.sh` yeniden çalıştırıldı; yeni baseline **250** takipli Python dosyası / **79.462** Python satırı / **369** toplam takipli dosya olarak raporlara yansıtıldı.
-
-### Teknik Borç Kapanışı
-- Son mock tabanlı edge-case kapsamı sayesinde bağımlılık kopmaları, async iptal akışları ve yetkilendirme bypass girişimleri için regresyon boşluğu bırakılmadı; Coverage Agent yol haritası artık bu %100 baseline üzerine kurulacaktır.
-
----
-
-## [v5.1.0-docs] - 2026-03-21
-Faz D kurumsal ölçekleme teslimatları ve Faz E otonom iş ekosistemi vizyonu, güncel audit metrikleriyle birlikte üst seviye belgelere işlendi.
-
-### Eklenenler (Added)
-- **Faz D dokümantasyon senkronizasyonu:** `PROJE_RAPORU.md` içine Plugin Marketplace, Multiplayer Collaboration Workspace, Nightly Memory Maintenance ve chaos engineering olgunluğu mevcut durum özeti olarak eklendi.
-- **Faz E mimari yönü:** `docs/SIDAR_v5_1_MIMARI_RAPORU.md` sonuna Coverage Agent, Poyraz ve YouTube/dış platform video analizi odaklı yeni mimari başlık eklendi.
-- **Audit metriği yenilemesi:** `scripts/audit_metrics.sh` ve `scripts/collect_repo_metrics.sh` çıktıları yeniden alınarak `AUDIT_REPORT_v5.1.md` ile üst seviye raporlardaki satır/dosya sayıları güncellendi; yeni baseline 250 takipli Python dosyası / 79.462 Python satırı / 369 toplam takipli dosya seviyesine taşındı.
-
-### Teknik Borç Kapanışı
-- `tests/test_system_health_dependency_checks.py`, `tests/test_plugin_marketplace_hot_reload.py` ve `tests/test_nightly_memory_maintenance.py` ile temsil edilen Faz D yüzeyleri coverage anlatısına açıkça dahil edildi.
-- Kaos mühendisliği, eklenti pazaryeri ve bellek bakımı modüllerinin regresyon güvenliği artık changelog ve audit katmanında da görünür durumdadır.
-- `TEKNIK_REFERANS.md`, `nightly_memory_loop` temelli vektör optimizasyonu ve bakım politikası için ayrı teknik alt başlıkla güncellendi.
-- Helm chart sürüm işaretleri runtime baseline ile hizalanarak `v5.0.0-alpha` çizgisine taşındı.
-
----
-
-## [v5.0.0-alpha] - 2026-03-19
-v5.0 Faz 6 geçişi; çok modlu algı, proaktif otonomi, LSP tabanlı anlamsal denetim ve akıllı başlatıcı yüzeyiyle görünür ürün fazına taşındı.
-
-### Eklenenler (Added)
-- **Ultimate Launcher (`main.py`):** Etkileşimli CLI arayüzü, ön kontrol (preflight) mekanizması, `--capture-output`/`--child-log` desteği ve thread tabanlı alt süreç log akışı ile daha güvenli launcher davranışı sağlandı.
-- **Launcher Runtime Guard:** `config.py` importu başarısız olduğunda launcher artık `web_server.py` / `cli.py` alt süreçlerini fail-fast koruma ile durdurup kullanıcıya nedenini açıkça bildirir; böylece launcher-fallback ile child-process çökmesi arasındaki tutarsızlık giderildi.
-- **Cross-Platform Ollama Cleanup:** `web_server.py` içindeki child-process keşfi artık önce `psutil` kullanıyor, Windows ortamında `ps` komutuna düşmeden güvenli biçimde boş liste döndürüyor; böylece shutdown cleanup hattı POSIX bağımlılığıyla sınırlı kalmıyor.
-- **LSP Entegrasyonu:** `managers/code_manager.py` içine Pyright ve TypeScript LSP desteği, yapılandırılmış semantik audit ve güvenli refactor yardımcıları eklendi.
-- **Reviewer Agent Yetenekleri:** Reviewer ajanına `lsp_diagnostics` aracı eklenerek anlamsal kod denetimi kalite kapısına bağlandı.
-- **Multimodal Medya İşleme:** `core/multimodal.py` ile FFmpeg tabanlı video frame analizi, ses kanalı ayırma ve STT tabanlı medya bağlamı üretimi eklendi.
-- **Voice WebSocket Arayüzü:** `web_server.py` üzerinde base64 ses verilerini işleyip LLM bağlamına katan gerçek zamanlı sesli iletişim endpoint'leri açıldı; VAD olayları ve duplex voice state payload'ları testlerle doğrulandı.
-- **Duplex Voice-to-Voice Derinleşmesi:** `core/voice.py` ve `/ws/voice` hattına assistant turn kimliği, output buffer durumu, audio sıra numarası ve VAD tabanlı barge-in interrupt temizliği eklendi.
-- **Otonom Cron Loop:** SİDAR'ın kendi kendine uyanıp görevleri değerlendirmesini sağlayan `_autonomous_cron_loop` arka plan görevi eklendi.
-- **Tarayıcı Otomasyonu:** Playwright öncelikli dinamik web etkileşim katmanı (`managers/browser_manager.py`), yüksek riskli aksiyonlar için audit trail ve HITL korumalarıyla ürünleşti.
-- **GraphRAG Etki Analizi:** `core/rag.py` içindeki impact analizi; risk seviyesi, etkilenen endpoint handler'ları ve reviewer hedeflerini üreten daha yönlendirici bir raporlama katmanına genişletildi.
-- **Faz C Self-Healing Bootstrap:** `core/ci_remediation.py` ve `agent/sidar_agent.py` artık düşük riskli CI arızaları için LLM tabanlı JSON patch planı üretip patch uygular, sandbox içinde doğrular ve hata halinde otomatik rollback yapar; yüksek riskli akışlar ise HITL beklemeye devam eder.
-- **React Duplex Voice Paneli:** `web_ui_react/src/components/VoiceAssistantPanel.jsx` ve `web_ui_react/src/hooks/useVoiceAssistant.js` ile istemci tarafı mikrofon/VAD yönetimi, `MediaRecorder` tabanlı akış, transcript/diagnostics görünürlüğü ve barge-in görsel geri bildirimi React SPA içine entegre edildi.
-- **Reviewer → CodeManager Self-Healing Döngüsü:** Reviewer/LSP/GraphRAG sinyalleri ile başlayan remediation akışı, `core/ci_remediation.py`, `agent/sidar_agent.py` ve `managers/code_manager.py` üzerinden güvenli patch planı, sandbox doğrulaması ve rollback fail-safe zinciriyle proaktif onarım davranışına genişletildi.
-- **Browser Decisioning Derinleşmesi:** `managers/browser_manager.py` artık Playwright/Selenium oturumlarından screenshot + DOM sinyalleri toplayıp typed browser tool şemaları ve reviewer browser_signals akışı için deterministik selector/HITL odaklı karar verisi üretiyor.
-- **Event-Driven Swarm Federation:** `web_server.py`, `github_upload.py`, webhook uçları ve `agent/swarm.py` ile GitHub/Jira/sistem uyarılarından tetiklenen event-driven federation workflow'ları Coder + Reviewer pipeline'ına otomatik dağıtılıyor.
-- **Nightly Memory Consolidation (Faz D başlangıcı):** `ConversationMemory`, `DocumentStore`, `SidarAgent` ve `web_server.py` üzerine idle-gated gece döngüsü eklendi; eski oturumlar özetleniyor, düşük değerli RAG dokümanları `memory://nightly-digest` ile konsolide edilip gereksiz embedding'ler temizleniyor, entity memory TTL purge işlemi aynı bakım turunda çalışıyor.
-
-### Teknik Borç Kapanışı
-- `core/voice.py`, `web_server.py`, `managers/browser_manager.py`, `main.py`, `core/ci_remediation.py`, `agent/core/contracts.py` ve `core/rag.py` çevresindeki v5.0-alpha test kapsamı `tests/test_voice_pipeline.py`, `tests/test_web_server_voice.py`, `tests/test_browser_manager.py`, `tests/test_main_launcher_improvements.py`, `tests/test_ci_remediation.py`, `tests/test_contracts_federation.py` ve `tests/test_rag_graph.py` ile kapatıldı.
-- Böylece belgelerde daha önce izlenen v5.0-alpha coverage/test borcu kapanmış oldu; aktif teknik borç yerine sürdürülen regresyon güvenliği statüsüne geçildi.
-
----
-
-## [4.3.0] - 2026-03-19
-Repo metrikleri, sürüm numaraları ve üst seviye dokümantasyon mevcut takipli kod tabanı ile senkronize edildi.
-
-### ✅ Dokümantasyon ve Sürüm Senkronizasyonu
-**Dosyalar:** `config.py`, `pyproject.toml`, `sidar_project.egg-info/PKG-INFO`, `helm/sidar/Chart.yaml`, `README.md`, `PROJE_RAPORU.md`, `AUDIT_REPORT_v5.0.md`, `TEKNIK_REFERANS.md`, `SIDAR.md`, `CLAUDE.md`
-- Runtime, paket ve dağıtım yüzeyi `v4.3.0` sürüm çizgisine taşındı; README, teknik referans, proje raporu ve geliştirici rehberleri aynı baseline ile hizalandı.
-- Takipli depo ölçümleri yeniden doğrulandı: **58** üretim Python dosyası / **20.582** satır, **151** test dosyası / **39.147** satır, toplam takipli Python **209** dosya / **59.729** satır, Web UI toplamı **6.105** satır ve REST endpoint envanteri **60** olarak raporlara işlendi.
-- Teknik referans turunda API/DB/env sözleşmeleri tekrar kontrol edildi; bu sürümde yeni endpoint, tablo veya config anahtarı eklenmediği için envanter korunurken başlık ve senkronizasyon notları güncellendi.
-
-### ✅ Çözülen Bulgular
-**Dosyalar:** `scripts/audit_metrics.sh`, `scripts/collect_repo_metrics.sh`, `tests/test_release_version_bump.py`
-- Repo metrik betikleri Git deposu içinde öncelikle `git ls-files` kullanacak şekilde düzeltilerek `.venv`, `node_modules` ve benzeri takip dışı içeriklerin satır sayılarını şişirmesi engellendi.
-- Sürüm doğrulama testi, yeni `v4.3.0` baseline ve güncel proje raporu/changelog/SIDAR talimatlarıyla uyumlu hale getirildi.
-
----
-
-### Teknik Borç Kapanışı
-- Repo metrik betikleri Git-takipli dosya ölçümüne alınarak rapor şişmesi üreten ölçüm drift'i kapatıldı.
-- Sürüm doğrulama testi ve üst seviye dokümantasyon aynı release çizgisine hizalandı.
-
----
-
-## [4.0.0] - 2026-03-19
-Runtime sürümü ve üst seviye proje raporları, v4 kurumsal mimari omurgasıyla senkronize edildi.
-
-### ✅ Sürüm ve Mimari Senkronizasyonu
-**Dosyalar:** `config.py`, `pyproject.toml`, `sidar_project.egg-info/PKG-INFO`, `PROJE_RAPORU.md`, `README.md`
-- Runtime ve paket sürümleri `3.0.0` / `0.0.0` seviyelerinden `4.0.0` değerine yükseltildi; böylece config, paket metadata'sı ve v4 audit anlatısı aynı sürüm çizgisine taşındı.
-- React tabanlı `web_ui_react/` arayüzünün standart kullanıcı deneyimi olduğu, legacy `web_ui/` klasörünün ise geriye dönük uyumluluk/fallback amacıyla korunduğu dokümante edildi.
-- SQLite'tan PostgreSQL + `pgvector` altyapısına geçiş, Alembic migration zinciri ve kurumsal deployment yüzeyinin (Docker Compose + Helm/Redis/Jaeger/OTel) proje raporlarında daha açık biçimde özetlenmesi sağlandı.
-- Multi-agent swarm mimarisinin Coder/Researcher/Reviewer uzman rolleri, reviewer QA döngüsü ve token/maliyet gözlemlenebilirliğiyle birlikte ana dokümantasyonda öne çıkarılması tamamlandı.
-
----
-
-### Teknik Borç Kapanışı
-- v4 kurumsal mimari geçişinde sürüm ve rapor baseline farkları kapatıldı.
-- Aktif teknik borç kaydı bırakılmadan dokümantasyon tek sürüm çizgisine toplandı.
-
----
-
-## [v4.2.1] - 2026-03-19
-FAZ-10 sonrası dokümantasyon, paketleme ve cutover doğrulama yüzeyi mevcut repo durumu ile senkronize edildi.
-
-### ✅ Dokümantasyon ve Operasyon Senkronizasyonu
-**Dosyalar:** `pyproject.toml`, `.github/workflows/migration-cutover-checks.yml`, `README.md`, `RFC-MultiAgent.md`, `TEKNIK_REFERANS.md`, `runbooks/production-cutover-playbook.md`, `PROJE_RAPORU.md`, `AUDIT_REPORT_v5.0.md`
-- `pyproject.toml` paket sürümü `config.py` içindeki runtime sürümüyle uyumlu olacak şekilde `3.0.0` olarak düzeltildi.
-- PostgreSQL cutover workflow'undan diskte bulunmayan `requirements.txt` bağımlılığı kaldırıldı; migration provası artık `requirements-dev.txt + asyncpg` ile çalışır.
-- README, React/Vite geliştirme akışı, SPA öncelikli servisleme modeli, güncel proje ağacı ve 149 test modülü / 151 test dosyası gerçekliğiyle yenilendi.
-- RFC ve teknik referans, Supervisor/Coder/Researcher/Reviewer sorumluluklarını ve reviewer'ın dinamik QA/sandbox regresyon rolünü yansıtacak şekilde güncellendi.
-- Production cutover ve audit raporları prompt registry, DLP, observability dashboard'ları, migration provası ve `%99` local/CI ratchet gate ve opt-in `%100` coverage campaign detaylarıyla güçlendirildi.
-
-### Teknik Borç Kapanışı
-- Cutover workflow içindeki `requirements.txt` drift'i kaldırıldı.
-- Operasyon ve audit dokümantasyonu mevcut repo gerçekliğiyle yeniden hizalandı.
-
----
-
-## [v4.2.0] - 2026-03-19
-FAZ-10 — Autonomous LLMOps kapanış anlatısı kurumsal operasyon seviyesiyle eşitlendi.
-
-### ✅ FAZ-10 — Faz 4 Operasyonel Olarak Kapatıldı
-**Dosyalar:** `PROJE_RAPORU.md`, `RFC-MultiAgent.md`, `AUDIT_REPORT_v5.0.md`, `README.md`
-- Faz 4; aktif öğrenme, vision, cost-aware routing ve dış sistem orkestrasyonunu kapsayan birleşik **Autonomous LLMOps** katmanı olarak yeniden çerçevelendi.
-- Audit trail ve direct `p2p.v1` handoff doğrulamaları bu kabiliyetlerin sadece mevcut değil, denetlenebilir ve rollout'a hazır olduğunu gösterecek şekilde dokümante edildi.
-- Proje raporu ve RFC tarafında `v4.2.0` operasyonel kapanış dili, audit ve README tarafında da görünür hâle getirildi.
-
-### Teknik Borç Kapanışı
-- Faz 4 kapanışına ait operasyonel belirsizlikler tek kurumsal anlatıda konsolide edildi.
-
----
-
-## [v3.2.0] - 2026-03-19
-FAZ-10 — Autonomous LLMOps ürün anlatısı konsolide edildi.
-
-### ✅ FAZ-10 — Faz 4 Ürün Hikâyesi Tek Çatı Altında Toplandı
-**Dosyalar:** `PROJE_RAPORU.md`, `README.md`
-- Active Learning/LoRA, Vision Pipeline, cost-aware routing ve Slack/Jira/Teams orkestrasyonu birlikte Faz 4 ürün hikâyesi olarak yeniden yazıldı.
-- Faz 4 artık tekil özellik listesi yerine kapalı döngü öğrenme + çok modlu üretim + otonom entegrasyon yönetimi ekseninde anlatılıyor.
-
-### Teknik Borç Kapanışı
-- Ayrı bir yeni teknik borç kapanışı yok; Faz 4 ürün hikâyesi borç sonrası ürünleştirme diline taşındı.
-
----
-
-## [v3.0.31] - 2026-03-19
-FAZ-9 — Kurumsal audit trail ve doğrudan P2P handoff rollout'u raporlarla senkronize edildi.
-
-### ✅ FAZ-9 — Tenant RBAC Audit Trail Kayıtları Operasyonel Olarak Doğrulandı
-**Dosyalar:** `core/db.py`, `migrations/versions/0003_audit_trail.py`, `web_server.py`, `tests/test_rbac_policy_runtime.py`
-- `audit_logs` tablosu Alembic migration `0003_audit_trail` ile şemaya eklendi; kullanıcı/zaman damgası indeksleri hazırlandı.
-- `core/db.py` içine `record_audit_log()` ve `list_audit_logs()` yardımcıları eklenerek hem SQLite hem PostgreSQL yollarında denetim kaydı okunur/yazılır hale geldi.
-- `web_server.py::access_policy_middleware` artık RBAC kararlarından sonra `user_id`, `tenant_id`, `action`, `resource`, `ip_address` ve `allowed` alanlarını audit trail'e asenkron olarak yazıyor.
-- `tests/test_rbac_policy_runtime.py` hem DB round-trip'ini hem de middleware'in izin verilen erişimleri audit tablosuna kaydettiğini doğruluyor.
-
-### ✅ FAZ-9 — Direct Agent Handoff Protokolü Swarm Katmanına Taşındı
-**Dosyalar:** `agent/core/contracts.py`, `agent/base_agent.py`, `agent/core/supervisor.py`, `agent/swarm.py`, `tests/test_swarm_orchestrator.py`, `tests/test_supervisor_agent.py`
-- `P2PMessage` / `DelegationRequest` sözleşmeleri `handoff_depth`, `protocol` ve `meta.reason` alanlarıyla kurumsal direct handoff protokolünü standartlaştırdı.
-- `BaseAgent.delegate_to(...)` ve `SupervisorAgent._route_p2p(...)`, sender/receiver bağlamını ve hop sayısını koruyarak fail-closed P2P delegasyonu sürdürüyor.
-- `SwarmOrchestrator._direct_handoff(...)` aynı sözleşmeyi runtime orchestration akışına taşıdı; coder → reviewer → coder zincirinde bağlam kaybı olmadan uzmanlar arası el değiştirme mümkün hale geldi.
-- İlgili testler sender/receiver, `p2p_reason`, `p2p_protocol` ve `handoff_depth` alanlarının korunduğunu doğruluyor.
-
----
-
-### Teknik Borç Kapanışı
-- Tenant RBAC audit trail omurgası kurumsal doğrulama eksiklerini kapattı.
-- Direct `p2p.v1` handoff zinciri bağlam korumalı hale getirildi.
-
----
-
-## [v3.0.30] - 2026-03-19
-FAZ-8 — Son düşük öncelikli kalite borçları kapatıldı; Zero Debt doğrulama turu tamamlandı.
-
-### ✅ FAZ-8 — D-8..D-14 Kapanış Doğrulaması
-**Dosyalar:** `core/entity_memory.py`, `core/cache_metrics.py`, `core/judge.py`, `core/vision.py`, `core/active_learning.py`, `core/hitl.py`, `core/llm_client.py`, `web_server.py`
-- **D-8 Çözüldü:** `core/entity_memory.py` içindeki no-op / dead-code satırı kaldırıldı; `get_entity_memory()` artık yalnızca gerçek `db_url` çözümlemesi yapıyor.
-- **D-9 Çözüldü:** `core/cache_metrics.py` içine modül düzeyinde public `record_cache_hit()`, `record_cache_miss()` ve `record_cache_skip()` sarmalayıcıları eklendi; `core/llm_client.py` private singleton yerine bu public API'yi kullanıyor.
-- **D-10 Çözüldü:** `core/judge.py` içinde `Config()` nesnesi `LLMJudge.__init__()` içine alındı; `_call_llm()` artık aynı config örneğini yeniden kullanıyor.
-- **D-11 Çözüldü:** `core/vision.py` içindeki görsel okuma akışı `await asyncio.to_thread(p.read_bytes)` ile event loop'u bloklamayacak şekilde güncellendi.
-- **D-12 Çözüldü:** `core/active_learning.py` içindeki `IN (...)` SQL güncellemesi named placeholder (`:id_0`, `:id_1`, ...) yaklaşımına taşındı; veri bind parametreleriyle geçiriliyor.
-- **D-13 Çözüldü:** `core/hitl.py` içindeki `_HITLStore` kilidi event loop dışında oluşturulmak yerine `None` ile başlatılıp ilk kullanımda lazy-init ediliyor.
-- **D-14 Çözüldü:** `core/hitl.py` içine public `notify()` wrapper'ı eklendi; `web_server.py` artık private `_notify()` yerine bu public arayüzü çağırıyor.
-
-**🏁 Zero Debt Sonucu:** Audit kapsamındaki tüm bulgular (`K-1..K-2`, `Y-1..Y-6`, `O-1..O-8`, `D-1..D-14`) kapatıldı. Açık kritik, yüksek, orta veya düşük öncelikli bulgu kalmadı; güvenlik/operasyon puanı **10.0/10** olarak teyit edildi.
-
----
-
-### Teknik Borç Kapanışı
-- `D-8..D-14` kümesinin tamamı kapatıldı.
-- Proje denetim kapsamındaki tüm açık bulgular sıfırlanarak `Zero Debt` durumuna geçti.
-
----
-
-## [v3.0.26] - 2026-03-18
-FAZ-7 — Slack entegrasyonu ve audit çapraz-doğrulama turu tamamlandı.
-
-### ✅ FAZ-7 — O-8 Düzeltme: SlackManager Senkron Blokajı Giderildi
-**Dosya:** `managers/slack_manager.py`
-- `_init_client()` içindeki senkron `auth_test()` çağrısı kaldırıldı.
-- Token doğrulaması asenkron `initialize()` fonksiyonuna taşındı ve `asyncio.to_thread(...)` ile event loop bloklaması önlendi.
-- Doğrulama: `managers/slack_manager.py:47-95`
-
-### ✅ FAZ-7 — D-7 Düzeltme: Judge Prometheus Gauge Tekrar Kayıt Riski Giderildi
-**Dosya:** `core/judge.py`
-- `_prometheus_gauges` modül düzeyi önbelleği eklendi.
-- `_inc_prometheus()` aynı metrik adını yeniden kaydetmek yerine mevcut Gauge nesnesini tekrar kullanıyor.
-- Doğrulama: `core/judge.py:49-63`
-
-### ✅ FAZ-7 — Önceden Kapatılan Entegrasyon Bulguları Yeniden Doğrulandı
-**Dosyalar:** `core/llm_client.py`, `web_server.py`
-- Y-6 için `record_routing_cost()` çağrısının aktif olduğu yeniden doğrulandı.
-- O-7 için Vision / EntityMemory / FeedbackStore / Slack / Jira / Teams endpoint'lerinin HTTP katmanına gerçekten bağlandığı yeniden doğrulandı.
-
-### ⚠️ FAZ-7 — Açık Kalan Düşük Öncelikli Bulgular
-**Dosyalar:** `core/entity_memory.py`, `core/cache_metrics.py`, `core/judge.py`, `core/vision.py`, `core/active_learning.py`, `core/hitl.py`, `web_server.py`
-- `D-8` açık: `core/entity_memory.py` içinde `db_url = db_url` no-op satırı hâlâ mevcut.
-- `D-9` açık: `core/cache_metrics.py` yalnızca sınıf içi `record_*` metodlarına sahip; modül düzeyi public wrapper fonksiyonlar eklenmediği için `llm_client.py` private `_cache_metrics` nesnesini doğrudan kullanmaya devam ediyor.
-- `D-10` açık: `core/judge.py::_call_llm()` içinde `Config()` hâlâ her çağrıda yeniden oluşturuluyor.
-- `D-11` açık: `core/vision.py::load_image_as_base64()` hâlâ senkron `read_bytes()` kullanıyor.
-- `D-12`, `D-13`, `D-14` açık: önceki audit raporundaki durum değişmedi.
-
----
-
-### Teknik Borç Kapanışı
-- `O-8` Slack senkron blokajı ve `D-7` Prometheus tekrar kayıt riski kapatıldı.
-- Önceki `Y-6` ve `O-7` kapanışları yeniden doğrulanarak entegrasyon drift'i temizlendi.
-
----
-
-## [v3.0.18] - 2026-03-18
-FAZ-6 Düşük Öncelikli Son Bulgu — D-6 kapatıldı. Tüm bulgular tamamlandı.
-
-### ✅ FAZ-6 — D-6 Düzeltme: DB `_run_sqlite_op` Gereksiz Lazy Lock Kontrolü
-**Dosya:** `core/db.py`
-- `_run_sqlite_op` içindeki erişilemez `if self._sqlite_lock is None: raise RuntimeError(...)` bloğu `assert self._sqlite_lock is not None` ile değiştirildi.
-- `_connect_sqlite()` her zaman `_sqlite_lock = asyncio.Lock()` oluşturduğundan ve `_sqlite_conn is None` kontrolü üstte yapıldığından ikinci kontrol dead-code'du.
-- `assert` ile hem gereksiz dal kaldırıldı hem de lock varlığı belgesi tutuldu.
-- Doğrulama: `core/db.py:189`
-
-**🏁 Denetim Tamamlandı:** Tüm K-1..K-2, Y-1..Y-5, O-1..O-6, D-1..D-6 bulguları kapatıldı. Güvenlik puanı: **10.0 / 10**.
-
----
-
-### Teknik Borç Kapanışı
-- `D-6` DB lazy-lock dead-code borcu kapatıldı.
-
----
-
-## [v3.0.17] - 2026-03-18
-FAZ-5 Orta Öncelikli Güvenlik Hardening — Tüm O-1..O-6 bulgular kapatıldı.
-
-### ✅ FAZ-5 — O-1 Doğrulama: Tüm Kilitleri `_app_lifespan`'da Başlat
-**Dosya:** `web_server.py`
-- `_agent_lock`, `_redis_lock`, `_local_rate_lock` tümü `_app_lifespan` içinde event loop başlatıldıktan hemen sonra oluşturuluyor. Lazy init anti-pattern yok.
-- Doğrulama: `web_server.py:289-293`
-
-### ✅ FAZ-5 — O-2 Düzeltme: `add_document_from_file` Base Directory Kısıtlaması
-**Dosya:** `core/rag.py`
-- `file.is_relative_to(Config.BASE_DIR)` sınır kontrolü eklendi. Proje kök dizini dışındaki tüm dosyalara erişim engellendi.
-- Boş uzantı (`""`) `_TEXT_EXTS` whitelist'inden zaten kaldırılmıştı; `_BLOCKED_PARTS` koruması da eklendi.
-- Doğrulama: `core/rag.py:635-637`
-
-### ✅ FAZ-5 — O-3 Düzeltme: `DOCKER_REQUIRED` Bayrağı
-**Dosyalar:** `config.py`, `managers/code_manager.py`, `.env.example`
-- `DOCKER_REQUIRED: bool = get_bool_env("DOCKER_REQUIRED", False)` alanı config.py'ye eklendi.
-- `execute_code` fonksiyonunda Docker erişilemezken `Config.DOCKER_REQUIRED` kontrol ediliyor; `True` ise yerel subprocess fallback engelleniyor.
-- `.env.example`'a `DOCKER_REQUIRED=false` belgesi eklendi.
-
-### ✅ FAZ-5 — O-4 Doğrulama: Senkron Ollama Check `asyncio.to_thread` ile Sarıldı
-**Dosya:** `web_server.py`
-- `Config.validate_critical_settings()` zaten `await asyncio.to_thread(Config.validate_critical_settings)` ile sarılmış durumda.
-- Doğrulama: `web_server.py:295`
-
-### ✅ FAZ-5 — O-5 Doğrulama: WebSocket Token `Sec-WebSocket-Protocol` Başlığından Okunuyor
-**Dosya:** `web_server.py`
-- WebSocket handshake sırasında `sec-websocket-protocol` başlığından token okunuyor; JSON payload fallback ikincil konuma düşürüldü.
-- Doğrulama: `web_server.py:1076-1103`
-
-### ✅ FAZ-5 — O-6 Düzeltme: `run_shell` Tehlikeli Komut Blocklist
-**Dosya:** `managers/code_manager.py`
-- `allow_shell_features=True` yoluna yıkıcı komut kalıpları için blocklist eklendi (`rm -rf /`, fork bomb, disk silme, vb.).
-- Blocklist `shell=True` subprocess çağrısından önce uygulanıyor.
-- Doğrulama: `managers/code_manager.py:551-560`
-
----
-
-### Teknik Borç Kapanışı
-- `O-1..O-6` güvenlik hardening maddeleri kapatıldı.
-
----
-
-## [v3.0.16] - 2026-03-18
-FAZ-4 Yüksek Öncelikli Güvenlik Hardening — Tüm Y-1..Y-5 bulgular doğrulandı ve kapatıldı.
-
-### ✅ FAZ-4 — Y-1 Doğrulama: `/set-level` Admin Kısıtlaması
-**Dosya:** `web_server.py`
-- `set_level_endpoint` zaten `_require_admin_user` Depends dependency'si ile korunuyor. Kod doğrulamasında bulgu önceden çözülmüş olarak tespit edildi.
-- Doğrulama: `web_server.py:1865` — `async def set_level_endpoint(request: Request, _user=Depends(_require_admin_user))`
-
-### ✅ FAZ-4 — Y-2 Doğrulama: RAG Upload Boyut Limiti
-**Dosya:** `web_server.py`
-- Upload endpoint'i zaten `await file.read(max_bytes + 1)` ile diske yazmadan önce boyut kontrolü yapıyor; aşımda HTTP 413 döndürüyor.
-- Doğrulama: `web_server.py:1756-1762`
-
-### ✅ FAZ-4 — Y-3 Doğrulama: `_summarize_memory` Async Çağrısı
-**Dosya:** `agent/sidar_agent.py`
-- `docs.add_document` zaten `await self.docs.add_document(...)` ile doğru şekilde çağrılıyor; `asyncio.to_thread` anti-pattern yok.
-- Doğrulama: `agent/sidar_agent.py:497`
-
-### ✅ FAZ-4 — Y-4 Doğrulama: X-Forwarded-For TRUSTED_PROXIES
-**Dosya:** `web_server.py`
-- `_get_client_ip()` zaten `Config.TRUSTED_PROXIES` whitelist kontrolü yapıyor; XFF başlığı yalnızca güvenilir proxy IP'lerinden geliyorsa okunuyor.
-- Doğrulama: `web_server.py:945-955`
-
-### ✅ FAZ-4 — Y-5 Düzeltme: REDIS_URL get_system_info'dan Kaldırıldı
-**Dosya:** `config.py`
-- `get_system_info()` dönüş sözlüğünden `redis_url` alanı tamamen kaldırıldı. Kısmi şifre maskeleme yetersiz görüldüğünden (host/port da ifşa oluyordu) alan bütünüyle çıkarıldı.
-- Artık kullanılmayan `import re` de kaldırıldı.
-- Doğrulama: `config.py:561` — alan mevcut değil.
-
----
-
-### Teknik Borç Kapanışı
-- `Y-1..Y-5` yüksek öncelikli güvenlik bulguları kapatıldı.
-
----
-
-## [v3.0.15] - 2026-03-18
-FAZ-3 Düşük Öncelikli Teknik Borç Temizliği — Tüm D-1..D-5 bulgular ve §11.2 refactor kalıntıları kapatıldı.
-
-### ✅ FAZ-3-1 — web_server.py Dead-Code Temizliği (§11.2 / YN3-O-3 Kapatma)
-**Dosya:** `web_server.py`
-- `/auth/register` endpoint'inde `hasattr(payload, "username")` + `payload.get("username", "")` dead-code deseni kaldırıldı; `payload.username.strip()` ile doğrudan Pydantic model alanına erişildi.
-- `/auth/login` endpoint'inde aynı pattern temizlendi; `payload.username.strip()` / `payload.password` doğrudan kullanım.
-- `_RegisterRequest` ve `_LoginRequest` Pydantic modelleri zaten tüm doğrulamayı yapmaktadır; `hasattr`/`.get()` artık gerekmiyordu.
-
-### ✅ FAZ-3-2 — Açık Metrik Endpoint Auth Koruması (D-3)
-**Dosyalar:** `web_server.py`, `config.py`, `.env.example`
-- `/metrics`, `/metrics/llm`, `/metrics/llm/prometheus`, `/api/budget` endpoint'leri `open_paths` whitelist'inden çıkarıldı.
-- `_require_metrics_access(request, user)` Depends dependency eklendi: admin kullanıcı **veya** `METRICS_TOKEN` Bearer token ile erişim.
-- `config.py`'ye `METRICS_TOKEN: str = os.getenv("METRICS_TOKEN", "")` alanı eklendi.
-- `.env.example`'a `METRICS_TOKEN=` belgesi ve açıklaması eklendi.
-
-### ✅ FAZ-3-3 — Test Altyapısı Standardizasyonu (§11.2 Yol Haritası)
-**Dosyalar:** `tests/conftest.py`, `pytest.ini`, `.github/workflows/ci.yml`
-- `conftest.py`: Deprecated `event_loop` session fixture override kaldırıldı; `asyncio` import temizlendi.
-- `pytest.ini`: `asyncio_default_fixture_loop_scope = session` eklendi (pytest-asyncio ≥ 0.21 standart yolu); `slow` ve `pg_stress` marker tanımları eklendi.
-- `ci.yml`: `pg-stress` job eklendi — PostgreSQL 16 service container, `alembic upgrade head` migration adımı ve `pytest -m pg_stress` bağlantı havuzu stres testi otomatikleştirildi.
-
-### ✅ FAZ-3-4a — config.py GPU Fraction Yorum Düzeltmesi (D-1)
-**Dosya:** `config.py`
-- GPU bellek fraksiyonu hata mesajı: `"(0.1–1.0 bekleniyor)"` → `"(0.1–0.99 bekleniyor, 1.0 dahil değil)"` — `frac < 1.0` validation kuralıyla tutarlı hale getirildi.
-- Satır 332 yorum da güncellendi: `# Embedding ve model yüklemeleri için VRAM fraksiyonu (0.1–0.99 bekleniyor, 1.0 dahil değil)`
-
-### ✅ FAZ-3-4b — main.py Port Validasyonu (D-2)
-**Dosya:** `main.py`
-- `--port` argümanı için `parse_args()` sonrasına 1–65535 aralık doğrulayıcısı eklendi.
-- Aralık dışı değer için `parser.error(f"--port değeri 1-65535 arasında...")` ile kullanıcı dostu hata mesajı.
-
-### ✅ FAZ-3-4c — core/rag.py bleach HTML Sanitizasyonu (D-4)
-**Dosyalar:** `core/rag.py`, `pyproject.toml`
-- `bleach` kütüphanesi opsiyonel import olarak eklendi (`try/except ImportError`).
-- `_clean_html()` metodu güncellendi: `bleach` varsa `bleach.clean(html, tags=[], strip=True, strip_comments=True)` ile DOM tabanlı sanitizasyon; yoksa mevcut regex fallback korunur.
-- `pyproject.toml` çekirdek bağımlılıklarına `"bleach~=6.1.0"` eklendi.
-
-### ✅ FAZ-3-4d — agent/sidar_agent.py Prompt Injection Koruması (D-5)
-**Dosya:** `agent/sidar_agent.py`
-- `BASE_DIR` tam dosya sistemi yolu `_build_context()` içinde LLM'e artık gönderilmiyor; `"[proje dizini]"` placeholder kullanılıyor.
-- `GITHUB_REPO` tam URL yerine `owner/repo` formatına indirgendi.
-- `Son dosya` alanı tam yol yerine `Path(last_file).name` (basename) ile sınırlandırıldı.
-- Kod bloğuna güvenlik açıklama yorumu eklendi.
-
----
-
-### Teknik Borç Kapanışı
-- `D-1..D-5` teknik borç kümesi kapatıldı.
-- Coverage gate, test standardizasyonu ve auth/HTML/context güvenlik temizliği tamamlandı.
-
----
-
-## [v3.0.12] - 2026-03-16
-§13 kalan maddeler: Extras fine-tuning tamamlandı; Swarm + React UI temeli oluşturuldu.
-
-### ✅ Bağımlılık Extras Grupları — Tamamlandı
-**Dosya:** `pyproject.toml`, `requirements-dev.txt`, `uv.lock`
-- Yeni extras: `[gemini]` (`google-generativeai`), `[anthropic]` (`anthropic`), `[gpu]` (`nvidia-ml-py`), `[sandbox]` (`docker`), `[gui]` (`eel`)
-- `openai~=1.51.2` core'dan kaldırıldı — codebase httpx ile OpenAI API'yi doğrudan çağırıyor; SDK hiç kullanılmıyordu
-- `opentelemetry-instrumentation-httpx~=0.50b0` `[telemetry]` extras'ına eklendi (web_server.py'de HTTPXClientInstrumentor kullanılıyor)
-- `[all]` kolaylık profili eklendi: tek komutla tüm opsiyonel paketleri kurar
-- `requirements-dev.txt` → `-e .[all,dev]` olarak güncellendi
-- `uv.lock` yeniden oluşturuldu (openai kaldırıldı, otel-httpx eklendi)
-
-### 🔄 Agent Swarm + Marketplace Temeli
-**Dosyalar:** `agent/registry.py`, `agent/swarm.py`
-- **`AgentRegistry`**: Çalışma zamanı ajan keşfi ve eklenti kaydı. `@AgentRegistry.register()` dekoratörü veya `register_type()` ile yeni ajan tipleri eklenir. `find_by_capability()` intent bazlı arama sağlar.
-- **`AgentSpec`**: `role_name`, `capabilities`, `description`, `version`, `is_builtin` meta verisi ile ajan tanımı
-- **`SwarmOrchestrator`**: `run()` (tek görev), `run_parallel()` (eş zamanlı, semafore kısıtlı), `run_pipeline()` (sıralı, context aktarımlı) modları
-- **`TaskRouter`**: `_INTENT_CAPABILITY_MAP` üzerinden intent → yetenek → ajan spec yönlendirmesi; yeni kayıtlı ajanlar otomatik keşfedilir
-- Yerleşik 3 rol (coder, researcher, reviewer) otomatik kayıtlı
-
-### 🔄 React Frontend Scaffold
-**Dizin:** `web_ui_react/`
-- Vite + React 18 + Zustand tabanlı modern SPA
-- **`useWebSocket`**: FastAPI `/ws/{session_id}` endpoint'i ile tam uyumlu; streaming chunks, `[DONE]` sinyali, JSON zarf ve ham metin chunk desteği
-- **`useChatStore`**: Zustand ile mesaj geçmişi, akış tamponu, hata durumu
-- **Bileşenler:** `ChatWindow` (auto-scroll), `ChatMessage` (react-markdown + rehype-highlight), `ChatInput` (Enter gönder, Shift+Enter satır), `StatusBar` (WS durum + yeni oturum)
-- Vite proxy: `/api`, `/ws`, `/admin`, `/sessions` → `localhost:7860`; `npm run dev` ile hazır çalışır
-- Build çıktısı `web_ui_built/` → FastAPI mount'u için hazır yapı
-
-### Güvenlik (önceki commit)
-**Dosyalar:** `config.py`, `tests/test_security_warnings.py`
-- `MEMORY_ENCRYPTION_KEY` boşken `logger.critical()` (JWT_SECRET_KEY pattern'i ile tutarlı)
-- Redis rate limit fallback testleri (10 test)
-
----
-
-### Teknik Borç Kapanışı
-- Bu sürümde ayrı bir teknik borç kapanışı kaydı bulunmuyor; odak sürüm farklarının belgelenmesidir.
-
----
-
-## [v3.0.11] - 2026-03-16
-§13 v4.0 Kurumsal Yol Haritası iyileştirmeleri uygulandı.
-
-### ✅ OTel Span Enstrümantasyonu — OpenAI ve LiteLLM Sağlayıcıları
-**Dosya:** `core/llm_client.py`
-Ollama ve Gemini sağlayıcılarında mevcut olan OpenTelemetry span enstrümantasyonu eksik olan iki sağlayıcıya eklendi:
-- **OpenAI client:** `llm.openai.chat` span; `sidar.llm.provider`, `sidar.llm.model`, `sidar.llm.stream`, `sidar.llm.total_ms` attribute'ları; streaming için `start_span`, non-streaming için `start_as_current_span` pattern'i uygulandı; her iki `except` bloğuna `span_cm.__exit__` eklendi.
-- **LiteLLM client:** `llm.litellm.chat` span; `sidar.llm.provider`, `sidar.llm.model`, `sidar.llm.stream`, `sidar.llm.total_ms` attribute'ları; fallback model döngüsü kapsamında hata yolları dahil tüm çıkış noktaları kapatıldı.
-- **Sonuç:** Tüm 5 LLM sağlayıcısı (Ollama, Gemini, OpenAI, Anthropic, LiteLLM) artık `sidar.llm.*` attribute'larıyla tam kapsamlı OTel izlemeye sahip.
-
-### ✅ OTel Span Enstrümantasyonu — RAG Arama Katmanı
-**Dosya:** `core/rag.py`
-- `opentelemetry` paketinin opsiyonel import'u eklendi (`try/except` — paket yoksa `None`).
-- `search()` async metodu `rag.search` span ile sarıldı; `sidar.rag.mode`, `sidar.rag.session_id`, `sidar.rag.query_len`, `sidar.rag.success` attribute'ları eklendi.
-- `asyncio.to_thread()` ile çağrılan `_search_sync` için span async sınırda (`search()` içinde) oluşturuldu — context propagation korundu.
-
-### ✅ Prompt Registry Admin UI
-**Dosyalar:** `web_ui/index.html`, `web_ui/app.js`
-- `index.html` admin paneline "Prompt Registry" bölümü eklendi: istatistik kartları (aktif rol, toplam sayım), rol filtresi, yenile/yeni prompt butonları, ID/Rol/Versiyon/Durum/Güncellenme/İşlem sütunlarından oluşan tablo, prompt oluşturma/düzenleme formu (rol seçici, etkinleştirme checkbox'ı, textarea).
-- `app.js`'e 5 yeni fonksiyon eklendi: `loadPromptRegistry()` (GET /admin/prompts), `showPromptForm()`, `hidePromptForm()`, `savePrompt()` (POST /admin/prompts), `activatePrompt(id)` (POST /admin/prompts/activate).
-- `showAdminPanel()` fonksiyonu `loadPromptRegistry()` çağrısını içerecek şekilde güncellendi.
-
-### ✅ `.env.example` Genişletildi
-**Dosya:** `.env.example`
-Eksik v4.0 konfigürasyon değişkenleri için yeni bölümler eklendi:
-- **LiteLLM Gateway:** `LITELLM_GATEWAY_URL`, `LITELLM_API_KEY`, `LITELLM_MODEL`, `LITELLM_FALLBACK_MODELS`, `LITELLM_TIMEOUT`
-- **Anlamsal Önbellekleme:** `ENABLE_SEMANTIC_CACHE`, `SEMANTIC_CACHE_THRESHOLD`, `SEMANTIC_CACHE_TTL`, `SEMANTIC_CACHE_MAX_ITEMS`
-- **pgvector RAG:** `RAG_VECTOR_BACKEND`, `PGVECTOR_TABLE`, `PGVECTOR_EMBEDDING_DIM`, `PGVECTOR_EMBEDDING_MODEL`
-- **Event Bus:** `SIDAR_EVENT_BUS_CHANNEL`, `SIDAR_EVENT_BUS_GROUP`
-- **OTel genişletme:** `OTEL_SERVICE_NAME`, `OTEL_INSTRUMENT_FASTAPI`, `OTEL_INSTRUMENT_HTTPX`
-
-### ✅ PROJE_RAPORU.md v3.0.11 Güncellendi
-- §13'te Anlamsal Önbellekleme: 🟡 Kısmen → ✅ Tamamlandı (Redis + cosine similarity + LRU)
-- §13'te Dinamik Prompt ve Model Yönetimi: pending → ✅ Tamamlandı (migration 0002 + 4 API endpoint + Admin UI)
-- §13'te Dağıtık İzlenebilirlik: sınırlı → ✅ Tamamlandı (5 LLM sağlayıcısı + RAG OTel span)
-- v4.0 özet bloğuna 3 yeni tamamlama maddesi eklendi.
-
----
-
-### Teknik Borç Kapanışı
-- Bu sürümde ayrı bir teknik borç kapanışı kaydı bulunmuyor; odak sürüm farklarının belgelenmesidir.
-
----
-
-## [v3.0.9] - 2026-03-16
-YN3 serisi kapatma — v3.0.7 doğrulama turunda tespit edilen 6 bulgunun tamamı giderildi.
-
-### ✅ YN3-O-4 — Yanlış Pozitif Teyit Edildi
-`agent/sidar_agent.py:96,321` — `threading.Lock()` `_load_instruction_files()` sync metodunda doğru kullanılıyor; metot `asyncio.to_thread()` ile thread pool'da çalışıyor. `asyncio.Lock()` thread-safe olmadığından değişiklik gerekmez.
-
-### ✅ YN3-O-1 — `_ANYIO_CLOSED` Artık Kullanılıyor
-**Dosya:** `web_server.py`
-`_ANYIO_CLOSED` WebSocket handler dış `except` bloğuna eklendi. `anyio.ClosedResourceError` artık `WebSocketDisconnect` ile eşdeğer biçimde işleniyor; beklenmedik diğer istisnalar ise `logger.warning` ile iletilir.
-
-### ✅ YN3-O-2 — `_rate_lock` Dead Code Kaldırıldı
-**Dosyalar:** `web_server.py`, `tests/test_targeted_coverage_additions.py`, `tests/test_sidar.py`
-* `_rate_lock: asyncio.Lock | None = None` satırı kaldırıldı (`web_server.py:467`).
-* Test dosyalarındaki `web_server._rate_lock = asyncio.Lock()` ifadeleri (6 adet, 2 dosya) `web_server._local_rate_lock = asyncio.Lock()` olarak güncellendi. Artık testler üretim kodunun gerçekten kullandığı kilidi sıfırlıyor; test izolasyonu tamamlandı.
-* `_rate_data` alias'ı korundu — `_local_rate_limits` sözlüğü için geçerli test temizleme noktası.
-
-### ✅ YN3-O-3 — `isinstance(payload, dict)` Redundant Kaldırıldı
-**Dosya:** `web_server.py` — `/auth/register` (satır 365-366) ve `/auth/login` (satır 382-383)
-FastAPI Pydantic doğrulaması `payload`'ı her zaman model örneği olarak sağlar; `isinstance(payload, dict)` dalı hiçbir zaman `True` olmuyordu. `payload.username` / `payload.password` doğrudan kullanılıyor.
-
-### ✅ YN3-D-1 — JWT_SECRET_KEY Config'e Taşındı + Kritik Uyarı Eklendi
-**Dosyalar:** `config.py`, `web_server.py`, `.env.example`
-* `JWT_SECRET_KEY`, `JWT_ALGORITHM`, `JWT_TTL_DAYS` `config.py` `Web Arayüzü` bölümüne eklendi.
-* `web_server.py`'de `_get_jwt_secret()` yardımcı fonksiyonu oluşturuldu; `JWT_SECRET_KEY` boşsa `logger.critical(...)` ile açık uyarı verilir.
-* `.env.example`'a JWT bölümü ve güvenlik notu eklendi.
-
-### ✅ YN3-D-2 — Grafana URL Dinamik Injection
-**Dosyalar:** `config.py`, `web_server.py`, `web_ui/index.html`, `.env.example`
-* `GRAFANA_URL` env değişkeni `config.py`'ye eklendi (varsayılan: `http://localhost:3000`).
-* `index()` route'u artık `window.__SIDAR_CONFIG__ = {"grafanaUrl": "..."}` config script'ini `<head>` içine inject ediyor.
-* `web_ui/index.html:286` Grafana butonu `window.__SIDAR_CONFIG__.grafanaUrl` değerini kullanıyor; fallback olarak yine `http://localhost:3000` korunuyor.
-* `.env.example`'a `GRAFANA_URL` ve açıklaması eklendi.
-
----
-
-### Teknik Borç Kapanışı
-- Bu sürümde ayrı bir teknik borç kapanışı kaydı bulunmuyor; odak sürüm farklarının belgelenmesidir.
-
----
-
-## [v3.0.8] - 2026-03-16
-YN2 serisi kapatma — v3.0.6 doğrulama turunda tespit edilen her iki operasyonel uyumsuzluk giderildi.
-
-### ✅ YN2-Y-1 Kapatıldı — CI Kurulum Adımı Düzeltildi
-
-**[YN2-Y-1 Çözüldü] `.github/workflows/ci.yml` — `pip install -r requirements.txt` satırı kaldırıldı**
-* **Kök neden:** `ci.yml` `Install dependencies` adımı var olmayan `requirements.txt` dosyasını yüklemeye çalışıyordu. Bu, CI kurulumunu hata ile sonlandırıyor ve `pytest-asyncio` hiç yüklenmiyordu. `pytest.ini:4` `asyncio_mode = auto` ayarı aktif olmasına rağmen plugin eksikliği nedeniyle async testler çalışamıyordu.
-* **Uygulanan düzeltme:** `pip install -r requirements.txt` satırı kaldırıldı. `requirements-dev.txt` zaten `-e .[rag,postgres,telemetry,dev]` komutuyla `pyproject.toml[dev]`'daki `pytest-asyncio>=0.23.0` dahil tüm bağımlılıkları yükler.
-* **Değişen dosya:** `.github/workflows/ci.yml` satır 22 (eski satır silindi)
-* **Doğrulama zinciri:** `requirements-dev.txt:3` → `pyproject.toml:40` `pytest-asyncio>=0.23.0`
-
-### ✅ YN2-O-1 Kapatıldı — Mock Varlığı Doğrulandı
-
-**[YN2-O-1 Doğrulandı] `tests/test_code_manager_runtime.py:280-285` — socket mock'ları zaten mevcut**
-* `os.stat()` ve `stat.S_ISSOCK()` satır satır incelemeyle tam mock'lanmış olduğu teyit edildi.
-* Rapor, mevcut mock'ları gözden kaçırmıştı; test deterministik olduğu onaylandı.
-* Ek kod değişikliği gerektirmedi.
-
----
-
-### Teknik Borç Kapanışı
-- Bu sürümde ayrı bir teknik borç kapanışı kaydı bulunmuyor; odak sürüm farklarının belgelenmesidir.
-
----
-
-## [v3.0.7] - 2026-03-16
-Tam kaynak denetimi (v3.0.7) — tüm kaynak dosyalar yeniden satır satır incelendi; YN2-O-1 kapatıldı; YN2-Y-1 hâlâ açık; 6 yeni bulgu (YN3 serisi) kayıt altına alındı.
-
-### ✅ YN2-O-1 Kapatıldı
-
-**[YN2-O-1 Çözüldü] `managers/code_manager.py` — Docker socket fallback test mock'ları doğrulandı**
-* `tests/test_code_manager_runtime.py:281-285` satırlarında `os.stat()` `st_mode=0` döndüren sahte nesneyle, `stat.S_ISSOCK()` her zaman `True` döndürecek şekilde tam mock'lanmıştır.
-* Test artık WSL2 socket fallback akışını deterministik biçimde doğrulamaktadır.
-* Referans: `tests/test_code_manager_runtime.py:238-285`
-
-### 🟠 YN2-Y-1 Hâlâ Açık
-
-**[YN2-Y-1 Devam Ediyor] `pytest.ini` / `pyproject.toml` — async test plugin bağımlılık uyumsuzluğu**
-* `pytest.ini:4` içinde `asyncio_mode = auto` aktif. `pytest-asyncio>=0.23.0` yalnızca `pyproject.toml[dev]` extras'ında tanımlı.
-* `environment.yml` `-e .[rag,postgres,telemetry,dev]` ile conda ortamında dev dahil ediliyor.
-* Bare `pip install -e .` ile kurulan ortamlarda (`dev` extras olmadan) `pytest-asyncio` yüklenmez ve async testler `"async def functions are not natively supported"` hatası verir.
-* **Öneri:** `pytest-asyncio` ve `anyio[trio]` paketlerini `pyproject.toml` ana `dependencies`'den değil, CI workflow'da `pip install -e ".[dev]"` ile zorunlu kılarak çözmek veya CI adımına eklemek.
-
-### ✅ YN3 Serisi — Yeni Tespit Edilen Bulgular
-
-| # | Dosya | Satır | Ciddiyet | Açıklama |
-|---|-------|-------|----------|----------|
-| YN3-O-4 | `agent/sidar_agent.py` | `96`, `321` | 🟠 ORTA | `threading.Lock()` async fonksiyon içinde kullanılıyor; event loop'u anlık bloklama riski. `asyncio.Lock()` ile değiştirilmeli. |
-| YN3-O-1 | `web_server.py` | `32-35` | 🟡 ORTA | `_ANYIO_CLOSED` dead code — import ediliyor ama hiç kullanılmıyor. |
-| YN3-O-2 | `web_server.py` | `466-467` | 🟡 ORTA | `_rate_data` ve `_rate_lock` dead code — `_local_rate_lock` kullanılırken bu değişkenler tanımlı ama işlevsiz. |
-| YN3-O-3 | `web_server.py` | `365-366`, `382-383` | 🟡 ORTA | `isinstance(payload, dict)` redundant — FastAPI Pydantic validation sonrası `payload` her zaman model örneğidir; `.get()` çalışmaz. |
-| YN3-D-1 | `web_server.py` | `196`, `207` | 🟡 DÜŞÜK | `"sidar-dev-secret"` hardcoded JWT fallback — production'da `JWT_SECRET_KEY` set edilmezse imzalar tahmin edilebilir. |
-| YN3-D-2 | `web_ui/index.html` | `286` | 🟡 DÜŞÜK | `http://localhost:3000` hardcoded Grafana URL — container ortamında düzgün çalışmayabilir. |
-
----
-
-### Teknik Borç Kapanışı
-- Bu sürümde ayrı bir teknik borç kapanışı kaydı bulunmuyor; odak sürüm farklarının belgelenmesidir.
-
----
-
-## [v3.0.6] - 2026-03-16
-Doğrulama turu — v3.0.4/v3.0.5 bulguları kod üzerinde yeniden teyit edildi; 2 yeni operasyonel uyumsuzluk tespit edildi (YN2-Y-1, YN2-O-1).
-
-_(Ayrıntılar PROJE_RAPORU.md §11.3'te kayıtlıdır.)_
-
----
-
-### Teknik Borç Kapanışı
-- Bu sürümde ayrı bir teknik borç kapanışı kaydı bulunmuyor; odak sürüm farklarının belgelenmesidir.
-
----
-
-## [v3.0.5] - 2026-03-16
-Tam kaynak denetimi (v3.0.5) — v3.0.4 tüm bulgular doğrulandı/kapatıldı; 5 yeni bulgu tespit edilip giderildi.
-
-### ✅ v3.0.4 Bulgularının Doğrulanması ve Kapatılması
-
-Aşağıdaki bulgular satır satır kaynak incelemesiyle doğrulanmıştır.
-
-| Bulgu | Dosya | Durum |
-|-------|-------|-------|
-| K-1 — `.env`/`.example` `_SAFE_EXTENSIONS`'dan kaldırıldı | `web_server.py:876` | ✅ Doğrulandı |
-| K-2 — `container.wait()` dict dönüş tipi | `managers/code_manager.py:393` | ✅ Yanlış Pozitif Teyit |
-| Y-1 — Test kodu enjeksiyonu `repr()` ile giderildi | `agent/roles/reviewer_agent.py:52` | ✅ Doğrulandı |
-| Y-2 — asyncpg `endswith("1")` → `int(...split()[-1]) > 0` | `core/db.py:516–519` | ✅ Doğrulandı |
-| Y-3 — `handle()` blocking çağrıları `asyncio.to_thread` | `agent/auto_handle.py:93,96,108` | ✅ Doğrulandı |
-| Y-4 — `add_document_from_file` sync | `core/rag.py:427` | ✅ Yanlış Pozitif Teyit |
-| Y-5 — `_root = Path(__file__).parent.resolve()` | `web_server.py:838,879,1105` | ✅ Doğrulandı |
-| O-1 — ReDoS: `.{0,200}` + 2000 karakter guard | `agent/auto_handle.py:56,72` | ✅ Doğrulandı |
-| O-2 — `re.IGNORECASE` zaten mevcut | `managers/security.py:30` | ✅ Yanlış Pozitif Teyit |
-| O-3 — `logger.warning()` webhook secret eksikliği | `web_server.py:1294` | ✅ Doğrulandı |
-| O-4 — `__exit__(*sys.exc_info())` — 5 lokasyon | `core/llm_client.py:304,383,542,705,890` | ✅ Doğrulandı |
-| O-5 — `_init_lock = asyncio.Lock()` pre-created | `agent/sidar_agent.py:101` | ✅ Doğrulandı |
-| O-6 — `asyncio.wait_for(..., timeout=REACT_TIMEOUT)` | `agent/core/supervisor.py:86` | ✅ Doğrulandı |
-| O-7 — `stat.S_ISSOCK()` WSL2 socket doğrulaması | `managers/code_manager.py:173` | ✅ Doğrulandı |
-| D-1 — `async def` shim'ler `def`'e dönüştürüldü | `agent/core/memory_hub.py:45` | ✅ Doğrulandı |
-| D-2 — `Version()` sürüm karşılaştırması | `managers/package_info.py:176` | ✅ Doğrulandı |
-| D-3 — `daily_usage_usd` vs `total_usage_usd` ayrıldı | `core/llm_metrics.py:188` | ✅ Doğrulandı |
-| D-4 — `self._tasks = []` __init__'te başlatılıyor | `managers/todo_manager.py:65` | ✅ Yanlış Pozitif Teyit |
-| D-5 — Açıklayıcı `KeyError` mesajı | `agent/core/registry.py:19` | ✅ Doğrulandı |
-| D-6 — FTS read `_write_lock` ile korundu | `core/rag.py:661` | ✅ Doğrulandı |
-
-### ✅ v3.0.5 Yeni Bulgular — Giderilen
-
-**[YN-K-1 Çözüldü] `core/rag.py` — `.env`/`.example` `_TEXT_EXTS`'den kaldırıldı (K-1 bypass)**
-* `add_document_from_file` içindeki `_TEXT_EXTS` kümesinden `.env` ve `.example` uzantıları çıkarıldı.
-* Artık `{"path": ".env"}` ile `/rag/add-file` endpoint'i üzerinden gizli dosyalar RAG deposuna indekslenemiyor.
-* Referans: `core/rag.py:446`
-
-**[YN-Y-1 Çözüldü] `agent/sidar_agent.py` — `_lock` lazy None init giderildi**
-* `self._lock = None` → `self._lock = asyncio.Lock()` (`__init__` içinde).
-* `respond()` içindeki `if self._lock is None:` guard kaldırıldı.
-* O-5'te `_init_lock` için uygulanan aynı pattern `_lock` için de tamamlandı.
-* Referans: `agent/sidar_agent.py:53`
-
-**[YN-Y-2 Çözüldü] `core/rag.py` — `add_document_from_url` SSRF koruması eklendi**
-* `_validate_url_safe()` statik metodu eklendi:
-  - Yalnızca `http`/`https` şemalarına izin verilir.
-  - IP adresi private/loopback/link-local/reserved ise `ValueError` fırlatır.
-  - `localhost`, `169.254.169.254`, `metadata.google.internal` hostname'leri engellendi.
-* `max_redirects=5` sınırı eklendi.
-* `urllib.parse` ve `ipaddress` modülleri import edildi.
-* Referans: `core/rag.py:411–431`
-
-**[YN-Y-3 Çözüldü] `managers/github_manager.py` — `.env`/`.example` `SAFE_TEXT_EXTENSIONS`'dan kaldırıldı**
-* GitHub deposu dosyası okuma izninden `.env` ve `.example` uzantıları çıkarıldı.
-* K-1 güvenlik gerekçesiyle (hassas ortam değişkeni dosyaları) tutarlı hale getirildi.
-* Referans: `managers/github_manager.py:33`
-
-**[YN-O-1 Çözüldü] `web_server.py` — Auth endpoint'leri Pydantic model kullanıyor**
-* `_RegisterRequest` (`username` min_length=3/max_length=64, `password` min_length=6/max_length=128) modeli eklendi.
-* `_LoginRequest` (`username` max_length=64, `password` max_length=128) modeli eklendi.
-* `/auth/register` ve `/auth/login` endpoint'leri `payload: dict` yerine bu modelleri kullanıyor.
-* FastAPI'nin otomatik doğrulaması devreye girdiğinden `str(None)` DB'ye ulaşamaz.
-* Referans: `web_server.py:269–306`
-
----
-
-### Teknik Borç Kapanışı
-- Bu sürümde ayrı bir teknik borç kapanışı kaydı bulunmuyor; odak sürüm farklarının belgelenmesidir.
-
----
-
-## [v3.0.4] - 2026-03-16
-Tam kaynak denetimi — test istatistikleri güncellendi, kapsama kalite kapısı %100'e yükseltildi, 20 yeni güvenlik/işlevsellik bulgusu tespit edilip giderildi.
-
-### ✅ Güvenlik Düzeltmeleri
-
-**[K-1 Çözüldü] `web_server.py` — `.env`/`.example` `/file-content` endpoint'inden engellendi**
-* `_SAFE_EXTENSIONS` kümesinden `.env` ve `.example` kaldırıldı; bu uzantılara `415 Unsupported Media Type` döndürülüyor.
-* Regresyon testi `tests/test_web_server_runtime.py::test_vendor_index_and_file_content_guard_paths`'e eklendi.
-
-**[Y-1 Çözüldü] `agent/roles/reviewer_agent.py` — Test kodu enjeksiyonu engellendi**
-* Triple-quote string embed → `repr()` ile tüm özel karakterler kaçışlandı.
-
-**[Y-2 Çözüldü] `core/db.py` — asyncpg result `endswith("1")` kırılganlığı giderildi**
-* `int(str(result).split()[-1]) > 0` ile "UPDATE 10+" senaryoları doğru işleniyor.
-
-**[Y-3 Çözüldü] `agent/auto_handle.py` — Async bağlamda bloklayıcı senkron çağrılar**
-* `handle()` içinde `_try_*` çağrıları `await asyncio.to_thread(...)` ile sarmalandı.
-
-**[Y-5 Çözüldü] `web_server.py` — Symlink traversal tutarsızlığı**
-* 3 endpoint'te `_root = Path(__file__).parent.resolve()` yapıldı.
-
-### ✅ Asenkron / Yapısal Düzeltmeler
-
-| Bulgu | Değişiklik |
-|-------|-----------|
-| O-1 ReDoS | `\bfirst\b.{0,200}\bthen\b` + 2000 karakter guard |
-| O-3 Webhook | `logger.warning()` secret eksikliği için |
-| O-4 `__exit__` | `sys.exc_info()` ile 5 lokasyon güncellendi |
-| O-5 `_init_lock` | `asyncio.Lock()` pre-created in `__init__` |
-| O-6 P2P timeout | `asyncio.wait_for(..., REACT_TIMEOUT)` |
-| O-7 Docker socket | `stat.S_ISSOCK()` doğrulaması |
-
-### ✅ Kalite / Mimari Düzeltmeler
-
-| Bulgu | Değişiklik |
-|-------|-----------|
-| D-1 async shims | `async def` → `def` (4 metot) |
-| D-2 Version | `packaging.version.Version()` karşılaştırması |
-| D-3 daily/total | 24 saatlik pencere ayrımı |
-| D-5 KeyError | Açıklayıcı hata mesajı |
-| D-6 FTS read | `_write_lock` ile korundu |
-
----
-
-### Teknik Borç Kapanışı
-- Bu sürümde ayrı bir teknik borç kapanışı kaydı bulunmuyor; odak sürüm farklarının belgelenmesidir.
-
----
-
-## [v3.0.1] - 2026-03-15
-Teknik borç temizleme + tam repo denetimi yayını — tüm v3.0 nesil teknik borç kalemleri kapatıldı, Bölüm 11.2 tablosu sıfırlandı; satır sayımları güncellendi; `SANDBOX_*` env var dokümantasyon boşluğu kapatıldı.
-
-### ✅ Ödenmiş Teknik Borçlar
-
-**[Borç #2 Çözüldü] Vanilla JS UI ölçeklenme riski (`web_ui/*.js`)**
-* `seedUIStore()` IIFE `app.js`'e eklenerek 12 paylaşımlı durum anahtarı (`isCurrentUserAdmin`, `isStreaming`, `msgCounter`, `currentRepo`, `currentBranch`, `defaultBranch`, `currentSessionId`, `attachedFileContent`, `attachedFileName`, `allSessions`, `cachedRepos`, `cachedBranches`) merkezi varsayılanlarla başlatıldı.
-* Tüm dosya genelindeki `let` global değişkenleri kaldırıldı; `chat.js` 10 `let` bildirimi, `sidebar.js` `_cachedBranches`, `app.js` `isCurrentUserAdmin` tamamen UIStore'a taşındı.
-* Çift yazma (double-write) anti-pattern'i kaldırıldı — `setUIState()` / `_setState()` tek ve yetkin kaynak oldu.
-* `sidebar.js`'e `_getState` shim'i eklendi; dosyalar arası tüm koordinasyon `window.UIStore.state` üzerinden yürüyor.
-* `app.js`: `loadGitInfo()` doğrudan global atamaları bıraktı, ESC kısayol ve DOMContentLoaded init UIStore okuyor.
-
-**[Borç #3 Çözüldü] Sağlayıcılar arası tool-calling şema farkları (`core/llm_client.py`)**
-* `SIDAR_TOOL_JSON_INSTRUCTION` paylaşımlı sabiti eklendi — Anthropic'teki dağınık inline string kaldırıldı; tüm sağlayıcılar aynı talimat metnini kullanıyor.
-* `BaseLLMClient.json_mode_config()` soyut metodu eklendi — her alt sınıf kendi payload konfigürasyonunu kapsülüyor; `build_provider_json_mode_config()` dışarıdan string dispatch'e gerek kalmadı.
-* `BaseLLMClient._inject_json_instruction()` statik yardımcısı: mevcut system mesajına talimatı birleştirir, yoksa başa ekler.
-* `OllamaClient` → `{"format": SIDAR_TOOL_JSON_SCHEMA}` (değişmedi, metoda taşındı).
-* `GeminiClient` → `response_mime_type: application/json` + system_text'e talimat enjeksiyonu.
-* `OpenAIClient` → `json_object` yerine `json_schema` structured outputs (`strict: True`) + `_inject_json_instruction` ile system prompt enjeksiyonu.
-* `AnthropicClient` → `json_mode_config()` `{}` döndürür; sistem talimatı `SIDAR_TOOL_JSON_INSTRUCTION` sabiti üzerinden enjekte edilir.
-
-### 🔍 Çoklu Denetim Turu Bulguları
-
-**Satır sayısı güncellemeleri (Borç #2 + #3 refaktörleri sonrası gerçek ölçüm):**
-* `core/llm_client.py`: 860 → 898 satır (Borç #3 ilaveleri: `json_mode_config()`, `_inject_json_instruction()`, `SIDAR_TOOL_JSON_INSTRUCTION`)
-* `web_ui/chat.js`: 721 → 708 satır (Borç #2: 10 `let` bildirimi kaldırıldı)
-* `web_ui/sidebar.js`: 421 → 412 satır (Borç #2: `_cachedBranches` ve double-write kaldırıldı)
-* `web_ui/app.js`: 710 → 733 satır (Borç #2: `seedUIStore()` IIFE ve `setUIState()` çağrıları eklendi)
-* Web UI toplamı: 4.239 → 4.240 satır; Python kaynak toplamı: ~12.160 → 12.185 satır
-
-**`SANDBOX_*` ortam değişkeni dokümantasyon boşluğu (kapatıldı):**
-* `SANDBOX_MEMORY`, `SANDBOX_CPUS`, `SANDBOX_NETWORK`, `SANDBOX_PIDS_LIMIT`, `SANDBOX_TIMEOUT` değişkenleri `config.py::SANDBOX_LIMITS` sözlüğünde tanımlı olmasına rağmen `.env.example`'da ve PROJE_RAPORU.md §12.11'de yer almıyordu.
-* Her iki dosyaya da eklenip belgelenmiştir.
-
-**Denetim tespitleri (eylem gerektirmeyen / temiz):**
-* 134 Python dosyasının tamamı sözdizimi hatası içermiyor (`ast.parse()` doğrulandı).
-* Dairesel import riski yok; tüm iç bağımlılık grafiği tek yönlü DAG.
-* Hardcoded secret/credential yok; tüm hassas değerler `os.getenv()` veya yardımcı sarmalayıcılar üzerinden okunuyor.
-* `ENABLE_MULTI_AGENT` legacy bayrak olarak `config.py`'de `True` sabitine dönüştürüldü; `.env` üzerinden değiştirilemiyor (belgelendi).
-
-**Bağımsız kod incelemelerinden gelen yeni açık teknik borçlar (§11.2'ye eklendi):**
-* **Borç #4:** `inspect.isawaitable()` köprüsü — `memory.add()`/`memory.clear()` async olmasına rağmen `sidar_agent.py:432-434`, `397-399`'da wrapper mevcut.
-* **Borç #5:** `ConversationMemory.__init__` `file_path` API kalıntısı — DB-first mimarisiyle çelişen `MEMORY_FILE` parametresi.
-* **Borç #6:** RAG `DocumentStore` senkron blokajı — `add_document()` ve `search()` sync; `asyncio.to_thread()` ile wrap ediliyor.
-* **Borç #7:** `requirements.txt` zorunlu ↔ runtime opsiyonel çelişkisi — `asyncpg`, `opentelemetry-*`, `chromadb` zorunlu listede ama `try/except` ile opsiyonel.
-* **Borç #8 (kritik):** `ToolCall` Pydantic modeli `sidar_agent.py`'de tanımlı değil → `test_sidar.py` ImportError, `test_sidar_agent_runtime.py` AttributeError.
-* **Borç #9 (kritik):** `_tool_subtask` metodu ve paralel ReAct kod parçacıkları `sidar_agent.py`'de yok → 8+ test kırık (`test_sidar_agent_runtime.py`, `test_parallel_react_improvements.py`, `test_agent_subtask.py`).
-* **Borç #10:** `main.py` `DummyConfig` fail-fast sorunu — `config.py` yoksa sahte ayarlarla devam edilmesi.
-* **§7.2/7.4:** `asyncpg`, `opentelemetry-*`, `chromadb` bağımlılık statüsü ⚠ notu ile güncellendi.
-* **§13:** JWT stateless auth ve dependency extras grupları v4.0 yol haritasına eklendi.
-
-### Teknik Borç Kapanışı
-- Bu sürümde ayrı bir teknik borç kapanışı kaydı bulunmuyor; odak sürüm farklarının belgelenmesidir.
-
----
-
-## [v3.0.0] - 2026-03-11
-Bu sürüm, SİDAR'ın kurumsal/SaaS odaklı v3.0 kapanış sürümüdür.
-
-### ✅ Öne çıkanlar
-* **Kurumsal veri katmanı:** Alembic migration zinciri, SQLite→PostgreSQL cutover rehberi ve CI dry-run/prova kapıları.
-* **Multi-Agent varsayılan mimari:** Supervisor + Coder + Researcher + Reviewer akışının üretim odağında olgunlaştırılması.
-* **Güvenlik ve erişim:** Bearer auth, admin panel, WebSocket auth-handshake ve graceful session-expiry UX.
-* **Gözlemlenebilirlik:** Prometheus metrikleri + Grafana provisioning/dashboard ile maliyet/hata/kullanıcı görünürlüğü.
-* **Sandbox operasyonu:** gVisor/Kata host runtime otomasyon scripti ve rollout dokümantasyonu.
-
-### ✅ Final doğrulama kayıtları (Audit #8–#11)
-* **Güvenlik:** WebSocket zorunlu Auth Handshake ve ConversationMemory fail-closed (`MemoryAuthError`) sertleştirmesi eklendi.
-* **QA:** ReviewerAgent ile dinamik unit test üretimi ve `MAX_QA_RETRIES=3` devre kesici (circuit-breaker) mekanizması devreye alındı.
-* **Operasyon:** SQLite'tan PostgreSQL'e geçiş için `migrate_sqlite_to_pg.py` scripti ve Alembic migration zinciri standardize edildi.
-* **Kalite:** Test coverage alt sınırı güncel `pyproject.toml fail_under=99` ratchet baseline'ına taşındı; CI üzerinde profile-aware bloklayıcı gate olarak izlenir.
-
-### Added (Eklenenler)
-* **[Veritabanı Altyapısı]:** Kalıcılık katmanı JSON modelinden async PostgreSQL + Alembic migration temeline taşındı.
-* **[Web Arayüzü]:** WebSocket destekli gerçek zamanlı Web UI üretim akışına alındı.
-* **[Güvenli Kod Çalıştırma]:** Zero-Trust Docker REPL sandbox entegrasyonu ile ajan kod yürütme yolu izole edildi.
-* **[Telemetri ve İzleme]:** Prometheus + Grafana hattı ile token/maliyet/gecikme görünürlüğü üretim seviyesine çıkarıldı.
-
-### ✅ Ödenmiş teknik borçlar (v3.0 kapanış)
-* **[Çözüldü] JSON tabanlı bellek kırılganlığı:** Kalıcılık DB katmanına taşındı; kullanıcı/oturum verileri UUID ve zaman damgası odaklı kayıt modeliyle yönetiliyor.
-* **[Çözüldü] Senkron darboğazlar:** Kritik çağrı yolları async modele geçirildi (`httpx`/async servis akışları) ve blocking etkisi azaltıldı.
-* **[Çözüldü] Tek ajan sınırı:** Supervisor-first çoklu ajan (Coder/Researcher/Reviewer) + P2P delegasyon/QA döngüsü üretim akışına alındı.
-* **[Çözüldü] İzolasyon-güvenlik açığı:** Docker sandbox, path/symlink/blacklist kontrolleri ve auth katmanı sertleştirmeleri ile Zero-Trust çizgisi güçlendirildi.
-* **[Çözüldü] Test/CI kalite eşiği:** GitHub Actions kalite kapıları, migration kontrolleri ve coverage ratchet gate (`fail_under=99`) ve opt-in `%100` campaign profili operasyonel standarda bağlandı.
-
-#### Önceki Denetimlerde (Audit) Çözüldüğü Doğrulanan Diğer Maddeler
-| Madde | Doğrulama | Dosya / Referans |
-|-------|-----------|-----------------|
-| CLI `asyncio.Lock` lifetime hatası | ✅ `_interactive_loop_async()` tek async fonksiyon; `asyncio.run()` döngü dışında | `cli.py:1` |
-| RAG oturum izolasyonu | ✅ `session_id` filtresi ChromaDB `where=` ve SQLite `WHERE` clause | `rag.py:_fetch_chroma`, `_fetch_bm25` |
-| RRF hibrit sıralama | ✅ `_rrf_search()` k=60, her iki motordan bağımsız getirme | `rag.py:_rrf_search` |
-| Sliding window özetleme | ✅ `apply_summary()` son `keep_last`=4 mesajı korur | `memory.py:apply_summary` |
-| Web UI modülarizasyonu | ✅ 6 ayrı dosya; `StaticFiles` mount aktif | `web_server.py`, `web_ui/` |
-| Bearer Token Auth | ✅ `basic_auth_middleware` + `auth_tokens` doğrulaması | `web_server.py`, `core/db.py` |
-| DDoS rate limit | ✅ `ddos_rate_limit_middleware` 120 istek/60 sn; `/health`, `/healthz`, `/readyz`, `/ui/`, `/static/` muaf | `web_server.py`, `web/middleware/ratelimit.py` |
-| LLM istemci yeniden yapılandırma | ✅ `BaseLLMClient` ABC + 3 concrete impl | `llm_client.py` |
-| DuckDuckGo timeout koruması | ✅ `asyncio.wait_for` + doğru except sırası | `web_search.py` |
-| GitHub Issue yönetimi | ✅ list/create/comment/close; 4 metod + 4 ajan aracı | `github_manager.py`, `tooling.py` |
-| PR diff aracı | ✅ `get_pull_request_diff(pr_number)` + `github_pr_diff` ajan aracı | `github_manager.py` |
-| `scan_project_todos` | ✅ `TodoManager.scan_project_todos()` + `ScanProjectTodosSchema` | `todo_manager.py`, `tooling.py` |
-| Non-root Docker kullanıcısı | ✅ `sidaruser` uid=10001 | `Dockerfile` |
-| Docker health check | ✅ web modunda `/status`, CLI'de PID 1 kontrol | `Dockerfile` |
-| RAG pre-cache | ✅ `PRECACHE_RAG_MODEL=true` build-arg ile `all-MiniLM-L6-v2` önceden indirilir | `Dockerfile` |
-| SQLite FTS5 disk tabanlı BM25 | ✅ `_init_fts()` PersistentClient; `unicode61 remove_diacritics 1` tokenizer | `rag.py:_init_fts` |
-| Prometheus metrikleri | ✅ `update_prometheus_metrics()` + lazy Gauge init | `system_health.py` |
-| OpenAI istemci | ✅ `OpenAIClient` + `response_format: json_object` | `llm_client.py` |
-| Drag-drop dosya yükleme | ✅ `/api/rag/upload` endpoint; temp dizin temizleme | `web_server.py` |
-| Coverage zorunluluğu (`pyproject.toml fail_under=99` + opt-in `%100` campaign) | ✅ `run_tests.sh` içinde profile-aware coverage kapısı tanımlı | `run_tests.sh` |
-| Performans benchmark baseline'ları | ✅ `tests/test_benchmark.py` ile ChromaDB/BM25/regex hedef eşikleri doğrulanıyor | `tests/test_benchmark.py` |
-
-### Teknik Borç Kapanışı
-- Bu sürümde ayrı bir teknik borç kapanışı kaydı bulunmuyor; odak sürüm farklarının belgelenmesidir.
-
----
-
-## [v2.10.8] - 2026-03-10
-Bu sürümde RAG cold-start optimizasyonu tamamlandı ve Anthropic (Claude) sağlayıcı desteği eklendi.
-
-### ✅ RAG Soğuk Başlangıç İyileştirmesi
-* **Startup prewarm (`web_server.py`):** FastAPI lifespan başlangıcında `_prewarm_rag_embeddings()` görevi ile Chroma/embedding hazırlığı arka planda tetiklenir.
-* **Kullanıcı deneyimi:** İlk RAG çağrısındaki model yükleme gecikmesi sunucu başlangıcına taşındı.
-
-### ✅ Anthropic (Claude) Sağlayıcı Desteği
-* **Yeni istemci (`core/llm_client.py`):** `AnthropicClient` eklendi; non-stream ve stream chat akışları desteklenir.
-* **Yapılandırma (`config.py`, `.env.example`):** `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `ANTHROPIC_TIMEOUT` değişkenleri eklendi.
-* **Başlatıcı/UI/bağımlılıklar:** CLI ve launcher provider seçeneklerine `anthropic` eklendi; Web UI model seçim listesi güncellendi; `requirements.txt` ve `environment.yml` dosyalarına `anthropic` paketi eklendi.
-
-### Teknik Borç Kapanışı
-- Bu sürümde ayrı bir teknik borç kapanışı kaydı bulunmuyor; odak sürüm farklarının belgelenmesidir.
-
----
-
-## [v2.10.7] - 2026-03-08
-Bu sürümde çoklu ortam (environment) yapılandırma desteği tamamlandı.
-
-### ✅ Çevre Başına Konfigürasyon
-* **Ortam bazlı dotenv yükleme (`config.py`):** `SIDAR_ENV` değişkeni ile `.env.development`, `.env.production`, `.env.test` gibi dosyalar temel `.env` üzerine `override=True` ile yüklenebilir hale getirildi.
-
-### Teknik Borç Kapanışı
-- Bu sürümde ayrı bir teknik borç kapanışı kaydı bulunmuyor; odak sürüm farklarının belgelenmesidir.
-
----
-
-## [v2.10.6] - 2026-03-08
-Bu sürümde GitHub entegrasyonu pull modelden webhook tabanlı push modele genişletildi.
-
-### ✅ GitHub Webhook Desteği
-* **Webhook alıcısı (`web_server.py`):** Push, Pull Request ve Issue event'lerini dinleyen `POST /api/webhook` endpoint'i eklendi.
-* **HMAC doğrulaması (`web_server.py`, `config.py`):** `X-Hub-Signature-256` başlığı `GITHUB_WEBHOOK_SECRET` ile doğrulanır; geçersiz imza istekleri `401` ile reddedilir.
-* **Ajan belleği bildirimi (`web_server.py`):** Doğrulanan webhook event'leri `[GITHUB BİLDİRİMİ]` formatında konuşma belleğine asenkron olarak yazılır.
-
-### Teknik Borç Kapanışı
-- Bu sürümde ayrı bir teknik borç kapanışı kaydı bulunmuyor; odak sürüm farklarının belgelenmesidir.
-
----
-
-## [v2.10.5] - 2026-03-08
-Bu sürümde güvenlik seviyesi geçişleri ajanın kalıcı sohbet belleğine işlenecek şekilde geliştirildi.
-
-### ✅ Güvenlik Seviyesi Geçiş Logu
-* **Runtime seviye değişimi (`managers/security.py`, `agent/sidar_agent.py`):** `SecurityManager.set_level(...)` ve `SidarAgent.set_access_level(...)` eklendi; seviye değişimleri `[GÜVENLİK BİLDİRİMİ]` formatında konuşma belleğine kalıcı olarak yazılıyor.
-* **CLI ve Web entegrasyonu (`cli.py`, `web_server.py`):** CLI'da `.level <seviye>` komutu ile dinamik seviye değişimi desteklendi; Web API tarafına `POST /set-level` endpoint'i eklendi.
-
-### Teknik Borç Kapanışı
-- Bu sürümde ayrı bir teknik borç kapanışı kaydı bulunmuyor; odak sürüm farklarının belgelenmesidir.
-
----
-
-## [v2.10.4] - 2026-03-08
-Bu sürümde Web API dokümantasyonu OpenAPI/Swagger standardına yükseltilmiştir.
-
-### ✅ Web API Dokümantasyon İyileştirmeleri
-* **OpenAPI Şema Belgelendirmesi (`web_server.py`):** FastAPI `/docs` ve `/redoc` arayüzleri aktif edildi. Kritik API uç noktalarına (`/status`, `/health`, `/sessions`, `/rag/search`, `/rag/add-file`, `/clear`) `summary`, `description` ve `responses` detayları eklendi.
-
-### Teknik Borç Kapanışı
-- Bu sürümde ayrı bir teknik borç kapanışı kaydı bulunmuyor; odak sürüm farklarının belgelenmesidir.
-
----
-
-## [v2.10.3] - 2026-03-08
-Bu sürümde test kalite kapıları ve performans baseline ölçümleri CI/test akışına entegre edilmiştir.
-
-### ✅ Test ve Kalite İyileştirmeleri
-* **Test Coverage Hedefleri (`run_tests.sh`):** CI süreçleri için `pyproject.toml` kaynaklı `fail_under=99` ratchet baseline ve kritik çekirdek modüller için opt-in `%100` coverage campaign yaklaşımı dokümante edildi.
-* **Performans Benchmark (`tests/test_benchmark.py`):** Kritik RAG (ChromaDB, BM25) ve AutoHandle regex yolları için `pytest-benchmark` tabanlı otomatik hız testleri sisteme entegre edildi.
-
-### Teknik Borç Kapanışı
-- Bu sürümde ayrı bir teknik borç kapanışı kaydı bulunmuyor; odak sürüm farklarının belgelenmesidir.
-
----
-
-## [v2.9.0] - 2026-03-08
-Bu sürümde RAG motoru ve konuşma belleği katmanında izolasyon, sıralama kalitesi ve ölçeklenebilirlik odaklı iyileştirmeler tamamlanmıştır.
-
-### ✅ Çözülen RAG ve Bellek İyileştirmeleri
-* **Hibrit Sıralama (RRF) (`core/rag.py`):** `auto` modda ChromaDB ve BM25 sonuçları Reciprocal Rank Fusion (RRF) ile birleştirilerek daha tutarlı top-k geri çağırma sağlandı.
-* **BM25 Disk Motoru (`core/rag.py`):** RAM içi `rank_bm25` akışı kaldırılarak SQLite FTS5 tabanlı kalıcı BM25 indeksine geçildi (`bm25_fts.db`, `bm25_index`).
-* **Çok Oturumlu RAG İzolasyonu (`core/rag.py`, `agent/sidar_agent.py`, `web_server.py`):** `session_id` filtrelemesi ChromaDB/BM25/keyword yollarına ve RAG endpoint akışına taşındı; oturumlar arası veri sızıntısı engellendi.
-* **Sliding-Window Bellek Özetleme (`core/memory.py`, `agent/sidar_agent.py`):** `apply_summary()` son mesajları koruyan pencere stratejisiyle güncellendi; `MEMORY_SUMMARY_KEEP_LAST` ile yapılandırılabilir hale getirildi.
-
-### 🔎 PROJE_RAPORU §14.3 Eşlemesi (Referans)
-* **14.3.1 Hibrit Sıralama (RRF)** → `core/rag.py` içinde `_rrf_search()` ve birleşik skor akışı aktif.
-* **14.3.2 BM25 Corpus Ölçeklenebilirliği** → SQLite FTS5 tabanlı disk indeks (`bm25_index`) kullanımı aktif.
-* **14.3.3 Çok Oturumlu RAG İzolasyonu** → `session_id` filtreleme ve endpoint geçişleri aktif.
-* **14.3.4 Bellek Özetleme Stratejisi Seçimi** → `ConversationMemory.apply_summary()` sliding-window yaklaşımıyla çalışıyor.
-
-### 🔎 PROJE_RAPORU §14.5 Eşlemesi (Referans)
-* **14.5.2 Issue Yönetimi** → `managers/github_manager.py` içinde `list_issues/create_issue/comment_issue/close_issue` akışları ve ajan tarafında karşılık gelen `github_*_issue` araçları aktif.
-* **14.5.3 Diff Analizi** → `managers/github_manager.py` içinde `get_pull_request_diff()` ve ajan tarafında `github_pr_diff` aracı aktif.
-
-### 🔎 PROJE_RAPORU §14.6 Eşlemesi (Referans)
-* **14.6.1 Docker Socket Riski Azaltma** → `docker-compose.yml` içinde `/var/run/docker.sock` yalnızca CLI/REPL servislerinde bırakıldı; web servislerinden kaldırıldı.
-* **14.6.2 Denetim Logu (Audit Log)** → `agent/sidar_agent.py` içinde araç çağrıları `logs/audit.jsonl` dosyasına yapısal JSONL olarak yazılıyor.
-* **14.6.3 Sandbox Çıktı Boyutu Limiti** → `managers/code_manager.py` içinde `max_output_chars=10000` limiti ile Docker/lokal/shell çıktıları kırpılıyor.
-
-### 🔎 PROJE_RAPORU §14.7 Eşlemesi (Referans)
-* **14.7.1 Entegrasyon Test Altyapısı** → `pytest.ini` ile keşif/asenkron mod standardize edildi, `environment.yml` içinde `pytest` + `pytest-asyncio` tanımlandı ve `run_tests.sh` ile tek komut çalıştırma akışı mevcut.
-* **14.7.5 Otonom TODO/FIXME Tarama** → `TodoManager.scan_project_todos(...)` ile tarama, `ScanProjectTodosSchema` ile şemalı argüman doğrulama ve ajan tarafında `_tool_scan_project_todos` (non-blocking `asyncio.to_thread`) akışı aktif.
-
-### 🔎 PROJE_RAPORU §14.8 Eşlemesi (Referans)
-* **14.8.1 Sağlık Endpoint Genişletmesi** → `SystemHealthManager.get_health_summary()` + `GET /health` endpoint akışı aktif; yanıta `uptime_seconds` ekleniyor ve `AI_PROVIDER=ollama` + erişim yoksa `status=degraded` ile `503` dönülüyor.
-
-### Teknik Borç Kapanışı
-- Bu sürümde ayrı bir teknik borç kapanışı kaydı bulunmuyor; odak sürüm farklarının belgelenmesidir.
-
----
-
-## [v2.8.0] - 2026-03-08
-Bu sürümde kurumsal düzeyde AI Ajan (Agent) mimarisine, çoklu model desteğine ve Model Context Protocol (MCP) standartlarına geçiş yapılmıştır.
-
-### ✅ Çözülen LLM ve Ajan Katmanı İyileştirmeleri (Mimari Değişiklikler)
-* **Çoklu LLM Sağlayıcı Genişletmesi (`core/llm_client.py`):** `BaseLLMClient` soyut sınıfı oluşturularak Nesne Yönelimli (OOP) yapıya geçildi. Ollama ve Gemini'nin yanına yapısal stream destekli **OpenAI (GPT-4o)** sağlayıcısı eklendi.
-* **Yapısal Araç Şemaları ve MCP Uyumu (`agent/tooling.py`):** Araçların aldığı argümanlar güvensiz string ayrıştırmasından kurtarılarak Pydantic `BaseModel` şemalarına bağlandı. LLM çıktıları JSON Schema kullanılarak yapısal (Structured Output) hale getirildi.
-* **Araç Tanımlarının Dışsallaştırılması (`agent/sidar_agent.py`):** Ajan içindeki hardcoded `_tools` sözlüğü dış modüle taşındı, modülerleştirildi ve Pydantic validasyon ağına (`ToolCall`) entegre edildi.
-* **Paralel ReAct Adımları (`agent/sidar_agent.py`):** ReAct döngüsü, LLM'den gelen JSON listelerini (Array) yakalayacak şekilde güncellendi. Sadece güvenli okuma/sorgulama araçları filtre edilerek `asyncio.gather` ile tam paralel çalıştırılabilir hale getirildi. Hantal `parallel` aracı kullanımdan kaldırıldı.
-
-### ✅ Çözülen Teknik Borçlar ve Stabilite İyileştirmeleri
-* **Web Arama / DuckDuckGo Güvenliği (`managers/web_search.py`, `environment.yml`):** DuckDuckGo arama motoru (DDGS) paketi `6.2.13` sürümüne sabitlendi. Gelecek versiyonlardaki mimari API değişikliklerine karşı koruma sağlamak için dinamik `AsyncDDGS` kontrolü eklendi ve thread'lerin asılı kalmasını (hang) önlemek amacıyla arama işlemlerine `asyncio.wait_for` ile zaman aşımı (timeout) koruması getirildi.
-* **Web UI Modülarizasyonu (`web_ui/index.html`, `web_server.py`):** 3.300+ satırlık devasa HTML dosyası parçalanarak `style.css`, `app.js`, `chat.js`, `sidebar.js` ve `rag.js` modüllerine ayrıldı. FastAPI `StaticFiles` ara katmanı (middleware) eklenerek statik asset'lerin performanslı ve güvenli bir şekilde sunulması sağlandı. Ön yüzün (frontend) test edilebilirliği ve sürdürülebilirliği kurumsal standartlara taşındı.
-
-### 🔎 PROJE_RAPORU §14.4 Eşlemesi (Referans)
-* **14.4.1 Web UI Modülarizasyonu** → UI katmanı `index.html + style.css + app.js + chat.js + sidebar.js + rag.js` olarak ayrıştırıldı ve `/static` mount ile servis ediliyor.
-* **14.4.4 Kimlik Doğrulama** → Web katmanında `API_KEY` tabanlı HTTP Basic Auth middleware akışı aktif (`API_KEY` boşsa bypass, doluysa zorunlu kimlik doğrulama).
-
-### Teknik Borç Kapanışı
-- Bu sürümde ayrı bir teknik borç kapanışı kaydı bulunmuyor; odak sürüm farklarının belgelenmesidir.
-
----
-
-## [v2.7.0] - 2026-03-07
-Bu sürümde asenkron güvenlik, performans ve stabilite iyileştirmelerine odaklanılmıştır.
-
-### ✅ Çözülen Yüksek Öncelikli Sorunlar
-* **`core/rag.py` (Thread-Safety):** `_chunk_text()` içindeki geçici sınıf değişkeni değişimi lokal değişkenlere alınarak race condition engellendi. Sıfıra bölme ve sonsuz döngü koruması eklendi.
-* **`core/rag.py` (Performans):** `_bm25_search()` içindeki skor hesaplaması `_write_lock` kapsamı dışına çıkarılarak thread bloklanması önlendi.
-* **`agent/sidar_agent.py` (Cache Güvenliği):** `_instructions_cache` okuma/yazma işlemleri `threading.Lock` ile asenkron çakışmalara karşı koruma altına alındı.
-
-### ✅ Çözülen Orta Öncelikli Sorunlar
-* **`web_server.py` (Rate Limiting):** İstek sınırlandırması `defaultdict` yerine `cachetools.TTLCache` entegrasyonu ile kalıcı hale getirildi.
-* **`core/memory.py` (Token Optimizasyonu):** Tahmini token hesabı yerine `tiktoken` kütüphanesi ile gerçek tokenizer entegrasyonu yapıldı.
-* **`docker-compose.yml` (Güvenlik):** `sidar-web` ve `sidar-web-gpu` servislerinden `/var/run/docker.sock` erişimi kaldırılarak container escape zafiyeti giderildi.
-* **`managers/github_manager.py` (API Güvenliği):** `list_commits` metodunda limit aşımlarında kullanıcıya açık uyarı dönecek şekilde düzenleme yapıldı.
-
-### 🔎 PROJE_RAPORU §14.1 Eşlemesi (Referans)
-* **14.1.1 Kalıcı Rate Limiting** → `web_server.py` üzerinde `TTLCache` tabanlı kalıcı pencere sınırlandırması uygulandı.
-* **14.1.2 Gerçek Token Sayacı** → `core/memory.py` içinde `tiktoken` entegrasyonu aktif.
-* **14.1.3 Talimat Cache Koruması** → `agent/sidar_agent.py` içinde `_instructions_cache` akışı `threading.Lock` ile korunuyor.
-* **14.1.4 Thread-Safe Chunking** → `core/rag.py` içinde chunking adımında güvenli `step=max(1, size-overlap)` koruması mevcut.
-
-### ✅ Çözülen Düşük Öncelikli / Teknik Borçlar
-* **`agent/auto_handle.py`:** Çok adımlı regex kalıbına İngilizce bağlaçlar (`first`, `then`, `step`, vb.) eklendi.
-* **`config.py`:** İçe aktarma anında çalışan dizin oluşturma komutları `__main__` koruması altına alınarak test ortamı izole edildi.
-
-### Teknik Borç Kapanışı
-- Bu sürümde ayrı bir teknik borç kapanışı kaydı bulunmuyor; odak sürüm farklarının belgelenmesidir.
-
----

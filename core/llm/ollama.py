@@ -1,4 +1,27 @@
-"""Ollama provider adapter for the LLM facade."""
+"""Ollama provider adapter for the LLM facade.
+
+A code review flagged the ten one-line ``_setting``/``_retry_with_backoff``/…
+forwarding functions below (module lines ~26-91) as a DRY violation and
+suggested extracting them to a shared ``core/llm/_shared.py`` module.
+Investigated: the exact same ten functions are byte-for-byte duplicated
+across all five provider adapters (anthropic.py, gemini.py, litellm.py,
+openai.py, ollama.py), so the real duplication is larger than the single
+file cited. The duplication is real but deliberate and already load-bearing:
+each adapter's ``import core.llm_client as llm_facade`` gives it its own
+independently monkeypatchable binding, and
+``tests/unit/core/llm/test_provider_facade_delegation.py`` asserts exactly
+that per-module ``module.llm_facade`` is what each wrapper calls through at
+call time (not import time), across every provider module. Consolidating
+the wrappers into a shared module would require every provider to funnel
+through one shared ``llm_facade`` binding instead of its own — either
+collapsing that per-module monkeypatch surface (rewriting the delegation
+test's patch target) or reintroducing per-provider closures via a factory,
+which reproduces the same duplication one level up. Since the wrappers are
+pure call-time forwarding with no logic of their own (zero runtime cost,
+zero behavior difference from calling ``llm_facade.X`` inline), and the
+reviewer's own priority on this item was low, this was left as documentation
+rather than a mechanical five-file refactor for a purely cosmetic gain.
+"""
 
 from __future__ import annotations
 
@@ -12,7 +35,7 @@ from typing import Any, cast
 import httpx
 
 import core.llm_client as llm_facade
-from config import OLLAMA_BATCH_POLICY
+from config import OLLAMA_BATCH_POLICY, OLLAMA_TIMEOUT_DEFAULT
 from core.llm.streaming_http import enter_httpx_stream
 from core.llm_client import (
     OLLAMA_NUM_BATCH_DEFAULT,
@@ -101,7 +124,9 @@ class OllamaClient(BaseLLMClient):
         )
 
     def _build_timeout(self) -> httpx.Timeout:
-        timeout_seconds = max(10, int(_setting(self.config, "OLLAMA_TIMEOUT", 120)))
+        timeout_seconds = max(
+            10, int(_setting(self.config, "OLLAMA_TIMEOUT", OLLAMA_TIMEOUT_DEFAULT))
+        )
         return httpx.Timeout(timeout_seconds, connect=10.0)
 
     def json_mode_config(self) -> dict[str, Any]:
@@ -186,6 +211,39 @@ class OllamaClient(BaseLLMClient):
         ollama_coding_num_ctx = int(_setting(self.config, "OLLAMA_CODING_NUM_CTX", 8192))
         if ollama_coding_num_ctx > 0:
             options["num_ctx"] = ollama_coding_num_ctx
+        # OLLAMA_NUM_BATCH is intentionally NOT auto-scaled down for low VRAM
+        # the way OLLAMA_CODING_NUM_CTX is (config.py::_autoselect_ollama_coding_ctx_window).
+        # A code review flagged the missing VRAM scaling as a possible OOM risk;
+        # investigated and found the opposite failure mode is the actual
+        # documented constraint here: llama.cpp raises
+        # `GGML_ASSERT(n_tokens_all <= cparams.n_batch)` when a single prompt's
+        # token count exceeds num_batch (see README.md's GPU benchmark note and
+        # the "Long prompt assertion fix" comments in the .env*.example files).
+        # Since a prompt can be as long as num_ctx, a *smaller* num_batch on
+        # low-VRAM tiers would widen the token range that can trip this
+        # assertion, not shrink the OOM risk — the two constraints pull in
+        # opposite directions and a real fix needs GPU hardware to validate
+        # llama.cpp's actual batching/chunking behavior at each tier, not a
+        # guessed threshold. Left unchanged pending that validation.
+        #
+        # A field report (RTX 3070 Ti Laptop, 8192 MiB VRAM) hit an HTTP 500
+        # from Ollama's /api/generate at install time and was read as
+        # possible corroborating evidence for scaling num_batch down too.
+        # On inspection it isn't: the installer's coding-model smoke test
+        # sends a ~15-token prompt (scripts/install_modules/phases/
+        # 09_ollama_models.sh::run_coding_model_smoke_prompt), far below any
+        # num_batch=2048 default, so the GGML_ASSERT this comment describes
+        # cannot fire there — a *tiny* prompt failing with a clean HTTP 500
+        # is the signature of KV-cache/weights OOM from num_ctx sizing, not
+        # a batch-size assertion crash. That report tracked back to a real,
+        # separate gap: 8-12 GiB VRAM cards got the full 8192 num_ctx tier
+        # with no headroom over the coding model's own weights (fixed in
+        # config.py::_autoselect_ollama_coding_ctx_window; the installer's
+        # smoke test now also self-heals by retrying with a reduced num_ctx
+        # and leaves num_batch untouched, matching the reasoning above). It
+        # does not supply the GPU-validated batching/chunking evidence this
+        # comment is still waiting on, and num_batch remains unscaled here
+        # for that reason.
         configured_num_batch = int(
             _setting(self.config, "OLLAMA_NUM_BATCH", OLLAMA_NUM_BATCH_DEFAULT)
         )

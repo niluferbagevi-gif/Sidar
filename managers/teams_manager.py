@@ -31,10 +31,10 @@ class TeamsManager:
 
     def __init__(
         self,
-        webhook_url: str = "",  # nosec B107
+        webhook_url: str | None = None,
         tenant_id: str = "",
         client_id: str = "",
-        client_secret: str = "",  # nosec B107
+        client_secret: str | None = None,
     ) -> None:
         self.webhook_url = (webhook_url or "").strip()
         self.tenant_id = (tenant_id or "").strip()

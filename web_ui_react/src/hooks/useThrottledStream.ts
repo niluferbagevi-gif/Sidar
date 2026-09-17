@@ -18,7 +18,7 @@ export interface ThrottledStreamController {
   flush: (setGet: StreamSetGet) => void;
   scheduleFlush: (setGet: StreamSetGet) => void;
   clearTimer: () => void;
-  setPending: (text?: string, requestId?: string) => void;
+  setPending: (text?: unknown, requestId?: unknown) => void;
   reset: () => void;
   getFlushTimer: () => ReturnType<typeof setTimeout> | null;
 }
@@ -70,7 +70,7 @@ export function createThrottledStreamController({
     flushTimer = setTimeout(() => flush(setGet), throttleMs);
   };
 
-  const setPending = (text = "", requestId = ""): void => {
+  const setPending = (text: unknown = "", requestId: unknown = ""): void => {
     pendingChunkText = String(text || "");
     pendingChunkRequestId = String(requestId || "");
   };

@@ -107,7 +107,40 @@ sidar_install_summary_any_failed() {
     return 1
 }
 
+sidar_install_frontend_e2e_label() {
+    local scope=""
+    local script=""
+    scope="$(sidar_install_summary_field_or_empty frontend_e2e_scope)"
+    script="$(sidar_install_summary_field_or_empty frontend_e2e_script)"
+
+    case "${scope}:${script}" in
+        full:test:e2e|full:*) printf '%s' "tam Playwright E2E (npm run test:e2e)" ;;
+        smoke:test:e2e:smoke|smoke:*) printf '%s' "Playwright smoke (npm run test:e2e:smoke)" ;;
+        skipped:*) printf '%s' "Playwright E2E çalıştırılmadı" ;;
+        *:test:e2e) printf '%s' "tam Playwright E2E (npm run test:e2e)" ;;
+        *:test:e2e:smoke) printf '%s' "Playwright smoke (npm run test:e2e:smoke)" ;;
+        *) printf '%s' "Playwright E2E kapsamı bilinmiyor" ;;
+    esac
+}
+
 print_install_summary_extended_test_statuses() {
+    local summary_ruff=""
+    local summary_aggregate=""
+    summary_ruff="$(sidar_install_summary_field_or_empty ruff)"
+    summary_aggregate="$(sidar_install_summary_field_or_empty aggregate)"
+    case "$summary_ruff" in
+        passed) echo "  Ruff kalite kapısı: başarılı (lint + repo-geneli format)." ;;
+        failed) echo "  Ruff kalite kapısı: hata var; diğer bağımsız fazlar çalıştırıldı ve sonuç aggregate'e dahil edildi." ;;
+        *) echo "  Ruff kalite kapısı: durum özeti yok (${summary_ruff:-skipped})." ;;
+    esac
+    case "$summary_aggregate" in
+        passed) echo "  Birleşik kalite sonucu: başarılı." ;;
+        failed) echo "  Birleşik kalite sonucu: hata var; ayrıntılar artifacts/test-summary.json içinde." ;;
+        *) echo "  Birleşik kalite sonucu: durum özeti yok." ;;
+    esac
+
+    local frontend_e2e_label=""
+    frontend_e2e_label="$(sidar_install_frontend_e2e_label)"
     local summary_integration=""
     summary_integration="$(sidar_install_summary_field_or_empty integration)"
     if [[ "$summary_integration" == "passed" ]]; then
@@ -136,9 +169,9 @@ print_install_summary_extended_test_statuses() {
         echo "  E2E testleri: durum özeti yok. Doğrulamak için: bash run_tests.sh --stage e2e"
     fi
 
-    if sidar_install_summary_all_passed frontend_lint frontend_typecheck frontend_coverage frontend_e2e; then
-        echo "  Frontend kalite kapısı: başarılı (run_tests.sh --stage all içinde lint/typecheck/coverage/e2e doğrulandı)."
-    elif sidar_install_summary_any_failed frontend_lint frontend_typecheck frontend_coverage frontend_e2e; then
+    if sidar_install_summary_all_passed frontend_audit frontend_lint frontend_typecheck frontend_coverage frontend_bundle_budget frontend_e2e; then
+        echo "  Frontend kalite kapısı: başarılı (audit/lint/typecheck/coverage/bundle budget/${frontend_e2e_label} doğrulandı)."
+    elif sidar_install_summary_any_failed frontend_audit frontend_lint frontend_typecheck frontend_coverage frontend_bundle_budget frontend_e2e; then
         echo "  Frontend kalite kapısı: hata var (artifacts/test-summary.json). Tekrar için: RUN_FRONTEND_E2E=1 bash run_tests.sh --stage frontend"
     elif [[ "$FRONTEND_QUALITY_STATUS" == "tamamlandi" ]]; then
         echo "  Frontend kalite kapısı: başarılı (run_tests.sh --stage frontend)."
@@ -173,10 +206,12 @@ print_react_frontend_qa_status_block() {
     fi
 
     local frontend_status="${FRONTEND_QUALITY_STATUS:-atlandi_bayrak}"
-    local frontend_quality_command="cd web_ui_react && npm run lint && npm run typecheck && npm run test:coverage && npm run test:e2e:smoke"
+    local frontend_e2e_label=""
+    frontend_e2e_label="$(sidar_install_frontend_e2e_label)"
+    local frontend_quality_command="cd web_ui_react && npm run audit:high && npm run lint && npm run typecheck && npm run test:coverage && npm run build:budget && npm run test:e2e:smoke"
 
     if [[ "$frontend_status" == "tamamlandi" ]]; then
-        echo -e "       ${GREEN}✅ Frontend QA: lint/typecheck/coverage/e2e smoke tamamlandı.${NC}"
+        echo -e "       ${GREEN}✅ Frontend QA: audit/lint/typecheck/coverage/bundle budget/${frontend_e2e_label} tamamlandı.${NC}"
         return
     fi
 
@@ -188,7 +223,7 @@ print_react_frontend_qa_status_block() {
     else
         echo -e "       ${YELLOW}${BOLD}⚠️  FRONTEND QA ÇALIŞTIRILMADI${NC}"
         echo -e "       ${YELLOW}React build geçti ≠ frontend QA geçti.${NC}"
-        echo -e "       ${YELLOW}Lint, typecheck, coverage ve e2e smoke henüz doğrulanmadı.${NC}"
+        echo -e "       ${YELLOW}Audit, lint, typecheck, coverage, bundle budget ve ${frontend_e2e_label} henüz doğrulanmadı.${NC}"
         echo -e "       ${YELLOW}Ayrı frontend kalite kapısını çalıştırın:${NC}"
     fi
     echo "       ${frontend_quality_command}"
@@ -202,8 +237,9 @@ print_release_readiness_next_action() {
 
     echo -e "  ${BOLD}🚦 Release / merge readiness:${NC}"
     if [[ "$production_ready" == "true" ]]; then
-        echo -e "       ${GREEN}✅ Production readiness geçti.${NC}"
-        echo "       Release/merge kapısı tamamlandı: make production-readiness"
+        echo -e "       ${GREEN}✅ Yerel/base production-readiness kapısı geçti.${NC}"
+        echo -e "       ${YELLOW}⚠️  Bu sonuç self-hosted GPU TTFT/latency kanıtını içermez.${NC}"
+        echo "       Release/merge için CI GPU Inference Required Evidence Gate ve aggregate sonucu zorunludur."
         return
     fi
 
@@ -212,7 +248,7 @@ print_release_readiness_next_action() {
         echo -e "       ${YELLOW}${BOLD}⚠️  Bu sonuç yalnız yerel geliştirme ortamının sağlıklı olduğunu gösterir.${NC}"
         echo -e "       ${YELLOW}Profil farkı:${NC}"
         echo -e "       ${YELLOW}• dev-light: hızlı lokal geliştirme; voice/browser/GPU gibi sistem-header bağımlılıklarını kapsamaz.${NC}"
-        echo -e "       ${YELLOW}• dev-full / uv sync --frozen --all-extras: tam geliştirici/CI paritesi ve tüm extras yüzeyi.${NC}"
+        echo -e "       ${YELLOW}• dev-full / uv sync --frozen --all-extras: tam geliştirici bağımlılık ve local doğrulama yüzeyi (CI paritesi için make ci-parity).${NC}"
         echo -e "       ${YELLOW}• production-readiness: release/merge kapısı; sistem bağımlılıkları + Playwright browser + benchmark baseline gerektirebilir.${NC}"
     elif [[ "$ci_status" == "hata" ]]; then
         echo -e "       ${RED}❌ Development validation hata verdi; önce run_tests.sh çıktısını düzeltin.${NC}"
@@ -225,9 +261,11 @@ print_release_readiness_next_action() {
     echo -e "       ${YELLOW}   bu gate'i (production-readiness job) her push/PR'da otomatik çalıştırır${NC}"
     echo -e "       ${YELLOW}   (bkz. .github/workflows/ci.yml). Aşağıdaki komut yereldeki eşdeğer çalıştırmadır.${NC}"
     echo -e "       ${YELLOW}Development validation ≠ release/merge onayı.${NC}"
-    echo -e "       ${BOLD}Release/merge için tek zorunlu kapı:${NC}"
+    echo -e "       ${BOLD}Yerel ön doğrulama (merge kararı değildir):${NC}"
     echo "       make production-readiness"
     echo "       # Eşdeğer: TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all"
+    echo -e "       ${BOLD}Asıl release/merge kararı:${NC} PR'ı açın ve required GitHub Actions"
+    echo "       'Production readiness aggregate' check'inin geçmesini bekleyin."
 }
 
 
@@ -241,9 +279,36 @@ sidar_summary_materialize_real_keys_to_env_enabled() {
     esac
 }
 
+sidar_summary_external_api_key_count() {
+    local sidar_keys_file="${SIDAR_KEYS_FILE:-${HOME}/.sidar_keys.env}"
+    local count=0
+    local key_name=""
+
+    [[ -f "$sidar_keys_file" ]] || { printf '0'; return 0; }
+    declare -F sidar_user_api_key_names >/dev/null 2>&1 || { printf '0'; return 0; }
+    declare -F read_env_value_from_file >/dev/null 2>&1 || { printf '0'; return 0; }
+    while IFS= read -r key_name; do
+        [[ -n "$key_name" ]] || continue
+        if [[ -n "$(read_env_value_from_file "$key_name" "$sidar_keys_file" | tr -d '[:space:]')" ]]; then
+            ((count+=1))
+        fi
+    done < <(sidar_user_api_key_names)
+    printf '%s' "$count"
+}
+
+print_optional_rag_next_step() {
+    echo -e "  7️⃣  RAG/GraphRAG hazır oluşunu doğrula:"
+    echo "       Geliştirici kurulumunda metadata seed varsayılan olarak migrasyondan sonra uygulanır."
+    echo "       Tam vektör seed veya yeniden oluşturma: uv run python -m scripts.seed_rag"
+    echo "       Sonucu doğrula: uv run python -m core.doctor artifacts/install/doctor.json"
+    echo "       Onboarding ve pgvector fallback teşhisi: docs/RAG_ONBOARDING.md"
+}
+
 # ── 15. Özet ─────────────────────────────────────────────────────────────────
 print_summary() {
     local summary_banner=""
+    local sidar_keys_file="${SIDAR_KEYS_FILE:-${HOME}/.sidar_keys.env}"
+    local external_api_keys_filled=0
     summary_banner="$(_center_visible "Sidar AI Kurulumu Tamamlandı!" 60)"
     echo ""
     echo -e "${BOLD}${GREEN}"
@@ -261,8 +326,10 @@ print_summary() {
     if [[ "$ENV_API_KEYS_TOTAL" -gt 0 && "$ENV_API_KEYS_FILLED" -eq "$ENV_API_KEYS_TOTAL" ]]; then
         echo -e "  ${GREEN}✅ .env dosyası API anahtarları açısından eksiksiz görünüyor (${ENV_API_KEYS_FILLED}/${ENV_API_KEYS_TOTAL}).${NC}"
     elif ! sidar_summary_materialize_real_keys_to_env_enabled; then
+        external_api_keys_filled="$(sidar_summary_external_api_key_count)"
         echo -e "  ${BLUE}ℹ️  .env dosyasında ${ENV_API_KEYS_FILLED}/${ENV_API_KEYS_TOTAL} API anahtarı dolu; bu beklenen güvenli kurulum davranışıdır.${NC}"
-        echo "  Gerçek servis anahtarları SIDAR_KEYS_FILE (${SIDAR_KEYS_FILE:-${HOME}/.sidar_keys.env}) kaynağında tutulur; aşağıdaki 'Kritik key kaynak özeti' tablosuna bakın."
+        echo "  Secret overlay durumu: ${external_api_keys_filled}/${ENV_API_KEYS_TOTAL} dolu servis anahtarı (${sidar_keys_file})."
+        echo "  Gerçek servis anahtarları SIDAR_KEYS_FILE kaynağında tutulur; aşağıdaki 'Kritik key kaynak özeti' tablosuna bakın."
         echo "  .env içinde boş görünen servis anahtarları, SIDAR_MATERIALIZE_REAL_KEYS_TO_ENV=1 verilmedikçe uyarı değildir."
     else
         echo -e "  ${YELLOW}⚠️  Dolu anahtar: ${ENV_API_KEYS_FILLED}/${ENV_API_KEYS_TOTAL}${NC}"
@@ -287,9 +354,9 @@ print_summary() {
     if [[ "${APP_RUNTIME_MODE_SELECTED:-docker}" == "local" ]]; then
         echo "       Çalışma modu: Geliştirici (uygulama local, altyapı Docker)."
         echo "       Altyapı servisleri: docker compose up -d postgres redis"
-        echo "       İzleme gerekiyorsa: COMPOSE_PROFILES=observability docker compose up -d jaeger prometheus grafana"
+        echo "       İzleme gerekiyorsa: docker compose -f docker-compose.yml -f docker-compose.observability.yml --profile cpu --profile observability up -d jaeger prometheus grafana"
         echo "       (Host Ollama yoksa ayrıca: docker compose up -d ollama)"
-        echo "       Durdurma: docker compose stop postgres redis jaeger prometheus grafana ollama"
+        echo "       Durdurma: docker compose stop postgres redis ollama; docker compose -f docker-compose.yml -f docker-compose.observability.yml stop jaeger prometheus grafana"
     else
         echo "       Çalışma modu: Tam Docker (web/agent dahil)."
     echo "       Servisleri manuel yönetmek isterseniz: docker compose up -d / docker compose down"
@@ -325,12 +392,21 @@ print_summary() {
     echo "       ./run_tests.sh"
     echo "       Test rehberi: docs/TESTING.md (PR/merge öncesi ana doğrulama yolu)"
     echo ""
+    print_optional_rag_next_step
+    echo ""
     print_release_readiness_next_action
     echo ""
     print_install_validation_coverage
 
     if [[ "$GPU_AVAILABLE" == true ]]; then
         echo -e "  ${GREEN}🚀 GPU hızlandırma aktif — .env: USE_GPU=true${NC}"
+        echo ""
+    fi
+
+    if ! command -v ffmpeg >/dev/null 2>&1; then
+        echo -e "  ${YELLOW}⚠️  ffmpeg bulunamadı — multimodal video/ses ayrıştırma (frame/ses kanalı çıkarımı) şu an çalışmayacak.${NC}"
+        echo -e "  ${YELLOW}   Kurulum: Debian/Ubuntu → sudo apt-get install ffmpeg; macOS → brew install ffmpeg.${NC}"
+        echo -e "  ${YELLOW}   Kurulum sonrası doğrulama: uv run python -m core.doctor${NC}"
         echo ""
     fi
 
@@ -358,8 +434,14 @@ print_summary() {
     echo "  dev-full (local tam doğrulama; backend + frontend + benchmark + BATS + security):"
     echo "    make dev-full"
     echo "    # Eşdeğer: bash run_tests.sh --stage all"
-    echo "  production-readiness (merge/release kapısı):"
+    echo "  production-readiness (yerel ön doğrulama; tek başına merge/release onayı değildir):"
     echo "    make production-readiness"
+    echo -e "  ${YELLOW}ℹ️  'make production-readiness' 'uv'nin PATH'te olmasını gerektirir. install_sidar.sh doğrudan${NC}"
+    echo -e "  ${YELLOW}   çalıştırıldıysa (ör. './install_sidar.sh', 'source' edilmeden), yaptığı PATH güncellemesi${NC}"
+    echo -e "  ${YELLOW}   yalnızca o kurulum sürecine özeldi ve bu terminale geri yansımaz. Yeni bir terminalde${NC}"
+    echo -e "  ${YELLOW}   'command -v uv' boş dönerse: terminali kapatıp yeniden açın veya 'source ~/.bashrc'${NC}"
+    echo -e "  ${YELLOW}   ('~/.zshrc' için zsh) çalıştırıp tekrar deneyin.${NC}"
+    echo "  merge/release kararı: PR üzerindeki required GitHub Actions 'Production readiness aggregate' check'i."
     echo "  Backend entegrasyon ana yolu:"
     echo "    bash run_tests.sh --stage integration   # tests/integration/{api,cli,db,managers,web,workflow}"
     echo "  E2E odaklı doğrulama için:"
@@ -404,12 +486,13 @@ print_summary() {
     if [[ "$SKIP_MODELS" == true ]]; then
         echo "  ollama pull <model_adi>   — model indirmeleri atlandı, sonradan manuel indirin"
     fi
-    echo "  docker compose up sidar-gpu     — Docker GPU modu"
+    echo "  docker compose -f docker-compose.yml -f docker-compose.gpu.yml up sidar-gpu     — Docker GPU modu"
     echo "  Not: Docker GPU için nvidia-container-toolkit kurulu olmalıdır."
     echo ""
     echo -e "${BOLD}Gözlemlenebilirlik (Telemetry)${NC}"
-    echo "  İzleme servislerini başlat: COMPOSE_PROFILES=observability docker compose up -d jaeger prometheus grafana"
-    echo "  Grafana paneli    : http://localhost:3000 (varsayılan: admin / admin)"
+    echo "  İzleme servislerini başlat: docker compose -f docker-compose.yml -f docker-compose.observability.yml --profile cpu --profile observability up -d jaeger prometheus grafana"
+    echo "  Grafana paneli    : http://localhost:3000"
+    echo "  Grafana girişi    : kullanıcı admin; parola .env içinde installer tarafından üretilen GRAFANA_ADMIN_PASSWORD"
     echo "  Prometheus paneli : http://localhost:9090"
     echo "  Jaeger UI         : http://localhost:16686"
     echo "  Not: Bu servisler docker_setup/ altındaki hazır konfigürasyonları kullanır."

@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { P2PDialoguePanel } from "./P2PDialoguePanel.jsx";
+import { P2PDialoguePanel } from "./P2PDialoguePanel.tsx";
 
 const { useChatStoreMock } = vi.hoisted(() => ({
   useChatStoreMock: vi.fn(),

@@ -12,7 +12,9 @@ concurrency:
 jobs:
   gpu-performance-benchmarks:
     name: GPU Benchmark Suite (nightly)
-    runs-on: [self-hosted, linux, gpu]
+    runs-on: [self-hosted, linux, x64, gpu, cuda]
+    # Ortak labels primary arızasında warm-standby'a otomatik yönlendirme sağlar.
+    # Üç aylık failover tatbikatı: docs/runbooks/gpu-runner-continuity.md
     timeout-minutes: 90
 
     env:
@@ -21,19 +23,24 @@ jobs:
       PYTHONUNBUFFERED: "1"
       GPU_TREND_WINDOW: "7"
       GPU_TREND_THRESHOLD_PERCENT: "20"
+      # sidar[runtime-gpu] pulls multi-hundred-MB nvidia-*/torch wheels; uv's
+      # 30s default HTTP timeout can time out these individual downloads on a
+      # slower/self-hosted link well before the transfer itself would fail.
+      UV_HTTP_TIMEOUT: "180"
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
-          python-version: "3.11"
+          python-version: "3.11.15"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v10.1.0
         with:
+          version: "0.12.0"
           enable-cache: true
 
       - name: Install system dependencies
@@ -44,7 +51,7 @@ jobs:
 
       - name: Restore GPU trend history cache
         id: gpu-trend-cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: .ci-history/gpu_trend_history.json
           key: gpu-trend-history-${{ runner.os }}-${{ runner.name }}-${{ github.ref_name }}
@@ -67,7 +74,7 @@ jobs:
             --no-cov \
             --benchmark-json=artifacts/gpu/benchmark.json
 
-      - name: Check 7-run median trend guards (TTFT/TPS/VRAM)
+      - name: Check 7-run median trend guards (TTFT/TPS/VRAM peak/load latency)
         run: |
           python scripts/ci/check_gpu_benchmark_trend.py \
             artifacts/gpu/benchmark.json \
@@ -78,14 +85,14 @@ jobs:
 
       - name: Save GPU trend history cache
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: .ci-history/gpu_trend_history.json
           key: gpu-trend-history-${{ runner.os }}-${{ runner.name }}-${{ github.ref_name }}
 
       - name: Upload benchmark artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nightly-gpu-performance-artifacts
           path: |

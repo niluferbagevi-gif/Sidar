@@ -16,13 +16,13 @@ import logging
 import platform
 import shutil
 import socket
-import subprocess  # nosec B404
 import threading
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlparse
 
 from config import Config
+from core.utils.trusted_subprocess import run_trusted_command
 
 logger = logging.getLogger(__name__)
 
@@ -362,13 +362,13 @@ class SystemHealthManager:
         # WSL2 fallback: nvidia-smi subprocess ile sürücü sürümünü al
         try:
             nvidia_smi_bin = shutil.which("nvidia-smi") or "nvidia-smi"
-            result = subprocess.run(
+            result = run_trusted_command(
                 [nvidia_smi_bin, "--query-gpu=driver_version", "--format=csv,noheader"],
                 capture_output=True,
                 text=True,
                 timeout=5,
-            )  # nosec B603  # sabit ve kullanıcı girdisi içermeyen komut.
-            version = result.stdout.strip().split("\n")[0]
+            )
+            version = str(result.stdout).strip().split("\n")[0]
             if version:
                 return version
             # Çıktı boş → GPU yok veya sürücü raporlamıyor (WSL2'de beklenen)
@@ -423,7 +423,11 @@ class SystemHealthManager:
             import requests
 
             base_url = getattr(self.cfg, "OLLAMA_URL", "http://localhost:11434/api")
-            timeout = max(1, int(getattr(self.cfg, "OLLAMA_TIMEOUT", 5)))
+            # Deliberately its own short timeout, not OLLAMA_TIMEOUT (the
+            # inference-request timeout, 600s default): this is a lightweight
+            # liveness probe and must fail fast if Ollama is hung, not block
+            # for up to 10 minutes. See config_llm.py::OLLAMA_HEALTH_CHECK_TIMEOUT.
+            timeout = max(1, int(getattr(self.cfg, "OLLAMA_HEALTH_CHECK_TIMEOUT", 5)))
             resp = requests.get(f"{base_url.rstrip('/')}/tags", timeout=timeout)
             return bool(resp.status_code == 200)
         except Exception:

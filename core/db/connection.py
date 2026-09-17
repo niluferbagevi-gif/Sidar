@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import os
 import random
+import re
 import sqlite3
 from collections.abc import AsyncIterator, Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -14,6 +16,7 @@ from pathlib import Path
 from typing import Any, TypeVar, cast
 
 logger = logging.getLogger(__name__)
+_JITTER_RANDOM = random.SystemRandom()
 _T = TypeVar("_T")
 
 
@@ -132,7 +135,7 @@ class DatabaseConnectionMixin:
                     if "database is locked" not in str(exc).lower() or attempt == 3:
                         raise
                     await asyncio.sleep(
-                        0.015 * (2 ** (attempt - 1)) + random.uniform(0.0, 0.01)  # nosec B311  # güvenlik değil jitter/backoff amaçlıdır.
+                        0.015 * (2 ** (attempt - 1)) + _JITTER_RANDOM.uniform(0.0, 0.01)
                     )
                 except Exception:
                     if write:
@@ -219,7 +222,12 @@ class DatabaseConnectionMixin:
         if configured:
             return configured
         base_dir = Path(getattr(self.cfg, "BASE_DIR", Path.cwd()))
-        return f"sqlite+aiosqlite:///{(base_dir / 'data' / 'sidar_degraded.db').as_posix()}"
+        worker = os.getenv("PYTEST_XDIST_WORKER", "").strip()
+        # A PostgreSQL failure may send every xdist worker into degraded mode at
+        # once.  Keep their WAL/SHM files separate instead of racing on one DB.
+        worker_suffix = re.sub(r"[^A-Za-z0-9_.-]", "_", worker) if worker else ""
+        filename = f"sidar_degraded.{worker_suffix}.db" if worker_suffix else "sidar_degraded.db"
+        return f"sqlite+aiosqlite:///{(base_dir / 'data' / filename).as_posix()}"
 
     @staticmethod
     def _postgres_user_action_message(reason: str, exc: BaseException | None = None) -> str:

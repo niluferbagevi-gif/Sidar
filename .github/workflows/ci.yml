@@ -26,111 +26,22 @@ jobs:
   seed-benchmark-baseline:
     name: Seed benchmark baseline cache
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.seed_benchmark_baseline }}
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          enable-cache: true
-          cache-dependency-glob: '**/uv.lock'
-
-      - name: Install system dependencies
-        run: bash scripts/install_ci_system_deps.sh
-
-      - name: Install dependencies
-        run: uv sync --frozen --all-extras
-
-      - name: Restore existing benchmark baseline cache (if any)
-        uses: actions/cache/restore@v4
-        with:
-          path: .benchmarks
-          key: benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
-          restore-keys: |
-            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-
-            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-main-
-            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-master-
-            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-
-
-      - name: Seed benchmark baseline
-        env:
-          DOTENV_FILE: .env.test
-          BENCHMARK_BASELINE_NAME: baseline
-          BENCHMARK_JSON_OUTPUT: artifacts/benchmark/benchmark.json
-        run: |
-          set -euo pipefail
-          mkdir -p artifacts/benchmark .benchmarks
-          uv run python -m pytest -c pyproject.toml -v tests/performance -n 0 --no-cov \
-            --benchmark-save="${BENCHMARK_BASELINE_NAME}" \
-            --benchmark-json="${BENCHMARK_JSON_OUTPUT}" \
-            --benchmark-warmup=on \
-            --benchmark-warmup-iterations=100000 \
-            --benchmark-disable-gc
-          benchmark_compare_name="${BENCHMARK_BASELINE_NAME}"
-          if ! find .benchmarks -type f -name "*_${benchmark_compare_name}.json" -print -quit | grep -q .; then
-            echo "::error title=Benchmark seed failed::pytest-benchmark completed but .benchmarks/*_${benchmark_compare_name}.json was not created."
-            exit 1
-          fi
-          mapfile -t baseline_files < <(find .benchmarks -type f -name "*_${benchmark_compare_name}.json" | sort)
-          BASELINE_FILES="$(printf '%s\n' "${baseline_files[@]}")" python - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          baseline_files = os.environ["BASELINE_FILES"].splitlines()
-          manifest = {
-              "schema_version": 1,
-              "baseline_name": os.environ["BENCHMARK_BASELINE_NAME"],
-              "github_run_id": os.environ["GITHUB_RUN_ID"],
-              "github_ref": os.environ["GITHUB_REF"],
-              "github_sha": os.environ["GITHUB_SHA"],
-              "benchmark_files": baseline_files,
-          }
-          Path("artifacts/benchmark/baseline-seed-manifest.json").write_text(
-              json.dumps(manifest, indent=2, sort_keys=True) + "\n",
-              encoding="utf-8",
-          )
-          PY
-          {
-            echo "### Benchmark baseline seeded"
-            echo "- Baseline name: \`${benchmark_compare_name}\`"
-            echo "- Baseline files: \`${#baseline_files[@]}\`"
-            echo "- Seed manifest: \`artifacts/benchmark/baseline-seed-manifest.json\`"
-            echo "- Cache key prefix: \`benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-\`"
-            echo "- Download artifact: \`benchmark-baseline-seed\` and restore its \`.benchmarks/\` directory if cache restore is unavailable."
-            echo "- Next step: rerun the normal CI / production-readiness gate; gated runs remain fail-closed and do not seed baselines."
-            echo "- Operator path: GitHub Actions → CI → Run workflow → \`seed_benchmark_baseline=true\`, then rerun normal CI / production-readiness."
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload benchmark baseline seed artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: benchmark-baseline-seed
-          path: |
-            .benchmarks/
-            artifacts/benchmark/benchmark.json
-            artifacts/benchmark/baseline-seed-manifest.json
-          if-no-files-found: error
-          retention-days: 90
-
-      - name: Save benchmark baseline cache for CI
-        uses: actions/cache/save@v4
-        with:
-          path: .benchmarks
-          key: benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
+    permissions:
+      contents: read
+      actions: write
+    uses: ./.github/workflows/benchmark-baseline-reusable.yml
+    with:
+      compare_name: baseline
+      benchmark_filter: ""
+      retention_days: 90
 
   test:
     name: Base quality gates (lint, smoke, unit, coverage, frontend)
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.seed_benchmark_baseline }}
-    runs-on: ubuntu-latest
+    # Release-blocking Playwright evidence must use an explicitly supported,
+    # stable host image. Local Ubuntu 26.04 overrides are developer compatibility,
+    # not release evidence.
+    runs-on: ubuntu-24.04
 
     services:
       postgres:
@@ -181,7 +92,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # check-install-manifests runs update_install_module_hash_manifest.py
           # --check-pin, which does `git show <pinned commit>:<path>` against
@@ -190,19 +101,23 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
-          python-version: '3.11'
+          python-version: '3.11.15'
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v10.1.0
         with:
+          version: "0.12.0"
           # Cache uv's wheel/download store so large wheels like pyarrow do not
           # have to be refetched on every run; a missed cache turns a
           # network/tunnel blip into a CI red. The cache key is derived from
           # uv.lock so a lockfile change naturally invalidates it.
           enable-cache: true
           cache-dependency-glob: '**/uv.lock'
+
+      - name: Verify canonical toolchain contract
+        run: python scripts/ci/check_toolchain_contract.py
 
       - name: Install system dependencies
         run: bash scripts/install_ci_system_deps.sh
@@ -216,43 +131,6 @@ jobs:
 
       - name: Check dated policy/debt expirations
         run: uv run python scripts/ci/check_policy_dates.py
-
-      - name: Restore benchmark baseline cache
-        id: benchmark-baseline-cache
-        uses: actions/cache@v4
-        with:
-          path: .benchmarks
-          key: benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
-          restore-keys: |
-            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-
-            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-main-
-            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-master-
-            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-
-
-      - name: Report benchmark baseline availability
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p .benchmarks
-          benchmark_compare_name="${BENCHMARK_COMPARE_NAME:-baseline}"
-          if find .benchmarks -type f -name "*_${benchmark_compare_name}.json" -print -quit | grep -q .; then
-            echo "BENCHMARK_BASELINE_AVAILABLE=1" >> "$GITHUB_ENV"
-            echo "::notice title=Benchmark baseline::Restored benchmark baseline for ${benchmark_compare_name}; benchmark-compare job will enforce it."
-            {
-              echo "### Benchmark baseline"
-              echo "- Restored cached baseline for \`${benchmark_compare_name}\`; benchmark-compare job will enforce it."
-            } >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "BENCHMARK_BASELINE_AVAILABLE=0" >> "$GITHUB_ENV"
-            echo "::warning title=Benchmark baseline missing::No cached benchmark baseline found for ${benchmark_compare_name}. Base lint/smoke/unit/coverage/frontend gates will still run; benchmark-compare remains fail-closed."
-            {
-              echo "### Benchmark baseline"
-              echo "- No cached baseline found for \`${benchmark_compare_name}\`; base quality gates continue so lint, smoke, unit, coverage, shell and frontend failures remain visible."
-              echo "- The separate \`benchmark-compare\` job is fail-closed and blocks production readiness until a reviewed baseline exists."
-              echo "- Seed via GitHub Actions → CI → Run workflow → \`seed_benchmark_baseline=true\`, then rerun normal CI / production-readiness."
-              echo "- Or restore \`.benchmarks/*_${benchmark_compare_name}.json\` from a reviewed benchmark artifact/cache before re-running CI."
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
 
       - name: Diagnose environment (always)
         if: always()
@@ -279,7 +157,7 @@ jobs:
           SIDAR_INSTALL_TEST_MODE=1 SIDAR_INSTALL_VERSION_PROBE_ONLY=1 bash dist/install_sidar.sh
 
       - name: Upload standalone installer bundle artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: standalone-install-sidar
           path: |
@@ -290,9 +168,9 @@ jobs:
           retention-days: 30
 
       - name: Set up Node.js (with npm cache)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version-file: web_ui_react/.nvmrc
           cache: 'npm'
           cache-dependency-path: web_ui_react/package-lock.json
 
@@ -301,6 +179,21 @@ jobs:
 
       - name: Check Ruff docstring and ASYNC240 debt baseline
         run: uv run python scripts/ci/check_ruff_debt_baseline.py
+
+      - name: Check production source debt markers
+        run: uv run python scripts/ci/check_source_debt_markers.py
+
+      - name: Check production coverage exclusion budget
+        run: uv run python scripts/ci/check_coverage_exclusion_budget.py
+
+      - name: Check module-notes documentation inventory
+        run: uv run python scripts/ci/check_module_notes_inventory.py
+
+      - name: Check web_server.py size budget
+        run: uv run python scripts/ci/check_web_server_size_baseline.py
+
+      - name: Check CHANGELOG.md entry budget
+        run: uv run python scripts/ci/check_changelog_entry_budget.py
 
       - name: Run Python format check gate (ruff format)
         run: uv run ruff format --check .
@@ -325,21 +218,69 @@ jobs:
           npm run audit:high
 
       - name: Restore Playwright browser cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('web_ui_react/package-lock.json') }}
+          key: playwright-ubuntu-24.04-${{ hashFiles('web_ui_react/package-lock.json') }}
           restore-keys: |
-            playwright-${{ runner.os }}-
+            playwright-ubuntu-24.04-
 
       - name: Install Playwright Chromium for frontend smoke tests
         run: |
           cd web_ui_react
           npx playwright install --with-deps chromium
 
+      - name: Attest canonical Playwright browser environment
+        env:
+          PLAYWRIGHT_EVIDENCE_PATH: ../artifacts/playwright/canonical-environment.json
+        run: |
+          cd web_ui_react
+          mkdir -p ../artifacts/playwright
+          node <<'NODE'
+          const fs = require('node:fs');
+          const os = require('node:os');
+          const path = require('node:path');
+          const { chromium } = require('@playwright/test');
+          const packageJson = require('@playwright/test/package.json');
+
+          (async () => {
+            const browser = await chromium.launch({ headless: true });
+            const page = await browser.newPage();
+            await page.setContent('<title>Sidar canonical Playwright evidence</title>');
+            const title = await page.title();
+            if (title !== 'Sidar canonical Playwright evidence') {
+              throw new Error(`Unexpected Chromium smoke title: ${title}`);
+            }
+            const evidence = {
+              schema_version: 1,
+              evidence_kind: 'canonical-ci-browser-environment',
+              github_sha: process.env.GITHUB_SHA || null,
+              runner_os: process.env.RUNNER_OS || null,
+              runner_arch: process.env.RUNNER_ARCH || null,
+              image_os: process.env.ImageOS || null,
+              platform: os.platform(),
+              platform_release: os.release(),
+              node_version: process.version,
+              playwright_version: packageJson.version,
+              browser_name: 'chromium',
+              browser_version: browser.version(),
+              headless_launch_smoke: 'passed',
+            };
+            await browser.close();
+            fs.writeFileSync(
+              path.resolve(process.env.PLAYWRIGHT_EVIDENCE_PATH),
+              `${JSON.stringify(evidence, null, 2)}\n`,
+              'utf8',
+            );
+          })().catch((error) => {
+            console.error(error);
+            process.exitCode = 1;
+          });
+          NODE
+
       - name: Run SAST gates (Bandit + pip-audit)
         run: |
-          uv run bandit -r . -c pyproject.toml
+          uv run python scripts/ci/check_bandit_suppression_baseline.py
           mkdir -p artifacts/security
           mapfile -t pip_audit_ignore_args < <(python scripts/pip_audit_ignore_args.py)
           stderr_log=artifacts/security/pip-audit-stderr.log
@@ -358,7 +299,7 @@ jobs:
 
       - name: Upload security audit artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: security-audit-artifacts
           path: artifacts/security/
@@ -375,6 +316,11 @@ jobs:
 
       - name: Check empty test artifacts
         run: bash scripts/check_empty_test_artifacts.sh
+
+      # Keep this strict contract before pytest. A green Base Quality Gates job
+      # therefore proves parity passed and the evidence validator below ran.
+      - name: Check .env.example ↔ config.py parity
+        run: bash scripts/check_env_parity.sh
 
       - name: Run deterministic quality gates
         run: >-
@@ -409,15 +355,36 @@ jobs:
           shopt -s globstar nullglob
           uv run shellcheck --severity=warning -x install_sidar.sh scripts/install_modules/**/*.sh
 
-      - name: Run canonical production-readiness gate
+      - name: Run base quality gates (performance isolated)
         env:
-          FRONTEND_E2E_NPM_SCRIPT: "test:e2e:smoke"
+          # web_ui_react/e2e/ has 8 spec files; only chat-websocket.spec.js
+          # ("smoke") ever ran here, so the other 7 panel specs (admin-panels,
+          # agent-manager, p2p-dialogue, prompt-admin, swarm-flow, tools-panel,
+          # voice-panel) never executed in any automated path -- not in CI, not
+          # in any nightly/weekly/release workflow, and not even via `make
+          # production-readiness` despite docs/TESTING.md's "yalnız
+          # RUN_FRONTEND_E2E=1 ile tam gate'te tetiklenir" claim (that claim
+          # was aspirational; FRONTEND_E2E_NPM_SCRIPT was never actually set
+          # anywhere but here). Running the full suite surfaced two real,
+          # previously-undetected bugs (see the CHANGELOG entry) before this
+          # was turned on as release-blocking; test:e2e (all 8 specs, ~10
+          # tests) is fast (~12s locally with 2 workers) and self-contained
+          # (each spec starts its own mock backend + Vite server, no shared
+          # infra), so there's no cost reason to keep it scoped to one file.
+          FRONTEND_E2E_NPM_SCRIPT: "test:e2e"
           RUN_FRONTEND_E2E: "1"
           FRONTEND_E2E_ENFORCE_RESULT: "1"
           QUALITY_GATE_EXIT_AFTER_FIRST_FAIL: "1"
           AUTO_BUILD_DOCKER_TEST_IMAGE: "1"
           DOCKER_TEST_IMAGE: "sidar:latest"
           DOCKER_TEST_IMAGE_BUILD_CONTEXT: "."
+          # check-bundle-budget.mjs requires both budget vars whenever
+          # TEST_PROFILE=ci (or SIDAR_PRODUCTION_READINESS=1) so a CI run can
+          # never silently skip the frontend bundle-size gate. Match the
+          # ratcheted Makefile defaults (500/160) used by every local
+          # `make dev-full`/`make production-readiness` run.
+          SIDAR_TOTAL_JS_BUDGET_KB: "500"
+          SIDAR_TOTAL_GZIP_BUDGET_KB: "160"
           # CI no longer hardcodes a separate pre-merge override; it inherits
           # the ratchet-managed pyproject.toml baseline like the local profile
           # (current local/CI baseline: %100; coverage_ratchet.py only raises it)
@@ -426,10 +393,21 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p artifacts
-          make production-readiness 2>&1 | tee artifacts/test_run.log
+          TEST_PROFILE=ci RUN_BENCHMARKS=0 RUN_FRONTEND_E2E=1 \
+            SIDAR_PRODUCTION_READINESS=0 bash run_tests.sh --stage all \
+            2>&1 | tee artifacts/test_run.log
 
-      - name: Validate production-readiness test summary
-        run: uv run python scripts/ci/validate_test_summary.py --mode release --summary artifacts/test-summary.json
+      - name: Enforce real-container plugin sandbox security matrix
+        env:
+          SIDAR_PLUGIN_SANDBOX_IMAGE: sidar:latest
+          SIDAR_REQUIRE_PLUGIN_SANDBOX_CONTAINER_TESTS: "1"
+        run: uv run pytest -q -rs tests/integration/web/test_plugin_sandbox_container_escape.py
+
+      - name: Validate base test summary
+        run: uv run python scripts/ci/validate_test_summary.py --mode development --summary artifacts/test-summary.json
+
+      - name: Attest current-commit pytest and coverage evidence
+        run: uv run python scripts/ci/validate_pytest_evidence.py --commit-sha "${GITHUB_SHA}"
 
       - name: Verify committed coverage ratchet baseline
         run: |
@@ -440,7 +418,7 @@ jobs:
 
       - name: Upload run_tests.sh full log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-run-log
           path: artifacts/test_run.log
@@ -449,7 +427,7 @@ jobs:
 
       - name: Upload mypy failure logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mypy-error-logs
           path: artifacts/mypy_errors*.log
@@ -462,18 +440,19 @@ jobs:
 
       - name: Upload Playwright frontend smoke report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-playwright-report
           path: |
             web_ui_react/playwright-report/
             web_ui_react/test-results/
+            artifacts/playwright/canonical-environment.json
           if-no-files-found: warn
           retention-days: 14
 
       - name: Upload BATS JUnit Report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bats-junit-report
           path: artifacts/bats/report.xml
@@ -482,7 +461,7 @@ jobs:
 
       - name: Upload Backend Coverage Report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: backend-coverage-report
           path: htmlcov/
@@ -491,11 +470,12 @@ jobs:
 
       - name: Upload test summary, coverage XML/JSON + Benchmark JSON artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: backend-quality-trend-artifacts
           path: |
             artifacts/test-summary.json
+            artifacts/pytest-evidence.json
             coverage.json
             coverage.xml
             artifacts/benchmark/benchmark.json
@@ -507,7 +487,7 @@ jobs:
 
       - name: Upload Frontend Coverage Report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-coverage-report
           path: |
@@ -517,9 +497,6 @@ jobs:
             web_ui_react/coverage/coverage-final.json
           if-no-files-found: warn
           retention-days: 14
-
-      - name: Check .env.example ↔ config.py parity
-        run: bash scripts/check_env_parity.sh
 
   installer-smoke:
     # Branch protection should mark this job name as required. It runs on every
@@ -533,7 +510,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # check-install-manifests --check-pin needs the full history to
           # `git show` the commit pinned in SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT;
@@ -541,13 +518,14 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
-          python-version: '3.11'
+          python-version: '3.11.15'
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v10.1.0
         with:
+          version: "0.12.0"
           enable-cache: true
           cache-dependency-glob: '**/uv.lock'
 
@@ -598,22 +576,64 @@ jobs:
   benchmark-compare:
     name: Benchmark compare gate
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.seed_benchmark_baseline }}
-    runs-on: ubuntu-latest
+    # A shared ubuntu-latest VM is too noisy for a release-blocking latency
+    # comparison. The baseline seed jobs use the same named runner/cache scope.
+    runs-on: [self-hosted, linux, benchmark]
+
+    env:
+      # sidar[runtime-gpu] pulls multi-hundred-MB nvidia-*/torch wheels; uv's
+      # 30s default HTTP timeout can time out these individual downloads on a
+      # slower/self-hosted link well before the transfer itself would fail.
+      UV_HTTP_TIMEOUT: "180"
+      # uv's default of 50 in-flight concurrent downloads can saturate this
+      # operator's home internet link during a cold cache fill, which is
+      # what triggered the WSL2 broker disconnects documented in
+      # docs/runbooks/gpu-runner-continuity.md. uv has no byte/bandwidth-size
+      # throttle (only this count-based knob -- see astral-sh/uv#1205 and
+      # astral-sh/uv#10570), so serializing to one download at a time is the
+      # only way to bound peak simultaneous throughput without adding an
+      # external bandwidth-limiting tool. This trades wall-clock time on a
+      # cold fill (rare -- only after an explicit `uv cache clean`) for a
+      # link that never has more than one multi-hundred-MB transfer open.
+      UV_CONCURRENT_DOWNLOADS: "1"
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
-          python-version: '3.11'
+          python-version: '3.11.15'
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v10.1.0
         with:
-          enable-cache: true
-          cache-dependency-glob: '**/uv.lock'
+          version: "0.12.0"
+          # This is a persistent self-hosted host, not an ephemeral VM: uv's
+          # own default cache directory already lives on local disk and
+          # survives across every job for free. setup-uv's enable-cache
+          # wraps that same directory in an actions/cache save/restore round
+          # trip -- upstream's own "auto" default disables it on self-hosted
+          # runners for exactly this reason. This job used to override that
+          # default to `true`, which produced mismatched/racy cache keys
+          # between this job and gpu-inference-quality-gate's own
+          # (differently-configured) setup-uv step and caused redundant
+          # multi-GB wheel downloads seconds apart on the same runner.
+          enable-cache: false
+
+      - name: Pin uv cache to persistent host disk
+        # setup-uv unconditionally exports UV_CACHE_DIR pointing at
+        # $RUNNER_TEMP/setup-uv-cache regardless of enable-cache -- and
+        # RUNNER_TEMP (_work/_temp) is scratch space the runner clears
+        # between jobs, even on this persistent self-hosted host. That
+        # alone (independent of the actions/cache wrapping disabled above)
+        # meant this job and gpu-inference-quality-gate could never share
+        # a uv cache: each got its own empty _work/_temp and re-downloaded
+        # the same multi-GB wheels. Re-point it at the host's real,
+        # never-cleared home directory so both self-hosted jobs share one
+        # cache on disk.
+        run: echo "UV_CACHE_DIR=$HOME/.cache/uv" >> "$GITHUB_ENV"
 
       - name: Install system dependencies
         run: bash scripts/install_ci_system_deps.sh
@@ -623,15 +643,15 @@ jobs:
 
       - name: Restore benchmark baseline cache
         id: benchmark-baseline-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .benchmarks
-          key: benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
+          key: benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
           restore-keys: |
-            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-
-            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-main-
-            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-master-
-            benchmark-baseline-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-main-
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-master-
+            benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-
 
       - name: Resolve benchmark baseline gate mode
         id: benchmark-baseline
@@ -642,24 +662,41 @@ jobs:
           benchmark_compare_name="${BENCHMARK_COMPARE_NAME:-baseline}"
           compare_file="$(find .benchmarks -type f -name "*_${benchmark_compare_name}.json" -print 2>/dev/null | sort -V | tail -n 1)"
           if [[ -z "$compare_file" ]]; then
-            echo "::error title=Benchmark baseline missing::No cached benchmark baseline found for ${benchmark_compare_name}. Base quality gates run separately, but production readiness is fail-closed until a benchmark baseline exists."
+            # No baseline is visible in any cache scope this run can reach. This is
+            # expected the first time a PR touches uv.lock: GitHub Actions cache
+            # access for a pull_request-triggered run is limited to this run's own
+            # ref (refs/pull/<n>/merge), the PR's base branch, and the repo default
+            # branch -- a baseline seeded on the PR's *head* branch (e.g. via
+            # workflow_dispatch) is out of scope and never restorable here, and a
+            # baseline seeded on the base branch only matches when uv.lock is
+            # identical to the base branch's, which a dependency-touching PR breaks.
+            # Bootstrap instead of failing closed: generate this run's own baseline
+            # and save it under this run's ref scope so the *next* push to this PR
+            # restores it and gets a real regression comparison.
+            echo "mode=bootstrap" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Benchmark baseline::No cached baseline found for ${benchmark_compare_name} in a reachable cache scope; bootstrapping one from this run instead of failing closed."
             {
               echo "### Benchmark baseline"
-              echo "- No cached baseline found for \`${benchmark_compare_name}\`; benchmark compare is fail-closed."
-              echo "- Base quality gates are independent and still run in the \`test\` job."
-              echo "- Seed via GitHub Actions → CI → Run workflow → \`seed_benchmark_baseline=true\`, then rerun normal CI / production-readiness."
+              echo "- No cached baseline found for \`${benchmark_compare_name}\` in a scope this run can access."
+              echo "- Bootstrapping: this run generates and saves a fresh \`${benchmark_compare_name}\` under this PR's own cache scope. **No regression comparison was performed this run.**"
+              echo "- The next push to this PR (same \`uv.lock\`) will restore this bootstrap baseline and perform a real comparison."
+              echo "- To review-gate a curated baseline for \`main\`/\`master\` instead, run: GitHub Actions → CI → Run workflow → \`seed_benchmark_baseline=true\`."
             } >> "$GITHUB_STEP_SUMMARY"
-            exit 1
+          else
+            echo "mode=compare" >> "$GITHUB_OUTPUT"
+            echo "compare_file=$compare_file" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Benchmark baseline::Using ${compare_file} for compare gate."
           fi
-          echo "compare_file=$compare_file" >> "$GITHUB_OUTPUT"
-          echo "::notice title=Benchmark baseline::Using ${compare_file} for compare gate."
 
       - name: Run benchmark compare gate
         env:
           DOTENV_FILE: .env.test
           BENCHMARK_JSON_OUTPUT: artifacts/benchmark/benchmark.json
+          BENCHMARK_IO_JSON_OUTPUT: artifacts/benchmark/io-benchmark.json
           BENCHMARK_COMPARE_FAIL: mean:10%
+          BENCHMARK_IO_COMPARE_FAIL: mean:25%
           BENCHMARK_BASELINE_FILE: ${{ steps.benchmark-baseline.outputs.compare_file }}
+          BENCHMARK_MODE: ${{ steps.benchmark-baseline.outputs.mode }}
         run: |
           set -o pipefail
           mkdir -p artifacts/benchmark
@@ -668,45 +705,129 @@ jobs:
           import os
           from pathlib import Path
 
-          baseline = Path(os.environ["BENCHMARK_BASELINE_FILE"])
-          metadata = {
-              "baseline_file": str(baseline),
-              "baseline_exists": baseline.exists(),
-              "baseline_size_bytes": baseline.stat().st_size if baseline.exists() else 0,
-          }
+          mode = os.environ["BENCHMARK_MODE"]
+          metadata = {"mode": mode}
+          if mode == "compare":
+              baseline = Path(os.environ["BENCHMARK_BASELINE_FILE"])
+              metadata.update(
+                  baseline_file=str(baseline),
+                  baseline_exists=baseline.exists(),
+                  baseline_size_bytes=baseline.stat().st_size if baseline.exists() else 0,
+              )
           Path("artifacts/benchmark/baseline-metadata.json").write_text(
               json.dumps(metadata, indent=2, sort_keys=True),
               encoding="utf-8",
           )
           PY
+          if [[ "${BENCHMARK_MODE}" == "bootstrap" ]]; then
+            compare_args=(--benchmark-save=baseline)
+            io_compare_args=(--benchmark-save=baseline)
+          else
+            compare_args=(--benchmark-compare="${BENCHMARK_BASELINE_FILE}" --benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}")
+            io_compare_args=(--benchmark-compare="${BENCHMARK_BASELINE_FILE}" --benchmark-compare-fail="${BENCHMARK_IO_COMPARE_FAIL}")
+          fi
           uv run python -m pytest -c pyproject.toml -v tests/performance -n 0 --no-cov \
+            --ignore=tests/performance/test_gpu_benchmark.py \
+            -k "not test_multi_user_session_message_workload_scales_with_concurrency" \
             --benchmark-json="${BENCHMARK_JSON_OUTPUT}" \
-            --benchmark-compare="${BENCHMARK_BASELINE_FILE}" \
-            --benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}" \
+            "${compare_args[@]}" \
             --benchmark-warmup=on \
             --benchmark-warmup-iterations=100000 \
             --benchmark-disable-gc \
             --junitxml=artifacts/benchmark/benchmark-junit.xml \
             2>&1 | tee artifacts/benchmark/benchmark-compare.log
           status=${PIPESTATUS[0]}
+          if [ "$status" -eq 0 ]; then
+            uv run python -m pytest -c pyproject.toml -v tests/performance/test_benchmark.py -n 0 --no-cov \
+              -k "test_multi_user_session_message_workload_scales_with_concurrency" \
+              --benchmark-json="${BENCHMARK_IO_JSON_OUTPUT}" \
+              "${io_compare_args[@]}" \
+              --benchmark-warmup=on \
+              --benchmark-warmup-iterations=100000 \
+              --benchmark-disable-gc \
+              --junitxml=artifacts/benchmark/io-benchmark-junit.xml \
+              2>&1 | tee artifacts/benchmark/io-benchmark-compare.log
+            status=${PIPESTATUS[0]}
+          fi
           test -s "${BENCHMARK_JSON_OUTPUT}" || {
             printf '{"status":"failed-before-json","exit_code":%s}\n' "$status" \
               > artifacts/benchmark/failure.json
           }
           exit "$status"
 
+      - name: Save bootstrap benchmark baseline cache
+        if: steps.benchmark-baseline.outputs.mode == 'bootstrap'
+        uses: actions/cache/save@v6
+        with:
+          path: .benchmarks
+          key: benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ hashFiles('uv.lock') }}-${{ github.ref_name }}-${{ github.run_id }}
+
       - name: Upload benchmark compare artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: benchmark-compare-artifacts
           path: |
             artifacts/benchmark/benchmark.json
             artifacts/benchmark/benchmark-compare.log
             artifacts/benchmark/benchmark-junit.xml
+            artifacts/benchmark/io-benchmark.json
+            artifacts/benchmark/io-benchmark-junit.xml
+            artifacts/benchmark/io-benchmark-compare.log
             artifacts/benchmark/baseline-metadata.json
             artifacts/benchmark/failure.json
             .benchmarks/
+          if-no-files-found: warn
+          retention-days: 14
+
+  frontend-node-compatibility:
+    name: Frontend Node ${{ matrix.node }} compatibility (non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up compatibility Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: web_ui_react/package-lock.json
+
+      - name: Install locked frontend dependencies
+        working-directory: web_ui_react
+        run: npm ci
+
+      - name: Run critical compatibility tests and production build
+        working-directory: web_ui_react
+        run: |
+          npm run test:critical
+          npm run build
+
+  production-compose-validation:
+    name: Production Compose runtime validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Validate production Compose runtime evidence
+        run: bash scripts/ci/validate_production_compose.sh
+
+      - name: Publish production Compose diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: production-compose-diagnostics
+          path: artifacts/production-compose/
           if-no-files-found: warn
           retention-days: 14
 
@@ -714,13 +835,13 @@ jobs:
     name: Production readiness aggregate
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.seed_benchmark_baseline }}
     runs-on: ubuntu-latest
-    needs: [test, benchmark-compare, gpu-inference-policy-gate]
+    needs: [test, benchmark-compare, gpu-inference-policy-gate, production-profile-dry-run, production-compose-validation]
 
     steps:
       - name: Confirm production readiness gates
         run: |
-          echo "Base quality, benchmark compare, and GPU inference policy gates passed."
-          echo "Production readiness is the combined result of jobs: test + benchmark-compare + gpu-inference-policy-gate."
+          echo "Base quality, benchmark, GPU evidence, production-minimal imports/migration, and Production Compose runtime gates passed."
+          echo "Production readiness includes production Compose boot, health/readiness, migration head, restart, persistence, and graceful shutdown evidence."
 
   production-profile-dry-run:
     name: Production-minimal runtime validation
@@ -728,16 +849,17 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
-          python-version: '3.11'
+          python-version: '3.11.15'
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v10.1.0
         with:
+          version: "0.12.0"
           enable-cache: false
 
       - name: Validate production-minimal installer sync
@@ -795,7 +917,7 @@ jobs:
 
       - name: Upload production-minimal runtime evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: production-minimal-runtime-evidence
           path: |
@@ -831,20 +953,21 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
-          python-version: '3.11'
+          python-version: '3.11.15'
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v10.1.0
         with:
+          version: "0.12.0"
           enable-cache: true
 
       - name: Cache APT packages (PortAudio)
-        uses: awalsh128/cache-apt-pkgs-action@v1.4.3
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.3
         with:
           packages: portaudio19-dev
           version: ci-portaudio-v1
@@ -868,30 +991,70 @@ jobs:
   gpu-inference-quality-gate:
     name: GPU Inference Quality Gate (TTFT<=200ms, latency<=250ms)
     if: ${{ vars.ENABLE_GPU_BENCH_GATE == 'true' }}
-    runs-on: [self-hosted, linux, gpu]
+    # `runs-on` is the scheduler contract. Merely exporting the same strings in
+    # an environment variable would not make a host eligible for this job.
+    runs-on: [self-hosted, linux, x64, gpu, cuda]
+    # Primary ve warm-standby aynı etiketleri taşır; GitHub uygun online hostu seçer.
+    # Kapasite/RTO sözleşmesi: docs/runbooks/gpu-runner-continuity.md
+    # Bounds execution after a runner accepts the job. GitHub does not apply
+    # timeout-minutes while a self-hosted job is still queued/offline; the
+    # operator runbook documents that separate availability failure mode.
+    # 45m was too tight for a runner's first cold uv/pip cache fill (multi-GB
+    # torch/nvidia-cu13 wheels) over a slower link — a brand-new standby
+    # runner hit this exact timeout mid-download and got cancelled before
+    # ever reaching the actual benchmark. 90m still wasn't enough on this
+    # operator's actual link speed (individual nvidia-cu13-* wheels alone
+    # took 5-13m each on a cold cache); 180m gives real headroom for a slow
+    # connection's cold cache fill without materially weakening the
+    # fail-closed timeout.
+    timeout-minutes: 180
     needs: test
 
     env:
       GPU_BENCH_TTFT_BUDGET: "0.2"
       GPU_BENCH_LATENCY_BUDGET: "0.25"
       RUN_GPU_STRESS: "1"
+      # sidar[runtime-gpu] pulls multi-hundred-MB nvidia-*/torch wheels; uv's
+      # 30s default HTTP timeout can time out these individual downloads on a
+      # slower/self-hosted link well before the transfer itself would fail.
+      UV_HTTP_TIMEOUT: "180"
+      # Same operator-link rationale as benchmark-compare's identical env var
+      # -- see its comment.
+      UV_CONCURRENT_DOWNLOADS: "1"
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
-          python-version: '3.11'
+          python-version: '3.11.15'
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v10.1.0
         with:
-          enable-cache: true
+          version: "0.12.0"
+          # Same persistent self-hosted host as benchmark-compare -- see the
+          # comment on that job's "Set up uv" step. uv's own local disk
+          # cache already survives across jobs here; routing it through
+          # actions/cache (enable-cache: true, previously without even a
+          # cache-dependency-glob) produced a different cache key than the
+          # benchmark job's and caused redundant re-downloads of the same
+          # multi-GB nvidia-cu13/torch wheels moments apart.
+          enable-cache: false
+
+      - name: Pin uv cache to persistent host disk
+        # See the comment on benchmark-compare's identical step: setup-uv
+        # unconditionally exports UV_CACHE_DIR under $RUNNER_TEMP
+        # (_work/_temp), which the runner clears between jobs even on this
+        # persistent host, regardless of enable-cache. Without this
+        # override this job and benchmark-compare each got their own empty
+        # _work/_temp and could never share a uv cache.
+        run: echo "UV_CACHE_DIR=$HOME/.cache/uv" >> "$GITHUB_ENV"
 
       - name: Cache APT packages (PortAudio)
-        uses: awalsh128/cache-apt-pkgs-action@v1.4.3
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.3
         with:
           packages: portaudio19-dev
           version: ci-portaudio-v1
@@ -907,7 +1070,7 @@ jobs:
 
       - name: Upload GPU inference gate JUnit report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gpu-inference-quality-gate-junit
           path: gpu-inference-quality-gate.junit.xml
@@ -921,21 +1084,14 @@ jobs:
     needs: [test, gpu-inference-quality-gate]
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
       - name: Require GPU latency evidence
         env:
           GPU_GATE_ENABLED: ${{ vars.ENABLE_GPU_BENCH_GATE }}
           GPU_GATE_RESULT: ${{ needs.gpu-inference-quality-gate.result }}
-        run: |
-          set -euo pipefail
-          if [[ "${GPU_GATE_ENABLED}" != "true" ]]; then
-            echo "::error title=GPU inference evidence missing::ENABLE_GPU_BENCH_GATE=true is required for merge/release readiness. Configure a [self-hosted, linux, gpu] runner; production readiness must not pass without TTFT/latency evidence."
-            exit 1
-          fi
-          if [[ "${GPU_GATE_RESULT}" != "success" ]]; then
-            echo "::error title=GPU inference gate failed::gpu-inference-quality-gate result=${GPU_GATE_RESULT}; expected success."
-            exit 1
-          fi
-          echo "GPU inference TTFT/latency evidence is present and passing."
+        run: bash scripts/ci/check_gpu_evidence.sh
 
   publish-standalone-installer:
     name: Publish Standalone Installer Bundle
@@ -951,24 +1107,25 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # check-pin needs the full history to `git show` the commit pinned
           # in SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT; shallow clones don't have it.
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
-          python-version: '3.11'
+          python-version: '3.11.15'
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v10.1.0
         with:
+          version: "0.12.0"
           enable-cache: false
 
       - name: Cache APT packages (PortAudio)
-        uses: awalsh128/cache-apt-pkgs-action@v1.4.3
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.3
         with:
           packages: portaudio19-dev
           version: ci-portaudio-v1

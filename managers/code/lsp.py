@@ -63,10 +63,109 @@ def decode_lsp_stream(raw: bytes) -> list[dict[str, Any]]:
     return messages
 
 
+def lsp_install_hint(language_id: str) -> str:
+    """Return the canonical installation hint for a language server."""
+    if language_id == "python":
+        return "uv tool install pyright  # veya: uv add --dev pyright"
+    return "npm install -g typescript-language-server typescript"
+
+
+def lsp_target_binary(
+    command: list[str], *, language_id: str, python_server: str, typescript_server: str
+) -> str:
+    """Return the wrapped LSP executable name from an uv/uvx command."""
+    default = python_server if language_id == "python" else typescript_server
+    if not command or Path(command[0]).name.lower() not in {"uv", "uvx"}:
+        return default
+    skip_next = False
+    for token in command[1:]:
+        if skip_next:
+            skip_next = False
+            continue
+        if token in {"--from", "--with"}:
+            skip_next = True
+            continue
+        if token in {"run", "--frozen", "tool"} or token.startswith("-"):
+            continue
+        return token
+    return default
+
+
+def lsp_stderr_indicates_missing_binary(stderr_text: str) -> bool:
+    """Return whether wrapper stderr indicates a missing executable."""
+    lowered = stderr_text.lower()
+    return bool(stderr_text) and any(
+        marker in lowered
+        for marker in (
+            "failed to spawn",
+            "no such file or directory",
+            "command not found",
+            "executable not found",
+            "not found in",
+        )
+    )
+
+
+def extract_lsp_result(
+    messages: list[dict[str, Any]], request_id: int = 2
+) -> tuple[Any, list[dict[str, Any]]]:
+    """Separate one request result from LSP notifications."""
+    result = None
+    notifications: list[dict[str, Any]] = []
+    for message in messages:
+        if message.get("id") == request_id:
+            if "error" in message:
+                raise RuntimeError(str(message["error"]))
+            result = message.get("result")
+        elif "method" in message:
+            notifications.append(message)
+    return result, notifications
+
+
+def format_lsp_locations(locations: Any, limit: int) -> str:
+    """Format Location and LocationLink results for human-readable output."""
+    if not locations:
+        return "Sonuç bulunamadı."
+    normalized = [
+        {
+            "uri": item["targetUri"],
+            "range": item.get("targetSelectionRange") or item.get("targetRange") or {},
+        }
+        if "targetUri" in item
+        else item
+        for item in locations
+    ]
+    lines = []
+    for entry in normalized[:limit]:
+        start = entry.get("range", {}).get("start", {})
+        path = file_uri_to_path(entry.get("uri", ""))
+        lines.append(
+            f"- {path}: satır {int(start.get('line', 0)) + 1}, "
+            f"sütun {int(start.get('character', 0)) + 1}"
+        )
+    if len(normalized) > limit:
+        lines.append(f"... ve {len(normalized) - limit} ek sonuç daha.")
+    return "\n".join(lines)
+
+
+def position_params(path: Path, line: int, character: int) -> dict[str, Any]:
+    """Build canonical LSP text-document position parameters."""
+    return {
+        "textDocument": {"uri": path_to_file_uri(path)},
+        "position": {"line": line, "character": character},
+    }
+
+
 __all__ = [
     "LSPProtocolError",
     "decode_lsp_stream",
     "encode_lsp_message",
+    "extract_lsp_result",
     "file_uri_to_path",
+    "format_lsp_locations",
+    "lsp_install_hint",
+    "lsp_stderr_indicates_missing_binary",
+    "lsp_target_binary",
     "path_to_file_uri",
+    "position_params",
 ]

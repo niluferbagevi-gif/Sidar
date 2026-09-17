@@ -7,6 +7,7 @@ Bağlantı yaşam döngüsü ve transaction yardımcıları ``core.db.connection
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import sqlite3
 import uuid
@@ -45,7 +46,7 @@ from core.db.auth import (
     _AUTH_HASH_SLO_MS_ENV as _AUTH_HASH_SLO_MS_ENV,
 )
 from core.db.auth import (
-    _PASSWORD_HASH_ALGORITHM_ENV as _PASSWORD_HASH_ALGORITHM_ENV,
+    _CREDENTIAL_HASH_ALGORITHM_ENV as _CREDENTIAL_HASH_ALGORITHM_ENV,
 )
 from core.db.auth import (
     _PBKDF2_ALGORITHM as _PBKDF2_ALGORITHM,
@@ -109,6 +110,7 @@ from core.db.dialect import (
 from core.db.dialect import (
     quote_sql_identifier as _quote_sql_identifier_impl,
 )
+from core.db.dialect import render_sql_identifier_template
 from core.db.helpers import (
     new_entity_id as _new_entity_id,
 )
@@ -182,6 +184,37 @@ def _postgres_user_action_message(reason: str, exc: BaseException | None = None)
 
 logger = logging.getLogger(__name__)
 _ASYNCPG_COMMAND_TAG_COUNT_RE = _DEFAULT_ASYNCPG_COMMAND_TAG_COUNT_RE
+_INSECURE_LOCAL_DATABASE_URL = "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/sidar"
+
+
+class DatabaseConfigurationError(RuntimeError):
+    """Raised when the database facade cannot resolve a safe connection URL."""
+
+
+def _resolve_database_url(cfg: Any) -> str:
+    """Resolve a configured DSN, allowing the legacy default only by local opt-in."""
+    database_url = str(getattr(cfg, "DATABASE_URL", "") or "").strip()
+    if database_url:
+        return database_url
+
+    environment = str(getattr(cfg, "SIDAR_ENV", "") or "").strip().lower()
+    raw_allow_insecure = getattr(cfg, "SIDAR_ALLOW_INSECURE_LOCAL_DB_DEFAULT", False)
+    allow_insecure = raw_allow_insecure is True or (
+        isinstance(raw_allow_insecure, str)
+        and raw_allow_insecure.strip().lower() in {"1", "true", "yes", "on"}
+    )
+    if allow_insecure and environment in {"development", "test"}:
+        logger.warning(
+            "SIDAR_ALLOW_INSECURE_LOCAL_DB_DEFAULT etkin; yalnız yerel kullanım için "
+            "postgres/postgres PostgreSQL varsayılanı kullanılıyor."
+        )
+        return _INSECURE_LOCAL_DATABASE_URL
+
+    raise DatabaseConfigurationError(
+        "DATABASE_URL yapılandırılmamış. Güvenli bir bağlantı URL'si sağlayın; yalnız "
+        "development/test ortamında geçici yerel kullanım için "
+        "SIDAR_ALLOW_INSECURE_LOCAL_DB_DEFAULT=true açıkça ayarlanabilir."
+    )
 
 
 def _quote_sql_identifier(identifier: str) -> str:
@@ -217,8 +250,8 @@ class Database(DatabaseConnectionMixin):
     """Asenkron veritabanı erişim katmanı.
 
     Not:
-    - `DATABASE_URL` yoksa varsayılan PostgreSQL DSN kullanılır:
-      `postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/sidar`
+    - `DATABASE_URL` yoksa fail-closed davranılır. Eski yerel DSN yalnız
+      development/test ortamında açık opt-in ile kullanılabilir.
     - PostgreSQL URL (postgresql:// / postgresql+asyncpg://) verildiğinde `asyncpg`
       kullanılır; paket yoksa anlaşılır hata döndürür.
     - SQLite hâlâ desteklenir (örn. `sqlite+aiosqlite:///data/sidar.db`).
@@ -228,9 +261,7 @@ class Database(DatabaseConnectionMixin):
         self, cfg: Config | None = None, *, pg_pool_factory: Callable[..., Any] | None = None
     ) -> None:
         self.cfg = cfg or Config()
-        self.database_url = (
-            getattr(self.cfg, "DATABASE_URL", "") or ""
-        ).strip() or "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/sidar"
+        self.database_url = _resolve_database_url(self.cfg)
         self.pool_size = max(1, int(getattr(self.cfg, "DB_POOL_SIZE", 5) or 5))
         self.pool_min_size = max(
             1,
@@ -265,10 +296,6 @@ class Database(DatabaseConnectionMixin):
         self._configure_backend()
 
     @staticmethod
-    def _message_columns_sql() -> str:
-        return "id, session_id, role, content, tokens_used, created_at"
-
-    @staticmethod
     def _sqlite_fetchone(cursor: sqlite3.Cursor) -> sqlite3.Row | None:
         return _sqlite_fetchone(cursor)
 
@@ -294,7 +321,6 @@ class Database(DatabaseConnectionMixin):
         if not normalized_ids:
             return []
 
-        columns = self._message_columns_sql()
         if self._backend == "postgresql":
             assert self._pg_pool is not None
             # session_id sütunu PostgreSQL'de UUID tipindedir; doğrudan text[] ile
@@ -303,29 +329,28 @@ class Database(DatabaseConnectionMixin):
             # çevirerek SQLite şemasıyla uyumlu bir karşılaştırma sağlıyoruz.
             async with self._pg_pool.acquire() as conn:
                 rows = await conn.fetch(
-                    f"""
-                    SELECT {columns}
+                    """
+                    SELECT id, session_id, role, content, tokens_used, created_at
                     FROM messages
                     WHERE session_id::text = ANY($1::text[])
                     ORDER BY session_id ASC, created_at ASC, id ASC
-                    """,  # nosec B608  # columns sabit whitelist'ten üretilir.
+                    """,
                     normalized_ids,
                 )
             return list(rows)
 
         assert self._sqlite_conn is not None
-        placeholders = ",".join(["?"] * len(normalized_ids))
 
         def _run() -> list[sqlite3.Row]:
             assert self._sqlite_conn is not None
             cur = self._sqlite_conn.execute(
-                f"""
-                SELECT {columns}
+                """
+                SELECT id, session_id, role, content, tokens_used, created_at
                 FROM messages
-                WHERE session_id IN ({placeholders})
+                WHERE session_id IN (SELECT value FROM json_each(?))
                 ORDER BY session_id ASC, created_at ASC, id ASC
-                """,  # nosec B608  # columns/placeholders iç kaynaklıdır.
-                normalized_ids,
+                """,
+                (json.dumps(normalized_ids),),
             )
             return cur.fetchall()
 
@@ -467,9 +492,21 @@ class Database(DatabaseConnectionMixin):
     async def _init_schema_sqlite(self) -> None:
         assert self._sqlite_conn is not None
 
+        # NOT NULL, added explicitly on every PRIMARY KEY column below (both TEXT
+        # and INTEGER AUTOINCREMENT ones): SQLite's PRIMARY KEY alone does not
+        # imply NOT NULL the way SQL:1999/Alembic's Column(primary_key=True)
+        # does — a bare `id TEXT PRIMARY KEY` still accepts NULL, and since
+        # SQLite's UNIQUE/PRIMARY KEY index never treats two NULLs as
+        # conflicting, that silently allowed multiple NULL-id rows. This also
+        # keeps this hand-written bootstrap DDL structurally comparable to the
+        # Alembic-managed PostgreSQL schema (see
+        # test_sqlite_bootstrap_schema_matches_alembic_head_schema in
+        # tests/integration/db/test_db_migrations_integration.py, which
+        # reflects both schemas and previously had to special-case this
+        # divergence).
         schema_sql = """
         CREATE TABLE IF NOT EXISTS users (
-            id TEXT PRIMARY KEY,
+            id TEXT PRIMARY KEY NOT NULL,
             username TEXT NOT NULL UNIQUE,
             password_hash TEXT,
             role TEXT NOT NULL DEFAULT 'user',
@@ -478,7 +515,7 @@ class Database(DatabaseConnectionMixin):
         );
 
         CREATE TABLE IF NOT EXISTS auth_tokens (
-            token TEXT PRIMARY KEY,
+            token TEXT PRIMARY KEY NOT NULL,
             user_id TEXT NOT NULL,
             expires_at TEXT NOT NULL,
             created_at TEXT NOT NULL,
@@ -486,14 +523,14 @@ class Database(DatabaseConnectionMixin):
         );
 
         CREATE TABLE IF NOT EXISTS user_quotas (
-            user_id TEXT PRIMARY KEY,
+            user_id TEXT PRIMARY KEY NOT NULL,
             daily_token_limit INTEGER NOT NULL DEFAULT 0,
             daily_request_limit INTEGER NOT NULL DEFAULT 0,
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
         );
 
         CREATE TABLE IF NOT EXISTS provider_usage_daily (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             user_id TEXT NOT NULL,
             provider TEXT NOT NULL,
             usage_date TEXT NOT NULL,
@@ -504,7 +541,7 @@ class Database(DatabaseConnectionMixin):
         );
 
         CREATE TABLE IF NOT EXISTS sessions (
-            id TEXT PRIMARY KEY,
+            id TEXT PRIMARY KEY NOT NULL,
             user_id TEXT NOT NULL,
             title TEXT NOT NULL,
             created_at TEXT NOT NULL,
@@ -513,7 +550,7 @@ class Database(DatabaseConnectionMixin):
         );
 
         CREATE TABLE IF NOT EXISTS messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             session_id TEXT NOT NULL,
             role TEXT NOT NULL,
             content TEXT NOT NULL,
@@ -528,7 +565,7 @@ class Database(DatabaseConnectionMixin):
         CREATE INDEX IF NOT EXISTS idx_provider_usage_daily_user_id ON
         provider_usage_daily(user_id);
         CREATE TABLE IF NOT EXISTS access_policies (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             user_id TEXT NOT NULL,
             tenant_id TEXT NOT NULL DEFAULT 'default',
             resource_type TEXT NOT NULL,
@@ -545,7 +582,7 @@ class Database(DatabaseConnectionMixin):
             ON access_policies(user_id, tenant_id, resource_type, action);
 
         CREATE TABLE IF NOT EXISTS audit_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             user_id TEXT NOT NULL DEFAULT '',
             tenant_id TEXT NOT NULL DEFAULT 'default',
             action TEXT NOT NULL,
@@ -558,7 +595,7 @@ class Database(DatabaseConnectionMixin):
         CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp);
 
         CREATE TABLE IF NOT EXISTS prompt_registry (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             role_name TEXT NOT NULL,
             prompt_text TEXT NOT NULL,
             version INTEGER NOT NULL DEFAULT 1,
@@ -572,7 +609,7 @@ class Database(DatabaseConnectionMixin):
         is_active);
 
         CREATE TABLE IF NOT EXISTS marketing_campaigns (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             tenant_id TEXT NOT NULL DEFAULT 'default',
             name TEXT NOT NULL,
             channel TEXT NOT NULL DEFAULT '',
@@ -588,7 +625,7 @@ class Database(DatabaseConnectionMixin):
             ON marketing_campaigns(tenant_id, status, updated_at);
 
         CREATE TABLE IF NOT EXISTS content_assets (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             campaign_id INTEGER NOT NULL,
             tenant_id TEXT NOT NULL DEFAULT 'default',
             asset_type TEXT NOT NULL,
@@ -604,7 +641,7 @@ class Database(DatabaseConnectionMixin):
             ON content_assets(campaign_id, tenant_id, asset_type);
 
         CREATE TABLE IF NOT EXISTS operation_checklists (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             campaign_id INTEGER,
             tenant_id TEXT NOT NULL DEFAULT 'default',
             title TEXT NOT NULL,
@@ -619,7 +656,7 @@ class Database(DatabaseConnectionMixin):
             ON operation_checklists(campaign_id, tenant_id, status);
 
         CREATE TABLE IF NOT EXISTS coverage_tasks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             tenant_id TEXT NOT NULL DEFAULT 'default',
             requester_role TEXT NOT NULL DEFAULT 'coverage',
             command TEXT NOT NULL,
@@ -635,7 +672,7 @@ class Database(DatabaseConnectionMixin):
             ON coverage_tasks(tenant_id, status, updated_at);
 
         CREATE TABLE IF NOT EXISTS coverage_findings (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             task_id INTEGER NOT NULL,
             finding_type TEXT NOT NULL,
             target_path TEXT NOT NULL DEFAULT '',
@@ -747,11 +784,15 @@ class Database(DatabaseConnectionMixin):
             assert self._sqlite_conn is not None
             tbl = self._schema_version_table_quoted
             self._sqlite_conn.execute(
-                f"CREATE TABLE IF NOT EXISTS {tbl} (version INTEGER PRIMARY KEY, applied_at TEXT"
-                " NOT NULL, description TEXT NOT NULL)"
+                render_sql_identifier_template(
+                    "CREATE TABLE IF NOT EXISTS {table} "
+                    "(version INTEGER PRIMARY KEY NOT NULL, "
+                    "applied_at TEXT NOT NULL, description TEXT NOT NULL)",
+                    table=tbl,
+                )
             )
             cur = self._sqlite_conn.execute(
-                f"SELECT MAX(version) AS v FROM {tbl}"  # nosec B608  # tablo adı sistem içi sabittir.
+                render_sql_identifier_template("SELECT MAX(version) AS v FROM {table}", table=tbl)
             )
             row = _sqlite_fetchone(cur)
             current = int((row["v"] if row else 0) or 0)
@@ -759,7 +800,10 @@ class Database(DatabaseConnectionMixin):
                 return
             for v in range(current + 1, self.target_schema_version + 1):
                 self._sqlite_conn.execute(
-                    f"INSERT INTO {tbl} (version, applied_at, description) VALUES (?, ?, ?)",  # nosec B608
+                    render_sql_identifier_template(
+                        "INSERT INTO {table} (version, applied_at, description) VALUES (?, ?, ?)",
+                        table=tbl,
+                    ),
                     (v, _utc_now_iso(), f"baseline migration v{v}"),
                 )
             self._sqlite_conn.commit()
@@ -771,18 +815,28 @@ class Database(DatabaseConnectionMixin):
         tbl = self._schema_version_table_quoted
         async with self._pg_pool.acquire() as conn:
             await conn.execute(
-                f"CREATE TABLE IF NOT EXISTS {tbl} (version INTEGER PRIMARY KEY, applied_at "
-                f"TIMESTAMPTZ NOT NULL, description TEXT NOT NULL)"
+                render_sql_identifier_template(
+                    "CREATE TABLE IF NOT EXISTS {table} "
+                    "(version INTEGER PRIMARY KEY NOT NULL, "
+                    "applied_at TIMESTAMPTZ NOT NULL, description TEXT NOT NULL)",
+                    table=tbl,
+                )
             )
             current = await conn.fetchval(
-                f"SELECT COALESCE(MAX(version), 0) FROM {tbl}"  # nosec B608  # tablo adı sistem içi sabittir.
+                render_sql_identifier_template(
+                    "SELECT COALESCE(MAX(version), 0) FROM {table}", table=tbl
+                )
             )
             current = int(current or 0)
             if current >= self.target_schema_version:
                 return
             for v in range(current + 1, self.target_schema_version + 1):
                 await conn.execute(
-                    f"INSERT INTO {tbl} (version, applied_at, description) VALUES ($1, $2, $3)",  # nosec B608
+                    render_sql_identifier_template(
+                        "INSERT INTO {table} (version, applied_at, description) "
+                        "VALUES ($1, $2, $3)",
+                        table=tbl,
+                    ),
                     v,
                     datetime.now(UTC),
                     f"baseline migration v{v}",
@@ -1284,42 +1338,7 @@ class Database(DatabaseConnectionMixin):
     async def upsert_user_quota(
         self, user_id: str, daily_token_limit: int = 0, daily_request_limit: int = 0
     ) -> None:
-        tokens = max(0, int(daily_token_limit or 0))
-        requests = max(0, int(daily_request_limit or 0))
-        if self._backend == "postgresql":
-            assert self._pg_pool is not None
-            async with self._pg_pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    INSERT INTO user_quotas (user_id, daily_token_limit, daily_request_limit)
-                    VALUES ($1, $2, $3)
-                    ON CONFLICT (user_id)
-                    DO UPDATE SET daily_token_limit=EXCLUDED.daily_token_limit,
-                                  daily_request_limit=EXCLUDED.daily_request_limit
-                    """,
-                    user_id,
-                    tokens,
-                    requests,
-                )
-            return
-
-        assert self._sqlite_conn is not None
-
-        def _run() -> None:
-            assert self._sqlite_conn is not None
-            self._sqlite_conn.execute(
-                """
-                INSERT INTO user_quotas (user_id, daily_token_limit, daily_request_limit)
-                VALUES (?, ?, ?)
-                ON CONFLICT(user_id) DO UPDATE SET
-                    daily_token_limit=excluded.daily_token_limit,
-                    daily_request_limit=excluded.daily_request_limit
-                """,
-                (user_id, tokens, requests),
-            )
-            self._sqlite_conn.commit()
-
-        await self._run_sqlite_op(_run)
+        await db_metrics.upsert_user_quota(self, user_id, daily_token_limit, daily_request_limit)
 
     async def record_provider_usage_daily(
         self, user_id: str, provider: str, tokens_used: int, requests_inc: int = 1

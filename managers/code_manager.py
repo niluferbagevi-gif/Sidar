@@ -10,7 +10,7 @@ import logging
 import os
 import shlex
 import shutil
-import subprocess  # nosec B404
+import subprocess
 import sys
 import tempfile
 import threading
@@ -20,6 +20,7 @@ from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from core.hitl import get_hitl_gate
+from core.utils.trusted_subprocess import popen_trusted_command, run_trusted_command
 from managers.code import docker as docker_helpers
 from managers.code import file_io_security, linter_runners, runner, test_runner_orchestrator
 from managers.code.docker import (
@@ -41,8 +42,14 @@ from managers.code.lsp import (
     LSPProtocolError,
     decode_lsp_stream,
     encode_lsp_message,
+    extract_lsp_result,
     file_uri_to_path,
+    format_lsp_locations,
+    lsp_install_hint,
+    lsp_stderr_indicates_missing_binary,
+    lsp_target_binary,
     path_to_file_uri,
+    position_params,
 )
 from managers.code.platform import candidate_lsp_executable_paths
 from managers.code.pytest_parser import (
@@ -443,6 +450,11 @@ class CodeManager:
                 "remove": False,
                 "working_dir": tempfile.gettempdir(),
                 "mem_limit": sandbox_limits["memory"],
+                # Pin memswap_limit to mem_limit so the container cannot double its
+                # effective memory ceiling via swap before the OOM killer engages;
+                # the Docker Engine otherwise defaults memswap_limit to 2x mem_limit
+                # when host swap is available.
+                "memswap_limit": sandbox_limits["memory"],
                 "nano_cpus": sandbox_limits["nano_cpus"],
                 "pids_limit": sandbox_limits["pids_limit"],
             }
@@ -563,7 +575,7 @@ class CodeManager:
             python_bin = (
                 sys.executable or shutil.which("python3") or shutil.which("python") or "python"
             )
-            result = subprocess.run(  # nosec B603
+            result = run_trusted_command(
                 [python_bin, tmp_path],
                 capture_output=True,
                 text=True,
@@ -812,33 +824,16 @@ class CodeManager:
 
     @staticmethod
     def _lsp_install_hint(language_id: str) -> str:
-        if language_id == "python":
-            return "uv tool install pyright  # veya: uv add --dev pyright"
-        return "npm install -g typescript-language-server typescript"
+        return lsp_install_hint(language_id)
 
     def _lsp_target_binary(self, command: list[str], language_id: str) -> str:
         """uv/uvx ile sarmalanmış komutta hedef LSP binary adını döndür."""
-        default = self.python_lsp_server if language_id == "python" else self.typescript_lsp_server
-        if not command:
-            return default
-        head = Path(command[0]).name.lower()
-        if head in {"uv", "uvx"}:
-            # `--from <paket>` ve `--with <paket>` argümanları bir değer alır;
-            # bunların değerlerini atlayarak gerçek binary'yi yakala.
-            skip_next = False
-            for token in command[1:]:
-                if skip_next:
-                    skip_next = False
-                    continue
-                if token in {"--from", "--with"}:
-                    skip_next = True
-                    continue
-                if token in {"run", "--frozen", "tool"}:
-                    continue
-                if token.startswith("-"):
-                    continue
-                return token
-        return default
+        return lsp_target_binary(
+            command,
+            language_id=language_id,
+            python_server=self.python_lsp_server,
+            typescript_server=self.typescript_lsp_server,
+        )
 
     @staticmethod
     def _lsp_stderr_indicates_missing_binary(stderr_text: str) -> bool:
@@ -846,17 +841,7 @@ class CodeManager:
 
         uv/uvx benzeri sarmalayıcıların stderr çıktısını kontrol eder.
         """
-        if not stderr_text:
-            return False
-        lowered = stderr_text.lower()
-        missing_markers = (
-            "failed to spawn",
-            "no such file or directory",
-            "command not found",
-            "executable not found",
-            "not found in",
-        )
-        return any(marker in lowered for marker in missing_markers)
+        return lsp_stderr_indicates_missing_binary(stderr_text)
 
     def _normalize_lsp_path(self, path: str) -> Path:
         target = Path(path)
@@ -950,7 +935,7 @@ class CodeManager:
 
         payload = b"".join(_encode_lsp_message(msg) for msg in messages)
         try:
-            proc = subprocess.Popen(  # nosec B603
+            proc = popen_trusted_command(
                 command,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
@@ -991,53 +976,15 @@ class CodeManager:
     def _extract_lsp_result(
         messages: list[dict[str, Any]], request_id: int = 2
     ) -> tuple[Any, list[dict[str, Any]]]:
-        result = None
-        notifications: list[dict[str, Any]] = []
-        for message in messages:
-            if message.get("id") == request_id:
-                if "error" in message:
-                    raise RuntimeError(str(message["error"]))
-                result = message.get("result")
-            elif "method" in message:
-                notifications.append(message)
-        return result, notifications
+        return extract_lsp_result(messages, request_id)
 
     @staticmethod
     def _format_lsp_locations(locations: Any, limit: int) -> str:
-        if not locations:
-            return "Sonuç bulunamadı."
-
-        normalized: list[dict[str, Any]] = []
-        for item in locations:
-            if "targetUri" in item:
-                normalized.append(
-                    {
-                        "uri": item["targetUri"],
-                        "range": item.get("targetSelectionRange") or item.get("targetRange") or {},
-                    }
-                )
-            else:
-                normalized.append(item)
-
-        lines = []
-        for entry in normalized[:limit]:
-            uri = entry.get("uri", "")
-            rng = entry.get("range", {})
-            start = rng.get("start", {})
-            path = _file_uri_to_path(uri)
-            line_no = int(start.get("line", 0)) + 1
-            column_no = int(start.get("character", 0)) + 1
-            lines.append(f"- {path}: satır {line_no}, sütun {column_no}")
-        if len(normalized) > limit:
-            lines.append(f"... ve {len(normalized) - limit} ek sonuç daha.")
-        return "\n".join(lines)
+        return format_lsp_locations(locations, limit)
 
     @staticmethod
     def _position_params(path: Path, line: int, character: int) -> dict[str, Any]:
-        return {
-            "textDocument": {"uri": _path_to_file_uri(path)},
-            "position": {"line": line, "character": character},
-        }
+        return position_params(path, line, character)
 
     def lsp_go_to_definition(self, path: str, line: int, character: int) -> tuple[bool, str]:
         """LSP üzerinden sembol tanımına gider."""

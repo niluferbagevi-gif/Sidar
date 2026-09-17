@@ -60,6 +60,32 @@ async def build_health_response(
 
     health_data["uptime_seconds"] = int(time.monotonic() - start_time)
 
+    docs = getattr(agent, "docs", None)
+    if docs is not None:
+        rag_report: dict[str, Any]
+        try:
+            rag_report = docs.runtime_readiness_report()
+        except Exception as exc:
+            logger.exception("RAG runtime readiness sorgusu başarısız oldu: %s", exc)
+            rag_report = {
+                "ready": False,
+                "metadata_seeded": False,
+                "components": {
+                    "rag_vector": {"healthy": False, "status": "unavailable"},
+                    "rag_bm25": {"healthy": False, "status": "unavailable"},
+                },
+            }
+            if expose_details():
+                rag_report["detail"] = str(exc)
+        health_data.setdefault("components", {}).update(rag_report.get("components", {}))
+        health_data["rag"] = rag_report
+        if not rag_report.get("ready", False):
+            health_data["status"] = "degraded"
+            if require_dependencies and bool(
+                getattr(agent.cfg, "RAG_REQUIRED_FOR_READINESS", False)
+            ):
+                return JSONResponse(health_data, status_code=503)
+
     # Eğer ana yapay zeka servisi (Ollama) çöktüyse 503 HTTP kodu döndür
     if agent.cfg.AI_PROVIDER == "ollama" and not health_data["ollama_online"]:
         health_data["status"] = "degraded"

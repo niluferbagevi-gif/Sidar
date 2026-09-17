@@ -26,8 +26,10 @@ DEFAULT_INCLUDE_PATTERNS = (
     "README.md",
     "AGENTS.md",
     "docs/SIDAR.md",
+    "docs/ARCHITECTURE.md",
     "docs/TEKNIK_REFERANS.md",
     "docs/PROJE_RAPORU.md",
+    "docs/project-report/*.md",
     "docs/SIDAR_v5_0_MIMARI_RAPORU.md",
     "docs/SIDAR_v5_1_MIMARI_RAPORU.md",
     # Curated architecture/runtime code entry points.  This keeps the seed
@@ -314,10 +316,21 @@ def _wait_for_pgvector_readiness() -> None:
     with contextlib.redirect_stdout(sys.stderr):
         from sqlalchemy import create_engine, text
 
+    # Config.DATABASE_URL always carries the `postgresql+asyncpg://` scheme
+    # (see docker-compose.yml / database_url.sh), but asyncpg is an async-only
+    # driver: driving it through SQLAlchemy's sync create_engine()/Engine.connect()
+    # raises `MissingGreenlet: greenlet_spawn has not been called` on every
+    # attempt, regardless of whether pgvector is actually ready. Drop the
+    # `+asyncpg` driver suffix for this one-off sync readiness probe so
+    # SQLAlchemy falls back to the sync psycopg2 driver (bundled alongside
+    # asyncpg in the `postgres` extra) — same conversion already used for
+    # `pg_isready`/urlparse in 06_services.sh and 12_alembic.sh.
+    sync_database_url = database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+
     last_error: BaseException | None = None
     for attempt in range(1, max_retries + 1):
         try:
-            engine = create_engine(database_url, future=True, pool_pre_ping=True)
+            engine = create_engine(sync_database_url, future=True, pool_pre_ping=True)
             with engine.connect() as conn:
                 ready = bool(
                     conn.execute(
@@ -468,6 +481,12 @@ def run(
     if dry_run:
         store: SeedDocumentStore = DryRunStore()
     else:
+        if metadata_only:
+            print(
+                "RAG metadata-only seed mode: vector runtime initialization intentionally "
+                "skipped; BM25/metadata/GraphRAG seed devam ediyor.",
+                file=sys.stderr,
+            )
         if not metadata_only:
             _wait_for_pgvector_readiness()
         store = _build_store(resolved_rag_dir, initialize_vector=not metadata_only)

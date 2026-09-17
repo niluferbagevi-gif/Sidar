@@ -11,7 +11,9 @@ concurrency:
 
 jobs:
   auth-benchmark:
-    runs-on: ubuntu-latest
+    # Keep the scheduled comparison on the same stable hardware class as its
+    # baseline. Merely enabling comparison on a shared runner is noisy evidence.
+    runs-on: [self-hosted, linux, benchmark]
     env:
       AUTH_BENCH_P95_BUDGET_MS: "950"
       AUTH_BENCH_P99_BUDGET_MS: "1200"
@@ -20,34 +22,39 @@ jobs:
       BENCHMARK_ENFORCE_COMPARE: "1"
       BENCHMARK_COMPARE_NAME: "baseline"
       BENCHMARK_COMPARE_FAIL: "mean:10%"
+      # sidar[runtime-gpu] pulls multi-hundred-MB nvidia-*/torch wheels; uv's
+      # 30s default HTTP timeout can time out these individual downloads on a
+      # slower/self-hosted link well before the transfer itself would fail.
+      UV_HTTP_TIMEOUT: "180"
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
-          python-version: "3.11"
+          python-version: "3.11.15"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v10.1.0
         with:
+          version: "0.12.0"
           enable-cache: true
 
       - name: Restore auth benchmark baseline cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .benchmarks
-          key: auth-benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}
+          key: auth-benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ github.ref_name }}-${{ github.run_id }}
           restore-keys: |
-            auth-benchmark-baseline-${{ runner.os }}-py311-${{ github.ref_name }}-
-            auth-benchmark-baseline-${{ runner.os }}-py311-main-
-            auth-benchmark-baseline-${{ runner.os }}-py311-master-
-            auth-benchmark-baseline-${{ runner.os }}-py311-
+            auth-benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-${{ github.ref_name }}-
+            auth-benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-main-
+            auth-benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-master-
+            auth-benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-
 
       - name: Cache APT packages (PortAudio)
-        uses: awalsh128/cache-apt-pkgs-action@v1.4.3
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.3
         with:
           packages: portaudio19-dev
           version: ci-portaudio-v1
@@ -81,7 +88,7 @@ jobs:
             echo "BENCHMARK_COMPARE_REQUIRED=1 ancak .benchmarks altında ${BENCHMARK_COMPARE_NAME} baseline bulunamadı."
             exit 1
           fi
-          CMD="uv run pytest -q tests/performance/test_benchmark.py -k \"password_hash_cpu_cost or password_verify_cpu_cost\" --benchmark-json=artifacts/auth-benchmark/benchmark.json --benchmark-min-rounds=5 --benchmark-save=${BENCHMARK_COMPARE_NAME} ${compare_args[*]}"
+          CMD="uv run pytest -q tests/performance/test_benchmark.py -k \"password_ and cpu_cost\" --benchmark-json=artifacts/auth-benchmark/benchmark.json --benchmark-min-rounds=30 --benchmark-save=${BENCHMARK_COMPARE_NAME} ${compare_args[*]}"
           if command -v taskset >/dev/null 2>&1; then
             taskset -c "${BENCHMARK_CPU_AFFINITY}" bash -lc "${CMD}"
           else
@@ -94,7 +101,7 @@ jobs:
 
       - name: Upload auth benchmark artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nightly-auth-benchmark
           path: artifacts/auth-benchmark/

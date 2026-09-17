@@ -1,11 +1,21 @@
 import importlib
 import logging
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
 from core.db import prompt_registry
+
+
+def test_prompt_registry_queries_are_fixed_constants_without_b608_suppressions() -> None:
+    """Keep the fixed registry schema out of dynamic-SQL construction paths."""
+    source = Path(prompt_registry.__file__).read_text(encoding="utf-8")
+
+    assert "# nosec " + "B608" not in source
+    assert "SELECT {" + "PROMPT_REGISTRY_COLUMNS}" not in source
+    assert "RETURNING {" + "PROMPT_REGISTRY_COLUMNS}" not in source
 
 
 class _FakeAcquire:

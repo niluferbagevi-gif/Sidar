@@ -9,6 +9,74 @@ from fastapi import Request
 from fastapi.responses import JSONResponse, Response
 
 
+def get_user_tenant(user: Any) -> str:
+    """Return a normalized tenant identifier for an authenticated principal."""
+    return str(getattr(user, "tenant_id", "default") or "default").strip() or "default"
+
+
+def serialize_policy(record: Any) -> dict[str, Any]:
+    """Serialize an access-policy record for an API response."""
+    return {
+        "id": int(getattr(record, "id", 0) or 0),
+        "user_id": str(getattr(record, "user_id", "") or ""),
+        "tenant_id": str(getattr(record, "tenant_id", "default") or "default"),
+        "resource_type": str(getattr(record, "resource_type", "") or ""),
+        "resource_id": str(getattr(record, "resource_id", "*") or "*"),
+        "action": str(getattr(record, "action", "") or ""),
+        "effect": str(getattr(record, "effect", "allow") or "allow"),
+        "created_at": str(getattr(record, "created_at", "") or ""),
+        "updated_at": str(getattr(record, "updated_at", "") or ""),
+    }
+
+
+def serialize_audit_log(record: Any) -> dict[str, Any]:
+    """Serialize an access audit-log record for an API response."""
+    return {
+        "id": int(getattr(record, "id", 0) or 0),
+        "user_id": str(getattr(record, "user_id", "") or ""),
+        "tenant_id": str(getattr(record, "tenant_id", "default") or "default"),
+        "action": str(getattr(record, "action", "") or ""),
+        "resource": str(getattr(record, "resource", "") or ""),
+        "ip_address": str(getattr(record, "ip_address", "") or ""),
+        "allowed": bool(getattr(record, "allowed", False)),
+        "timestamp": str(getattr(record, "timestamp", "") or ""),
+    }
+
+
+def resolve_policy_from_request(request: Request) -> tuple[str, str, str]:
+    """Map a protected HTTP path to its policy resource, action, and identifier."""
+    path = request.url.path
+    if path.startswith("/rag/"):
+        action = "read" if request.method == "GET" else "write"
+        resource_id = path.rsplit("/", 1)[-1] if request.method == "DELETE" else "*"
+        return ("rag", action, resource_id)
+    if path.startswith("/github-") or path == "/set-repo":
+        action = "read" if request.method == "GET" else "write"
+        return ("github", action, "*")
+    if path.startswith("/api/agents/register"):
+        return ("agents", "register", "*")
+    if path.startswith("/api/swarm/"):
+        return ("swarm", "execute", "*")
+    if path.startswith("/api/operations/"):
+        return ("operations", "write" if request.method != "GET" else "read", "*")
+    if path.startswith("/api/qa/coverage/"):
+        return ("coverage", "write" if request.method != "GET" else "read", "*")
+    if path.startswith("/admin/"):
+        return ("admin", "manage", "*")
+    if path.startswith("/ws/"):
+        return ("swarm", "execute", "*")
+    return ("", "", "")
+
+
+def build_audit_resource(resource_type: str, resource_id: str) -> str:
+    """Build the canonical resource value persisted in an access audit log."""
+    normalized_type = (resource_type or "").strip().lower()
+    normalized_id = (resource_id or "*").strip() or "*"
+    if not normalized_type:
+        return ""
+    return f"{normalized_type}:{normalized_id}"
+
+
 async def access_policy_middleware_impl(
     request: Request,
     call_next: Callable[[Request], Awaitable[Response]],

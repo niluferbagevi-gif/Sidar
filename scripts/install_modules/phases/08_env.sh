@@ -44,6 +44,18 @@ sidar_user_api_key_names() {
     printf '%s\n' "${SIDAR_USER_SECRET_ENV_KEYS[@]}"
 }
 
+# İnteraktif istemlerin grup düzenini ayrı ve test edilebilir tutar. Bu liste,
+# SIDAR_USER_SECRET_ENV_KEYS içindeki her girdiyi tam bir kez içermelidir.
+sidar_user_api_key_group_specs() {
+    printf '%s\n' \
+        "AI Sağlayıcıları|OPENAI_API_KEY,GEMINI_API_KEY,GOOGLE_API_KEY,ANTHROPIC_API_KEY,LITELLM_API_KEY,HF_TOKEN" \
+        "GitHub ve Web Arama|GITHUB_TOKEN,TAVILY_API_KEY,GOOGLE_SEARCH_API_KEY,GOOGLE_SEARCH_CX" \
+        "Slack|SLACK_TOKEN,SLACK_APP_LEVEL_TOKEN,SLACK_WEBHOOK_URL,SLACK_DEFAULT_CHANNEL" \
+        "Jira|JIRA_URL,JIRA_EMAIL,JIRA_TOKEN,JIRA_API_TOKEN,JIRA_DEFAULT_PROJECT" \
+        "Microsoft Teams|TEAMS_WEBHOOK_URL" \
+        "Meta|META_GRAPH_API_TOKEN"
+}
+
 # ── İnteraktif API Anahtarı Toplama ──────────────────────────────────────────
 # Eksik API anahtarları için zenity (GUI) → whiptail (TUI) → read (fallback)
 # sırasıyla denenir; kullanıcı anahtarları girdikten sonra kurulum devam eder.
@@ -57,18 +69,14 @@ collect_api_keys_interactive() {
 
     # Gruplar: "Başlık|KEY1,KEY2,..."  (her grup zenity'de ayrı form / whiptail'de bölüm)
     # NOT: GROUPS bash reserved değişkeni olduğundan API_GROUPS adı kullanılıyor.
-    local -a API_GROUPS=(
-        "AI Sağlayıcıları|OPENAI_API_KEY,GEMINI_API_KEY,ANTHROPIC_API_KEY,LITELLM_API_KEY,HF_TOKEN"
-        "GitHub ve Web Arama|GITHUB_TOKEN,TAVILY_API_KEY,GOOGLE_SEARCH_API_KEY,GOOGLE_SEARCH_CX"
-        "Slack|SLACK_TOKEN,SLACK_APP_LEVEL_TOKEN,SLACK_WEBHOOK_URL,SLACK_DEFAULT_CHANNEL"
-        "Jira|JIRA_URL,JIRA_EMAIL,JIRA_TOKEN,JIRA_DEFAULT_PROJECT"
-        "Microsoft Teams|TEAMS_WEBHOOK_URL"
-    )
+    local -a API_GROUPS=()
+    mapfile -t API_GROUPS < <(sidar_user_api_key_group_specs)
 
     _key_label() {
         case "$1" in
             OPENAI_API_KEY)        echo "OpenAI API Anahtarı" ;;
             GEMINI_API_KEY)        echo "Google Gemini API Anahtarı" ;;
+            GOOGLE_API_KEY)        echo "Google API Anahtarı" ;;
             ANTHROPIC_API_KEY)     echo "Anthropic Claude API Anahtarı" ;;
             LITELLM_API_KEY)       echo "LiteLLM / OpenRouter API Anahtarı" ;;
             HF_TOKEN)              echo "HuggingFace Token" ;;
@@ -83,8 +91,10 @@ collect_api_keys_interactive() {
             JIRA_URL)              echo "Jira URL (örn: https://sirket.atlassian.net)" ;;
             JIRA_EMAIL)            echo "Jira Atlassian E-posta" ;;
             JIRA_TOKEN)            echo "Jira API Token" ;;
+            JIRA_API_TOKEN)        echo "Jira API Token (alternatif)" ;;
             JIRA_DEFAULT_PROJECT)  echo "Jira Proje Anahtarı (örn: SID)" ;;
             TEAMS_WEBHOOK_URL)     echo "Microsoft Teams Webhook URL" ;;
+            META_GRAPH_API_TOKEN)  echo "Meta Graph API Token" ;;
             *)                     echo "$1" ;;
         esac
     }
@@ -1122,7 +1132,6 @@ configure_gpu_env_defaults() {
     command -v sed &>/dev/null || return 0
 
     if [[ "$GPU_AVAILABLE" == true ]]; then
-        info "DEBUG: GPU branch entered for .env configuration (GPU_AVAILABLE=true)."
         if grep -q '^USE_GPU=' "$env_file"; then
             sed_inplace 's/^USE_GPU=.*/USE_GPU=true/' "$env_file"
         else
@@ -1145,9 +1154,19 @@ configure_gpu_env_defaults() {
         else
             echo "COMPOSE_PROFILES=gpu" >> "$env_file"
         fi
+        # COMPOSE_PROFILES ile birlikte tutulmalı: GPU servisleri (ollama-gpu,
+        # sidar-gpu, sidar-web-gpu) docker-compose.gpu.yml'dedir; Docker Compose
+        # COMPOSE_FILE'ı .env'den de okur, bu yüzden bare `docker compose up`
+        # bu değer olmadan GPU servislerini bulamaz (bkz. docker-compose.yml'nin
+        # başlık yorumu).
+        if grep -q '^COMPOSE_FILE=' "$env_file"; then
+            sed_inplace 's/^COMPOSE_FILE=.*/COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml/' "$env_file"
+        else
+            echo "COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml" >> "$env_file"
+        fi
 
         ok "${env_file##*/}: USE_GPU=true, REQUIRE_GPU=true, GPU_MIXED_PRECISION=true (GPU tespit edildi)"
-        ok "${env_file##*/}: COMPOSE_PROFILES=gpu ayarlandı (Docker GPU modu artık varsayılan)."
+        ok "${env_file##*/}: COMPOSE_PROFILES=gpu, COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml ayarlandı (Docker GPU modu artık varsayılan)."
     else
         if grep -q '^USE_GPU=' "$env_file"; then
             sed_inplace 's/^USE_GPU=.*/USE_GPU=false/' "$env_file"
@@ -1169,7 +1188,12 @@ configure_gpu_env_defaults() {
         else
             echo "COMPOSE_PROFILES=cpu" >> "$env_file"
         fi
-        ok "${env_file##*/}: USE_GPU=false, REQUIRE_GPU=false, GPU_MIXED_PRECISION=false, COMPOSE_PROFILES=cpu ayarlandı."
+        if grep -q '^COMPOSE_FILE=' "$env_file"; then
+            sed_inplace 's/^COMPOSE_FILE=.*/COMPOSE_FILE=docker-compose.yml/' "$env_file"
+        else
+            echo "COMPOSE_FILE=docker-compose.yml" >> "$env_file"
+        fi
+        ok "${env_file##*/}: USE_GPU=false, REQUIRE_GPU=false, GPU_MIXED_PRECISION=false, COMPOSE_PROFILES=cpu, COMPOSE_FILE=docker-compose.yml ayarlandı."
     fi
 
     # Docker + GPU tespit edildiyse NVIDIA runtime'ı varsayılan yap
@@ -1206,6 +1230,39 @@ ensure_local_service_host_defaults() {
         sed_inplace 's|^OTEL_EXPORTER_ENDPOINT=http://jaeger:|OTEL_EXPORTER_ENDPOINT=http://localhost:|' "$env_file"
         ok ".env: OTEL_EXPORTER_ENDPOINT lokal ortam için localhost olarak güncellendi."
     fi
+}
+
+# "Tam Docker" modunda docker-compose.yml servisleri
+# `user: "${SIDAR_CONTAINER_UID:-10001}:${SIDAR_CONTAINER_GID:-10001}"` ile
+# parametrik bir container kullanıcısı destekler, ama installer bu değişkenleri
+# hiçbir zaman yazmıyordu. `chown <başka-uid> ...`, root olmayan bir kullanıcı
+# için POSIX'te her zaman EPERM ile başarısız olur — ve install_sidar.sh kök
+# seviyede root/sudo ile çalıştırılmayı zaten reddeder (bkz. dosyanın en
+# üstündeki EUID guard'ı) — bu yüzden create_directories()'in host'ta sabit
+# 10001:10001'e chown denemesi pratikte hep sessizce başarısız oluyor, bind-mount
+# dizinleri (logs/data/temp/sessions) host kullanıcısında kalıyor, container
+# UID 10001 olarak yazamıyor ve "Permission denied" ile RAG seed adımı çöküyor.
+# Kök neden düzeltmesi: chown yerine, container'ı host kullanıcısıyla AYNI
+# UID/GID'de çalıştır — bu dizinleri zaten host kullanıcısı `mkdir -p` ile
+# oluşturduğu için hiçbir izin değişikliğine gerek kalmaz.
+ensure_container_uid_gid_defaults() {
+    local env_file="$1"
+    local runtime_mode="${APP_RUNTIME_MODE_SELECTED:-${APP_RUNTIME_MODE:-${AUTO_RUNTIME_MODE:-ask}}}"
+
+    [[ "$runtime_mode" == "docker" ]] || return 0
+
+    # Root/sudo ile çalıştırılan (yalnız test/istisnai) bir senaryoda imaja
+    # gömülü sabit 10001:10001 kullanıcısı host'ta doğrudan chown edilebilir
+    # (bkz. create_directories()); .env override'ına gerek yok.
+    [[ "$(id -u)" -eq 0 ]] && return 0
+
+    local current_uid=""
+    current_uid="$(read_env_value_from_file "SIDAR_CONTAINER_UID" "$env_file" | tr -d '[:space:]')"
+    [[ -n "$current_uid" ]] && return 0
+
+    sidar_write_env_value "$env_file" "SIDAR_CONTAINER_UID" "$(id -u)"
+    sidar_write_env_value "$env_file" "SIDAR_CONTAINER_GID" "$(id -g)"
+    ok ".env: SIDAR_CONTAINER_UID=$(id -u) / SIDAR_CONTAINER_GID=$(id -g) eklendi — docker-compose.yml container'ı host kullanıcısıyla aynı kimlikte çalıştırıp logs/data/temp/sessions bind-mount dizinlerine chown/setfacl olmadan yazabilir."
 }
 
 ensure_sidar_env_default() {
@@ -1256,13 +1313,20 @@ prompt_post_install_sidar_env_mode() {
     elif [[ "$NO_INTERACTION" == true ]]; then
         info "--ci/--no-interaction etkin: SIDAR_ENV varsayılanı development bırakıldı."
     else
-        echo ""
-        echo "======================================================"
-        echo "✅ Kurulum işlemleri tamamlandı!"
-        echo "Sistemi hangi modda çalıştırmak istiyorsunuz?"
-        echo "  1) Development (Geliştirme ve Test - Debug logları açık)"
-        echo "  2) Production  (Canlı Kullanım - Hızlı, güvenli, optimize)"
-        echo "======================================================"
+        # Menü, hemen altındaki `read ... 2>/dev/tty` ile aynı senkron
+        # /dev/tty kanalını paylaşsın diye tek blok halinde /dev/tty'e
+        # yazılıyor — normal stdout install_sidar.sh'ın log-yakalama
+        # pipe'ından (`exec > >(...) 2>&1`) asenkron geçtiği için, yavaş
+        # fork'lu ortamlarda (WSL2) prompt menüden önce görünebilirdi.
+        {
+            echo ""
+            echo "======================================================"
+            echo "✅ Kurulum işlemleri tamamlandı!"
+            echo "Sistemi hangi modda çalıştırmak istiyorsunuz?"
+            echo "  1) Development (Geliştirme ve Test - Debug logları açık)"
+            echo "  2) Production  (Canlı Kullanım - Hızlı, güvenli, optimize)"
+            echo "======================================================"
+        } &> /dev/tty
 
         clear_stdin_buffer
         if read -r -t "$SIDAR_PROMPT_TIMEOUT" -p "Seçiminiz (1 veya 2, varsayılan=1): " env_choice 2>/dev/tty; then
@@ -1474,6 +1538,10 @@ PYDB
 }
 
 sync_database_env_chain_after_setup() {
+    # Eski installer turlarından kalmış açık URL'leri uv/Python helper'ına
+    # bağımlı olmadan tüm mevcut runtime dotenv varyantlarında da onar.
+    ensure_database_url_defaults_for_variants
+
     if ! command -v uv &>/dev/null; then
         warn "uv bulunamadı; PostgreSQL dotenv zinciri Python senkronizasyonu atlandı."
         return 0

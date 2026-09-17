@@ -2,6 +2,34 @@
 set -Eeuo pipefail
 # Sidar installer phase: post-install service launch, runtime mode and subcommand helpers.
 
+# `docker compose up -d` çeşitli imajları (bazıları — redis/postgres/ollama/
+# docker-socket-proxy — registry'den, bazıları yerel `build:` hedefinden)
+# tek komutta çekip başlatır. Bunlardan herhangi birinde tek seferlik bir
+# geçici ağ hatası (DNS hıçkırığı, TLS EOF, registry rate-limit) TÜM `up -d`
+# komutunu düşürür — bu, `sidar:latest` gibi imajlarla hiç ilgisi olmayan bir
+# servis (ör. tecnativa/docker-socket-proxy) için bile geçerlidir ve
+# postgres'in hiç ayağa kalkmamasına, ardından Alembic migrasyon fazının
+# sert şekilde çökmesine yol açar. ollama_models.sh'deki model indirme retry
+# deseniyle (backoff = deneme * 5sn, 3 deneme) tutarlı şekilde `up -d`'yi
+# tekrar dene.
+sidar_compose_up_with_retry() {
+    local -a compose_cmd=("$@")
+    local max_attempts=3
+    local attempt=0
+
+    for attempt in 1 2 3; do
+        if "${compose_cmd[@]}"; then
+            return 0
+        fi
+        if [[ "$attempt" -lt "$max_attempts" ]]; then
+            local backoff=$((attempt * 5))
+            warn "Docker Compose 'up -d' başarısız oldu [deneme ${attempt}/${max_attempts}]; geçici bir registry/ağ hatası olabilir. ${backoff}s sonra yeniden denenecek..."
+            sleep "$backoff"
+        fi
+    done
+    return 1
+}
+
 # ── Docker Servislerini Başlatma ──────────────────────────────────────────────
 launch_docker_services() {
     local docker_compose_cmd=()
@@ -33,6 +61,13 @@ launch_docker_services() {
     if [[ "$include_observability" == "true" && ",$compose_profiles," != *",observability,"* ]]; then
         compose_profiles="${compose_profiles},observability"
     fi
+
+    # docker-compose.yml (core) yalnızca cpu-profilli servisleri taşır; GPU
+    # (docker-compose.gpu.yml) ve observability (docker-compose.observability.yml)
+    # servisleri ayrı dosyalardadır ve yalnızca aktif profile göre -f ile eklenir.
+    local -a compose_file_args=()
+    sidar_compose_file_args_for_profiles "$compose_profiles" compose_file_args
+    docker_compose_cmd+=("${compose_file_args[@]}")
 
     if [[ "$runtime_mode" == "ask" ]]; then
         runtime_mode="docker"
@@ -91,26 +126,26 @@ launch_docker_services() {
                     info "Host Ollama healthy tespit edildi; Docker Ollama konteyneri başlatılmayacak."
                     log_host_ollama_runtime_diagnostics "$env_file"
                 fi
-                if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d "${infra_services[@]}"; then
+                if COMPOSE_PROFILES="$compose_profiles" sidar_compose_up_with_retry "${docker_compose_cmd[@]}" up -d "${infra_services[@]}"; then
                     ok "Altyapı Docker servisleri başarıyla başlatıldı (${infra_services[*]})."
                 else
-                    warn "Altyapı Docker servisleri başlatılamadı. Port çakışması veya Docker kapalı olabilir."
+                    warn "Altyapı Docker servisleri başlatılamadı (3 deneme sonrası). Port çakışması veya Docker kapalı olabilir."
                 fi
             else
                 info "Seçilen çalışma modu: docker (tüm servisler Docker)"
                 info "Docker Compose profili: $compose_profiles"
-                if COMPOSE_PROFILES="$compose_profiles" "${docker_compose_cmd[@]}" up -d; then
+                if COMPOSE_PROFILES="$compose_profiles" sidar_compose_up_with_retry "${docker_compose_cmd[@]}" up -d; then
                     ok "Docker servisleri başarıyla başlatıldı."
                 else
-                    warn "Docker servisleri başlatılamadı. Port çakışması veya Docker kapalı olabilir."
+                    warn "Docker servisleri başlatılamadı (3 deneme sonrası). Port çakışması veya Docker kapalı olabilir."
                 fi
             fi
             ;;
         *)
             if [[ "$runtime_mode" == "local" ]]; then
-                info "Docker servislerinin başlatılması atlandı. (Manuel: docker compose up -d ${infra_services[*]}; gözlemlenebilirlik için: COMPOSE_PROFILES=observability docker compose up -d jaeger prometheus grafana)"
+                info "Docker servislerinin başlatılması atlandı. (Manuel: ${docker_compose_cmd[*]} up -d ${infra_services[*]}; gözlemlenebilirlik için: docker compose -f docker-compose.yml -f docker-compose.observability.yml --profile observability up -d jaeger prometheus grafana)"
             else
-                info "Docker servislerinin başlatılması atlandı. (Manuel: COMPOSE_PROFILES=$compose_profiles docker compose up -d; gözlemlenebilirlik için profile'a observability ekleyin)"
+                info "Docker servislerinin başlatılması atlandı. (Manuel: COMPOSE_PROFILES=$compose_profiles ${docker_compose_cmd[*]} up -d; gözlemlenebilirlik için profile'a observability ekleyin ve docker-compose.observability.yml'i -f ile ekleyin)"
             fi
             ;;
     esac
@@ -126,10 +161,18 @@ select_runtime_mode() {
             runtime_mode="docker"
             info "--ci/--no-interaction etkin: çalışma modu varsayılanı 'docker' seçildi."
         else
-            echo ""
-            info "Çalışma modu seçimi:"
-            echo "  1) Geliştirici modu (önerilen): uygulama local, altyapı servisleri Docker"
-            echo "  2) Tam Docker modu: web/agent dahil tüm servisler Docker"
+            # Menü, hemen altındaki `read ... 2>/dev/tty` ile aynı senkron
+            # /dev/tty kanalını paylaşsın diye tek blok halinde /dev/tty'e
+            # yazılıyor — normal stdout/stderr install_sidar.sh'ın
+            # log-yakalama pipe'ından (`exec > >(...) 2>&1`) asenkron
+            # geçtiği için, yavaş fork'lu ortamlarda (WSL2) prompt menüden
+            # önce görünebilirdi.
+            {
+                echo ""
+                info "Çalışma modu seçimi:"
+                echo "  1) Geliştirici modu (önerilen): uygulama local, altyapı servisleri Docker"
+                echo "  2) Tam Docker modu: web/agent dahil tüm servisler Docker"
+            } &> /dev/tty
             clear_stdin_buffer
             if read -r -t "$SIDAR_PROMPT_TIMEOUT" -p "Seçim [1/2, varsayılan=1]: " runtime_answer 2>/dev/tty; then
                 :
@@ -302,19 +345,33 @@ run_doctor_phase() {
     step "Sidar Doctor"
     cd "$SCRIPT_DIR" || return 1
     mkdir -p artifacts/install
+    local doctor_report="artifacts/install/doctor.json"
     local -a doctor_cmd=()
     if command -v uv &>/dev/null; then
-        doctor_cmd=(uv run python -m core.doctor artifacts/install/doctor.json)
+        doctor_cmd=(uv run python -m core.doctor "$doctor_report")
     elif command -v python3 &>/dev/null; then
-        doctor_cmd=(python3 -m core.doctor artifacts/install/doctor.json)
+        doctor_cmd=(python3 -m core.doctor "$doctor_report")
     else
         fail "Doctor çalıştırmak için python3 veya uv bulunamadı."
     fi
+    if [[ "${DOCTOR_FIX:-false}" == true ]]; then
+        doctor_cmd+=(--fix)
+    fi
 
-    if SIDAR_CONFIG_QUIET=1 "${doctor_cmd[@]}"; then
-        ok "Doctor raporu üretildi: artifacts/install/doctor.json"
+    # Eski bir rapor, çöken yeni bir doctor çalıştırmasını başarılı göstermemelidir.
+    rm -f "$doctor_report"
+    if SIDAR_CONFIG_QUIET=true "${doctor_cmd[@]}"; then
+        if [[ ! -s "$doctor_report" ]]; then
+            warn "Doctor tamamlandı ancak rapor üretilemedi: $doctor_report"
+            return 1
+        fi
+        ok "Doctor raporu üretildi: $doctor_report"
     else
-        warn "Doctor raporu üretildi ancak bir veya daha fazla kontrol fail durumunda. Rapor: artifacts/install/doctor.json"
+        if [[ -s "$doctor_report" ]]; then
+            warn "Doctor raporu üretildi ancak bir veya daha fazla kontrol fail durumunda. Rapor: $doctor_report"
+        else
+            warn "Doctor çalıştırılamadı ve rapor üretilemedi: $doctor_report"
+        fi
         return 1
     fi
 }

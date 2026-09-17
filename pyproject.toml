@@ -32,28 +32,28 @@ dependencies = [
   # docs/DEPENDENCY_PROFILE_PLAN.md ve [tool.sidar.dependency_profile_plan]
   # ile takip edilir.
   # ── Temel altyapı ──────────────────────────────────────────────────────
-  "packaging~=24.1",
-  "python-dotenv==1.2.2",
+  "packaging~=26.3",
+  "python-dotenv==1.2.3",
   "pyyaml~=6.0.2",
   # HTTP client policy: production imports use httpx only; the old httpx2
   # migration candidate was retired to keep the runtime dependency graph smaller.
   "httpx>=0.27.0,<0.29.0",
   "pydantic>=2.8.2,<3.0.0",
-  "pydantic-settings>=2.14.2,<3.0.0",
+  "pydantic-settings>=2.15.0,<3.0.0",
   "cachetools~=5.5.0",
-  "redis~=5.2.1",
+  "redis>=5.2.1,<8.2.0",
   "psutil~=6.0.0",
   # ── Web sunucu ─────────────────────────────────────────────────────────
-  "fastapi>=0.136.1,<0.140.0",
-  # Starlette 1.3.1+ includes fixes for current request parsing and URL validation CVEs.
-  "starlette>=1.3.1,<1.4.0",
+  "fastapi>=0.141.1,<0.142.0",
+  # Starlette 1.6.0 is the validated security baseline for request parsing and URL validation.
+  "starlette>=1.6.0,<1.7.0",
   "python-multipart>=0.0.31,<0.1.0",
   "uvicorn[standard]~=0.30.6",
   "anyio>=4.0.0",
   # ── Veritabanı ─────────────────────────────────────────────────────────
-  "aiosqlite~=0.20.0",
+  "aiosqlite~=0.22.1",
   "SQLAlchemy~=2.0.36",
-  "alembic~=1.14.0",
+  "alembic>=1.19.1,<1.21.0",
   # ── Güvenlik / Kimlik doğrulama ────────────────────────────────────────
   "cryptography>=46.0.6",
   "argon2-cffi>=25.1.0,<26.0.0",
@@ -65,17 +65,24 @@ dependencies = [
   "requests>=2.32.5",
   "tenacity>=8.0.0,<10.0.0",
   # ── İçerik işleme ─────────────────────────────────────────────────────
-  "tiktoken~=0.12.0",
+  "tiktoken>=0.13,<0.15",
   "rank-bm25==0.2.2",
-  "beautifulsoup4~=4.12.3",
+  "beautifulsoup4~=4.15.0",
   "bleach>=6.4.0,<7.0.0",
+  # CoverageAgent (agent/roles/coverage_agent.py, is_builtin=True) parses pytest
+  # JUnit XML reports with defusedxml.ElementTree at runtime. It must stay a core
+  # runtime dependency, not a dev-only tool: a `production`/`production-minimal`
+  # (--no-dev) install without it breaks `agent.roles` package import entirely
+  # (not just CoverageAgent), taking every other built-in role down with it and
+  # failing the doctor `agent_catalog`/`supervisor_routing` checks.
+  "defusedxml>=0.7.1",
   # Keep NeMo Guardrails on the validated 0.22 minor until the SecurityManager
   # adapter contract is re-run against a newer major/minor API.
   "nemoguardrails>=0.22.0,<0.23.0",
   # ── Harici entegrasyonlar ─────────────────────────────────────────────
   "PyGithub~=2.4.0",
-  "duckduckgo-search~=6.2.13",
-  "websockets>=15.0,<16.0",
+  "duckduckgo-search>=6.2.13,<8.2.0",
+  "websockets>=16.1.1,<17.0",
   "pillow>=12.2.0,<14.0.0",
   "pyttsx3~=2.98",
   "chromadb~=0.5.5",
@@ -84,11 +91,11 @@ dependencies = [
   "langchain-text-splitters>=1.1.2,<2.0.0",
   # Pin transitive langsmith above GHSA-f4xh-w4cj-qxq8 fix; needed until
   # langchain-* upstream tightens its own floor on langsmith.
-  "langsmith>=0.8.18,<1.0.0",
+  "langsmith>=0.10.17,<1.0.0",
   # ChromaDB 0.5.x brings PostHog as its telemetry client; keep it on the
   # current 5.x API until the Chroma/RAG telemetry smoke matrix validates v6.
   "posthog<6.0.0",
-  "sentence-transformers>=3.0.1,<6.0.0",
+  "sentence-transformers>=5.7.0,<6.0.0",
   "opentelemetry-api>=1.29.0",
   "opentelemetry-sdk>=1.29.0",
   "opentelemetry-instrumentation-fastapi>=0.50b0",
@@ -109,28 +116,52 @@ sidar-gui = "gui_launcher:main"
 sidar-web = "web_server:main"
 
 [project.optional-dependencies]
+# ── Canonical composable dependency profiles ─────────────────────────────
+# The project dependencies above are the runtime-core contract. The empty
+# extra gives Docker/CI/install scripts an explicit, stable profile name.
+runtime-core = []
+runtime-postgres = [
+  "sidar[postgres]",
+]
+runtime-gpu = [
+  "sidar[rag,gpu]",
+]
+provider-ollama = []
+provider-openai = [
+  "sidar[openai]",
+]
+provider-gemini = [
+  "sidar[gemini]",
+]
+ci-cpu = [
+  "sidar[dev,browser,sandbox]",
+]
+ci-gpu = [
+  "sidar[ci-cpu,runtime-gpu]",
+]
+
 # ── LLM sağlayıcıları (istenilen sağlayıcı için ilgili extras ekleyin) ──
 gemini = [
   "google-genai>=1.0.0,<2.0.0",
 ]
 anthropic = [
-  "anthropic~=0.40.0",
+  "anthropic~=0.121.0",
 ]
 openai = [
-  "openai>=2.8.0,<3.0.0",
+  "openai>=2.53.0,<3.0.0",
 ]
 litellm = [
-  "litellm>=1.83.7,<2.0.0",
+  "litellm>=1.96.0,<2.0.0",
 ]
 
 # ── Altyapı extras ────────────────────────────────────────────────────────
 postgres = [
-  "asyncpg~=0.30.0",
+  "asyncpg~=0.31.0",
   "psycopg2-binary~=2.9.10",
-  "pgvector~=0.3.6",
+  "pgvector~=0.5.0",
 ]
 telemetry = [
-  "prometheus-client~=0.21.0",
+  "prometheus-client~=0.26.0",
   "opentelemetry-api>=1.29.0",
   "opentelemetry-sdk>=1.29.0",
   "opentelemetry-instrumentation-fastapi>=0.50b0",
@@ -141,12 +172,11 @@ telemetry = [
 rag = [
   "chromadb~=0.5.5",
   "posthog<6.0.0",
-  # Keep torch below 2.12 while CVE-2025-3000 is tracked by security/pip-audit-ignores.tsv.
-  # Current lock target is torch 2.11.0; re-check upstream patches by 2026-08-15
-  # before the dated policy exception expires.
-  "torch>=2.4.1,<2.12",
-  "torchvision>=0.19,<0.27",
-  "sentence-transformers>=3.0.1,<6.0.0",
+  # Torch 2.13.0 is the first GHSA-rrmf-rvhw-rf47 / CVE-2025-3000 patched release.
+  # Keep torch/torchvision on the compatible 2.13/0.28 release family.
+  "torch>=2.13,<2.14",
+  "torchvision>=0.28,<0.29",
+  "sentence-transformers>=5.7.0,<6.0.0",
 ]
 lora = [
   "transformers>=5.0.0,<6.0.0",
@@ -161,17 +191,17 @@ gpu = [
 # system-level Docker CLI/daemon; use install_sidar.sh prepare-system or the
 # Dev Container feature setup for docker/buildx/compose binaries.
 sandbox = [
-  "docker~=7.1.0",
+  "docker~=7.2.0",
 ]
 gui = [
   "eel>=0.16.0",
 ]
 slack = [
-  "slack-sdk~=3.33.0",
+  "slack-sdk>=3.43,<3.45",
 ]
 browser = [
-  "playwright>=1.60,<1.62",
-  "selenium~=4.29.0",
+  "playwright>=1.62.0,<1.63",
+  "selenium>=4.46,<4.50",
 ]
 voice = [
   "SpeechRecognition~=3.10.4",
@@ -185,10 +215,10 @@ tools = [
   "yt-dlp>=2024.0.0",
 ]
 aws = [
-  "boto3~=1.35.0",
+  "boto3~=1.43.67",
 ]
 jira = [
-  "jira~=3.8.0",
+  "jira~=3.10.5",
 ]
 teams = [
   "pymsteams~=0.2.3",
@@ -211,10 +241,10 @@ gpu-runtime = [
   "sidar[rag,gpu]",
 ]
 production = [
-  "sidar[postgres,telemetry]",
+  "sidar[runtime-postgres,telemetry]",
 ]
 production-minimal = [
-  "sidar[postgres]",
+  "sidar[runtime-postgres]",
 ]
 dev = [
   "sidar[postgres]",
@@ -224,19 +254,20 @@ dev = [
   "pytest-xdist>=3.6.1",
   "freezegun>=1.5.1",
   "pytest-cov~=5.0.0",
-  "pytest-benchmark~=4.0.0",
+  "pytest-benchmark>=5.2.3,<5.4.0",
   "pytest-mock>=3.14.0",
-  "hypothesis>=6.112.0",
+  "hypothesis>=6.165.2",
   "respx>=0.21.1",
   "fakeredis>=2.20.0",
   "testcontainers>=4.0.0",
-  "ruff>=0.15,<0.16",
+  "ruff>=0.16.2,<0.17",
   "mypy~=1.11.2",
   "pyright>=1.1.409,<2.0.0",
   "pre-commit>=4.0.0,<5.0.0",
-  "shellcheck-py>=0.10.0.1,<0.11.0",
+  "shellcheck-py>=0.11.0.1,<0.12.0",
   "types-bleach>=6.4.0.20260607",
-  "defusedxml>=0.7.1",
+  # NOTE: defusedxml itself moved to core `dependencies` (CoverageAgent needs it
+  # at runtime); only its type stub package stays a dev-only tool here.
   "types-defusedxml",
   "types-requests",
   "types-PyYAML",
@@ -244,6 +275,7 @@ dev = [
   "types-beautifulsoup4",
   "bandit>=1.7.0",
   "safety>=3.0.0",
+  "detect-secrets>=1.5.0",
   "opentelemetry-api>=1.29.0",
   "opentelemetry-sdk>=1.29.0",
   "opentelemetry-instrumentation-fastapi>=0.50b0",
@@ -270,7 +302,8 @@ bleach = "runtime"
 cachetools = "runtime"
 chromadb = "runtime"
 cryptography = "runtime"
-defusedxml = "dev"
+defusedxml = "runtime"
+"detect-secrets" = "security-tool"
 "duckduckgo-search" = "integration"
 fakeredis = "test-double"
 fastapi = "runtime"
@@ -371,15 +404,13 @@ status = "visible-opt-in"
 summary = "Installer now prompts/selects a dependency profile after runtime mode: dev-full is the normal recommended default via uv sync --all-extras, dev-light remains an opt-in fast local profile, dev-gpu/gpu-runtime cover narrow CUDA/RAG remediation, production-minimal/production cover runtime installs, and custom supports explicit provider extras."
 
 [tool.sidar.dependency_profile_plan.torch_upgrade_reminder]
-current_lock = "torch 2.11.0"
+status = "resolved"
+current_lock = "torch 2.13.0"
 tracked_policy_exception = "CVE-2025-3000"
-advisory_checked_on = "2026-07-16"
-upstream_last_affected = "2.12.0"
-upstream_patched_versions = "none"
-review_by = "2026-08-15"
-expires = "2026-09-15"
-warning_window_days = 45
-calendar_file = "docs/reminders/torch-cve-review-2026-08-15.ics"
+advisory_checked_on = "2026-08-09"
+upstream_last_affected = "2.12.1"
+upstream_patched_versions = "2.13.0"
+resolved_on = "2026-08-09"
 runbook_file = "docs/runbooks/torch-cve-upgrade.md"
 tracked_files = [
   "pyproject.toml",
@@ -398,16 +429,17 @@ line_length = 100
 close_docstring_campaign_by = "2026-09-30"
 close_async240_campaign_by = "2026-09-30"
 tracking_owner = "qa+reviewer"
+global_ignores_removed_on = "2026-08-02"
 planned_validation_commands = [
   "uv run ruff check . --select D,ASYNC",
   "uv run python scripts/ci/check_ruff_debt_baseline.py",
   "uv run ruff check .",
 ]
 e501_global_ignore_review_by = "2026-09-30"
-e501_global_ignore_reason = "Legacy root entrypoints still contain long lines; new or meaningfully edited code should wrap to line-length=100 and avoid expanding this debt."
+e501_global_ignore_reason = "Global ignore removed early on 2026-08-02; the zero ratchet remains as defense-in-depth until the scheduled review."
 e501_debt_baseline = 0
 async240_global_ignore_review_by = "2026-09-30"
-async240_global_ignore_reason = "Legacy async code paths still contain synchronous pathlib metadata checks that are safe for current small local files but trip Ruff ASYNC240 after flake8-async updates; new async I/O paths should prefer asyncio.to_thread, anyio.Path, or precomputed sync setup instead of expanding this debt."
+async240_global_ignore_reason = "Global ignore removed early on 2026-08-02; new async I/O paths remain directly enforced by Ruff and the zero ratchet."
 legacy_hotspots = ["web_server.py", "main.py"]
 docstring_async_debt_baseline = { D200 = 0, D202 = 0, D205 = 0, D209 = 0, D212 = 0, D403 = 0, D415 = 0, D417 = 0, ASYNC240 = 0 }
 
@@ -471,11 +503,13 @@ markers = [
   "gpu_stress: uzun/yoğun GPU yük testleri (CI pipeline'ında ayrı job olarak çalıştırılabilir)",
   "pg_stress: PostgreSQL bağlantı havuzu yük testleri (postgres servisi gerektirir)",
   "benchmark: performans baseline testleri",
+  "password_benchmark: parola hash/verify CPU-maliyetli benchmark'lar (yüksek varyans; ayrı karşılaştırma toleransı)",
   "integration: harici sistem entegrasyonları",
   "quality_gate: deterministik kalite kapısı doğrulamaları",
   "shellcheck: shell betikleri için ShellCheck kalite kapısı",
   "installer_smoke: release-critical installer smoke tests",
   "allow_unit_network: explicit opt-out for rare unit tests that must exercise real sockets",
+  "docker: gerçek Docker daemon'ı ve build edilmiş bir imaj gerektiren container izolasyon/kaçış testleri",
 ]
 filterwarnings = [
   "error",
@@ -501,6 +535,15 @@ filterwarnings = [
   # file); production and tests intentionally stay on httpx, so silence
   # starlette's testclient nudge instead of adding the extra dependency back.
   "ignore:Using .httpx. with .starlette\\.testclient. is deprecated; install .httpx2. instead\\.:starlette.exceptions.StarletteDeprecationWarning",
+  # anyio has no pinned upper bound (see dependencies comment above) and 4.9+
+  # deprecated the anyio.abc.BlockingPortal alias in favor of
+  # anyio.from_thread.BlockingPortal. starlette==1.6.0 (the validated security
+  # baseline pin, see dependencies comment) still imports the old alias from
+  # its testclient module, so any test importing fastapi/starlette's
+  # TestClient trips this warning during collection. Silence it here rather
+  # than loosening the starlette pin or capping anyio; drop this once
+  # starlette ships a release that stops using the deprecated alias.
+  "ignore:The anyio\\.abc\\.BlockingPortal alias is deprecated, use anyio\\.from_thread\\.BlockingPortal instead\\.:DeprecationWarning",
 ]
 log_cli = false
 log_cli_level = "INFO"
@@ -567,6 +610,13 @@ index-strategy = "first-index"
 environments = ["sys_platform == 'linux'"]
 override-dependencies = ["setuptools>=83.0.0"]
 
+# Linux (the only `environments` target below, and the platform every Docker
+# image builds on) intentionally has no pinned CUDA index: torch's own
+# manylinux wheel on PyPI already declares CUDA 13.x runtime deps
+# (nvidia-cudnn-cu13, cuda-toolkit[...] extras, etc. — see uv.lock) that
+# match the nvidia/cuda:13.0.0 GPU base image, so `uv sync --frozen` resolves
+# a working GPU-capable torch with no extra index at all. Only macOS (CPU-only
+# PyTorch has no CUDA build) needs an explicit alternate index.
 [tool.uv.sources]
 torch = [
   { index = "pytorch-cpu", marker = "platform_system == 'Darwin'" },
@@ -581,11 +631,6 @@ torchaudio = [
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
-explicit = true
-
-[[tool.uv.index]]
-name = "pytorch-cu124"
-url = "https://download.pytorch.org/whl/cu124"
 explicit = true
 
 [tool.setuptools.packages.find]
@@ -667,6 +712,8 @@ exclude = [
   "web_ui",
   "web_ui_react",
   "launcher_gui",
+  "models--*",
+  "actions-runner",
 ]
 
 [tool.ruff.lint]
@@ -681,8 +728,6 @@ select = [
   "D",
 ]
 ignore = [
-  # E501 remains a temporary legacy compatibility ignore; see [tool.sidar.ruff_debt].
-  "E501",
   # D100-D107 eksik docstring kuralları AGENTS.md §2.5.6'de tarihli kademeli
   # dokümantasyon kampanyasına bağlıdır; agent rol kontratları şimdilik
   # tests/unit/agent/test_builtin_role_contracts.py ile korunur.
@@ -694,19 +739,6 @@ ignore = [
   "D105",
   "D106",
   "D107",
-  # D200-D417 stil ignore'ları aynı kampanyanın 2026-09-30 kapanış kapısında
-  # kaldırılacaktır; yeni dokümantasyon Google convention'a uymalıdır.
-  "D200",
-  "D202",
-  "D205",
-  "D209",
-  "D212",
-  "D403",
-  "D415",
-  "D417",
-  # ASYNC240 is tracked in [tool.sidar.ruff_debt]; new async I/O code should not
-  # add blocking pathlib calls just because this compatibility ignore exists.
-  "ASYNC240",
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -824,5 +856,5 @@ ignore_missing_imports = true
 
 [dependency-groups]
 dev = [
-    "playwright>=1.60,<1.62",
+    "playwright>=1.62.0,<1.63",
 ]

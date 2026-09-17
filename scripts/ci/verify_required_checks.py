@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import os
+import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.parse import quote, urlsplit
 
 import yaml
+
+from core.utils.trusted_subprocess import run_trusted_command
 
 DEFAULT_RELEASE_JOB_IDS = (
     "test",
@@ -22,6 +26,8 @@ DEFAULT_RELEASE_JOB_IDS = (
     "production-readiness",
     "pg-stress",
 )
+BRANCH_PROTECTION_AUDIT_CONTEXT = "Required release checks audit"
+_GIT_REMOTE_COMMAND = ("git", "remote", "get-url", "origin")
 
 
 class RequiredCheckAuditError(RuntimeError):
@@ -30,12 +36,24 @@ class RequiredCheckAuditError(RuntimeError):
 
 def _repo_from_git_remote() -> str:
     """Resolve owner/repo from the local git remote when GITHUB_REPOSITORY is absent."""
+    if any("\x00" in part for part in _GIT_REMOTE_COMMAND):
+        return ""
+    git_binary = shutil.which("git")
+    if not git_binary or not Path(git_binary).is_absolute():
+        return ""
+    command = [git_binary, *_GIT_REMOTE_COMMAND[1:]]
     try:
-        # Fixed git command without user shell or user-controlled executable.
-        remote = subprocess.check_output(  # nosec B603 B607
-            ["git", "remote", "get-url", "origin"], text=True, stderr=subprocess.DEVNULL
+        remote = str(
+            run_trusted_command(
+                command,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                timeout=10,
+                check=True,
+            ).stdout
         ).strip()
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return ""
     if remote.endswith(".git"):
         remote = remote[:-4]
@@ -48,11 +66,18 @@ def _repo_from_git_remote() -> str:
 
 
 def _load_expected_check_names(workflow_path: Path, job_ids: tuple[str, ...]) -> list[str]:
-    """Return GitHub check-run context names for selected workflow job ids."""
+    """Return GitHub check-run context names for selected workflow job ids.
+
+    GitHub Actions reports a check run's context as the job's own `name:` (or its
+    id, if unnamed) with no workflow-name prefix, unless the job name is
+    ambiguous across workflows — which none of these release-critical jobs are.
+    Confirmed against this repo's live branch-protection UI and Jobs API output
+    (e.g. the audit job itself reports as "Required release checks audit", not
+    "Branch protection audit / Required release checks audit").
+    """
     workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
     if not isinstance(workflow, dict):
         raise RequiredCheckAuditError(f"Workflow YAML is not a mapping: {workflow_path}")
-    workflow_name = str(workflow.get("name") or workflow_path.stem)
     jobs = workflow.get("jobs")
     if not isinstance(jobs, dict):
         raise RequiredCheckAuditError(f"Workflow has no jobs mapping: {workflow_path}")
@@ -64,7 +89,7 @@ def _load_expected_check_names(workflow_path: Path, job_ids: tuple[str, ...]) ->
         if not isinstance(job, dict):
             missing_job_ids.append(job_id)
             continue
-        expected.append(f"{workflow_name} / {job.get('name') or job_id}")
+        expected.append(str(job.get("name") or job_id))
     if missing_job_ids:
         raise RequiredCheckAuditError(
             "Release-critical job id(s) missing from workflow: " + ", ".join(missing_job_ids)
@@ -86,11 +111,61 @@ def _extract_required_contexts(payload: dict[str, Any]) -> set[str]:
     return contexts
 
 
-def _fetch_required_contexts(
+def _extract_protection_required_contexts(payload: dict[str, Any]) -> set[str]:
+    """Return required contexts from a complete branch-protection response."""
+    required_status_checks = payload.get("required_status_checks")
+    if not isinstance(required_status_checks, dict):
+        return set()
+    return _extract_required_contexts(required_status_checks)
+
+
+def audit_merge_safety(payload: dict[str, Any]) -> list[str]:
+    """Validate non-context merge-safety controls in branch protection."""
+    findings: list[str] = []
+    required_status_checks = payload.get("required_status_checks")
+    if not isinstance(required_status_checks, dict):
+        findings.append("Require status checks to pass before merging is disabled")
+    elif required_status_checks.get("strict") is not True:
+        findings.append("Require branches to be up to date before merging is disabled")
+
+    if not isinstance(payload.get("required_pull_request_reviews"), dict):
+        findings.append("Require a pull request before merging is disabled")
+
+    enforce_admins = payload.get("enforce_admins")
+    if not isinstance(enforce_admins, dict) or enforce_admins.get("enabled") is not True:
+        findings.append("Administrator enforcement is disabled")
+
+    allow_force_pushes = payload.get("allow_force_pushes")
+    if not isinstance(allow_force_pushes, dict) or allow_force_pushes.get("enabled") is not False:
+        findings.append("Force pushes are allowed or could not be verified as disabled")
+
+    allow_deletions = payload.get("allow_deletions")
+    if not isinstance(allow_deletions, dict) or allow_deletions.get("enabled") is not False:
+        findings.append("Branch deletion is allowed or could not be verified as disabled")
+    return findings
+
+
+def _fetch_branch_protection(
     *, api_url: str, repo: str, branch: str, token: str | None, timeout: float
-) -> set[str]:
-    """Fetch branch-protection required checks from the GitHub REST API."""
-    url = f"{api_url.rstrip('/')}/repos/{repo}/branches/{branch}/protection/required_status_checks"
+) -> dict[str, Any]:
+    """Fetch complete branch protection so merge controls cannot escape the audit."""
+    parsed = urlsplit(api_url)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise RequiredCheckAuditError(
+            "GitHub API URL must be an HTTPS origin/path without credentials, query, or fragment"
+        )
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
+        raise RequiredCheckAuditError("Repository must use the validated owner/name form")
+    endpoint = (
+        f"{parsed.path.rstrip('/')}/repos/{repo}/branches/{quote(branch, safe='')}/protection"
+    )
     headers = {
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
@@ -98,23 +173,33 @@ def _fetch_required_contexts(
     }
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    request = Request(url, headers=headers)
+    connection = http.client.HTTPSConnection(parsed.hostname, parsed.port, timeout=timeout)
     try:
-        # URL is GitHub API or an explicit operator override.
-        with urlopen(request, timeout=timeout) as response:  # nosec B310
-            raw_payload = response.read().decode("utf-8")
-    except HTTPError as exc:
+        connection.request("GET", endpoint, headers=headers)
+        response = connection.getresponse()
+        raw_payload = response.read().decode("utf-8")
+        if response.status == 403:
+            raise RequiredCheckAuditError(
+                "GitHub branch-protection API returned HTTP 403 for "
+                f"{repo}@{branch}. Merge safety could not be verified. Configure "
+                "BRANCH_PROTECTION_AUDIT_TOKEN with repository Administration: read "
+                "permission (or an equivalent authorized admin token)."
+            )
+        if response.status >= 400:
+            raise RequiredCheckAuditError(
+                f"GitHub branch-protection API returned HTTP {response.status} for "
+                f"{repo}@{branch}: {response.reason}"
+            )
+    except OSError as exc:
         raise RequiredCheckAuditError(
-            f"GitHub required-check API returned HTTP {exc.code} for {repo}@{branch}: {exc.reason}"
+            f"GitHub branch-protection API could not be reached for {repo}@{branch}: {exc}"
         ) from exc
-    except URLError as exc:
-        raise RequiredCheckAuditError(
-            f"GitHub required-check API could not be reached for {repo}@{branch}: {exc.reason}"
-        ) from exc
+    finally:
+        connection.close()
     payload = json.loads(raw_payload)
     if not isinstance(payload, dict):
-        raise RequiredCheckAuditError("GitHub required-check API response was not an object")
-    return _extract_required_contexts(payload)
+        raise RequiredCheckAuditError("GitHub branch-protection API response was not an object")
+    return payload
 
 
 def audit_required_checks(
@@ -125,6 +210,7 @@ def audit_required_checks(
 ) -> tuple[list[str], list[str]]:
     """Compare expected workflow check names with branch-protection contexts."""
     expected = _load_expected_check_names(workflow_path, job_ids)
+    expected.append(BRANCH_PROTECTION_AUDIT_CONTEXT)
     missing = [name for name in expected if name not in required_contexts]
     return expected, missing
 
@@ -140,7 +226,14 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--repo", default=os.getenv("GITHUB_REPOSITORY") or _repo_from_git_remote())
     parser.add_argument("--branch", default=os.getenv("SIDAR_REQUIRED_CHECK_BRANCH", "main"))
     parser.add_argument("--api-url", default=os.getenv("GITHUB_API_URL", "https://api.github.com"))
-    parser.add_argument("--token", default=os.getenv("GITHUB_TOKEN"))
+    parser.add_argument(
+        "--token",
+        default=os.getenv("BRANCH_PROTECTION_AUDIT_TOKEN") or os.getenv("GITHUB_TOKEN"),
+        help=(
+            "Authorized GitHub token. Defaults to BRANCH_PROTECTION_AUDIT_TOKEN, then "
+            "GITHUB_TOKEN. Live audits require repository Administration: read permission."
+        ),
+    )
     parser.add_argument("--timeout", default=20.0, type=float)
     parser.add_argument(
         "--job-id",
@@ -163,18 +256,21 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.required_contexts is not None:
             required_contexts = set(args.required_contexts)
+            merge_safety_findings: list[str] = []
         else:
             if not args.repo:
                 raise RequiredCheckAuditError(
                     "Repository is unknown. Set GITHUB_REPOSITORY or pass --repo owner/repo."
                 )
-            required_contexts = _fetch_required_contexts(
+            protection = _fetch_branch_protection(
                 api_url=args.api_url,
                 repo=args.repo,
                 branch=args.branch,
                 token=args.token,
                 timeout=args.timeout,
             )
+            required_contexts = _extract_protection_required_contexts(protection)
+            merge_safety_findings = audit_merge_safety(protection)
         expected, missing = audit_required_checks(
             workflow_path=args.workflow, job_ids=job_ids, required_contexts=required_contexts
         )
@@ -190,6 +286,13 @@ def main(argv: list[str] | None = None) -> int:
         print(
             "::error::Branch protection is missing required release gate check(s): "
             + "; ".join(missing),
+            file=sys.stderr,
+        )
+        return 1
+    if merge_safety_findings:
+        print(
+            "::error::Branch protection merge-safety policy violation(s): "
+            + "; ".join(merge_safety_findings),
             file=sys.stderr,
         )
         return 1

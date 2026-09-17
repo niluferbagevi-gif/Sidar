@@ -4,7 +4,6 @@ Sürüm: `sidar_version.PRODUCT_VERSION` üzerinden merkezi olarak çözülür.
 Açıklama: Sistem ayarları, donanım tespiti, dizin yönetimi ve loglama altyapısı.
 """
 
-import contextlib
 import logging
 import os
 import sys
@@ -14,14 +13,14 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-
 import config_autonomy
 import config_gpu
 import config_llm
 import config_quality
 import config_rag_defaults
+import core.config_hardware as config_hardware
 import core.config_logging_setup as config_logging_setup
+import core.config_observability as config_observability
 from config_security import load_security_settings
 from core import config_dotenv, config_gpu_detect, config_postgres
 from core.config_app import load_app_runtime_settings
@@ -244,10 +243,15 @@ def _load_dotenv_into_effective_env(
     )
 
 
-def _dotenv_reload_baseline_environment() -> dict[str, str]:
+def _dotenv_reload_baseline_environment(
+    *,
+    managed_keys: set[str],
+    key_sources: dict[str, dict[str, Any]],
+    plan: "config_dotenv.DotenvReloadPlan",
+) -> dict[str, str]:
     """Return the pre-dotenv baseline for atomic reload without intermediate os.environ pops."""
     return config_dotenv.dotenv_reload_baseline_environment(
-        environ=os.environ, managed_keys=_DOTENV_MANAGED_KEYS
+        environ=os.environ, managed_keys=managed_keys, key_sources=key_sources, plan=plan
     )
 
 
@@ -295,58 +299,25 @@ ENV_PATH = base_env_path
 SECURITY_SETTINGS = load_security_settings()
 
 
-class DotenvReloadPlan(BaseModel):
-    """Validated plan for the dotenv precedence chain used during reloads."""
-
-    model_config = ConfigDict(frozen=True)
-
-    profile: str = ""
-    base_path: Path
-    advanced_path: Path
-    explicit_path: str = ""
-    sidar_keys_file: str = "~/.sidar_keys.env"
-    skip_default_layers: bool = False
-    labels: tuple[str, ...] = Field(
-        default=(
-            "base",
-            "advanced",
-            "environment",
-            "explicit:DOTENV_FILE",
-            "secret:SIDAR_KEYS_FILE",
-        ),
-        min_length=5,
-        max_length=5,
-    )
-
-    @field_validator("profile")
-    @classmethod
-    def _normalize_profile(cls, value: str) -> str:
-        """Normalize dotenv profile names before environment-specific file lookup."""
-        normalized = str(value or "").strip().lower()
-        if any(char in normalized for char in ("/", "\\", "..")):
-            raise ValueError("SIDAR_ENV profile cannot contain path separators")
-        return normalized
+DotenvReloadPlan = config_dotenv.DotenvReloadPlan
 
 
 def _build_dotenv_reload_plan(
     effective_env: dict[str, str], *, profile: str | None
 ) -> DotenvReloadPlan:
     """Build and validate the dotenv reload chain plan from the effective environment."""
-    selected_profile = (profile or effective_env.get("SIDAR_ENV", "")).strip().lower()
-    plan = DotenvReloadPlan(
-        profile=selected_profile,
-        base_path=BASE_DIR / ".env",
-        advanced_path=BASE_DIR / ".env.advanced",
-        explicit_path=effective_env.get("DOTENV_FILE", "").strip(),
-        sidar_keys_file=effective_env.get("SIDAR_KEYS_FILE", "~/.sidar_keys.env").strip(),
+    return config_dotenv.build_dotenv_reload_plan(
+        effective_env,
+        profile=profile,
+        base_dir=BASE_DIR,
         skip_default_layers=_skip_default_dotenv_layers(effective_env),
+        validate_secret_overlay=_validate_sidar_keys_file_path,
     )
-    _validate_sidar_keys_file_path(plan.sidar_keys_file)
-    return plan
 
 
 OllamaBatchPolicy = config_llm.OllamaBatchPolicy
 OLLAMA_BATCH_POLICY = config_llm.OLLAMA_BATCH_POLICY
+OLLAMA_TIMEOUT_DEFAULT = config_llm.OLLAMA_TIMEOUT_DEFAULT
 LLMClientSettings = config_llm.LLMClientSettings
 LLM_SETTINGS = config_llm.load_llm_settings(
     env_path=ENV_PATH, skip_default_dotenv=_SKIP_DEFAULT_DOTENV
@@ -373,16 +344,19 @@ get_database_url = config_postgres.get_database_url
 get_container_database_url = config_postgres.get_container_database_url
 
 
-def _default_auto_migrate_enabled() -> bool:
-    """Enable runtime Alembic auto-migrate outside production by default."""
-    return os.getenv("SIDAR_ENV", "").strip().lower() != "production"
-
-
 def get_db_pool_size_default() -> int:
     """Return the profile-aware default PostgreSQL pool size."""
     return config_postgres.get_db_pool_size_default(
         get_int_env=get_int_env, cpu_count=os.cpu_count()
     )
+
+
+_DATABASE_SETTINGS = config_postgres.load_database_settings(
+    get_bool_env=get_bool_env,
+    get_int_env=get_int_env,
+    get_float_env=get_float_env,
+    default_pool_size=get_db_pool_size_default(),
+)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -415,7 +389,9 @@ def _configure_noisy_dependency_loggers(*, verbose_http: bool = _VERBOSE_HTTP_LO
     )
 
 
-_DEPENDENCY_AUTO = object()
+# Shared identity with core.config_observability.init_telemetry's default
+# parameter values -- see Config.init_telemetry's delegation below.
+_DEPENDENCY_AUTO = config_observability.DEPENDENCY_AUTO
 
 
 def _log_once_env(
@@ -476,112 +452,38 @@ PYTORCH_RECOMMENDED_CUDA_INSTALL_COMMAND = config_gpu.PYTORCH_RECOMMENDED_CUDA_I
 
 
 def _is_wsl2() -> bool:
-    """WSL2 ortamını tespit eder (/proc/sys/kernel/osrelease içinde 'microsoft' arar)."""
-    try:
-        return "microsoft" in Path("/proc/sys/kernel/osrelease").read_text().lower()
-    except Exception:
-        return False
+    """Compatibility facade for the extracted WSL2 detector."""
+    return config_hardware.is_wsl2()
 
 
 def _apply_vram_memory_fraction(info: HardwareInfo) -> None:
-    """Apply Sidar's VRAM-fraction policy after the shared GPU probe succeeds."""
-    if not info.has_cuda:
-        if _is_wsl2() and info.gpu_name == "CUDA Bulunamadı":
-            logger.warning(
-                "⚠️  WSL2 — CUDA bulunamadı. Kontrol: "
-                "Windows NVIDIA sürücüsü güncel mi? "
-                "PyTorch resmi selector ile uyumlu CUDA wheel kurulumu yapıldı mı? "
-                "Desteklenen stabil wheel etiketleri: %s. Örnek: %s",
-                ", ".join(PYTORCH_STABLE_CUDA_WHEEL_TAGS),
-                PYTORCH_RECOMMENDED_CUDA_INSTALL_COMMAND,
-            )
-        return
-
-    try:
-        import torch
-    except Exception as exc:
-        logger.debug("VRAM fraksiyon ayarı için torch yeniden açılamadı: %s", exc)
-        return
-
-    legacy_frac = get_float_env("GPU_MEMORY_FRACTION", 0.8)
-    llm_frac = get_float_env("LLM_GPU_MEMORY_FRACTION", legacy_frac)
-    rag_frac = get_float_env("RAG_GPU_MEMORY_FRACTION", max(0.1, min(0.5, legacy_frac * 0.35)))
-    if (
-        os.getenv("LLM_GPU_MEMORY_FRACTION") is not None
-        or os.getenv("RAG_GPU_MEMORY_FRACTION") is not None
-    ):
-        vram_budget = normalize_gpu_memory_fractions(llm_frac, rag_frac)
-        frac = float(vram_budget["gpu"] if vram_budget["normalized"] else vram_budget["total"])
-        if vram_budget["normalized"]:
-            logger.warning(
-                "LLM/RAG VRAM fraksiyonları toplamı %.2f; donanım probu %.2f toplamına normalize "
-                "edilmiş bütçeyi uyguluyor "
-                "(LLM=%.2f, RAG=%.2f).",
-                vram_budget["original_total"],
-                vram_budget["gpu"],
-                vram_budget["llm"],
-                vram_budget["rag"],
-            )
-    else:
-        frac = legacy_frac
-    if not (0.1 <= frac < 1.0):
-        logger.warning(
-            "GPU bellek fraksiyonu=%.2f geçersiz aralık (0.1–0.99 bekleniyor, 1.0 dahil değil) — "
-            "varsayılan 0.8 kullanılıyor.",
-            frac,
-        )
-        frac = 0.8
-    multi_gpu = get_bool_env("MULTI_GPU", False)
-    target_device = max(0, get_int_env("GPU_DEVICE", 0))
-    try:
-        if multi_gpu and info.gpu_count > 1:
-            for device_idx in range(info.gpu_count):
-                torch.cuda.set_per_process_memory_fraction(frac, device=device_idx)
-            _log_first_load_info(
-                "🔧 VRAM fraksiyonu tüm GPU'lara uygulandı: %.0f%% (%d cihaz)",
-                frac * 100,
-                info.gpu_count,
-            )
-        else:
-            if info.gpu_count > 0:
-                target_device = min(target_device, info.gpu_count - 1)
-            torch.cuda.set_per_process_memory_fraction(frac, device=target_device)
-            _log_first_load_info(
-                "🔧 VRAM fraksiyonu ayarlandı: %.0f%% (cuda:%d)", frac * 100, target_device
-            )
-    except Exception as exc:
-        logger.debug("VRAM fraksiyon ayarı atlandı: %s", exc)
+    """Compatibility facade for the extracted VRAM policy."""
+    config_hardware.apply_vram_memory_fraction(
+        info,
+        is_wsl2_runtime=_is_wsl2,
+        stable_cuda_wheel_tags=PYTORCH_STABLE_CUDA_WHEEL_TAGS,
+        recommended_cuda_install_command=PYTORCH_RECOMMENDED_CUDA_INSTALL_COMMAND,
+        get_float_env=get_float_env,
+        get_bool_env=get_bool_env,
+        get_int_env=get_int_env,
+        normalize_gpu_memory_fractions=normalize_gpu_memory_fractions,
+        log_first_load_info=_log_first_load_info,
+        logger=logger,
+        environ=os.environ,
+    )
 
 
 def check_hardware() -> HardwareInfo:
-    """GPU/CPU donanımını shared probe ile tespit eder, sadece VRAM fraksiyonunu burada uygular."""
-    original_is_wsl2 = config_gpu_detect.is_wsl2
-    config_gpu_detect.is_wsl2 = _is_wsl2
-    try:
-        info = config_gpu_detect.detect_gpu(
-            get_bool_env=get_bool_env,
-            get_int_env=get_int_env,
-            get_float_env=get_float_env,
-            logger=logger,
-        )
-    finally:
-        config_gpu_detect.is_wsl2 = original_is_wsl2
-
-    _apply_vram_memory_fraction(info)
-
-    try:
-        import pynvml
-
-        pynvml.nvmlInit()
-        info.driver_version = pynvml.nvmlSystemGetDriverVersion()
-        pynvml.nvmlShutdown()
-    except Exception as exc:
-        logger.debug(
-            "NVML driver version okunamadı (opsiyonel bağımlılık/ortam kısıtı olabilir): %s",
-            exc,
-        )
-
-    return info
+    """Detect hardware through the extracted service while preserving the public facade."""
+    return config_hardware.check_hardware(
+        gpu_detect_module=config_gpu_detect,
+        is_wsl2_runtime=_is_wsl2,
+        apply_vram_policy=_apply_vram_memory_fraction,
+        get_bool_env=get_bool_env,
+        get_int_env=get_int_env,
+        get_float_env=get_float_env,
+        logger=logger,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -620,8 +522,10 @@ class Config:
     observability_settings = _OBSERVABILITY_SETTINGS
     orchestrator_settings = _ORCHESTRATOR_SETTINGS
     self_heal_settings = _SELF_HEAL_SETTINGS
+    database_settings = _DATABASE_SETTINGS
 
     # ─── Genel ───────────────────────────────────────────────
+    SIDAR_ENV: str = os.getenv("SIDAR_ENV", "").strip().lower()
     PROJECT_NAME: str = _APP_SETTINGS.project_name
     VERSION: str = _APP_SETTINGS.version
     DEBUG_MODE: bool = _APP_SETTINGS.debug_mode
@@ -684,6 +588,7 @@ class Config:
     # ─── Ollama ──────────────────────────────────────────────
     OLLAMA_URL: str = LLM_SETTINGS.OLLAMA_URL
     OLLAMA_TIMEOUT: int = LLM_SETTINGS.OLLAMA_TIMEOUT
+    OLLAMA_HEALTH_CHECK_TIMEOUT: int = LLM_SETTINGS.OLLAMA_HEALTH_CHECK_TIMEOUT
     OLLAMA_KEEP_ALIVE: str = LLM_SETTINGS.OLLAMA_KEEP_ALIVE
     OLLAMA_NUM_BATCH: int = get_int_env("OLLAMA_NUM_BATCH", LLM_SETTINGS.OLLAMA_NUM_BATCH)
     OLLAMA_CODING_NUM_CTX: int = get_int_env(
@@ -746,8 +651,17 @@ class Config:
 
     # Embedding ve model yüklemeleri için VRAM fraksiyonu (0.1–0.99 bekleniyor, 1.0 dahil değil)
     GPU_MEMORY_FRACTION: float = get_float_env("GPU_MEMORY_FRACTION", 0.8)
-    # Yerel LLM ve RAG için ayrı bellek bütçeleri (opsiyonel)
-    LLM_GPU_MEMORY_FRACTION: float = get_float_env("LLM_GPU_MEMORY_FRACTION", GPU_MEMORY_FRACTION)
+    # Yerel LLM ve RAG için ayrı bellek bütçeleri (opsiyonel). Varsayılanlar
+    # GPU_MEMORY_FRACTION'ı 65/35 oranında bölüştürür ki hiçbir override
+    # olmadan toplamları zaten GPU_MEMORY_FRACTION'a eşit olsun --
+    # _apply_gpu_memory_safety_check()'in her boot'ta gereksiz yere runtime
+    # normalize etmesini (ve bir OOM-riski uyarısı basmasını) önler. Eskiden
+    # LLM_GPU_MEMORY_FRACTION varsayılanı doğrudan GPU_MEMORY_FRACTION'ın
+    # kendisiydi (yani ×1.0), bu da RAG'ın ×0.35'iyle toplamda her zaman
+    # GPU_MEMORY_FRACTION'ın %135'ini buluyordu (varsayılan 0.8'de: 1.08).
+    LLM_GPU_MEMORY_FRACTION: float = get_float_env(
+        "LLM_GPU_MEMORY_FRACTION", max(0.1, min(0.9, GPU_MEMORY_FRACTION * 0.65))
+    )
     RAG_GPU_MEMORY_FRACTION: float = get_float_env(
         "RAG_GPU_MEMORY_FRACTION", max(0.1, min(0.5, GPU_MEMORY_FRACTION * 0.35))
     )
@@ -815,22 +729,21 @@ class Config:
     METRICS_TOKEN: str = _OBSERVABILITY_SETTINGS.metrics_token
 
     # ─── Veritabanı (v3.0 çoklu kullanıcı hazırlığı) ────────
-    DATABASE_URL: str = get_database_url()
-    CONTAINER_DATABASE_URL: str | None = None
-    SIDAR_CONTAINER_DATABASE_URL: str = get_container_database_url()
-    DB_POOL_SIZE: int = get_int_env("DB_POOL_SIZE", get_db_pool_size_default())
-    DB_POOL_MIN_SIZE: int = get_int_env("DB_POOL_MIN_SIZE", 1)
-    DB_STATEMENT_CACHE_SIZE: int = get_int_env("DB_STATEMENT_CACHE_SIZE", 256)
-    DB_MAX_CACHED_STATEMENT_LIFETIME: float = get_float_env(
-        "DB_MAX_CACHED_STATEMENT_LIFETIME", 300.0
+    DATABASE_URL: str = _DATABASE_SETTINGS.database_url
+    SIDAR_ALLOW_INSECURE_LOCAL_DB_DEFAULT: bool = _DATABASE_SETTINGS.allow_insecure_local_default
+    CONTAINER_DATABASE_URL: str | None = _DATABASE_SETTINGS.container_database_url
+    SIDAR_CONTAINER_DATABASE_URL: str = _DATABASE_SETTINGS.sidar_container_database_url
+    DB_POOL_SIZE: int = _DATABASE_SETTINGS.pool_size
+    DB_POOL_MIN_SIZE: int = _DATABASE_SETTINGS.pool_min_size
+    DB_STATEMENT_CACHE_SIZE: int = _DATABASE_SETTINGS.statement_cache_size
+    DB_MAX_CACHED_STATEMENT_LIFETIME: float = _DATABASE_SETTINGS.max_cached_statement_lifetime
+    DB_DEGRADED_MODE_ON_POSTGRES_FAILURE: bool = (
+        _DATABASE_SETTINGS.degraded_mode_on_postgres_failure
     )
-    DB_DEGRADED_MODE_ON_POSTGRES_FAILURE: bool = get_bool_env(
-        "DB_DEGRADED_MODE_ON_POSTGRES_FAILURE", True
-    )
-    DB_DEGRADED_SQLITE_URL: str = os.getenv("DB_DEGRADED_SQLITE_URL", "")
-    DB_SCHEMA_VERSION_TABLE: str = os.getenv("DB_SCHEMA_VERSION_TABLE", "schema_versions")
-    DB_SCHEMA_TARGET_VERSION: int = get_int_env("DB_SCHEMA_TARGET_VERSION", 1)
-    SIDAR_AUTO_MIGRATE: bool = get_bool_env("SIDAR_AUTO_MIGRATE", _default_auto_migrate_enabled())
+    DB_DEGRADED_SQLITE_URL: str = _DATABASE_SETTINGS.degraded_sqlite_url
+    DB_SCHEMA_VERSION_TABLE: str = _DATABASE_SETTINGS.schema_version_table
+    DB_SCHEMA_TARGET_VERSION: int = _DATABASE_SETTINGS.schema_target_version
+    SIDAR_AUTO_MIGRATE: bool = _DATABASE_SETTINGS.auto_migrate
 
     # ─── Gözlemlenebilirlik (OpenTelemetry) ───────────────────
     ENABLE_TRACING: bool = _OBSERVABILITY_SETTINGS.enable_tracing
@@ -1076,6 +989,9 @@ class Config:
     ENABLE_GRAPH_RAG: bool = get_bool_env("ENABLE_GRAPH_RAG", True)
     GRAPH_RAG_MAX_FILES: int = get_int_env("GRAPH_RAG_MAX_FILES", 5000)
     ENABLE_RAG_ENTITY_EXTRACTION: bool = get_bool_env("ENABLE_RAG_ENTITY_EXTRACTION", True)
+    # Liveness remains process-only; when enabled, /readyz fails closed unless
+    # both the configured vector backend and BM25 runtime are initialized.
+    RAG_REQUIRED_FOR_READINESS: bool = get_bool_env("RAG_REQUIRED_FOR_READINESS", False)
     RAG_ENTITY_MAX_PER_DOC: int = get_int_env("RAG_ENTITY_MAX_PER_DOC", 24)
     ENABLE_RAG_LLM_ENTITY_EXTRACTION: bool = get_bool_env("ENABLE_RAG_LLM_ENTITY_EXTRACTION", False)
     RAG_LLM_ENTITY_PROVIDER: str = os.getenv("RAG_LLM_ENTITY_PROVIDER", "")
@@ -1244,7 +1160,14 @@ class Config:
     @classmethod
     def _autoselect_ollama_coding_ctx_window(cls) -> None:
         """Auto-tune Ollama coding context from the loaded hardware inventory."""
-        if os.getenv("OLLAMA_CODING_NUM_CTX") is not None:
+        # Blank (`OLLAMA_CODING_NUM_CTX=`) counts as "not explicitly set", matching
+        # get_int_env()'s empty-string-is-unset convention and LLMClientSettings'
+        # env_ignore_empty=True. .env.advanced.example ships this key blank on
+        # purpose so a fresh install still auto-tunes from detected GPU VRAM;
+        # `is not None` alone treats that shipped blank as an explicit override
+        # and always skips auto-tuning.
+        raw_override = os.getenv("OLLAMA_CODING_NUM_CTX")
+        if raw_override is not None and raw_override.strip():
             return
         if not cls.USE_GPU:
             return
@@ -1252,10 +1175,34 @@ class Config:
         # Keep check_hardware() as the single source of truth. Importing torch
         # here can observe a different device or driver state than the hardware
         # probe and overwrite cls.GPU_VRAM_MB with inconsistent data.
+        #
+        # Below 8 GiB this used to fall through untouched, leaving
+        # LLMClientSettings' fixed 8192 default in place for 6 GB-class cards
+        # (RTX 2060/3050, 4060 laptop, GTX 1660, ...) — the same context a
+        # 8-16 GiB card gets, with none of its VRAM headroom.
+        #
+        # A field report (RTX 3070 Ti Laptop, gpu_vram_mb=8192) then showed
+        # the >=8192 tier itself has the identical problem: a card that
+        # reports *exactly* the tier floor gets that tier's full context with
+        # zero margin for the coding model's own weights (~5 GiB for
+        # qwen2.5-coder:7b q4) plus KV cache plus OS/desktop VRAM overhead,
+        # and the installer's `/api/generate` JSON smoke test failed with
+        # HTTP 500 (VRAM OOM). 8-12 GiB cards (no comfortable headroom over a
+        # ~5 GiB model) now get the same 4096 tier as 4-8 GiB cards; only
+        # 12 GiB+ cards (RTX 3060 12GB, 4070, 3080 10-12GB, ...) keep the
+        # full 8192 window. 16 GiB+ still gets 16384. Floor at 2048 for
+        # anything below 4 GiB (including gpu_vram_mb=0, i.e. USE_GPU forced
+        # on without a successful hardware probe) — 2048 mirrors
+        # OLLAMA_BATCH_POLICY's own auto_min, the smallest context this
+        # codebase already treats as meaningful for local Ollama inference.
         if cls.GPU_VRAM_MB >= 16384:
             cls.OLLAMA_CODING_NUM_CTX = 16384
-        elif cls.GPU_VRAM_MB >= 8192:
+        elif cls.GPU_VRAM_MB >= 12288:
             cls.OLLAMA_CODING_NUM_CTX = 8192
+        elif cls.GPU_VRAM_MB >= 4096:
+            cls.OLLAMA_CODING_NUM_CTX = 4096
+        else:
+            cls.OLLAMA_CODING_NUM_CTX = 2048
 
     @classmethod
     def trusted_proxies_as_list(cls) -> list[str]:
@@ -1271,7 +1218,7 @@ class Config:
 
     @classmethod
     def _apply_gpu_memory_safety_check(cls) -> None:
-        """LLM+RAG VRAM fraksiyonu 1.0'ı aşarsa toplamı güvenli 0.8'e normalize eder."""
+        """LLM+RAG VRAM fraksiyonlarını güvenli 0.8 hedef bütçesine normalize eder."""
         llm = float(cls.LLM_GPU_MEMORY_FRACTION or 0.0)
         rag = float(cls.RAG_GPU_MEMORY_FRACTION or 0.0)
         total = llm + rag
@@ -1545,85 +1492,24 @@ class Config:
         httpx_instrumentor_cls: Any = _DEPENDENCY_AUTO,
     ) -> bool:
         """OpenTelemetry tracing + opsiyonel FastAPI/HTTPX enstrümantasyonunu başlat."""
-        log = logger_obj or logger
-        if not cls.ENABLE_TRACING:
-            return False
-
-        if (
-            trace_module is None
-            or otlp_exporter_cls is None
-            or tracer_provider_cls is None
-            or resource_cls is None
-            or batch_span_processor_cls is None
-        ):
-            log.warning("ENABLE_TRACING açık fakat OpenTelemetry bağımlılıkları yüklenemedi.")
-            return False
-
-        try:
-            if trace_module is _DEPENDENCY_AUTO:
-                from opentelemetry import trace as imported_trace_module
-
-                trace_module = imported_trace_module
-            if otlp_exporter_cls is _DEPENDENCY_AUTO:
-                from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
-                    OTLPSpanExporter as imported_otlp_exporter_cls,
-                )
-
-                otlp_exporter_cls = imported_otlp_exporter_cls
-            if tracer_provider_cls is _DEPENDENCY_AUTO:
-                from opentelemetry.sdk.trace import TracerProvider as imported_tracer_provider_cls
-
-                tracer_provider_cls = imported_tracer_provider_cls
-            if resource_cls is _DEPENDENCY_AUTO:
-                from opentelemetry.sdk.resources import Resource as imported_resource_cls
-
-                resource_cls = imported_resource_cls
-            if batch_span_processor_cls is _DEPENDENCY_AUTO:
-                from opentelemetry.sdk.trace.export import (
-                    BatchSpanProcessor as imported_batch_span_processor_cls,
-                )
-
-                batch_span_processor_cls = imported_batch_span_processor_cls
-        except Exception:
-            log.warning("ENABLE_TRACING açık fakat OpenTelemetry bağımlılıkları yüklenemedi.")
-            return False
-
-        try:
-            svc_name = service_name or cls.OTEL_SERVICE_NAME or "sidar"
-            resource = resource_cls.create({"service.name": svc_name})
-            provider = tracer_provider_cls(resource=resource)
-            exporter = otlp_exporter_cls(endpoint=cls.OTEL_EXPORTER_ENDPOINT, insecure=True)
-            provider.add_span_processor(batch_span_processor_cls(exporter))
-            trace_module.set_tracer_provider(provider)
-
-            if fastapi_app is not None and cls.OTEL_INSTRUMENT_FASTAPI:
-                if fastapi_instrumentor_cls is _DEPENDENCY_AUTO:
-                    from opentelemetry.instrumentation.fastapi import (
-                        FastAPIInstrumentor as imported_fastapi_instrumentor_cls,
-                    )
-
-                    fastapi_instrumentor_cls = imported_fastapi_instrumentor_cls
-                fastapi_instrumentor_cls.instrument_app(fastapi_app)
-
-            if cls.OTEL_INSTRUMENT_HTTPX:
-                if httpx_instrumentor_cls is _DEPENDENCY_AUTO:
-                    try:
-                        from opentelemetry.instrumentation.httpx import (
-                            HTTPXClientInstrumentor as imported_httpx_instrumentor_cls,
-                        )
-
-                        httpx_instrumentor_cls = imported_httpx_instrumentor_cls
-                    except Exception:
-                        httpx_instrumentor_cls = None
-                if httpx_instrumentor_cls is not None:
-                    with contextlib.suppress(Exception):
-                        httpx_instrumentor_cls().instrument()
-
-            log.info(localized_log_message("otel_active"), cls.OTEL_EXPORTER_ENDPOINT)
-            return True
-        except Exception as exc:
-            log.warning(localized_log_message("otel_failed"), exc)
-            return False
+        return config_observability.init_telemetry(
+            enable_tracing=cls.ENABLE_TRACING,
+            otel_service_name=cls.OTEL_SERVICE_NAME,
+            otel_exporter_endpoint=cls.OTEL_EXPORTER_ENDPOINT,
+            otel_instrument_fastapi=cls.OTEL_INSTRUMENT_FASTAPI,
+            otel_instrument_httpx=cls.OTEL_INSTRUMENT_HTTPX,
+            logger_obj=logger_obj or logger,
+            localized_log_message=localized_log_message,
+            service_name=service_name,
+            fastapi_app=fastapi_app,
+            trace_module=trace_module,
+            otlp_exporter_cls=otlp_exporter_cls,
+            tracer_provider_cls=tracer_provider_cls,
+            resource_cls=resource_cls,
+            batch_span_processor_cls=batch_span_processor_cls,
+            fastapi_instrumentor_cls=fastapi_instrumentor_cls,
+            httpx_instrumentor_cls=httpx_instrumentor_cls,
+        )
 
     @classmethod
     def print_config_summary(cls) -> None:
@@ -1669,8 +1555,19 @@ def _reload_dotenv_chain(*, profile: str | None = None) -> None:
     global _LAST_DOTENV_LOAD_CHAIN_SIGNATURE
     with _CONFIG_STATE_LOCK:
         previous_managed_keys = set(_DOTENV_MANAGED_KEYS)
-        effective_env = _dotenv_reload_baseline_environment()
-        plan = _build_dotenv_reload_plan(effective_env, profile=profile)
+        # Snapshot before the globals below are cleared -- needed to decide,
+        # per key, whether its supplying layer is still active this round
+        # (see _dotenv_reload_baseline_environment's docstring).
+        previous_key_sources = {key: dict(value) for key, value in _DOTENV_KEY_SOURCES.items()}
+        # Resolve the plan (SIDAR_SKIP_DEFAULT_DOTENV/DOTENV_FILE/SIDAR_KEYS_FILE)
+        # from the *real*, unmodified process environment -- never from a
+        # baseline that may have already popped a previously dotenv-managed
+        # control variable, or a direct override of one of these three keys
+        # would be invisible to this reload's own plan.
+        plan = _build_dotenv_reload_plan(dict(os.environ), profile=profile)
+        effective_env = _dotenv_reload_baseline_environment(
+            managed_keys=previous_managed_keys, key_sources=previous_key_sources, plan=plan
+        )
         _DOTENV_MANAGED_KEYS.clear()
         _DOTENV_LOAD_EVENTS.clear()
         _DOTENV_KEY_SOURCES.clear()
@@ -1823,6 +1720,7 @@ def get_config() -> "Config":
 __all__ = [
     "Config",
     "OLLAMA_BATCH_POLICY",
+    "OLLAMA_TIMEOUT_DEFAULT",
     "SANDBOX_LIMITS",
     "get_bool_prefixed_env",
     "get_config",

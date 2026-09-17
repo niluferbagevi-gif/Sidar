@@ -483,6 +483,43 @@ def test_packaged_alembic_head_base_cycle_is_repeatable(tmp_path, monkeypatch):
             engine.dispose()
 
 
+_ALEMBIC_ONLY_TABLES = {"alembic_version"}
+
+# Bazı sütun default'ları backend/tip farkı yüzünden metinsel olarak farklı
+# render edilir ama anlam olarak aynıdır (örn. SQLAlchemy Boolean sütunu
+# SQLite'ta 0/1 saklarken reflection'da 'false'/'true' döner; quoted '0' ile
+# çıplak 0 aynı sayısal default'tur). Bunlar migrations/versions/0001'deki
+# SidarUUID gibi bilinçli backend-tipi tercihleridir — drift değildir, bu
+# yüzden karşılaştırmadan önce normalize edilirler.
+_BOOLEAN_DEFAULT_ALIASES = {"0": "false", "1": "true", "false": "false", "true": "true"}
+
+
+def _strip_default_quotes(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in "'\"":
+        text = text[1:-1]
+    return text
+
+
+def _defaults_are_equivalent(alembic_default: object, bootstrap_default: object) -> bool:
+    a = _strip_default_quotes(alembic_default)
+    b = _strip_default_quotes(bootstrap_default)
+    if a == b:
+        return True
+    if a is None or b is None:
+        return False
+    if _BOOLEAN_DEFAULT_ALIASES.get(a.lower(), a.lower()) == _BOOLEAN_DEFAULT_ALIASES.get(
+        b.lower(), b.lower()
+    ):
+        return True
+    try:
+        return float(a) == float(b)
+    except ValueError:
+        return False
+
+
 @pytest.mark.integration
 def test_sqlite_bootstrap_schema_matches_alembic_head_schema(tmp_path, monkeypatch):
     """SQLite bootstrap DDL şemasının Alembic head şemasıyla eşleştiğini doğrular.
@@ -490,7 +527,11 @@ def test_sqlite_bootstrap_schema_matches_alembic_head_schema(tmp_path, monkeypat
     core/db/monolith.py'deki elle yazılmış SQLite bootstrap DDL'i (`_init_schema_sqlite`
     ve ilgili `_ensure_*_schema_sqlite` yardımcıları) ile Alembic migration'larının ürettiği
     head şeması, iki bağımsız ve elle bakım gören kaynak olduğu için birbirinden sapabilir.
-    Bu test tablo/sütun kümelerini karşılaştırarak drift'i CI'da erken yakalar.
+    Bu test tablo/sütun kümelerinin yanı sıra nullable ve default değerlerini de
+    karşılaştırarak drift'i CI'da erken yakalar (bkz. `0007_faz_e_defaults_parity`:
+    yalnızca tablo/sütun *adı* karşılaştırması, o migration'ın kapattığı dokuz
+    server_default sapmasını -- örn. `owner_user_id`'nin PostgreSQL'de 'system',
+    SQLite'ta '' varsayılanına sahip olması -- hiç yakalayamamıştı).
 
     Not: Alembic'in `env.py`'si kendi içinde `asyncio.run(...)` çağırdığından, bu test
     zaten çalışan bir event loop içinde olmamalı (bkz. diğer `command.upgrade` kullanan
@@ -529,7 +570,7 @@ def test_sqlite_bootstrap_schema_matches_alembic_head_schema(tmp_path, monkeypat
         alembic_inspector = inspect(alembic_engine)
 
         bootstrap_tables = set(bootstrap_inspector.get_table_names())
-        alembic_tables = set(alembic_inspector.get_table_names()) - {"alembic_version"}
+        alembic_tables = set(alembic_inspector.get_table_names()) - _ALEMBIC_ONLY_TABLES
 
         assert bootstrap_tables == alembic_tables, (
             "SQLite bootstrap (_init_schema_sqlite) ile Alembic head arasında tablo seti "
@@ -537,14 +578,41 @@ def test_sqlite_bootstrap_schema_matches_alembic_head_schema(tmp_path, monkeypat
             f"sadece Alembic'te={alembic_tables - bootstrap_tables}"
         )
 
+        mismatches: list[str] = []
         for table in sorted(bootstrap_tables):
-            bootstrap_cols = {c["name"] for c in bootstrap_inspector.get_columns(table)}
-            alembic_cols = {c["name"] for c in alembic_inspector.get_columns(table)}
+            bootstrap_columns = {c["name"]: c for c in bootstrap_inspector.get_columns(table)}
+            alembic_columns = {c["name"]: c for c in alembic_inspector.get_columns(table)}
+            bootstrap_cols = set(bootstrap_columns)
+            alembic_cols = set(alembic_columns)
             assert bootstrap_cols == alembic_cols, (
                 f"'{table}' tablosunda bootstrap/Alembic sütun sapması: "
                 f"sadece bootstrap'ta={bootstrap_cols - alembic_cols}, "
                 f"sadece Alembic'te={alembic_cols - bootstrap_cols}"
             )
+
+            for column_name in sorted(bootstrap_cols):
+                bootstrap_column = bootstrap_columns[column_name]
+                alembic_column = alembic_columns[column_name]
+                if bool(bootstrap_column["nullable"]) != bool(alembic_column["nullable"]):
+                    mismatches.append(
+                        f"{table}.{column_name}: nullable sapması "
+                        f"(bootstrap={bootstrap_column['nullable']!r} "
+                        f"alembic={alembic_column['nullable']!r})"
+                    )
+                if not _defaults_are_equivalent(
+                    alembic_column.get("default"), bootstrap_column.get("default")
+                ):
+                    mismatches.append(
+                        f"{table}.{column_name}: default sapması "
+                        f"(bootstrap={bootstrap_column.get('default')!r} "
+                        f"alembic={alembic_column.get('default')!r})"
+                    )
+
+        assert not mismatches, (
+            "SQLite bootstrap (_init_schema_sqlite) ile Alembic head arasında nullable/"
+            "default sapması var; _init_schema_sqlite()/ilgili _ensure_*_sqlite() metodunu "
+            "veya yeni bir Alembic migration'ını güncelleyin:\n" + "\n".join(mismatches)
+        )
     finally:
         bootstrap_engine.dispose()
         alembic_engine.dispose()

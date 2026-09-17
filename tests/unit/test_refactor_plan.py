@@ -32,7 +32,9 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
         "web/routes/webhooks.py",
         "web/app_factory.py",
         "web/plugins/sandbox.py",
-        "scripts/test_gates/benchmark.sh",
+        "scripts/test_gates/benchmark_helpers.sh",
+        "scripts/test_gates/coverage_helpers.sh",
+        "scripts/test_gates/frontend_helpers.sh",
         "scripts/test_gates/summary.py",
         "scripts/install_modules/validation.sh",
         "scripts/install_modules/install_cli.sh",
@@ -71,7 +73,7 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
         "core/doctor/reporting.py",
         "core/doctor/launcher_preflight.py",
         "agent/roles/reviewer/judge.py",
-        "core/ci_remediation/validation.py",
+        "core/ci_remediation/command_safety.py",
         "managers/browser/visual_drift.py",
         "agent/swarm/handoff.py",
     ):
@@ -86,18 +88,38 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
     assert "WebSocket token parser (`web/security.py`) çıkarımı yapıldı" in plan
     assert "AST-validated `exec()`" in plan
     assert "plugin AST/policy helperları `web/plugins/sandbox.py`" in plan
-    assert "process-içi plugin exec varsayılan olarak fail-closed" in plan
+    assert (
+        "process-içi plugin exec artık yalnız varsayılan olarak değil koşulsuz fail-closed" in plan
+    )
+    assert "`SIDAR_ENABLE_IN_PROCESS_PLUGINS=1` bu sınırı aşamaz" in plan
     assert "Docker sandbox sözleşmesiyle uyumlu" in plan
     assert "frontend static mount ve SPA fallback bootstrap boundary'si `web/bootstrap.py`" in plan
     assert "middleware/frontend fallback bootstrap boundary" in plan
     assert "loopback CORS middleware bootstrap'ı `web/middleware/cors.py`" in plan
     assert "access policy middleware orchestration'ı `web/middleware/access_policy.py`" in plan
     assert "Güncel bakım hotspot snapshot" in plan
-    assert "Quality gate orchestration büyüdü" in plan
+    assert "run_tests.sh` 678 satıra indi" in plan
+    assert "yeni modül icat etmek değil" in plan
     assert "ana script bootstrap facade" in plan
     assert "Launcher Doctor preflight" in plan
     assert "core/doctor/launcher_preflight.py" in plan
     assert "config_rag_defaults.py" in plan
+    assert "docs/development/frontend-typescript-migration.md" in plan
+    assert "hedef tamamlanma **2027-03-31**" in plan
+    assert "hâlâ ham `os.getenv(...)` inline çözümlenen ~35 alan" in plan
+    assert "marketing/social entegrasyonları önce, en izole grup" in plan
+    assert "en düşük riskli silinecek ikili" in plan
+    assert "`main.py:874-903`'te de aynı desen" in plan
+    assert (
+        "test_sqlite_bootstrap_schema_matches_alembic_head_schema" in plan
+        and "önerilen (b) seçeneği" in plan
+    )
+    assert "core/doctor/__init__.py` (eski `core/doctor.py`; repo'nun en büyük dosyası" in plan
+    assert "yalnızca `redis.py::check_redis` gerçekten kendi kendine yeten" in plan
+    assert "core/ci_remediation/command_safety.py" in plan
+    assert "otonom self-heal döngüsünün hangi shell komutlarını" in plan
+    assert "scripts/install_modules/utils/remote_module_fetch.sh" in plan
+    assert "trust-root chicken-and-egg sorunu" in plan
 
 
 def test_install_sidar_cli_and_dispatch_boundaries_are_sourced() -> None:

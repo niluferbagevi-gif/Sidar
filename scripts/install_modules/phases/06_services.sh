@@ -28,7 +28,10 @@ phase06_docker_daemon_gate_or_fail() {
             info "Etkileşimsiz mod: yeniden deneme öncesi 10sn bekleniyor."
             sleep 10
         else
-            info "Lütfen Docker Desktop'ı açın/yeniden başlatın, sonra yeniden deneme yapılacak."
+            # tty_notice (info() değil): hemen altındaki `read ... 2>/dev/tty`
+            # ile aynı senkron /dev/tty kanalını paylaşması gerekiyor —
+            # bkz. install_sidar.sh'taki tty_notice() tanımı.
+            tty_notice "Lütfen Docker Desktop'ı açın/yeniden başlatın, sonra yeniden deneme yapılacak."
             clear_stdin_buffer
             read -r -p "Devam etmek için [ENTER] tuşuna basın..." 2>/dev/tty
         fi
@@ -58,6 +61,28 @@ sidar_normalize_compose_project_name() {
     raw="${raw,,}"
     raw="$(printf '%s' "$raw" | sed -E 's/[^a-z0-9_-]+/-/g; s/^-+//; s/-+$//')"
     printf '%s' "$raw"
+}
+
+# docker-compose.yml (core) yalnızca redis/postgres/ollama/sidar-migrate/
+# docker-socket-proxy/sidar-ai/sidar-web'i taşır; GPU servisleri (ollama-gpu,
+# sidar-gpu, sidar-web-gpu) docker-compose.gpu.yml'de, observability servisleri
+# (jaeger, exporter'lar, cadvisor, prometheus, grafana) docker-compose.observability.yml'de
+# ayrı dosyalardadır (bkz. docker-compose.yml'nin kendi başlık yorumu). Bu
+# yardımcı, verilen COMPOSE_PROFILES değerine (virgülle ayrılmış, ör. "gpu"
+# veya "cpu,observability") göre gereken tüm `-f` argümanlarını hesaplayıp
+# ikinci argüman olarak verilen array değişkenine yazar; installer'ın
+# `docker compose ...` çağıran her yerinin hangi profilin aktif olduğuna göre
+# doğru dosya kombinasyonunu kullanmasını sağlar.
+sidar_compose_file_args_for_profiles() {
+    local profiles="${1:-}"
+    local -n _sidar_compose_file_args_out="$2"
+    _sidar_compose_file_args_out=(-f "${SCRIPT_DIR}/docker-compose.yml")
+    if [[ ",${profiles}," == *",gpu,"* ]]; then
+        _sidar_compose_file_args_out+=(-f "${SCRIPT_DIR}/docker-compose.gpu.yml")
+    fi
+    if [[ ",${profiles}," == *",observability,"* ]]; then
+        _sidar_compose_file_args_out+=(-f "${SCRIPT_DIR}/docker-compose.observability.yml")
+    fi
 }
 
 sidar_volume_name_matches_suffix() {
@@ -920,19 +945,22 @@ seed_rag_in_docker_after_startup() {
         seed_service="sidar-web-gpu"
     fi
 
+    local -a compose_file_args=()
+    sidar_compose_file_args_for_profiles "$compose_profiles" compose_file_args
+
     info "RAG seed servisi aktif profillere göre seçildi: ${seed_service} (COMPOSE_PROFILES=${compose_profiles:-cpu})."
     info "Tam Docker modu: ilk açılış gecikmesini azaltmak için RAG/GraphRAG seed adımı çalıştırılıyor..."
-    if (cd "$SCRIPT_DIR" && "${compose_cmd[@]}" run --rm --no-deps --entrypoint "" "$seed_service" uv run python -m scripts.seed_rag); then
+    if (cd "$SCRIPT_DIR" && "${compose_cmd[@]}" "${compose_file_args[@]}" run --rm --no-deps --entrypoint "" "$seed_service" uv run python -m scripts.seed_rag); then
         ok "Docker RAG/GraphRAG seed adımı tamamlandı."
     else
         warn "Docker RAG/GraphRAG seed adımı başarısız. Geçici container temizliği deneniyor..."
-        (cd "$SCRIPT_DIR" && "${compose_cmd[@]}" rm -f -s "$seed_service" >/dev/null 2>&1) || true
-        warn "Docker RAG/GraphRAG seed adımı başarısız. Manuel: ${compose_cmd[*]} run --rm --no-deps --entrypoint \"\" ${seed_service} uv run python -m scripts.seed_rag"
+        (cd "$SCRIPT_DIR" && "${compose_cmd[@]}" "${compose_file_args[@]}" rm -f -s "$seed_service" >/dev/null 2>&1) || true
+        warn "Docker RAG/GraphRAG seed adımı başarısız. Manuel: ${compose_cmd[*]} ${compose_file_args[*]} run --rm --no-deps --entrypoint \"\" ${seed_service} uv run python -m scripts.seed_rag"
     fi
 }
 
 sidar_phase_local_migrations_and_models() {
-    sidar_source_install_utils "ollama_models.sh"
+    sidar_source_install_utils "env_utils.sh" "database_url.sh" "ollama_models.sh"
     if [[ "${APP_RUNTIME_MODE_SELECTED:-local}" == "local" ]]; then
         # DB migrasyonu öncesi servis hazırlığı: kullanıcı onayı bu aşamada alınır.
         prepare_docker_for_migrations
@@ -971,6 +999,10 @@ PY
         fi
         # Önce DB migrasyonu: olası bağlantı/şema hataları sonraki adımlara geçmeden görülsün.
         run_migrations
+        # Geliştirici modu da tam Docker ve smoke akışlarıyla aynı başlangıç
+        # bilgi tabanına sahip olmalı. Yardımcı, migrasyon tamamlanmadıysa veya
+        # AUTO_SEED_RAG_METADATA=false ise güvenli biçimde no-op olur.
+        seed_rag_metadata_after_migrations
         # Model indirme: fonksiyon sonunda cleanup_temp_ollama trap'i geçici 'ollama serve'
         # sürecini otomatik sonlandırır; hemen ardından gelen launch_docker_services'in
         # Docker Ollama servisiyle 11434 port çakışması bu şekilde önlenir.
@@ -979,6 +1011,14 @@ PY
         # shellcheck disable=SC2034  # summarized by print_summary in the finish phase.
         MIGRATION_STATUS="tam_docker_modu_nedeniyle_atlandi"
         info "Tam Docker modu: lokal migrasyon/model indirme adımları atlanıyor."
+        # local moddaki download_ollama_models()'in cleanup_temp_ollama trap'i
+        # yalnızca KENDİ başlattığı geçici süreci kapattığı için Tam Docker
+        # modunda hiç çalışmıyordu; host/WSL2'de zaten çalışan bir native
+        # Ollama, docker compose up'ın 11434'ü bağlamasını engelleyebiliyordu.
+        # docker compose up'tan (launch_docker_services, 11_post_install.sh)
+        # önce host portunu kontrol edip gerekirse otomatik boş bir porta
+        # kaydır (bkz. ollama_models.sh).
+        sidar_ensure_ollama_host_port_available_for_docker || true
         seed_rag_in_docker_after_startup
     fi
 }

@@ -164,6 +164,74 @@ async def test_gpu_stress_skips_when_model_is_not_installed(monkeypatch):
         await gpu_smoke.test_real_gpu_inference_stress_vram_and_concurrency()
 
 
+def test_real_ollama_gpu_pool_size_mirrors_production_adaptive_sizing(monkeypatch):
+    """Regression: the stress test's limiter must match production's, not collapse to 1.
+
+    Fail-closed regression for a review comment: `make_test_config()` returns a
+    `MagicMock(spec_set=Config)`, and any attribute not explicitly `setattr`'d
+    (like `OLLAMA_GPU_REQUEST_POOL_SIZE`) resolves through `MagicMock.__int__()`
+    defaulting to 1 — silently serializing the "stress" test's concurrent
+    requests to concurrency=1 regardless of GPU_STRESS_CONCURRENCY, and
+    bypassing the VRAM-aware throttle production actually applies (an 8 GB
+    card gets pool_size=2 in real Config init via
+    resolve_adaptive_gpu_pool_size, not 1 and not an unthrottled 4).
+    """
+    for vram_mib, expected_pool_size in (
+        (8192, 2),  # exactly the 8 GB card the review comment called out
+        (16384, 3),
+        (24576, 4),
+        (4096, 1),
+        (0, 1),  # nvidia-smi unavailable/unreadable
+    ):
+        monkeypatch.setattr(gpu_smoke, "_read_gpu_memory_total_mib", lambda v=vram_mib: v)
+        assert gpu_smoke._real_ollama_gpu_pool_size(cpu_count_hint=32) == expected_pool_size
+
+
+def test_real_ollama_gpu_pool_size_honors_explicit_env_override(monkeypatch):
+    """An operator's explicit OLLAMA_GPU_REQUEST_POOL_SIZE still wins, like production."""
+    monkeypatch.setattr(gpu_smoke, "_read_gpu_memory_total_mib", lambda: 8192)
+    monkeypatch.setenv("OLLAMA_GPU_REQUEST_POOL_SIZE", "5")
+    assert gpu_smoke._real_ollama_gpu_pool_size(cpu_count_hint=32) == 5
+
+
+@pytest.mark.asyncio
+async def test_gpu_stress_threads_the_real_adaptive_pool_size_into_the_client_config(monkeypatch):
+    """The stress test must pass its resolved pool size into the (mocked) config.
+
+    Without this wiring the concurrency limiter core.llm_client actually
+    enforces has no relationship to GPU_STRESS_CONCURRENCY or to what
+    production would do on this hardware — see
+    test_real_ollama_gpu_pool_size_mirrors_production_adaptive_sizing.
+    """
+    seen_pool_sizes: list[int] = []
+
+    class _FakeClient:
+        def __init__(self, cfg):
+            seen_pool_sizes.append(cfg.OLLAMA_GPU_REQUEST_POOL_SIZE)
+
+        async def is_available(self):
+            return True
+
+        async def list_models(self):
+            return [gpu_smoke.MODEL_NAME]
+
+        async def chat(self, **kwargs):
+            return "ok"
+
+    monkeypatch.setenv("RUN_GPU_STRESS", "1")
+    monkeypatch.setenv("GPU_STRESS_CONCURRENCY", "1")
+    monkeypatch.setenv("GPU_STRESS_ROUNDS", "1")
+    monkeypatch.setattr(gpu_smoke, "OllamaClient", _FakeClient)
+    monkeypatch.setattr(gpu_smoke, "make_test_config", lambda **kwargs: SimpleNamespace(**kwargs))
+    monkeypatch.setattr(gpu_smoke.shutil, "which", lambda _command: "/usr/bin/mock")
+    monkeypatch.setattr(gpu_smoke, "_read_gpu_memory_total_mib", lambda: 8192)
+    monkeypatch.setattr(gpu_smoke, "_read_gpu_memory_used_mib", lambda: 512)
+
+    await gpu_smoke.test_real_gpu_inference_stress_vram_and_concurrency()
+
+    assert seen_pool_sizes == [2]
+
+
 @pytest.mark.asyncio
 async def test_gpu_stress_success_path_without_real_gpu(monkeypatch):
     class _FakeClient:

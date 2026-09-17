@@ -14,6 +14,8 @@ from collections.abc import Callable, Coroutine
 from dataclasses import asdict, dataclass
 from typing import Any, cast
 
+from core.llm_pricing import MODEL_PRICES_PER_1M_TOKENS_USD
+
 logger = logging.getLogger(__name__)
 
 
@@ -54,14 +56,11 @@ def _env_float(key: str, default: float) -> float:
         return float(default)
 
 
-# Yaklaşık maliyet tablosu (1M token başına USD)
-# Not: Bu değerler dashboard trend amaçlıdır; faturalama sisteminin tek-kaynağı değildir.
-_MODEL_PRICES_PER_1M: dict[str, dict[str, float]] = {
-    "openai:gpt-4o-mini": {"prompt": 0.15, "completion": 0.60},
-    "openai:gpt-4o": {"prompt": 5.00, "completion": 15.00},
-    "anthropic:claude-3-5-sonnet-latest": {"prompt": 3.00, "completion": 15.00},
-    "anthropic:claude-3-5-haiku-latest": {"prompt": 0.80, "completion": 4.00},
-}
+# Yaklaşık maliyet tablosu (1M token başına USD). Not: Bu değerler dashboard
+# trend amaçlıdır; faturalama sisteminin tek-kaynağı değildir. Tablo artık
+# core.llm_pricing'de merkezi olarak tutuluyor (bkz. o modülün docstring'i);
+# burada yalnızca geriye dönük uyumluluk için yerel bir takma ad.
+_MODEL_PRICES_PER_1M: dict[str, dict[str, float]] = MODEL_PRICES_PER_1M_TOKENS_USD
 
 
 _CURRENT_USER_ID: contextvars.ContextVar[str] = contextvars.ContextVar(

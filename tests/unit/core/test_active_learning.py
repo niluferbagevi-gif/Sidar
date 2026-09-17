@@ -132,8 +132,7 @@ async def test_feedback_store_get_pending_signals_parses_bad_json(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_feedback_store_mark_exported_builds_chunked_placeholders(monkeypatch):
-    monkeypatch.setattr(al, "sql_text", lambda s: s, raising=False)
+async def test_feedback_store_mark_exported_uses_expanding_bind_parameter():
     executed = []
 
     class FakeConn:
@@ -157,8 +156,9 @@ async def test_feedback_store_mark_exported_builds_chunked_placeholders(monkeypa
     await store.mark_exported([1, 2, 3])
     assert executed
     sql, params = executed[0]
-    assert "id_0" in sql and "id_1" in sql
-    assert params["id_2"] == 3
+    assert "id IN" in sql
+    assert "POSTCOMPILE_ids" in sql
+    assert params["ids"] == [1, 2, 3]
 
 
 @pytest.mark.asyncio
@@ -1025,6 +1025,7 @@ def test_active_learning_module_import_success_sets_sa_true(monkeypatch):
     fake_sa_asyncio.create_async_engine = lambda *args, **kwargs: object()
     fake_sa = types.ModuleType("sqlalchemy")
     fake_sa.text = lambda value: value
+    fake_sa.bindparam = lambda name, **kwargs: (name, kwargs)
 
     monkeypatch.setitem(sys.modules, "sqlalchemy.ext.asyncio", fake_sa_asyncio)
     monkeypatch.setitem(sys.modules, "sqlalchemy", fake_sa)

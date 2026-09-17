@@ -4,9 +4,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import re
-import subprocess
+import shutil
 import sys
 from pathlib import Path
+
+from core.utils.trusted_subprocess import run_trusted_command
 
 ROOT = Path(__file__).resolve().parents[2]
 MODULES_DIR = ROOT / "scripts/install_modules"
@@ -30,10 +32,15 @@ def sha256sum_git_show(commit: str, rel_path: str) -> str | None:
 
     This is the Python equivalent of the operator-facing verification command
     ``git show $SOURCE_COMMIT:<path> | sha256sum``. ``None`` means the pinned
-    commit or path cannot be read from the local git object database.
+    commit or path cannot be read from the local git object database, *or*
+    ``git`` cannot be resolved to an absolute path (fail-closed — see the
+    ``shutil.which`` guard below).
     """
-    result = subprocess.run(  # nosec B603 B607  # sabit "git" komutu; kullanıcı girdisi shell'e geçmiyor.
-        ["git", "-C", str(ROOT), "show", f"{commit}:{rel_path}"],
+    git_binary = shutil.which("git")
+    if not git_binary or not Path(git_binary).is_absolute():
+        return None
+    result = run_trusted_command(
+        [git_binary, "-C", str(ROOT), "show", f"{commit}:{rel_path}"],
         capture_output=True,
         check=False,
     )

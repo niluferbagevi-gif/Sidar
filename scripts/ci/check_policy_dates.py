@@ -64,22 +64,23 @@ def check_policy_date_warnings(
     )
     warnings: list[str] = []
 
-    _add_if_due_soon(
-        warnings,
-        label="Torch CVE policy review",
-        value=torch_reminder.get("review_by", ""),
-        key="tool.sidar.dependency_profile_plan.torch_upgrade_reminder.review_by",
-        today=effective_today,
-        warn_within_days=warning_window,
-    )
-    _add_if_due_soon(
-        warnings,
-        label="Torch CVE policy exception",
-        value=torch_reminder.get("expires", ""),
-        key="tool.sidar.dependency_profile_plan.torch_upgrade_reminder.expires",
-        today=effective_today,
-        warn_within_days=warning_window,
-    )
+    if torch_reminder.get("status") != "resolved":
+        _add_if_due_soon(
+            warnings,
+            label="Torch CVE policy review",
+            value=torch_reminder.get("review_by", ""),
+            key="tool.sidar.dependency_profile_plan.torch_upgrade_reminder.review_by",
+            today=effective_today,
+            warn_within_days=warning_window,
+        )
+        _add_if_due_soon(
+            warnings,
+            label="Torch CVE policy exception",
+            value=torch_reminder.get("expires", ""),
+            key="tool.sidar.dependency_profile_plan.torch_upgrade_reminder.expires",
+            today=effective_today,
+            warn_within_days=warning_window,
+        )
     _add_if_due_soon(
         warnings,
         label="Ruff E501 global ignore review",
@@ -138,20 +139,21 @@ def check_policy_dates(pyproject_path: Path, *, today: date | None = None) -> li
     )
 
     torch_reminder = sidar.get("dependency_profile_plan", {}).get("torch_upgrade_reminder", {})
-    _add_if_expired(
-        failures,
-        label="Torch CVE policy review",
-        value=torch_reminder.get("review_by", ""),
-        key="tool.sidar.dependency_profile_plan.torch_upgrade_reminder.review_by",
-        today=effective_today,
-    )
-    _add_if_expired(
-        failures,
-        label="Torch CVE policy exception",
-        value=torch_reminder.get("expires", ""),
-        key="tool.sidar.dependency_profile_plan.torch_upgrade_reminder.expires",
-        today=effective_today,
-    )
+    if torch_reminder.get("status") != "resolved":
+        _add_if_expired(
+            failures,
+            label="Torch CVE policy review",
+            value=torch_reminder.get("review_by", ""),
+            key="tool.sidar.dependency_profile_plan.torch_upgrade_reminder.review_by",
+            today=effective_today,
+        )
+        _add_if_expired(
+            failures,
+            label="Torch CVE policy exception",
+            value=torch_reminder.get("expires", ""),
+            key="tool.sidar.dependency_profile_plan.torch_upgrade_reminder.expires",
+            today=effective_today,
+        )
     return failures
 
 

@@ -53,6 +53,10 @@ def test_is_wsl2_handles_matching_and_unreadable_kernel_release(
 def test_normalize_gpu_memory_fractions_covers_default_safe_and_scaled_budgets() -> None:
     assert config_gpu_detect.normalize_gpu_memory_fractions(0, 0)["llm"] == 0.4
     assert config_gpu_detect.normalize_gpu_memory_fractions(0.3, 0.2)["normalized"] is False
+    gray_zone = config_gpu_detect.normalize_gpu_memory_fractions(0.6, 0.3)
+    assert gray_zone["normalized"] is True
+    assert gray_zone["original_total"] == 0.9
+    assert gray_zone["total"] == 0.8
     scaled = config_gpu_detect.normalize_gpu_memory_fractions(4.0, 0.01, min_fraction=0.2)
     assert scaled["normalized"] is True
     assert scaled["total"] == 0.8

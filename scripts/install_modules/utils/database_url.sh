@@ -110,10 +110,22 @@ sync_postgres_env_variants_with_source() {
     local source_env_file="$1"
     shift || true
     local -a variant_specs=("$@")
+    # NOT: POSTGRES_DB burada kasıtlı olarak yok. .env.development.example gibi
+    # profil şablonları POSTGRES_DB'yi bilinçli olarak base/production'dan
+    # (POSTGRES_DB=sidar) izole tutar (ör. POSTGRES_DB=sidar_development) —
+    # kendi yorum satırlarında bunu açıkça belirtiyorlar. Bunu bir "credential"
+    # gibi ele alıp base .env'den zorla kopyalamak bu izolasyonu eziyor ve
+    # core/doctor'ın environment_profile kontrolünün tam olarak yakaladığı
+    # "POSTGRES_DB='sidar' is not isolated from the base/production database"
+    # uyarısına yol açıyordu. DATABASE_URL/SIDAR_CONTAINER_DATABASE_URL yine de
+    # senkronize edilir (parola rotasyonu için gerekli); ardından
+    # sync_database_env_chain_after_setup()'ın çağırdığı
+    # ensure_database_url_defaults_for_variants(), her varyantın DSN'indeki
+    # veritabanı adını YİNE O DOSYANIN KENDİ (burada dokunulmamış) POSTGRES_DB
+    # değerine göre yeniden hizalar — böylece izolasyon korunur.
     local -a postgres_keys=(
         POSTGRES_USER
         POSTGRES_PASSWORD
-        POSTGRES_DB
         DATABASE_URL
         SIDAR_CONTAINER_DATABASE_URL
     )
@@ -236,9 +248,27 @@ write_generated_default_database_url() {
     } >> "$env_file"
 }
 
+database_name_from_postgresql_url() {
+    local db_url="$1"
+    local authority_and_path=""
+    local db_path=""
+
+    [[ "$db_url" == postgresql://* || "$db_url" == postgresql+asyncpg://* ]] || return 1
+    authority_and_path="${db_url#*://}"
+    [[ "$authority_and_path" == */* ]] || return 1
+    db_path="${authority_and_path#*/}"
+    db_path="${db_path%%\?*}"
+    db_path="${db_path%%\#*}"
+    [[ -n "$db_path" ]] || return 1
+    printf '%s\n' "$db_path"
+}
+
 ensure_database_url_defaults() {
     local env_file="$1"
+    local env_label="${env_file##*/}"
     local current_db_url=""
+    local current_db_name=""
+    local configured_db_name=""
 
     if [[ ! -f "$env_file" ]]; then
         return
@@ -250,33 +280,76 @@ ensure_database_url_defaults() {
         DB_PASSWORD_HARDENED=false
         write_generated_default_database_url "$env_file"
         if [[ "${DB_PASSWORD_HARDENED:-false}" == "true" ]]; then
-            ok ".env: DATABASE_URL güçlü rastgele PostgreSQL parolasıyla eklendi."
+            ok "${env_label}: DATABASE_URL güçlü rastgele PostgreSQL parolasıyla eklendi."
         else
-            ok ".env: DATABASE_URL mevcut güçlü PostgreSQL parolası korunarak eklendi."
+            ok "${env_label}: DATABASE_URL mevcut güçlü PostgreSQL parolası korunarak eklendi."
         fi
-        return
+        # Keep fresh-create on the same validation path as pre-existing URLs.
+        # Re-read the generated value instead of returning early so future changes
+        # to DSN generation cannot silently bypass ssl/query and database-name checks.
+        current_db_url=$(read_env_value_from_file "DATABASE_URL" "$env_file")
     fi
 
     if [[ "$current_db_url" == sqlite* ]] && [[ "${ALLOW_SQLITE_DATABASE_URL:-0}" != "1" ]]; then
-        warn ".env içinde SQLite DATABASE_URL tespit edildi: $current_db_url"
+        warn "${env_label} içinde SQLite DATABASE_URL tespit edildi: $current_db_url"
         DB_PASSWORD_HARDENED=false
         write_generated_default_database_url "$env_file"
         if [[ "${DB_PASSWORD_HARDENED:-false}" == "true" ]]; then
-            ok ".env: DATABASE_URL güçlü rastgele PostgreSQL parolasıyla güncellendi."
+            ok "${env_label}: DATABASE_URL güçlü rastgele PostgreSQL parolasıyla güncellendi."
         else
-            ok ".env: DATABASE_URL mevcut güçlü PostgreSQL parolası korunarak güncellendi."
+            ok "${env_label}: DATABASE_URL mevcut güçlü PostgreSQL parolası korunarak güncellendi."
         fi
         return
     fi
 
     if [[ "$current_db_url" == *lotus* ]]; then
-        warn ".env içinde eski ürün adına ait DATABASE_URL tespit edildi; Sidar varsayılanına geçirilecek."
+        warn "${env_label} içinde eski ürün adına ait DATABASE_URL tespit edildi; Sidar varsayılanına geçirilecek."
         DB_PASSWORD_HARDENED=false
         write_generated_default_database_url "$env_file"
         if [[ "${DB_PASSWORD_HARDENED:-false}" == "true" ]]; then
-            ok ".env: DATABASE_URL güçlü rastgele Sidar PostgreSQL DSN değerine güncellendi."
+            ok "${env_label}: DATABASE_URL güçlü rastgele Sidar PostgreSQL DSN değerine güncellendi."
         else
-            ok ".env: DATABASE_URL mevcut güçlü PostgreSQL parolası korunarak Sidar DSN değerine güncellendi."
+            ok "${env_label}: DATABASE_URL mevcut güçlü PostgreSQL parolası korunarak Sidar DSN değerine güncellendi."
+        fi
+        return
+    fi
+
+    if [[ "${current_db_url,,}" =~ [\?\&]ssl= ]]; then
+        warn "${env_label} içinde asyncpg ile uyumsuz ssl query parametresi içeren DATABASE_URL tespit edildi; güvenli PostgreSQL DSN yeniden üretilecek."
+        DB_PASSWORD_HARDENED=false
+        write_generated_default_database_url "$env_file"
+        if [[ "${DB_PASSWORD_HARDENED:-false}" == "true" ]]; then
+            ok "${env_label}: Uyumsuz ssl parametresi kaldırıldı ve DATABASE_URL güçlü rastgele PostgreSQL parolasıyla güncellendi."
+        else
+            ok "${env_label}: Uyumsuz ssl parametresi kaldırıldı ve DATABASE_URL mevcut güçlü PostgreSQL parolasıyla güncellendi."
+        fi
+        return
+    fi
+
+    configured_db_name=$(read_env_value_from_file "POSTGRES_DB" "$env_file" | tr -d '\n')
+    if [[ -n "${configured_db_name//[[:space:]]/}" ]] && \
+        current_db_name=$(database_name_from_postgresql_url "$current_db_url") && \
+        [[ "$current_db_name" != "$configured_db_name" ]]; then
+        warn "${env_label} içinde DATABASE_URL veritabanı (${current_db_name}) POSTGRES_DB (${configured_db_name}) ile eşleşmiyor; profile özgü PostgreSQL DSN yeniden üretilecek."
+        DB_PASSWORD_HARDENED=false
+        write_generated_default_database_url "$env_file"
+        if [[ "${DB_PASSWORD_HARDENED:-false}" == "true" ]]; then
+            ok "${env_label}: DATABASE_URL, POSTGRES_DB ile güçlü rastgele PostgreSQL parolası kullanılarak senkronize edildi."
+        else
+            ok "${env_label}: DATABASE_URL, POSTGRES_DB ile mevcut güçlü PostgreSQL parolası korunarak senkronize edildi."
         fi
     fi
+}
+
+ensure_database_url_defaults_for_variants() {
+    local spec=""
+    local variant_file=""
+    local -a variant_specs=()
+
+    mapfile -t variant_specs < <(sidar_default_db_env_variant_specs)
+    for spec in "${variant_specs[@]}"; do
+        variant_file="${spec%%:*}"
+        [[ -n "$variant_file" && -f "$variant_file" ]] || continue
+        ensure_database_url_defaults "$variant_file"
+    done
 }

@@ -1,6 +1,13 @@
-# `main.py` — Akıllı Başlatıcı (225 satır)
+# `main.py` — Akıllı Başlatıcı (1241 satır)
 
 **Amaç:** Sidar'ı başlatmak için etkileşimli sihirbaz veya `--quick` hızlı mod sağlar.
+
+**İsimlendirme notu:** `main.py` ajan REPL'i *değildir* — yalnızca preflight/sihirbaz
+akışını çalıştırıp sonunda `cli.py`'yi (gerçek REPL giriş noktası) veya
+`web_server.py`'yi alt süreçte başlatır. `cli.py`, ismi tarihsel olarak
+`main.py`'den `cli.py`'ye taşınmış eski/asıl giriş noktasıdır; bugünkü kökteki
+`main.py` sonradan eklenen, tamamen farklı bir launcher modülüdür. Bkz.
+`docs/module-notes/cli.py.md`.
 
 **Temel Fonksiyonlar:**
 
@@ -66,7 +73,9 @@ python main.py --quick cli --provider ollama --model qwen2.5-coder:7b --log debu
 
 - `--log`: `info` (varsayılan), `debug`, `warning`
 - `--model`: Ollama için varsayılan model `qwen2.5-coder:7b`
-- Web varsayılanları: Host `0.0.0.0`, Port `7860`
+- Web varsayılanları: Port `7860`; Host **`127.0.0.1`** (yalnız loopback — dış erişim
+  `--host`/`WEB_HOST` ile bilinçli olarak açılır; `python main.py --quick web --host 0.0.0.0 ...`
+  örnekleri bu bilinçli override'ı gösterir, varsayılanı değil)
 
 ## Analiz Derinliği Notu
 

@@ -7,11 +7,33 @@ import os
 import re
 import shlex
 import shutil
-import subprocess  # nosec B404
+import subprocess
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Protocol, cast
+
+from core.utils.trusted_subprocess import run_trusted_command
 
 logger = logging.getLogger(__name__)
+
+
+class SandboxRunner(Protocol):
+    """Callable contract for production container shell delegation."""
+
+    def __call__(self, command: str, *, cwd: str | None = None) -> tuple[bool, str]:
+        """Execute ``command`` in the sandbox and return status plus output."""
+        ...  # pragma: no cover - declarative Protocol contract
+
+
+def requires_container_shell(manager: Any) -> bool:
+    """Return whether host command execution is forbidden for this runtime.
+
+    ``ACCESS_LEVEL=full`` is an authorization decision, not an isolation
+    boundary. Production commands must therefore use CodeManager's container
+    sandbox regardless of whether the blacklist considers their text benign.
+    """
+    cfg = getattr(manager, "cfg", None)
+    environment = str(getattr(cfg, "SIDAR_ENV", "") or os.getenv("SIDAR_ENV", "")).strip().lower()
+    return environment == "production"
 
 
 def build_sanitized_shell_args(
@@ -183,6 +205,20 @@ def run_shell_command(
     if not command or not command.strip():
         return False, "⚠ Çalıştırılacak komut belirtilmedi."
 
+    if requires_container_shell(manager):
+        sandbox_runner = getattr(manager, "run_shell_in_sandbox", None)
+        if not callable(sandbox_runner):
+            return False, (
+                "Production ortamında host komut yürütme kapalıdır; "
+                "container sandbox kullanılamıyor."
+            )
+        logger.info(
+            "Production shell komutu host yerine resource/network policy uygulayan "
+            "container sandbox'a yönlendiriliyor."
+        )
+        typed_sandbox_runner = cast(SandboxRunner, sandbox_runner)
+        return typed_sandbox_runner(command, cwd=cwd)
+
     work_dir = cwd or str(manager.base_dir)
 
     shell_meta_chars = ("|", "&", ";", ">", "<", "$(", "`")
@@ -215,7 +251,7 @@ def run_shell_command(
         args = build_sanitized_shell_args(
             command, allow_shell_features=allow_shell_features, find_executable=shutil.which
         )
-        result = subprocess.run(  # nosec B603
+        result = run_trusted_command(
             args,
             shell=False,
             capture_output=True,
@@ -250,4 +286,9 @@ def run_shell_command(
         return False, f"Kabuk hatası: {exc}"
 
 
-__all__ = ["build_sanitized_shell_args", "find_destructive_shell_pattern", "run_shell_command"]
+__all__ = [
+    "build_sanitized_shell_args",
+    "find_destructive_shell_pattern",
+    "requires_container_shell",
+    "run_shell_command",
+]

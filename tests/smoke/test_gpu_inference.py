@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import shutil
 import subprocess
@@ -13,8 +14,12 @@ from typing import Any
 
 import pytest
 
+from core.config_env_helpers import get_int_env
+from core.config_gpu_detect import HardwareInfo, resolve_adaptive_gpu_pool_size
 from core.llm_client import OllamaClient
 from tests.helpers import make_test_config
+
+_logger = logging.getLogger(__name__)
 
 # Fresh kurulumda installer'ın .env üzerinden hazırladığı model ile hizalı olsun.
 # İhtiyaç halinde GPU_SMOKE_MODEL ile geçersiz kılınabilir.
@@ -115,6 +120,30 @@ def _read_gpu_memory_total_mib() -> int | None:
     return sum(values)
 
 
+def _real_ollama_gpu_pool_size(cpu_count_hint: int) -> int:
+    """Resolve the same adaptive GPU request pool size production would use here.
+
+    Mirrors ``config.Config._ensure_hardware_info_loaded``'s call into
+    ``resolve_adaptive_gpu_pool_size`` byte-for-byte (same helper, same
+    env-override precedence via ``OLLAMA_GPU_REQUEST_POOL_SIZE``), driven by
+    the VRAM this test already detects via ``nvidia-smi`` rather than a
+    hand-picked constant. An 8 GB card resolves to 2, not the 4 the stress
+    test's GPU_STRESS_CONCURRENCY default requests — production throttles
+    concurrent GPU execution through this exact limiter, so mirroring it
+    here is what makes "4 concurrent requests" a safe, representative
+    client-level load instead of 4 uncapped simultaneous GPU generations.
+    """
+    vram_mib = _read_gpu_memory_total_mib() or 0
+    info = HardwareInfo(
+        has_cuda=True,
+        gpu_name="detected",
+        gpu_count=1,
+        cpu_count=cpu_count_hint,
+        gpu_vram_mb=vram_mib,
+    )
+    return resolve_adaptive_gpu_pool_size(info, get_int_env=get_int_env, logger=_logger)
+
+
 def _torch_cuda_major(torch_module: Any) -> str | None:
     """Torch wheel'ının derlendiği CUDA major sürümünü döndürür."""
     cuda_version = getattr(getattr(torch_module, "version", SimpleNamespace()), "cuda", None)
@@ -195,12 +224,29 @@ async def test_real_gpu_inference_stress_vram_and_concurrency() -> None:
     if not shutil.which("ollama"):
         pytest.skip("Sistemde 'ollama' komutu bulunamadı.")
 
+    # KRİTİK: make_test_config() bir MagicMock(spec_set=Config) döndürür; burada
+    # açıkça set edilmeyen her attribute (ör. OLLAMA_GPU_REQUEST_POOL_SIZE) gerçek
+    # Config().__init__()'in hardware-farkında resolve_adaptive_gpu_pool_size()
+    # çağrısından hiç geçmez — MagicMock.__int__()'in varsayılan 1 döndürmesi
+    # yüzünden core.llm_client._ollama_gpu_pool_size() sessizce 1'e düşer. Bu,
+    # GPU_STRESS_CONCURRENCY kaç olursa olsun tüm istekleri fiilen seri hale
+    # getirir — test hiçbir zaman gerçek eşzamanlı GPU yükünü sınamaz. Aynı
+    # zamanda gerçek üretimin kendi 8 GB'lık kartlarda (per_gpu=2, bkz.
+    # resolve_adaptive_gpu_pool_size) uyguladığı VRAM korumasını da atlar — sabit
+    # concurrency=4'ü hiçbir throttle olmadan GPU'ya göndermek gerçek bir OOM
+    # riski taşır. Üretimin kullanacağı gerçek değeri burada da hesaplayıp mock'a
+    # açıkça geçiriyoruz; böylece "4 eşzamanlı istek" güvenli, temsili bir
+    # istemci-seviyesi yük olur, GPU'ya giden fiili eşzamanlılık üretimdeki gibi
+    # donanıma göre otomatik sınırlanır.
+    gpu_pool_size = _real_ollama_gpu_pool_size(os.cpu_count() or 1)
+
     cfg = make_test_config(
         USE_GPU=True,
         OLLAMA_URL="http://localhost:11434",
         OLLAMA_TIMEOUT=_env_int("GPU_STRESS_TIMEOUT", 45, min_value=10, max_value=180),
         OLLAMA_NUM_BATCH=GPU_STRESS_DEFAULT_NUM_BATCH,
         OLLAMA_CODING_NUM_CTX=GPU_STRESS_DEFAULT_NUM_CTX,
+        OLLAMA_GPU_REQUEST_POOL_SIZE=gpu_pool_size,
         CODING_MODEL=MODEL_NAME,
     )
     client = OllamaClient(cfg)
@@ -224,7 +270,9 @@ async def test_real_gpu_inference_stress_vram_and_concurrency() -> None:
         f"prompt_repeat={prompt_repeat} (env GPU_STRESS_PROMPT_REPEAT), "
         f"num_batch={GPU_STRESS_DEFAULT_NUM_BATCH}, "
         f"num_ctx={GPU_STRESS_DEFAULT_NUM_CTX}, "
-        f"concurrency={concurrency}, rounds={rounds}"
+        f"concurrency={concurrency} istemci-seviyesi istek, rounds={rounds}, "
+        f"gpu_request_pool_size={gpu_pool_size} (üretimin bu donanımda kullanacağı "
+        "gerçek eşzamanlı GPU yürütme sınırı — bkz. resolve_adaptive_gpu_pool_size)"
     )
 
     prompt = "Aşağıdaki metni kısaca özetle ve sadece iki cümle döndür:\n" + (

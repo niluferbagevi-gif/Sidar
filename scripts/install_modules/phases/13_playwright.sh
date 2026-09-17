@@ -202,6 +202,17 @@ PY_PLAYWRIGHT_VERSION
             fi
         fi
 
+        if playwright_linux_dependencies_ready; then
+            info "Playwright Chromium headless launch smoke doğrulanıyor..."
+            if playwright_chromium_launch_smoke "${PY_CMD[@]}"; then
+                ok "Playwright Chromium headless launch smoke başarılı."
+            else
+                warn "Playwright Chromium kuruldu ancak headless launch smoke başarısız oldu."
+            fi
+        else
+            warn "Playwright Chromium launch smoke bağımlılıklar doğrulanamadığı için atlandı."
+        fi
+
         rm -f "$_pw_install_log"
     else
         info "playwright paketi bu profilde kurulmadı — tarayıcı motor kurulumu atlandı."

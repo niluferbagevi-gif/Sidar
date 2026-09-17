@@ -54,6 +54,21 @@ def _build_embedding_function(
     use_gpu=False →  embedding fonksiyonu açıkça CPU device ile kurulur.
 
     Döndürülen nesne None ise ChromaDB kendi varsayılanını kullanır.
+
+    GPU→CPU fallback kalıcıdır (bir kod incelemesi bunu işaret etti): bu
+    fonksiyon `DocumentStore._init_chroma()` tarafından yalnızca DocumentStore
+    singleton'ı (bkz. `core/rag/__init__.py::_DOCUMENT_STORE_SINGLETONS`)
+    oluşturulurken BİR KEZ çağrılır — GPU'da o an geçici bir VRAM baskısı
+    nedeniyle başarısız olup CPU'ya düşülürse, VRAM sonradan boşalsa bile
+    süreç yeniden başlamadan/singleton yeniden oluşturulmadan GPU'ya geri
+    dönülmez. `_build_embedding_function_cached`'in `@functools.lru_cache`'i
+    BU DAVRANIŞIN nedeni değildir — `lru_cache` başarısız (exception fırlatan)
+    çağrıları önbelleğe almaz, yani aynı parametrelerle yapılan bir SONRAKİ
+    çağrı GPU'yu gerçekten yeniden dener; kalıcılığın asıl kaynağı
+    DocumentStore'un embedding fonksiyonunu yalnızca bir kez inşa edip
+    saklaması. Gerçek bir düzeltme (örn. periyodik/istek üzerine GPU'yu
+    yeniden deneme) DocumentStore singleton yaşam döngüsüne dokunmayı
+    gerektirir; kapsam dışı bırakıldı, yalnızca davranış belgelendi.
     """
     try:
         local_files_only = bool(

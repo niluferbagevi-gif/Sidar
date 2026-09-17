@@ -7,16 +7,20 @@ import os
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from sidar_version import PRODUCT_VERSION
 
+if TYPE_CHECKING:
+    from config import Config
+
 logger = logging.getLogger("sidar.web")
 
 _RUNTIME_STATE_DEFAULTS: dict[str, Any] = {
+    "settings": None,
     "agent": None,
     "agent_lock": None,
     "redis_lock": None,
@@ -34,23 +38,32 @@ async def _noop_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     yield
 
 
-def _expose_exception_details() -> bool:
-    return os.getenv("SIDAR_ENV", "").strip().lower() != "production"
+def _runtime_environment(settings: Config | None = None) -> str:
+    """Resolve the environment from app settings before the process fallback."""
+    configured = getattr(settings, "SIDAR_ENV", None) if settings is not None else None
+    return str(configured or os.getenv("SIDAR_ENV", "")).strip().lower()
 
 
-def _expose_api_docs() -> bool:
+def _expose_exception_details(settings: Config | None = None) -> bool:
+    return _runtime_environment(settings) != "production"
+
+
+def _expose_api_docs(settings: Config | None = None) -> bool:
     """Return whether interactive API schemas may be published in this environment."""
-    return os.getenv("SIDAR_ENV", "").strip().lower() != "production"
+    return _runtime_environment(settings) != "production"
 
 
 def register_exception_handlers(
-    application: FastAPI, *, expose_exception_details: bool | None = None
+    application: FastAPI,
+    *,
+    expose_exception_details: bool | None = None,
+    settings: Config | None = None,
 ) -> None:
     """Register Sidar's JSON exception handlers on a FastAPI application."""
     if not hasattr(application, "exception_handler"):
         return
     include_detail = (
-        _expose_exception_details()
+        _expose_exception_details(settings)
         if expose_exception_details is None
         else expose_exception_details
     )
@@ -120,11 +133,12 @@ def get_runtime_state(application: FastAPI) -> SimpleNamespace:
 
 def create_app(
     *,
+    settings: Config | None = None,
     lifespan: Callable[[FastAPI], Any] | None = None,
     register_handlers: bool = True,
     expose_exception_details: bool | None = None,
     expose_api_docs: bool | None = None,
-    version: str = PRODUCT_VERSION,
+    version: str | None = None,
 ) -> FastAPI:
     """Create the Sidar FastAPI application shell.
 
@@ -132,20 +146,25 @@ def create_app(
     router registration is centralized through ``register_routers`` in this
     factory module.
     """
-    include_api_docs = _expose_api_docs() if expose_api_docs is None else expose_api_docs
+    include_api_docs = _expose_api_docs(settings) if expose_api_docs is None else expose_api_docs
+    resolved_version = version or getattr(settings, "VERSION", None) or PRODUCT_VERSION
     application = FastAPI(
         title="Sidar Web UI & REST API",
         description=(
             "Sidar AI Ajanı için Web Arayüzü ve REST API uç noktaları. "
             "RAG, GitHub, Görev Yönetimi ve Sistem İzleme API'lerini içerir."
         ),
-        version=str(version or PRODUCT_VERSION),
+        version=str(resolved_version),
         docs_url="/docs" if include_api_docs else None,
         redoc_url="/redoc" if include_api_docs else None,
         openapi_url="/openapi.json" if include_api_docs else None,
         lifespan=lifespan or _noop_lifespan,
     )
     if register_handlers:
-        register_exception_handlers(application, expose_exception_details=expose_exception_details)
-    initialize_runtime_state(application)
+        register_exception_handlers(
+            application,
+            expose_exception_details=expose_exception_details,
+            settings=settings,
+        )
+    initialize_runtime_state(application, settings=settings)
     return application

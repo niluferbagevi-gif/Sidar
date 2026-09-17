@@ -90,6 +90,11 @@ uygundur; ancak `.env.production` gerçek dağıtıma kaynak olacaksa production
 rotate edilmelidir. Operasyon adımları için
 `docs/runbooks/production-secret-rotation.md` runbook'unu uygulayın.
 
+Grafana için kanonik giriş sözleşmesi: kullanıcı adı `admin`, parola ise seçili
+dotenv kaynağındaki (normal kurulumda `.env`) `GRAFANA_ADMIN_PASSWORD` değeridir.
+`admin/admin` varsayılanı güvenlik nedeniyle reddedilir; parolayı terminal veya
+dokümantasyon çıktısına kopyalamayın.
+
 ### One-off overrides
 
 For temporary experiments, prefer `DOTENV_FILE` instead of editing multiple profile
@@ -110,12 +115,19 @@ By default, `install_sidar.sh` writes real service/provider API keys only to
 configuration. If you need the legacy behavior for an isolated environment, opt in
 explicitly:
 
-Seeing `.env` report `0/18` filled service API keys is therefore not a failure when
+Seeing `.env` report `0/N` filled service API keys (for example, `0/21` with the current
+installer key catalog) is therefore not a failure when
 `SIDAR_KEYS_FILE`/`~/.sidar_keys.env` contains the real keys. The `.env` status line
 describes only repo-local materialization; the runtime loader still reads the final
 secret overlay from `SIDAR_KEYS_FILE`. Keep that file outside the repository with mode
 `600` or stricter, and do not copy personal provider keys into `.env` unless the
 explicit materialization opt-in below is intentional.
+
+The installer summary reports the non-secret counts separately: `.env: 0/N` describes
+repo-local materialization, while `Secret overlay durumu: M/N` counts non-empty provider
+keys in `SIDAR_KEYS_FILE` without printing their values. An overlay count below `N` is also
+valid when those optional integrations are unused; provider availability should be judged
+from the masked key-source table rather than by copying secrets back into `.env`.
 
 Sidar validates this boundary before initial dotenv loading and runtime reloads.
 Relative paths resolve from the repository root, so `SIDAR_KEYS_FILE=.env` and

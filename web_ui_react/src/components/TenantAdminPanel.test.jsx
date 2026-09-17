@@ -117,6 +117,14 @@ describe("TenantAdminPanel", () => {
     expect(screen.getByRole("button", { name: "Yenile" })).not.toBeDisabled();
   });
 
+  it("renders non-Error tenant loading failures", async () => {
+    fetchJson.mockRejectedValueOnce("tenant ham hata");
+
+    render(<TenantAdminPanel />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("tenant ham hata");
+  });
+
   it("shows an empty-policy hint when the selected user has no tenant policies", async () => {
     const user = userEvent.setup();
     fetchJson.mockImplementation((url) => {

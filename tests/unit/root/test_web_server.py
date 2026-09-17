@@ -170,6 +170,12 @@ def test_web_server_route_table_has_no_duplicate_method_path_pairs():
 
 @pytest.fixture(autouse=True)
 def _reset_collaboration_state(monkeypatch, tmp_path):
+    # This legacy-heavy module exercises the host-process implementation
+    # directly. Production/default-backend contracts live in
+    # tests/unit/web/plugins/test_sandbox.py; opt in explicitly here so the
+    # suite cannot accidentally depend on the runtime default.
+    monkeypatch.setenv("SIDAR_PLUGIN_SANDBOX_BACKEND", "in_process")
+    monkeypatch.setenv("SIDAR_ENABLE_IN_PROCESS_PLUGINS", "1")
     web_server._collaboration_rooms.clear()
     web_server._hitl_ws_clients.clear()
     monkeypatch.setattr(web_server.cfg, "BASE_DIR", str(tmp_path))
@@ -2176,13 +2182,15 @@ def test_plugin_source_execution_fails_closed_in_production(monkeypatch):
     assert "process-içi" in exc.value.detail
 
 
-def test_plugin_source_execution_production_override_requires_explicit_opt_in(monkeypatch):
+def test_plugin_source_execution_production_cannot_be_enabled_by_environment(monkeypatch):
     monkeypatch.setenv("SIDAR_ENV", "production")
     monkeypatch.setenv("SIDAR_ENABLE_IN_PROCESS_PLUGINS", "1")
 
-    namespace = web_server._run_plugin_source_in_sandbox("VALUE = 1", "prod_allowed")
+    with pytest.raises(HTTPException) as exc:
+        web_server._run_plugin_source_in_sandbox("VALUE = 1", "prod_blocked_override")
 
-    assert namespace["VALUE"] == 1
+    assert exc.value.status_code == 403
+    assert "ortam değişkeniyle aşılamaz" in exc.value.detail
 
 
 def test_load_plugin_agent_class_runtime_blocks_dangerous_builtin_access():
@@ -2818,20 +2826,20 @@ def test_verify_hmac_signature_and_git_run_paths(monkeypatch):
 
     calls = []
 
-    def _fake_check_output(*args, **kwargs):
+    def _fake_run_trusted_command(*args, **kwargs):
         calls.append((args, kwargs))
-        return b"main\n"
+        return SimpleNamespace(stdout=b"main\n")
 
-    monkeypatch.setattr(project_ops.subprocess, "check_output", _fake_check_output)
+    monkeypatch.setattr(project_ops, "run_trusted_command", _fake_run_trusted_command)
     assert web_server._git_run(["git"], ".") == "main"
-    assert calls[0][1]["shell"] is False
+    assert calls[0][1]["stderr"] == project_ops.subprocess.DEVNULL
     assert web_server._git_run(["git", "status"], ".") == ""
     assert len(calls) == 1
 
     def _raise(*_args, **_kwargs):
         raise OSError("boom")
 
-    monkeypatch.setattr(project_ops.subprocess, "check_output", _raise)
+    monkeypatch.setattr(project_ops, "run_trusted_command", _raise)
     assert web_server._git_run(["git"], ".") == ""
 
 
@@ -3264,7 +3272,9 @@ async def test_git_and_branch_endpoints(monkeypatch):
     invalid = await web_server.set_branch(_JsonRequest({"branch": "bad name"}))
     assert invalid.status_code == 400
 
-    monkeypatch.setattr(project_ops.subprocess, "check_output", lambda *a, **k: b"")
+    monkeypatch.setattr(
+        project_ops, "run_trusted_command", lambda *a, **k: SimpleNamespace(stdout=b"")
+    )
     ok = await web_server.set_branch(_JsonRequest({"branch": "feature/x"}))
     assert ok.status_code == 200
 
@@ -3921,9 +3931,17 @@ async def test_rate_limit_middleware_allows_ws_and_get_io_when_not_limited(monke
 
 @pytest.mark.asyncio
 async def test_swarm_federation_execute_success(monkeypatch):
+    signature_calls = []
+
+    def _verify_signature(payload, secret, signature, **kwargs):
+        signature_calls.append((payload, secret, signature, kwargs))
+
     monkeypatch.setattr(web_server.cfg, "ENABLE_SWARM_FEDERATION", True)
-    monkeypatch.setattr(web_server.cfg, "SWARM_FEDERATION_SHARED_SECRET", "", raising=False)
-    monkeypatch.setattr(web_server, "_verify_hmac_signature", lambda *args, **kwargs: None)
+    monkeypatch.setattr(web_server.cfg, "SIDAR_ENV", "test", raising=False)
+    monkeypatch.setattr(
+        web_server.cfg, "SWARM_FEDERATION_SHARED_SECRET", "test-federation-secret", raising=False
+    )
+    monkeypatch.setattr(web_server, "_verify_hmac_signature", _verify_signature)
 
     async def _dispatch_ok(**kwargs):
         return {
@@ -3952,13 +3970,28 @@ async def test_swarm_federation_execute_success(monkeypatch):
     )
     assert fed_res.status_code == 200
     assert b'"status":"success"' in fed_res.body
+    assert len(signature_calls) == 1
+    _payload, secret, signature, signature_kwargs = signature_calls[0]
+    assert (secret, signature, signature_kwargs) == (
+        "test-federation-secret",
+        "sig",
+        {"label": "Federation"},
+    )
 
 
 @pytest.mark.asyncio
 async def test_swarm_federation_feedback_success(monkeypatch):
+    signature_calls = []
+
+    def _verify_signature(payload, secret, signature, **kwargs):
+        signature_calls.append((payload, secret, signature, kwargs))
+
     monkeypatch.setattr(web_server.cfg, "ENABLE_SWARM_FEDERATION", True)
-    monkeypatch.setattr(web_server.cfg, "SWARM_FEDERATION_SHARED_SECRET", "", raising=False)
-    monkeypatch.setattr(web_server, "_verify_hmac_signature", lambda *args, **kwargs: None)
+    monkeypatch.setattr(web_server.cfg, "SIDAR_ENV", "test", raising=False)
+    monkeypatch.setattr(
+        web_server.cfg, "SWARM_FEDERATION_SHARED_SECRET", "test-federation-secret", raising=False
+    )
+    monkeypatch.setattr(web_server, "_verify_hmac_signature", _verify_signature)
 
     async def _dispatch_ok(**kwargs):
         return {
@@ -3987,6 +4020,13 @@ async def test_swarm_federation_feedback_success(monkeypatch):
     )
     assert feedback_res.status_code == 200
     assert b'"feedback_id":"fb-1"' in feedback_res.body
+    assert len(signature_calls) == 1
+    _payload, secret, signature, signature_kwargs = signature_calls[0]
+    assert (secret, signature, signature_kwargs) == (
+        "test-federation-secret",
+        "sig",
+        {"label": "Federation feedback"},
+    )
 
 
 @pytest.mark.asyncio
@@ -4201,30 +4241,43 @@ def test_reap_child_processes_nonblocking_handles_generic_exception(monkeypatch)
 
 def test_list_child_ollama_pids_ps_fallback_handles_malformed_and_failures(monkeypatch):
     monkeypatch.setattr(web_server, "os", SimpleNamespace(name="posix", getpid=lambda: 77))
-    original_import = __import__
 
     class _Psutil:
         class Process:
             def __init__(self, _pid):
                 raise RuntimeError("psutil broken")
 
-    def _fake_import(name, *args, **kwargs):
-        if name == "psutil":
-            return _Psutil
-        return original_import(name, *args, **kwargs)
-
-    monkeypatch.setattr("builtins.__import__", _fake_import)
+    # _resolve_psutil_module() resolves psutil via importlib.import_module(),
+    # which checks sys.modules directly and only falls through to
+    # builtins.__import__ when the name isn't already cached there. psutil is
+    # a real transitive dependency of several heavy libraries in this repo
+    # (transformers, accelerate, onnxruntime, ...), so once some other test in
+    # the same pytest-xdist worker has imported it for real, patching
+    # builtins.__import__ silently stops intercepting "psutil" and this test
+    # exercises the real library instead of the mocked failure path — flaky
+    # depending on worker/test ordering. Patching sys.modules["psutil"]
+    # directly (matching test_list_child_ollama_pids_windows_and_psutil_failure
+    # and test_list_child_ollama_pids_psutil_success_path above) is robust
+    # regardless of prior import state.
+    monkeypatch.setitem(sys.modules, "psutil", _Psutil)
+    # process_lifecycle._list_processes_via_ps() now runs the `ps` invocation
+    # through core.utils.trusted_subprocess.run_trusted_command() (see that
+    # module's docstring: centralizes the unavoidable Bandit B603 suppression
+    # for internally-trusted subprocess calls), which process_lifecycle
+    # imports by name -- so the fake belongs on that imported name, not on a
+    # stand-in `subprocess` module (run_trusted_command wraps the *real*
+    # subprocess.run internally; replacing process_lifecycle.subprocess here
+    # wouldn't intercept it).
     monkeypatch.setattr(
         web_server.process_lifecycle,
-        "subprocess",
-        SimpleNamespace(
-            DEVNULL=object(),
-            check_output=lambda *args, **kwargs: (
+        "run_trusted_command",
+        lambda *args, **kwargs: SimpleNamespace(
+            stdout=(
                 b"broken-line-without-columns\n"
                 b" abc 77 ollama ollama serve\n"
                 b" 13 xyz ollama ollama serve\n"
                 b" 15 77 ollama ollama serve\n"
-            ),
+            )
         ),
     )
 
@@ -4232,11 +4285,8 @@ def test_list_child_ollama_pids_ps_fallback_handles_malformed_and_failures(monke
 
     monkeypatch.setattr(
         web_server.process_lifecycle,
-        "subprocess",
-        SimpleNamespace(
-            DEVNULL=object(),
-            check_output=lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("ps failed")),
-        ),
+        "run_trusted_command",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("ps failed")),
     )
     assert web_server._list_child_ollama_pids() == []
 
@@ -7904,7 +7954,7 @@ async def test_set_branch_empty_and_checkout_error_paths(monkeypatch):
         )
 
     monkeypatch.setattr(web_server.asyncio, "to_thread", _inline_to_thread)
-    monkeypatch.setattr(project_ops.subprocess, "check_output", _raise_checkout)
+    monkeypatch.setattr(project_ops, "run_trusted_command", _raise_checkout)
     failed = await web_server.set_branch(_JsonRequest({"branch": "feature/x"}))
     assert failed.status_code == 400
     assert b"checkout failed" in failed.body
@@ -9145,7 +9195,9 @@ def test_list_child_ollama_pids_ps_fallback_skips_non_matching_rows(monkeypatch)
         b"502 500 python python app.py\n"  # comm ve args ollama degil -> atlanmali
     )
     monkeypatch.setattr(
-        web_server.process_lifecycle.subprocess, "check_output", lambda *_args, **_kwargs: ps_output
+        web_server.process_lifecycle,
+        "run_trusted_command",
+        lambda *_args, **_kwargs: SimpleNamespace(stdout=ps_output),
     )
 
     assert web_server._list_child_ollama_pids() == []
@@ -11861,6 +11913,10 @@ def test_get_rate_limit_key_prefers_authenticated_user() -> None:
 
 async def test_federation_and_github_webhook_paths(monkeypatch):
     monkeypatch.setattr(web_server.cfg, "ENABLE_SWARM_FEDERATION", True)
+    monkeypatch.setattr(web_server.cfg, "SIDAR_ENV", "test", raising=False)
+    monkeypatch.setattr(
+        web_server.cfg, "SWARM_FEDERATION_SHARED_SECRET", "test-federation-secret", raising=False
+    )
     monkeypatch.setattr(web_server, "_verify_hmac_signature", lambda *args, **kwargs: None)
 
     async def _dispatch_ok(**kwargs):

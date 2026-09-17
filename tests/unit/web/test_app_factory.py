@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+from typing import cast
+
 import pytest
 from fastapi import HTTPException
 
+from config import Config
 from sidar_version import PRODUCT_VERSION
 from web.app_factory import (
     _expose_api_docs,
@@ -126,8 +130,38 @@ def test_create_app_attaches_isolated_runtime_state() -> None:
     assert first_state is first.state.sidar_runtime
     assert second_state is second.state.sidar_runtime
     assert first_state is not second_state
+    assert first_state.settings is None
     assert first_state.agent is None
     assert first_state.agent_lock is None
+
+
+def test_create_app_binds_isolated_settings_without_process_env(
+    monkeypatch, make_test_client
+) -> None:
+    monkeypatch.setenv("SIDAR_ENV", "production")
+    test_settings = cast(Config, SimpleNamespace(SIDAR_ENV="test", VERSION="test-version"))
+    app = create_app(settings=test_settings)
+
+    assert get_runtime_state(app).settings is test_settings
+    assert app.version == "test-version"
+    assert make_test_client(app).get("/docs").status_code == 200
+
+
+def test_create_app_settings_control_production_policy_without_process_env(
+    monkeypatch, make_test_client
+) -> None:
+    monkeypatch.setenv("SIDAR_ENV", "test")
+    production_settings = cast(Config, SimpleNamespace(SIDAR_ENV="production"))
+    app = create_app(settings=production_settings)
+
+    @app.get("/settings-secret-boom")
+    async def settings_secret_boom() -> None:
+        raise RuntimeError("settings-only-secret")
+
+    response = make_test_client(app, raise_server_exceptions=False).get("/settings-secret-boom")
+
+    assert app.docs_url is None
+    assert response.json() == {"success": False, "error": "İç sunucu hatası"}
 
 
 def test_initialize_runtime_state_preserves_existing_values_and_applies_overrides() -> None:

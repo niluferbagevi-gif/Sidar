@@ -3,12 +3,41 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
-PYTHON_MAJOR_MINOR = "3.11"
+PYTHON_MAJOR_MINOR = "3.11.15"
 PYTHON_BASE_IMAGE = f"python:{PYTHON_MAJOR_MINOR}-slim"
+UV_IMAGE = (
+    "ghcr.io/astral-sh/uv:0.12.0@"
+    "sha256:606e70c71c852d03f611b1e56a195d08648507018a7057fab82c4974c4eae105"
+)
+PRODUCTION_PYTHON_IMAGE = (
+    "python:3.11.15-slim-bookworm@"
+    "sha256:d29f48a31a8b408ed19272ca1e7b10ebae13b240a27e862d3d4217c528e2e0c3"
+)
 
 
 def _read(relative_path: str) -> str:
     return (ROOT / relative_path).read_text()
+
+
+# docker-compose.yml (core) + docker-compose.gpu.yml (profiles: ["gpu"]) +
+# docker-compose.observability.yml (profiles: ["observability"]) are always
+# combined via `docker compose -f ... -f ... -f ...` at runtime (see
+# docker-compose.yml's own header comment for the split rationale) -- no
+# service name repeats across the three files, so a plain dict union below
+# reflects the same merged service set Compose itself would resolve.
+COMPOSE_FILES = (
+    "docker-compose.yml",
+    "docker-compose.gpu.yml",
+    "docker-compose.observability.yml",
+)
+
+
+def _merged_compose_services() -> dict:
+    services: dict = {}
+    for relative_path in COMPOSE_FILES:
+        document = yaml.safe_load((ROOT / relative_path).read_text())
+        services.update(document.get("services") or {})
+    return services
 
 
 def test_main_dockerfile_defaults_to_python_311_runtime():
@@ -26,14 +55,135 @@ def test_main_dockerfile_installs_shellcheck_os_package():
 
     assert "shellcheck \\" in dockerfile
     assert dockerfile.index("pkg-config") < dockerfile.index("shellcheck")
-    assert dockerfile.index("shellcheck") < dockerfile.index("rm -rf /var/lib/apt/lists/*")
+    # System apt layer uses a BuildKit cache mount (no baked-in
+    # `rm -rf /var/lib/apt/lists/*`), so anchor on the ENV block that
+    # follows it to confirm shellcheck still lands in that same layer.
+    assert dockerfile.index("shellcheck") < dockerfile.index("ENV UV_INDEX_STRATEGY=first-index")
+
+
+def test_main_dockerfile_does_not_install_unused_rust_toolchain():
+    """Regression: `cargo` (with rustc/llvm, ~110MB) was in the runtime apt layer unused.
+
+    Verified against uv.lock: the only 5 packages built from sdist (no
+    prebuilt wheel at all) are annoy, bottle-websocket, eel, openai-whisper,
+    and pyaudio — none are Rust-based (annoy/pyaudio only need the C/C++
+    compiler already provided by build-essential). The repo itself has no
+    Cargo.toml/*.rs either. A full `uv sync --frozen --all-extras` with
+    cargo/rustc removed from PATH was verified to succeed before this
+    package was dropped from the Dockerfile.
+    """
+    dockerfile = _read("Dockerfile")
+
+    assert " cargo " not in dockerfile
+    assert "build-essential" in dockerfile
+
+
+def test_main_dockerfile_uses_cache_mount_for_apt_not_baked_in_lists_cleanup():
+    """Regression: GPU builds previously re-downloaded the same .deb archives every time.
+
+    A BuildKit cache mount keeps them across builds instead. Cache mounts
+    never persist into the image layer, so the old
+    `rm -rf /var/lib/apt/lists/*` cleanup would only defeat the cache.
+    """
+    dockerfile = _read("Dockerfile")
+
+    assert "--mount=type=cache,target=/var/cache/apt" in dockerfile
+    assert "--mount=type=cache,target=/var/lib/apt/lists" in dockerfile
+
+
+def test_main_dockerfile_installs_gpu_python_via_uv_not_deadsnakes_ppa():
+    """Regression: a GPU (Ubuntu-based nvidia/cuda) build previously added the deadsnakes PPA.
+
+    That dragged in ~60 unrelated packages (software-properties-common,
+    dbus, PackageKit, PolicyKit, ...) and could trip tzdata's interactive
+    prompt. `uv python install` provisions the same pinned version without
+    apt/PPA at all.
+    """
+    dockerfile = _read("Dockerfile")
+
+    assert "uv python install ${PYTHON_VERSION}" in dockerfile
+    assert "deadsnakes" not in dockerfile
+    assert "add-apt-repository" not in dockerfile
+    assert "software-properties-common" not in dockerfile
+
+
+def test_main_dockerfile_disables_interactive_apt_prompts():
+    """Regression: without DEBIAN_FRONTEND=noninteractive, tzdata drops apt into a prompt.
+
+    tzdata is pulled in transitively by packages like
+    docker.io/ffmpeg/alsa-utils on an Ubuntu-based GPU base image, and the
+    interactive timezone prompt it triggers hangs forever in a TTY-less CI
+    build.
+    """
+    dockerfile = _read("Dockerfile")
+
+    assert "DEBIAN_FRONTEND=noninteractive" in dockerfile
+    assert "TZ=Etc/UTC" in dockerfile
+    # Anchor on the actual apt RUN instruction (not just any "apt-get
+    # install" substring — the file's GPU usage comment near the top also
+    # mentions one) to confirm the ENV lands before that layer runs.
+    assert dockerfile.index("DEBIAN_FRONTEND=noninteractive") < dockerfile.index(
+        "RUN --mount=type=cache,target=/var/cache/apt"
+    )
 
 
 def test_main_dockerfile_preinstalls_uv_for_sandbox_regression_tests():
     dockerfile = _read("Dockerfile")
 
-    assert "COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/" in dockerfile
+    assert f"COPY --from={UV_IMAGE} /uv /uvx /bin/" in dockerfile
+    assert "ghcr.io/astral-sh/uv:latest" not in dockerfile
     assert "RUN uv --version && uvx --version" in dockerfile
+
+
+def test_production_dockerfile_pins_build_inputs_by_version_and_digest():
+    dockerfile = _read("Dockerfile.production")
+
+    assert f"ARG BASE_IMAGE={PRODUCTION_PYTHON_IMAGE}" in dockerfile
+    assert (
+        "ARG NODE_IMAGE=node:20.20.2-bookworm-slim@sha256:"
+        "2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0" in dockerfile
+    )
+    assert f"COPY --from={UV_IMAGE} /uv /uvx /bin/" in dockerfile
+    assert "ghcr.io/astral-sh/uv:latest" not in dockerfile
+
+
+def test_production_dockerfile_keeps_build_toolchain_out_of_runtime_stage():
+    """The deploy image must copy artifacts, not compilers or package managers."""
+    dockerfile = _read("Dockerfile.production")
+    builder, runtime = dockerfile.split("FROM ${BASE_IMAGE} AS runtime", maxsplit=1)
+
+    assert "FROM ${BASE_IMAGE} AS builder" in builder
+    assert "build-essential git" in builder
+    assert "COPY --from=builder /app /app" in runtime
+    runtime_apt = runtime.split("apt-get install -y --no-install-recommends", maxsplit=1)[1].split(
+        "rm -rf /var/lib/apt/lists/*", maxsplit=1
+    )[0]
+    for build_only in ("build-essential", " git", "/uv /uvx", "python3-pip", "python3-venv"):
+        assert build_only not in runtime_apt
+    assert "ca-certificates curl ffmpeg" in runtime_apt
+
+
+def test_production_dockerfile_builds_readable_frontend_inside_image():
+    """The runtime SPA must not inherit host ownership or permission bits."""
+    dockerfile = _read("Dockerfile.production")
+    frontend, remainder = dockerfile.split("FROM ${BASE_IMAGE} AS builder", maxsplit=1)
+    runtime = remainder.split("FROM ${BASE_IMAGE} AS runtime", maxsplit=1)[1]
+
+    assert "FROM ${NODE_IMAGE} AS frontend-builder" in frontend
+    assert "COPY web_ui_react/package.json web_ui_react/package-lock.json ./" in frontend
+    assert "npm ci" in frontend
+    assert "npm run build" in frontend
+    assert "COPY --from=frontend-builder /frontend/dist /app/web_ui_react/dist" in runtime
+    assert "find /app/web_ui_react/dist -type d -exec chmod 755 {} +" in runtime
+    assert "find /app/web_ui_react/dist -type f -exec chmod 644 {} +" in runtime
+    assert runtime.index("COPY --from=frontend-builder") < runtime.index("USER sidaruser")
+
+
+def test_main_dockerfile_documents_current_cuda_13_example_consistently():
+    dockerfile = _read("Dockerfile")
+
+    assert "nvidia/cuda:13.0.0-runtime-ubuntu22.04" in dockerfile
+    assert "nvidia/cuda:12.6" not in dockerfile
 
 
 def test_main_dockerfile_validates_pyright_lsp_binary_for_reviewer_semantics():
@@ -41,6 +191,59 @@ def test_main_dockerfile_validates_pyright_lsp_binary_for_reviewer_semantics():
 
     assert "shutil.which('pyright-langserver')" in dockerfile
     assert "shutil.which('pyright')" in dockerfile
+
+
+def test_dockerfiles_only_grant_runtime_user_ownership_to_writable_directories():
+    """Keep application sources and the virtualenv root-owned in runtime images."""
+    writable_directories = (
+        "/app/logs",
+        "/app/data",
+        "/app/temp",
+        "/app/sessions",
+        "/app/chroma_db",
+    )
+
+    for relative_path in ("Dockerfile", "Dockerfile.production"):
+        dockerfile = _read(relative_path)
+        ownership_instruction = dockerfile.split("&& chown -R sidaruser:sidaruser", maxsplit=1)[
+            1
+        ].split("USER sidaruser", maxsplit=1)[0]
+
+        assert ownership_instruction.replace("\\\n", " ").split() == [*writable_directories]
+        assert "/app/.venv" not in ownership_instruction
+
+
+def test_pyproject_has_no_orphaned_pytorch_cuda_index():
+    """Regression: `pytorch-cu124` was declared but never referenced by [tool.uv.sources].
+
+    On linux (the only `environments` target), torch resolves from the
+    default PyPI index and already bundles CUDA 13.x runtime deps (see
+    uv.lock) matching the nvidia/cuda:13.0.0 GPU base image — no separate
+    CUDA-tagged index is needed there. Only `pytorch-cpu` (for Darwin) is
+    real. Wiring the dead cu124 index up instead of removing it would have
+    been actively wrong: it targets an older CUDA build than the image
+    actually ships.
+    """
+    pyproject = _read("pyproject.toml")
+
+    assert "pytorch-cu124" not in pyproject
+    assert 'name = "pytorch-cpu"' in pyproject
+
+
+def test_compose_gpu_builds_have_no_dead_torch_index_url_arg():
+    """Regression: a TORCH_INDEX_URL build arg the Dockerfile never declared.
+
+    docker-compose.yml passed it anyway (silently dropped by Docker), and
+    `uv sync --frozen` would ignore it even if wired up — it installs
+    exactly what uv.lock pins, not whatever an index-url arg points at.
+    """
+    services = _merged_compose_services()
+    dockerfile = _read("Dockerfile")
+
+    for service_name in ("sidar-gpu", "sidar-web-gpu"):
+        build_args = services[service_name]["build"]["args"]
+        assert "TORCH_INDEX_URL" not in build_args
+    assert "ARG TORCH_INDEX_URL" not in dockerfile
 
 
 def test_compose_cpu_builds_use_python_311_base_image():
@@ -55,7 +258,7 @@ def test_compose_postgres_volume_uses_predictable_name():
     compose = _read("docker-compose.yml")
 
     assert "- postgres_data:/var/lib/postgresql/data" in compose
-    assert "  postgres_data:\n    name: sidar_postgres_data" in compose
+    assert "name: ${SIDAR_POSTGRES_VOLUME_NAME:-sidar_postgres_data}" in compose
 
 
 def test_compose_ollama_service_keeps_model_warm_for_gpu_benchmark_stability():
@@ -160,16 +363,15 @@ def test_helm_chart_rejects_inline_postgresql_password_generation():
 
 
 def test_observability_compose_pins_tracing_and_exports_infra_metrics():
-    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
-    services = compose["services"]
+    services = _merged_compose_services()
 
     assert services["redis"]["image"] == "redis:7.4-alpine"
-    assert services["postgres"]["image"] == "pgvector/pgvector:0.8.1-pg16"
+    assert services["postgres"]["image"] == "pgvector/pgvector:0.8.6-pg16"
 
-    assert services["jaeger"]["image"] == "jaegertracing/all-in-one:1.63.0"
+    assert services["jaeger"]["image"] == "jaegertracing/all-in-one:1.76.0"
     assert ":latest" not in services["jaeger"]["image"]
 
-    assert services["redis-exporter"]["image"] == "oliver006/redis_exporter:v1.67.0"
+    assert services["redis-exporter"]["image"] == "oliver006/redis_exporter:v1.91.1"
     redis_exporter_env = services["redis-exporter"]["environment"]
     assert "REDIS_ADDR=redis://redis:6379" in redis_exporter_env
     assert any(str(item).startswith("REDIS_PASSWORD=") for item in redis_exporter_env)
@@ -178,7 +380,7 @@ def test_observability_compose_pins_tracing_and_exports_infra_metrics():
     assert "--requirepass" in services["redis"]["command"]
 
     postgres_exporter = services["postgres-exporter"]
-    assert postgres_exporter["image"] == "prometheuscommunity/postgres-exporter:v0.15.0"
+    assert postgres_exporter["image"] == "prometheuscommunity/postgres-exporter:v0.20.1"
     assert any(
         item.startswith("DATA_SOURCE_NAME=postgresql://")
         for item in postgres_exporter["environment"]
@@ -186,18 +388,183 @@ def test_observability_compose_pins_tracing_and_exports_infra_metrics():
     assert postgres_exporter["depends_on"]["postgres"]["condition"] == "service_healthy"
 
     cadvisor = services["cadvisor"]
-    assert cadvisor["image"] == "gcr.io/cadvisor/cadvisor:v0.49.1"
+    assert cadvisor["image"] == "gcr.io/cadvisor/cadvisor:v0.55.1"
     assert cadvisor["privileged"] is True
     assert "/var/lib/docker:/var/lib/docker:ro" in cadvisor["volumes"]
 
-    assert services["prometheus"]["depends_on"] == [
+    assert set(services["prometheus"]["depends_on"]) == {
         "redis-exporter",
         "postgres-exporter",
         "cadvisor",
-    ]
+        "prometheus-token-init",
+    }
+    assert (
+        services["prometheus"]["depends_on"]["prometheus-token-init"]["condition"]
+        == "service_completed_successfully"
+    )
     assert services["prometheus"]["image"] == "prom/prometheus:v2.54.1"
     assert services["grafana"]["image"] == "grafana/grafana:11.2.0"
     assert services["grafana"]["healthcheck"]["test"][0] == "CMD-SHELL"
+
+
+def test_observability_profile_services_have_resource_limits():
+    """Ensure the observability sidecars can't starve the host of CPU/memory.
+
+    A code review flagged that jaeger/the exporters/cadvisor (and, by the
+    same standard already applied to sidar-web/sidar-ai, prometheus/grafana
+    too) had no resource limits at all, unlike sidar-web/sidar-ai which set
+    both the top-level `cpus`/`mem_limit` shorthand and the
+    `deploy.resources.limits` block. Healthchecks for these services were
+    deliberately NOT added in the same change — see the comment above the
+    jaeger service in docker-compose.yml for why (this sandbox has no live
+    Docker daemon to verify wget/curl/shell exist in each third-party image,
+    and a wrong guess produces a permanently-misleading "unhealthy" status).
+    """
+    services = _merged_compose_services()
+
+    for service_name in (
+        "jaeger",
+        "redis-exporter",
+        "postgres-exporter",
+        "cadvisor",
+        "prometheus",
+        "grafana",
+    ):
+        service = services[service_name]
+        assert "cpus" in service, f"{service_name} is missing a top-level cpus limit"
+        assert "mem_limit" in service, f"{service_name} is missing a top-level mem_limit"
+        limits = service["deploy"]["resources"]["limits"]
+        assert limits["cpus"]
+        assert limits["memory"]
+
+
+def test_prometheus_scrape_of_authenticated_sidar_endpoints_carries_a_bearer_token():
+    """Fail-closed regression for a review comment.
+
+    prometheus.yml never sent any Authorization header for the sidar-web/
+    sidar-gpu jobs, but web_server.py's global auth middleware 401s *every*
+    request lacking `Authorization: Bearer ...` - independent of whether
+    METRICS_TOKEN is configured. Scraping those two jobs was therefore
+    always broken, not just when the documented METRICS_TOKEN hardening
+    step was turned on. docker-compose.yml's prometheus-token-init writes
+    METRICS_TOKEN into the file prometheus.yml now points both jobs at
+    (fail-closed via a required env var if METRICS_TOKEN is unset); the
+    exporter jobs (redis/postgres/cadvisor) are untouched since they are
+    unauthenticated third-party processes outside Sidar's own auth guard.
+    """
+    prometheus_yml = yaml.safe_load(
+        (ROOT / "docker_setup" / "prometheus" / "prometheus.yml").read_text()
+    )
+    jobs = {job["job_name"]: job for job in prometheus_yml["scrape_configs"]}
+
+    for job_name in ("sidar-web", "sidar-gpu"):
+        assert jobs[job_name]["bearer_token_file"] == "/etc/prometheus-secrets/metrics_token"
+    for job_name in ("redis-exporter", "postgres-exporter", "cadvisor"):
+        assert "bearer_token_file" not in jobs[job_name]
+        assert "bearer_token" not in jobs[job_name]
+
+    services = _merged_compose_services()
+    # Volume declarations stay centralized in docker-compose.yml (core) even
+    # though prometheus-token-init/prometheus live in
+    # docker-compose.observability.yml -- see that file's header comment.
+    core_compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+
+    init_service = services["prometheus-token-init"]
+    assert init_service["profiles"] == ["observability"]
+    assert "${METRICS_TOKEN:?" in " ".join(init_service["command"])
+    assert {"prometheus_secrets:/etc/prometheus-secrets"} <= set(init_service["volumes"])
+
+    assert "prometheus_secrets:/etc/prometheus-secrets:ro" in services["prometheus"]["volumes"]
+    assert "prometheus_secrets" in core_compose["volumes"]
+
+
+def test_postgres_and_ollama_ports_bind_to_loopback_like_redis():
+    """Ensure Postgres/Ollama host ports never bind wider than Redis's loopback-only policy.
+
+    Fail-closed regression: a review comment flagged that redis's port was
+    scoped to `127.0.0.1` while postgres/ollama/ollama-gpu published to all
+    interfaces (`"5432:5432"` / `"11434:11434"`) with no host_ip prefix —
+    reachable from the LAN/WSL even with a strong POSTGRES_PASSWORD, and
+    Ollama's API has no authentication of its own at all.
+    """
+    services = _merged_compose_services()
+
+    assert services["postgres"]["ports"] == ["127.0.0.1:${POSTGRES_PORT:-5432}:5432"]
+    assert services["ollama"]["ports"] == ["127.0.0.1:${OLLAMA_PORT:-11434}:11434"]
+    assert services["ollama-gpu"]["ports"] == ["127.0.0.1:${OLLAMA_PORT:-11434}:11434"]
+
+
+def test_ollama_services_have_a_healthcheck_and_dependents_wait_for_it():
+    """Ensure Ollama's startup can't race the first request against it.
+
+    A review comment flagged that redis/postgres both have a healthcheck and
+    are waited on via `condition: service_healthy`, but ollama/ollama-gpu had
+    neither: they only defined `condition: service_started`, which is
+    satisfied the instant the container process starts — not when Ollama's
+    HTTP API is actually ready to serve requests. Ollama's official image
+    has no curl/wget in its runtime stage (verified against its Dockerfile),
+    so the healthcheck uses the `ollama` binary already in the image
+    (`ollama list`, which itself talks to the local API and fails until the
+    server is up) instead of redis/postgres's curl/pg_isready style.
+    """
+    services = _merged_compose_services()
+
+    for service_name in ("ollama", "ollama-gpu"):
+        healthcheck = services[service_name]["healthcheck"]
+        assert healthcheck["test"] == ["CMD", "ollama", "list"]
+        assert healthcheck["retries"] >= 1
+
+    for service_name in ("sidar-ai", "sidar-web", "sidar-gpu", "sidar-web-gpu"):
+        depends_on = services[service_name]["depends_on"]
+        for ollama_dep in ("ollama", "ollama-gpu"):
+            if ollama_dep in depends_on:
+                assert depends_on[ollama_dep]["condition"] == "service_healthy"
+
+
+def test_ollama_image_is_pinned_not_latest():
+    """Ollama was the only unpinned image in docker-compose.yml.
+
+    A code review flagged that every other image (redis, postgres, jaeger,
+    the exporters) is pinned to a specific version, but ollama/ollama-gpu
+    used `ollama/ollama:latest` — an upstream release can silently change
+    behavior/API surface on the next `docker compose pull` with no diff in
+    this repo to review.
+    """
+    services = _merged_compose_services()
+
+    for service_name in ("ollama", "ollama-gpu"):
+        image = services[service_name]["image"]
+        assert image.startswith("ollama/ollama:")
+        assert ":latest" not in image
+
+
+def test_helm_redis_and_postgresql_images_match_docker_compose_pins():
+    """Helm's redis/postgresql images must not drift from docker-compose.yml.
+
+    A code review found docker-compose.yml pins `redis:7.4-alpine` /
+    `pgvector/pgvector:0.8.1-pg16`, while the Helm chart's values.yaml used
+    unversioned `redis:alpine` / `pgvector/pgvector:pg16` — a real
+    Compose-vs-Helm version mismatch, not just a cosmetic one, since neither
+    values-prod.yaml nor values-staging.yaml override these image fields
+    (verified: only `image.tag`, the app's own image, is CI-overridden).
+    """
+    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+    redis_image = compose["services"]["redis"]["image"]
+    postgres_image = compose["services"]["postgres"]["image"]
+
+    for rel_path in ("helm/sidar/values.yaml", "sidar_assets/helm/sidar/values.yaml"):
+        document = yaml.safe_load((ROOT / rel_path).read_text())
+        assert document["redis"]["image"] == redis_image
+        assert document["postgresql"]["image"] == postgres_image
+        # values-prod.yaml/values-staging.yaml must not silently reintroduce
+        # an unpinned override on top of the base file's pinned image.
+        for overlay in (
+            rel_path.replace("values.yaml", "values-prod.yaml"),
+            rel_path.replace("values.yaml", "values-staging.yaml"),
+        ):
+            overlay_doc = yaml.safe_load((ROOT / overlay).read_text())
+            assert "image" not in overlay_doc.get("redis", {})
+            assert "image" not in overlay_doc.get("postgresql", {})
 
 
 def test_cli_sandbox_services_use_docker_socket_proxy_not_raw_host_socket():
@@ -210,8 +577,7 @@ def test_cli_sandbox_services_use_docker_socket_proxy_not_raw_host_socket():
     through docker-socket-proxy, which only exposes the container
     create/start/stop/logs operations CodeManager actually needs.
     """
-    compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
-    services = compose["services"]
+    services = _merged_compose_services()
 
     proxy = services["docker-socket-proxy"]
     assert proxy["volumes"] == ["/var/run/docker.sock:/var/run/docker.sock:ro"]
@@ -264,15 +630,8 @@ def test_dockerignore_exists_and_excludes_secrets_from_build_context():
     assert ".venv/" in dockerignore
 
 
-def test_dockerignore_preserves_react_spa_build_output():
-    """Regression: a blanket `dist/`/`build/` exclusion must not swallow `web_ui_react/dist`.
-
-    `web_server.py` serves the SPA from `web_ui_react/dist` (see
-    `web_dist_path()`), which `release-quality.yml` builds via
-    `npm run build` *before* `docker build`, not inside the Dockerfile. A
-    generic `dist/`/`build/` rule would therefore also match
-    `web_ui_react/dist` and silently ship an image with no frontend.
-    """
+def test_dockerignore_excludes_host_react_spa_build_output():
+    """Production frontend artifacts are built in-image, never copied from the host."""
     dockerignore = _read(".dockerignore")
     ignored_lines = {
         line.strip()
@@ -280,6 +639,7 @@ def test_dockerignore_preserves_react_spa_build_output():
         if line.strip() and not line.strip().startswith("#")
     }
 
+    assert "web_ui_react/dist/" in ignored_lines
     assert "dist/" not in ignored_lines
     assert "build/" not in ignored_lines
     assert "/dist/" not in ignored_lines

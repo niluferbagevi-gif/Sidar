@@ -10,6 +10,7 @@ import subprocess  # nosec B404
 import sys
 from typing import Any, cast
 
+from core.utils.trusted_subprocess import run_trusted_command
 from managers.code.docker import (
     LEGACY_PROJECT_IMAGE_PREFIXES,
     PROJECT_TEST_IMAGE_CANDIDATES,
@@ -83,7 +84,7 @@ class DockerLifecycleAdapter:
         if not docker_bin:
             return False
         try:
-            result = subprocess.run(  # nosec B603
+            result = run_trusted_command(
                 [docker_bin, "info"],
                 capture_output=True,
                 text=True,
@@ -174,7 +175,7 @@ class DockerLifecycleAdapter:
         if not docker_bin:
             return False
         try:
-            result = subprocess.run(  # nosec B603
+            result = run_trusted_command(
                 [docker_bin, "image", "inspect", safe_image],
                 capture_output=True,
                 text=True,
@@ -194,7 +195,7 @@ class DockerLifecycleAdapter:
 
         available = False
         try:
-            probe = subprocess.run(  # nosec B603
+            probe = run_trusted_command(
                 [shutil.which("nvidia-smi") or "nvidia-smi"],
                 capture_output=True,
                 text=True,

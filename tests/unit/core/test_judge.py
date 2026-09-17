@@ -179,7 +179,7 @@ def test_init_uses_bound_env_helpers(monkeypatch):
 
 
 def test_should_evaluate(monkeypatch, judge_instance):
-    monkeypatch.setattr(judge.random, "random", lambda: 0.3)
+    monkeypatch.setattr(judge._SAMPLING_RANDOM, "random", lambda: 0.3)
     assert judge_instance.should_evaluate() is True
     judge_instance.enabled = False
     assert judge_instance.should_evaluate() is False

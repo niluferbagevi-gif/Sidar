@@ -96,7 +96,20 @@ detect_pytorch_runtime_cuda_version() {
     local python_cmd=()
 
     if command -v uv &>/dev/null; then
-        python_cmd=(uv run python)
+        # --no-sync is essential here: bare `uv run python` implicitly syncs the
+        # project's environment (base deps, which include torch via
+        # sentence-transformers) before running the inline script. detect_gpu()
+        # runs before the dependency-sync phase, so on a fresh checkout this
+        # single diagnostic probe was silently triggering the first, full
+        # `uv sync` — a multi-hundred-MB-to-GB download hidden behind the
+        # "GPU Tespiti" step, with no visible progress (stderr redirected below)
+        # and no relation to the step's actual (near-instant, nvidia-smi-only)
+        # purpose. --no-sync makes this check use whatever environment already
+        # exists (nothing on a fresh clone -> import fails instantly, already
+        # handled by the try/except below) instead of provisioning one.
+        # Verified empirically: ~0.1s either way (missing venv or already-synced
+        # venv), vs. minutes-to-an-hour on a slow/contended link without it.
+        python_cmd=(uv run --no-sync python)
     elif command -v python3 &>/dev/null; then
         python_cmd=(python3)
     elif command -v python &>/dev/null; then
@@ -244,7 +257,13 @@ detect_gpu() {
         if [[ "${RUN_GPU_STRESS:-0}" != "1" ]]; then
             export RUN_GPU_STRESS=1
             declare -F persist_run_gpu_stress_dotenv >/dev/null 2>&1 && persist_run_gpu_stress_dotenv
-            info "GPU tespit edildiği için RUN_GPU_STRESS=1 otomatik etkinleştirildi."
+            # Eşzamanlılık ve context zaten VRAM'e göre otomatik ölçekleniyor
+            # (bkz. resolve_adaptive_gpu_pool_size, _autoselect_ollama_coding_ctx_window),
+            # bu yüzden burada VRAM eşiğine göre etkinleştirmeyi tamamen
+            # atlamıyoruz — ama tespit edilen VRAM'i mesajda gösteriyoruz ki
+            # düşük VRAM'li bir kartta ("VRAM: 4096 MiB" gibi) zorunlu hale
+            # gelen testin neden düşük eşzamanlılıkla çalıştığı belli olsun.
+            info "GPU tespit edildi (VRAM: ${VRAM_MB} MiB); RUN_GPU_STRESS=1 otomatik etkinleştirildi. Atlamak isterseniz .env.development içinde RUN_GPU_STRESS=0 yapın."
         fi
         ok "GPU     : $GPU_NAME"
         ok "VRAM    : ${VRAM_MB} MiB"
@@ -303,17 +322,74 @@ wait_for_docker_nvidia_runtime() {
     return 1
 }
 
+install_nvidia_container_repository() {
+    local key_url="https://nvidia.github.io/libnvidia-container/gpgkey"
+    local list_url="https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list"
+    local keyring="/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg"
+    local repo_file="/etc/apt/sources.list.d/nvidia-container-toolkit.list"
+    local temp_dir=""
+
+    temp_dir="$(mktemp -d)"
+    if ! curl -fsSL --retry 3 --retry-all-errors "$key_url" -o "${temp_dir}/nvidia.asc" \
+        || ! curl -fsSL --retry 3 --retry-all-errors "$list_url" -o "${temp_dir}/nvidia.list"; then
+        rm -rf "$temp_dir"
+        fail "NVIDIA container-toolkit imza anahtarı veya depo listesi indirilemedi."
+    fi
+    if ! gpg --batch --yes --dearmor --output "${temp_dir}/nvidia.gpg" "${temp_dir}/nvidia.asc"; then
+        rm -rf "$temp_dir"
+        fail "NVIDIA container-toolkit GPG anahtarı keyring biçimine dönüştürülemedi."
+    fi
+    if [[ ! -s "${temp_dir}/nvidia.gpg" ]] \
+        || ! grep -Eq '^deb([[:space:]]|\[).*https://nvidia\.github\.io/libnvidia-container/' "${temp_dir}/nvidia.list"; then
+        rm -rf "$temp_dir"
+        fail "NVIDIA keyring/depo içeriği beklenen biçimde değil; APT yapılandırması değiştirilmedi."
+    fi
+
+    sed "s#deb https://#deb [signed-by=${keyring}] https://#g" \
+        "${temp_dir}/nvidia.list" > "${temp_dir}/nvidia.signed.list"
+    # gpg'yi sudo altında doğrudan hedef dosyaya yazdırmak, yarım dosya ve
+    # root-owned geçici çıktı sorunlarına yol açabiliyordu. Doğrulanan dosyaları
+    # install(1) ile atomik olarak ve APT'nin okuyabileceği açık izinlerle yerleştir.
+    sudo install -d -m 0755 /usr/share/keyrings /etc/apt/sources.list.d
+    sudo install -m 0644 "${temp_dir}/nvidia.gpg" "$keyring"
+    sudo install -m 0644 "${temp_dir}/nvidia.signed.list" "$repo_file"
+    rm -rf "$temp_dir"
+
+    if [[ ! -r "$keyring" || ! -r "$repo_file" ]]; then
+        fail "NVIDIA keyring/depo dosyaları APT kullanıcısı tarafından okunamıyor (${keyring}, ${repo_file})."
+    fi
+    ok "NVIDIA container-toolkit keyring ve depo izinleri doğrulandı (0644)."
+}
+
 setup_nvidia_docker() {
+    # WSL2'de GPU desteği Docker Desktop tarafından WSL2 backend üzerinden sağlanır;
+    # NVIDIA'nın Windows sürücüsü libcuda.so aracılığıyla WSL2'ye zaten aktarılır.
+    # WSL Ubuntu'ya ayrıca Linux NVIDIA ekran sürücüsü kurmak veya bu distro'da
+    # `nvidia-ctk runtime configure` ile /etc/docker/daemon.json'ı değiştirmeye
+    # çalışmak yanlış hedefi düzenler: bu Ubuntu distro'daki `docker` CLI yalnız
+    # Docker Desktop'ın ayrı motoruna bağlanan bir istemcidir, o motorun kendi
+    # daemon.json'ı bu distro'da değildir. Bu yüzden WSL2'de önce doğrudan
+    # `--gpus all` passthrough'unu ampirik olarak doğruluyoruz; çalışıyorsa
+    # aşağıdaki apt/nvidia-ctk kurulum yolu tamamen atlanır.
+    if [[ "$WSL2" == true && "$GPU_AVAILABLE" == true ]] && command -v docker &>/dev/null; then
+        step "Docker Desktop / WSL2 GPU doğrulaması"
+        local wsl_gpu_verify_image="${SIDAR_WSL_GPU_VERIFY_IMAGE:-nvidia/cuda:13.0.0-runtime-ubuntu22.04}"
+
+        if docker run --rm --gpus all "$wsl_gpu_verify_image" nvidia-smi; then
+            ok "Docker Desktop GPU passthrough doğrulandı."
+            return 0
+        fi
+
+        fail "Docker Desktop GPU passthrough başarısız. Windows NVIDIA sürücüsü ve Docker Desktop GPU desteğini kontrol edin."
+    fi
+
     if [[ "$GPU_AVAILABLE" == true ]] && command -v docker &>/dev/null; then
         step "Docker GPU Desteği (nvidia-container-toolkit)"
         if ! command -v nvidia-ctk &>/dev/null; then
             warn "nvidia-container-toolkit bulunamadı. Kurulum başlatılıyor (sudo şifreniz istenebilir)..."
 
-            # NVIDIA repolarını ekle ve kur
-            curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg --yes
-            curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-              sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
-              sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list > /dev/null
+            # NVIDIA repolarını doğrulanmış geçici dosyalardan, açık izinlerle kur.
+            install_nvidia_container_repository
 
             sudo apt-get update
             sudo apt-get install -y nvidia-container-toolkit

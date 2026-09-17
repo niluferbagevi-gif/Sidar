@@ -6,6 +6,8 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from core.config_scoped_settings import build_scoped_settings_type
+
 
 class OllamaBatchPolicy:
     """Central Ollama num_batch bounds used by config and runtime clients."""
@@ -27,6 +29,16 @@ class OllamaBatchPolicy:
 
 
 OLLAMA_BATCH_POLICY = OllamaBatchPolicy()
+
+# Single source of truth for the Ollama inference-request timeout default.
+# core/llm_client.py and core/llm/ollama.py both used to hardcode their own
+# `_setting(self.config, "OLLAMA_TIMEOUT", 120)` fallback — a stale guess
+# that drifted from this field's real 600s default and only ever mattered
+# for a config object missing the attribute entirely (getattr's fallback),
+# never in normal runtime. Both now import this constant instead of
+# re-guessing it.
+OLLAMA_TIMEOUT_DEFAULT = 600
+
 SUPPORTED_AI_PROVIDERS: frozenset[str] = frozenset(
     {"ollama", "gemini", "openai", "anthropic", "litellm"}
 )
@@ -41,7 +53,17 @@ PROVIDER_REQUIRED_SETTINGS: dict[str, tuple[str, ...]] = {
 class LLMClientSettings(BaseSettings):
     """LLM istemcisi için ortam değişkenlerini tip güvenli şekilde yükler."""
 
-    model_config = SettingsConfigDict(env_file=None, env_file_encoding="utf-8", extra="ignore")
+    # env_ignore_empty=True: shipped .env templates use `KEY=` (blank) as the
+    # "value derived at runtime / not overridden" placeholder for keys like
+    # OLLAMA_CODING_NUM_CTX (see config.Config._autoselect_ollama_coding_ctx_window,
+    # which auto-tunes it from detected GPU VRAM). Without this, pydantic-settings
+    # tries to parse the empty string against the field's int/float type and
+    # raises a ValidationError instead of falling back to the field default,
+    # crashing every entrypoint that imports config.py as soon as `.env.advanced`
+    # (copied verbatim from .env.advanced.example) is present on disk.
+    model_config = SettingsConfigDict(
+        env_file=None, env_file_encoding="utf-8", extra="ignore", env_ignore_empty=True
+    )
 
     AI_PROVIDER: str = "ollama"
     GEMINI_API_KEY: str = ""
@@ -60,7 +82,16 @@ class LLMClientSettings(BaseSettings):
     LITELLM_MODEL: str = ""
     LITELLM_TIMEOUT: int = 60
     OLLAMA_URL: str = "http://localhost:11434/api"
-    OLLAMA_TIMEOUT: int = 600
+    OLLAMA_TIMEOUT: int = OLLAMA_TIMEOUT_DEFAULT
+    # Deliberately separate from OLLAMA_TIMEOUT: check_ollama() (managers/
+    # system_health.py) is a lightweight "/api/tags" liveness probe, not an
+    # inference request. It used to reuse OLLAMA_TIMEOUT (600s) via
+    # getattr(self.cfg, "OLLAMA_TIMEOUT", 5) — since self.cfg is a real
+    # Config with OLLAMA_TIMEOUT always set, that 5s fallback never actually
+    # applied, so the health check could block for up to 10 minutes waiting
+    # on a hung Ollama before reporting it unreachable, defeating the point
+    # of a health check. Now uses its own short, dedicated timeout.
+    OLLAMA_HEALTH_CHECK_TIMEOUT: int = 5
     OLLAMA_KEEP_ALIVE: str = "30m"
     OLLAMA_NUM_BATCH: int = OLLAMA_BATCH_POLICY.default
     OLLAMA_CODING_NUM_CTX: int = 8192
@@ -80,14 +111,7 @@ def load_llm_settings(*, env_path: Path, skip_default_dotenv: bool) -> LLMClient
     if env_file is None:
         return LLMClientSettings()
 
-    scoped_settings_type: type[LLMClientSettings] = type(
-        "ScopedLLMClientSettings",
-        (LLMClientSettings,),
-        {
-            "__module__": __name__,
-            "model_config": SettingsConfigDict(
-                env_file=env_file, env_file_encoding="utf-8", extra="ignore"
-            ),
-        },
+    scoped_settings_type = build_scoped_settings_type(
+        LLMClientSettings, env_file=env_file, env_ignore_empty=True
     )
     return scoped_settings_type()

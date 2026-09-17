@@ -4,7 +4,17 @@ import os
 import subprocess
 from pathlib import Path
 
+from tests._helpers.source_contracts import expanded_bash_source
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _expanded_autonomous_loop() -> str:
+    """Return the entry point with its autonomous domain modules expanded."""
+    return expanded_bash_source(
+        REPO_ROOT / "autonomous_loop.sh",
+        root=REPO_ROOT,
+    )
 
 
 def _run_autonomous_loop_config(
@@ -86,7 +96,7 @@ def test_autonomous_loop_bandit_invocation_loads_pyproject_config() -> None:
     including third-party packages, causing multi-minute hangs and spurious
     auto-heal triggers during the preflight phase.
     """
-    script = (REPO_ROOT / "autonomous_loop.sh").read_text(encoding="utf-8")
+    script = _expanded_autonomous_loop()
 
     assert "uv run bandit -r . -c pyproject.toml -f json" in script
 
@@ -196,3 +206,22 @@ def test_autonomous_loop_intentionally_omits_set_dash_e() -> None:
     # A comment explaining the omission must precede the `set` line so a
     # future edit doesn't "fix" this into a regression.
     assert "kasıtlı olarak KULLANILMIYOR" in "\n".join(lines[1:set_line_index])
+
+
+def test_autonomous_loop_delegates_high_value_domains_to_modules() -> None:
+    """Prevent the coverage and heal workflows from returning to the root script."""
+    script = (REPO_ROOT / "autonomous_loop.sh").read_text(encoding="utf-8")
+    module_contracts = {
+        "coverage_agent.sh": "run_coverage_agent() {",
+        "auto_heal.sh": "run_auto_heal_for_test_failure() {",
+        "static_analysis.sh": "run_static_analysis_heal_phases() {",
+    }
+
+    for module_name, function_declaration in module_contracts.items():
+        source_line = f'source "${{SCRIPT_DIR}}/scripts/autonomous_modules/{module_name}"'
+        module = (REPO_ROOT / "scripts" / "autonomous_modules" / module_name).read_text(
+            encoding="utf-8"
+        )
+        assert source_line in script
+        assert function_declaration in module
+        assert function_declaration not in script

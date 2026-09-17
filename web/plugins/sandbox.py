@@ -1,21 +1,334 @@
-"""Plugin source validation and in-process sandbox policy helpers.
+"""Plugin source validation and isolated sandbox policy helpers.
 
-The validator is defense-in-depth only. Production deployments should avoid
-in-process plugin source execution unless explicitly enabled by an operator.
+The validator is defense-in-depth only. Docker is the default in every
+environment; the legacy in-process backend requires an explicit, non-production
+operator opt-in.
 """
 
 from __future__ import annotations
 
 import ast
+import asyncio
 import builtins
+import json
 import os
-from collections.abc import Mapping
+import shutil
+import subprocess
+from collections.abc import Callable, Mapping
 from types import SimpleNamespace
 from typing import Any
 
 from fastapi import HTTPException
 
 from agent.base_agent import BaseAgent
+from core.utils.trusted_subprocess import run_trusted_command
+from managers.code.docker import (
+    DOCKER_CPUS_RE,
+    DOCKER_MEMORY_RE,
+    sanitize_docker_image,
+    sanitize_docker_token,
+)
+
+# B404 review: subprocess is limited to the fixed-argument Docker client invocation below.
+
+PLUGIN_RPC_VERSION = "1"
+PLUGIN_RPC_MAX_RESPONSE_BYTES = 1_048_576
+
+
+class PluginSandboxError(RuntimeError):
+    """Raised when the isolated plugin worker cannot return a trusted response."""
+
+
+def plugin_sandbox_backend(env: Mapping[str, str] | None = None) -> str:
+    """Resolve the plugin backend, defaulting every environment to Docker."""
+    environ = os.environ if env is None else env
+    configured = str(environ.get("SIDAR_PLUGIN_SANDBOX_BACKEND", "")).strip().lower()
+    if configured:
+        if configured not in {"docker", "in_process"}:
+            raise PluginSandboxError("Desteklenmeyen plugin sandbox backend'i.")
+        if configured == "in_process" and not in_process_plugin_execution_allowed(environ):
+            raise PluginSandboxError(
+                "Legacy process-içi plugin backend'i yalnız açık "
+                "SIDAR_ENABLE_IN_PROCESS_PLUGINS=1 opt-in'i ile kullanılabilir."
+            )
+        return configured
+    return "docker"
+
+
+class DockerPluginSandboxBackend:
+    """Run versioned plugin RPC requests in a disposable, locked-down container."""
+
+    def __init__(self, env: Mapping[str, str] | None = None) -> None:
+        environ = os.environ if env is None else env
+        self.image = sanitize_docker_image(
+            environ.get("SIDAR_PLUGIN_SANDBOX_IMAGE", "sidar:latest")
+        )
+        # The RPC deadline is deliberately independent from Docker lifecycle
+        # cleanup. A completed worker response must not become a plugin timeout
+        # merely because container removal is slow on a contended daemon.
+        self.timeout = max(1, int(environ.get("SIDAR_PLUGIN_SANDBOX_TIMEOUT", "15")))
+        self.cleanup_timeout = max(
+            1, int(environ.get("SIDAR_PLUGIN_SANDBOX_CLEANUP_TIMEOUT", "60"))
+        )
+        # 256m (this project's default elsewhere for lighter CLI/SDK code-exec
+        # sandboxes -- managers/code/docker.py, managers/code_manager.py) was
+        # never actually enough here: describe() (imports the full
+        # agent.base_agent chain -- config/LLM client/RAG deps -- but never
+        # instantiates BaseAgent) fits, but run_task() additionally
+        # constructs a real BaseAgent (Config() + LLMClient(...)) inside the
+        # container and the process died with a non-zero exit -- no timeout,
+        # no malformed JSON, the signature of an OOM kill -- once this test
+        # group's first real end-to-end run finally exercised that path.
+        # 512m gives that construction headroom without loosening any other
+        # isolation flag.
+        self.memory = sanitize_docker_token(
+            environ.get("SIDAR_PLUGIN_SANDBOX_MEMORY", "512m"),
+            pattern=DOCKER_MEMORY_RE,
+            default="512m",
+            kind="plugin memory",
+        )
+        self.cpus = sanitize_docker_token(
+            environ.get("SIDAR_PLUGIN_SANDBOX_CPUS", "0.5"),
+            pattern=DOCKER_CPUS_RE,
+            default="0.5",
+            kind="plugin cpu",
+        )
+        # Widened alongside the memory bump: the same real BaseAgent
+        # construction may spin up thread pools (BLAS/OpenMP workers in the
+        # ML dependency stack) that a lightweight describe()-only call never
+        # touches; 64 was sized for the latter.
+        self.pids = max(1, int(environ.get("SIDAR_PLUGIN_SANDBOX_PIDS", "128")))
+
+    def _isolation_argv(self, *, command: str = "run", auto_remove: bool = True) -> list[str]:
+        """Return the Docker container isolation flags shared by every invocation.
+
+        Kept separate from the worker entrypoint so tests can reuse the exact
+        production isolation contract (network/fs/user/resource limits) against
+        arbitrary in-container commands instead of maintaining a second,
+        independently-drifting copy of these security-critical flags.
+        """
+        docker = shutil.which("docker")
+        if not docker:
+            raise PluginSandboxError("Docker bulunamadı; plugin sandbox fail-closed reddedildi.")
+        # No source, prompt, host path, secret or other host-derived value is
+        # placed on the command line -- the two -e flags below are fixed,
+        # non-secret isolation-contract constants (see their own comment),
+        # not host environment values being forwarded.
+        argv = [
+            docker,
+            command,
+            "--interactive",
+            "--network=none",
+            "--read-only",
+            "--cap-drop=ALL",
+            "--security-opt=no-new-privileges",
+            "--user=65534:65534",
+            f"--memory={self.memory}",
+            # Pin memory-swap to the same value as --memory so the container cannot
+            # double its effective ceiling via swap before the OOM killer engages;
+            # Docker otherwise defaults memory-swap to 2x --memory when swap is
+            # available on the host.
+            f"--memory-swap={self.memory}",
+            f"--cpus={self.cpus}",
+            f"--pids-limit={self.pids}",
+            "--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=16m",
+            # Pin the unprivileged-port floor explicitly instead of trusting the
+            # host's ambient net.ipv4.ip_unprivileged_port_start default. This
+            # sysctl is namespaced per network namespace but a *new* namespace
+            # (which --network=none still creates -- only its interfaces are
+            # empty) inherits whatever value the host currently has, not a
+            # fixed 1024. SEC-PLUGIN-001's container-escape matrix
+            # (test_plugin_sandbox_container_escape.py) caught this in CI:
+            # some hosts/runner images lower this sysctl (e.g. to 0) for their
+            # own service needs, which silently lets --user=65534:65534 +
+            # --cap-drop=ALL bind privileged ports (<1024) with no capability
+            # required -- --cap-drop/--security-opt cannot affect this sysctl,
+            # only an explicit --sysctl can. Reproduced and verified with
+            # `unshare --net` + `setpriv` at ip_unprivileged_port_start=0
+            # (bind succeeds) vs. the standard 1024 (bind is rejected).
+            "--sysctl=net.ipv4.ip_unprivileged_port_start=1024",
+            # web/plugins/worker.py (running inside this container) executes
+            # plugin source via run_plugin_source_in_process(), which is the
+            # same helper the *host's* legacy in-process backend uses and is
+            # gated by assert_in_process_plugin_execution_allowed() -- fail
+            # closed unless SIDAR_ENABLE_IN_PROCESS_PLUGINS=1 is set (and
+            # SIDAR_ENV isn't production). That gate exists to stop the
+            # *unsandboxed host process* from ever falling back to running
+            # untrusted plugin code directly; it was never meant to also
+            # block the worker executing inside this already-isolated,
+            # network-none/cap-dropped/non-root container -- the container
+            # boundary itself is what makes running "in-process" here safe.
+            # Without these, every real Docker-backed RPC call fails closed
+            # with a generic "rejected by security policy" (SEC-PLUGIN-001's
+            # container-integration test caught this: the plugin sandbox had
+            # never actually executed a single real request end-to-end
+            # before this test finally ran against a real image). Scoped to
+            # only this container's environment via -e, never the host's.
+            "-e",
+            "SIDAR_ENABLE_IN_PROCESS_PLUGINS=1",
+            "-e",
+            "SIDAR_ENV=development",
+            # The image's own ENTRYPOINT is the Sidar launcher (`python main.py`);
+            # without this override, trailing argv (e.g. "-m web.plugins.worker")
+            # is appended as *arguments to main.py* instead of replacing the
+            # command, so the RPC worker never actually runs. Fixing the
+            # entrypoint to the interpreter mirrors the already-correct
+            # `managers/code/docker.py` CLI sandbox fallback.
+            "--entrypoint=python",
+        ]
+        if auto_remove:
+            argv.insert(2, "--rm")
+        return argv
+
+    def _command(self) -> list[str]:
+        return [*self._isolation_argv(), self.image, "-m", "web.plugins.worker"]
+
+    def _create_command(self) -> list[str]:
+        """Build an explicit create command whose cleanup has its own deadline."""
+        return [
+            *self._isolation_argv(command="create", auto_remove=False),
+            self.image,
+            "-m",
+            "web.plugins.worker",
+        ]
+
+    def container_command(self, *args: str) -> list[str]:
+        """Build the production isolation argv (python entrypoint) with caller args.
+
+        Exposed for integration tests that need to run arbitrary in-container
+        probes (escape attempts) under the exact same isolation flags the RPC
+        worker runs under, rather than re-deriving them. Callers pass the
+        arguments to ``python`` (e.g. ``"-c", script``), not "python" itself --
+        the entrypoint is already fixed to the interpreter.
+        """
+        if not args:
+            raise ValueError("args boş olamaz.")
+        return [*self._isolation_argv(), self.image, *args]
+
+    def request(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        """Send one RPC envelope and validate the worker's bounded response."""
+        envelope = {"rpc_version": PLUGIN_RPC_VERSION, **dict(payload)}
+        docker = self._create_command()[0]
+        container_id = ""
+        cleanup_failed = False
+        try:
+            created = run_trusted_command(
+                self._create_command(),
+                capture_output=True,
+                text=True,
+                timeout=self.cleanup_timeout,
+                check=False,
+                env={"PATH": os.environ.get("PATH", "")},
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise PluginSandboxError(
+                "Plugin sandbox container oluşturma zaman aşımına uğradı."
+            ) from exc
+        if created.returncode != 0:
+            raise PluginSandboxError("Plugin sandbox container'ı oluşturulamadı.")
+        container_id = created.stdout.strip()
+        if not container_id:
+            raise PluginSandboxError("Plugin sandbox container kimliği doğrulanamadı.")
+        try:
+            completed = run_trusted_command(
+                [docker, "start", "--attach", "--interactive", container_id],
+                input=json.dumps(envelope),
+                capture_output=True,
+                text=True,
+                timeout=self.timeout,
+                check=False,
+                env={"PATH": os.environ.get("PATH", "")},
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise PluginSandboxError("Plugin worker zaman aşımına uğradı.") from exc
+        finally:
+            try:
+                removed = run_trusted_command(
+                    [docker, "rm", "--force", container_id],
+                    capture_output=True,
+                    text=True,
+                    timeout=self.cleanup_timeout,
+                    check=False,
+                    env={"PATH": os.environ.get("PATH", "")},
+                )
+                cleanup_failed = removed.returncode != 0
+            except subprocess.TimeoutExpired:
+                # Do not misreport a completed/expired RPC as an execution
+                # timeout. The explicit lifecycle leaves cleanup diagnosis
+                # distinct while the daemon continues the forced removal.
+                cleanup_failed = True
+        if cleanup_failed:
+            raise PluginSandboxError("Plugin sandbox container'ı temizlenemedi.")
+        if completed.returncode != 0:
+            raise PluginSandboxError("Plugin worker güvenli biçimde tamamlanamadı.")
+        encoded = completed.stdout.encode("utf-8", errors="replace")
+        if len(encoded) > PLUGIN_RPC_MAX_RESPONSE_BYTES:
+            raise PluginSandboxError("Plugin worker yanıt limiti aşıldı.")
+        try:
+            response = json.loads(completed.stdout)
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise PluginSandboxError("Plugin worker geçersiz RPC yanıtı döndürdü.") from exc
+        if not isinstance(response, dict) or response.get("rpc_version") != PLUGIN_RPC_VERSION:
+            raise PluginSandboxError("Plugin worker RPC sürümü doğrulanamadı.")
+        if response.get("ok") is not True:
+            # Worker exceptions can contain source/prompt fragments; never relay them to
+            # the host API or logs.
+            raise PluginSandboxError("Plugin worker isteği güvenlik politikasıyla reddedildi.")
+        return response
+
+    def describe(
+        self, source_code: str, class_name: str | None, module_label: str
+    ) -> dict[str, Any]:
+        """Validate a plugin and return safe class metadata without host import."""
+        return self.request(
+            {
+                "action": "describe",
+                "source": source_code,
+                "class_name": class_name,
+                "module_label": module_label,
+            }
+        )
+
+    async def run_task(
+        self, source_code: str, class_name: str, module_label: str, task_prompt: str
+    ) -> str:
+        """Execute a plugin task without blocking the host event loop."""
+        response = await asyncio.to_thread(
+            self.request,
+            {
+                "action": "run_task",
+                "source": source_code,
+                "class_name": class_name,
+                "module_label": module_label,
+                "task_prompt": task_prompt,
+            },
+        )
+        return str(response.get("result", ""))
+
+
+def build_isolated_plugin_proxy(
+    source_code: str, class_name: str | None, module_label: str
+) -> type[BaseAgent]:
+    """Create a host-safe BaseAgent proxy after container-side validation."""
+    backend = DockerPluginSandboxBackend()
+    metadata = backend.describe(source_code, class_name, module_label)
+    resolved_name = str(metadata.get("class_name") or "").strip()
+    if not resolved_name:
+        raise PluginSandboxError("Plugin worker sınıf metadata'sı döndürmedi.")
+
+    async def run_task(self: BaseAgent, task_prompt: str) -> str:
+        return await backend.run_task(source_code, resolved_name, module_label, task_prompt)
+
+    return type(
+        resolved_name,
+        (BaseAgent,),
+        {
+            "__doc__": str(metadata.get("description") or "Isolated plugin agent proxy."),
+            "__module__": "web.plugins.sandbox",
+            "run_task": run_task,
+        },
+    )
+
 
 # The runtime __builtins__/__import__ gate below (restricted_plugin_import,
 # build_restricted_plugin_builtins) used to have a second, independently
@@ -66,17 +379,16 @@ def plugin_source_filename(module_label: str) -> str:
 def in_process_plugin_execution_allowed(env: Mapping[str, str] | None = None) -> bool:
     """Return whether in-process plugin source execution is allowed.
 
-    Development/test deployments keep the legacy behavior. Production deployments
-    fail closed unless an operator explicitly sets ``SIDAR_ENABLE_IN_PROCESS_PLUGINS=1``.
+    Development/test deployments require an explicit legacy opt-in. Production
+    deployments always fail closed: an environment variable must not turn a known
+    lack of OS-level isolation into a runtime security-boundary bypass.
     """
     environ = os.environ if env is None else env
-    explicit = str(environ.get("SIDAR_ENABLE_IN_PROCESS_PLUGINS", "")).strip().lower()
-    if explicit in {"1", "true", "yes", "on"}:
-        return True
-    if explicit in {"0", "false", "no", "off"}:
-        return False
     sidar_env = str(environ.get("SIDAR_ENV", "development")).strip().lower()
-    return sidar_env not in {"prod", "production"}
+    if sidar_env in {"prod", "production"}:
+        return False
+    explicit = str(environ.get("SIDAR_ENABLE_IN_PROCESS_PLUGINS", "")).strip().lower()
+    return explicit in {"1", "true", "yes", "on"}
 
 
 def validate_plugin_source(source_code: str) -> None:
@@ -110,6 +422,33 @@ def validate_plugin_source(source_code: str) -> None:
         "__globals__",
         "__mro__",
         "__subclasses__",
+        # __traceback__ is the entry point of the frame-walking escape below --
+        # ban it alongside the other dunders it belongs with.
+        "__traceback__",
+        # Frame/generator-state escape: none of these are dunders, so none
+        # were denylisted, yet each hands out a live frame object exactly as
+        # __class__/__globals__ etc. do. A plugin that never writes a single
+        # previously-banned name could still reach this module's real,
+        # unrestricted globals (actual os/subprocess, not the restricted
+        # plugin namespace) with e.g.:
+        #   try:
+        #       1 / 0
+        #   except Exception as e:
+        #       e.__traceback__.tb_frame.f_back.f_globals["os"].popen(...)
+        # -- verified as a full sandbox bypass (confirmed real command
+        # execution as the exec'ing process) before this fix. Deny the whole
+        # frame/traceback/generator-state attribute surface, not just this
+        # one chain: any single name below already exposes a frame (or the
+        # code object it runs), from which the rest is reachable the same way.
+        "tb_frame",
+        "tb_next",
+        "f_back",
+        "f_globals",
+        "f_locals",
+        "f_code",
+        "gi_frame",
+        "cr_frame",
+        "ag_frame",
     }
 
     def _attribute_root_name(expr: ast.AST) -> str:
@@ -172,6 +511,41 @@ def execute_validated_plugin_source(
     exec(code, namespace)  # nosec B102
 
 
+def run_plugin_source_in_process(
+    source_code: str,
+    module_label: str,
+    *,
+    validator: Callable[[str], None] = validate_plugin_source,
+) -> dict[str, Any]:
+    """Run a validated plugin through the explicitly legacy in-process backend.
+
+    Keeping this backend behind one function makes the remaining isolation boundary
+    explicit and gives a future Docker/process RPC backend a single replacement seam.
+    Production remains fail-closed and can never select this backend.
+    """
+    try:
+        validator(source_code)
+        assert_in_process_plugin_execution_allowed()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Plugin kaynağı doğrulanamadı: {exc}") from exc
+
+    namespace: dict[str, Any] = {
+        "__name__": module_label,
+        "__builtins__": build_restricted_plugin_builtins(),
+    }
+    try:
+        execute_validated_plugin_source(source_code, module_label, namespace)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400, detail=f"Plugin kodu derlenemedi/çalıştırılamadı: {exc}"
+        ) from exc
+    return namespace
+
+
 def restricted_plugin_import(
     name: str,
     globals: dict[str, Any] | None = None,
@@ -227,13 +601,14 @@ def build_restricted_plugin_builtins() -> dict[str, Any]:
 
 
 def assert_in_process_plugin_execution_allowed() -> None:
-    """Fail closed for production unless an operator explicitly enables legacy exec."""
+    """Fail closed whenever the deployment policy disallows legacy in-process exec."""
     if not in_process_plugin_execution_allowed():
         raise HTTPException(
             status_code=403,
             detail=(
-                "Plugin kaynak kodunun process-içi çalıştırılması production ortamında kapalı. "
-                "İzole container/process sandbox entegrasyonu kullanılmalı veya risk kabulüyle "
-                "SIDAR_ENABLE_IN_PROCESS_PLUGINS=1 açıkça verilmelidir."
+                "Plugin kaynak kodunun process-içi çalıştırılması deployment politikası "
+                "tarafından kapalı. Legacy geliştirme/test kullanımı açık opt-in gerektirir; "
+                "production koruması ortam değişkeniyle aşılamaz. İzole container/process "
+                "sandbox entegrasyonu kullanılmalıdır."
             ),
         )
