@@ -9,8 +9,45 @@ sidar_weak_password_recovery_allowed() {
 }
 
 
+sidar_alembic_venv_has_asyncpg() {
+    local python_bin="$1"
+    "$python_bin" -c "import asyncpg" &>/dev/null
+}
+
+# `.venv/bin/python` var olması, Alembic'in gerçekten çalışabileceği anlamına
+# gelmez: "Tam Docker" modu host'ta `uv sync` hiç çalıştırmaz (bkz.
+# 04_workspace.sh::sidar_phase_workspace_config), ama diskte önceki/kısmi bir
+# `.venv` kalmış olabilir (ör. daha önce farklı bir dependency profile ile
+# `sync-deps` çalıştırılmış, veya kurulum subcommand akışıyla adım adım
+# sürdürülmüş). Böyle bir venv'i körü körüne seçmek, `postgresql+asyncpg://`
+# DSN'i için gereken `asyncpg` sürücüsü eksikken migrasyonun ortasında
+# "ModuleNotFoundError: No module named 'asyncpg'" ile kurulumu tamamen
+# durdurmasına yol açar. Seçmeden önce hızlı bir smoke-check yapılır; eksikse
+# `uv` mevcutsa venv `uv sync --frozen --extra postgres` ile tamamlanmaya
+# çalışılır (yalnızca postgres extra'sı — dev-full gibi ağır profilleri veya
+# PortAudio gibi sistem ön koşullarını tetiklemeyen, hedefe özel bir kurtarma).
 resolve_alembic_python() {
     local venv_python="$SCRIPT_DIR/.venv/bin/python"
+
+    if [[ -x "$venv_python" ]] && sidar_alembic_venv_has_asyncpg "$venv_python"; then
+        printf '%s\n' "$venv_python"
+        return 0
+    fi
+
+    if command -v uv &>/dev/null && [[ -f "$SCRIPT_DIR/uv.lock" ]]; then
+        if [[ -x "$venv_python" ]]; then
+            warn "Mevcut .venv içinde 'asyncpg' bulunamadı (eksik/eski bir kurulumdan kalma olabilir); 'uv sync --frozen --extra postgres' ile tamamlanıyor..."
+        else
+            info ".venv henüz oluşturulmamış; Alembic migrasyonu için 'uv sync --frozen --extra postgres' ile hazırlanıyor..."
+        fi
+        if (cd "$SCRIPT_DIR" && uv sync --frozen --extra postgres &>/dev/null) && \
+            [[ -x "$venv_python" ]] && sidar_alembic_venv_has_asyncpg "$venv_python"; then
+            ok ".venv tamamlandı; Alembic migrasyonu bu ortam üzerinden çalışacak."
+            printf '%s\n' "$venv_python"
+            return 0
+        fi
+        warn "'.venv' 'uv sync --frozen --extra postgres' ile tamamlanamadı; Alembic migrasyonu asyncpg olmadan başarısız olabilir. Manuel: (cd \"$SCRIPT_DIR\" && uv sync --frozen --all-extras)"
+    fi
 
     if [[ -x "$venv_python" ]]; then
         printf '%s\n' "$venv_python"
@@ -83,10 +120,6 @@ run_migrations() {
 
     cd "$SCRIPT_DIR" || return 1
 
-    ALEMBIC_PYTHON="$(resolve_alembic_python)" || \
-        fail "Python yorumlayıcısı bulunamadı. python3 kurup yeniden deneyin (örn. sudo apt-get install -y python3)."
-    ALEMBIC_CMD=("$ALEMBIC_PYTHON" -m alembic upgrade head)
-
     DB_URL=""
     DB_URL_SOURCE=""
     if resolve_runtime_database_url >/dev/null; then
@@ -99,10 +132,18 @@ run_migrations() {
 
     if [[ -z "$DB_URL" ]]; then
         warn "DATABASE_URL bulunamadı — otomatik migrasyon atlandı."
-        info "Veritabanını başlattıktan sonra manuel çalıştırın: ${ALEMBIC_PYTHON} -m alembic upgrade head"
+        info "Veritabanını başlattıktan sonra manuel çalıştırın: (proje .venv'i veya python3) -m alembic upgrade head"
         MIGRATION_STATUS="db_url_yok"
         return
     fi
+
+    # Python yorumlayıcısı (ve olası .venv self-heal'i) yalnızca gerçekten bir
+    # DATABASE_URL çözüldüğünde — yani migrasyon fiilen denenecekse — resolve
+    # edilir; DB_URL yoksa yukarıdaki erken dönüş zaten hiçbir Python/uv
+    # işlemi tetiklemeden migrasyonu atlar.
+    ALEMBIC_PYTHON="$(resolve_alembic_python)" || \
+        fail "Python yorumlayıcısı bulunamadı. python3 kurup yeniden deneyin (örn. sudo apt-get install -y python3)."
+    ALEMBIC_CMD=("$ALEMBIC_PYTHON" -m alembic upgrade head)
 
     # Güvenlik: DB_URL içindeki parolayı loglarda maskele.
     local masked_db_url=""
@@ -334,7 +375,6 @@ is_alembic_at_head() {
     local db_url_source=""
 
     [[ -f "$alembic_ini" ]] || return 1
-    py_bin="$(resolve_alembic_python)" || return 1
 
     if resolve_runtime_database_url >/dev/null; then
         db_url="$RUNTIME_DATABASE_URL"
@@ -349,6 +389,11 @@ is_alembic_at_head() {
         debug "Alembic head kontrolü için DATABASE_URL boş; current/head sorgusu atlandı."
         return 1
     fi
+
+    # Python yorumlayıcısı (ve olası .venv self-heal'i) yalnızca gerçek bir
+    # DATABASE_URL çözüldüğünde resolve edilir — bkz. run_migrations()'daki
+    # aynı gerekçe.
+    py_bin="$(resolve_alembic_python)" || return 1
 
     check_output="$(env "DATABASE_URL=$db_url" "$py_bin" -m alembic current --check-heads 2>&1)" || check_rc=$?
     if [[ "$check_rc" -eq 0 ]]; then
@@ -383,6 +428,10 @@ ensure_postgres_databases_exist() (
     local psql_bin=""
     local psql_err_file=""
     local select_output=""
+    local connect_attempt=0
+    local connect_max_attempts=3
+    local connect_retry_delay=2
+    local select_ok=false
 
     # PATH kurulum sırasında değişebilir; eski Bash command hash kayıtlarının
     # sistemdeki veya PATH üzerinden sağlanan güncel psql ikilisini gölgelemesini önle.
@@ -399,14 +448,43 @@ ensure_postgres_databases_exist() (
     unique_dbs=$(printf "%s\n" "${required_dbs[@]}" | awk 'NF && !seen[$0]++')
     while IFS= read -r db_name; do
         [[ -n "$db_name" ]] || continue
-        : >"$psql_err_file"
-        if ! select_output=$(PGPASSWORD="$db_password" "$psql_bin" -w \
-            -h "$db_host" -p "$db_port" -U "$db_user" -d postgres \
-            -tAc "SELECT 1 FROM pg_database WHERE datname = '${db_name}'" 2>"$psql_err_file"); then
+        select_ok=false
+        # `docker compose up -d`'nin dönmesiyle postgres'in gerçekten bağlantı
+        # kabul etmesi arasında birkaç saniye olabilir (healthcheck henüz
+        # `healthy` olmayabilir). Bu fonksiyon Alembic fazının PostgreSQL'e
+        # değen İLK adımı olduğu için (run_migrations()'daki asıl pg_isready/
+        # Docker-başlatma fallback'inden ÖNCE çağrılıyor), kısa bir retry
+        # olmadan tek bir bağlantı hıçkırığı tüm kurulumu (auto-heal'in
+        # "uygulanabilir strateji yok" demesiyle) durdurabiliyordu — bir
+        # arkadaşın kurulum log incelemesi.
+        for ((connect_attempt = 1; connect_attempt <= connect_max_attempts; connect_attempt++)); do
+            : >"$psql_err_file"
+            if select_output=$(PGPASSWORD="$db_password" "$psql_bin" -w \
+                -h "$db_host" -p "$db_port" -U "$db_user" -d postgres \
+                -tAc "SELECT 1 FROM pg_database WHERE datname = '${db_name}'" 2>"$psql_err_file"); then
+                select_ok=true
+                break
+            fi
             if grep -Eqi 'authentication|password' "$psql_err_file"; then
+                # Auth hatası bağlantı sorunundan farklıdır: yeniden denemek
+                # fayda sağlamaz, mevcut fail-fast davranışı korunur.
                 fail "PostgreSQL auth başarısız: .env POSTGRES_PASSWORD ile container parolası uyumsuz. Çözüm: docker compose down -v && yeniden kurulum."
             fi
-            warn "PostgreSQL veritabanı varlık sorgusu başarısız: ${db_name}"
+            [[ "$connect_attempt" -lt "$connect_max_attempts" ]] && sleep "$connect_retry_delay"
+        done
+        if [[ "$select_ok" != true ]]; then
+            local docker_hint=""
+            if [[ "$db_host" == "localhost" || "$db_host" == "127.0.0.1" ]] \
+                && command -v docker &>/dev/null && docker compose version &>/dev/null; then
+                local running_id=""
+                running_id="$(cd "$SCRIPT_DIR" 2>/dev/null && docker compose ps postgres --status running -q 2>/dev/null)" || true
+                if [[ -n "$running_id" ]]; then
+                    docker_hint=" PostgreSQL container Docker'da çalışıyor ama bağlantı henüz kabul etmiyor; healthcheck tamamlanana kadar biraz daha bekleyip tekrar deneyin veya inceleyin: docker compose logs postgres"
+                else
+                    docker_hint=" PostgreSQL servisi Docker'da çalışmıyor görünüyor (durum için: docker compose ps postgres). Önce başlatın: docker compose up -d postgres"
+                fi
+            fi
+            warn "PostgreSQL veritabanı varlık sorgusu başarısız: ${db_name} (${connect_max_attempts} deneme sonrası).${docker_hint}"
             return 1
         fi
         if grep -qx '1' <<<"$select_output"; then

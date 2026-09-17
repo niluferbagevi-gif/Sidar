@@ -54,6 +54,90 @@ if failed_tests:
 PY_FAILED_NODEIDS
 }
 
+production_compose_failure_diagnostics() {
+  local diagnostics_dir="${PRODUCTION_COMPOSE_DIAGNOSTICS_DIR:-artifacts/production-compose}"
+  python - "${diagnostics_dir}/ps.txt" "${diagnostics_dir}/compose.log" "${diagnostics_dir}/failure.txt" <<'PY_COMPOSE_DIAGNOSTICS'
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+ps_path, log_path, failure_path = map(Path, sys.argv[1:])
+service = "belirlenemedi"
+error = "compose diagnostics içinde hata özeti bulunamadı"
+
+if ps_path.is_file():
+    rows = [re.split(r"\s{2,}", line.strip()) for line in ps_path.read_text(errors="replace").splitlines()]
+    if rows:
+        header = rows[0]
+        try:
+            service_index = header.index("SERVICE")
+            status_index = header.index("STATUS")
+        except ValueError:
+            pass
+        else:
+            for row in rows[1:]:
+                if len(row) <= max(service_index, status_index):
+                    continue
+                status = row[status_index].lower()
+                # "Exited (0)" is the expected terminal state of a one-shot
+                # init container (e.g. sidar-migrate running its migrations
+                # to completion), not a failure. Treating any "exited" status
+                # as evidence of a crash falsely blames that container for an
+                # unrelated failure elsewhere in the stack and buries the
+                # real culprit. Only a non-zero exit code counts as a crash.
+                if "exited (0)" in status:
+                    continue
+                if any(marker in status for marker in ("exited", "restarting", "unhealthy", "dead")):
+                    service = row[service_index]
+                    break
+
+if log_path.is_file():
+    lines = log_path.read_text(errors="replace").splitlines()
+    exception_pattern = re.compile(
+        r"(?:PermissionError|FileNotFoundError|RuntimeError|ValueError|OSError|[A-Za-z]+Error):.*"
+    )
+    for line in reversed(lines):
+        if match := exception_pattern.search(line):
+            error = match.group(0).strip()[:500]
+            if service == "belirlenemedi":
+                container = line.split(" | ", maxsplit=1)[0].strip()
+                suffix_map = {"_web": "sidar-web", "_postgres": "postgres", "_redis": "redis"}
+                service = next(
+                    (name for suffix, name in suffix_map.items() if container.endswith(suffix)),
+                    service,
+                )
+            break
+
+# A crashing container's traceback is the most specific signal when one
+# exists, but several of this gate's own checks (health-loop status,
+# migration head/current parity, restart-persistence marker, shutdown
+# exit-code) are plain bash `[[ ... ]]` assertions in
+# scripts/ci/validate_production_compose.sh: nothing crashes and nothing logs
+# a Python exception when one of those fails. That script's own ERR trap
+# records the failing line/command to failure.txt before teardown runs, so
+# fall back to it whenever ps.txt/compose.log had nothing actionable.
+if error == "compose diagnostics içinde hata özeti bulunamadı" and failure_path.is_file():
+    breadcrumb: dict[str, str] = {}
+    for line in failure_path.read_text(errors="replace").splitlines():
+        key, sep, value = line.partition("=")
+        if sep:
+            breadcrumb[key] = value
+    command = breadcrumb.get("command", "").strip()
+    if command:
+        line_no = breadcrumb.get("line", "").strip()
+        location = f":{line_no}" if line_no else ""
+        error = f"scripts/ci/validate_production_compose.sh{location}: {command}"[:500]
+        if service == "belirlenemedi":
+            service_hints = ("sidar-migrate", "sidar-web", "postgres", "redis")
+            service = next((name for name in service_hints if name in command), service)
+
+print(service)
+print(error)
+PY_COMPOSE_DIAGNOSTICS
+}
+
 format_quality_status() {
   local code="$1"
   local ran="${2:-1}"

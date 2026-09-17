@@ -1154,9 +1154,19 @@ configure_gpu_env_defaults() {
         else
             echo "COMPOSE_PROFILES=gpu" >> "$env_file"
         fi
+        # COMPOSE_PROFILES ile birlikte tutulmalı: GPU servisleri (ollama-gpu,
+        # sidar-gpu, sidar-web-gpu) docker-compose.gpu.yml'dedir; Docker Compose
+        # COMPOSE_FILE'ı .env'den de okur, bu yüzden bare `docker compose up`
+        # bu değer olmadan GPU servislerini bulamaz (bkz. docker-compose.yml'nin
+        # başlık yorumu).
+        if grep -q '^COMPOSE_FILE=' "$env_file"; then
+            sed_inplace 's/^COMPOSE_FILE=.*/COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml/' "$env_file"
+        else
+            echo "COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml" >> "$env_file"
+        fi
 
         ok "${env_file##*/}: USE_GPU=true, REQUIRE_GPU=true, GPU_MIXED_PRECISION=true (GPU tespit edildi)"
-        ok "${env_file##*/}: COMPOSE_PROFILES=gpu ayarlandı (Docker GPU modu artık varsayılan)."
+        ok "${env_file##*/}: COMPOSE_PROFILES=gpu, COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml ayarlandı (Docker GPU modu artık varsayılan)."
     else
         if grep -q '^USE_GPU=' "$env_file"; then
             sed_inplace 's/^USE_GPU=.*/USE_GPU=false/' "$env_file"
@@ -1178,7 +1188,12 @@ configure_gpu_env_defaults() {
         else
             echo "COMPOSE_PROFILES=cpu" >> "$env_file"
         fi
-        ok "${env_file##*/}: USE_GPU=false, REQUIRE_GPU=false, GPU_MIXED_PRECISION=false, COMPOSE_PROFILES=cpu ayarlandı."
+        if grep -q '^COMPOSE_FILE=' "$env_file"; then
+            sed_inplace 's/^COMPOSE_FILE=.*/COMPOSE_FILE=docker-compose.yml/' "$env_file"
+        else
+            echo "COMPOSE_FILE=docker-compose.yml" >> "$env_file"
+        fi
+        ok "${env_file##*/}: USE_GPU=false, REQUIRE_GPU=false, GPU_MIXED_PRECISION=false, COMPOSE_PROFILES=cpu, COMPOSE_FILE=docker-compose.yml ayarlandı."
     fi
 
     # Docker + GPU tespit edildiyse NVIDIA runtime'ı varsayılan yap
@@ -1215,6 +1230,39 @@ ensure_local_service_host_defaults() {
         sed_inplace 's|^OTEL_EXPORTER_ENDPOINT=http://jaeger:|OTEL_EXPORTER_ENDPOINT=http://localhost:|' "$env_file"
         ok ".env: OTEL_EXPORTER_ENDPOINT lokal ortam için localhost olarak güncellendi."
     fi
+}
+
+# "Tam Docker" modunda docker-compose.yml servisleri
+# `user: "${SIDAR_CONTAINER_UID:-10001}:${SIDAR_CONTAINER_GID:-10001}"` ile
+# parametrik bir container kullanıcısı destekler, ama installer bu değişkenleri
+# hiçbir zaman yazmıyordu. `chown <başka-uid> ...`, root olmayan bir kullanıcı
+# için POSIX'te her zaman EPERM ile başarısız olur — ve install_sidar.sh kök
+# seviyede root/sudo ile çalıştırılmayı zaten reddeder (bkz. dosyanın en
+# üstündeki EUID guard'ı) — bu yüzden create_directories()'in host'ta sabit
+# 10001:10001'e chown denemesi pratikte hep sessizce başarısız oluyor, bind-mount
+# dizinleri (logs/data/temp/sessions) host kullanıcısında kalıyor, container
+# UID 10001 olarak yazamıyor ve "Permission denied" ile RAG seed adımı çöküyor.
+# Kök neden düzeltmesi: chown yerine, container'ı host kullanıcısıyla AYNI
+# UID/GID'de çalıştır — bu dizinleri zaten host kullanıcısı `mkdir -p` ile
+# oluşturduğu için hiçbir izin değişikliğine gerek kalmaz.
+ensure_container_uid_gid_defaults() {
+    local env_file="$1"
+    local runtime_mode="${APP_RUNTIME_MODE_SELECTED:-${APP_RUNTIME_MODE:-${AUTO_RUNTIME_MODE:-ask}}}"
+
+    [[ "$runtime_mode" == "docker" ]] || return 0
+
+    # Root/sudo ile çalıştırılan (yalnız test/istisnai) bir senaryoda imaja
+    # gömülü sabit 10001:10001 kullanıcısı host'ta doğrudan chown edilebilir
+    # (bkz. create_directories()); .env override'ına gerek yok.
+    [[ "$(id -u)" -eq 0 ]] && return 0
+
+    local current_uid=""
+    current_uid="$(read_env_value_from_file "SIDAR_CONTAINER_UID" "$env_file" | tr -d '[:space:]')"
+    [[ -n "$current_uid" ]] && return 0
+
+    sidar_write_env_value "$env_file" "SIDAR_CONTAINER_UID" "$(id -u)"
+    sidar_write_env_value "$env_file" "SIDAR_CONTAINER_GID" "$(id -g)"
+    ok ".env: SIDAR_CONTAINER_UID=$(id -u) / SIDAR_CONTAINER_GID=$(id -g) eklendi — docker-compose.yml container'ı host kullanıcısıyla aynı kimlikte çalıştırıp logs/data/temp/sessions bind-mount dizinlerine chown/setfacl olmadan yazabilir."
 }
 
 ensure_sidar_env_default() {

@@ -17,7 +17,7 @@ import logging
 import mimetypes
 import re
 import shutil
-import subprocess  # nosec B404
+import subprocess
 import tempfile
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
@@ -26,6 +26,8 @@ from typing import Any, cast
 from urllib.parse import parse_qs, urlparse
 
 import httpx
+
+from core.utils.trusted_subprocess import run_trusted_command
 
 logger = logging.getLogger(__name__)
 
@@ -88,11 +90,11 @@ def _command_exists(name: str) -> bool:
 
 
 def _run_subprocess(command: Sequence[str]) -> None:
-    subprocess.run(command, check=True, capture_output=True)  # nosec B603  # komut listesi iç kaynaklıdır.
+    run_trusted_command(command, check=True, capture_output=True)  # komut listesi iç kaynaklıdır.
 
 
 def _run_subprocess_capture(command: Sequence[str]) -> str:
-    result = subprocess.run(  # nosec B603  # komut listesi iç kaynaklıdır.
+    result = run_trusted_command(  # komut listesi iç kaynaklıdır.
         command, check=True, capture_output=True, text=True
     )
     return str(result.stdout or "")

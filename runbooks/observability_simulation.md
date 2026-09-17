@@ -4,8 +4,14 @@ Bu akış, WSL/Ubuntu üzerinde **tam izlenebilirlik demosu** için hazırlanmı
 
 ## 1) Stack'i ayağa kaldır
 
+Jaeger `docker-compose.observability.yml`'de tanımlıdır. `COMPOSE_FILE`'ı bu
+shell oturumu için bir kez export edin — bundan sonraki her bare
+`docker compose ...` komutu (ps/exec/down dahil) otomatik olarak doğru
+dosya birleşimini kullanır:
+
 ```bash
-docker compose up -d redis postgres jaeger sidar-web
+export COMPOSE_FILE=docker-compose.yml:docker-compose.observability.yml
+docker compose --profile cpu --profile observability up -d redis postgres jaeger sidar-web
 ```
 
 Kontrol:

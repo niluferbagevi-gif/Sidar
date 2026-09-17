@@ -13,6 +13,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from core.utils.trusted_subprocess import run_trusted_command
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FRONTEND_DIR = REPO_ROOT / "web_ui_react"
 
@@ -33,7 +35,7 @@ def run_command(
     """Run a command and capture text output without raising."""
     safe_command = list(command)
     # Doctor only dispatches fixed local prerequisite commands assembled in this module.
-    return subprocess.run(  # nosec B603
+    return run_trusted_command(
         safe_command,
         cwd=cwd,
         text=True,

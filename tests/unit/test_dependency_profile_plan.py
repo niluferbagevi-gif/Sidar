@@ -116,6 +116,36 @@ def test_dependency_inventory_labels_main_and_dev_extra_dependencies() -> None:
     assert pyproject["tool"]["uv"]["environments"] == ["sys_platform == 'linux'"]
 
 
+def test_defusedxml_is_a_core_runtime_dependency_not_a_dev_only_tool() -> None:
+    """Guard the runtime classification of `defusedxml`.
+
+    `CoverageAgent` (agent/roles/coverage_agent.py, is_builtin=True) imports
+    defusedxml unconditionally at module import time. It must ship as a core
+    `dependencies` entry, not only inside the `dev` extra: a `production` /
+    `production-minimal` (`--no-dev`) install without it fails to import
+    `agent.roles` at all (the package `__init__` chains every built-in role's
+    module import), taking every other built-in role down with it and
+    failing the doctor `agent_catalog`/`supervisor_routing` checks — not just
+    coverage. Regression guard for a friend code-review finding.
+    """
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    dependency_names = {
+        Requirement(dependency).name for dependency in pyproject["project"]["dependencies"]
+    }
+    dev_dependency_names = {
+        Requirement(dependency).name
+        for dependency in pyproject["project"]["optional-dependencies"]["dev"]
+        if not dependency.startswith("sidar[")
+    }
+    labels = pyproject["tool"]["sidar"]["dependency_inventory"]["labels"]
+    coverage_agent_source = Path("agent/roles/coverage_agent.py").read_text(encoding="utf-8")
+
+    assert "import defusedxml" in coverage_agent_source
+    assert "defusedxml" in dependency_names
+    assert "defusedxml" not in dev_dependency_names
+    assert labels["defusedxml"] == "runtime"
+
+
 def test_httpx2_migration_candidate_is_retired_to_keep_single_http_client() -> None:
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     labels = pyproject["tool"]["sidar"]["dependency_inventory"]["labels"]

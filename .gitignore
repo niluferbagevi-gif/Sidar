@@ -163,6 +163,10 @@ helm/**/*.tgz
 chroma_db/
 .git/
 models/
+# HuggingFace Hub cache snapshot dirs (models--<org>--<name>) can land at the
+# repo root instead of ~/.cache/huggingface/hub if HF_HOME/HF_HUB_CACHE isn't
+# resolved for a given shell/process; never track or scan them.
+models--*/
 
 # --- Ekstra Önerilen Kurallar ---
 
@@ -199,3 +203,9 @@ helm/sidar/charts/
 # Modern Editors / AI Assistants
 .cursor/
 .fleet/
+
+# Self-hosted GitHub Actions runner install (docs/runbooks/benchmark-runner-continuity.md,
+# docs/runbooks/gpu-runner-continuity.md). Operators extract this inside the repo checkout;
+# it ships upstream test fixtures (e.g. astral-sh/setup-uv's intentionally malformed
+# pyproject.toml) that must never be linted, formatted, or committed as Sidar source.
+actions-runner/

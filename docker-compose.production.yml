@@ -12,6 +12,16 @@
 # test_production_override_actually_closes_datastore_ports, izole
 # `docker compose config` repro'suyla doğrulandı). Portu gerçekten
 # kaldırmanın tek yolu compose-spec'in `!reset` merge tag'i.
+#
+# Önemli: bu dosya `ollama-gpu`/`sidar-web-gpu` için override-only bloklar
+# taşır (image/build yok) — temel tanımları docker-compose.gpu.yml'dedir.
+# Bu yüzden bu overlay her zaman docker-compose.gpu.yml ile BİRLİKTE
+# kullanılmalıdır, aktif --profile ne olursa olsun (cpu profili çalışırken
+# bile): `docker compose -f docker-compose.yml -f docker-compose.gpu.yml
+# -f docker-compose.production.yml --profile cpu ...`. Aksi halde Compose
+# "service ollama-gpu has neither an image nor a build context" hatası
+# verir — bu, split öncesi tek dosyada gpu servisleri her zaman inline
+# tanımlı olduğu için görünmeyen, örtük bir gereksinimdi.
 services:
   redis:
     ports: !reset []

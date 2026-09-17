@@ -35,7 +35,7 @@ def _stub_upload_guards(monkeypatch):
     monkeypatch.setattr(gu, "run_direct_main_readiness_gate", lambda: (True, ""))
     monkeypatch.setattr(gu, "record_upload_source_head", lambda: (True, "a" * 40))
     monkeypatch.setattr(gu, "stamp_install_manifest_pin_after_commit", lambda: (True, ""))
-    monkeypatch.setattr(gu, "assert_no_unmerged_files", lambda: None)
+    monkeypatch.setattr(gu, "assert_no_unmerged_files", lambda *args, **kwargs: None)
     monkeypatch.setattr(gu, "reexec_after_external_branch_merge", lambda: None)
 
 
@@ -1709,6 +1709,81 @@ def test_main_nothing_to_push_exits(monkeypatch):
         ],
     )
     assert run_main_and_exit_code() == 0
+
+
+def test_main_nothing_to_push_restores_original_branch(monkeypatch):
+    """Regression: github_upload.py leaked the auto-switch to 'main' on exit.
+
+    Starting from a feature branch, the tool auto-switches to 'main' to run
+    its upload workflow. When that run finds nothing new to upload, it must
+    not silently leave the user checked out on 'main' (or a branch derived
+    from it) — it has to return them to the branch they started on.
+    """
+    monkeypatch.setattr(gu, "get_deleted_files", lambda: [])
+    monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: ([], []))
+    harness = MainHarness(
+        monkeypatch,
+        [],
+        outputs=[
+            (True, "git version"),
+            (True, "name"),
+            (True, "origin"),
+            (True, "codex/gelistirme-veritaban-izolasyonunu-sagla"),  # branch --show-current
+            (True, ""),  # git status --porcelain (clean, no stash needed)
+            (True, "checkout ok"),  # git checkout main
+            (True, ""),  # git reset
+            (True, ""),  # staged_status: git diff --cached --name-status
+            (True, ""),  # git status --porcelain (info message check)
+            (True, ""),  # git log origin/main..HEAD (nothing unpushed)
+            (True, "main"),  # switch_back_to_original_branch: git branch --show-current
+            (True, "restored"),  # git checkout <original branch>
+        ],
+    )
+    assert run_main_and_exit_code() == 0
+    assert ["git", "checkout", "codex/gelistirme-veritaban-izolasyonunu-sagla"] in harness.calls
+    assert harness.calls[-1] == [
+        "git",
+        "checkout",
+        "codex/gelistirme-veritaban-izolasyonunu-sagla",
+    ]
+
+
+def test_switch_back_to_original_branch_noop_when_already_on_main(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        gu,
+        "run_command",
+        lambda cmd, show_output=True: (calls.append(cmd), (True, ""))[1],
+    )
+    gu.switch_back_to_original_branch("main")
+    assert calls == []
+
+
+def test_switch_back_to_original_branch_noop_when_already_there(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        gu,
+        "run_command",
+        lambda cmd, show_output=True: (calls.append(cmd), (True, "feature"))[1],
+    )
+    gu.switch_back_to_original_branch("feature")
+    assert calls == [["git", "branch", "--show-current"]]
+
+
+def test_switch_back_to_original_branch_checkout_failure_is_reported(monkeypatch, capsys):
+    outputs = [
+        (True, "sidar/upload-20260830-000000"),
+        (False, "local changes would be overwritten"),
+    ]
+
+    def fake_run(cmd, show_output=True):
+        return outputs.pop(0)
+
+    monkeypatch.setattr(gu, "run_command", fake_run)
+    gu.switch_back_to_original_branch("feature")
+    output = capsys.readouterr().out
+    assert "otomatik geri dönülemedi" in output
+    assert "git checkout feature" in output
 
 
 def test_main_commit_fail(monkeypatch):

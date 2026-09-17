@@ -141,6 +141,14 @@ def test_remote_script_interactive_pin_fails_closed_without_controlling_tty(
             1,
         ),
         (
+            "06_models",
+            "run_coding_model_smoke_prompt",
+            "Coding model JSON smoke testi başarısız: Ollama generate çağrısı yanıt vermedi "
+            "(qwen2.5-coder:7b, HTTP 500). Ollama hata metni: cuda error: out of memory",
+            "coding-model-oom-failure",
+            1,
+        ),
+        (
             "05_frontend",
             "npm install",
             "temporary network timeout",
@@ -286,3 +294,206 @@ def test_install_remediation_uses_structured_failure_codes_and_scoped_venv_clean
         "root-owned-venv",
         "service-cleanup-blocked",
     ]
+
+
+def test_coding_model_oom_failure_gets_concrete_guidance_on_first_occurrence() -> None:
+    """Review bulgusu (e): auto-heal 06_models fazına özel bir strateji tanımıyordu.
+
+    Before this fix, a coding-model smoke-test/OOM failure fell through every
+    specific classifier, took a blind "transient-phase-retry", and only on the
+    *second* (identical) failure did the generic repeated-failure-signature
+    fail-fast kick in - with no guidance beyond "aynı failure imzası
+    tekrarlandı". This asserts sidar_handle_install_failure now recognizes the
+    signature and gives concrete .env guidance on the FIRST occurrence
+    (attempt=0), without ever attempting a phase retry.
+    """
+    script = r"""
+        set -Eeuo pipefail
+        source scripts/install_modules/utils/install_remediation.sh
+        info() { :; }
+        warn() { printf 'WARN:%s\n' "$*"; }
+        sidar_write_remediation_report() { printf 'REPORT:%s|%s|%s\n' "$1" "$2" "$3"; }
+        sidar_resume_after_remediation() { echo "UNEXPECTED-RESUME-CALLED"; exit 1; }
+
+        export SIDAR_CURRENT_INSTALL_PHASE="06_models"
+        export SIDAR_INSTALL_REMEDIATION_ATTEMPT=0
+        unset SIDAR_INSTALL_LAST_FAILURE_PHASE SIDAR_INSTALL_LAST_FAILURE_SIGNATURE || true
+
+        reason="Coding model JSON smoke testi başarısız: Ollama generate çağrısı yanıt vermedi"
+        reason="${reason} (qwen2.5-coder:7b, HTTP 500)."
+        reason="${reason} Ollama hata metni: cuda error: out of memory"
+        reason="${reason} [GPU belleği yetersiz olabilir (OOM). OLLAMA_NUM_BATCH veya"
+        reason="${reason} OLLAMA_CODING_NUM_CTX değerini düşürmeyi ya da eşzamanlı istek sayısını"
+        reason="${reason} (OLLAMA_GPU_REQUEST_POOL_SIZE) azaltmayı deneyin.] .env dosyasında"
+        reason="${reason} OLLAMA_CODING_NUM_CTX=2048 ayarlayıp kurulumu yeniden deneyin."
+
+        rc=0
+        sidar_handle_install_failure 1 148 "run_coding_model_smoke_prompt" "$reason" || rc="$?"
+        printf 'RC:%s\n' "$rc"
+    """
+
+    result = subprocess.run(
+        ["bash", "-c", script],
+        cwd=REPO_ROOT,
+        env={"SIDAR_INSTALL_TEST_MODE": "1", "SIDAR_INSTALL_AUTO_HEAL": "1", **os.environ},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert "UNEXPECTED-RESUME-CALLED" not in result.stdout
+    assert "RC:1" in result.stdout
+    assert (
+        "REPORT:06_models|coding-model-oom-failure|fail-fast;no-retry;manual-fix-required"
+        in result.stdout
+    )
+    assert "OLLAMA_CODING_NUM_CTX=2048" in result.stdout
+    assert "OLLAMA_NUM_BATCH" in result.stdout
+    assert "curl -s http://localhost:11434/api/generate" in result.stdout
+    assert "ollama ps" in result.stdout
+    # This must fire on the FIRST occurrence, not only after a repeated signature.
+    assert "aynı failure imzası tekrarlandı" not in result.stdout
+
+
+def test_resume_after_remediation_carries_dependency_profile_across_reexec(
+    tmp_path: Path,
+) -> None:
+    """Review bulgusu: sidar_resume_after_remediation() seçilen bağımlılık profilini taşımıyordu.
+
+    Fonksiyon, resume re-exec'inde DEPENDENCY_PROFILE / SIDAR_DEPENDENCY_EXTRAS'ı
+    taşımıyordu. Bu, resume sonrası select_dependency_profile()'ın "ask"a
+    düşmesine (etkileşimsiz ortamlarda sessizce dev-full'a) yol açıyordu.
+    Bu test, gerçek `exec env ... "$resume_script"` zincirini çalıştırıp
+    sahte bir resume betiğinin bu iki değişkeni gördüğünü doğrular.
+    """
+    fake_installer = tmp_path / "install_sidar.sh"
+    fake_installer.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf 'RESUMED_DEPENDENCY_PROFILE=%s\\n' \"${DEPENDENCY_PROFILE-<unset>}\"\n"
+        "printf 'RESUMED_SIDAR_DEPENDENCY_EXTRAS=%s\\n' \"${SIDAR_DEPENDENCY_EXTRAS-<unset>}\"\n"
+        "printf 'RESUMED_PHASE=%s\\n' \"${SIDAR_INSTALL_RESUME_FROM_PHASE-<unset>}\"\n"
+    )
+    fake_installer.chmod(0o755)
+
+    script = r"""
+        set -Eeuo pipefail
+        source ./scripts/install_modules/utils/install_remediation.sh
+        info() { :; }
+        warn() { :; }
+        fail() { printf 'UNEXPECTED-FAIL:%s\n' "$*"; exit 1; }
+
+        SIDAR_INSTALL_ORIGINAL_ARGS=()
+        export SCRIPT_DIR="$1"
+        export DEPENDENCY_PROFILE="dev-gpu"
+        export SIDAR_DEPENDENCY_EXTRAS="openai anthropic"
+
+        sidar_resume_after_remediation 04_workspace 1
+    """
+
+    result = subprocess.run(
+        ["bash", "-c", script, "_", str(tmp_path)],
+        cwd=REPO_ROOT,
+        env={"SIDAR_INSTALL_TEST_MODE": "1", **os.environ},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert "UNEXPECTED-FAIL" not in result.stdout
+    assert "RESUMED_DEPENDENCY_PROFILE=dev-gpu" in result.stdout
+    assert "RESUMED_SIDAR_DEPENDENCY_EXTRAS=openai anthropic" in result.stdout
+    assert "RESUMED_PHASE=04_workspace" in result.stdout
+
+
+def _run_uv_sync_remediation(tmp_path: Path, failure_signal: str) -> tuple[str, str]:
+    """Run sidar_remediate_uv_sync_failure() against a fake `uv` and report back.
+
+    Returns (uv_call_log_contents, remediation_report_contents) so callers can
+    assert both what was actually invoked and what action string was recorded.
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    uv_call_log = tmp_path / "uv_calls.log"
+    fake_uv = bin_dir / "uv"
+    fake_uv.write_text('#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$UV_CALL_LOG"\nexit 0\n')
+    fake_uv.chmod(0o755)
+
+    # A present, structurally-valid uv.lock so the function's own `uv lock
+    # --check` (via the fake uv above, which always exits 0) takes the
+    # "lock is fine" branch and reaches the cache-prune decision this test
+    # targets, regardless of what the failure_signal text says.
+    (tmp_path / "uv.lock").write_text("")
+
+    script = r"""
+        set -Eeuo pipefail
+        source ./scripts/install_modules/utils/install_remediation.sh
+        info() { :; }
+        warn() { :; }
+
+        export SCRIPT_DIR="$1"
+        sidar_remediate_uv_sync_failure "$2"
+    """
+
+    subprocess.run(
+        ["bash", "-c", script, "_", str(tmp_path), failure_signal],
+        cwd=REPO_ROOT,
+        env={
+            **os.environ,
+            "SIDAR_INSTALL_TEST_MODE": "1",
+            "PATH": f"{bin_dir}:{os.environ.get('PATH', '')}",
+            "UV_CALL_LOG": str(uv_call_log),
+        },
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    uv_calls = uv_call_log.read_text() if uv_call_log.exists() else ""
+    report_files = sorted((tmp_path / "artifacts/install/remediation").glob("*.log"))
+    report = report_files[-1].read_text() if report_files else ""
+    return uv_calls, report
+
+
+def test_uv_sync_remediation_skips_cache_prune_on_network_timeout_signal(
+    tmp_path: Path,
+) -> None:
+    """Review bulgusu: sidar_remediate_uv_sync_failure() ağ zaman aşımını hiç tanımıyordu.
+
+    Fonksiyon, failure_signal'ın içeriğine hiç bakmadan koşulsuz `uv cache
+    prune` çalıştırıyordu (satır ~445-449) — saf bir "operation timed out"
+    ağ kesintisinde bile. Bu, torch/nvidia-cublas/nvidia-cudnn gibi
+    zaten indirilmiş yüzlerce MB'lık paketleri yerel cache'ten düşürüp
+    resume sonrası yeniden indirilmelerini gerektirebiliyor — ikinci
+    denemenin süresini ve zaman aşımı riskini artırıyordu (kullanıcı
+    log'unda ikinci hatanın farklı bir pakette çıkması bunu destekliyor).
+    Bu test, ağ zaman aşımı imzası taşıyan bir failure_signal'da cache
+    prune'un artık atlandığını doğrular.
+    """
+    failure_signal = (
+        "uv sync --frozen --all-extras openai==2.54.0 için operation timed out (Read timed out)."
+    )
+
+    uv_calls, report = _run_uv_sync_remediation(tmp_path, failure_signal)
+
+    assert "cache prune" not in uv_calls
+    assert "lock --check" in uv_calls
+    assert "action=uv-sync-remediation+cache-prune-skipped-network-timeout" in report
+
+
+def test_uv_sync_remediation_still_prunes_cache_for_non_network_failure(
+    tmp_path: Path,
+) -> None:
+    """A genuine (non-network) uv sync failure still runs `uv cache prune`.
+
+    This is the control case for the network-timeout regression test above:
+    cache prune must remain the default remediation for real lock/venv
+    corruption scenarios, not be skipped across the board.
+    """
+    failure_signal = (
+        "uv sync --frozen --all-extras bağımlılık çözümü başarısız (dependency conflict)"
+    )
+
+    uv_calls, report = _run_uv_sync_remediation(tmp_path, failure_signal)
+
+    assert "cache prune" in uv_calls
+    assert "action=uv-sync-remediation+uv-cache-pruned" in report

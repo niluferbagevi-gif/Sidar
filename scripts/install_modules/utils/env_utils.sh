@@ -82,6 +82,7 @@ setup_env_file() {
         harden_database_credentials "$ENV_FILE"
         sync_postgres_env_with_database_url "$ENV_FILE"
         ensure_local_service_host_defaults "$ENV_FILE"
+        ensure_container_uid_gid_defaults "$ENV_FILE"
         ensure_auto_secrets "$ENV_FILE"
         propagate_shared_secrets_to_env_variants "$ENV_FILE"
         validate_required_security_profile "$ENV_FILE"
@@ -107,6 +108,7 @@ setup_env_file() {
     harden_database_credentials "$ENV_FILE"
     sync_postgres_env_with_database_url "$ENV_FILE"
     ensure_local_service_host_defaults "$ENV_FILE"
+    ensure_container_uid_gid_defaults "$ENV_FILE"
 
     # Güvenlik secret'larını üret/doğrula (her iki yolda da çalışan üst-düzey fonksiyon)
     ensure_auto_secrets "$ENV_FILE"
@@ -130,9 +132,18 @@ setup_env_file() {
             else
                 echo "COMPOSE_PROFILES=gpu" >> "$ENV_FILE"
             fi
+            # COMPOSE_PROFILES ile birlikte tutulmalı: GPU servisleri
+            # docker-compose.gpu.yml'dedir; Compose COMPOSE_FILE'ı .env'den de
+            # okur, bu değer olmadan bare `docker compose up` GPU servislerini
+            # bulamaz.
+            if grep -q '^COMPOSE_FILE=' "$ENV_FILE"; then
+                sed_inplace 's/^COMPOSE_FILE=.*/COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml/' "$ENV_FILE"
+            else
+                echo "COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml" >> "$ENV_FILE"
+            fi
 
             ok ".env: USE_GPU=true, REQUIRE_GPU=true, GPU_MIXED_PRECISION=true (GPU tespit edildi)"
-            ok ".env: COMPOSE_PROFILES=gpu ayarlandı (Docker GPU modu artık varsayılan)."
+            ok ".env: COMPOSE_PROFILES=gpu, COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml ayarlandı (Docker GPU modu artık varsayılan)."
         else
             sed_inplace 's/^USE_GPU=true/USE_GPU=false/' "$ENV_FILE"
             if grep -q '^REQUIRE_GPU=' "$ENV_FILE"; then
@@ -146,7 +157,12 @@ setup_env_file() {
             else
                 echo "COMPOSE_PROFILES=cpu" >> "$ENV_FILE"
             fi
-            ok ".env: USE_GPU=false, REQUIRE_GPU=false, GPU_MIXED_PRECISION=false, COMPOSE_PROFILES=cpu ayarlandı."
+            if grep -q '^COMPOSE_FILE=' "$ENV_FILE"; then
+                sed_inplace 's/^COMPOSE_FILE=.*/COMPOSE_FILE=docker-compose.yml/' "$ENV_FILE"
+            else
+                echo "COMPOSE_FILE=docker-compose.yml" >> "$ENV_FILE"
+            fi
+            ok ".env: USE_GPU=false, REQUIRE_GPU=false, GPU_MIXED_PRECISION=false, COMPOSE_PROFILES=cpu, COMPOSE_FILE=docker-compose.yml ayarlandı."
         fi
     fi
 

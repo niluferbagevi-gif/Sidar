@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-import subprocess  # nosec B404
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol, cast

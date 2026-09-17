@@ -71,7 +71,16 @@ run_bats_shell_tests() {
 
   echo "🐚 BATS shell testleri çalıştırılıyor..."
   mkdir -p "${BATS_REPORT_DIR}"
+  # sidar_ollama_export_runtime_defaults() (09_ollama_models.sh) bu değişkenleri
+  # kendi shell sürecine export eder; install_sidar.sh sonunda make dev-full aynı
+  # süreçte çalıştığından bu export'lar buraya kadar sızabilir. sidar_ollama_read_
+  # runtime_setting() ortam değişkenini dosyadan önce okuduğu için, sızıntı
+  # tests/shell/ollama_ctx_batch_source_of_truth.bats'ın kendi geçici .env
+  # dosyalarını sessizce görmezden bırakır (gerçek bir kurulum çalıştırması
+  # sonrası tekrarlanabilir şekilde gözlemlendi). DB değişkenleriyle aynı
+  # gerekçeyle bunları da izole ediyoruz.
   if env -u DATABASE_URL -u TEST_DATABASE_URL -u POSTGRES_PASSWORD \
+    -u OLLAMA_NUM_CTX -u OLLAMA_NUM_BATCH -u OLLAMA_CODING_NUM_CTX \
     bats --report-formatter junit --output "${BATS_REPORT_DIR}" tests/shell; then
     echo "✅ BATS shell testleri geçti. JUnit raporu: ${BATS_REPORT_DIR}/report.xml"
     return 0

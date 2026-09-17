@@ -634,7 +634,7 @@ async def test_retry_with_backoff_succeeds_after_retry(
     monkeypatch: pytest.MonkeyPatch, mock_config
 ) -> None:
     monkeypatch.setattr(llm_client.asyncio, "sleep", AsyncMock(return_value=None))
-    monkeypatch.setattr(llm_client.random, "uniform", lambda *_args, **_kwargs: 0.0)
+    monkeypatch.setattr(llm_client._JITTER_RANDOM, "uniform", lambda *_args, **_kwargs: 0.0)
     state = {"n": 0}
 
     async def op():
@@ -663,7 +663,7 @@ async def test_retry_with_backoff_recovers_from_transient_external_api_outage(
         sleep_calls.append(delay)
 
     monkeypatch.setattr(llm_client.asyncio, "sleep", _fake_sleep)
-    monkeypatch.setattr(llm_client.random, "uniform", lambda *_args, **_kwargs: 0.0)
+    monkeypatch.setattr(llm_client._JITTER_RANDOM, "uniform", lambda *_args, **_kwargs: 0.0)
 
     state = {"n": 0}
 
@@ -696,7 +696,7 @@ async def test_retry_with_backoff_uses_base_delay_scaled_jitter(
         return 0.0
 
     monkeypatch.setattr(llm_client.asyncio, "sleep", _fake_sleep)
-    monkeypatch.setattr(llm_client.random, "uniform", _fake_uniform)
+    monkeypatch.setattr(llm_client._JITTER_RANDOM, "uniform", _fake_uniform)
 
     state = {"n": 0}
 

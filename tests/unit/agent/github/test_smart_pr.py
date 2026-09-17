@@ -5,9 +5,9 @@ import asyncio
 from agent.github.smart_pr import (
     GITHUB_SMART_PR_CREATE_FAILED_PREFIX,
     GITHUB_SMART_PR_CREATE_SUCCESS_PREFIX,
+    GITHUB_SMART_PR_NO_AUTH_MESSAGE,
     GITHUB_SMART_PR_NO_BRANCH_MESSAGE,
     GITHUB_SMART_PR_NO_CHANGES_MESSAGE,
-    GITHUB_SMART_PR_NO_TOKEN_MESSAGE,
     _CodeManagerLike,
     _GitHubManagerLike,
     create_smart_pr,
@@ -81,7 +81,7 @@ def test_create_smart_pr_requires_available_github_token() -> None:
         )
     )
 
-    assert result == GITHUB_SMART_PR_NO_TOKEN_MESSAGE
+    assert result == GITHUB_SMART_PR_NO_AUTH_MESSAGE
 
 
 def test_create_smart_pr_requires_current_branch() -> None:

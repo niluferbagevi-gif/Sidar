@@ -159,17 +159,10 @@ export default [
       globals: vitestGlobals,
     },
   },
-  {
-    files: ["src/test/launcher_script.test.js"],
-    languageOptions: {
-      // launcher_gui/script.js is a classic (non-module) script, side-effect
-      // imported here; it attaches these via `window.foo = foo`, which this
-      // jsdom test environment resolves as real globals at runtime, but
-      // eslint can't see that dynamic assignment statically.
-      globals: {
-        launchSidar: "readonly",
-        animateStepTransition: "readonly",
-      },
-    },
-  },
+  // src/test/launcher_script.test.ts previously needed a `globals` override
+  // here for `launchSidar`/`animateStepTransition` (launcher_gui/script.js
+  // attaches them via `window.foo = foo`, invisible to eslint's static
+  // analysis). Now that the test file is TypeScript, a `declare global { ... }`
+  // block in the file itself provides the same typed globals to both tsc and
+  // eslint's typescript-eslint parser, so this override is no longer needed.
 ];

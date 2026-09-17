@@ -8,6 +8,16 @@
 
 ARG PYTHON_VERSION=3.11.15
 ARG BASE_IMAGE=python:3.11.15-slim-bookworm@sha256:d29f48a31a8b408ed19272ca1e7b10ebae13b240a27e862d3d4217c528e2e0c3
+ARG NODE_IMAGE=node:20.20.2-bookworm-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+
+# Build the SPA from the lockfile inside the image build. Production images
+# must not depend on a host-created dist tree (or inherit its ownership/mode).
+FROM ${NODE_IMAGE} AS frontend-builder
+WORKDIR /frontend
+COPY web_ui_react/package.json web_ui_react/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci
+COPY web_ui_react/ ./
+RUN npm run build
 
 FROM ${BASE_IMAGE} AS builder
 
@@ -20,7 +30,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/app/.venv/bin:${PATH}"
 WORKDIR /app
 
+# DEBIAN_FRONTEND: BASE_IMAGE bir Ubuntu tabanlı image ile override edilirse
+# (örn. nvidia/cuda) tzdata gibi paketlerin interaktif kurulumda takılmasını
+# engeller. Yalnızca bu RUN katmanına sınırlı; final imaja sızmaz.
 RUN set -eux; \
+    export DEBIAN_FRONTEND=noninteractive; \
     apt-get update; \
     apt-get install -y --no-install-recommends build-essential git; \
     rm -rf /var/lib/apt/lists/*
@@ -52,12 +66,21 @@ WORKDIR /app
 
 # Runtime installs only OS libraries/binaries used while serving requests.
 # Compiler, build-essential, git and uv installation remain confined to builder.
+# DEBIAN_FRONTEND scoped to this RUN only — see builder stage note above.
 RUN set -eux; \
+    export DEBIAN_FRONTEND=noninteractive; \
     apt-get update; \
     apt-get install -y --no-install-recommends ca-certificates curl ffmpeg; \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app /app
+# Overwrite any source-tree path with the deterministic frontend artifact.
+# Explicit modes ensure the unprivileged runtime user can traverse and read
+# every asset regardless of the build host's umask or checkout permissions.
+COPY --from=frontend-builder /frontend/dist /app/web_ui_react/dist
+RUN chmod 755 /app /app/web_ui_react /app/web_ui_react/dist \
+    && find /app/web_ui_react/dist -type d -exec chmod 755 {} + \
+    && find /app/web_ui_react/dist -type f -exec chmod 644 {} +
 RUN useradd -m -u 10001 sidaruser \
     && mkdir -p /app/logs /app/data /app/temp /app/sessions /app/chroma_db \
     && chown -R sidaruser:sidaruser \

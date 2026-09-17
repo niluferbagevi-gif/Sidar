@@ -4,7 +4,6 @@ Sürüm: `sidar_version.PRODUCT_VERSION` üzerinden merkezi olarak çözülür.
 Açıklama: Sistem ayarları, donanım tespiti, dizin yönetimi ve loglama altyapısı.
 """
 
-import contextlib
 import logging
 import os
 import sys
@@ -21,6 +20,7 @@ import config_quality
 import config_rag_defaults
 import core.config_hardware as config_hardware
 import core.config_logging_setup as config_logging_setup
+import core.config_observability as config_observability
 from config_security import load_security_settings
 from core import config_dotenv, config_gpu_detect, config_postgres
 from core.config_app import load_app_runtime_settings
@@ -243,10 +243,15 @@ def _load_dotenv_into_effective_env(
     )
 
 
-def _dotenv_reload_baseline_environment() -> dict[str, str]:
+def _dotenv_reload_baseline_environment(
+    *,
+    managed_keys: set[str],
+    key_sources: dict[str, dict[str, Any]],
+    plan: "config_dotenv.DotenvReloadPlan",
+) -> dict[str, str]:
     """Return the pre-dotenv baseline for atomic reload without intermediate os.environ pops."""
     return config_dotenv.dotenv_reload_baseline_environment(
-        environ=os.environ, managed_keys=_DOTENV_MANAGED_KEYS
+        environ=os.environ, managed_keys=managed_keys, key_sources=key_sources, plan=plan
     )
 
 
@@ -384,7 +389,9 @@ def _configure_noisy_dependency_loggers(*, verbose_http: bool = _VERBOSE_HTTP_LO
     )
 
 
-_DEPENDENCY_AUTO = object()
+# Shared identity with core.config_observability.init_telemetry's default
+# parameter values -- see Config.init_telemetry's delegation below.
+_DEPENDENCY_AUTO = config_observability.DEPENDENCY_AUTO
 
 
 def _log_once_env(
@@ -644,8 +651,17 @@ class Config:
 
     # Embedding ve model yüklemeleri için VRAM fraksiyonu (0.1–0.99 bekleniyor, 1.0 dahil değil)
     GPU_MEMORY_FRACTION: float = get_float_env("GPU_MEMORY_FRACTION", 0.8)
-    # Yerel LLM ve RAG için ayrı bellek bütçeleri (opsiyonel)
-    LLM_GPU_MEMORY_FRACTION: float = get_float_env("LLM_GPU_MEMORY_FRACTION", GPU_MEMORY_FRACTION)
+    # Yerel LLM ve RAG için ayrı bellek bütçeleri (opsiyonel). Varsayılanlar
+    # GPU_MEMORY_FRACTION'ı 65/35 oranında bölüştürür ki hiçbir override
+    # olmadan toplamları zaten GPU_MEMORY_FRACTION'a eşit olsun --
+    # _apply_gpu_memory_safety_check()'in her boot'ta gereksiz yere runtime
+    # normalize etmesini (ve bir OOM-riski uyarısı basmasını) önler. Eskiden
+    # LLM_GPU_MEMORY_FRACTION varsayılanı doğrudan GPU_MEMORY_FRACTION'ın
+    # kendisiydi (yani ×1.0), bu da RAG'ın ×0.35'iyle toplamda her zaman
+    # GPU_MEMORY_FRACTION'ın %135'ini buluyordu (varsayılan 0.8'de: 1.08).
+    LLM_GPU_MEMORY_FRACTION: float = get_float_env(
+        "LLM_GPU_MEMORY_FRACTION", max(0.1, min(0.9, GPU_MEMORY_FRACTION * 0.65))
+    )
     RAG_GPU_MEMORY_FRACTION: float = get_float_env(
         "RAG_GPU_MEMORY_FRACTION", max(0.1, min(0.5, GPU_MEMORY_FRACTION * 0.35))
     )
@@ -1163,16 +1179,25 @@ class Config:
         # Below 8 GiB this used to fall through untouched, leaving
         # LLMClientSettings' fixed 8192 default in place for 6 GB-class cards
         # (RTX 2060/3050, 4060 laptop, GTX 1660, ...) — the same context a
-        # 8-16 GiB card gets, with none of its VRAM headroom. The two tiers
-        # below continue the same halving ladder this function already uses
-        # (16384 -> 8192) down to 4096, then floor at 2048 for anything
-        # smaller (including gpu_vram_mb=0, i.e. USE_GPU forced on without a
-        # successful hardware probe) — 2048 mirrors OLLAMA_BATCH_POLICY's own
-        # auto_min, the smallest context this codebase already treats as
-        # meaningful for local Ollama inference.
+        # 8-16 GiB card gets, with none of its VRAM headroom.
+        #
+        # A field report (RTX 3070 Ti Laptop, gpu_vram_mb=8192) then showed
+        # the >=8192 tier itself has the identical problem: a card that
+        # reports *exactly* the tier floor gets that tier's full context with
+        # zero margin for the coding model's own weights (~5 GiB for
+        # qwen2.5-coder:7b q4) plus KV cache plus OS/desktop VRAM overhead,
+        # and the installer's `/api/generate` JSON smoke test failed with
+        # HTTP 500 (VRAM OOM). 8-12 GiB cards (no comfortable headroom over a
+        # ~5 GiB model) now get the same 4096 tier as 4-8 GiB cards; only
+        # 12 GiB+ cards (RTX 3060 12GB, 4070, 3080 10-12GB, ...) keep the
+        # full 8192 window. 16 GiB+ still gets 16384. Floor at 2048 for
+        # anything below 4 GiB (including gpu_vram_mb=0, i.e. USE_GPU forced
+        # on without a successful hardware probe) — 2048 mirrors
+        # OLLAMA_BATCH_POLICY's own auto_min, the smallest context this
+        # codebase already treats as meaningful for local Ollama inference.
         if cls.GPU_VRAM_MB >= 16384:
             cls.OLLAMA_CODING_NUM_CTX = 16384
-        elif cls.GPU_VRAM_MB >= 8192:
+        elif cls.GPU_VRAM_MB >= 12288:
             cls.OLLAMA_CODING_NUM_CTX = 8192
         elif cls.GPU_VRAM_MB >= 4096:
             cls.OLLAMA_CODING_NUM_CTX = 4096
@@ -1467,85 +1492,24 @@ class Config:
         httpx_instrumentor_cls: Any = _DEPENDENCY_AUTO,
     ) -> bool:
         """OpenTelemetry tracing + opsiyonel FastAPI/HTTPX enstrümantasyonunu başlat."""
-        log = logger_obj or logger
-        if not cls.ENABLE_TRACING:
-            return False
-
-        if (
-            trace_module is None
-            or otlp_exporter_cls is None
-            or tracer_provider_cls is None
-            or resource_cls is None
-            or batch_span_processor_cls is None
-        ):
-            log.warning("ENABLE_TRACING açık fakat OpenTelemetry bağımlılıkları yüklenemedi.")
-            return False
-
-        try:
-            if trace_module is _DEPENDENCY_AUTO:
-                from opentelemetry import trace as imported_trace_module
-
-                trace_module = imported_trace_module
-            if otlp_exporter_cls is _DEPENDENCY_AUTO:
-                from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
-                    OTLPSpanExporter as imported_otlp_exporter_cls,
-                )
-
-                otlp_exporter_cls = imported_otlp_exporter_cls
-            if tracer_provider_cls is _DEPENDENCY_AUTO:
-                from opentelemetry.sdk.trace import TracerProvider as imported_tracer_provider_cls
-
-                tracer_provider_cls = imported_tracer_provider_cls
-            if resource_cls is _DEPENDENCY_AUTO:
-                from opentelemetry.sdk.resources import Resource as imported_resource_cls
-
-                resource_cls = imported_resource_cls
-            if batch_span_processor_cls is _DEPENDENCY_AUTO:
-                from opentelemetry.sdk.trace.export import (
-                    BatchSpanProcessor as imported_batch_span_processor_cls,
-                )
-
-                batch_span_processor_cls = imported_batch_span_processor_cls
-        except Exception:
-            log.warning("ENABLE_TRACING açık fakat OpenTelemetry bağımlılıkları yüklenemedi.")
-            return False
-
-        try:
-            svc_name = service_name or cls.OTEL_SERVICE_NAME or "sidar"
-            resource = resource_cls.create({"service.name": svc_name})
-            provider = tracer_provider_cls(resource=resource)
-            exporter = otlp_exporter_cls(endpoint=cls.OTEL_EXPORTER_ENDPOINT, insecure=True)
-            provider.add_span_processor(batch_span_processor_cls(exporter))
-            trace_module.set_tracer_provider(provider)
-
-            if fastapi_app is not None and cls.OTEL_INSTRUMENT_FASTAPI:
-                if fastapi_instrumentor_cls is _DEPENDENCY_AUTO:
-                    from opentelemetry.instrumentation.fastapi import (
-                        FastAPIInstrumentor as imported_fastapi_instrumentor_cls,
-                    )
-
-                    fastapi_instrumentor_cls = imported_fastapi_instrumentor_cls
-                fastapi_instrumentor_cls.instrument_app(fastapi_app)
-
-            if cls.OTEL_INSTRUMENT_HTTPX:
-                if httpx_instrumentor_cls is _DEPENDENCY_AUTO:
-                    try:
-                        from opentelemetry.instrumentation.httpx import (
-                            HTTPXClientInstrumentor as imported_httpx_instrumentor_cls,
-                        )
-
-                        httpx_instrumentor_cls = imported_httpx_instrumentor_cls
-                    except Exception:
-                        httpx_instrumentor_cls = None
-                if httpx_instrumentor_cls is not None:
-                    with contextlib.suppress(Exception):
-                        httpx_instrumentor_cls().instrument()
-
-            log.info(localized_log_message("otel_active"), cls.OTEL_EXPORTER_ENDPOINT)
-            return True
-        except Exception as exc:
-            log.warning(localized_log_message("otel_failed"), exc)
-            return False
+        return config_observability.init_telemetry(
+            enable_tracing=cls.ENABLE_TRACING,
+            otel_service_name=cls.OTEL_SERVICE_NAME,
+            otel_exporter_endpoint=cls.OTEL_EXPORTER_ENDPOINT,
+            otel_instrument_fastapi=cls.OTEL_INSTRUMENT_FASTAPI,
+            otel_instrument_httpx=cls.OTEL_INSTRUMENT_HTTPX,
+            logger_obj=logger_obj or logger,
+            localized_log_message=localized_log_message,
+            service_name=service_name,
+            fastapi_app=fastapi_app,
+            trace_module=trace_module,
+            otlp_exporter_cls=otlp_exporter_cls,
+            tracer_provider_cls=tracer_provider_cls,
+            resource_cls=resource_cls,
+            batch_span_processor_cls=batch_span_processor_cls,
+            fastapi_instrumentor_cls=fastapi_instrumentor_cls,
+            httpx_instrumentor_cls=httpx_instrumentor_cls,
+        )
 
     @classmethod
     def print_config_summary(cls) -> None:
@@ -1591,8 +1555,19 @@ def _reload_dotenv_chain(*, profile: str | None = None) -> None:
     global _LAST_DOTENV_LOAD_CHAIN_SIGNATURE
     with _CONFIG_STATE_LOCK:
         previous_managed_keys = set(_DOTENV_MANAGED_KEYS)
-        effective_env = _dotenv_reload_baseline_environment()
-        plan = _build_dotenv_reload_plan(effective_env, profile=profile)
+        # Snapshot before the globals below are cleared -- needed to decide,
+        # per key, whether its supplying layer is still active this round
+        # (see _dotenv_reload_baseline_environment's docstring).
+        previous_key_sources = {key: dict(value) for key, value in _DOTENV_KEY_SOURCES.items()}
+        # Resolve the plan (SIDAR_SKIP_DEFAULT_DOTENV/DOTENV_FILE/SIDAR_KEYS_FILE)
+        # from the *real*, unmodified process environment -- never from a
+        # baseline that may have already popped a previously dotenv-managed
+        # control variable, or a direct override of one of these three keys
+        # would be invisible to this reload's own plan.
+        plan = _build_dotenv_reload_plan(dict(os.environ), profile=profile)
+        effective_env = _dotenv_reload_baseline_environment(
+            managed_keys=previous_managed_keys, key_sources=previous_key_sources, plan=plan
+        )
         _DOTENV_MANAGED_KEYS.clear()
         _DOTENV_LOAD_EVENTS.clear()
         _DOTENV_KEY_SOURCES.clear()

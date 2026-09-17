@@ -9,6 +9,32 @@ from typing import Any
 from core.config_gpu_detect import HardwareInfo
 
 
+def _gpu_runtime_requested(
+    environ: Mapping[str, str],
+    *,
+    get_bool_env: Callable[[str, bool], bool],
+) -> bool:
+    """Return whether configuration/runtime metadata explicitly requests a GPU."""
+    if get_bool_env("USE_GPU", False) or get_bool_env("REQUIRE_GPU", False):
+        return True
+
+    compose_profiles = {
+        profile.strip().lower()
+        for profile in environ.get("COMPOSE_PROFILES", "").split(",")
+        if profile.strip()
+    }
+    if "gpu" in compose_profiles:
+        return True
+
+    for key, disabled_values in (
+        ("NVIDIA_VISIBLE_DEVICES", {"", "none", "void"}),
+        ("CUDA_VISIBLE_DEVICES", {"", "-1"}),
+    ):
+        if key in environ and environ[key].strip().lower() not in disabled_values:
+            return True
+    return False
+
+
 def is_wsl2() -> bool:
     """Return whether the Linux kernel release identifies a WSL2 runtime."""
     try:
@@ -34,13 +60,19 @@ def apply_vram_memory_fraction(
     """Apply the configured VRAM fraction after a shared GPU probe succeeds."""
     if not info.has_cuda:
         if is_wsl2_runtime() and info.gpu_name == "CUDA Bulunamadı":
-            logger.warning(
-                "⚠️  WSL2 — CUDA bulunamadı. Kontrol: Windows NVIDIA sürücüsü güncel mi? "
+            message = (
+                "WSL2 — CUDA bulunamadı. Kontrol: Windows NVIDIA sürücüsü güncel mi? "
                 "PyTorch resmi selector ile uyumlu CUDA wheel kurulumu yapıldı mı? "
-                "Desteklenen stabil wheel etiketleri: %s. Örnek: %s",
-                ", ".join(stable_cuda_wheel_tags),
-                recommended_cuda_install_command,
+                "Desteklenen stabil wheel etiketleri: %s. Örnek: %s"
             )
+            args = (", ".join(stable_cuda_wheel_tags), recommended_cuda_install_command)
+            if _gpu_runtime_requested(environ, get_bool_env=get_bool_env):
+                logger.warning("⚠️  " + message, *args)
+            else:
+                logger.debug(
+                    "CPU runtime profili etkin; WSL2 CUDA yokluğu beklenen durum. " + message,
+                    *args,
+                )
         return
 
     try:
@@ -50,7 +82,11 @@ def apply_vram_memory_fraction(
         return
 
     legacy_frac = get_float_env("GPU_MEMORY_FRACTION", 0.8)
-    llm_frac = get_float_env("LLM_GPU_MEMORY_FRACTION", legacy_frac)
+    # Kept in sync with config.py's Config.LLM_GPU_MEMORY_FRACTION/
+    # RAG_GPU_MEMORY_FRACTION default formula: a 65/35 split of legacy_frac so
+    # neither default alone (nor together, when only one of the two env vars
+    # below is explicitly set) overflows the safe VRAM budget.
+    llm_frac = get_float_env("LLM_GPU_MEMORY_FRACTION", max(0.1, min(0.9, legacy_frac * 0.65)))
     rag_frac = get_float_env("RAG_GPU_MEMORY_FRACTION", max(0.1, min(0.5, legacy_frac * 0.35)))
     if "LLM_GPU_MEMORY_FRACTION" in environ or "RAG_GPU_MEMORY_FRACTION" in environ:
         vram_budget = normalize_gpu_memory_fractions(llm_frac, rag_frac)

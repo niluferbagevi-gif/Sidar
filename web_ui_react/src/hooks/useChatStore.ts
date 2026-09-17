@@ -88,7 +88,7 @@ function persistValue(key: string, value: unknown): void {
 }
 
 export const __chatStoreTestUtils = {
-  setPendingChunk(text = "", requestId = "") {
+  setPendingChunk(text: unknown = "", requestId: unknown = "") {
     streamController.setPending(text, requestId);
   },
   flushPendingChunk(set: StreamStateSetter, get: StreamStateGetter): void {

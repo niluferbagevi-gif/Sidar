@@ -1,3 +1,4 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useWebSocket } from "./useWebSocket.js";
 import {
@@ -7,9 +8,36 @@ import {
   TOKEN_STORAGE_MODE_KEY,
 } from "../lib/api.js";
 
+// This suite swaps `globalThis.WebSocket` for a hand-rolled double -- a plain
+// object with just the members useWebSocket.ts actually touches (readyState,
+// send, close, on{message,error,close}), not the full DOM WebSocket surface
+// (binaryType, bufferedAmount, extensions, protocol, url, event-target
+// methods, ...). MockWebSocketInstance/MockWebSocketCtor describe that
+// double's real shape; the handful of `as unknown as typeof WebSocket` casts
+// below are the single, well-contained seam where the double stands in for
+// the real global.
+type MockWebSocketMessageEvent = { data: unknown };
+type MockWebSocketCloseEvent = { code?: number; reason?: string };
+
+interface MockWebSocketInstance {
+  readyState: number;
+  send: ReturnType<typeof vi.fn>;
+  close: ReturnType<typeof vi.fn>;
+  onmessage: ((event: MockWebSocketMessageEvent) => void) | null;
+  onerror: (() => void) | null;
+  onclose: ((event?: MockWebSocketCloseEvent) => void) | null;
+}
+
+type MockWebSocketCtor = ReturnType<typeof vi.fn<(...args: unknown[]) => MockWebSocketInstance>> & {
+  CONNECTING: number;
+  OPEN: number;
+  CLOSING: number;
+  CLOSED: number;
+};
+
 // WebSocket mock factory
-function makeWsMock() {
-  const ws = {
+function makeWsMock(): MockWebSocketInstance {
+  return {
     readyState: WebSocket.CONNECTING,
     send: vi.fn(),
     close: vi.fn(),
@@ -17,13 +45,16 @@ function makeWsMock() {
     onerror: null,
     onclose: null,
   };
-  return ws;
 }
 
-function makeWebSocketCtor(instanceFactory) {
-  const ctor = vi.fn(function webSocketCtorProxy(...args) {
+function makeWebSocketCtor(
+  instanceFactory: (...args: unknown[]) => MockWebSocketInstance,
+): MockWebSocketCtor {
+  // A regular `function` (not an arrow function) so `new WebSocket(...)`
+  // inside the hook can actually invoke it as a constructor.
+  const ctor = vi.fn(function webSocketCtorProxy(...args: unknown[]) {
     return instanceFactory(...args);
-  });
+  }) as MockWebSocketCtor;
   ctor.CONNECTING = 0;
   ctor.OPEN = 1;
   ctor.CLOSING = 2;
@@ -31,12 +62,21 @@ function makeWebSocketCtor(instanceFactory) {
   return ctor;
 }
 
-let wsMockInstance = null;
+function installWebSocketCtor(ctor: MockWebSocketCtor): void {
+  globalThis.WebSocket = ctor as unknown as typeof WebSocket;
+}
+
+function currentWebSocketCtor(): MockWebSocketCtor {
+  return globalThis.WebSocket as unknown as MockWebSocketCtor;
+}
+
+// Always (re)assigned in beforeEach before any test body runs.
+let wsMockInstance!: MockWebSocketInstance;
 
 beforeEach(() => {
   vi.restoreAllMocks();
   // localStorage stub
-  const store = {};
+  const store: Record<string, string> = {};
   vi.spyOn(Storage.prototype, "getItem").mockImplementation((key) => store[key] ?? null);
   vi.spyOn(Storage.prototype, "setItem").mockImplementation((key, val) => { store[key] = val; });
   vi.spyOn(Storage.prototype, "removeItem").mockImplementation((key) => { delete store[key]; });
@@ -49,7 +89,7 @@ beforeEach(() => {
 
   // WebSocket global stub
   wsMockInstance = makeWsMock();
-  globalThis.WebSocket = makeWebSocketCtor(() => wsMockInstance);
+  installWebSocketCtor(makeWebSocketCtor(() => wsMockInstance));
 });
 
 afterEach(() => {
@@ -60,20 +100,20 @@ describe("useWebSocket — bağlantı kurulumu", () => {
   it("attempts to connect on mount when token exists", () => {
     localStorage.setItem("sidar_access_token", "test-token");
     renderHook(() => useWebSocket("session-1", { roomId: "ws:test" }));
-    expect(globalThis.WebSocket).toHaveBeenCalledTimes(1);
+    expect(currentWebSocketCtor()).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the connection stable when callback references change between renders", () => {
     localStorage.setItem("sidar_access_token", "test-token");
-    const errors = [];
-    const { rerender } = renderHook(({ renderId }) => useWebSocket("session-1", {
+    const errors: string[] = [];
+    const { rerender } = renderHook(({ renderId }: { renderId: string }) => useWebSocket("session-1", {
       roomId: "ws:test",
       onError: (message) => errors.push(`${renderId}:${message}`),
     }), { initialProps: { renderId: "first" } });
 
     rerender({ renderId: "second" });
 
-    expect(globalThis.WebSocket).toHaveBeenCalledTimes(1);
+    expect(currentWebSocketCtor()).toHaveBeenCalledTimes(1);
     expect(wsMockInstance.close).not.toHaveBeenCalled();
 
     act(() => {
@@ -93,7 +133,7 @@ describe("useWebSocket — bağlantı kurulumu", () => {
 
   it("does NOT create WebSocket when no token", () => {
     renderHook(() => useWebSocket("session-1", {}));
-    expect(globalThis.WebSocket).not.toHaveBeenCalled();
+    expect(currentWebSocketCtor()).not.toHaveBeenCalled();
   });
 
   it("reports a closed connection only after an explicit send without a token", () => {
@@ -113,7 +153,7 @@ describe("useWebSocket — bağlantı kurulumu", () => {
     localStorage.setItem("sidar_access_token", "   ");
     const { result } = renderHook(() => useWebSocket("session-1", {}));
     expect(result.current.status).toBe("unauthenticated");
-    expect(globalThis.WebSocket).not.toHaveBeenCalled();
+    expect(currentWebSocketCtor()).not.toHaveBeenCalled();
   });
 
   it("sets status to connecting when token exists", () => {
@@ -129,7 +169,7 @@ describe("useWebSocket — token değişimi", () => {
     const firstSocket = wsMockInstance;
     const secondSocket = makeWsMock();
     const sockets = [firstSocket, secondSocket];
-    globalThis.WebSocket = makeWebSocketCtor(() => sockets.shift());
+    installWebSocketCtor(makeWebSocketCtor(() => sockets.shift() as MockWebSocketInstance));
 
     renderHook(() => useWebSocket("s1", {}));
 
@@ -141,12 +181,12 @@ describe("useWebSocket — token değişimi", () => {
     expect(firstSocket.onclose).toBeNull();
     expect(firstSocket.onerror).toBeNull();
     expect(firstSocket.onmessage).toBeNull();
-    expect(globalThis.WebSocket).toHaveBeenNthCalledWith(2, expect.any(String), ["yeni-token"]);
+    expect(currentWebSocketCtor()).toHaveBeenNthCalledWith(2, expect.any(String), ["yeni-token"]);
   });
 
   it("starts a connection on token-change events when no previous socket exists", () => {
     renderHook(() => useWebSocket("s1", {}));
-    expect(globalThis.WebSocket).not.toHaveBeenCalled();
+    expect(currentWebSocketCtor()).not.toHaveBeenCalled();
 
     localStorage.setItem(TOKEN_KEY, "ilk-token");
 
@@ -154,8 +194,8 @@ describe("useWebSocket — token değişimi", () => {
       window.dispatchEvent(new Event(TOKEN_CHANGE_EVENT));
     });
 
-    expect(globalThis.WebSocket).toHaveBeenCalledTimes(1);
-    expect(globalThis.WebSocket).toHaveBeenNthCalledWith(1, expect.any(String), ["ilk-token"]);
+    expect(currentWebSocketCtor()).toHaveBeenCalledTimes(1);
+    expect(currentWebSocketCtor()).toHaveBeenNthCalledWith(1, expect.any(String), ["ilk-token"]);
   });
 
   it("cleans up an open previous socket before restarting for the token-change event", () => {
@@ -163,7 +203,7 @@ describe("useWebSocket — token değişimi", () => {
     const firstSocket = wsMockInstance;
     const secondSocket = makeWsMock();
     const sockets = [firstSocket, secondSocket];
-    globalThis.WebSocket = makeWebSocketCtor(() => sockets.shift());
+    installWebSocketCtor(makeWebSocketCtor(() => sockets.shift() as MockWebSocketInstance));
 
     renderHook(() => useWebSocket("s1", {}));
     firstSocket.readyState = WebSocket.OPEN;
@@ -177,7 +217,7 @@ describe("useWebSocket — token değişimi", () => {
     expect(firstSocket.onclose).toBeNull();
     expect(firstSocket.onerror).toBeNull();
     expect(firstSocket.onmessage).toBeNull();
-    expect(globalThis.WebSocket).toHaveBeenNthCalledWith(2, expect.any(String), ["yeni-token"]);
+    expect(currentWebSocketCtor()).toHaveBeenNthCalledWith(2, expect.any(String), ["yeni-token"]);
   });
 
   it("restarts the connection for a cross-tab storage event affecting the token", () => {
@@ -185,7 +225,7 @@ describe("useWebSocket — token değişimi", () => {
     const firstSocket = wsMockInstance;
     const secondSocket = makeWsMock();
     const sockets = [firstSocket, secondSocket];
-    globalThis.WebSocket = makeWebSocketCtor(() => sockets.shift());
+    installWebSocketCtor(makeWebSocketCtor(() => sockets.shift() as MockWebSocketInstance));
 
     renderHook(() => useWebSocket("s1", {}));
     localStorage.setItem(TOKEN_KEY, "sekme-token");
@@ -195,7 +235,7 @@ describe("useWebSocket — token değişimi", () => {
     });
 
     expect(firstSocket.close).toHaveBeenCalledTimes(1);
-    expect(globalThis.WebSocket).toHaveBeenNthCalledWith(2, expect.any(String), ["sekme-token"]);
+    expect(currentWebSocketCtor()).toHaveBeenNthCalledWith(2, expect.any(String), ["sekme-token"]);
   });
 
   it("ignores cross-tab storage events for unrelated keys", () => {
@@ -203,7 +243,7 @@ describe("useWebSocket — token değişimi", () => {
     const firstSocket = wsMockInstance;
     const secondSocket = makeWsMock();
     const sockets = [firstSocket, secondSocket];
-    globalThis.WebSocket = makeWebSocketCtor(() => sockets.shift());
+    installWebSocketCtor(makeWebSocketCtor(() => sockets.shift() as MockWebSocketInstance));
 
     renderHook(() => useWebSocket("s1", {}));
     localStorage.setItem(TOKEN_KEY, "degismemeli-token");
@@ -213,7 +253,7 @@ describe("useWebSocket — token değişimi", () => {
     });
 
     expect(firstSocket.close).not.toHaveBeenCalled();
-    expect(globalThis.WebSocket).toHaveBeenCalledTimes(1);
+    expect(currentWebSocketCtor()).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -232,7 +272,7 @@ describe("useWebSocket — auth_ok sonrası bağlı durum", () => {
 });
 
 describe("useWebSocket — mesaj işleme", () => {
-  const setup = (callbacks = {}) => {
+  const setup = (callbacks: Record<string, unknown> = {}) => {
     localStorage.setItem("sidar_access_token", "tok");
     const { result } = renderHook(() =>
       useWebSocket("s1", { roomId: "ws:demo", ...callbacks })
@@ -524,7 +564,7 @@ describe("useWebSocket — onerror / onclose", () => {
     localStorage.setItem("sidar_access_token", "tok");
     const { result } = renderHook(() => useWebSocket("s1", {}));
 
-    expect(globalThis.WebSocket).toHaveBeenCalledTimes(1);
+    expect(currentWebSocketCtor()).toHaveBeenCalledTimes(1);
 
     act(() => {
       wsMockInstance.onclose?.({ code: 1008, reason: "Invalid or expired token" });
@@ -536,7 +576,7 @@ describe("useWebSocket — onerror / onclose", () => {
       vi.advanceTimersByTime(20_000);
     });
 
-    expect(globalThis.WebSocket).toHaveBeenCalledTimes(1);
+    expect(currentWebSocketCtor()).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
   });
 
@@ -550,13 +590,13 @@ describe("useWebSocket — onerror / onclose", () => {
       wsMockInstance.onclose?.();
     });
 
-    expect(globalThis.WebSocket).toHaveBeenCalledTimes(1);
+    expect(currentWebSocketCtor()).toHaveBeenCalledTimes(1);
 
     act(() => {
       vi.advanceTimersByTime(800);
     });
 
-    expect(globalThis.WebSocket).toHaveBeenCalledTimes(2);
+    expect(currentWebSocketCtor()).toHaveBeenCalledTimes(2);
     vi.useRealTimers();
   });
 });
@@ -617,7 +657,7 @@ describe("useWebSocket — disconnect", () => {
     localStorage.setItem("sidar_access_token", "tok");
     const { result } = renderHook(() => useWebSocket("s1", {}));
 
-    expect(globalThis.WebSocket).toHaveBeenCalledTimes(1);
+    expect(currentWebSocketCtor()).toHaveBeenCalledTimes(1);
 
     act(() => {
       result.current.disconnect();
@@ -625,7 +665,7 @@ describe("useWebSocket — disconnect", () => {
       vi.advanceTimersByTime(800);
     });
 
-    expect(globalThis.WebSocket).toHaveBeenCalledTimes(1);
+    expect(currentWebSocketCtor()).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
   });
 });
@@ -633,13 +673,13 @@ describe("useWebSocket — disconnect", () => {
 describe("useWebSocket — eksik branch testleri (100% Coverage için)", () => {
   it("uses wss:// when protocol is https: (Satır 4)", () => {
     const originalLocation = globalThis.location;
-    delete globalThis.location;
-    globalThis.location = { protocol: "https:", host: "localhost" };
+    Reflect.deleteProperty(globalThis, "location");
+    globalThis.location = { protocol: "https:", host: "localhost" } as unknown as Location;
 
     localStorage.setItem("sidar_access_token", "tok");
     renderHook(() => useWebSocket("s1", {}));
 
-    expect(globalThis.WebSocket).toHaveBeenCalledWith("wss://localhost/ws/chat", ["tok"]);
+    expect(currentWebSocketCtor()).toHaveBeenCalledWith("wss://localhost/ws/chat", ["tok"]);
 
     globalThis.location = originalLocation;
   });
@@ -648,14 +688,14 @@ describe("useWebSocket — eksik branch testleri (100% Coverage için)", () => {
     localStorage.setItem("sidar_access_token", "tok");
     const { result } = renderHook(() => useWebSocket("s1", {}));
 
-    globalThis.WebSocket.mockClear();
+    currentWebSocketCtor().mockClear();
 
     act(() => {
       wsMockInstance.readyState = WebSocket.OPEN;
       result.current.connect();
     });
 
-    expect(globalThis.WebSocket).not.toHaveBeenCalled();
+    expect(currentWebSocketCtor()).not.toHaveBeenCalled();
   });
 
   it("handles joinRoom edge cases and fallbacks (Satır 33-36)", () => {
@@ -670,7 +710,7 @@ describe("useWebSocket — eksik branch testleri (100% Coverage için)", () => {
     wsMockInstance.send.mockClear();
 
     act(() => {
-      result.current.joinRoom("new_room", null);
+      result.current.joinRoom("new_room", null as unknown as string);
     });
 
     const payload = JSON.parse(wsMockInstance.send.mock.calls[0][0]);

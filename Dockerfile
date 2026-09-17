@@ -45,7 +45,14 @@ LABEL description="Yazılım Mühendisi AI Asistanı - Docker İzolasyonu"
 # GPU_ENABLED build-arg çalışma zamanında USE_GPU env değişkenine dönüşür
 # MEMORY_ENCRYPTION_KEY: docker run -e MEMORY_ENCRYPTION_KEY=<fernet_key> ile iletilebilir
 ARG MEMORY_ENCRYPTION_KEY=""
-ENV PYTHONDONTWRITEBYTECODE=1 \
+# DEBIAN_FRONTEND/TZ: apt-get install sırasında tzdata gibi paketlerin
+# interaktif coğrafi bölge sorusuna düşüp build'i (özellikle TTY'siz CI
+# ortamında) sonsuza kadar kilitlemesini engeller. GPU tabanlı image'larda
+# (nvidia/cuda, Ubuntu tabanlı) docker.io/ffmpeg/alsa-utils gibi paketler
+# tzdata'yı bağımlılık olarak çekebildiği için bu ayar zorunludur.
+ENV DEBIAN_FRONTEND=noninteractive \
+    TZ=Etc/UTC \
+    PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PORT=7860 \
     PIP_NO_CACHE_DIR=1 \
@@ -66,35 +73,48 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Çalışma dizini
 WORKDIR /app
 
+# Bağımlılık Yönetimi — uv lock dosyasından deterministik kurulum
+# Sandbox testleri `run_tests.sh` gibi betikleri doğrudan container içinde
+# çalıştırdığı için uv binary'si imajda önceden bulunmalıdır.
+# Python provisioning'den önce kopyalanır: `uv python install` sistem
+# apt/PPA'sından bağımsız kendi standalone Python build'ini kurabiliyor
+# (bkz. aşağıdaki sistem bağımlılıkları katmanı).
+COPY --from=ghcr.io/astral-sh/uv:0.12.0@sha256:606e70c71c852d03f611b1e56a195d08648507018a7057fab82c4974c4eae105 /uv /uvx /bin/
+RUN uv --version && uvx --version
+
 # Sistem bağımlılıkları
 # GPU base image'ında (nvidia/cuda) libcuda ve sürücü zaten mevcuttur.
-RUN set -eux; \
+# apt önbellekleri BuildKit cache mount ile tutulur; her build'de aynı
+# .deb arşivlerinin yeniden indirilmesini önler. Cache mount'lar son imaja
+# sızmadığı için burada `rm -rf /var/lib/apt/lists/*` gerekmez/zararlıdır
+# (cache'i her build'de boşaltır).
+# build-essential/pkg-config/shellcheck bilinçli olarak runtime image'da
+# kalıyor (run_tests.sh gibi betikler doğrudan bu container içinde
+# çalıştırılıyor — bkz. `docker-compose.production.yml`/Dockerfile.production
+# ayrımı, üretim için ayrı, minimal bir imaj kullanır). `cargo` (rustc/llvm
+# ile birlikte ~110MB) daha önce burada listeliydi; uv.lock'ta sdist'ten
+# derlenen tek 5 paket (annoy, bottle-websocket, eel, openai-whisper,
+# pyaudio) doğrulandı — hiçbiri Rust değil (annoy/pyaudio yalnızca
+# build-essential'daki gcc/g++'a ihtiyaç duyuyor), repoda da hiç
+# Cargo.toml/*.rs yok; bu yüzden kaldırıldı.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
       ca-certificates git build-essential curl wget zstd \
-      docker.io portaudio19-dev python3-pyaudio alsa-utils v4l-utils ffmpeg cargo pkg-config \
+      docker.io portaudio19-dev python3-pyaudio alsa-utils v4l-utils ffmpeg pkg-config \
       shellcheck \
     ; \
     if [ -f /etc/os-release ] && grep -qi 'ubuntu' /etc/os-release; then \
-      apt-get install -y --no-install-recommends software-properties-common; \
-      add-apt-repository ppa:deadsnakes/ppa; \
-      apt-get update; \
-      apt-get install -y --no-install-recommends \
-        python${PYTHON_VERSION} python${PYTHON_VERSION}-venv python${PYTHON_VERSION}-distutils python3-pip; \
-      update-alternatives --install /usr/bin/python3 python3 /usr/bin/python${PYTHON_VERSION} 2; \
+      uv python install ${PYTHON_VERSION}; \
     else \
       apt-get install -y --no-install-recommends python3 python3-venv python3-pip; \
-    fi; \
-    rm -rf /var/lib/apt/lists/*
+    fi
 
 ENV UV_INDEX_STRATEGY=first-index \
     PATH="${VIRTUAL_ENV}/bin:$PATH"
 
-# Bağımlılık Yönetimi — uv lock dosyasından deterministik kurulum
-# Sandbox testleri `run_tests.sh` gibi betikleri doğrudan container içinde
-# çalıştırdığı için uv binary'si imajda önceden bulunmalıdır.
-COPY --from=ghcr.io/astral-sh/uv:0.12.0@sha256:606e70c71c852d03f611b1e56a195d08648507018a7057fab82c4974c4eae105 /uv /uvx /bin/
-RUN uv --version && uvx --version
 COPY pyproject.toml uv.lock README.md ./
 RUN test -f uv.lock || (echo "uv.lock is required for deterministic builds" >&2; exit 1)
 RUN --mount=type=cache,target=/root/.cache/uv \

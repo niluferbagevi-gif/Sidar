@@ -239,7 +239,13 @@ run_smoke_tests() {
         info "GPU tespit edilmedi; GPU stres smoke testi varsayılan davranışla atlanabilir."
     fi
 
-    if ! python -c "import pytest" >/dev/null 2>&1; then
+    # Not: `prepare-system`/`provision-models`/`smoke` gibi bağımsız alt-komutlar
+    # .venv'i bu process içinde aktive etmez (yalnız `sync-deps`/`create_uv_venv`
+    # yapar). Bu yüzden kontrol de gerçek çalıştırma yöntemiyle aynı olmalı
+    # (`uv run`), aksi halde venv aktif olmayan bir shell'de bare `python` PATH'te
+    # bulunamadığı veya sistem Python'ına işaret ettiği için pytest kurulu olsa
+    # bile yanlışlıkla "kurulu değil" denip smoke testler sessizce atlanır.
+    if ! uv run --no-sync python -c "import pytest" >/dev/null 2>&1; then
         warn "pytest bu ortamda kurulu değil. Varsayılan dev paketleri için kurulum betiğini uv.lock ile tekrar çalıştırın."
         SMOKE_TEST_STATUS="pytest_yok"
         return
@@ -452,6 +458,52 @@ sidar_install_production_gate_required() {
     return 1
 }
 
+sidar_install_benchmark_baseline_present() {
+    local script_dir="${SCRIPT_DIR:-$(pwd)}"
+    local baseline_name="${BENCHMARK_BASELINE_NAME:-baseline}"
+    local match=""
+
+    [[ -d "$script_dir/.benchmarks" ]] || return 1
+    match="$(find "$script_dir/.benchmarks" -type f -name "*_${baseline_name}.json" -print -quit 2>/dev/null)"
+    [[ -n "$match" ]]
+}
+
+# Taze bir checkout'ta `.benchmarks/` hiç yok; `make production-readiness`
+# (TEST_PROFILE=ci → BENCHMARK_COMPARE_REQUIRED varsayılanı 1, bkz. run_tests.sh)
+# bu durumda ~10+ dakikalık statik analiz + backend/frontend/e2e + benchmark
+# koşusunun EN SONUNDA, karşılaştırılacak bir baseline bulamadığı için garanti
+# başarısız olur (bkz. scripts/test_gates/benchmark_helpers.sh:
+# "Local production-readiness için benchmark baseline bulunamadı" ve o mesajın
+# önerdiği tek elle kurtarma: `make benchmark-seed && make production-readiness`).
+# Bu, kurulum/kod kalitesiyle ilgisiz, saf bir bootstrap eksikliğidir. Burada
+# aynı iki adımı otomatik zincirleyerek kullanıcının bunu elle keşfetmesini
+# (ve ilk denemeyi tamamen kaybetmesini) engelliyoruz.
+sidar_ensure_benchmark_baseline_before_production_gate() {
+    local script_dir="${SCRIPT_DIR:-$(pwd)}"
+
+    sidar_install_benchmark_baseline_present && return 0
+
+    warn "'.benchmarks' altında baseline bulunamadı; 'make production-readiness' bu eksiklik yüzünden (karşılaştırılacak kayıt yok) uzun koşunun sonunda garanti başarısız olurdu."
+    info "Önce 'make benchmark-seed' otomatik çalıştırılıyor (run_tests.sh --stage all'ı yeniden koşturur; süreyi kabaca ikiye katlar ama yalnızca bu ilk çalıştırmada gereklidir)."
+
+    if ! (cd "$script_dir" && env \
+        -u TEST_PROFILE \
+        -u RUN_BENCHMARKS \
+        -u RUN_FRONTEND_E2E \
+        -u SIDAR_PRODUCTION_READINESS \
+        -u BENCHMARK_COMPARE_REQUIRED \
+        -u OLLAMA_INSTALL_SHA256 \
+        -u UV_INSTALL_SHA256 \
+        -u VOLTA_INSTALL_SHA256 \
+        -u NVM_INSTALL_SHA256 \
+        AUTO_OPEN_ARTIFACTS=0 make benchmark-seed); then
+        warn "'make benchmark-seed' başarısız oldu; 'make production-readiness' yine de denenecek, ancak benchmark karşılaştırma adımı muhtemelen yine başarısız olacaktır. Elle kurtarma: make benchmark-seed && make production-readiness"
+        return 1
+    fi
+
+    ok "'.benchmarks' baseline'ı oluşturuldu; 'make production-readiness' artık karşılaştırmalı çalışabilir."
+}
+
 sidar_install_optional_dev_full_validation_available() {
     [[ "${GPU_AVAILABLE:-false}" == true ]] || return 1
     [[ "${SMOKE_TEST_STATUS:-}" == "tamamlandi" ]] || return 1
@@ -643,6 +695,8 @@ run_install_ci_full_validation() {
         fi
         warn "Production readiness sistem bağımlılığı ön kontrolü tamamlanamadı. Development/local tam doğrulamada akış make production-readiness adımına devam edecek; eksikleri kurmak için: bash scripts/install_ci_system_deps.sh"
     fi
+
+    sidar_ensure_benchmark_baseline_before_production_gate || true
 
     info "Tam doğrulama başlıyor: make production-readiness"
     if (cd "$script_dir" && env \

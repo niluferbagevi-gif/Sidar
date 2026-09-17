@@ -1,7 +1,7 @@
 {
   // checkJs is intentionally false. As of 2026-08-06 application/component
   // migration is complete: every remaining .js/.jsx file under src/ is a
-  // test file (*.test.jsx, *.test.js) or test setup (src/test/setup.js) --
+  // test file (*.test.jsx, *.test.js) or test setup --
   // zero untyped application source remains. `npm run typecheck` therefore
   // type-checks the full component/hook/lib tree; it is a real regression
   // gate for application logic, not just the migrated subset. Do not read a

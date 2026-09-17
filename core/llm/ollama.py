@@ -225,6 +225,25 @@ class OllamaClient(BaseLLMClient):
         # opposite directions and a real fix needs GPU hardware to validate
         # llama.cpp's actual batching/chunking behavior at each tier, not a
         # guessed threshold. Left unchanged pending that validation.
+        #
+        # A field report (RTX 3070 Ti Laptop, 8192 MiB VRAM) hit an HTTP 500
+        # from Ollama's /api/generate at install time and was read as
+        # possible corroborating evidence for scaling num_batch down too.
+        # On inspection it isn't: the installer's coding-model smoke test
+        # sends a ~15-token prompt (scripts/install_modules/phases/
+        # 09_ollama_models.sh::run_coding_model_smoke_prompt), far below any
+        # num_batch=2048 default, so the GGML_ASSERT this comment describes
+        # cannot fire there — a *tiny* prompt failing with a clean HTTP 500
+        # is the signature of KV-cache/weights OOM from num_ctx sizing, not
+        # a batch-size assertion crash. That report tracked back to a real,
+        # separate gap: 8-12 GiB VRAM cards got the full 8192 num_ctx tier
+        # with no headroom over the coding model's own weights (fixed in
+        # config.py::_autoselect_ollama_coding_ctx_window; the installer's
+        # smoke test now also self-heals by retrying with a reduced num_ctx
+        # and leaves num_batch untouched, matching the reasoning above). It
+        # does not supply the GPU-validated batching/chunking evidence this
+        # comment is still waiting on, and num_batch remains unscaled here
+        # for that reason.
         configured_num_batch = int(
             _setting(self.config, "OLLAMA_NUM_BATCH", OLLAMA_NUM_BATCH_DEFAULT)
         )

@@ -354,9 +354,9 @@ print_summary() {
     if [[ "${APP_RUNTIME_MODE_SELECTED:-docker}" == "local" ]]; then
         echo "       Çalışma modu: Geliştirici (uygulama local, altyapı Docker)."
         echo "       Altyapı servisleri: docker compose up -d postgres redis"
-        echo "       İzleme gerekiyorsa: COMPOSE_PROFILES=observability docker compose up -d jaeger prometheus grafana"
+        echo "       İzleme gerekiyorsa: docker compose -f docker-compose.yml -f docker-compose.observability.yml --profile cpu --profile observability up -d jaeger prometheus grafana"
         echo "       (Host Ollama yoksa ayrıca: docker compose up -d ollama)"
-        echo "       Durdurma: docker compose stop postgres redis jaeger prometheus grafana ollama"
+        echo "       Durdurma: docker compose stop postgres redis ollama; docker compose -f docker-compose.yml -f docker-compose.observability.yml stop jaeger prometheus grafana"
     else
         echo "       Çalışma modu: Tam Docker (web/agent dahil)."
     echo "       Servisleri manuel yönetmek isterseniz: docker compose up -d / docker compose down"
@@ -403,6 +403,13 @@ print_summary() {
         echo ""
     fi
 
+    if ! command -v ffmpeg >/dev/null 2>&1; then
+        echo -e "  ${YELLOW}⚠️  ffmpeg bulunamadı — multimodal video/ses ayrıştırma (frame/ses kanalı çıkarımı) şu an çalışmayacak.${NC}"
+        echo -e "  ${YELLOW}   Kurulum: Debian/Ubuntu → sudo apt-get install ffmpeg; macOS → brew install ffmpeg.${NC}"
+        echo -e "  ${YELLOW}   Kurulum sonrası doğrulama: uv run python -m core.doctor${NC}"
+        echo ""
+    fi
+
     if [[ "$WSL2" == true ]]; then
         local multimodal_val=""
         [[ -f "$SCRIPT_DIR/.env" ]] && multimodal_val=$(read_env_value_from_file "ENABLE_MULTIMODAL" "$SCRIPT_DIR/.env" | tr -d '[:space:]')
@@ -429,6 +436,11 @@ print_summary() {
     echo "    # Eşdeğer: bash run_tests.sh --stage all"
     echo "  production-readiness (yerel ön doğrulama; tek başına merge/release onayı değildir):"
     echo "    make production-readiness"
+    echo -e "  ${YELLOW}ℹ️  'make production-readiness' 'uv'nin PATH'te olmasını gerektirir. install_sidar.sh doğrudan${NC}"
+    echo -e "  ${YELLOW}   çalıştırıldıysa (ör. './install_sidar.sh', 'source' edilmeden), yaptığı PATH güncellemesi${NC}"
+    echo -e "  ${YELLOW}   yalnızca o kurulum sürecine özeldi ve bu terminale geri yansımaz. Yeni bir terminalde${NC}"
+    echo -e "  ${YELLOW}   'command -v uv' boş dönerse: terminali kapatıp yeniden açın veya 'source ~/.bashrc'${NC}"
+    echo -e "  ${YELLOW}   ('~/.zshrc' için zsh) çalıştırıp tekrar deneyin.${NC}"
     echo "  merge/release kararı: PR üzerindeki required GitHub Actions 'Production readiness aggregate' check'i."
     echo "  Backend entegrasyon ana yolu:"
     echo "    bash run_tests.sh --stage integration   # tests/integration/{api,cli,db,managers,web,workflow}"
@@ -474,11 +486,11 @@ print_summary() {
     if [[ "$SKIP_MODELS" == true ]]; then
         echo "  ollama pull <model_adi>   — model indirmeleri atlandı, sonradan manuel indirin"
     fi
-    echo "  docker compose up sidar-gpu     — Docker GPU modu"
+    echo "  docker compose -f docker-compose.yml -f docker-compose.gpu.yml up sidar-gpu     — Docker GPU modu"
     echo "  Not: Docker GPU için nvidia-container-toolkit kurulu olmalıdır."
     echo ""
     echo -e "${BOLD}Gözlemlenebilirlik (Telemetry)${NC}"
-    echo "  İzleme servislerini başlat: COMPOSE_PROFILES=observability docker compose up -d jaeger prometheus grafana"
+    echo "  İzleme servislerini başlat: docker compose -f docker-compose.yml -f docker-compose.observability.yml --profile cpu --profile observability up -d jaeger prometheus grafana"
     echo "  Grafana paneli    : http://localhost:3000"
     echo "  Grafana girişi    : kullanıcı admin; parola .env içinde installer tarafından üretilen GRAFANA_ADMIN_PASSWORD"
     echo "  Prometheus paneli : http://localhost:9090"

@@ -1,10 +1,10 @@
 {
-  "captured_at": "2026-08-14",
-  "owner": "Frontend bak\u0131m ekibi",
-  "maximum_untyped_files": 26,
+  "captured_at": "2026-08-30",
+  "owner": "Frontend bakım ekibi",
+  "maximum_untyped_files": 21,
   "maximum_production_untyped_files": 0,
-  "maximum_test_untyped_files": 26,
-  "minimum_typed_files": 41,
+  "maximum_test_untyped_files": 21,
+  "minimum_typed_files": 51,
   "milestones": [
     {
       "deadline": "2026-10-31",
@@ -41,13 +41,8 @@
     "src/components/SwarmFlowPanel.test.jsx",
     "src/components/TenantAdminPanel.test.jsx",
     "src/components/VoiceAssistantPanel.test.jsx",
-    "src/hooks/useChatStore.test.js",
     "src/hooks/useVoiceAssistant.test.js",
-    "src/hooks/useWebSocket.test.js",
-    "src/lib/rehypeSidarHighlight.test.js",
     "src/lib/routerShim.test.jsx",
-    "src/main.test.jsx",
-    "src/test/launcher_script.test.js",
-    "src/test/setup.js"
+    "src/main.test.jsx"
   ]
 }

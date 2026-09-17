@@ -15,7 +15,7 @@ import json
 import os
 import re
 import shutil
-import subprocess  # nosec B404
+import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -34,6 +34,7 @@ from core.doctor.models import (
 )
 from core.doctor.reporting import build_doctor_report, write_doctor_report
 from core.rag.readiness import build_readiness_report
+from core.utils.trusted_subprocess import run_trusted_command
 from sidar_assets.paths import migrations_path
 
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -54,7 +55,7 @@ WEAK_SECRET_VALUES = set(DEFAULT_WEAK_SECRET_VALUES)
 
 def _run_command(cmd: list[str], *, timeout: int = 20) -> tuple[int, str]:
     try:
-        proc = subprocess.run(  # nosec B603  # noqa: S603 - command list is internally constructed.
+        proc = run_trusted_command(
             cmd,
             cwd=BASE_DIR,
             text=True,
@@ -1021,7 +1022,7 @@ def _rag_readiness_state() -> dict[str, Any]:
     if vector_backend == "pgvector":
         database_url, _, _, _ = _resolved_database_urls()
         postgres_password = os.getenv("POSTGRES_PASSWORD", "").strip()
-        parsed_database_password = ""  # Empty sentinel; real value is parsed below.  # nosec B105
+        parsed_database_password: str | None = None
         parsed_database_url, _ = _parse_url(database_url)
         if parsed_database_url:
             parsed_database_password = unquote(str(parsed_database_url.password or ""))
@@ -1459,7 +1460,7 @@ def _docker_image_exists_local(image: str) -> bool:
     if not docker_bin:
         return False
     try:
-        result = subprocess.run(  # Executable path and argument list are controlled.  # nosec B603
+        result = run_trusted_command(  # Executable path and argument list are controlled.
             [docker_bin, "image", "inspect", safe_image],
             capture_output=True,
             text=True,
@@ -1852,6 +1853,7 @@ def run_doctor_report(
     from core.doctor.checks.gpu import check_docker_test_image as docker_test_image_check
     from core.doctor.checks.gpu import check_gpu as gpu_check
     from core.doctor.checks.gpu import check_gpu_memory_config as gpu_memory_config_check
+    from core.doctor.checks.media import check_media_tools as media_tools_check
     from core.doctor.checks.rag import (
         check_graphrag_entity_memory_ready as graphrag_entity_memory_ready_check,
     )
@@ -1884,6 +1886,7 @@ def run_doctor_report(
             check_websocket_routes(),
             redis_check(),
             gpu_check(),
+            media_tools_check(),
             check_model(smoke=include_model_smoke),
         ]
     )

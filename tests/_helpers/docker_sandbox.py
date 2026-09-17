@@ -67,6 +67,34 @@ def image_available(image: str) -> bool:
     return completed.returncode == 0
 
 
+_DEFAULT_ORPHAN_CLEANUP_TIMEOUT_S = 60.0
+
+
+def orphan_cleanup_timeout_seconds() -> float:
+    """Resolve the orphan-container poll budget (overridable for slow Docker setups).
+
+    ``test_plugin_sandbox_container_escape.py`` polls for asynchronous
+    ``docker rm --force`` cleanup after a real timeout/OOM-kill and has
+    repeatedly needed more than a fixed 60s budget under CI load (a busy
+    runner building the target image, running Postgres/Redis service
+    containers, and this module's own xdist workers concurrently). Resource-
+    constrained developer setups -- WSL2 + Docker Desktop, especially
+    alongside concurrent GPU stress tests -- have been observed to need even
+    more; a fixed constant would just make the module flaky there instead of
+    in CI. ``SIDAR_SANDBOX_TEST_CLEANUP_TIMEOUT_S`` lets such environments
+    raise the budget without editing the test module. Invalid, blank,
+    non-positive, or unset values all fall back to the 60s default.
+    """
+    raw = os.getenv("SIDAR_SANDBOX_TEST_CLEANUP_TIMEOUT_S", "").strip()
+    if not raw:
+        return _DEFAULT_ORPHAN_CLEANUP_TIMEOUT_S
+    try:
+        value = float(raw)
+    except ValueError:
+        return _DEFAULT_ORPHAN_CLEANUP_TIMEOUT_S
+    return value if value > 0 else _DEFAULT_ORPHAN_CLEANUP_TIMEOUT_S
+
+
 def container_tests_required() -> bool:
     return os.getenv("SIDAR_REQUIRE_PLUGIN_SANDBOX_CONTAINER_TESTS", "0").strip().lower() in {
         "1",

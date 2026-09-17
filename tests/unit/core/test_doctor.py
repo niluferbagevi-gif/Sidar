@@ -1332,6 +1332,7 @@ def test_docker_test_image_is_info_in_development_when_auto_build_is_deferred(mo
     from config import Config
 
     monkeypatch.delenv("AUTO_BUILD_DOCKER_TEST_IMAGE", raising=False)
+    monkeypatch.delenv("SIDAR_PRODUCTION_READINESS", raising=False)
     monkeypatch.setattr(Config, "AI_PROVIDER", "ollama")
     monkeypatch.setattr(Config, "CODING_MODEL", "qwen2.5-coder:7b")
     monkeypatch.setattr(Config, "ACCESS_LEVEL", "sandbox")

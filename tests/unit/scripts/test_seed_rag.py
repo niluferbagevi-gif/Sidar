@@ -264,3 +264,56 @@ def test_wait_for_pgvector_readiness_retries_until_extension_visible(
 
     assert state["calls"] == 3
     assert sleep_calls == [0.1, 0.1]
+
+
+def test_wait_for_pgvector_readiness_drops_async_driver_for_sync_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The async driver must be stripped, or the sync probe always raises `MissingGreenlet`."""
+
+    class _FakeConn:
+        def execute(self, _query: object) -> object:
+            return type("_Result", (), {"scalar": lambda self: True})()
+
+        def __enter__(self) -> _FakeConn:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    class _FakeEngine:
+        def connect(self) -> _FakeConn:
+            return _FakeConn()
+
+        def dispose(self) -> None:
+            return None
+
+    seen_urls: list[str] = []
+    fake_config = type(
+        "_Cfg",
+        (),
+        {
+            "RAG_VECTOR_BACKEND": "pgvector",
+            "DATABASE_URL": "postgresql+asyncpg://sidar:pw@postgres:5432/sidar",
+        },
+    )
+    monkeypatch.setitem(sys.modules, "config", type("_Mod", (), {"Config": fake_config})())
+
+    def _fake_create_engine(url: str, **_kwargs: object) -> _FakeEngine:
+        seen_urls.append(url)
+        return _FakeEngine()
+
+    from types import SimpleNamespace
+
+    monkeypatch.setitem(
+        sys.modules,
+        "sqlalchemy",
+        SimpleNamespace(create_engine=_fake_create_engine, text=lambda q: q),
+    )
+    monkeypatch.setenv("SEED_RAG_PGVECTOR_MAX_RETRIES", "5")
+    monkeypatch.setenv("SEED_RAG_PGVECTOR_RETRY_DELAY_SEC", "0.1")
+    monkeypatch.setattr(seed_rag.time, "sleep", lambda _s: None)
+
+    seed_rag._wait_for_pgvector_readiness()
+
+    assert seen_urls == ["postgresql://sidar:pw@postgres:5432/sidar"]

@@ -46,7 +46,7 @@ from core.db.auth import (
     _AUTH_HASH_SLO_MS_ENV as _AUTH_HASH_SLO_MS_ENV,
 )
 from core.db.auth import (
-    _PASSWORD_HASH_ALGORITHM_ENV as _PASSWORD_HASH_ALGORITHM_ENV,
+    _CREDENTIAL_HASH_ALGORITHM_ENV as _CREDENTIAL_HASH_ALGORITHM_ENV,
 )
 from core.db.auth import (
     _PBKDF2_ALGORITHM as _PBKDF2_ALGORITHM,

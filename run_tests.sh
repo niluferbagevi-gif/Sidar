@@ -339,10 +339,16 @@ else
 fi
 BENCHMARK_DISABLE_GC="${BENCHMARK_DISABLE_GC:-1}"
 BENCHMARK_IO_COMPARE_FAIL="${BENCHMARK_IO_COMPARE_FAIL:-mean:25%}"
+# Parola hash/verify (bcrypt/pbkdf2 tarzı) primitive'leri kasıtlı olarak CPU-maliyetli
+# olduğundan paylaşılan CPU zamanına (termal, arka planda Docker build/GPU stress,
+# çok-worker'lı xdist) diğer CPU testlerinden belirgin biçimde daha duyarlıdır; bu yüzden
+# genel CPU eşiğinden ayrı, daha toleranslı bir karşılaştırma eşiği kullanır.
+BENCHMARK_PASSWORD_COMPARE_FAIL="${BENCHMARK_PASSWORD_COMPARE_FAIL:-mean:30%}"
 BENCHMARK_WARMUP="${BENCHMARK_WARMUP:-on}"
 BENCHMARK_WARMUP_ITERATIONS="${BENCHMARK_WARMUP_ITERATIONS:-100000}"
 BENCHMARK_JSON_OUTPUT="${BENCHMARK_JSON_OUTPUT:-artifacts/benchmark/benchmark.json}"
 BENCHMARK_IO_JSON_OUTPUT="${BENCHMARK_IO_JSON_OUTPUT:-artifacts/benchmark/io-benchmark.json}"
+BENCHMARK_PASSWORD_JSON_OUTPUT="${BENCHMARK_PASSWORD_JSON_OUTPUT:-artifacts/benchmark/password-benchmark.json}"
 BENCHMARK_GPU_TEST_FILE="${BENCHMARK_GPU_TEST_FILE:-${PERFORMANCE_TEST_DIR}/test_gpu_benchmark.py}"
 BENCHMARK_GPU_JSON_OUTPUT="${BENCHMARK_GPU_JSON_OUTPUT:-artifacts/benchmark/gpu-benchmark.json}"
 BENCHMARK_TREND_COMPARE="${BENCHMARK_TREND_COMPARE:-0}"
@@ -659,13 +665,21 @@ echo "======================================================"
 # for the strict production-readiness profile and remains outside normal dev runs.
 PRODUCTION_COMPOSE_EXIT_CODE=0
 PRODUCTION_COMPOSE_BOOT_STATUS="not_run"
+PRODUCTION_COMPOSE_DISPLAY_STATUS="NOT RUN"
+PRODUCTION_COMPOSE_FAILED_SERVICE="uygulanamaz"
+PRODUCTION_COMPOSE_ERROR_SUMMARY="yok"
 if production_readiness_gate_active; then
   echo "🐳 Production Compose boot/readiness/restart/persistence kapısı çalıştırılıyor..."
   if bash scripts/ci/validate_production_compose.sh; then
     PRODUCTION_COMPOSE_BOOT_STATUS="passed"
+    PRODUCTION_COMPOSE_DISPLAY_STATUS="PASSED"
   else
     PRODUCTION_COMPOSE_EXIT_CODE=1
     PRODUCTION_COMPOSE_BOOT_STATUS="failed"
+    PRODUCTION_COMPOSE_DISPLAY_STATUS="FAILED"
+    mapfile -t production_compose_diagnostics < <(production_compose_failure_diagnostics)
+    PRODUCTION_COMPOSE_FAILED_SERVICE="${production_compose_diagnostics[0]:-belirlenemedi}"
+    PRODUCTION_COMPOSE_ERROR_SUMMARY="${production_compose_diagnostics[1]:-compose diagnostics içinde hata özeti bulunamadı}"
   fi
 fi
 
@@ -725,6 +739,12 @@ if [ "${FINAL_EXIT_CODE}" -ne 0 ]; then
   echo "   Frontend Bundle Budget Çıkış Kodu: ${FRONTEND_BUNDLE_BUDGET_EXIT_CODE} (ran=${FRONTEND_BUNDLE_BUDGET_RAN})"
   echo "   Frontend E2E Çıkış Kodu: ${FRONTEND_E2E_EXIT_CODE} (enforce=${FRONTEND_E2E_ENFORCE_RESULT})"
   echo "   Benchmark Çıkış Kodu: ${BENCHMARK_EXIT_CODE} (enforce=${BENCHMARK_ENFORCE_RESULT})"
+  echo "   Production Compose Çıkış Kodu: ${PRODUCTION_COMPOSE_EXIT_CODE:-0}"
+  echo "   Production Compose Durumu: ${PRODUCTION_COMPOSE_DISPLAY_STATUS:-NOT RUN}"
+  if [ "${PRODUCTION_COMPOSE_BOOT_STATUS:-not_run}" = "failed" ]; then
+    echo "   Başarısız Servis: ${PRODUCTION_COMPOSE_FAILED_SERVICE:-belirlenemedi}"
+    echo "   Hata: ${PRODUCTION_COMPOSE_ERROR_SUMMARY:-compose diagnostics içinde hata özeti bulunamadı}"
+  fi
   exit 1
 else
   if production_readiness_gate_active; then
@@ -737,5 +757,7 @@ else
   fi
   echo "   Frontend E2E Çıkış Kodu: ${FRONTEND_E2E_EXIT_CODE} (enforce=${FRONTEND_E2E_ENFORCE_RESULT})"
   echo "   Benchmark Çıkış Kodu: ${BENCHMARK_EXIT_CODE} (enforce=${BENCHMARK_ENFORCE_RESULT})"
+  echo "   Production Compose Çıkış Kodu: ${PRODUCTION_COMPOSE_EXIT_CODE:-0}"
+  echo "   Production Compose Durumu: ${PRODUCTION_COMPOSE_DISPLAY_STATUS:-NOT RUN}"
   exit 0
 fi

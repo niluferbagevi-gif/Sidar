@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -38,20 +39,28 @@ def test_repo_from_git_remote_uses_allowlisted_absolute_git(
         audit.shutil, "which", lambda name: "/usr/bin/git" if name == "git" else None
     )
 
-    def fake_check_output(command, **kwargs):  # noqa: ANN001 - subprocess argv test double.
+    # _repo_from_git_remote() runs the git invocation through
+    # core.utils.trusted_subprocess.run_trusted_command() (centralizes the
+    # unavoidable Bandit B603 suppression -- see that module's docstring),
+    # which verify_required_checks imports by name, so the fake belongs on
+    # that imported name rather than on audit.subprocess.check_output
+    # (run_trusted_command wraps the real subprocess.run internally, not
+    # check_output).
+    def fake_run_trusted_command(command, **kwargs):  # noqa: ANN001 - subprocess argv test double.
         captured["command"] = command
         captured.update(kwargs)
-        return "git@github.com:owner/repo.git\n"
+        return SimpleNamespace(stdout="git@github.com:owner/repo.git\n")
 
-    monkeypatch.setattr(audit.subprocess, "check_output", fake_check_output)
+    monkeypatch.setattr(audit, "run_trusted_command", fake_run_trusted_command)
 
     assert audit._repo_from_git_remote() == "owner/repo"
     assert captured == {
         "command": ["/usr/bin/git", "remote", "get-url", "origin"],
         "text": True,
+        "stdout": audit.subprocess.PIPE,
         "stderr": audit.subprocess.DEVNULL,
-        "shell": False,
         "timeout": 10,
+        "check": True,
     }
 
 
@@ -60,8 +69,8 @@ def test_repo_from_git_remote_fails_closed_without_absolute_git(
 ) -> None:
     monkeypatch.setattr(audit.shutil, "which", lambda _name: None)
     monkeypatch.setattr(
-        audit.subprocess,
-        "check_output",
+        audit,
+        "run_trusted_command",
         lambda *_args, **_kwargs: pytest.fail("subprocess must not run without resolved git"),
     )
 
@@ -71,14 +80,14 @@ def test_repo_from_git_remote_fails_closed_without_absolute_git(
 def test_audit_required_checks_accepts_all_release_contexts(tmp_path: Path) -> None:
     workflow = _workflow(tmp_path / "ci.yml")
     expected_contexts = {
-        "CI / Base quality gates",
-        "CI / Installer manifest and smoke gate",
-        "CI / Production-minimal runtime validation",
-        "CI / GPU Inference Required Evidence Gate",
-        "CI / Production readiness aggregate",
-        "CI / PostgreSQL Connection Pool Stress Test",
-        "CI / Extra non-release check",
-        "Branch protection audit / Required release checks audit",
+        "Base quality gates",
+        "Installer manifest and smoke gate",
+        "Production-minimal runtime validation",
+        "GPU Inference Required Evidence Gate",
+        "Production readiness aggregate",
+        "PostgreSQL Connection Pool Stress Test",
+        "Extra non-release check",
+        "Required release checks audit",
     }
 
     expected, missing = audit.audit_required_checks(
@@ -88,13 +97,13 @@ def test_audit_required_checks_accepts_all_release_contexts(tmp_path: Path) -> N
     )
 
     assert expected == [
-        "CI / Base quality gates",
-        "CI / Installer manifest and smoke gate",
-        "CI / Production-minimal runtime validation",
-        "CI / GPU Inference Required Evidence Gate",
-        "CI / Production readiness aggregate",
-        "CI / PostgreSQL Connection Pool Stress Test",
-        "Branch protection audit / Required release checks audit",
+        "Base quality gates",
+        "Installer manifest and smoke gate",
+        "Production-minimal runtime validation",
+        "GPU Inference Required Evidence Gate",
+        "Production readiness aggregate",
+        "PostgreSQL Connection Pool Stress Test",
+        "Required release checks audit",
     ]
     assert missing == []
 
@@ -106,16 +115,16 @@ def test_audit_required_checks_reports_missing_release_context(tmp_path: Path) -
         workflow_path=workflow,
         job_ids=audit.DEFAULT_RELEASE_JOB_IDS,
         required_contexts={
-            "CI / Base quality gates",
-            "CI / Installer manifest and smoke gate",
-            "CI / Production-minimal runtime validation",
-            "CI / GPU Inference Required Evidence Gate",
-            "CI / Production readiness aggregate",
-            "Branch protection audit / Required release checks audit",
+            "Base quality gates",
+            "Installer manifest and smoke gate",
+            "Production-minimal runtime validation",
+            "GPU Inference Required Evidence Gate",
+            "Production readiness aggregate",
+            "Required release checks audit",
         },
     )
 
-    assert missing == ["CI / PostgreSQL Connection Pool Stress Test"]
+    assert missing == ["PostgreSQL Connection Pool Stress Test"]
 
 
 def test_extract_required_contexts_supports_legacy_contexts_and_checks() -> None:
@@ -349,10 +358,10 @@ def test_cli_offline_mode_fails_when_context_is_missing(
             "--workflow",
             str(workflow),
             "--required-context",
-            "CI / Base quality gates",
+            "Base quality gates",
         ]
     )
 
     captured = capsys.readouterr()
     assert exit_code == 1
-    assert "CI / Installer manifest and smoke gate" in captured.err
+    assert "Installer manifest and smoke gate" in captured.err

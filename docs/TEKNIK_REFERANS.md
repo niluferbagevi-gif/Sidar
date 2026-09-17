@@ -558,7 +558,8 @@ WEB_SEARCH_MAX_RESULTS
 
 ### 5.3 Docker Compose override değişkenleri
 
-`docker-compose.yml` üzerinden doğrudan kullanılan başlıca override’lar:
+`docker-compose.yml` (core) ve GPU-özel değişkenler için `docker-compose.gpu.yml`
+üzerinden doğrudan kullanılan başlıca override’lar:
 
 - Kaynak limitleri:
   - `SIDAR_CPU_LIMIT`, `SIDAR_MEM_LIMIT`
