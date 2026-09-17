@@ -11,6 +11,8 @@ import sys
 from pathlib import Path
 from typing import Any, cast
 
+BATCH_RETRIES_SAFETY_CAP = 10
+
 MYPY_SELF_HEAL_REFERENCE = """\
 Mypy quick-fix referansı:
 - [import-untyped]: 3rd-party paket için tip stubları yoksa önce stubs/paket kurulumu dene; geçici
@@ -62,7 +64,7 @@ def _parse_args() -> argparse.Namespace:
         default=2,
         help=(
             "Her batch için plan üretimi/uygulama başarısız olursa yapılacak ek deneme sayısı "
-            "(varsayılan: 2)."
+            f"(varsayılan: 2, güvenlik üst sınırı: {BATCH_RETRIES_SAFETY_CAP})."
         ),
     )
     parser.add_argument(
@@ -86,7 +88,15 @@ def _parse_args() -> argparse.Namespace:
             "Verilirse stdout'a basılan sonuç aynı zamanda bu artefakta da kaydedilir."
         ),
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    raw_batch_retries = int(args.batch_retries)
+    args.batch_retries = max(0, min(raw_batch_retries, BATCH_RETRIES_SAFETY_CAP))
+    if raw_batch_retries != args.batch_retries:
+        print(
+            "⚠ --batch-retries değeri güvenlik için sınırlandı: "
+            f"{raw_batch_retries} -> {args.batch_retries} (max={BATCH_RETRIES_SAFETY_CAP})"
+        )
+    return args
 
 
 def _emit_result(payload: dict[str, Any], args: argparse.Namespace) -> None:

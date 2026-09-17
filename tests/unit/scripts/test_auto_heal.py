@@ -84,6 +84,35 @@ def test_parse_args_applies_optional_defaults(
     assert args.output is None
 
 
+def test_parse_args_clamps_batch_retries_to_safety_cap(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    log_path = tmp_path / "mypy.log"
+    monkeypatch.setattr(
+        "sys.argv",
+        ["auto_heal.py", "--log", str(log_path), "--batch-retries", "999"],
+    )
+
+    args = auto_heal._parse_args()
+
+    assert args.batch_retries == auto_heal.BATCH_RETRIES_SAFETY_CAP
+    assert "999" in capsys.readouterr().out
+
+
+def test_parse_args_clamps_negative_batch_retries_to_zero(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    log_path = tmp_path / "mypy.log"
+    monkeypatch.setattr(
+        "sys.argv",
+        ["auto_heal.py", "--log", str(log_path), "--batch-retries", "-5"],
+    )
+
+    args = auto_heal._parse_args()
+
+    assert args.batch_retries == 0
+
+
 def test_resolve_auto_heal_database_url_defaults_to_log_scoped_sqlite(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
