@@ -1299,8 +1299,15 @@ def test_install_sidar_test_mode_and_uv_only_contract() -> None:
     with (repo_root / "pyproject.toml").open("rb") as pyproject_file:
         pyproject_version = tomllib.load(pyproject_file)["project"]["version"]
 
-    assert 'if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]; then' in installer_text
-    assert 'main "$@"' in installer_text
+    # Regression: a plain `source install_sidar.sh` (no SIDAR_INSTALL_TEST_MODE)
+    # must never run the real main() install flow. The BASH_SOURCE[0] == "${0}"
+    # guard makes that independent of SIDAR_INSTALL_TEST_MODE; asserting the
+    # exact final guard clause (not just any TEST_MODE check elsewhere in the
+    # file) pins the actual fix without executing the destructive install path.
+    assert (
+        'if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" && "${BASH_SOURCE[0]}" == "${0}" ]]; then\n'
+        '    main "$@"\nfi'
+    ) in installer_text
     strict_mode_idx = installer_text.index("set -Eeuo pipefail")
     pretrap_func_idx = installer_text.index("on_install_error()")
     pretrap_idx = installer_text.index('trap \'on_install_error "$LINENO" "$BASH_COMMAND"\' ERR')
