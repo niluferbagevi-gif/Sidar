@@ -176,6 +176,45 @@ The repaired [`pr-1677-2763-live-reconciliation.csv`](pr-1677-2763-live-reconcil
 
 The exact `EXCLUSION_ANOMALY_CLOSED` set is 28 unique PRs: #1861, #1921, #1942, #1983, #1984, #2042, #2066, #2069, #2077, #2078, #2113, #2114, #2225, #2231, #2273, #2344, #2346, #2347, #2569, #2635, #2636, #2647, #2648, #2649, #2651, #2655, #2696, and #2701. All count and exact-set invariants passed; no remediation/reopen action was performed in this task.
 
+## Exclusion anomaly remediation
+
+Remediation time: **2026-09-17T01:02:16Z–01:04:53Z**. The 272-row reconciliation CSV was read directly from the existing #2818 head, and its strict predicate produced the exact authorized 28-PR set. A read-only GraphQL preflight confirmed all 28 were `CLOSED`, `merged=false`, and categorized only as `SECURITY` or `UNCLEAR`.
+
+Each PR was checked again immediately before mutation, reopened with the normal `gh pr reopen` path without `--admin`, force, or bypass, and verified `OPEN`/unmerged before exactly one category-specific correction comment was written. No reopen, verification, or comment call failed; no PR was idempotently skipped. Exact operation result: **28 reopened, 0 skipped, 0 failed**.
+
+A post-operation GraphQL verification confirmed all **31 `SECURITY` PRs are `OPEN` and unmerged** and all **3 `UNCLEAR` PRs are `OPEN` and unmerged**. The CSV retains the historical `EXCLUSION_ANOMALY_CLOSED` value while adding `remediation_action`, `remediation_result`, `reopened_at`, and `correction_comment_url`; the current `live_state` for the remediated rows is now `OPEN`. No `CLOSE_CANDIDATE`, `REAL_MISSING`, protected PR, review, merge, or close operation was performed.
+
+| PR | Category | Reopened at | Correction comment | Result |
+|---|---|---|---|---|
+| #1861 | `SECURITY` | `2026-09-17T01:02:16Z` | [comment](https://github.com/niluferbagevi-gif/Sidar/pull/1861#issuecomment-5706824481) | `SUCCESS` |
+| #1921 | `SECURITY` | `2026-09-17T01:02:21Z` | [comment](https://github.com/niluferbagevi-gif/Sidar/pull/1921#issuecomment-5706825243) | `SUCCESS` |
+| #1942 | `UNCLEAR` | `2026-09-17T01:02:27Z` | [comment](https://github.com/niluferbagevi-gif/Sidar/pull/1942#issuecomment-5706825956) | `SUCCESS` |
+| #1983 | `SECURITY` | `2026-09-17T01:02:33Z` | [comment](https://github.com/niluferbagevi-gif/Sidar/pull/1983#issuecomment-5706826676) | `SUCCESS` |
+| #1984 | `SECURITY` | `2026-09-17T01:02:39Z` | [comment](https://github.com/niluferbagevi-gif/Sidar/pull/1984#issuecomment-5706827400) | `SUCCESS` |
+| #2042 | `SECURITY` | `2026-09-17T01:02:45Z` | [comment](https://github.com/niluferbagevi-gif/Sidar/pull/2042#issuecomment-5706828140) | `SUCCESS` |
+| #2066 | `SECURITY` | `2026-09-17T01:02:50Z` | [comment](https://github.com/niluferbagevi-gif/Sidar/pull/2066#issuecomment-5706828810) | `SUCCESS` |
+| #2069 | `UNCLEAR` | `2026-09-17T01:02:56Z` | [comment](https://github.com/niluferbagevi-gif/Sidar/pull/2069#issuecomment-5706829624) | `SUCCESS` |
+| #2077 | `SECURITY` | `2026-09-17T01:03:02Z` | [comment](https://github.com/niluferbagevi-gif/Sidar/pull/2077#issuecomment-5706830318) | `SUCCESS` |
+| #2078 | `SECURITY` | `2026-09-17T01:03:07Z` | [comment](https://github.com/niluferbagevi-gif/Sidar/pull/2078#issuecomment-5706831094) | `SUCCESS` |
+| #2113 | `SECURITY` | `2026-09-17T01:03:13Z` | [comment](https://github.com/niluferbagevi-gif/Sidar/pull/2113#issuecomment-5706831738) | `SUCCESS` |
+| #2114 | `SECURITY` | `2026-09-17T01:03:18Z` | [comment](https://github.com/niluferbagevi-gif/Sidar/pull/2114#issuecomment-5706832413) | `SUCCESS` |
+| #2225 | `SECURITY` | `2026-09-17T01:03:25Z` | [comment](https://github.com/niluferbagevi-gif/Sidar/pull/2225#issuecomment-5706833204) | `SUCCESS` |
+| #2231 | `SECURITY` | `2026-09-17T01:03:31Z` | [comment](https://github.com/niluferbagevi-gif/Sidar/pull/2231#issuecomment-5706833945) | `SUCCESS` |
+| #2273 | `SECURITY` | `2026-09-17T01:03:37Z` | [comment](https://github.com/niluferbagevi-gif/Sidar/pull/2273#issuecomment-5706834688) | `SUCCESS` |
+| #2344 | `SECURITY` | `2026-09-17T01:03:42Z` | [comment](https://github.com/niluferbagevi-gif/Sidar/pull/2344#issuecomment-5706835408) | `SUCCESS` |
+| #2346 | `SECURITY` | `2026-09-17T01:03:48Z` | [comment](https://github.com/niluferbagevi-gif/Sidar/pull/2346#issuecomment-5706836150) | `SUCCESS` |
+| #2347 | `SECURITY` | `2026-09-17T01:03:54Z` | [comment](https://github.com/niluferbagevi-gif/Sidar/pull/2347#issuecomment-5706836935) | `SUCCESS` |
+| #2569 | `SECURITY` | `2026-09-17T01:04:00Z` | [comment](https://github.com/niluferbagevi-gif/Sidar/pull/2569#issuecomment-5706837805) | `SUCCESS` |
+| #2635 | `SECURITY` | `2026-09-17T01:04:06Z` | [comment](https://github.com/niluferbagevi-gif/Sidar/pull/2635#issuecomment-5706838573) | `SUCCESS` |
+| #2636 | `SECURITY` | `2026-09-17T01:04:11Z` | [comment](https://github.com/niluferbagevi-gif/Sidar/pull/2636#issuecomment-5706839287) | `SUCCESS` |
+| #2647 | `SECURITY` | `2026-09-17T01:04:17Z` | [comment](https://github.com/niluferbagevi-gif/Sidar/pull/2647#issuecomment-5706840030) | `SUCCESS` |
+| #2648 | `SECURITY` | `2026-09-17T01:04:23Z` | [comment](https://github.com/niluferbagevi-gif/Sidar/pull/2648#issuecomment-5706840795) | `SUCCESS` |
+| #2649 | `SECURITY` | `2026-09-17T01:04:29Z` | [comment](https://github.com/niluferbagevi-gif/Sidar/pull/2649#issuecomment-5706841399) | `SUCCESS` |
+| #2651 | `SECURITY` | `2026-09-17T01:04:35Z` | [comment](https://github.com/niluferbagevi-gif/Sidar/pull/2651#issuecomment-5706842247) | `SUCCESS` |
+| #2655 | `SECURITY` | `2026-09-17T01:04:41Z` | [comment](https://github.com/niluferbagevi-gif/Sidar/pull/2655#issuecomment-5706842882) | `SUCCESS` |
+| #2696 | `UNCLEAR` | `2026-09-17T01:04:47Z` | [comment](https://github.com/niluferbagevi-gif/Sidar/pull/2696#issuecomment-5706843631) | `SUCCESS` |
+| #2701 | `SECURITY` | `2026-09-17T01:04:53Z` | [comment](https://github.com/niluferbagevi-gif/Sidar/pull/2701#issuecomment-5706844392) | `SUCCESS` |
+
 ## Explicit no-merge guard
 
 - #2739: left open/unmerged; current checks include 4 failures, 5 skipped, and 8 successes; `MERGEABLE` / `BEHIND`; no review decision.
