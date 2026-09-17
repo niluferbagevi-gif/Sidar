@@ -4848,22 +4848,18 @@ def test_docker_only_skips_host_ollama_install(tmp_path: Path) -> None:
     `--docker-only`.
     """
     tail = _extract_ensure_prerequisites_ollama_tail()
-    assert '_ollama_install_step' in tail
-    assert (
-        'if [[ "$DOCKER_ONLY" == true || "${APP_RUNTIME_MODE:-ask}" == "docker" ]]' in tail
-    )
+    assert "_ollama_install_step" in tail
+    assert 'if [[ "$DOCKER_ONLY" == true || "${APP_RUNTIME_MODE:-ask}" == "docker" ]]' in tail
 
     harness = tmp_path / "ollama_gate_probe.sh"
     harness.write_text(
         "#!/usr/bin/env bash\nset -uo pipefail\n"
-        'warn() { :; }\n'
-        'info() { :; }\n'
-        'ok() { :; }\n'
+        "warn() { :; }\n"
+        "info() { :; }\n"
+        "ok() { :; }\n"
         '_ollama_install_step() { echo "OLLAMA_INSTALL_CALLED"; }\n'
-        'WSL2=false\n'
-        "ensure_prerequisites() {\n"
-        + tail
-        + "\n",
+        "WSL2=false\n"
+        "ensure_prerequisites() {\n" + tail + "\n",
         encoding="utf-8",
     )
     harness.chmod(0o755)
@@ -4872,7 +4868,7 @@ def test_docker_only_skips_host_ollama_install(tmp_path: Path) -> None:
         [
             "bash",
             "-c",
-            f'source {harness}; DOCKER_ONLY=true APP_RUNTIME_MODE=ask ensure_prerequisites',
+            f"source {harness}; DOCKER_ONLY=true APP_RUNTIME_MODE=ask ensure_prerequisites",
         ],
         capture_output=True,
         text=True,
@@ -4884,28 +4880,28 @@ def test_docker_only_skips_host_ollama_install(tmp_path: Path) -> None:
         [
             "bash",
             "-c",
-            f'source {harness}; DOCKER_ONLY=false APP_RUNTIME_MODE=docker ensure_prerequisites',
+            f"source {harness}; DOCKER_ONLY=false APP_RUNTIME_MODE=docker ensure_prerequisites",
         ],
         capture_output=True,
         text=True,
     )
-    assert (
-        runtime_mode_docker_result.returncode == 0
-    ), runtime_mode_docker_result.stdout + runtime_mode_docker_result.stderr
+    assert runtime_mode_docker_result.returncode == 0, (
+        runtime_mode_docker_result.stdout + runtime_mode_docker_result.stderr
+    )
     assert "OLLAMA_INSTALL_CALLED" not in runtime_mode_docker_result.stdout
 
     non_docker_only_result = subprocess.run(
         [
             "bash",
             "-c",
-            f'source {harness}; DOCKER_ONLY=false APP_RUNTIME_MODE=local ensure_prerequisites',
+            f"source {harness}; DOCKER_ONLY=false APP_RUNTIME_MODE=local ensure_prerequisites",
         ],
         capture_output=True,
         text=True,
     )
-    assert (
-        non_docker_only_result.returncode == 0
-    ), non_docker_only_result.stdout + non_docker_only_result.stderr
+    assert non_docker_only_result.returncode == 0, (
+        non_docker_only_result.stdout + non_docker_only_result.stderr
+    )
     assert "OLLAMA_INSTALL_CALLED" in non_docker_only_result.stdout
 
 
@@ -4939,15 +4935,13 @@ def test_wsl2_verifies_gpu_passthrough_before_nvidia_ctk_install(tmp_path: Path)
 
     harness.write_text(
         "#!/usr/bin/env bash\nset -uo pipefail\n"
-        'step() { :; }\n'
-        'warn() { :; }\n'
-        'info() { :; }\n'
+        "step() { :; }\n"
+        "warn() { :; }\n"
+        "info() { :; }\n"
         'ok() { echo "OK:$*"; }\n'
         'fail() { echo "FAIL:$*"; exit 1; }\n'
         'wait_for_docker_nvidia_runtime() { echo "WAIT_FOR_RUNTIME_CALLED"; return 0; }\n'
-        'print_docker_desktop_restart_notice() { :; }\n'
-        + body
-        + "\n",
+        "print_docker_desktop_restart_notice() { :; }\n" + body + "\n",
         encoding="utf-8",
     )
     harness.chmod(0o755)
@@ -4965,7 +4959,7 @@ def test_wsl2_verifies_gpu_passthrough_before_nvidia_ctk_install(tmp_path: Path)
             [
                 "bash",
                 "-c",
-                f'source {harness}; WSL2={wsl2} GPU_AVAILABLE={gpu} setup_nvidia_docker',
+                f"source {harness}; WSL2={wsl2} GPU_AVAILABLE={gpu} setup_nvidia_docker",
             ],
             capture_output=True,
             text=True,
@@ -4995,6 +4989,8 @@ def test_wsl2_verifies_gpu_passthrough_before_nvidia_ctk_install(tmp_path: Path)
         docker_script="#!/usr/bin/env bash\nexit 1\n",
     )
     assert "WAIT_FOR_RUNTIME_CALLED" in non_wsl2_fallback.stdout
+
+
 def test_node_install_fallbacks_report_failures_and_validate_apt_major() -> None:
     """Every Node fallback must explain degradation and enforce the .nvmrc major check."""
     system_phase = Path("scripts/install_modules/phases/03_system.sh").read_text(encoding="utf-8")
@@ -7937,7 +7933,9 @@ def test_docker_compose_gpu_services_default_ollama_url_to_ollama_gpu() -> None:
     compose = Path("docker-compose.yml").read_text(encoding="utf-8")
     gpu_compose = Path("docker-compose.gpu.yml").read_text(encoding="utf-8")
 
-    agent_gpu_block = _compose_service_block(gpu_compose, "\n  sidar-gpu:\n", "\n  sidar-web-gpu:\n")
+    agent_gpu_block = _compose_service_block(
+        gpu_compose, "\n  sidar-gpu:\n", "\n  sidar-web-gpu:\n"
+    )
     assert (
         "- OLLAMA_URL=${SIDAR_CONTAINER_OLLAMA_GPU_URL:-http://ollama-gpu:11434/api}"
         in agent_gpu_block
@@ -8013,9 +8011,7 @@ def test_docker_compose_web_ports_use_configurable_bind_addr() -> None:
 
 
 def _extract_context_phase_function(name: str, next_marker: str) -> str:
-    context_phase = Path("scripts/install_modules/phases/01_context.sh").read_text(
-        encoding="utf-8"
-    )
+    context_phase = Path("scripts/install_modules/phases/01_context.sh").read_text(encoding="utf-8")
     start = context_phase.index(f"{name}() {{")
     end = context_phase.index(next_marker, start)
     return context_phase[start:end]
@@ -8031,18 +8027,17 @@ def test_wsl2_warns_when_repo_checked_out_on_windows_mount(tmp_path: Path) -> No
     all; a user cloning to /mnt/c/Users/.../Sidar would get no signal.
     """
     fn = _extract_context_phase_function(
-        "sidar_warn_if_repo_on_windows_mount", "\nsidar_fail_if_wsl_integration_autofix_applied_current_session() {"
+        "sidar_warn_if_repo_on_windows_mount",
+        "\nsidar_fail_if_wsl_integration_autofix_applied_current_session() {",
     )
-    assert '/mnt/*' in fn
+    assert "/mnt/*" in fn
     assert "WSL2" in fn
 
     harness = tmp_path / "mount_probe.sh"
     harness.write_text(
         "#!/usr/bin/env bash\nset -uo pipefail\n"
         'warn() { echo "WARN:$*"; }\n'
-        'info() { echo "INFO:$*"; }\n'
-        + fn
-        + "\n",
+        'info() { echo "INFO:$*"; }\n' + fn + "\n",
         encoding="utf-8",
     )
     harness.chmod(0o755)
@@ -8051,19 +8046,23 @@ def test_wsl2_warns_when_repo_checked_out_on_windows_mount(tmp_path: Path) -> No
         [
             "bash",
             "-c",
-            f'source {harness}; WSL2=true SCRIPT_DIR=/mnt/c/Users/test/Sidar sidar_warn_if_repo_on_windows_mount',
+            f"source {harness}; WSL2=true SCRIPT_DIR=/mnt/c/Users/test/Sidar "
+            "sidar_warn_if_repo_on_windows_mount",
         ],
         capture_output=True,
         text=True,
     )
-    assert windows_mount_result.returncode == 0, windows_mount_result.stdout + windows_mount_result.stderr
+    assert windows_mount_result.returncode == 0, (
+        windows_mount_result.stdout + windows_mount_result.stderr
+    )
     assert "WARN:" in windows_mount_result.stdout
 
     linux_fs_result = subprocess.run(
         [
             "bash",
             "-c",
-            f'source {harness}; WSL2=true SCRIPT_DIR=/home/test/Sidar sidar_warn_if_repo_on_windows_mount',
+            f"source {harness}; WSL2=true SCRIPT_DIR=/home/test/Sidar "
+            "sidar_warn_if_repo_on_windows_mount",
         ],
         capture_output=True,
         text=True,
@@ -8075,7 +8074,8 @@ def test_wsl2_warns_when_repo_checked_out_on_windows_mount(tmp_path: Path) -> No
         [
             "bash",
             "-c",
-            f'source {harness}; WSL2=false SCRIPT_DIR=/mnt/c/Users/test/Sidar sidar_warn_if_repo_on_windows_mount',
+            f"source {harness}; WSL2=false SCRIPT_DIR=/mnt/c/Users/test/Sidar "
+            "sidar_warn_if_repo_on_windows_mount",
         ],
         capture_output=True,
         text=True,
