@@ -12,6 +12,20 @@ if [[ -z "${SIDAR_INSTALL_UTIL_WSL_HOST_SH_LOADED:-}" ]]; then
 fi
 
 
+# sparseVhd, WSL2'nin deneysel [experimental] özelliğidir; Microsoft bazı
+# senaryolarda veri bozulmasına yol açabileceğini belgelemiştir
+# (bkz. https://github.com/microsoft/WSL/issues/9862). Bu yüzden varsayılan
+# olarak kapalı bırakılır; disk alanından tasarruf etmek isteyen kullanıcılar
+# riski bilerek SIDAR_WSL_SPARSE_VHD=true ile açıkça etkinleştirebilir.
+resolve_sidar_wsl_sparse_vhd() {
+    local value="${SIDAR_WSL_SPARSE_VHD:-false}"
+    if [[ "$value" != "true" && "$value" != "false" ]]; then
+        warn "SIDAR_WSL_SPARSE_VHD='${value}' geçersiz (true/false olmalı); güvenli varsayılan olan false kullanılıyor."
+        value="false"
+    fi
+    echo "$value"
+}
+
 # ── 8. WSL2 Ses Desteği Kurulumu ─────────────────────────────────────────────
 # WSLg (Windows 11 Build 22000+) PulseAudio soketi üzerinden gerçek zamanlı
 # mikrofon/hoparlör erişimini etkinleştirir.
@@ -264,7 +278,8 @@ ASOUNDRC
     local target_memory="${target_memory_gb}GB"
     local target_swap="${target_swap_gb}GB"
     local target_kernel_command_line="cgroup_no_v1=all"
-    local target_sparse_vhd="true"
+    local target_sparse_vhd
+    target_sparse_vhd=$(resolve_sidar_wsl_sparse_vhd)
     info "WSL2 için dinamik .wslconfig hedefleri: memory=${target_memory}, swap=${target_swap}, processors=${target_processors}, kernelCommandLine=${target_kernel_command_line}, sparseVhd=${target_sparse_vhd} (host RAM: ${host_ram_gb}GB, logical processors: ${host_processors})."
 
     # Genel INI anahtar-değer yardımcı fonksiyonu. Belirtilen bölümde anahtarı

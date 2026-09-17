@@ -1819,6 +1819,34 @@ EOF
   [[ "$output" == *"native-linux=false"* ]]
 }
 
+@test "resolve_sidar_wsl_sparse_vhd defaults to false (opt-in only)" {
+  # Regression for a fail-closed default: WSL2's [experimental] sparseVhd
+  # feature has documented data-corruption risk (microsoft/WSL#9862), so the
+  # installer must never force-enable it. Installs must opt in explicitly.
+  run_installer_function '
+    unset SIDAR_WSL_SPARSE_VHD
+    resolve_sidar_wsl_sparse_vhd
+  '
+  [ "$status" -eq 0 ]
+  [ "${lines[-1]}" = "false" ]
+}
+
+@test "resolve_sidar_wsl_sparse_vhd honors an explicit opt-in" {
+  run_installer_function '
+    SIDAR_WSL_SPARSE_VHD=true resolve_sidar_wsl_sparse_vhd
+  '
+  [ "$status" -eq 0 ]
+  [ "${lines[-1]}" = "true" ]
+}
+
+@test "resolve_sidar_wsl_sparse_vhd falls back to false on an invalid value" {
+  run_installer_function '
+    SIDAR_WSL_SPARSE_VHD=maybe resolve_sidar_wsl_sparse_vhd
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"false"* ]]
+}
+
 @test "detect_environment warns explicitly when WSL1 is detected" {
   run_installer_function '
     tmpdir="$(mktemp -d)"
