@@ -4,7 +4,7 @@ Snapshot time: **2026-09-16 UTC**. Repository: `niluferbagevi-gif/Sidar`.
 
 ## Safety contract
 
-The triage classifications remain a **dry-run artifact**. A first controlled pass updated only #2706, #2737, #2768, #2793, #2795, #2796, and #2805 through GitHub's update-branch API. In the later authorized sequential merge operation, #2805 was updated again and merged; processing then stopped fail-closed when GitHub rejected #2706's required update-branch request. No pull request was closed, approved, or commented on. PRs #2739, #2794, and #2808 were not touched.
+The triage classifications remain a **dry-run artifact**. A first controlled pass updated only #2706, #2737, #2768, #2793, #2795, #2796, and #2805 through GitHub's update-branch API. The authorized sequential merge operation merged #2805, initially stopped fail-closed on #2706's workflow-permission error, and then resumed after the fine-grained PAT received `Workflows: Read and write`. The resumed run merged #2706, #2737, #2768, #2793, and #2795 in order before stopping fail-closed because #2796 was conflicting/dirty. No pull request was closed, approved, or commented on. PRs #2739, #2794, and #2808 were not touched.
 
 ## Authentication and authorization
 
@@ -95,6 +95,25 @@ Main changed after that merge, so #2706 was re-evaluated from scratch. It remain
 | #2796 | `4c8c4a8d66e359bb1a8f65f065f130ec16d4d368` | none | not attempted after stop | not evaluated | none | none | `OPEN`; not processed |
 
 No required check or branch protection was bypassed. #2739, #2794, #2808, and the 234 historical close candidates were not mutated or commented on.
+
+## Resumed sequential merge operation
+
+Resume time: **2026-09-16/17 UTC**. GitHub identity and `ADMIN` repository permission were revalidated, and the existing audit PR remained #2818. #2805 was not processed again. Each remaining PR was queried from scratch after the previous merge; no earlier `CLEAN` or check result was reused. Every accepted update-branch request used that fresh head as `expected_head_sha`, and every merge used `--match-head-commit` plus the repository's normal merge-commit method without `--admin`.
+
+#2706's retry succeeded after the token permission change. #2706, #2737, #2768, #2793, and #2795 were each `OPEN`, non-draft, based on `main`, `MERGEABLE`, and `BEHIND` immediately before their protected update. For each new head, the exact 11 required-check names were matched, all 11 passed, all observed checks completed, and there were zero failed, cancelled, timed-out, action-required, stale, or pending checks before the final `MERGEABLE` / `CLEAN` gate and merge.
+
+When its turn arrived, #2796 was freshly observed as `OPEN`, non-draft, based on `main`, with head `f3a185f9acb8820670f86de388a8417cbec09834` and no review decision. GitHub then resolved it as `CONFLICTING` / `DIRTY`. No update-branch request or merge was attempted for #2796, and the operation stopped fail-closed.
+
+| PR | Fresh old head | Updated head | Update-branch | Required checks on updated head | All observed checks | Merge method | Merge commit | Final result |
+|---|---|---|---|---|---|---|---|---|
+| #2706 | `f0277c42182c8db3ac6803925954cb5538992bad` | `0d3b63ff9047783edad58acd8b8be461d2257b05` | accepted | 11/11 passed | 16 pass, 2 skipped, 0 bad/pending | merge commit; no `--admin` | `d39414a0c169cacec549740358be2eddf49ce8e5` | `MERGED` |
+| #2737 | `dd91429fd6810c7726e27a03adaf93033ebc69ac` | `dbdc2768dd33232bfcacc43e246d3759ee86410c` | accepted | 11/11 passed | 16 pass, 2 skipped, 0 bad/pending | merge commit; no `--admin` | `a206094015333852bc4bb1f5c4fc759f569b77bc` | `MERGED` |
+| #2768 | `81a078967f5b4cb73620404f5f94f761f1d80809` | `fa58d2cda05569a16051b756bf7bb267ae33efcd` | accepted | 11/11 passed | 16 pass, 2 skipped, 0 bad/pending | merge commit; no `--admin` | `502696a9cc896ca42c869fccf9d31edd765121a4` | `MERGED` |
+| #2793 | `a87414854cb2ee02ea3f9d2bce38223b0ae8089f` | `e89ad45e0b39fbe67412a95b620908e31ba43270` | accepted | 11/11 passed | 16 pass, 2 skipped, 0 bad/pending | merge commit; no `--admin` | `7432cdcdf0f538a7a46675745614fd1a5368e844` | `MERGED` |
+| #2795 | `9e2786a423b5d459a7bb6d896b06cf0d0638abda` | `d03b18ce2b3ea0c1d87735b4308e53d20da35446` | accepted | 11/11 passed | 15 pass, 2 skipped, 0 bad/pending | merge commit; no `--admin` | `5cca39732d22eec6e886664ec47e3a1f8a1a5692` | `MERGED` |
+| #2796 | `f3a185f9acb8820670f86de388a8417cbec09834` | none | not attempted: `CONFLICTING` / `DIRTY` | not evaluated/reused | not evaluated/reused | none | none | `OPEN`; operation stopped |
+
+No required check or branch protection was bypassed. #2739, #2794, #2808, and the 234 historical close candidates were not mutated or commented on. This result was committed to the existing #2818 audit branch; no new audit PR was created.
 
 ## Explicit no-merge guard
 
