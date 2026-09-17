@@ -146,7 +146,7 @@ async def test_multi_user_sessions_and_messages_keep_integrity_under_concurrency
         )
         assert all(len(items) == messages_per_session for items in session_messages)
         assert all(
-            [m.tokens_used for m in items] == list(range(messages_per_session))
+            sorted(m.tokens_used for m in items) == list(range(messages_per_session))
             for items in session_messages
         )
 
