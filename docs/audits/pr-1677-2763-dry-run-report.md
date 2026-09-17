@@ -157,6 +157,25 @@ The authorization predicate—manifest category `SECURITY`/`UNCLEAR`, reconcilia
 
 Per the mandatory fail-closed rule, the remediation stopped before live per-PR state checks and before any reopen/comment request. Exact result: **0 reopened, 0 idempotently skipped, 0 reopen failures, 28 blocked by preflight data mismatch**. No reopen-result columns were added to the CSV because no authorized remediation operation began. The six already-open security PRs (#2207, #2390, #2566, #2640, #2641, #2652), all `REAL_MISSING` and `CLOSE_CANDIDATE` PRs, #2739, #2794, #2808, #2796, and #2818 were not mutated.
 
+## Reconciliation CSV coverage repair
+
+Repair time: **2026-09-17 UTC**. This data-only repair made no PR state, comment, review, or merge mutation. The category/action/base/title/URL fields came exclusively from the 272-row manifest on `main`; all 272 unique PRs were re-queried through GitHub GraphQL. The previously verified evidence for the original 234 `CLOSE_CANDIDATE` rows was preserved, while all 31 `SECURITY`, 4 `REAL_MISSING`, and 3 `UNCLEAR` rows were added.
+
+The repaired [`pr-1677-2763-live-reconciliation.csv`](pr-1677-2763-live-reconciliation.csv) now has 272 data rows and 272 unique PR numbers. Its deterministic category/result cross-table is:
+
+| Manifest category | Reconciliation result | Count |
+|---|---|---:|
+| `CLOSE_CANDIDATE` | `CLOSED_VERIFIED` | 211 |
+| `CLOSE_CANDIDATE` | `SKIPPED_OPEN` | 23 |
+| `SECURITY` | `EXCLUSION_ANOMALY_CLOSED` | 25 |
+| `SECURITY` | `EXCLUDED_OPEN` | 6 |
+| `UNCLEAR` | `EXCLUSION_ANOMALY_CLOSED` | 3 |
+| `REAL_MISSING` | `AUTHORIZED_MERGED` | 2 |
+| `REAL_MISSING` | `EXCLUDED_OPEN` | 2 |
+| all categories | `UNEXPECTED_ANOMALY` | 0 |
+
+The exact `EXCLUSION_ANOMALY_CLOSED` set is 28 unique PRs: #1861, #1921, #1942, #1983, #1984, #2042, #2066, #2069, #2077, #2078, #2113, #2114, #2225, #2231, #2273, #2344, #2346, #2347, #2569, #2635, #2636, #2647, #2648, #2649, #2651, #2655, #2696, and #2701. All count and exact-set invariants passed; no remediation/reopen action was performed in this task.
+
 ## Explicit no-merge guard
 
 - #2739: left open/unmerged; current checks include 4 failures, 5 skipped, and 8 successes; `MERGEABLE` / `BEHIND`; no review decision.
