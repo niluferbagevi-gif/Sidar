@@ -191,8 +191,8 @@ install_docker_cli_from_apt() {
     fi
 
     info "Docker CLI resmi Docker APT deposundan kuruluyor (${docker_platform}/${docker_codename})."
-    "${sudo_cmd[@]}" apt-get update
-    "${sudo_cmd[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl gnupg
+    sidar_apt_get_as sudo_cmd update
+    sidar_apt_get_as sudo_cmd install -y --no-install-recommends ca-certificates curl gnupg
     "${sudo_cmd[@]}" install -m 0755 -d /etc/apt/keyrings
 
     local keyring="/etc/apt/keyrings/docker-${docker_platform}.asc"
@@ -210,8 +210,8 @@ install_docker_cli_from_apt() {
         "$(dpkg --print-architecture)" "$keyring" "$docker_platform" "$docker_codename" | \
         "${sudo_cmd[@]}" tee /etc/apt/sources.list.d/docker.list >/dev/null
 
-    "${sudo_cmd[@]}" apt-get update
-    "${sudo_cmd[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    sidar_apt_get_as sudo_cmd update
+    sidar_apt_get_as sudo_cmd install -y --no-install-recommends \
         docker-ce-cli docker-buildx-plugin docker-compose-plugin
 
     if docker_cli_healthy; then
@@ -303,6 +303,13 @@ ensure_docker_cli_available() {
 }
 
 
+gpu_stress_disabled_by_user() {
+    local target_env_file="${1:-${SCRIPT_DIR}/.env.development}"
+    [[ -f "$target_env_file" ]] || return 1
+    grep -qE '^[[:space:]]*RUN_GPU_STRESS[[:space:]]*=[[:space:]]*0[[:space:]]*$' "$target_env_file" 2>/dev/null
+}
+
+
 # shellcheck disable=SC2120 # opsiyonel pozisyonel argümanlar; testler özel dosya yolu geçebilir.
 persist_run_gpu_stress_dotenv() {
     [[ "${RUN_GPU_STRESS:-0}" == "1" ]] || return 0
@@ -360,13 +367,13 @@ install_system_dependencies() {
             fi
         fi
 
-        if ! sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -y; then
+        if ! sidar_apt_get update -y; then
             warn "apt update başarısız oldu. NodeSource listesi sıfırlanıp tekrar denenecek..."
             sudo rm -f /etc/apt/sources.list.d/nodesource.list
-            sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -y
+            sidar_apt_get update -y
         fi
         info "Gerekli temel paketler (curl, wget, git, zstd vb.) kuruluyor..."
-        sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y \
+        sidar_apt_get install -y \
             curl wget git build-essential shellcheck bats software-properties-common zstd ca-certificates gnupg jq \
             postgresql-client-common postgresql-client
 
@@ -498,8 +505,8 @@ EOF
 
             local ns_node_installed=false
             if [[ "$ns_ready" == true ]]; then
-                if sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 update -y; then
-                    if sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs; then
+                if sidar_apt_get update -y; then
+                    if sidar_apt_get install -y nodejs; then
                         ns_node_installed=true
                     else
                         warn "NodeSource apt deposu hazırlandı ancak nodejs paketi kurulamadı; varsayılan apt fallback değerlendirilecek."
@@ -537,7 +544,7 @@ EOF
                         warn "npm bulunamadı. NodeSource nodejs paketi npm içerir; PATH/kurulum durumu kontrol edilmeli."
                     fi
                 else
-                    if ! sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y nodejs npm; then
+                    if ! sidar_apt_get install -y nodejs npm; then
                         warn "Varsayılan apt deposundan nodejs + npm kurulumu başarısız oldu. Node.js ${node_target_major}.x manuel kurulmalıdır."
                     fi
                     node_bin="$(resolve_native_binary_path node || true)"
@@ -555,7 +562,7 @@ EOF
             info "WSL2 için PulseAudio uyumluluk paketleri de kurulacak."
             linux_media_pkgs+=(pulseaudio-utils libpulse-dev libasound2-plugins pulseaudio)
         fi
-        sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y "${linux_media_pkgs[@]}"
+        sidar_apt_get install -y "${linux_media_pkgs[@]}"
         info "Host PostgreSQL/Redis kurulumu devre dışı bırakıldı (port çakışmasını önlemek için)."
         info "Veritabanı ve cache servislerini Docker Compose ile yönetin: docker compose up -d"
 
@@ -689,7 +696,7 @@ ensure_prerequisites() {
         warn "FFmpeg bulunamadı. openai-whisper ve yt-dlp özellikleri FFmpeg olmadan çalışmaz."
         if command -v apt-get &>/dev/null && command -v sudo &>/dev/null; then
             info "Kurulum yapılıyor: sudo apt-get update && sudo apt-get install -y ffmpeg"
-            if sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ffmpeg; then
+            if sidar_apt_get update && sidar_apt_get install -y ffmpeg; then
                 ok "FFmpeg otomatik kuruldu."
             else
                 warn "FFmpeg otomatik kurulamadı, manuel kurunuz."

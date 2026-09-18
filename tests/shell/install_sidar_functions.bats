@@ -105,6 +105,89 @@ run_installer_function() {
   [ "$status" -eq 0 ]
 }
 
+@test "installer Docker pull flags and environment select an explicit policy" {
+  run_installer_function '
+    SIDAR_PULL_DOCKER_IMAGES=false
+    unset PULL_DOCKER_IMAGES
+    sidar_parse_install_cli
+    [[ "$PULL_DOCKER_IMAGES" == false ]]
+    sidar_parse_install_cli --fresh
+    [[ "$PULL_DOCKER_IMAGES" == true ]]
+    sidar_parse_install_cli --last
+    [[ "$PULL_DOCKER_IMAGES" == false ]]
+    sidar_parse_install_cli --from-zero --wipe-models
+    [[ "$PULL_DOCKER_IMAGES" == true ]]
+    [[ "$FROM_ZERO_INSTALL" == true ]]
+    [[ "$WIPE_MODELS" == true ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "from-zero cleanup is explicit, idempotent, offline-safe, and preserves models by default" {
+  run_installer_function '
+    calls=()
+    info() { :; }
+    warn() { :; }
+    ok() { :; }
+    docker() {
+      calls+=("$*")
+      return 0
+    }
+
+    FROM_ZERO_INSTALL=false OFFLINE_MODE=false FROM_ZERO_CLEANUP_DONE=false
+    from_zero_cleanup_if_requested docker compose
+    [[ ${#calls[@]} -eq 0 ]]
+
+    FROM_ZERO_INSTALL=true
+    from_zero_cleanup_if_requested docker compose
+    [[ "${calls[0]}" == "compose down --remove-orphans" ]]
+    [[ " ${calls[*]} " == *" volume rm -f sidar_postgres_data "* ]]
+    [[ " ${calls[*]} " == *" volume rm -f sidar_redis_data "* ]]
+    [[ " ${calls[*]} " != *"sidar_ollama_data"* ]]
+    [[ " ${calls[*]} " != *"ollama/ollama"* ]]
+    [[ "$FROM_ZERO_CLEANUP_DONE" == true ]]
+    count=${#calls[@]}
+    from_zero_cleanup_if_requested docker compose
+    [[ ${#calls[@]} -eq $count ]]
+
+    calls=()
+    FROM_ZERO_CLEANUP_DONE=false OFFLINE_MODE=true
+    from_zero_cleanup_if_requested docker compose
+    [[ ${#calls[@]} -eq 0 ]]
+    [[ "$FROM_ZERO_CLEANUP_DONE" == true ]]
+
+    calls=()
+    OFFLINE_MODE=false FROM_ZERO_CLEANUP_DONE=false WIPE_MODELS=true
+    from_zero_cleanup_if_requested docker compose
+    [[ " ${calls[*]} " == *" volume rm -f sidar_ollama_data "* ]]
+    [[ " ${calls[*]} " == *" image rm -f ollama/ollama:0.34.1 "* ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "Docker image pull policy pulls, skips by flag, and always skips offline" {
+  run_installer_function '
+    calls=()
+    info() { :; }
+    warn() { :; }
+    docker() { calls+=("$*"); return 0; }
+
+    PULL_DOCKER_IMAGES=true OFFLINE_MODE=false
+    pull_docker_images_if_enabled docker compose -- postgres redis
+    [[ "${calls[*]}" == "compose pull postgres redis" ]]
+
+    calls=()
+    PULL_DOCKER_IMAGES=false
+    pull_docker_images_if_enabled docker compose -- postgres
+    [[ ${#calls[@]} -eq 0 ]]
+
+    PULL_DOCKER_IMAGES=true OFFLINE_MODE=true
+    pull_docker_images_if_enabled docker compose -- postgres
+    [[ ${#calls[@]} -eq 0 ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
 @test "Redis smoke readiness prefers SIDAR_REDIS_URL and honors its custom port" {
   run_installer_function '
     tmpdir="$(mktemp -d)"
@@ -544,7 +627,7 @@ EOF
     # deliberately fails so install-deps chromium actually runs, fails, and
     # the fixed apt dependency list is retried (2nd sudo call) and succeeds.
     [[ "$(cat "$tmpdir/sudo-count")" -eq 2 ]]
-    grep -q "^DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libxshmfence1 libgbm1 libgtk-3-0t64 libpango-1.0-0 libcairo2 libasound2t64$" "$tmpdir/sudo.log"
+    grep -q "^env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=180 -o Acquire::Retries=3 install -y libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libxshmfence1 libgbm1 libgtk-3-0t64 libpango-1.0-0 libcairo2 libasound2t64$" "$tmpdir/sudo.log"
   '
   [ "$status" -eq 0 ]
   [[ "$output" == *"apt ön taraması eksik Chromium bağımlılıkları buldu"* ]]
@@ -1819,6 +1902,21 @@ EOF
   [[ "$output" == *"native-linux=false"* ]]
 }
 
+@test "resolve_sidar_wsl_sparse_vhd is opt-in and fail-closed" {
+  run_installer_function '
+    unset SIDAR_WSL_SPARSE_VHD
+    [[ "$(resolve_sidar_wsl_sparse_vhd)" == false ]]
+    SIDAR_WSL_SPARSE_VHD=true
+    [[ "$(resolve_sidar_wsl_sparse_vhd)" == true ]]
+    SIDAR_WSL_SPARSE_VHD=false
+    [[ "$(resolve_sidar_wsl_sparse_vhd)" == false ]]
+    SIDAR_WSL_SPARSE_VHD=maybe
+    [[ "$(resolve_sidar_wsl_sparse_vhd)" == false ]]
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"güvenli varsayılan false"* ]]
+}
+
 @test "detect_environment warns explicitly when WSL1 is detected" {
   run_installer_function '
     tmpdir="$(mktemp -d)"
@@ -1862,6 +1960,40 @@ EOF
 
     sidar_phase_runtime_prerequisites
     [[ "${events[*]}" == "source:gpu_utils.sh python_env.sh ensure_prerequisites select_runtime_mode select_dependency_profile detect_gpu setup_nvidia_docker" ]]
+  '
+  [ "$status" -eq 0 ]
+}
+
+@test "WSL2 local Docker service policy supports opt-in and systemd auto-detection" {
+  run_installer_function '
+    WSL2=true
+    systemctl() {
+      case "$*" in
+        "is-system-running") return 0 ;;
+        "list-unit-files --type=service") printf "docker.service enabled\n" ;;
+      esac
+    }
+
+    _should_attempt_wsl_local_docker_service
+    printf "auto=%s\n" "$?"
+
+    systemctl() { return 1; }
+    SIDAR_FORCE_LOCAL_DOCKER=1
+    _should_attempt_wsl_local_docker_service
+    printf "forced=%s\n" "$?"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"auto=0"* ]]
+  [[ "$output" == *"forced=0"* ]]
+}
+
+@test "WSL2 local Docker service policy skips Docker Desktop flow by default" {
+  run_installer_function '
+    WSL2=true
+    systemctl() { return 1; }
+    if _should_attempt_wsl_local_docker_service; then
+      exit 99
+    fi
   '
   [ "$status" -eq 0 ]
 }
@@ -2293,8 +2425,8 @@ EOF
 
     install_python_deps
 
-    grep -q "^update$" "$tmpdir/apt.log"
-    grep -q "^install -y --no-install-recommends portaudio19-dev$" "$tmpdir/apt.log"
+    grep -q "^-o DPkg::Lock::Timeout=180 -o Acquire::Retries=3 update$" "$tmpdir/apt.log"
+    grep -q "^-o DPkg::Lock::Timeout=180 -o Acquire::Retries=3 install -y --no-install-recommends portaudio19-dev$" "$tmpdir/apt.log"
     grep -q "^sync --frozen --all-extras$" "$tmpdir/uv.log"
   '
   [ "$status" -eq 0 ]
@@ -2341,8 +2473,8 @@ EOF
 
     [[ ! -s "$tmpdir/apt.log" ]]
     grep -q "^-n true$" "$tmpdir/sudo.log"
-    grep -q "^-n apt-get update$" "$tmpdir/sudo.log"
-    grep -q "^-n env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends portaudio19-dev$" "$tmpdir/sudo.log"
+    grep -q "^-n env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=180 -o Acquire::Retries=3 update$" "$tmpdir/sudo.log"
+    grep -q "^-n env DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=180 -o Acquire::Retries=3 install -y --no-install-recommends portaudio19-dev$" "$tmpdir/sudo.log"
     grep -q "^sync --frozen --all-extras$" "$tmpdir/uv.log"
   '
   [ "$status" -eq 0 ]
@@ -3209,6 +3341,162 @@ EOF
   [[ "$output" != *"unexpected-resume"* ]]
 }
 
+@test "sidar_apt_get_as bir dpkg lock-frontend hatasını yakalayıp apt-lock-contention olarak sınıflandırılabilir hale getirir" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/bin/sudo" <<EOF
+#!/usr/bin/env bash
+echo "E: Could not get lock /var/lib/dpkg/lock-frontend. It is held by process 4242 (unattended-upgr)" >&2
+exit 100
+EOF
+    chmod +x "$tmpdir/bin/sudo"
+    export PATH="$tmpdir/bin:$PATH"
+
+    sudo_cmd=(sudo)
+    apt_rc=0
+    sidar_apt_get_as sudo_cmd install -y curl || apt_rc=$?
+    [[ "$apt_rc" -eq 100 ]] || { echo "unexpected-rc=$apt_rc"; exit 1; }
+    [[ -n "${SIDAR_LAST_FAIL_MESSAGE:-}" ]] || { echo "SIDAR_LAST_FAIL_MESSAGE-not-set"; exit 1; }
+    code="$(sidar_failure_code_for_signal "sidar_apt_get install -y curl" "$SIDAR_LAST_FAIL_MESSAGE")"
+    [[ "$code" == "apt-lock-contention" ]] || { echo "unexpected-code=$code"; exit 1; }
+    echo "CLASSIFIED_OK"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"CLASSIFIED_OK"* ]]
+}
+
+@test "sidar_wait_for_apt_lock_release kilit serbest kalana kadar bekleyip sonra devam eder" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/bin/fuser" <<EOF
+#!/usr/bin/env bash
+count_file="$tmpdir/fuser-calls"
+count=0
+[[ -f "\$count_file" ]] && count="\$(cat "\$count_file")"
+count=\$((count + 1))
+printf "%s" "\$count" > "\$count_file"
+if [[ "\$count" -le 2 ]]; then
+  echo "\$1: 4242"
+  exit 0
+fi
+exit 1
+EOF
+    chmod +x "$tmpdir/bin/fuser"
+    export PATH="$tmpdir/bin:$PATH"
+
+    SIDAR_APT_LOCK_WAIT_MAX_SECONDS=30
+    SIDAR_APT_LOCK_WAIT_POLL_SECONDS=1
+    sidar_wait_for_apt_lock_release
+    echo "WAIT_RETURNED"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"WAIT_RETURNED"* ]]
+  [[ "$output" == *"apt/dpkg kilidi serbest kaldı"* ]]
+}
+
+@test "auto-heal apt-lock-contention hatası tekrarlanan imzada erken kesilmeyip retry bütçesini tüketir" {
+  run_installer_function '
+    SIDAR_CURRENT_INSTALL_PHASE=02_repo
+    SIDAR_INSTALL_REMEDIATION_ATTEMPT=1
+    SIDAR_INSTALL_LAST_FAILURE_PHASE=02_repo
+    reason="E: Could not get lock /var/lib/dpkg/lock-frontend. It is held by process 4242 (unattended-upgr)"
+    SIDAR_INSTALL_LAST_FAILURE_SIGNATURE="$(sidar_failure_signature 02_repo "sidar_apt_get install -y curl" "$reason" 100)"
+    sidar_wait_for_apt_lock_release() { echo "wait-called"; return 0; }
+    resumed=0
+    sidar_resume_after_remediation() {
+      resumed=1
+      echo "resume-called"
+      return 0
+    }
+    sidar_handle_install_failure 100 20 "sidar_apt_get install -y curl" "$reason" || true
+    [[ "$resumed" -eq 1 ]] || { echo "resume-not-called"; exit 1; }
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"wait-called"* ]]
+  [[ "$output" == *"resume-called"* ]]
+  [[ "$output" == *"apt/dpkg kilidi hâlâ tekrarlanıyor"* ]]
+  [[ "$output" != *"aynı failure imzası tekrarlandı"* ]]
+}
+
+@test "apt-get lock-frontend hatası sonrası bekleme+resume ile tekrar denenip başarıyla tamamlanır" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    mkdir -p "$tmpdir/bin"
+    cat > "$tmpdir/bin/sudo" <<EOF
+#!/usr/bin/env bash
+attempt_file="$tmpdir/apt-attempts"
+n=0
+[[ -f "\$attempt_file" ]] && n="\$(cat "\$attempt_file")"
+n=\$((n + 1))
+printf "%s" "\$n" > "\$attempt_file"
+if [[ "\$n" -eq 1 ]]; then
+  echo "E: Could not get lock /var/lib/dpkg/lock-frontend. It is held by process 4242 (unattended-upgr)" >&2
+  exit 100
+fi
+echo "apt-get ok (deneme \$n)"
+exit 0
+EOF
+    chmod +x "$tmpdir/bin/sudo"
+    cat > "$tmpdir/bin/fuser" <<EOF
+#!/usr/bin/env bash
+count_file="$tmpdir/fuser-calls"
+count=0
+[[ -f "\$count_file" ]] && count="\$(cat "\$count_file")"
+count=\$((count + 1))
+printf "%s" "\$count" > "\$count_file"
+# İlk iki çağrı sidar_apt_lock_wait_notice tarafından (apt-get denemesinden
+# önce, biri boolean kontrol biri tutan pid değerini okumak için) tüketilir;
+# kilidin sidar_wait_for_apt_lock_release döngüsünde en az bir kez hala
+# tutuluyor olarak görülmesi için eşik üç olarak ayarlandı.
+if [[ "\$count" -le 3 ]]; then
+  echo "\$1: 4242"
+  exit 0
+fi
+exit 1
+EOF
+    chmod +x "$tmpdir/bin/fuser"
+    export PATH="$tmpdir/bin:$PATH"
+
+    SIDAR_CURRENT_INSTALL_PHASE=02_repo
+    SIDAR_INSTALL_REMEDIATION_ATTEMPT=0
+    SIDAR_APT_LOCK_WAIT_MAX_SECONDS=30
+    SIDAR_APT_LOCK_WAIT_POLL_SECONDS=1
+
+    sudo_cmd=(sudo)
+    retry_succeeded=0
+    # Gerçek installer resume/re-exec yerine (bats altında exec edilemez),
+    # aynı apt-get adımını burada tekrar dener -- tıpkı gerçek resume sonrası
+    # 03_system.sh install_system_dependencies() yeniden çalıştığında olacağı
+    # gibi. Bu kez fuser kilidi bulamıyor ve fake sudo/apt-get ikinci
+    # denemede başarıyla dönüyor.
+    sidar_resume_after_remediation() {
+      if sidar_apt_get_as sudo_cmd install -y curl; then
+        retry_succeeded=1
+      fi
+      return 0
+    }
+
+    apt_rc=0
+    sidar_apt_get_as sudo_cmd install -y curl || apt_rc=$?
+    if [[ "$apt_rc" -ne 0 ]]; then
+      sidar_handle_install_failure "$apt_rc" 30 "sidar_apt_get_as sudo_cmd install -y curl" "$SIDAR_LAST_FAIL_MESSAGE" || true
+    fi
+
+    [[ "$retry_succeeded" -eq 1 ]] || { echo "RETRY_DID_NOT_SUCCEED"; exit 1; }
+    echo "RETRY_SUCCEEDED"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"apt/dpkg kilidi serbest kaldı"* ]]
+  [[ "$output" == *"apt-get ok (deneme 2)"* ]]
+  [[ "$output" == *"RETRY_SUCCEEDED"* ]]
+  [[ "$output" != *"erken kesiliyor"* ]]
+}
+
 @test "postgres volume discovery catches Sidar volumes after project directory mismatch" {
   run_installer_function '
     docker() {
@@ -3797,6 +4085,39 @@ ENV
     grep -q "^RUN_GPU_STRESS=1$" "$tmpdir/.env.development"
   '
   [ "$status" -eq 0 ]
+}
+
+@test "detect_gpu preserves an existing RUN_GPU_STRESS=0 user opt-out" {
+  run_installer_function '
+    tmpdir="$(mktemp -d)"
+    trap "rm -rf \"$tmpdir\"" EXIT
+    cat > "$tmpdir/nvidia-smi" <<SMI
+#!/usr/bin/env bash
+case "\$*" in
+  "-L") echo "GPU 0: Test GPU (UUID: GPU-test)" ;;
+  "--query-gpu=name --format=csv,noheader") echo "Test GPU" ;;
+  "--query-gpu=memory.total --format=csv,noheader,nounits") echo "8192" ;;
+  "--query-gpu=compute_cap --format=csv,noheader") echo "8.6" ;;
+  "--query-gpu=cuda_version --format=csv,noheader") echo "12.4" ;;
+  "--query-gpu=driver_version --format=csv,noheader") echo "550.00" ;;
+esac
+SMI
+    chmod +x "$tmpdir/nvidia-smi"
+    printf "SIDAR_ENV=development\nRUN_GPU_STRESS=0\n" > "$tmpdir/.env.development"
+    export PATH="$tmpdir:$PATH"
+    SCRIPT_DIR="$tmpdir"
+    FORCE_CPU=false
+    WSL2=false
+    unset RUN_GPU_STRESS
+
+    detect_gpu
+
+    [[ "$GPU_AVAILABLE" == true ]]
+    [[ "$RUN_GPU_STRESS" == 0 ]]
+    grep -q "^RUN_GPU_STRESS=0$" "$tmpdir/.env.development"
+  '
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"kullanıcı tercihi korunuyor"* ]]
 }
 
 @test "propagate_gpu_settings_to_env_variants syncs GPU flags to development and advanced but not production" {

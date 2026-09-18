@@ -254,7 +254,10 @@ detect_gpu() {
         PYTORCH_RUNTIME_CUDA_VERSION=$(detect_pytorch_runtime_cuda_version || true)
 
         GPU_AVAILABLE=true
-        if [[ "${RUN_GPU_STRESS:-0}" != "1" ]]; then
+        if declare -F gpu_stress_disabled_by_user >/dev/null 2>&1 && gpu_stress_disabled_by_user; then
+            export RUN_GPU_STRESS=0
+            info "RUN_GPU_STRESS=0 (.env.development) kullanıcı tercihi korunuyor; otomatik olarak yeniden etkinleştirilmiyor."
+        elif [[ "${RUN_GPU_STRESS:-0}" != "1" ]]; then
             export RUN_GPU_STRESS=1
             declare -F persist_run_gpu_stress_dotenv >/dev/null 2>&1 && persist_run_gpu_stress_dotenv
             # Eşzamanlılık ve context zaten VRAM'e göre otomatik ölçekleniyor
@@ -370,15 +373,24 @@ setup_nvidia_docker() {
             # NVIDIA repolarını doğrulanmış geçici dosyalardan, açık izinlerle kur.
             install_nvidia_container_repository
 
-            sudo apt-get update
-            sudo apt-get install -y nvidia-container-toolkit
+            sidar_apt_get update
+            sidar_apt_get install -y nvidia-container-toolkit
 
             # Docker'ı NVIDIA runtime kullanacak şekilde yapılandır
             sudo nvidia-ctk runtime configure --runtime=docker
 
             # Docker daemon'ı çalışma tipine duyarlı şekilde yeniden başlat
             info "Docker servisi yeniden başlatılıyor..."
-            if command -v systemctl &>/dev/null && systemctl cat docker &>/dev/null; then
+            local allow_wsl_local_docker_restart=false
+            if declare -F _should_attempt_wsl_local_docker_service >/dev/null 2>&1 \
+                && _should_attempt_wsl_local_docker_service; then
+                allow_wsl_local_docker_restart=true
+            fi
+
+            if [[ "${WSL2:-false}" == true && "$allow_wsl_local_docker_restart" != true ]]; then
+                warn "WSL2 ortamında Docker Desktop entegrasyonu algılandı; local docker servisi yeniden başlatma atlanıyor."
+                print_docker_desktop_restart_notice
+            elif command -v systemctl &>/dev/null && systemctl cat docker &>/dev/null; then
                 if systemctl is-active --quiet docker; then
                     sudo systemctl restart docker
                     ok "Docker servisi systemd üzerinden yeniden başlatıldı."

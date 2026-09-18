@@ -22,6 +22,9 @@
 # birleşir. Bu, docker-compose.production.yml'nin zaten kullandığı aynı
 # desendir.
 services:
+  # Image pull policy is managed by install_sidar.sh (`--last` / `--fresh`) so
+  # offline installs can reliably retain local images. Keep services
+  # pull_policy-free unless a service-specific exception is required.
   # Not: Development'ta varsayılan bind-mount kullanılır.
   # Production'ta host permission/chown sorunlarını azaltmak için aşağıdaki
   # env değişkenlerini named volume ile override edin:

@@ -48,7 +48,7 @@ dependencies = [
   # Starlette 1.6.0 is the validated security baseline for request parsing and URL validation.
   "starlette>=1.6.0,<1.7.0",
   "python-multipart>=0.0.31,<0.1.0",
-  "uvicorn[standard]~=0.30.6",
+  "uvicorn[standard]~=0.49.0",
   "anyio>=4.0.0",
   # ── Veritabanı ─────────────────────────────────────────────────────────
   "aiosqlite~=0.22.1",

@@ -12,6 +12,18 @@ if [[ -z "${SIDAR_INSTALL_UTIL_WSL_HOST_SH_LOADED:-}" ]]; then
 fi
 
 
+resolve_sidar_wsl_sparse_vhd() {
+    local value="${SIDAR_WSL_SPARSE_VHD:-false}"
+    case "$value" in
+        true|false) printf '%s\n' "$value" ;;
+        *)
+            warn "SIDAR_WSL_SPARSE_VHD='${value}' geçersiz (true/false olmalı); güvenli varsayılan false kullanılıyor." >&2
+            printf 'false\n'
+            ;;
+    esac
+}
+
+
 # ── 8. WSL2 Ses Desteği Kurulumu ─────────────────────────────────────────────
 # WSLg (Windows 11 Build 22000+) PulseAudio soketi üzerinden gerçek zamanlı
 # mikrofon/hoparlör erişimini etkinleştirir.
@@ -49,7 +61,7 @@ setup_wsl2_audio() {
             dpkg -l "$pkg" &>/dev/null 2>&1 || pa_pkgs_needed+=("$pkg")
         done
         if [[ ${#pa_pkgs_needed[@]} -gt 0 ]]; then
-            if sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "${pa_pkgs_needed[@]}" >/dev/null 2>&1; then
+            if sidar_apt_get install -y "${pa_pkgs_needed[@]}" >/dev/null 2>&1; then
                 ok "PulseAudio paketleri kuruldu: ${pa_pkgs_needed[*]}"
             else
                 warn "Bazı PulseAudio paketleri kurulamadı: ${pa_pkgs_needed[*]}"
@@ -264,7 +276,8 @@ ASOUNDRC
     local target_memory="${target_memory_gb}GB"
     local target_swap="${target_swap_gb}GB"
     local target_kernel_command_line="cgroup_no_v1=all"
-    local target_sparse_vhd="true"
+    local target_sparse_vhd
+    target_sparse_vhd=$(resolve_sidar_wsl_sparse_vhd)
     info "WSL2 için dinamik .wslconfig hedefleri: memory=${target_memory}, swap=${target_swap}, processors=${target_processors}, kernelCommandLine=${target_kernel_command_line}, sparseVhd=${target_sparse_vhd} (host RAM: ${host_ram_gb}GB, logical processors: ${host_processors})."
 
     # Genel INI anahtar-değer yardımcı fonksiyonu. Belirtilen bölümde anahtarı

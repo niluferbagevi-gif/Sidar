@@ -1299,8 +1299,10 @@ def test_install_sidar_test_mode_and_uv_only_contract() -> None:
     with (repo_root / "pyproject.toml").open("rb") as pyproject_file:
         pyproject_version = tomllib.load(pyproject_file)["project"]["version"]
 
-    assert 'if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" ]]; then' in installer_text
-    assert 'main "$@"' in installer_text
+    assert (
+        'if [[ "${SIDAR_INSTALL_TEST_MODE:-0}" != "1" && "${BASH_SOURCE[0]}" == "${0}" ]]; then\n'
+        '    main "$@"\nfi'
+    ) in installer_text
     strict_mode_idx = installer_text.index("set -Eeuo pipefail")
     pretrap_func_idx = installer_text.index("on_install_error()")
     pretrap_idx = installer_text.index('trap \'on_install_error "$LINENO" "$BASH_COMMAND"\' ERR')

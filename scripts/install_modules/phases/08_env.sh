@@ -416,7 +416,7 @@ collect_api_keys_interactive() {
 
     if [[ "$has_display" == true ]] && ! command -v zenity &>/dev/null; then
         info "Grafik pencere için zenity kuruluyor..."
-        sudo apt-get install -y zenity -qq >/dev/null 2>&1 || true
+        sidar_apt_get install -y zenity -qq >/dev/null 2>&1 || true
     fi
 
     if command -v zenity &>/dev/null && [[ "$has_display" == true ]]; then

@@ -31,6 +31,10 @@ sidar_parse_install_cli() {
     STRICT_DOCKER=false
     AUTO_RUNTIME_MODE="ask"
     AUTO_START_DOCKER_SERVICES="ask"
+    PULL_DOCKER_IMAGES="${PULL_DOCKER_IMAGES:-${SIDAR_PULL_DOCKER_IMAGES:-true}}"
+    FROM_ZERO_INSTALL=false
+    FROM_ZERO_CLEANUP_DONE=false
+    WIPE_MODELS=false
     AUTO_RESET_POSTGRES_VOLUMES="ask"
     AUTO_ENV_TYPE="ask"
     AUTO_OPEN_VSCODE="ask"
@@ -119,6 +123,11 @@ sidar_parse_install_cli() {
             --offline|--air-gapped) OFFLINE_MODE=true ;;
             --install-docker-cli) DOCKER_CLI_INSTALL_MODE="always" ;;
             --skip-docker-cli|--no-install-docker-cli) DOCKER_CLI_INSTALL_MODE="never" ;;
+            --last|--no-pull|--use-cached-images) PULL_DOCKER_IMAGES="false"; FROM_ZERO_INSTALL=false ;;
+            --fresh|--pull|--pull-latest) PULL_DOCKER_IMAGES="true" ;;
+            --from-zero) FROM_ZERO_INSTALL=true; PULL_DOCKER_IMAGES="true" ;;
+            --wipe-models) WIPE_MODELS=true ;;
+            --keep-models) WIPE_MODELS=false ;;
             --keep-temp-modules) KEEP_TEMP_MODULES=true ;;
             --helm-release=*) HELM_RELEASE_NAME="${arg#*=}" ;;
             --namespace=*) HELM_NAMESPACE="${arg#*=}" ;;
@@ -167,6 +176,9 @@ sidar_parse_install_cli() {
         # shellcheck disable=SC2034  # multiple sourced phase/util scripts read this runtime flag (e.g. 02_repo.sh, utils/python_env.sh).
         OFFLINE_MODE=true
     fi
+
+    PULL_DOCKER_IMAGES="$(normalize_bool "${PULL_DOCKER_IMAGES:-true}")"
+    [[ -n "$PULL_DOCKER_IMAGES" ]] || PULL_DOCKER_IMAGES="true"
 
     case "${DOCKER_CLI_INSTALL_MODE}" in
         auto|always|never|true|false|yes|no|1|0) ;;

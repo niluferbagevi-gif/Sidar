@@ -9,6 +9,37 @@ log() { printf 'ℹ️  %s\n' "$*"; }
 ok() { printf '✅ %s\n' "$*"; }
 warn() { printf '⚠️  %s\n' "$*"; }
 fail() { printf '❌ %s\n' "$*"; }
+# scripts/install_modules/install_helpers.sh's sidar_apt_get_as() (sourced
+# below) logs via info(); alias it to this script's own log() so we do not
+# need a second logging convention.
+info() { log "$@"; }
+
+# devcontainer.json'ın initializeCommand'ı bu betiği repo kökünden çalıştırır
+# ("bash .devcontainer/host-preflight.sh"), bu yüzden scripts/install_modules
+# her zaman komşu dizinde bulunur. Ortak sidar_apt_get_as() sarmalayıcısını
+# (kilit-farkında -o DPkg::Lock::Timeout, retry, teşhis) buradan da kullanmak
+# hem aynı apt/dpkg kilit sorununu kapatır hem de aşağıdaki
+# install_docker_cli_from_apt()'ın scripts/install_modules/phases/03_system.sh
+# ile neredeyse birebir aynı apt-get gövdesini tekrar yazmasını önler. Dosya
+# bulunamazsa (ör. betik repo dışına kopyalanmışsa) preflight'ı kırmadan aynı
+# bayraklarla yerel bir fallback tanımlanır.
+_sidar_host_preflight_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_sidar_shared_apt_helpers="${_sidar_host_preflight_dir}/../scripts/install_modules/install_helpers.sh"
+if [ -f "${_sidar_shared_apt_helpers}" ]; then
+  # shellcheck source=../scripts/install_modules/install_helpers.sh
+  # shellcheck disable=SC1091
+  source "${_sidar_shared_apt_helpers}"
+else
+  warn "scripts/install_modules/install_helpers.sh bulunamadı; apt-get kilit-zaman aşımı için yerel fallback kullanılacak."
+  sidar_apt_get_as() {
+    local -n _sidar_apt_sudo_prefix="$1"
+    shift
+    "${_sidar_apt_sudo_prefix[@]}" env DEBIAN_FRONTEND=noninteractive apt-get \
+      -o "DPkg::Lock::Timeout=${SIDAR_APT_LOCK_TIMEOUT_SECONDS:-180}" \
+      -o "Acquire::Retries=${SIDAR_APT_ACQUIRE_RETRIES:-3}" \
+      "$@"
+  }
+fi
 
 
 normalize_bool_mode() {
@@ -76,8 +107,8 @@ install_docker_cli_from_apt() {
   fi
 
   log "Docker CLI resmi Docker APT deposundan kuruluyor (${platform}/${codename})."
-  "${sudo_cmd[@]}" apt-get update
-  "${sudo_cmd[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl gnupg
+  sidar_apt_get_as sudo_cmd update
+  sidar_apt_get_as sudo_cmd install -y --no-install-recommends ca-certificates curl gnupg
   "${sudo_cmd[@]}" install -m 0755 -d /etc/apt/keyrings
 
   local keyring="/etc/apt/keyrings/docker-${platform}.asc"
@@ -95,8 +126,8 @@ install_docker_cli_from_apt() {
     "$(dpkg --print-architecture)" "${keyring}" "${platform}" "${codename}" | \
     "${sudo_cmd[@]}" tee /etc/apt/sources.list.d/docker.list >/dev/null
 
-  "${sudo_cmd[@]}" apt-get update
-  "${sudo_cmd[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+  sidar_apt_get_as sudo_cmd update
+  sidar_apt_get_as sudo_cmd install -y --no-install-recommends \
     docker-ce-cli docker-buildx-plugin docker-compose-plugin
 
   if command -v docker >/dev/null 2>&1; then

@@ -126,6 +126,7 @@ launch_docker_services() {
                     info "Host Ollama healthy tespit edildi; Docker Ollama konteyneri başlatılmayacak."
                     log_host_ollama_runtime_diagnostics "$env_file"
                 fi
+                COMPOSE_PROFILES="$compose_profiles" pull_docker_images_if_enabled "${docker_compose_cmd[@]}" -- "${infra_services[@]}"
                 if COMPOSE_PROFILES="$compose_profiles" sidar_compose_up_with_retry "${docker_compose_cmd[@]}" up -d "${infra_services[@]}"; then
                     ok "Altyapı Docker servisleri başarıyla başlatıldı (${infra_services[*]})."
                 else
@@ -134,6 +135,7 @@ launch_docker_services() {
             else
                 info "Seçilen çalışma modu: docker (tüm servisler Docker)"
                 info "Docker Compose profili: $compose_profiles"
+                COMPOSE_PROFILES="$compose_profiles" pull_docker_images_if_enabled "${docker_compose_cmd[@]}" --
                 if COMPOSE_PROFILES="$compose_profiles" sidar_compose_up_with_retry "${docker_compose_cmd[@]}" up -d; then
                     ok "Docker servisleri başarıyla başlatıldı."
                 else
@@ -459,4 +461,3 @@ sidar_fail_if_wsl_integration_autofix_applied_current_session_main() {
         fail "WSL integration ilk defa açıldı. Lütfen Windows'tan wsl --shutdown çalıştırın, Ubuntu'ya yeniden girin ve ./install_sidar.sh komutunu tekrar başlatın."
     fi
 }
-
