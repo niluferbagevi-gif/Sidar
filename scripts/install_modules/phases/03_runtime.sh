@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+_should_attempt_wsl_local_docker_service() {
+    [[ "${WSL2:-false}" == true ]] || return 1
+    if [[ "${SIDAR_FORCE_LOCAL_DOCKER:-0}" == "1" || "${WSL2_LOCAL_DOCKER_START:-false}" == "true" ]]; then
+        return 0
+    fi
+    command -v systemctl &>/dev/null || return 1
+    systemctl is-system-running &>/dev/null || return 1
+    systemctl list-unit-files --type=service 2>/dev/null \
+        | awk '{print $1}' \
+        | grep -Fxq "docker.service"
+}
+
 verify_wsl_integration_listed() {
     [[ "$WSL2" == true ]] || return 0
     command -v powershell.exe &>/dev/null || return 0
@@ -343,11 +355,27 @@ ensure_docker_daemon_running() {
 
     warn "Docker daemon çalışmıyor görünüyor; otomatik başlatma denenecek."
 
-    if [[ "$WSL2" != true ]] && command -v systemctl &>/dev/null; then
+    local allow_wsl_local_docker_start=false
+    if _should_attempt_wsl_local_docker_service; then
+        allow_wsl_local_docker_start=true
+        if [[ "${SIDAR_FORCE_LOCAL_DOCKER:-0}" == "1" ]]; then
+            info "SIDAR_FORCE_LOCAL_DOCKER=1: yerel Docker daemon başlatma denemeleri zorla etkin."
+        elif [[ "${WSL2_LOCAL_DOCKER_START:-false}" == "true" ]]; then
+            info "WSL2_LOCAL_DOCKER_START=true: yerel Docker daemon başlatma denemeleri etkin."
+        else
+            info "WSL2 üzerinde systemd + docker.service tespit edildi; yerel daemon başlatma denemeleri etkin."
+        fi
+    elif [[ "$WSL2" == true ]]; then
+        info "WSL2: local docker servisi başlatma atlandı, Docker Desktop akışı kullanılacak."
+    fi
+
+    if [[ "$WSL2" != true || "$allow_wsl_local_docker_start" == true ]] && command -v systemctl &>/dev/null; then
         sudo systemctl start docker >/dev/null 2>&1 || true
     fi
 
-    if [[ "$WSL2" != true ]] && ! docker info &>/dev/null && command -v service &>/dev/null; then
+    if [[ "$WSL2" != true || "$allow_wsl_local_docker_start" == true ]] \
+        && ! docker info &>/dev/null \
+        && command -v service &>/dev/null; then
         sudo service docker start >/dev/null 2>&1 || true
     fi
 

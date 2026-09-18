@@ -93,6 +93,96 @@ ensure_docker_compose_access_or_fail() {
     fail "Docker daemon erişilemedi; '${compose_cmd[*]} up -d' öncesi Docker Desktop/daemon hazır olmalıdır. docker info çıktısı: ${docker_info_err}"
 }
 
+from_zero_cleanup_if_requested() {
+    local -a compose_cmd=("$@")
+    [[ "${FROM_ZERO_CLEANUP_DONE:-false}" == "true" ]] && return 0
+    [[ "${FROM_ZERO_INSTALL:-false}" == "true" ]] || return 0
+
+    if [[ "${OFFLINE_MODE:-false}" == "true" ]]; then
+        info "Çevrimdışı mod: --from-zero temizliği atlandı; yerel Docker verileri korunacak."
+        FROM_ZERO_CLEANUP_DONE=true
+        return 0
+    fi
+    if ! command -v docker &>/dev/null; then
+        warn "Docker CLI bulunamadı; --from-zero temizliği atlandı."
+        FROM_ZERO_CLEANUP_DONE=true
+        return 0
+    fi
+
+    local compose_project="${COMPOSE_PROJECT_NAME:-sidar}"
+    local postgres_volume="${SIDAR_POSTGRES_VOLUME_NAME:-sidar_postgres_data}"
+    local -a volumes_to_remove=("$postgres_volume" "${compose_project}_redis_data")
+    local -a images_to_remove=(
+        redis:7.4-alpine
+        pgvector/pgvector:0.8.6-pg16
+        jaegertracing/all-in-one:1.76.0
+        oliver006/redis_exporter:v1.91.1
+        prometheuscommunity/postgres-exporter:v0.20.1
+        gcr.io/cadvisor/cadvisor:v0.55.1
+        prom/prometheus:v2.54.1
+        grafana/grafana:11.2.0
+        tecnativa/docker-socket-proxy:v0.5.0
+    )
+    if [[ "${WIPE_MODELS:-false}" == "true" ]]; then
+        volumes_to_remove+=("${compose_project}_ollama_data")
+        images_to_remove+=(ollama/ollama:0.34.1)
+        info "--wipe-models aktif: Ollama volume ve imajı da temizlenecek."
+    else
+        info "Ollama modelleri korunuyor; silmek için --wipe-models kullanın."
+    fi
+
+    warn "--from-zero aktif: Sidar container'ları, veritabanı/cache volume'leri ve harici imajlar silinecek."
+    "${compose_cmd[@]}" down --remove-orphans >/dev/null 2>&1 || true
+
+    local item=""
+    for item in "${volumes_to_remove[@]}"; do
+        docker volume inspect "$item" &>/dev/null || continue
+        docker volume rm -f "$item" >/dev/null 2>&1 \
+            && ok "Volume silindi: $item" \
+            || warn "Volume silinemedi: $item"
+    done
+    for item in "${images_to_remove[@]}"; do
+        docker image inspect "$item" &>/dev/null || continue
+        docker image rm -f "$item" >/dev/null 2>&1 \
+            && ok "Image silindi: $item" \
+            || warn "Image silinemedi: $item"
+    done
+
+    # shellcheck disable=SC2034  # phases/06_services.sh consumes this sourced installer state.
+    POSTGRES_VOLUME_RESET_DONE=true
+    FROM_ZERO_CLEANUP_DONE=true
+    ok "--from-zero temizliği tamamlandı."
+}
+
+pull_docker_images_if_enabled() {
+    local -a compose_cmd=()
+    while [[ $# -gt 0 ]]; do
+        if [[ "$1" == "--" ]]; then
+            shift
+            break
+        fi
+        compose_cmd+=("$1")
+        shift
+    done
+    local -a services=("$@")
+
+    from_zero_cleanup_if_requested "${compose_cmd[@]}"
+
+    if [[ "${OFFLINE_MODE:-false}" == "true" ]]; then
+        info "Çevrimdışı mod: Docker registry pull adımı atlandı, yerel imajlar kullanılacak."
+        return 0
+    fi
+    if [[ "${PULL_DOCKER_IMAGES:-true}" != "true" ]]; then
+        info "--last/--no-pull: Docker registry pull adımı atlandı, yerel imajlar kullanılacak."
+        return 0
+    fi
+
+    info "Docker imajları registry'den yenileniyor (docker compose pull)..."
+    if ! "${compose_cmd[@]}" pull "${services[@]}"; then
+        warn "Bazı Docker imajları çekilemedi; yereldeki imajlarla devam edilecek."
+    fi
+}
+
 start_docker_services_or_fail() {
     local -a compose_cmd=()
     while [[ $# -gt 0 ]]; do
@@ -112,6 +202,8 @@ start_docker_services_or_fail() {
     if ! maybe_reset_postgres_volume_after_password_hardening "${compose_cmd[@]}" -- "${services[@]}"; then
         fail "DB parola hardening sonrası PostgreSQL volume sıfırlanamadı; eski kimlik bilgileri nedeniyle kurulum güvenli şekilde durduruldu."
     fi
+
+    pull_docker_images_if_enabled "${compose_cmd[@]}" -- "${services[@]}"
 
     if "${compose_cmd[@]}" up -d "${services[@]}" 2>"$stderr_file"; then
         rm -f "$stderr_file"
@@ -200,4 +292,3 @@ wait_for_compose_services_health() {
 
     return 0
 }
-

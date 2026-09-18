@@ -48,6 +48,10 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--fix] [--up
   --offline / --air-gapped  Use prepared packages under ./offline_packages instead of downloading from the internet
   --install-docker-cli  Force Docker CLI + Buildx + Compose v2 installation on Debian/Ubuntu hosts
   --skip-docker-cli / --no-install-docker-cli  Skip automatic Docker CLI installation
+  --last / --no-pull  Use local Docker images and skip registry pulls
+  --fresh / --pull  Pull Docker images before docker compose up (default)
+  --from-zero  Remove Sidar containers, database/cache volumes, and external images before pulling
+  --wipe-models / --keep-models  Include/preserve Ollama models during --from-zero cleanup (default: preserve)
   --keep-temp-modules  Keep temporary installer module directory for debugging (if created)
 
   Non-interactive environment variables:
@@ -68,6 +72,7 @@ Usage: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--fix] [--up
     PYTORCH_CUDA_WHEEL_TAG=cu128  Override PyTorch CUDA wheel tag (cu124/cu126/cu128)
     PYTORCH_CUDA_INDEX_URL=https://...  Override PyTorch wheel index
     DOCKER_CLI_INSTALL=auto|always|never  Docker CLI automatic installation policy
+    SIDAR_PULL_DOCKER_IMAGES=true|false  Pull/skip Docker images before docker compose up
     DOCKER_DESKTOP_READY_TIMEOUT=240  Docker Desktop startup wait timeout in seconds
     SIDAR_REQUIRE_DOCKER=1|0  Force strict Docker daemon requirement (1 = fail-fast)
     SIDAR_INSTALL_AUTO_HEAL=1|0  Enable/disable phase auto-heal + resume (default: 1)
@@ -120,6 +125,10 @@ Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--fix] [
   --offline / --air-gapped  İnternetten script/repo indirmek yerine ./offline_packages altındaki hazır paketleri kullan
   --install-docker-cli  Debian/Ubuntu hostta Docker CLI + Buildx + Compose v2 kurulumunu zorla
   --skip-docker-cli / --no-install-docker-cli  Docker CLI otomatik kurulumunu atla
+  --last / --no-pull  Yerel Docker imajlarını kullan ve registry pull adımını atla
+  --fresh / --pull  docker compose up öncesi Docker imajlarını çek (varsayılan)
+  --from-zero  Pull öncesi Sidar container'larını, veritabanı/cache volume'lerini ve harici imajları sil
+  --wipe-models / --keep-models  --from-zero temizliğinde Ollama modellerini sil/koru (varsayılan: koru)
   --keep-temp-modules  Geçici kurulum modül dizinini debug için koru (oluştuysa)
 
   Etkileşimsiz çevre değişkenleri:
@@ -140,6 +149,7 @@ Kullanım: $0 [doctor|prepare-system|sync-deps|provision-models|smoke] [--fix] [
     PYTORCH_CUDA_WHEEL_TAG=cu128  PyTorch CUDA wheel tag override (cu124/cu126/cu128)
     PYTORCH_CUDA_INDEX_URL=https://...  PyTorch wheel index override
     DOCKER_CLI_INSTALL=auto|always|never  Docker CLI otomatik kurulum politikası
+    SIDAR_PULL_DOCKER_IMAGES=true|false  compose up öncesi Docker imajlarını çek/atla
     DOCKER_DESKTOP_READY_TIMEOUT=240  Docker Desktop hazır olma bekleme süresi (saniye)
     SIDAR_REQUIRE_DOCKER=1|0  Docker daemon zorunluluğunu fail-fast olarak uygular (1=zorunlu)
     SIDAR_INSTALL_AUTO_HEAL=1|0  Faz auto-heal + resume mantığını aç/kapat (varsayılan: 1)

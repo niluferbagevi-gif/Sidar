@@ -2661,7 +2661,8 @@ def test_ci_system_dependency_installer_provisions_shell_test_tools() -> None:
     assert "Passwordless or cached sudo is required for non-interactive installation." in installer
     assert "Run 'sudo -v' first" in installer
     assert (
-        '"${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y '
+        '"${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive apt-get '
+        "-o DPkg::Lock::Timeout=180 -o Acquire::Retries=3 install -y "
         '--no-install-recommends "${MISSING_PACKAGES[@]}"' in installer
     )
 
@@ -3273,7 +3274,7 @@ def test_ci_publishes_standalone_installer_bundle() -> None:
     assert "dist/install_sidar.sh" in ci_workflow
     assert "dist/MODULE_HASHES.txt" in ci_workflow
     assert "dist/INSTALLER_USAGE.md" in ci_workflow
-    assert "softprops/action-gh-release@v2" in ci_workflow
+    assert "softprops/action-gh-release@v3" in ci_workflow
     assert "github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')" in ci_workflow
     assert (
         "tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || "
@@ -7655,13 +7656,15 @@ def test_run_tests_stage_argument_contract_is_documented_and_wired() -> None:
 
     assert (
         "Usage: bash run_tests.sh [--stage "
-        "all|static|unit|integration|smoke|e2e|backend|frontend|bats[,..]]" in script
+        "all|static|unit|integration|smoke|e2e|backend|frontend|bats|benchmark[,..]]" in script
     )
     assert "normalize_test_stages()" in script
     assert "stage_all_selected()" in script
     assert "stage_selected()" in script
     assert "backend_infra_required_for_stage()" in script
     assert "SIDAR_RUN_BACKEND_PYTEST=0" in script
+    assert "if stage_selected benchmark; then" in script
+    assert "RUN_BENCHMARKS=required" in script
     assert (
         "if stage_selected backend || stage_selected unit || stage_selected integration || "
         "stage_selected smoke || stage_selected e2e; then" in script
