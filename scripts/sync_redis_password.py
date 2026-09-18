@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
+from scripts.private_env_file import write_private_env
 from scripts.sync_database_passwords import (
     DEFAULT_ENV_FILE,
     EnvFileSpec,
@@ -166,7 +167,7 @@ def sync_env_file(env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
     original = env_file.read_text(encoding="utf-8")
     updated, summary = sync_env_text(original)
     if updated != original:
-        env_file.write_text(updated, encoding="utf-8")
+        write_private_env(env_file, updated)
     return {"env_file": str(env_file), **summary}
 
 
@@ -262,7 +263,7 @@ def sync_env_chain(
             sync_redis_password_assignment=all_envs,
         )
         if updated != original:
-            spec.path.write_text(updated, encoding="utf-8")
+            write_private_env(spec.path, updated)
             changed_files.append(str(spec.path))
             changed_keys_by_file[str(spec.path)] = list(summary["changed_keys"])
         file_summaries.append(
