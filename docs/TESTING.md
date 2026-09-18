@@ -119,6 +119,28 @@ coverage başarısızlığı üretmez. Global coverage kalite kapısı yalnızca
 `--stage all` (varsayılan), `--stage backend` veya `--stage unit` çalıştığında
 uygulanır:
 
+### Büyük refactor sırasında coverage çalışma sözleşmesi
+
+`%100` ratchet merge/release kapısıdır; refactor sürerken geliştiricinin her ara
+commit'ini production-ready ilan etme zorunluluğu değildir. Geçici coverage
+düşüşünü teşhis etmek için eşik yalnızca **yerel komutta** açıkça düşürülebilir:
+
+```bash
+COVERAGE_FAIL_UNDER=95 ./run_tests.sh --stage unit
+```
+
+Bu çıktı tanısaldır ve PR/merge/release kanıtı sayılamaz. Geçici override workflow,
+repository variable, `.env` veya `pyproject.toml` içine yazılmamalı; refactor ve
+eksik testler aynı PR tamamlanmadan merge edilmemelidir. Merge öncesinde override
+kaldırılarak standart `./run_tests.sh` yeniden çalıştırılmalı ve committed `%100`
+baseline sağlanmalıdır.
+
+Repository, otomatik sona eren veya tarihli bir "refactor in progress" coverage
+istisnası sağlamaz. Böyle bir istisna gerçek bir coverage gerilemesini geçici
+borçtan ayıramayacağı için merge kapısı fail-closed kalır. Uzun refactor'lar küçük,
+testleriyle birlikte yeşil PR'lara bölünmeli; yalnız hedefli geliştirme döngüsünü
+hızlandırmak gerektiğinde kısmi stage veya `--no-cov` kullanılmalıdır.
+
 Kurulum betiğinin development/local varsayılanı da bu ayrımı izler: hızlı smoke ve
 kurulum doğrulaması otomatik yapılır, ancak frontend kalite kapısı ve `--stage all`
 kullanıcı/operatör opt-in'i olmadan başlangıçta çalıştırılmaz. Kurulum logunda

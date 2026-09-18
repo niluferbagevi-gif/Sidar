@@ -35,9 +35,8 @@ describe("useChatStore — başlangıç durumu", () => {
 });
 
 describe("useChatStore — environment fallbacks", () => {
-  it("falls back to Math.random id generation when crypto is unavailable", async () => {
+  it("fails closed when secure crypto is unavailable", async () => {
     const originalCrypto = globalThis.crypto;
-    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.123456789);
 
     try {
       Object.defineProperty(globalThis, "crypto", {
@@ -46,10 +45,9 @@ describe("useChatStore — environment fallbacks", () => {
         writable: true,
       });
       vi.resetModules();
-      const { useChatStore: fallbackStore } = await import("./useChatStore.js");
-
-      expect(fallbackStore.getState().sessionId).toBeTruthy();
-      expect(randomSpy).toHaveBeenCalled();
+      await expect(import("./useChatStore.js")).rejects.toThrow(
+        "Secure Web Crypto API is required",
+      );
     } finally {
       if (originalCrypto === undefined) {
         Reflect.deleteProperty(globalThis, "crypto");
@@ -60,7 +58,34 @@ describe("useChatStore — environment fallbacks", () => {
           writable: true,
         });
       }
-      randomSpy.mockRestore();
+      vi.resetModules();
+    }
+  });
+
+  it("uses getRandomValues when randomUUID is unavailable", async () => {
+    const originalCrypto = globalThis.crypto;
+    const getRandomValues = vi.fn((bytes: Uint8Array) => {
+      bytes.set(Array.from({ length: 16 }, (_, index) => index));
+      return bytes;
+    });
+
+    try {
+      Object.defineProperty(globalThis, "crypto", {
+        value: { getRandomValues },
+        configurable: true,
+        writable: true,
+      });
+      vi.resetModules();
+      const { useChatStore: fallbackStore } = await import("./useChatStore.js");
+
+      expect(fallbackStore.getState().sessionId).toBe("00010203-0405-4607-8809-0a0b0c0d0e0f");
+      expect(getRandomValues).toHaveBeenCalledOnce();
+    } finally {
+      Object.defineProperty(globalThis, "crypto", {
+        value: originalCrypto,
+        configurable: true,
+        writable: true,
+      });
       vi.resetModules();
     }
   });
