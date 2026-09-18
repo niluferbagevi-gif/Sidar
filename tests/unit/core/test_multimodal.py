@@ -95,6 +95,8 @@ def test_detect_platform_and_youtube_id_extractors():
     assert multimodal.detect_video_platform("https://vimeo.com/123") == "vimeo"
     assert multimodal.detect_video_platform("https://loom.com/share/1") == "loom"
     assert multimodal.detect_video_platform("https://example.com/file") == "generic"
+    hostile_youtube = "https://youtube.com.attacker.invalid/watch"
+    assert multimodal.detect_video_platform(hostile_youtube) == "generic"
 
     assert multimodal.extract_youtube_video_id("abcdefghijk") == "abcdefghijk"
     assert (
@@ -108,6 +110,7 @@ def test_detect_platform_and_youtube_id_extractors():
     )
     assert multimodal.extract_youtube_video_id("https://www.youtube.com/channel/abc") == ""
     assert multimodal.extract_youtube_video_id("https://example.com/nope") == ""
+    assert multimodal.extract_youtube_video_id(f"{hostile_youtube}?v=abcdefghijk") == ""
 
 
 def test_normalize_youtube_events_skips_invalid_items():

@@ -8,6 +8,7 @@ import sys
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any, cast
+from urllib.parse import urlsplit
 
 from fastapi import Depends, Request
 from fastapi.responses import JSONResponse
@@ -102,10 +103,13 @@ def _extract_repo_from_remote(remote: str) -> str:
     value = (remote or "").strip().removesuffix(".git")
     if not value:
         return ""
-    if "github.com/" in value:
-        return value.split("github.com/", 1)[1].strip("/")
-    if "github.com:" in value:
-        return value.split("github.com:", 1)[1].strip("/")
+    parsed = urlsplit(value)
+    if parsed.scheme in {"http", "https", "ssh", "git"} and parsed.hostname:
+        if parsed.hostname.rstrip(".").lower() == "github.com":
+            return parsed.path.strip("/")
+        return parsed.path.rstrip("/").rsplit("/", 1)[-1]
+    if value.startswith("git@github.com:"):
+        return value.removeprefix("git@github.com:").strip("/")
     if value.startswith("http://") or value.startswith("https://"):
         return value.rstrip("/").rsplit("/", 1)[-1]
     if ":" in value and "/" in value:

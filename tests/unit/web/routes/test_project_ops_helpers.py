@@ -131,6 +131,7 @@ def test_git_run_executes_resolved_git_with_exact_allowlisted_args(
         ("https://github.com/sidar-ai/sidar.git", "sidar-ai/sidar"),
         ("git@github.com:sidar-ai/sidar.git", "sidar-ai/sidar"),
         ("https://gitlab.example.com/sidar-ai/sidar.git", "sidar"),
+        ("https://github.com.attacker.invalid/sidar-ai/sidar.git", "sidar"),
         ("git@gitlab.example.com:sidar-ai/sidar.git", "sidar-ai/sidar"),
         ("/workspace/Sidar.git", "Sidar"),
         ("", ""),

@@ -4907,11 +4907,19 @@ def test_download_verified_script_soft_warns_and_returns_instead_of_exiting(
     assert "PROBE_INSTALL_SHA256" in result.stderr
 
 
-def test_remote_checksums_env_pins_volta_and_nvm_defaults() -> None:
+def test_remote_checksum_defaults_are_empty_or_valid_sha256_pins() -> None:
+    """Reviewed automation pins must satisfy the installer checksum contract."""
     checksums = Path("scripts/install_modules/remote_checksums.env").read_text(encoding="utf-8")
 
-    assert ': "${VOLTA_INSTALL_SHA256:=}"' in checksums
-    assert ': "${NVM_INSTALL_SHA256:=}"' in checksums
+    for name in (
+        "OLLAMA_INSTALL_SHA256",
+        "UV_INSTALL_SHA256",
+        "VOLTA_INSTALL_SHA256",
+        "NVM_INSTALL_SHA256",
+    ):
+        match = re.search(rf'^: "\${{{name}:=([0-9a-f]*)}}"$', checksums, re.MULTILINE)
+        assert match is not None, f"{name} default declaration is missing"
+        assert not match[1] or len(match[1]) == 64, f"{name} must be empty or a SHA-256 hex digest"
 
 
 def test_install_sidar_uv_steps_have_explicit_names_and_order() -> None:
