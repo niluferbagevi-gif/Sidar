@@ -27,7 +27,7 @@ jobs:
       - name: Refresh reviewed remote installer pins
         run: uv run python scripts/install_modules/refresh_remote_checksums.py --pr-body /tmp/remote-checksums-pr.md
       - name: Open checksum refresh pull request
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@v8
         with:
           branch: automation/refresh-remote-checksums
           title: Refresh remote installer checksum pins

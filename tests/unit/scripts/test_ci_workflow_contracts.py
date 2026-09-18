@@ -49,11 +49,17 @@ def test_github_hosted_script_jobs_checkout_repository_first(workflow: Path) -> 
 
 
 def test_remote_checksum_pr_checkout_does_not_persist_credentials() -> None:
-    """The PR action must not inherit checkout's competing Authorization header."""
+    """The supported PR action must not inherit checkout's competing auth header."""
     document = yaml.safe_load(REMOTE_CHECKSUM_WORKFLOW.read_text(encoding="utf-8"))
     steps = document["jobs"]["refresh"]["steps"]
     checkout = next(
         step for step in steps if str(step.get("uses", "")).startswith("actions/checkout@")
     )
+    create_pull_request = next(
+        step
+        for step in steps
+        if str(step.get("uses", "")).startswith("peter-evans/create-pull-request@")
+    )
 
     assert checkout["with"]["persist-credentials"] is False
+    assert create_pull_request["uses"] == "peter-evans/create-pull-request@v8"
