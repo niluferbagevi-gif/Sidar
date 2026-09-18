@@ -46,13 +46,11 @@ class YouTubeManager:
             return text
 
         parsed = urlparse(text)
-        host = (parsed.hostname or "").rstrip(".").lower()
-        is_youtu_be = host == "youtu.be" or host.endswith(".youtu.be")
-        is_youtube = host == "youtube.com" or host.endswith(".youtube.com")
-        if is_youtu_be:
+        host = (parsed.netloc or "").lower()
+        if host.endswith("youtu.be"):
             candidate = parsed.path.strip("/").split("/")[0]
             return candidate if re.fullmatch(r"[A-Za-z0-9_-]{11}", candidate or "") else ""
-        if is_youtube:
+        if "youtube.com" in host:
             if parsed.path == "/watch":
                 candidate = parse_qs(parsed.query).get("v", [""])[0]
                 return candidate if re.fullmatch(r"[A-Za-z0-9_-]{11}", candidate or "") else ""

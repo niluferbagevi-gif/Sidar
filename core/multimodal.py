@@ -109,19 +109,13 @@ def is_remote_media_source(value: str | Path) -> bool:
     return parsed.scheme in {"http", "https"}
 
 
-def _host_is(host: str, domain: str) -> bool:
-    """Return whether ``host`` is ``domain`` or one of its subdomains."""
-    normalized = host.rstrip(".").lower()
-    return normalized == domain or normalized.endswith(f".{domain}")
-
-
 def detect_video_platform(value: str) -> str:
-    host = (urlparse(str(value or "")).hostname or "").lower()
-    if _host_is(host, "youtu.be") or _host_is(host, "youtube.com"):
+    host = (urlparse(str(value or "")).netloc or "").lower()
+    if host.endswith("youtu.be") or "youtube.com" in host:
         return "youtube"
-    if _host_is(host, "vimeo.com"):
+    if "vimeo.com" in host:
         return "vimeo"
-    if _host_is(host, "loom.com"):
+    if "loom.com" in host:
         return "loom"
     return "generic"
 
@@ -134,11 +128,11 @@ def extract_youtube_video_id(value: str) -> str:
         return text
 
     parsed = urlparse(text)
-    host = (parsed.hostname or "").lower()
-    if _host_is(host, "youtu.be"):
+    host = (parsed.netloc or "").lower()
+    if host.endswith("youtu.be"):
         candidate = parsed.path.strip("/").split("/")[0]
         return candidate if re.fullmatch(r"[A-Za-z0-9_-]{11}", candidate or "") else ""
-    if _host_is(host, "youtube.com"):
+    if "youtube.com" in host:
         if parsed.path == "/watch":
             candidate = parse_qs(parsed.query).get("v", [""])[0]
             return candidate if re.fullmatch(r"[A-Za-z0-9_-]{11}", candidate or "") else ""
