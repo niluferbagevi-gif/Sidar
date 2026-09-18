@@ -8051,7 +8051,8 @@ async def test_rag_add_file_guards_and_upload_unexpected_error(monkeypatch, tmp_
     monkeypatch.setattr(web_server, "_get_agent_instance", lambda: agent)
     failed = await web_server.upload_rag_file(_FailingUpload())
     assert failed.status_code == 500
-    assert b"cannot read stream" in failed.body
+    assert b"rag_upload_failed" in failed.body
+    assert b"cannot read stream" not in failed.body
 
 
 def test_append_room_telemetry_handles_missing_optional_fields():
@@ -8504,7 +8505,8 @@ async def test_health_response_dependency_exception_marks_degraded(monkeypatch):
 
     assert response.status_code == 503
     assert b'"dependencies"' in response.body
-    assert b'"deps-boom"' in response.body
+    assert b'"dependency_health_failed"' in response.body
+    assert b'"deps-boom"' not in response.body
 
 
 @pytest.mark.asyncio

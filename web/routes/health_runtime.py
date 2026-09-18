@@ -26,11 +26,9 @@ def expose_operational_error_details(app_factory: Any) -> bool:
 
 
 def health_error_payload(error: str, exc: Exception, *, expose_details: bool) -> dict[str, Any]:
-    """Build a degraded health payload, optionally exposing exception text."""
-    payload: dict[str, Any] = {"status": "degraded", "error": error}
-    if expose_details:
-        payload["detail"] = str(exc)
-    return payload
+    """Build a degraded health payload without exposing internal exception text."""
+    _ = exc, expose_details  # Retained for compatibility with legacy callers.
+    return {"status": "degraded", "error": error}
 
 
 async def build_health_response(
@@ -75,8 +73,6 @@ async def build_health_response(
                     "rag_bm25": {"healthy": False, "status": "unavailable"},
                 },
             }
-            if expose_details():
-                rag_report["detail"] = str(exc)
         health_data.setdefault("components", {}).update(rag_report.get("components", {}))
         health_data["rag"] = rag_report
         if not rag_report.get("ready", False):
@@ -100,8 +96,6 @@ async def build_health_response(
                 "healthy": False,
                 "error": "dependency_health_failed",
             }
-            if expose_details():
-                dependency_error["detail"] = str(exc)
             health_data["dependencies"] = {"error": dependency_error}
             health_data["status"] = "degraded"
             return JSONResponse(health_data, status_code=503)

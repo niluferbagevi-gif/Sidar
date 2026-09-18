@@ -9,8 +9,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from scripts.private_env_file import write_private_env
-
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_PROFILE = "development"
 SECRET_PLACEHOLDERS = {
@@ -90,7 +88,12 @@ def bootstrap_profile_env(
         profile=source.stem.removeprefix(".env."),
         generate_secrets=generate_secrets,
     )
-    write_private_env(target, rendered)
+    target.write_text(rendered, encoding="utf-8")
+    try:
+        target.chmod(0o600)
+    except OSError:
+        # chmod is best-effort on platforms/filesystems that support POSIX modes.
+        pass
     return {
         "profile": profile,
         "created": True,
