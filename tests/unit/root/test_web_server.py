@@ -8966,7 +8966,8 @@ async def test_file_content_handles_read_text_exception(tmp_path, monkeypatch):
 
     response = await web_server.file_content("ok.txt")
     assert response.status_code == 500
-    assert b"disk error" in response.body
+    assert b"project_file_read_failed" in response.body
+    assert b"disk error" not in response.body
 
 
 @pytest.mark.asyncio
