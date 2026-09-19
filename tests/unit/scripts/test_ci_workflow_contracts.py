@@ -16,6 +16,7 @@ REPOSITORY_SCRIPT_COMMAND = re.compile(
     re.MULTILINE,
 )
 GITHUB_HOSTED_LABELS = ("ubuntu-", "windows-", "macos-")
+REMOTE_CHECKSUM_WORKFLOW = WORKFLOWS / "refresh-remote-checksums.yml"
 
 
 def _uses_github_hosted_runner(runs_on: Any) -> bool:
@@ -45,3 +46,20 @@ def test_github_hosted_script_jobs_checkout_repository_first(workflow: Path) -> 
                     f"{workflow}: job {job_id!r}, step {step_number} runs a repository-local "
                     "script before actions/checkout"
                 )
+
+
+def test_remote_checksum_pr_checkout_does_not_persist_credentials() -> None:
+    """The supported PR action must not inherit checkout's competing auth header."""
+    document = yaml.safe_load(REMOTE_CHECKSUM_WORKFLOW.read_text(encoding="utf-8"))
+    steps = document["jobs"]["refresh"]["steps"]
+    checkout = next(
+        step for step in steps if str(step.get("uses", "")).startswith("actions/checkout@")
+    )
+    create_pull_request = next(
+        step
+        for step in steps
+        if str(step.get("uses", "")).startswith("peter-evans/create-pull-request@")
+    )
+
+    assert checkout["with"]["persist-credentials"] is False
+    assert create_pull_request["uses"] == "peter-evans/create-pull-request@v8"

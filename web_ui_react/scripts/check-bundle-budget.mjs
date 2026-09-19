@@ -63,9 +63,11 @@ const reportPath = resolve(
   repoRoot,
   process.env.SIDAR_BUNDLE_BUDGET_REPORT_PATH || "artifacts/frontend-bundle-budget.json",
 );
+const committedBaselineRelativePath = "web_ui_react/bundle-budget-baseline.json";
+const committedBaselinePath = resolve(repoRoot, committedBaselineRelativePath);
 const previousReportPath = resolve(
   repoRoot,
-  process.env.SIDAR_BUNDLE_BUDGET_PREVIOUS_REPORT_PATH || reportPath,
+  process.env.SIDAR_BUNDLE_BUDGET_PREVIOUS_REPORT_PATH || committedBaselinePath,
 );
 const topChunkCount = 5;
 const missingRequiredBudgets = [];
@@ -266,11 +268,25 @@ for (const budget of namedChunkBudgets) {
 const totalJsBytes = jsChunks.reduce((total, chunk) => total + chunk.sizeBytes, 0);
 const totalGzipBytes = jsChunks.reduce((total, chunk) => total + chunk.gzipBytes, 0);
 const previousReport = readPreviousReport();
+if (
+  productionBudgetGateActive &&
+  !Number.isFinite(Number(previousReport?.totals?.gzipBytes))
+) {
+  fail(
+    `A reviewed bundle baseline with totals.gzipBytes is required at ${previousReportPath}.`,
+  );
+}
 const budgetUsage = {
   totalJs: buildBudgetUsage("Total JS", totalJsBytes, totalJsBudgetKb),
   totalGzip: buildBudgetUsage("Total gzip JS", totalGzipBytes, totalGzipBudgetKb),
 };
 const gzipTrend = buildGzipTrend(previousReport, totalGzipBytes);
+if (productionBudgetGateActive && gzipTrend.warning) {
+  fail(
+    `Total gzip JS regression exceeds the reviewed baseline allowance: +${formatKb(gzipTrend.deltaBytes)} KB > +${gzipTrendWarnKb} KB. ` +
+      `Optimize the bundle or intentionally refresh ${committedBaselineRelativePath} with review evidence.`,
+  );
+}
 const topChunks = jsChunks.slice(0, topChunkCount);
 
 for (const budget of namedChunkBudgets) {

@@ -4907,11 +4907,19 @@ def test_download_verified_script_soft_warns_and_returns_instead_of_exiting(
     assert "PROBE_INSTALL_SHA256" in result.stderr
 
 
-def test_remote_checksums_env_pins_volta_and_nvm_defaults() -> None:
+def test_remote_checksum_defaults_are_empty_or_valid_sha256_pins() -> None:
+    """Reviewed automation pins must satisfy the installer checksum contract."""
     checksums = Path("scripts/install_modules/remote_checksums.env").read_text(encoding="utf-8")
 
-    assert ': "${VOLTA_INSTALL_SHA256:=}"' in checksums
-    assert ': "${NVM_INSTALL_SHA256:=}"' in checksums
+    for name in (
+        "OLLAMA_INSTALL_SHA256",
+        "UV_INSTALL_SHA256",
+        "VOLTA_INSTALL_SHA256",
+        "NVM_INSTALL_SHA256",
+    ):
+        match = re.search(rf'^: "\${{{name}:=([0-9a-f]*)}}"$', checksums, re.MULTILINE)
+        assert match is not None, f"{name} default declaration is missing"
+        assert not match[1] or len(match[1]) == 64, f"{name} must be empty or a SHA-256 hex digest"
 
 
 def test_install_sidar_uv_steps_have_explicit_names_and_order() -> None:
@@ -6396,6 +6404,8 @@ def test_frontend_security_dependencies_are_patched_in_package_lock() -> None:
     assert "SIDAR_TOTAL_JS_BUDGET_KB" in bundle_budget_script
     assert "SIDAR_TOTAL_GZIP_BUDGET_KB" in bundle_budget_script
     assert "SIDAR_BUNDLE_BUDGET_WARN_RATIO" in bundle_budget_script
+    assert "bundle-budget-baseline.json" in bundle_budget_script
+    assert Path("web_ui_react/bundle-budget-baseline.json").is_file()
     assert "buildBudgetUsage" in bundle_budget_script
     assert "watch dependency additions" in bundle_budget_script
     assert "productionBudgetGateActive" in bundle_budget_script
@@ -6492,6 +6502,51 @@ def test_frontend_bundle_budget_warns_before_named_chunk_hard_limit(tmp_path: Pa
     assert "React DOM chunk react-dom-near-budget.js is at" in result.stderr
     assert react_dom["usage"][0]["warning"] is True
     assert report["budgetUsage"]["totalJs"]["warning"] is False
+
+
+def test_frontend_bundle_budget_fails_ci_on_reviewed_baseline_regression(
+    tmp_path: Path,
+) -> None:
+    """CI must catch gzip growth before the nearly-full absolute budget does."""
+    assets_dir = tmp_path / "assets"
+    assets_dir.mkdir()
+    (assets_dir / "react-dom-test.js").write_text("react-dom" * 100, encoding="utf-8")
+    (assets_dir / "ChatMarkdownRenderer-test.js").write_text(
+        "markdown" * 100, encoding="utf-8"
+    )
+    (assets_dir / "highlight-js-core-test.js").write_text(
+        "highlight" * 100, encoding="utf-8"
+    )
+    baseline_path = tmp_path / "reviewed-baseline.json"
+    baseline_path.write_text('{"totals":{"gzipBytes":1}}\n', encoding="utf-8")
+    report_path = tmp_path / "bundle-budget.json"
+
+    env = os.environ.copy()
+    env.update(
+        {
+            "TEST_PROFILE": "ci",
+            "SIDAR_TOTAL_JS_BUDGET_KB": "500",
+            "SIDAR_TOTAL_GZIP_BUDGET_KB": "160",
+            "SIDAR_BUNDLE_GZIP_TREND_WARN_KB": "0.01",
+            "SIDAR_BUNDLE_BUDGET_PREVIOUS_REPORT_PATH": str(baseline_path),
+            "SIDAR_BUNDLE_BUDGET_REPORT_PATH": str(report_path),
+            "SIDAR_BUNDLE_ASSETS_DIR": str(assets_dir),
+        }
+    )
+
+    result = subprocess.run(
+        ["node", "web_ui_react/scripts/check-bundle-budget.mjs"],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert result.returncode != 0
+    assert "Total gzip JS regression exceeds the reviewed baseline allowance" in result.stderr
+    assert report["trend"]["gzip"]["available"] is True
+    assert report["trend"]["gzip"]["warning"] is True
 
 
 def test_frontend_bundle_budget_requires_total_budgets_for_ci_gate(tmp_path: Path) -> None:

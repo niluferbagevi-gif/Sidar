@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "reviewedAt": "2026-09-19",
+  "source": "Issue #2776 reviewed bundle baseline",
+  "totals": {
+    "jsBytes": 482193,
+    "jsKb": 470.89,
+    "gzipBytes": 153559,
+    "gzipKb": 149.96
+  },
+  "namedChunks": [
+    {
+      "label": "React DOM",
+      "chunks": [
+        {
+          "name": "react-dom-DUTx1zrx.js",
+          "sizeBytes": 181513,
+          "gzipBytes": 56453,
+          "sizeKb": 177.26,
+          "gzipKb": 55.13
+        },
+        {
+          "name": "react-dom-client-CGt-YsI_.js",
+          "sizeBytes": 338,
+          "gzipBytes": 237,
+          "sizeKb": 0.33,
+          "gzipKb": 0.23
+        }
+      ]
+    },
+    {
+      "label": "ChatMarkdownRenderer",
+      "chunks": [
+        {
+          "name": "ChatMarkdownRenderer-7OxCfjlb.js",
+          "sizeBytes": 154291,
+          "gzipBytes": 45645,
+          "sizeKb": 150.67,
+          "gzipKb": 44.58
+        }
+      ]
+    },
+    {
+      "label": "highlight.js core",
+      "chunks": [
+        {
+          "name": "highlight-js-core-D2VsIQYR.js",
+          "sizeBytes": 33439,
+          "gzipBytes": 12764,
+          "sizeKb": 32.66,
+          "gzipKb": 12.46
+        }
+      ]
+    }
+  ]
+}

@@ -105,9 +105,14 @@ güncelleme sözleşmesi `docs/development/frontend-typescript-migration.md` iç
   `SIDAR_TOTAL_GZIP_BUDGET_KB=160` değerleriyle ratchet edilir ve gerektiğinde açık env
   override ile değiştirilebilir.
   `SIDAR_BUNDLE_BUDGET_WARN_RATIO` varsayılan `0.9` ile toplam JS/gzip
-  budget kullanımını %90 seviyesinde uyarı olarak raporlar. `SIDAR_BUNDLE_GZIP_TREND_WARN_KB`
-  varsayılan `5` KB artış eşiğiyle önceki
-  bundle raporuna göre toplam gzip büyümesini uyarı olarak raporlar; önceki rapor yolu
+  budget kullanımını %90 seviyesinde uyarı olarak raporlar. Her temiz CI checkout'unda
+  trend karşılaştırması yapılabilmesi için incelenmiş baseline
+  `web_ui_react/bundle-budget-baseline.json` içinde sürüm kontrolünde tutulur.
+  `SIDAR_BUNDLE_GZIP_TREND_WARN_KB` varsayılan `5` KB artış eşiğiyle bu baseline'a
+  göre toplam gzip büyümesini yerelde uyarır; CI/production-readiness profilinde aynı
+  eşiğin aşılması, 160 KB mutlak tavana henüz ulaşılmamış olsa bile kapıyı
+  fail-closed durdurur. Bilinçli bir bundle değişikliğinde baseline yalnızca build raporu
+  ve inceleme kanıtıyla güncellenmelidir; alternatif karşılaştırma yolu
   `SIDAR_BUNDLE_BUDGET_PREVIOUS_REPORT_PATH` ile verilebilir. Her koşu en büyük 5 JS chunk'ı
   terminalde listeler ve makinece okunabilir raporu `artifacts/frontend-bundle-budget.json`
   dosyasına yazar. Chat markdown renderer ana chat mesajından lazy import edilir. Markdown'ın
