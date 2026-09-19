@@ -101,6 +101,12 @@ export default defineConfig(() => {
         "!src/**/*.test.{js,jsx}",
         "!e2e/**",
       ],
+      // MarkdownBody lazily imports these, so without an explicit include they're
+      // only discovered on first real use. Under parallel e2e workers, several
+      // pages can trigger that discovery at once, racing the optimizer's
+      // deps_temp_* -> deps rename (ENOTEMPTY). Pre-bundling them eagerly avoids
+      // the race entirely.
+      include: ["react-markdown", "remark-gfm"],
     },
     server: {
       // Geliştirme sırasında FastAPI backend'e proxy — CORS sorununu önler.
