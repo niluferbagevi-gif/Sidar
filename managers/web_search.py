@@ -236,12 +236,14 @@ class WebSearchManager:
         try:
             import duckduckgo_search
 
-            # Dinamik AsyncDDGS kontrolü (Gelecekteki versiyon değişikliklerine karşı koruma)
-            if hasattr(duckduckgo_search, "AsyncDDGS"):
-                from duckduckgo_search import AsyncDDGS
+            # v8 paketinde AsyncDDGS artık dışa açılmıyor; eski desteklenen
+            # sürümlerle uyumluluğu statik olarak var olmayan bir sembolü import
+            # etmeden koru.
+            async_ddgs_cls = getattr(duckduckgo_search, "AsyncDDGS", None)
+            if async_ddgs_cls is not None:
 
                 async def _async_search() -> list[dict[str, Any]]:
-                    async with AsyncDDGS() as ddgs:
+                    async with async_ddgs_cls() as ddgs:
                         # Bazı versiyonlarda liste, bazılarında async generator döner
                         maybe_res = ddgs.text(query, max_results=n)
                         res = await maybe_res if isawaitable(maybe_res) else maybe_res

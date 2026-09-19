@@ -13,7 +13,7 @@ import time
 import uuid
 from collections import deque
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from redis.asyncio import Redis
 from redis.exceptions import ResponseError
@@ -459,7 +459,11 @@ class AgentEventBus:
             if not response:
                 continue
 
-            for _stream_name, entries in response:
+            # redis-py models xreadgroup with a broad ResponseT union even
+            # though this call (decode_responses=True) has the documented
+            # stream -> [(message id, field mapping)] shape.
+            stream_response = cast(list[tuple[str, list[tuple[str, dict[str, str]]]]], response)
+            for _stream_name, entries in stream_response:
                 for msg_id, fields in entries:
                     payload_raw = fields.get("payload", "{}")
                     try:
