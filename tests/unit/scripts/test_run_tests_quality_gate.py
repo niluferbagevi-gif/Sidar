@@ -6511,12 +6511,8 @@ def test_frontend_bundle_budget_fails_ci_on_reviewed_baseline_regression(
     assets_dir = tmp_path / "assets"
     assets_dir.mkdir()
     (assets_dir / "react-dom-test.js").write_text("react-dom" * 100, encoding="utf-8")
-    (assets_dir / "ChatMarkdownRenderer-test.js").write_text(
-        "markdown" * 100, encoding="utf-8"
-    )
-    (assets_dir / "highlight-js-core-test.js").write_text(
-        "highlight" * 100, encoding="utf-8"
-    )
+    (assets_dir / "ChatMarkdownRenderer-test.js").write_text("markdown" * 100, encoding="utf-8")
+    (assets_dir / "highlight-js-core-test.js").write_text("highlight" * 100, encoding="utf-8")
     baseline_path = tmp_path / "reviewed-baseline.json"
     baseline_path.write_text('{"totals":{"gzipBytes":1}}\n', encoding="utf-8")
     report_path = tmp_path / "bundle-budget.json"
