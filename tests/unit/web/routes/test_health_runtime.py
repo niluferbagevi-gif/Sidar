@@ -184,7 +184,7 @@ async def test_rag_runtime_readiness_exception_fails_closed() -> None:
 
 
 @pytest.mark.asyncio
-async def test_rag_runtime_readiness_exception_exposes_detail_when_enabled() -> None:
+async def test_rag_runtime_readiness_exception_never_exposes_detail() -> None:
     agent = SimpleNamespace(
         cfg=SimpleNamespace(AI_PROVIDER="openai", RAG_REQUIRED_FOR_READINESS=True),
         health=_Health(),
@@ -204,7 +204,7 @@ async def test_rag_runtime_readiness_exception_exposes_detail_when_enabled() -> 
 
     assert response.status_code == 503
     payload = json.loads(response.body)
-    assert payload["rag"]["detail"] == "rag-readiness-secret"
+    assert "detail" not in payload["rag"]
 
 
 @pytest.mark.asyncio

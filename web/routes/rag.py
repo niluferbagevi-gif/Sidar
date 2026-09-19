@@ -132,7 +132,8 @@ def build_rag_router(
         except HTTPException:
             raise
         except Exception as exc:
-            return JSONResponse({"success": False, "error": str(exc)}, status_code=500)
+            logger.exception("RAG yükleme isteği işlenemedi: %s", exc)
+            return JSONResponse({"success": False, "error": "rag_upload_failed"}, status_code=500)
         finally:
             try:
                 await file.close()
