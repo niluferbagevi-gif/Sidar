@@ -22,17 +22,15 @@
 `_search_duckduckgo()` içinde üç katmanlı güvenlik uygulandı:
 
 ```python
-# 1. Dinamik AsyncDDGS kontrolü (versiyon değişikliği koruması)
-if hasattr(duckduckgo_search, "AsyncDDGS"):
-    results = await asyncio.wait_for(_async_search(), timeout=FETCH_TIMEOUT)
-else:
-    # AsyncDDGS yoksa (gelecek sürümler için) sync+thread fallback
-    results = await asyncio.wait_for(
-        asyncio.to_thread(_sync_search), timeout=FETCH_TIMEOUT)
+# 1. Yeni adıyla desteklenen DDGS istemcisi
+from ddgs import DDGS
 
-# 2. Timeout koruması — her iki yol da wait_for ile sınırlı
-# 3. Except sırası: asyncio.TimeoutError > Exception (Python best practice)
-except asyncio.TimeoutError:  # Spesifik önce
+# 2. Senkron SDK event loop'u bloklamadan thread'de çalışır
+thread_task = asyncio.create_task(asyncio.to_thread(_sync_search))
+results = await asyncio.wait_for(thread_task, timeout=FETCH_TIMEOUT)
+
+# 3. Except sırası: TimeoutError > Exception
+except TimeoutError:  # Spesifik önce
     ...
 except Exception as exc:       # Genel sonra
     ...
@@ -40,10 +38,11 @@ except Exception as exc:       # Genel sonra
 
 | Güvenlik Katmanı | Açıklama |
 |---|---|
-| Versiyon pinleme | `environment.yml`: `duckduckgo-search~=6.2.13` |
-| `AsyncDDGS` dinamik kontrol | `hasattr()` ile mevcut sürümde async yol, gelecek sürümlerde sync yol |
-| `asyncio.wait_for()` | Her iki arama yolu için `FETCH_TIMEOUT` sınırı (sessiz takılma engeli) |
-| `asyncio.TimeoutError` handler | Spesifik timeout mesajı + `logger.warning` |
+| Versiyon pinleme | `pyproject.toml`: `ddgs>=9.16.0,<10.0.0` |
+| SDK geçişi | Yeniden adlandırılan `ddgs` paketi ve `DDGS` API'si kullanılır |
+| `asyncio.to_thread()` | Senkron SDK çağrısı event loop'u bloklamaz |
+| `asyncio.wait_for()` | `FETCH_TIMEOUT` sınırı sessiz takılmayı engeller |
+| `TimeoutError` handler | Spesifik timeout mesajı + `logger.warning` |
 
 **Konfigürasyon:** `WEB_SEARCH_MAX_RESULTS` (5), `WEB_FETCH_TIMEOUT` (15sn), `WEB_SCRAPE_MAX_CHARS` (12000)
 

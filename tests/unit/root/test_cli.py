@@ -295,7 +295,7 @@ async def test_interactive_loop_handles_provider_cpu_and_input_interrupt(monkeyp
     assert "CPU modu, USE_GPU=false" in output
     assert "coder-test" in output
     assert "Hazır değil" in output
-    assert "duckduckgo-search kurulu değil" in output
+    assert "ddgs kurulu değil" in output
     assert "Görüşürüz. ✓" in output
 
 

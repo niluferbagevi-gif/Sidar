@@ -9,7 +9,6 @@ Motor öncelik sırası (auto modu): Tavily → Google → DuckDuckGo
 import asyncio
 import logging
 from html import unescape
-from inspect import isawaitable
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -69,8 +68,7 @@ class WebSearchManager:
 
     def _check_ddg(self) -> bool:
         try:
-            # v8 uyumlu import (AsyncDDGS yerine standart DDGS)
-            from duckduckgo_search import DDGS  # noqa: F401
+            from ddgs import DDGS  # noqa: F401
 
             return True
         except ImportError as exc:
@@ -148,7 +146,7 @@ class WebSearchManager:
             ok, res = await self._search_duckduckgo(query, n)
             return ok, self._normalize_result_text(res)
 
-        return False, "⚠ Web arama yapılamadı. API anahtarları veya duckduckgo-search paketi eksik."
+        return False, "⚠ Web arama yapılamadı. API anahtarları veya ddgs paketi eksik."
 
     # ─────────────────────────────────────────────
     #  MOTORLAR
@@ -234,45 +232,23 @@ class WebSearchManager:
 
     async def _search_duckduckgo(self, query: str, n: int) -> tuple[bool, str]:
         try:
-            import duckduckgo_search
+            from ddgs import DDGS
 
-            # v8 paketinde AsyncDDGS artık dışa açılmıyor; eski desteklenen
-            # sürümlerle uyumluluğu statik olarak var olmayan bir sembolü import
-            # etmeden koru.
-            async_ddgs_cls = getattr(duckduckgo_search, "AsyncDDGS", None)
-            if async_ddgs_cls is not None:
+            def _sync_search() -> list[dict[str, Any]]:
+                with DDGS() as ddgs:
+                    return list(ddgs.text(query, max_results=n))
 
-                async def _async_search() -> list[dict[str, Any]]:
-                    async with async_ddgs_cls() as ddgs:
-                        # Bazı versiyonlarda liste, bazılarında async generator döner
-                        maybe_res = ddgs.text(query, max_results=n)
-                        res = await maybe_res if isawaitable(maybe_res) else maybe_res
-                        # Eğer dönen nesne async generator ise
-                        if hasattr(res, "__aiter__"):
-                            return [r async for r in res]
-                        return list(res)
-
-                # Olası takılmalara karşı zaman aşımı koruması
-                results = await asyncio.wait_for(_async_search(), timeout=self.FETCH_TIMEOUT)
-
-            else:
-                # AsyncDDGS yoksa (Örn: DDG SDK v8+), standart DDGS'i güvenli thread'de çalıştır
-                from duckduckgo_search import DDGS
-
-                def _sync_search() -> list[dict[str, Any]]:
-                    with DDGS() as ddgs:
-                        return list(ddgs.text(query, max_results=n))
-
-                # Thread işlemini de timeout ile sınırlandır (Sessiz bloklanmaları önler)
-                thread_task = asyncio.create_task(asyncio.to_thread(_sync_search))
-                try:
-                    results = await asyncio.wait_for(
-                        thread_task,
-                        timeout=self.FETCH_TIMEOUT,
-                    )
-                except Exception:
-                    thread_task.cancel()
-                    raise
+            # DDGS ağ çağrısı senkrondur; event loop'u bloklamadan ve
+            # sessiz takılmalara izin vermeden ayrı thread'de çalıştır.
+            thread_task = asyncio.create_task(asyncio.to_thread(_sync_search))
+            try:
+                results = await asyncio.wait_for(
+                    thread_task,
+                    timeout=self.FETCH_TIMEOUT,
+                )
+            except Exception:
+                thread_task.cancel()
+                raise
 
             if not results:
                 return True, self._mark_no_results(
