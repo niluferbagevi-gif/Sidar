@@ -18,6 +18,14 @@ def test_nemoguardrails_stays_on_validated_minor() -> None:
     assert "nemoguardrails>=0.22.0,<0.23.0" in deps
 
 
+def test_duckduckgo_client_uses_renamed_supported_package() -> None:
+    """The retired duckduckgo-search distribution must not return."""
+    deps = _project_dependencies()
+
+    assert "ddgs>=9.16.0,<10.0.0" in deps
+    assert not any(dependency.startswith("duckduckgo-search") for dependency in deps)
+
+
 def test_agent_swarm_and_core_llm_do_not_import_nemoguardrails_directly() -> None:
     """Guardrails API usage should remain isolated behind SecurityManager."""
     checked_paths = [

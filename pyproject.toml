@@ -81,7 +81,7 @@ dependencies = [
   "nemoguardrails>=0.22.0,<0.23.0",
   # ── Harici entegrasyonlar ─────────────────────────────────────────────
   "PyGithub~=2.4.0",
-  "duckduckgo-search>=6.2.13,<8.2.0",
+  "ddgs>=9.16.0,<10.0.0",
   "websockets>=16.1.1,<17.0",
   "pillow>=12.2.0,<14.0.0",
   "pyttsx3~=2.98",
@@ -304,7 +304,7 @@ chromadb = "runtime"
 cryptography = "runtime"
 defusedxml = "runtime"
 "detect-secrets" = "security-tool"
-"duckduckgo-search" = "integration"
+ddgs = "integration"
 fakeredis = "test-double"
 fastapi = "runtime"
 freezegun = "test-double"
@@ -523,6 +523,10 @@ filterwarnings = [
   # emit the project's actionable missing-dependency message rather than
   # failing early while resolving this warning category.
   "ignore::DeprecationWarning:pydantic.*",
+  # NeMo Guardrails 0.22 still calls Pydantic v1 compatibility APIs internally.
+  # Keep this pinned third-party warning scoped to its own modules; Sidar-owned
+  # Pydantic deprecations remain errors under the leading `error` rule.
+  "ignore::DeprecationWarning:nemoguardrails.*",
   "ignore:Field \"model_.*\" has conflict with protected namespace:UserWarning",
   "ignore:Benchmarks are automatically disabled because xdist plugin is active\\.Benchmarks cannot be performed reliably in a parallelized environment\\.:pytest_benchmark.logger.PytestBenchmarkWarning",
   # GitHub-hosted runners provision heterogeneous CPU models between the cached
@@ -808,8 +812,8 @@ module = [
   "chromadb.*",
   "sentence_transformers",
   "sentence_transformers.*",
-  "duckduckgo_search",
-  "duckduckgo_search.*",
+  "ddgs",
+  "ddgs.*",
   "github",
   "github.*",
   "opentelemetry",

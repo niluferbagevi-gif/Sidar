@@ -81,13 +81,13 @@ def test_dummy_response_raise_for_status_and_fail_import_passthrough():
     real_import = builtins.__import__
 
     def fail_import(name, *args, **kwargs):
-        if name == "duckduckgo_search":
+        if name == "ddgs":
             raise ImportError("missing")
         return real_import(name, *args, **kwargs)
 
     assert fail_import("math").__name__ == "math"
     with pytest.raises(ImportError):
-        fail_import("duckduckgo_search")
+        fail_import("ddgs")
 
 
 def test_init_with_config(monkeypatch):
@@ -110,7 +110,7 @@ def test_check_ddg_true_and_false(monkeypatch):
     real_import = builtins.__import__
 
     def ok_import(name, *args, **kwargs):
-        if name == "duckduckgo_search":
+        if name == "ddgs":
             return types.SimpleNamespace(DDGS=object)
         return real_import(name, *args, **kwargs)
 
@@ -118,13 +118,13 @@ def test_check_ddg_true_and_false(monkeypatch):
     assert m._check_ddg() is True
 
     def fail_import(name, *args, **kwargs):
-        if name == "duckduckgo_search":
+        if name == "ddgs":
             raise ImportError("missing")
         return real_import(name, *args, **kwargs)
 
     assert fail_import("math").__name__ == "math"
     with pytest.raises(ImportError):
-        fail_import("duckduckgo_search")
+        fail_import("ddgs")
 
     monkeypatch.setattr(builtins, "__import__", fail_import)
     assert m._check_ddg() is False
@@ -352,53 +352,6 @@ def test_search_google_success_no_items_and_error(monkeypatch):
     assert "   → l" in res
 
 
-def test_search_duckduckgo_asyncddgs_list(monkeypatch):
-    monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: True)
-    m = WebSearchManager()
-
-    class FakeAsyncDDGS:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return False
-
-        async def text(self, query, max_results):
-            return [{"title": "t", "body": "b", "href": "h"}]
-
-    mod = types.SimpleNamespace(AsyncDDGS=FakeAsyncDDGS)
-    monkeypatch.setitem(sys.modules, "duckduckgo_search", mod)
-
-    ok, res = run(m._search_duckduckgo("python", 2))
-    assert ok is True
-    assert "DuckDuckGo" in res
-
-
-def test_search_duckduckgo_asyncddgs_async_generator(monkeypatch):
-    monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: True)
-    m = WebSearchManager()
-
-    async def agen():
-        yield {"title": "t2", "body": "b2", "href": "h2"}
-
-    class FakeAsyncDDGS:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return False
-
-        async def text(self, query, max_results):
-            return agen()
-
-    mod = types.SimpleNamespace(AsyncDDGS=FakeAsyncDDGS)
-    monkeypatch.setitem(sys.modules, "duckduckgo_search", mod)
-
-    ok, res = run(m._search_duckduckgo("python", 2))
-    assert ok is True
-    assert "t2" in res
-
-
 def test_search_duckduckgo_ddgs_fallback_no_results_timeout_and_error(monkeypatch):
     monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: True)
     m = WebSearchManager()
@@ -414,7 +367,7 @@ def test_search_duckduckgo_ddgs_fallback_no_results_timeout_and_error(monkeypatc
             return []
 
     mod = types.SimpleNamespace(DDGS=FakeDDGS)
-    monkeypatch.setitem(sys.modules, "duckduckgo_search", mod)
+    monkeypatch.setitem(sys.modules, "ddgs", mod)
 
     ok, res = run(m._search_duckduckgo("python", 2))
     assert ok is True
@@ -440,19 +393,17 @@ def test_search_duckduckgo_no_body_line(monkeypatch):
     monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: True)
     m = WebSearchManager()
 
-    class FakeAsyncDDGS:
-        async def __aenter__(self):
+    class FakeDDGS:
+        def __enter__(self):
             return self
 
-        async def __aexit__(self, exc_type, exc, tb):
+        def __exit__(self, exc_type, exc, tb):
             return False
 
-        async def text(self, query, max_results):
+        def text(self, query, max_results):
             return [{"title": "t", "body": "", "href": "h"}]
 
-    monkeypatch.setitem(
-        sys.modules, "duckduckgo_search", types.SimpleNamespace(AsyncDDGS=FakeAsyncDDGS)
-    )
+    monkeypatch.setitem(sys.modules, "ddgs", types.SimpleNamespace(DDGS=FakeDDGS))
     ok, res = run(m._search_duckduckgo("python", 2))
     assert ok is True
     assert "   → h" in res

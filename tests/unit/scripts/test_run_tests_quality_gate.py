@@ -2625,6 +2625,7 @@ def test_pytest_warning_filters_do_not_import_runtime_only_modules_during_config
 
     assert "ignore::pydantic.warnings.PydanticDeprecatedSince20" not in pyproject
     assert "ignore::DeprecationWarning:pydantic.*" in pyproject
+    assert "ignore::DeprecationWarning:nemoguardrails.*" in pyproject
     assert "pytest should reach tests/conftest.py" in pyproject
 
 

@@ -877,6 +877,11 @@ ağacı üzerinde geçtiği açıkça görülür.
 > pydantic import etmeye çalışıp erken düşmez; suite `tests/conftest.py` içindeki
 > `uv sync --all-extras` yönlendirmesine kadar ulaşır.
 
+NeMo Guardrails `0.22.x` kendi modülleri içinde Pydantic v1 uyumluluk API'lerini
+kullandığından, bu sabitlenmiş üçüncü taraf uyarıları yalnızca
+`nemoguardrails.*` kaynak modülleri için filtrelenir. Genel Pydantic deprecation
+uyarıları susturulmaz; Sidar kaynaklı bir geçiş borcu `error` filtresinde kalır.
+
 Repo CI akışı Debian/Ubuntu runner'larda bu ön koşulu
 `scripts/install_ci_system_deps.sh` üzerinden kurar. Aynı script apt, dnf, zypper,
 pacman ve Homebrew ortamlarında eşdeğer paket adlarını kullanır; eksikleri yalnız

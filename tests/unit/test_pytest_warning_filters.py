@@ -23,7 +23,9 @@ def test_pytest_pydantic_warning_filter_avoids_config_time_pydantic_import() -> 
 
     assert "ignore::pydantic.warnings.PydanticDeprecatedSince20" not in filters
     assert "ignore::DeprecationWarning:pydantic.*" in filters
+    assert "ignore::DeprecationWarning:nemoguardrails.*" in filters
 
     testing_doc = (pyproject.parent / "docs" / "TESTING.md").read_text(encoding="utf-8")
     assert "Pydantic ve pytest warning filtresi" in testing_doc
     assert "ignore::DeprecationWarning:pydantic.*" in testing_doc
+    assert "`nemoguardrails.*` kaynak modülleri" in testing_doc
