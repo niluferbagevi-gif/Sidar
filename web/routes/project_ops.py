@@ -257,7 +257,7 @@ def build_project_ops_router(
             return JSONResponse({"path": path, "content": content, "size": len(content)})
         except OSError as exc:
             logger.warning("Proje dosyası okunamadı: %s (%s)", target, exc)
-            return JSONResponse({"error": str(exc)}, status_code=500)
+            return JSONResponse({"error": "project_file_read_failed"}, status_code=500)
 
     @router.get("/git-info")
     async def git_info() -> Any:

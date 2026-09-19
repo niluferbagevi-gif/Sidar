@@ -331,7 +331,7 @@ class _RedisDailyBudgetTracker:
             with self._redis.pipeline(transaction=True) as pipe:
                 pipe.incrbyfloat(key, value)
                 pipe.expireat(key, expire_at)
-                _ = pipe.execute()  # type: ignore[no-untyped-call]
+                _ = pipe.execute()
             return
         except Exception as exc:
             logger.debug("Redis budget tracker yazımı başarısız, in-memory fallback: %s", exc)
