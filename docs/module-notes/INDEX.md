@@ -84,6 +84,7 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `core/config_dotenv.py` → `docs/module-notes/core/config_dotenv.py.md`
 - `core/config_env_helpers.py` → `docs/module-notes/core/config_env_helpers.py.md`
 - `core/config_event_bus.py` → `docs/module-notes/core/config_event_bus.py.md`
+- `core/config_github_hf.py` → `docs/module-notes/core/config_github_hf.py.md`
 - `core/config_gpu_detect.py` → `docs/module-notes/core/config_gpu_detect.py.md`
 - `core/config_hardware.py` → `docs/module-notes/core/config_hardware.py.md`
 - `core/config_logging_setup.py` → `docs/module-notes/core/config_logging_setup.py.md`

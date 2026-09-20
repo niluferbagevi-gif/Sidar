@@ -40,6 +40,7 @@ from core.config_env_helpers import (
     get_web_scrape_max_chars,
 )
 from core.config_event_bus import load_event_bus_settings
+from core.config_github_hf import load_github_huggingface_settings
 from core.config_gpu_detect import HardwareInfo
 from core.config_observability import load_observability_settings
 from core.config_orchestrator import load_orchestrator_settings
@@ -431,6 +432,7 @@ _RATE_LIMIT_SETTINGS = load_rate_limit_settings(
     redis_max_connections_default=LLM_SETTINGS.REDIS_MAX_CONNECTIONS
 )
 _EVENT_BUS_SETTINGS = load_event_bus_settings()
+_GITHUB_HF_SETTINGS = load_github_huggingface_settings()
 _RAG_STORE_SETTINGS = load_rag_store_settings()
 _SANDBOX_SETTINGS = load_sandbox_settings(
     base_sandbox_limits=SANDBOX_LIMITS,
@@ -519,6 +521,7 @@ class Config:
     security_settings = SECURITY_SETTINGS
     rate_limit_settings = _RATE_LIMIT_SETTINGS
     event_bus_settings = _EVENT_BUS_SETTINGS
+    github_huggingface_settings = _GITHUB_HF_SETTINGS
     rag_store_settings = _RAG_STORE_SETTINGS
     sandbox_settings = _SANDBOX_SETTINGS
     social_integration_settings = _SOCIAL_INTEGRATION_SETTINGS
@@ -618,15 +621,15 @@ class Config:
     JWT_TTL_DAYS: int = SECURITY_SETTINGS.jwt_ttl_days
 
     # ─── GitHub ──────────────────────────────────────────────
-    GITHUB_TOKEN: str = os.getenv("GITHUB_TOKEN", "")
-    GITHUB_REPO: str = os.getenv("GITHUB_REPO", "")
-    GITHUB_WEBHOOK_SECRET: str = os.getenv("GITHUB_WEBHOOK_SECRET", "")
-    GITHUB_WEBHOOK_REQUIRE_SIGNATURE: bool = get_bool_env("GITHUB_WEBHOOK_REQUIRE_SIGNATURE", True)
+    GITHUB_TOKEN: str = _GITHUB_HF_SETTINGS.github_token
+    GITHUB_REPO: str = _GITHUB_HF_SETTINGS.github_repo
+    GITHUB_WEBHOOK_SECRET: str = _GITHUB_HF_SETTINGS.github_webhook_secret
+    GITHUB_WEBHOOK_REQUIRE_SIGNATURE: bool = _GITHUB_HF_SETTINGS.github_webhook_require_signature
 
     # ─── HuggingFace ─────────────────────────────────────────
-    HF_TOKEN: str = os.getenv("HF_TOKEN", "")
-    HF_HUB_OFFLINE: bool = get_external_bool_env("HF_HUB_OFFLINE", False)
-    HF_USE_LOCAL_CACHE_ONLY: bool = get_bool_env("HF_USE_LOCAL_CACHE_ONLY", False)
+    HF_TOKEN: str = _GITHUB_HF_SETTINGS.hf_token
+    HF_HUB_OFFLINE: bool = _GITHUB_HF_SETTINGS.hf_hub_offline
+    HF_USE_LOCAL_CACHE_ONLY: bool = _GITHUB_HF_SETTINGS.hf_use_local_cache_only
 
     # ─── Donanım & GPU ───────────────────────────────────────
     USE_GPU: bool = get_bool_env("USE_GPU", True)
