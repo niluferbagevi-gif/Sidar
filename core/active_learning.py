@@ -802,6 +802,14 @@ class LoRATrainer:
         # Bandit's huggingface_unsafe_download check specifically treats a
         # None revision as "still unpinned," which is the right call for a
         # real Hub download, just not applicable to this local-file path.
+        # Root cause confirmed by reading the plugin itself (bandit/plugins/
+        # huggingface_unsafe_download.py): it *does* have a local-path
+        # exemption, but only for `context.get_call_arg_at_position(0)`
+        # starting with "./", "/" or "../" -- it never looks at `data_files`.
+        # Here positional arg 0 is the required literal "json" (datasets'
+        # format/builder selector, not swappable for a path without breaking
+        # local-file loading), so the exemption can never fire for this
+        # calling convention regardless of what `data_files` actually is.
         dataset = load_dataset(  # nosec B615  # local JSON file, not a Hub download; no revision applies.
             "json", data_files=dataset_path, split="train"
         )
