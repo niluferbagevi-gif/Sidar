@@ -54,6 +54,7 @@ from core.config_secret_hardening import (
     warn_on_silent_security_fallbacks,
 )
 from core.config_secrets import is_nonempty_secret
+from core.config_social_integrations import load_social_integration_settings
 from core.config_validators import is_valid_http_url, normalize_ai_provider
 
 # HuggingFace/Transformers gürültülü çıktıları .env yüklemesi başlamadan bastırılır.
@@ -436,6 +437,7 @@ _SANDBOX_SETTINGS = load_sandbox_settings(
     safe_choice=safe_choice_for_reload,
     get_external_bool_prefixed_env=_get_external_bool_prefixed_env,
 )
+_SOCIAL_INTEGRATION_SETTINGS = load_social_integration_settings()
 
 # ═══════════════════════════════════════════════════════════════
 # DONANIM TESPİTİ
@@ -519,6 +521,7 @@ class Config:
     event_bus_settings = _EVENT_BUS_SETTINGS
     rag_store_settings = _RAG_STORE_SETTINGS
     sandbox_settings = _SANDBOX_SETTINGS
+    social_integration_settings = _SOCIAL_INTEGRATION_SETTINGS
     observability_settings = _OBSERVABILITY_SETTINGS
     orchestrator_settings = _ORCHESTRATOR_SETTINGS
     self_heal_settings = _SELF_HEAL_SETTINGS
@@ -999,28 +1002,28 @@ class Config:
     RAG_LLM_ENTITY_REVIEW_TARGET: str = os.getenv("RAG_LLM_ENTITY_REVIEW_TARGET", "2026-Q3")
 
     # ─── Sosyal / Meta Graph Entegrasyonları (v6.0) ─────────────
-    META_GRAPH_API_TOKEN: str = os.getenv("META_GRAPH_API_TOKEN", "")
-    META_GRAPH_API_VERSION: str = os.getenv("META_GRAPH_API_VERSION", "v20.0")
-    INSTAGRAM_BUSINESS_ACCOUNT_ID: str = os.getenv("INSTAGRAM_BUSINESS_ACCOUNT_ID", "")
-    FACEBOOK_PAGE_ID: str = os.getenv("FACEBOOK_PAGE_ID", "")
-    WHATSAPP_PHONE_NUMBER_ID: str = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
+    META_GRAPH_API_TOKEN: str = _SOCIAL_INTEGRATION_SETTINGS.meta_graph_api_token
+    META_GRAPH_API_VERSION: str = _SOCIAL_INTEGRATION_SETTINGS.meta_graph_api_version
+    INSTAGRAM_BUSINESS_ACCOUNT_ID: str = _SOCIAL_INTEGRATION_SETTINGS.instagram_business_account_id
+    FACEBOOK_PAGE_ID: str = _SOCIAL_INTEGRATION_SETTINGS.facebook_page_id
+    WHATSAPP_PHONE_NUMBER_ID: str = _SOCIAL_INTEGRATION_SETTINGS.whatsapp_phone_number_id
 
     # ─── Slack Entegrasyonu (v6.0) ──────────────────────────────
-    SLACK_TOKEN: str = os.getenv("SLACK_TOKEN", "")
-    SLACK_WEBHOOK_URL: str = os.getenv("SLACK_WEBHOOK_URL", "")
-    SLACK_DEFAULT_CHANNEL: str = os.getenv("SLACK_DEFAULT_CHANNEL", "")
+    SLACK_TOKEN: str = _SOCIAL_INTEGRATION_SETTINGS.slack_token
+    SLACK_WEBHOOK_URL: str = _SOCIAL_INTEGRATION_SETTINGS.slack_webhook_url
+    SLACK_DEFAULT_CHANNEL: str = _SOCIAL_INTEGRATION_SETTINGS.slack_default_channel
 
     # ─── Jira Entegrasyonu (v6.0) ───────────────────────────────
-    JIRA_URL: str = os.getenv("JIRA_URL", "")
-    JIRA_TOKEN: str = os.getenv("JIRA_TOKEN", "")
-    JIRA_EMAIL: str = os.getenv("JIRA_EMAIL", "")
-    JIRA_DEFAULT_PROJECT: str = os.getenv("JIRA_DEFAULT_PROJECT", "")
+    JIRA_URL: str = _SOCIAL_INTEGRATION_SETTINGS.jira_url
+    JIRA_TOKEN: str = _SOCIAL_INTEGRATION_SETTINGS.jira_token
+    JIRA_EMAIL: str = _SOCIAL_INTEGRATION_SETTINGS.jira_email
+    JIRA_DEFAULT_PROJECT: str = _SOCIAL_INTEGRATION_SETTINGS.jira_default_project
     # Geriye dönük/alternatif adlandırma uyumluluğu
-    JIRA_BASE_URL: str = os.getenv("JIRA_BASE_URL", JIRA_URL)
-    JIRA_API_TOKEN: str = os.getenv("JIRA_API_TOKEN", JIRA_TOKEN)
+    JIRA_BASE_URL: str = _SOCIAL_INTEGRATION_SETTINGS.jira_base_url
+    JIRA_API_TOKEN: str = _SOCIAL_INTEGRATION_SETTINGS.jira_api_token
 
     # ─── Microsoft Teams Entegrasyonu (v6.0) ────────────────────
-    TEAMS_WEBHOOK_URL: str = os.getenv("TEAMS_WEBHOOK_URL", "")
+    TEAMS_WEBHOOK_URL: str = _SOCIAL_INTEGRATION_SETTINGS.teams_webhook_url
 
     # ─────────────────────────────────────────────────────────
     #  METOTLAR
