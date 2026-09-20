@@ -98,6 +98,7 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `core/config_scoped_settings.py` → `docs/module-notes/core/config_scoped_settings.py.md`
 - `core/config_secret_hardening.py` → `docs/module-notes/core/config_secret_hardening.py.md`
 - `core/config_secrets.py` → `docs/module-notes/core/config_secrets.py.md`
+- `core/config_social_integrations.py` → `docs/module-notes/core/config_social_integrations.py.md`
 - `core/config_validators.py` → `docs/module-notes/core/config_validators.py.md`
 - `core/db/` → `docs/module-notes/core/db.py.md`
 - `core/db_components/` → `docs/module-notes/core/db_components.md`
