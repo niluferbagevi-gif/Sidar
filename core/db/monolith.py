@@ -26,6 +26,7 @@ from core.db import coverage as db_coverage
 from core.db import marketing as db_marketing
 from core.db import metrics as db_metrics
 from core.db import prompt_registry as db_prompt_registry
+from core.db import schema as db_schema
 from core.db import sessions as db_sessions
 from core.db import users as db_users
 from core.db.auth import (
@@ -111,7 +112,6 @@ from core.db.dialect import (
 from core.db.dialect import (
     quote_sql_identifier as _quote_sql_identifier_impl,
 )
-from core.db.dialect import render_sql_identifier_template
 from core.db.helpers import (
     new_entity_id as _new_entity_id,
 )
@@ -151,8 +151,6 @@ from core.db.session import (
 from core.db.session import (
     SessionRecord as SessionRecord,
 )
-from core.db_components.migrations import run_alembic_upgrade_head
-from sidar_assets.paths import alembic_ini_path, migrations_path
 
 
 def postgres_failure_diagnosis(reason: str, exc: BaseException | None = None) -> str:
@@ -358,349 +356,26 @@ class Database(DatabaseConnectionMixin):
         return await self._run_sqlite_op(_run, write=False)
 
     async def init_schema(self) -> None:
-        if self._backend == "postgresql":
-            # PostgreSQL schema is managed by Alembic as the single source of truth.
-            # Keep SQLite bootstrap below because degraded/local fallback does not run
-            # Alembic and must remain dependency-light.
-            await self._init_schema_postgresql()
-            await self.ensure_default_prompt_registry()
-            return
-        await self._init_schema_sqlite()
-        await self._ensure_access_control_schema_sqlite()
-        await self._ensure_audit_log_schema_sqlite()
-        await self._ensure_schema_version_sqlite()
-        await self.ensure_default_prompt_registry()
+        await db_schema.init_schema(self)
 
     async def _ensure_access_control_schema_sqlite(self) -> None:
-        assert self._sqlite_conn is not None
-
-        def _run() -> None:
-            assert self._sqlite_conn is not None
-            cols = self._sqlite_conn.execute("PRAGMA table_info(users)").fetchall()
-            col_names = {str(c[1]) for c in cols}
-            if "tenant_id" not in col_names:
-                self._sqlite_conn.execute(
-                    "ALTER TABLE users ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'default'"
-                )
-            self._sqlite_conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS access_policies (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id TEXT NOT NULL,
-                    tenant_id TEXT NOT NULL DEFAULT 'default',
-                    resource_type TEXT NOT NULL,
-                    resource_id TEXT NOT NULL DEFAULT '*',
-                    action TEXT NOT NULL,
-                    effect TEXT NOT NULL DEFAULT 'allow',
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    UNIQUE(user_id, tenant_id, resource_type, resource_id, action),
-                    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-                )
-                """
-            )
-            self._sqlite_conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant ON "
-                "access_policies(user_id, tenant_id, resource_type, action)"
-            )
-            self._sqlite_conn.commit()
-
-        await self._run_sqlite_op(_run)
+        await db_schema.ensure_access_control_schema_sqlite(self)
 
     async def _ensure_access_control_schema_postgresql(self) -> None:
-        assert self._pg_pool is not None
-        async with self._pg_pool.acquire() as conn:
-            await conn.execute(
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT "
-                "'default'"
-            )
-            await conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS access_policies (
-                    id BIGSERIAL PRIMARY KEY,
-                    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                    tenant_id TEXT NOT NULL DEFAULT 'default',
-                    resource_type TEXT NOT NULL,
-                    resource_id TEXT NOT NULL DEFAULT '*',
-                    action TEXT NOT NULL,
-                    effect TEXT NOT NULL DEFAULT 'allow',
-                    created_at TIMESTAMPTZ NOT NULL,
-                    updated_at TIMESTAMPTZ NOT NULL,
-                    UNIQUE(user_id, tenant_id, resource_type, resource_id, action)
-                )
-                """
-            )
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant ON "
-                "access_policies(user_id, tenant_id, resource_type, action)"
-            )
+        await db_schema.ensure_access_control_schema_postgresql(self)
 
     async def _ensure_audit_log_schema_sqlite(self) -> None:
-        assert self._sqlite_conn is not None
-
-        def _run() -> None:
-            assert self._sqlite_conn is not None
-            self._sqlite_conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS audit_logs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id TEXT NOT NULL DEFAULT '',
-                    tenant_id TEXT NOT NULL DEFAULT 'default',
-                    action TEXT NOT NULL,
-                    resource TEXT NOT NULL,
-                    ip_address TEXT NOT NULL,
-                    allowed INTEGER NOT NULL DEFAULT 0,
-                    timestamp TEXT NOT NULL
-                )
-                """
-            )
-            self._sqlite_conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_audit_logs_user_timestamp ON audit_logs(user_id, "
-                "timestamp)"
-            )
-            self._sqlite_conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)"
-            )
-            self._sqlite_conn.commit()
-
-        await self._run_sqlite_op(_run)
+        await db_schema.ensure_audit_log_schema_sqlite(self)
 
     async def _ensure_audit_log_schema_postgresql(self) -> None:
-        assert self._pg_pool is not None
-        async with self._pg_pool.acquire() as conn:
-            await conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS audit_logs (
-                    id BIGSERIAL PRIMARY KEY,
-                    user_id TEXT NOT NULL DEFAULT '',
-                    tenant_id TEXT NOT NULL DEFAULT 'default',
-                    action TEXT NOT NULL,
-                    resource TEXT NOT NULL,
-                    ip_address TEXT NOT NULL,
-                    allowed BOOLEAN NOT NULL DEFAULT FALSE,
-                    timestamp TIMESTAMPTZ NOT NULL
-                )
-                """
-            )
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_audit_logs_user_timestamp ON audit_logs(user_id, "
-                "timestamp)"
-            )
-            await conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp)"
-            )
+        await db_schema.ensure_audit_log_schema_postgresql(self)
 
     async def _init_schema_sqlite(self) -> None:
-        assert self._sqlite_conn is not None
-
-        # NOT NULL, added explicitly on every PRIMARY KEY column below (both TEXT
-        # and INTEGER AUTOINCREMENT ones): SQLite's PRIMARY KEY alone does not
-        # imply NOT NULL the way SQL:1999/Alembic's Column(primary_key=True)
-        # does — a bare `id TEXT PRIMARY KEY` still accepts NULL, and since
-        # SQLite's UNIQUE/PRIMARY KEY index never treats two NULLs as
-        # conflicting, that silently allowed multiple NULL-id rows. This also
-        # keeps this hand-written bootstrap DDL structurally comparable to the
-        # Alembic-managed PostgreSQL schema (see
-        # test_sqlite_bootstrap_schema_matches_alembic_head_schema in
-        # tests/integration/db/test_db_migrations_integration.py, which
-        # reflects both schemas and previously had to special-case this
-        # divergence).
-        schema_sql = """
-        CREATE TABLE IF NOT EXISTS users (
-            id TEXT PRIMARY KEY NOT NULL,
-            username TEXT NOT NULL UNIQUE,
-            password_hash TEXT,
-            role TEXT NOT NULL DEFAULT 'user',
-            tenant_id TEXT NOT NULL DEFAULT 'default',
-            created_at TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS auth_tokens (
-            token TEXT PRIMARY KEY NOT NULL,
-            user_id TEXT NOT NULL,
-            expires_at TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS user_quotas (
-            user_id TEXT PRIMARY KEY NOT NULL,
-            daily_token_limit INTEGER NOT NULL DEFAULT 0,
-            daily_request_limit INTEGER NOT NULL DEFAULT 0,
-            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS provider_usage_daily (
-            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-            user_id TEXT NOT NULL,
-            provider TEXT NOT NULL,
-            usage_date TEXT NOT NULL,
-            requests_used INTEGER NOT NULL DEFAULT 0,
-            tokens_used INTEGER NOT NULL DEFAULT 0,
-            UNIQUE(user_id, provider, usage_date),
-            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS sessions (
-            id TEXT PRIMARY KEY NOT NULL,
-            user_id TEXT NOT NULL,
-            title TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-            session_id TEXT NOT NULL,
-            role TEXT NOT NULL,
-            content TEXT NOT NULL,
-            tokens_used INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL,
-            FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
-        CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
-        CREATE INDEX IF NOT EXISTS idx_auth_tokens_user_id ON auth_tokens(user_id);
-        CREATE INDEX IF NOT EXISTS idx_provider_usage_daily_user_id ON
-        provider_usage_daily(user_id);
-        CREATE TABLE IF NOT EXISTS access_policies (
-            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-            user_id TEXT NOT NULL,
-            tenant_id TEXT NOT NULL DEFAULT 'default',
-            resource_type TEXT NOT NULL,
-            resource_id TEXT NOT NULL DEFAULT '*',
-            action TEXT NOT NULL,
-            effect TEXT NOT NULL DEFAULT 'allow',
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            UNIQUE(user_id, tenant_id, resource_type, resource_id, action),
-            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_access_policies_user_tenant
-            ON access_policies(user_id, tenant_id, resource_type, action);
-
-        CREATE TABLE IF NOT EXISTS audit_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-            user_id TEXT NOT NULL DEFAULT '',
-            tenant_id TEXT NOT NULL DEFAULT 'default',
-            action TEXT NOT NULL,
-            resource TEXT NOT NULL,
-            ip_address TEXT NOT NULL,
-            allowed INTEGER NOT NULL DEFAULT 0,
-            timestamp TEXT NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_audit_logs_user_timestamp ON audit_logs(user_id, timestamp);
-        CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp);
-
-        CREATE TABLE IF NOT EXISTS prompt_registry (
-            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-            role_name TEXT NOT NULL,
-            prompt_text TEXT NOT NULL,
-            version INTEGER NOT NULL DEFAULT 1,
-            is_active INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        );
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_prompt_registry_role_version ON
-        prompt_registry(role_name, version);
-        CREATE INDEX IF NOT EXISTS idx_prompt_registry_role_active ON prompt_registry(role_name,
-        is_active);
-
-        CREATE TABLE IF NOT EXISTS marketing_campaigns (
-            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-            tenant_id TEXT NOT NULL DEFAULT 'default',
-            name TEXT NOT NULL,
-            channel TEXT NOT NULL DEFAULT '',
-            objective TEXT NOT NULL DEFAULT '',
-            status TEXT NOT NULL DEFAULT 'draft',
-            owner_user_id TEXT NOT NULL DEFAULT '',
-            budget REAL NOT NULL DEFAULT 0,
-            metadata_json TEXT NOT NULL DEFAULT '{}',
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_marketing_campaigns_tenant_status
-            ON marketing_campaigns(tenant_id, status, updated_at);
-
-        CREATE TABLE IF NOT EXISTS content_assets (
-            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-            campaign_id INTEGER NOT NULL,
-            tenant_id TEXT NOT NULL DEFAULT 'default',
-            asset_type TEXT NOT NULL,
-            title TEXT NOT NULL,
-            content TEXT NOT NULL,
-            channel TEXT NOT NULL DEFAULT '',
-            metadata_json TEXT NOT NULL DEFAULT '{}',
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            FOREIGN KEY(campaign_id) REFERENCES marketing_campaigns(id) ON DELETE CASCADE
-        );
-        CREATE INDEX IF NOT EXISTS idx_content_assets_campaign_tenant
-            ON content_assets(campaign_id, tenant_id, asset_type);
-
-        CREATE TABLE IF NOT EXISTS operation_checklists (
-            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-            campaign_id INTEGER,
-            tenant_id TEXT NOT NULL DEFAULT 'default',
-            title TEXT NOT NULL,
-            items_json TEXT NOT NULL DEFAULT '[]',
-            status TEXT NOT NULL DEFAULT 'pending',
-            owner_user_id TEXT NOT NULL DEFAULT '',
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            FOREIGN KEY(campaign_id) REFERENCES marketing_campaigns(id) ON DELETE SET NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_operation_checklists_campaign_tenant
-            ON operation_checklists(campaign_id, tenant_id, status);
-
-        CREATE TABLE IF NOT EXISTS coverage_tasks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-            tenant_id TEXT NOT NULL DEFAULT 'default',
-            requester_role TEXT NOT NULL DEFAULT 'coverage',
-            command TEXT NOT NULL,
-            pytest_output TEXT NOT NULL DEFAULT '',
-            status TEXT NOT NULL DEFAULT 'pending_review',
-            target_path TEXT NOT NULL DEFAULT '',
-            suggested_test_path TEXT NOT NULL DEFAULT '',
-            review_payload_json TEXT NOT NULL DEFAULT '{}',
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_coverage_tasks_tenant_status
-            ON coverage_tasks(tenant_id, status, updated_at);
-
-        CREATE TABLE IF NOT EXISTS coverage_findings (
-            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-            task_id INTEGER NOT NULL,
-            finding_type TEXT NOT NULL,
-            target_path TEXT NOT NULL DEFAULT '',
-            summary TEXT NOT NULL,
-            severity TEXT NOT NULL DEFAULT 'medium',
-            details_json TEXT NOT NULL DEFAULT '{}',
-            created_at TEXT NOT NULL,
-            FOREIGN KEY(task_id) REFERENCES coverage_tasks(id) ON DELETE CASCADE
-        );
-        CREATE INDEX IF NOT EXISTS idx_coverage_findings_task
-            ON coverage_findings(task_id, finding_type, severity);
-        """
-
-        def _run() -> None:
-            assert self._sqlite_conn is not None
-            self._sqlite_conn.executescript(schema_sql)
-            self._sqlite_conn.commit()
-
-        await self._run_sqlite_op(_run)
+        await db_schema.init_schema_sqlite(self)
 
     def _run_alembic_upgrade_head(self) -> None:
         """Run the extracted Alembic migration helper for this database facade."""
-        run_alembic_upgrade_head(
-            database_url=self.database_url,
-            alembic_ini=alembic_ini_path(),
-            migrations_dir=migrations_path(),
-        )
+        db_schema.run_alembic_upgrade_head(self)
 
     async def _init_schema_postgresql(self) -> None:
         """Initialize PostgreSQL schema through Alembic when auto-migrate is enabled.
@@ -708,34 +383,7 @@ class Database(DatabaseConnectionMixin):
         In production, auto-migrate may be disabled by policy. We still run a one-time
         bootstrap migration when this looks like a fresh database (no alembic_version table).
         """
-        assert self._pg_pool is not None
-        should_run_migration = self.auto_migrate
-        if not should_run_migration:
-            if hasattr(self._pg_pool, "fetchval"):
-                has_alembic_version = await self._pg_pool.fetchval(
-                    "SELECT to_regclass('public.alembic_version')"
-                )
-            elif hasattr(self._pg_pool, "fetch_value"):
-                has_alembic_version = await self._pg_pool.fetch_value(
-                    "SELECT to_regclass('public.alembic_version')"
-                )
-            else:
-                async with self._pg_pool.acquire() as conn:
-                    has_alembic_version = await conn.fetchval(
-                        "SELECT to_regclass('public.alembic_version')"
-                    )
-            if has_alembic_version:
-                logger.info("SIDAR_AUTO_MIGRATE devre dışı; runtime Alembic upgrade atlandı.")
-                return
-            logger.warning(
-                "SIDAR_AUTO_MIGRATE devre dışı ancak fresh DB tespit edildi (alembic_version yok). "
-                "İlk açılış bootstrap migrasyonu çalıştırılıyor."
-            )
-            should_run_migration = True
-
-        # Reaching this point always means migration is required: auto-migrate was
-        # enabled initially or the disabled-policy fresh DB bootstrap promoted it.
-        await asyncio.to_thread(self._run_alembic_upgrade_head)
+        await db_schema.init_schema_postgresql(self)
 
     async def ensure_default_prompt_registry(self) -> None:
         await db_prompt_registry.ensure_default_prompt_registry(
@@ -779,69 +427,10 @@ class Database(DatabaseConnectionMixin):
         )
 
     async def _ensure_schema_version_sqlite(self) -> None:
-        assert self._sqlite_conn is not None
-
-        def _run() -> None:
-            assert self._sqlite_conn is not None
-            tbl = self._schema_version_table_quoted
-            self._sqlite_conn.execute(
-                render_sql_identifier_template(
-                    "CREATE TABLE IF NOT EXISTS {table} "
-                    "(version INTEGER PRIMARY KEY NOT NULL, "
-                    "applied_at TEXT NOT NULL, description TEXT NOT NULL)",
-                    table=tbl,
-                )
-            )
-            cur = self._sqlite_conn.execute(
-                render_sql_identifier_template("SELECT MAX(version) AS v FROM {table}", table=tbl)
-            )
-            row = _sqlite_fetchone(cur)
-            current = int((row["v"] if row else 0) or 0)
-            if current >= self.target_schema_version:
-                return
-            for v in range(current + 1, self.target_schema_version + 1):
-                self._sqlite_conn.execute(
-                    render_sql_identifier_template(
-                        "INSERT INTO {table} (version, applied_at, description) VALUES (?, ?, ?)",
-                        table=tbl,
-                    ),
-                    (v, _utc_now_iso(), f"baseline migration v{v}"),
-                )
-            self._sqlite_conn.commit()
-
-        await self._run_sqlite_op(_run)
+        await db_schema.ensure_schema_version_sqlite(self)
 
     async def _ensure_schema_version_postgresql(self) -> None:
-        assert self._pg_pool is not None
-        tbl = self._schema_version_table_quoted
-        async with self._pg_pool.acquire() as conn:
-            await conn.execute(
-                render_sql_identifier_template(
-                    "CREATE TABLE IF NOT EXISTS {table} "
-                    "(version INTEGER PRIMARY KEY NOT NULL, "
-                    "applied_at TIMESTAMPTZ NOT NULL, description TEXT NOT NULL)",
-                    table=tbl,
-                )
-            )
-            current = await conn.fetchval(
-                render_sql_identifier_template(
-                    "SELECT COALESCE(MAX(version), 0) FROM {table}", table=tbl
-                )
-            )
-            current = int(current or 0)
-            if current >= self.target_schema_version:
-                return
-            for v in range(current + 1, self.target_schema_version + 1):
-                await conn.execute(
-                    render_sql_identifier_template(
-                        "INSERT INTO {table} (version, applied_at, description) "
-                        "VALUES ($1, $2, $3)",
-                        table=tbl,
-                    ),
-                    v,
-                    datetime.now(UTC),
-                    f"baseline migration v{v}",
-                )
+        await db_schema.ensure_schema_version_postgresql(self)
 
     async def ensure_user(self, username: str, role: str = "user") -> UserRecord:
         return await db_users.ensure_user(self, username, role)

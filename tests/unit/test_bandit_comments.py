@@ -227,10 +227,10 @@ def test_pgvector_uses_audited_builder_without_b608_suppressions() -> None:
     assert "render_sql_identifier_template" in source
 
 
-def test_db_monolith_uses_audited_builder_without_b608_suppressions() -> None:
+def test_db_schema_uses_audited_builder_without_b608_suppressions() -> None:
     """Keep schema-version SQL on the central validated composition sink."""
     root = Path(__file__).resolve().parents[2]
-    source = (root / "core/db/monolith.py").read_text(encoding="utf-8")
+    source = (root / "core/db/schema.py").read_text(encoding="utf-8")
 
     assert not _NOSEC_B608_RE.search(source)
     assert "from core.db.dialect import render_sql_identifier_template" in source
