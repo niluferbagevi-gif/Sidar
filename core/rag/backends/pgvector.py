@@ -8,6 +8,7 @@ from typing import Any, cast
 
 from core.db import postgres_failure_diagnosis
 from core.db.dialect import is_safe_sql_identifier, render_sql_identifier_template
+from core.doctor.models import redact_sensitive_text
 from core.embeddings import get_sentence_transformer_model
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,7 @@ def _mark_pgvector_degraded(store: Any, operation: str, exc: BaseException) -> N
     store._pgvector_degraded = True
     store._pgvector_degraded_operation = operation
     store._pgvector_degraded_reason = type(exc).__name__
+    store._pgvector_degraded_detail = redact_sensitive_text(str(exc))
     store._pgvector_failure_count = int(getattr(store, "_pgvector_failure_count", 0) or 0) + 1
 
 
@@ -30,6 +32,7 @@ def pgvector_runtime_status(store: Any) -> dict[str, Any]:
         "degraded": bool(getattr(store, "_pgvector_degraded", False)),
         "operation": str(getattr(store, "_pgvector_degraded_operation", "") or ""),
         "reason": str(getattr(store, "_pgvector_degraded_reason", "") or ""),
+        "detail": str(getattr(store, "_pgvector_degraded_detail", "") or ""),
         "failure_count": int(getattr(store, "_pgvector_failure_count", 0) or 0),
     }
 
@@ -198,6 +201,7 @@ def init_pgvector(store: Any) -> None:
         store._pgvector_degraded = False
         store._pgvector_degraded_operation = ""
         store._pgvector_degraded_reason = ""
+        store._pgvector_degraded_detail = ""
         store._log_backend_init_status_once(
             "pgvector_init_success",
             "pgvector backend başlatıldı: table=%s model=%s",
@@ -206,7 +210,11 @@ def init_pgvector(store: Any) -> None:
         )
     except Exception as exc:
         logger.warning(pgvector_failure_action_message(exc))
-        logger.debug("pgvector backend devre dışı bırakıldı: error_type=%s", type(exc).__name__)
+        logger.debug(
+            "pgvector backend devre dışı bırakıldı: error_type=%s detail=%s",
+            type(exc).__name__,
+            redact_sensitive_text(str(exc)),
+        )
         _mark_pgvector_degraded(store, "initialization", exc)
 
 
@@ -227,7 +235,7 @@ def pgvector_embed_texts(
             return [list(map(float, row)) for row in raw_vectors]
         return [list(map(float, v)) for v in vectors]
     except Exception as exc:
-        logger.warning("pgvector embedding üretilemedi: %s", exc)
+        logger.warning("pgvector embedding üretilemedi: %s", redact_sensitive_text(str(exc)))
         _mark_pgvector_degraded(store, "embedding", exc)
         return []
 
@@ -279,7 +287,7 @@ def upsert_pgvector_chunks(
             ]
             conn.execute(text(sql["upsert"]), rows)
     except Exception as exc:
-        logger.error("pgvector belge ekleme hatası: %s", exc)
+        logger.error("pgvector belge ekleme hatası: %s", redact_sensitive_text(str(exc)))
         _mark_pgvector_degraded(store, "upsert", exc)
 
 
@@ -300,7 +308,7 @@ def delete_pgvector_parent(store: Any, parent_id: str, session_id: str) -> None:
                 {"parent_id": parent_id, "session_id": session_id},
             )
     except Exception as exc:
-        logger.error("pgvector silme hatası: %s", exc)
+        logger.error("pgvector silme hatası: %s", redact_sensitive_text(str(exc)))
         _mark_pgvector_degraded(store, "delete", exc)
 
 
@@ -352,7 +360,7 @@ def fetch_pgvector(store: Any, query: str, top_k: int, session_id: str) -> list[
                 break
         return found_docs
     except Exception as exc:
-        logger.warning("pgvector arama hatası: %s", exc)
+        logger.warning("pgvector arama hatası: %s", redact_sensitive_text(str(exc)))
         _mark_pgvector_degraded(store, "search", exc)
         return []
 

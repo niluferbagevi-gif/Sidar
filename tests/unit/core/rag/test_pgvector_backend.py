@@ -58,8 +58,77 @@ def test_reject_if_invalid_pg_table_blocks_sql_injection_identifier(monkeypatch)
         "degraded": True,
         "operation": "identifier_validation",
         "reason": "ValueError",
+        "detail": "invalid PGVECTOR_TABLE; expected pattern ^[A-Za-z_][A-Za-z0-9_]*$",
         "failure_count": 1,
     }
+
+
+def test_mark_pgvector_degraded_redacts_credentials_from_runtime_status_detail():
+    """The detail surfaced via pgvector_runtime_status must never leak secrets."""
+    pgvector = importlib.reload(pgvector_module)
+    store = SimpleNamespace(_pgvector_available=True)
+
+    pgvector._mark_pgvector_degraded(
+        store,
+        "initialization",
+        RuntimeError(
+            "connection to postgresql://sidar:super-secret-pw@localhost:5432/sidar failed"
+        ),
+    )
+
+    status = pgvector.pgvector_runtime_status(store)
+    assert status["operation"] == "initialization"
+    assert status["reason"] == "RuntimeError"
+    assert "super-secret-pw" not in status["detail"]
+    assert "postgresql://sidar:***@localhost:5432/sidar" in status["detail"]
+
+
+def test_init_pgvector_success_clears_previous_degraded_detail(monkeypatch):
+    """A later successful init must not leave a stale failure detail behind."""
+    pgvector = importlib.reload(pgvector_module)
+    store = SimpleNamespace(
+        cfg=SimpleNamespace(DATABASE_URL="postgresql://sidar:pw@localhost/sidar"),
+        _pg_table="rag_embeddings",
+        _pg_embedding_dim=384,
+        _pg_embedding_model_name="model",
+        _pgvector_degraded_detail="stale detail from a previous failure",
+        _check_import=lambda _name: True,
+        _log_backend_init_status_once=lambda *_a, **_kw: None,
+    )
+
+    class _FakeConn:
+        def execute(self, *_a, **_kw):
+            return None
+
+    class _FakeEngineCtx:
+        def __enter__(self):
+            return _FakeConn()
+
+        def __exit__(self, *_exc):
+            return False
+
+    class _FakeEngine:
+        def begin(self):
+            return _FakeEngineCtx()
+
+    store._require_pg_engine = lambda: _FakeEngine()
+    monkeypatch.setattr(pgvector, "get_sentence_transformer_model", lambda *_a, **_kw: object())
+
+    class _FakeSqlAlchemyModule:
+        @staticmethod
+        def create_engine(*_a, **_kw):
+            return _FakeEngine()
+
+        @staticmethod
+        def text(sql):
+            return sql
+
+    monkeypatch.setitem(__import__("sys").modules, "sqlalchemy", _FakeSqlAlchemyModule())
+
+    pgvector.init_pgvector(store)
+
+    assert store._pgvector_available is True
+    assert store._pgvector_degraded_detail == ""
 
 
 def test_pgvector_sql_builder_centralizes_validated_identifier_interpolation():

@@ -881,7 +881,9 @@ def test_pgvector_ready_passes_when_extension_probe_succeeds(monkeypatch):
     check = doctor.check_pgvector_ready()
 
     assert check.status == "pass"
-    assert check.message == "pgvector extension is installed"
+    assert check.message.startswith("pgvector extension is installed")
+    assert "extension presence only" in check.message
+    assert "does not confirm" in check.message
 
 
 def test_rag_readiness_warns_for_missing_index_with_auto_fix(monkeypatch, tmp_path):
