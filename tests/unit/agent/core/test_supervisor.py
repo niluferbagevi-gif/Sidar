@@ -191,6 +191,10 @@ def _build_supervisor(*, max_qa_retries: int = 2, has_coverage: bool = True) -> 
         ("seo kampanya planı", "marketing"),
         ("eksik test yaz ve coverage artır", "coverage"),
         ("selam", "chat"),
+        ("selam nasılsın", "chat"),
+        ("merhaba, naber?", "chat"),
+        ("hi hello", "chat"),
+        ("hey review this pr", "review"),
         ("yeni bir python fonksiyonu yaz", "code"),
     ],
 )
