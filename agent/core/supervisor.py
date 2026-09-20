@@ -132,10 +132,8 @@ class SupervisorAgent(BaseAgent):
             self.qa = None
             self.coverage = None
 
-    @staticmethod
-    def _intent(prompt: str) -> str:
-        text = (prompt or "").strip().lower()
-        if text in {
+    _GREETING_WORDS = frozenset(
+        {
             "selam",
             "merhaba",
             "selamlar",
@@ -144,7 +142,14 @@ class SupervisorAgent(BaseAgent):
             "hello",
             "nasılsın",
             "naber",
-        }:
+        }
+    )
+
+    @staticmethod
+    def _intent(prompt: str) -> str:
+        text = (prompt or "").strip().lower()
+        words = re.findall(r"[\w']+", text, flags=re.UNICODE)
+        if words and all(word in SupervisorAgent._GREETING_WORDS for word in words):
             return "chat"
         if any(
             t in text
