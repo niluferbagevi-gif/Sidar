@@ -972,7 +972,17 @@ def check_pgvector_ready(
             "RAG_VECTOR_BACKEND=pgvector but 'vector' extension is not installed",
             details,
         )
-    return DoctorCheck("pgvector_ready", "pass", "pgvector extension is installed", details)
+    return DoctorCheck(
+        "pgvector_ready",
+        "pass",
+        (
+            "pgvector extension is installed (this check verifies extension presence only; "
+            "it does not confirm the application's own pgvector connection pool actually "
+            "initializes at runtime - see core.rag.backends.pgvector.pgvector_runtime_status() "
+            "for that)"
+        ),
+        details,
+    )
 
 
 def _rag_readiness_state() -> dict[str, Any]:
