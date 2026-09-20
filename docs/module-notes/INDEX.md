@@ -101,6 +101,7 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `core/config_secrets.py` → `docs/module-notes/core/config_secrets.py.md`
 - `core/config_social_integrations.py` → `docs/module-notes/core/config_social_integrations.py.md`
 - `core/config_validators.py` → `docs/module-notes/core/config_validators.py.md`
+- `core/config_web_search.py` → `docs/module-notes/core/config_web_search.py.md`
 - `core/db/` → `docs/module-notes/core/db.py.md`
 - `core/db_components/` → `docs/module-notes/core/db_components.md`
 - `core/distributed_lock.py` → `docs/module-notes/core/distributed_lock.py.md`

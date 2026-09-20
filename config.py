@@ -57,6 +57,7 @@ from core.config_secret_hardening import (
 from core.config_secrets import is_nonempty_secret
 from core.config_social_integrations import load_social_integration_settings
 from core.config_validators import is_valid_http_url, normalize_ai_provider
+from core.config_web_search import load_web_search_settings
 
 # HuggingFace/Transformers gürültülü çıktıları .env yüklemesi başlamadan bastırılır.
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
@@ -440,6 +441,7 @@ _SANDBOX_SETTINGS = load_sandbox_settings(
     get_external_bool_prefixed_env=_get_external_bool_prefixed_env,
 )
 _SOCIAL_INTEGRATION_SETTINGS = load_social_integration_settings()
+_WEB_SEARCH_SETTINGS = load_web_search_settings()
 
 # ═══════════════════════════════════════════════════════════════
 # DONANIM TESPİTİ
@@ -525,6 +527,7 @@ class Config:
     rag_store_settings = _RAG_STORE_SETTINGS
     sandbox_settings = _SANDBOX_SETTINGS
     social_integration_settings = _SOCIAL_INTEGRATION_SETTINGS
+    web_search_settings = _WEB_SEARCH_SETTINGS
     observability_settings = _OBSERVABILITY_SETTINGS
     orchestrator_settings = _ORCHESTRATOR_SETTINGS
     self_heal_settings = _SELF_HEAL_SETTINGS
@@ -789,12 +792,12 @@ class Config:
     SIDAR_EVENT_BUS_CB_OPEN_SECONDS: float = _EVENT_BUS_SETTINGS.sidar_event_bus_cb_open_seconds
 
     # ─── Web Arama ───────────────────────────────────────────
-    SEARCH_ENGINE: str = os.getenv("SEARCH_ENGINE", "auto")
-    TAVILY_API_KEY: str = os.getenv("TAVILY_API_KEY", "")
-    GOOGLE_SEARCH_API_KEY: str = os.getenv("GOOGLE_SEARCH_API_KEY", "")
-    GOOGLE_SEARCH_CX: str = os.getenv("GOOGLE_SEARCH_CX", "")
-    WEB_SEARCH_MAX_RESULTS: int = get_int_env("WEB_SEARCH_MAX_RESULTS", 5)
-    WEB_FETCH_TIMEOUT: int = get_int_env("WEB_FETCH_TIMEOUT", 15)
+    SEARCH_ENGINE: str = _WEB_SEARCH_SETTINGS.search_engine
+    TAVILY_API_KEY: str = _WEB_SEARCH_SETTINGS.tavily_api_key
+    GOOGLE_SEARCH_API_KEY: str = _WEB_SEARCH_SETTINGS.google_search_api_key
+    GOOGLE_SEARCH_CX: str = _WEB_SEARCH_SETTINGS.google_search_cx
+    WEB_SEARCH_MAX_RESULTS: int = _WEB_SEARCH_SETTINGS.web_search_max_results
+    WEB_FETCH_TIMEOUT: int = _WEB_SEARCH_SETTINGS.web_fetch_timeout
     # Eski ad geriye dönük uyumluluk için tutulur; tercih edilen anahtar WEB_SCRAPE_MAX_CHARS.
     WEB_FETCH_MAX_CHARS: int = _RAG_STORE_SETTINGS.web_fetch_max_chars
     # Yeni ad (tercih edilen): scrape/okuma karakter limiti
