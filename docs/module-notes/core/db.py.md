@@ -13,7 +13,8 @@ Güncel sorumluluk dağılımı:
 - `core/db/monolith.py`: eski `core/db.py` davranışının ana gövdesi ve `Database`
   uygulaması.
 - `core/db/auth.py`, `session.py`, `sessions.py`, `audit.py`, `metrics.py`,
-  `prompt_registry.py`, `coverage.py`: aşamalı ayrıştırılmış domain yardımcıları.
+  `prompt_registry.py`, `coverage.py`, `marketing.py`, `access_policy.py`: aşamalı
+  ayrıştırılmış domain yardımcıları.
 - `core/db/models.py`, `engine.py`, `multitenant.py`, `alembic_runner.py`: yeni
   kodun daha dar import sınırlarına yönelebileceği facade/alias modülleri.
 - `core/db_components/`: düşük seviye dialect ve migration yardımcıları için geçiş
