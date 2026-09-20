@@ -13,8 +13,13 @@ Güncel sorumluluk dağılımı:
 - `core/db/monolith.py`: eski `core/db.py` davranışının ana gövdesi ve `Database`
   uygulaması.
 - `core/db/auth.py`, `session.py`, `sessions.py`, `audit.py`, `metrics.py`,
-  `prompt_registry.py`, `coverage.py`, `marketing.py`, `access_policy.py`: aşamalı
-  ayrıştırılmış domain yardımcıları.
+  `prompt_registry.py`, `coverage.py`, `marketing.py`, `access_policy.py`,
+  `schema.py`: aşamalı ayrıştırılmış domain yardımcıları. `schema.py`, SQLite'ın
+  elle yazılmış bootstrap DDL'i ile PostgreSQL'in Alembic tabanlı şemasını
+  birlikte barındırır; her iki kaynak bağımsız elle bakım gördüğünden
+  `tests/integration/db/test_db_migrations_integration.py::
+  test_sqlite_bootstrap_schema_matches_alembic_head_schema` ikisini karşılaştırıp
+  drift'i CI'da yakalar.
 - `core/db/models.py`, `engine.py`, `multitenant.py`, `alembic_runner.py`: yeni
   kodun daha dar import sınırlarına yönelebileceği facade/alias modülleri.
 - `core/db_components/`: düşük seviye dialect ve migration yardımcıları için geçiş
