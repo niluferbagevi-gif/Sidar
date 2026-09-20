@@ -108,7 +108,8 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
     assert "hedef tamamlanma **2027-03-31**" in plan
     assert "hâlâ ham `os.getenv(...)` inline çözümlenen ~35 alan" in plan
     assert "en izole grup olarak işaretlenen pazarlama/sosyal entegrasyon alanları" in plan
-    assert "en düşük riskli silinecek ikili" in plan
+    assert "bu en düşük riskli ikili artık silindi" in plan
+    assert "kalan 6 wrapper'ı silmek" in plan
     assert "`main.py:874-903`'te de aynı desen" in plan
     assert (
         "test_sqlite_bootstrap_schema_matches_alembic_head_schema" in plan

@@ -25,6 +25,7 @@ import web.cli as web_cli
 import web_server
 from agent.core import contracts as agent_contracts
 from web import security as web_security
+from web.routes import plugin_marketplace as plugin_marketplace_routes
 from web.routes import project_ops
 from web.routes import rag as rag_routes
 from web.routes import webhooks as webhook_routes
@@ -1177,7 +1178,7 @@ def test_plugin_marketplace_state_read_write_and_bad_payload(monkeypatch, tmp_pa
     web_server._write_plugin_marketplace_state(state)
     assert web_server._read_plugin_marketplace_state() == state
 
-    bad_path = web_server._plugin_marketplace_state_path()
+    bad_path = plugin_marketplace_routes.plugin_marketplace_state_path()
     bad_path.write_text("[]", encoding="utf-8")
     assert web_server._read_plugin_marketplace_state() == {}
 
@@ -1411,7 +1412,9 @@ async def test_nightly_memory_loop_disabled_and_failure_paths(monkeypatch):
 
 def test_get_plugin_marketplace_entry_and_serialization(monkeypatch):
     with pytest.raises(HTTPException):
-        web_server._get_plugin_marketplace_entry("unknown")
+        plugin_marketplace_routes.get_plugin_marketplace_entry(
+            "unknown", catalog=web_server.PLUGIN_MARKETPLACE_CATALOG
+        )
 
     fake_spec = SimpleNamespace(
         role_name="aws_management",
@@ -2295,7 +2298,7 @@ def test_persist_and_read_write_plugin_marketplace_state(tmp_path, monkeypatch):
     web_server._write_plugin_marketplace_state({"aws_management": {"installed_at": "now"}})
     assert web_server._read_plugin_marketplace_state()["aws_management"]["installed_at"] == "now"
 
-    state_path = web_server._plugin_marketplace_state_path()
+    state_path = plugin_marketplace_routes.plugin_marketplace_state_path()
     state_path.write_text("{not-json", encoding="utf-8")
     assert web_server._read_plugin_marketplace_state() == {}
 
@@ -2341,7 +2344,9 @@ def test_get_and_serialize_marketplace_plugin(monkeypatch, tmp_path):
     assert payload["agent"]["role_name"] == "demo_role"
 
     with pytest.raises(HTTPException):
-        web_server._get_plugin_marketplace_entry("missing")
+        plugin_marketplace_routes.get_plugin_marketplace_entry(
+            "missing", catalog=web_server.PLUGIN_MARKETPLACE_CATALOG
+        )
 
 
 def test_install_uninstall_and_reload_marketplace_plugins(monkeypatch, tmp_path):

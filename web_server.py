@@ -1452,22 +1452,12 @@ PLUGIN_SOURCE_DIR = plugin_marketplace_routes.PLUGIN_SOURCE_DIR
 PLUGIN_MARKETPLACE_CATALOG = plugin_marketplace_routes.PLUGIN_MARKETPLACE_CATALOG
 
 
-def _plugin_marketplace_state_path() -> Path:
-    return plugin_marketplace_routes.plugin_marketplace_state_path()
-
-
 def _read_plugin_marketplace_state() -> dict[str, Any]:
     return plugin_marketplace_routes.read_plugin_marketplace_state(logger_obj=logger)
 
 
 def _write_plugin_marketplace_state(state: dict[str, Any]) -> None:
     plugin_marketplace_routes.write_plugin_marketplace_state(state)
-
-
-def _get_plugin_marketplace_entry(plugin_id: str) -> dict[str, Any]:
-    return plugin_marketplace_routes.get_plugin_marketplace_entry(
-        plugin_id, catalog=PLUGIN_MARKETPLACE_CATALOG
-    )
 
 
 def _serialize_marketplace_plugin(
