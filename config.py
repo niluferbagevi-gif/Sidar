@@ -24,6 +24,7 @@ import core.config_observability as config_observability
 from config_security import load_security_settings
 from core import config_dotenv, config_gpu_detect, config_postgres
 from core.config_app import load_app_runtime_settings
+from core.config_cost_routing import load_cost_routing_settings
 from core.config_dirs import initialize_directories as initialize_required_directories
 from core.config_dirs import repair_log_file_permissions, resolve_base_dir
 from core.config_env_helpers import (
@@ -432,6 +433,7 @@ SANDBOX_LIMITS = {
 _RATE_LIMIT_SETTINGS = load_rate_limit_settings(
     redis_max_connections_default=LLM_SETTINGS.REDIS_MAX_CONNECTIONS
 )
+_COST_ROUTING_SETTINGS = load_cost_routing_settings()
 _EVENT_BUS_SETTINGS = load_event_bus_settings()
 _GITHUB_HF_SETTINGS = load_github_huggingface_settings()
 _RAG_STORE_SETTINGS = load_rag_store_settings()
@@ -522,6 +524,7 @@ class Config:
     quality_gate_settings = _QUALITY_GATE_SETTINGS
     security_settings = SECURITY_SETTINGS
     rate_limit_settings = _RATE_LIMIT_SETTINGS
+    cost_routing_settings = _COST_ROUTING_SETTINGS
     event_bus_settings = _EVENT_BUS_SETTINGS
     github_huggingface_settings = _GITHUB_HF_SETTINGS
     rag_store_settings = _RAG_STORE_SETTINGS
@@ -881,26 +884,28 @@ class Config:
     JUDGE_RESPONSE_MODEL: str = _QUALITY_GATE_SETTINGS.JUDGE_RESPONSE_MODEL
 
     # ─── Cost-Aware Model Routing (v5.0) ──────────────────────
-    ENABLE_COST_ROUTING: bool = get_bool_env("ENABLE_COST_ROUTING", False)
+    ENABLE_COST_ROUTING: bool = _COST_ROUTING_SETTINGS.enable_cost_routing
     # 0.0–1.0: Bu eşiğin altındaki sorgular lokal modele yönlendirilir
-    COST_ROUTING_COMPLEXITY_THRESHOLD: float = get_float_env(
-        "COST_ROUTING_COMPLEXITY_THRESHOLD", 0.55
+    COST_ROUTING_COMPLEXITY_THRESHOLD: float = (
+        _COST_ROUTING_SETTINGS.cost_routing_complexity_threshold
     )
     # Lokal sağlayıcı (basit sorgular için)
-    COST_ROUTING_LOCAL_PROVIDER: str = os.getenv("COST_ROUTING_LOCAL_PROVIDER", "ollama")
-    COST_ROUTING_LOCAL_MODEL: str = os.getenv("COST_ROUTING_LOCAL_MODEL", "")
+    COST_ROUTING_LOCAL_PROVIDER: str = _COST_ROUTING_SETTINGS.cost_routing_local_provider
+    COST_ROUTING_LOCAL_MODEL: str = _COST_ROUTING_SETTINGS.cost_routing_local_model
     # Bulut sağlayıcı (karmaşık sorgular için; boşsa varsayılan sağlayıcı kullanılır)
-    COST_ROUTING_CLOUD_PROVIDER: str = os.getenv("COST_ROUTING_CLOUD_PROVIDER", "")
-    COST_ROUTING_CLOUD_MODEL: str = os.getenv("COST_ROUTING_CLOUD_MODEL", "")
+    COST_ROUTING_CLOUD_PROVIDER: str = _COST_ROUTING_SETTINGS.cost_routing_cloud_provider
+    COST_ROUTING_CLOUD_MODEL: str = _COST_ROUTING_SETTINGS.cost_routing_cloud_model
     # Bu günlük bütçe (USD) aşılırsa tüm sorgular lokal modele yönlendirilir
-    COST_ROUTING_DAILY_BUDGET_USD: float = get_float_env("COST_ROUTING_DAILY_BUDGET_USD", 1.0)
+    COST_ROUTING_DAILY_BUDGET_USD: float = _COST_ROUTING_SETTINGS.cost_routing_daily_budget_usd
     # Tek bir isteğin yaklaşık token eşiği; aşılırsa lokal modele fallback uygulanır.
-    COST_ROUTING_TOKEN_THRESHOLD: int = get_int_env("COST_ROUTING_TOKEN_THRESHOLD", 0)
+    COST_ROUTING_TOKEN_THRESHOLD: int = _COST_ROUTING_SETTINGS.cost_routing_token_threshold
     # Çoklu worker/pod Redis bütçe sayaçlarında çakışmayı önleyen key namespace.
-    COST_ROUTING_SHARED_BUDGET_DB_PATH: str = os.getenv("COST_ROUTING_SHARED_BUDGET_DB_PATH", "")
-    COST_ROUTING_REDIS_BUDGET_URL: str = os.getenv("COST_ROUTING_REDIS_BUDGET_URL", "")
-    COST_ROUTING_REDIS_BUDGET_NAMESPACE: str = os.getenv(
-        "COST_ROUTING_REDIS_BUDGET_NAMESPACE", "sidar"
+    COST_ROUTING_SHARED_BUDGET_DB_PATH: str = (
+        _COST_ROUTING_SETTINGS.cost_routing_shared_budget_db_path
+    )
+    COST_ROUTING_REDIS_BUDGET_URL: str = _COST_ROUTING_SETTINGS.cost_routing_redis_budget_url
+    COST_ROUTING_REDIS_BUDGET_NAMESPACE: str = (
+        _COST_ROUTING_SETTINGS.cost_routing_redis_budget_namespace
     )
 
     # ─── Entity/Persona Memory (v5.0) ─────────────────────────
