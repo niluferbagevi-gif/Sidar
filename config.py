@@ -51,6 +51,7 @@ from core.config_lsp import load_lsp_settings
 from core.config_multimodal import load_multimodal_settings
 from core.config_observability import load_observability_settings
 from core.config_orchestrator import load_orchestrator_settings
+from core.config_rag_entity import load_rag_entity_settings
 from core.config_rag_store import load_rag_store_settings
 from core.config_rate_limit import load_rate_limit_settings
 from core.config_runtime_env import apply_runtime_env_overrides, safe_choice_for_reload
@@ -448,6 +449,7 @@ _GITHUB_HF_SETTINGS = load_github_huggingface_settings()
 _LORA_TRAINING_SETTINGS = load_lora_training_settings()
 _LSP_SETTINGS = load_lsp_settings()
 _MULTIMODAL_SETTINGS = load_multimodal_settings()
+_RAG_ENTITY_SETTINGS = load_rag_entity_settings()
 _RAG_STORE_SETTINGS = load_rag_store_settings()
 _SANDBOX_SETTINGS = load_sandbox_settings(
     base_sandbox_limits=SANDBOX_LIMITS,
@@ -545,6 +547,7 @@ class Config:
     lora_training_settings = _LORA_TRAINING_SETTINGS
     lsp_settings = _LSP_SETTINGS
     multimodal_settings = _MULTIMODAL_SETTINGS
+    rag_entity_settings = _RAG_ENTITY_SETTINGS
     rag_store_settings = _RAG_STORE_SETTINGS
     sandbox_settings = _SANDBOX_SETTINGS
     social_integration_settings = _SOCIAL_INTEGRATION_SETTINGS
@@ -1020,10 +1023,10 @@ class Config:
     # both the configured vector backend and BM25 runtime are initialized.
     RAG_REQUIRED_FOR_READINESS: bool = get_bool_env("RAG_REQUIRED_FOR_READINESS", False)
     RAG_ENTITY_MAX_PER_DOC: int = get_int_env("RAG_ENTITY_MAX_PER_DOC", 24)
-    ENABLE_RAG_LLM_ENTITY_EXTRACTION: bool = get_bool_env("ENABLE_RAG_LLM_ENTITY_EXTRACTION", False)
-    RAG_LLM_ENTITY_PROVIDER: str = os.getenv("RAG_LLM_ENTITY_PROVIDER", "")
-    RAG_LLM_ENTITY_MODEL: str = os.getenv("RAG_LLM_ENTITY_MODEL", "")
-    RAG_LLM_ENTITY_REVIEW_TARGET: str = os.getenv("RAG_LLM_ENTITY_REVIEW_TARGET", "2026-Q3")
+    ENABLE_RAG_LLM_ENTITY_EXTRACTION: bool = _RAG_ENTITY_SETTINGS.enable_rag_llm_entity_extraction
+    RAG_LLM_ENTITY_PROVIDER: str = _RAG_ENTITY_SETTINGS.rag_llm_entity_provider
+    RAG_LLM_ENTITY_MODEL: str = _RAG_ENTITY_SETTINGS.rag_llm_entity_model
+    RAG_LLM_ENTITY_REVIEW_TARGET: str = _RAG_ENTITY_SETTINGS.rag_llm_entity_review_target
 
     # ─── Sosyal / Meta Graph Entegrasyonları (v6.0) ─────────────
     META_GRAPH_API_TOKEN: str = _SOCIAL_INTEGRATION_SETTINGS.meta_graph_api_token
