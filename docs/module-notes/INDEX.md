@@ -80,6 +80,9 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `core/cache_metrics.py` → `docs/module-notes/core/cache_metrics.py.md`
 - `core/ci_remediation.py` → `docs/module-notes/core/ci_remediation.py.md`
 - `core/config_app.py` → `docs/module-notes/core/config_app.py.md`
+- `core/config_autonomy.py` → `docs/module-notes/core/config_autonomy.py.md`
+- `core/config_browser.py` → `docs/module-notes/core/config_browser.py.md`
+- `core/config_continuous_learning.py` → `docs/module-notes/core/config_continuous_learning.py.md`
 - `core/config_cost_routing.py` → `docs/module-notes/core/config_cost_routing.py.md`
 - `core/config_dirs.py` → `docs/module-notes/core/config_dirs.py.md`
 - `core/config_dotenv.py` → `docs/module-notes/core/config_dotenv.py.md`
@@ -90,6 +93,8 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `core/config_hardware.py` → `docs/module-notes/core/config_hardware.py.md`
 - `core/config_logging_setup.py` → `docs/module-notes/core/config_logging_setup.py.md`
 - `core/config_lora_training.py` → `docs/module-notes/core/config_lora_training.py.md`
+- `core/config_lsp.py` → `docs/module-notes/core/config_lsp.py.md`
+- `core/config_multimodal.py` → `docs/module-notes/core/config_multimodal.py.md`
 - `core/config_observability.py` → `docs/module-notes/core/config_observability.py.md`
 - `core/config_orchestrator.py` → `docs/module-notes/core/config_orchestrator.py.md`
 - `core/config_postgres.py` → `docs/module-notes/core/config_postgres.py.md`

@@ -24,6 +24,9 @@ import core.config_observability as config_observability
 from config_security import load_security_settings
 from core import config_dotenv, config_gpu_detect, config_postgres
 from core.config_app import load_app_runtime_settings
+from core.config_autonomy import load_autonomy_settings
+from core.config_browser import load_browser_settings
+from core.config_continuous_learning import load_continuous_learning_settings
 from core.config_cost_routing import load_cost_routing_settings
 from core.config_dirs import initialize_directories as initialize_required_directories
 from core.config_dirs import repair_log_file_permissions, resolve_base_dir
@@ -44,6 +47,8 @@ from core.config_event_bus import load_event_bus_settings
 from core.config_github_hf import load_github_huggingface_settings
 from core.config_gpu_detect import HardwareInfo
 from core.config_lora_training import load_lora_training_settings
+from core.config_lsp import load_lsp_settings
+from core.config_multimodal import load_multimodal_settings
 from core.config_observability import load_observability_settings
 from core.config_orchestrator import load_orchestrator_settings
 from core.config_rag_store import load_rag_store_settings
@@ -431,13 +436,18 @@ SANDBOX_LIMITS = {
     "timeout": get_int_env("SANDBOX_TIMEOUT", 10),
 }
 
+_AUTONOMY_SETTINGS = load_autonomy_settings()
+_BROWSER_SETTINGS = load_browser_settings()
 _RATE_LIMIT_SETTINGS = load_rate_limit_settings(
     redis_max_connections_default=LLM_SETTINGS.REDIS_MAX_CONNECTIONS
 )
+_CONTINUOUS_LEARNING_SETTINGS = load_continuous_learning_settings()
 _COST_ROUTING_SETTINGS = load_cost_routing_settings()
 _EVENT_BUS_SETTINGS = load_event_bus_settings()
 _GITHUB_HF_SETTINGS = load_github_huggingface_settings()
 _LORA_TRAINING_SETTINGS = load_lora_training_settings()
+_LSP_SETTINGS = load_lsp_settings()
+_MULTIMODAL_SETTINGS = load_multimodal_settings()
 _RAG_STORE_SETTINGS = load_rag_store_settings()
 _SANDBOX_SETTINGS = load_sandbox_settings(
     base_sandbox_limits=SANDBOX_LIMITS,
@@ -525,11 +535,16 @@ class Config:
     llm_settings = LLM_SETTINGS
     quality_gate_settings = _QUALITY_GATE_SETTINGS
     security_settings = SECURITY_SETTINGS
+    autonomy_settings = _AUTONOMY_SETTINGS
+    browser_settings = _BROWSER_SETTINGS
     rate_limit_settings = _RATE_LIMIT_SETTINGS
     cost_routing_settings = _COST_ROUTING_SETTINGS
+    continuous_learning_settings = _CONTINUOUS_LEARNING_SETTINGS
     event_bus_settings = _EVENT_BUS_SETTINGS
     github_huggingface_settings = _GITHUB_HF_SETTINGS
     lora_training_settings = _LORA_TRAINING_SETTINGS
+    lsp_settings = _LSP_SETTINGS
+    multimodal_settings = _MULTIMODAL_SETTINGS
     rag_store_settings = _RAG_STORE_SETTINGS
     sandbox_settings = _SANDBOX_SETTINGS
     social_integration_settings = _SOCIAL_INTEGRATION_SETTINGS
@@ -934,51 +949,53 @@ class Config:
     LORA_USE_4BIT: bool = _LORA_TRAINING_SETTINGS.lora_use_4bit
     LORA_OUTPUT_DIR: str = _LORA_TRAINING_SETTINGS.lora_output_dir
     # Ar-Ge: Judge/feedback sinyallerinden sürekli öğrenme bundle'ı üret
-    ENABLE_CONTINUOUS_LEARNING: bool = get_bool_env("ENABLE_CONTINUOUS_LEARNING", False)
-    CONTINUOUS_LEARNING_MIN_SFT_EXAMPLES: int = get_int_env(
-        "CONTINUOUS_LEARNING_MIN_SFT_EXAMPLES", 20
+    ENABLE_CONTINUOUS_LEARNING: bool = _CONTINUOUS_LEARNING_SETTINGS.enable_continuous_learning
+    CONTINUOUS_LEARNING_MIN_SFT_EXAMPLES: int = (
+        _CONTINUOUS_LEARNING_SETTINGS.continuous_learning_min_sft_examples
     )
-    CONTINUOUS_LEARNING_MIN_PREFERENCE_EXAMPLES: int = get_int_env(
-        "CONTINUOUS_LEARNING_MIN_PREFERENCE_EXAMPLES", 10
+    CONTINUOUS_LEARNING_MIN_PREFERENCE_EXAMPLES: int = (
+        _CONTINUOUS_LEARNING_SETTINGS.continuous_learning_min_preference_examples
     )
-    CONTINUOUS_LEARNING_MAX_PENDING_SIGNALS: int = get_int_env(
-        "CONTINUOUS_LEARNING_MAX_PENDING_SIGNALS", 5000
+    CONTINUOUS_LEARNING_MAX_PENDING_SIGNALS: int = (
+        _CONTINUOUS_LEARNING_SETTINGS.continuous_learning_max_pending_signals
     )
-    CONTINUOUS_LEARNING_COOLDOWN_SECONDS: int = get_int_env(
-        "CONTINUOUS_LEARNING_COOLDOWN_SECONDS", 3600
+    CONTINUOUS_LEARNING_COOLDOWN_SECONDS: int = (
+        _CONTINUOUS_LEARNING_SETTINGS.continuous_learning_cooldown_seconds
     )
-    CONTINUOUS_LEARNING_OUTPUT_DIR: str = os.getenv(
-        "CONTINUOUS_LEARNING_OUTPUT_DIR", "data/continuous_learning"
+    CONTINUOUS_LEARNING_OUTPUT_DIR: str = (
+        _CONTINUOUS_LEARNING_SETTINGS.continuous_learning_output_dir
     )
-    CONTINUOUS_LEARNING_SFT_FORMAT: str = os.getenv("CONTINUOUS_LEARNING_SFT_FORMAT", "alpaca")
+    CONTINUOUS_LEARNING_SFT_FORMAT: str = (
+        _CONTINUOUS_LEARNING_SETTINGS.continuous_learning_sft_format
+    )
 
     # ─── Multimodal Vision (v6.0) ───────────────────────────────
-    ENABLE_VISION: bool = get_bool_env("ENABLE_VISION", True)
+    ENABLE_VISION: bool = _MULTIMODAL_SETTINGS.enable_vision
     # Maksimum görsel boyutu (byte) — varsayılan 10 MB
-    VISION_MAX_IMAGE_BYTES: int = get_int_env("VISION_MAX_IMAGE_BYTES", 10485760)
-    ENABLE_MULTIMODAL: bool = get_bool_env("ENABLE_MULTIMODAL", True)
-    MULTIMODAL_MAX_FILE_BYTES: int = get_int_env("MULTIMODAL_MAX_FILE_BYTES", 52428800)
-    VOICE_STT_PROVIDER: str = os.getenv("VOICE_STT_PROVIDER", "whisper")
-    VOICE_TTS_PROVIDER: str = os.getenv("VOICE_TTS_PROVIDER", "auto")
-    VOICE_TTS_VOICE: str = os.getenv("VOICE_TTS_VOICE", "")
-    VOICE_TTS_SEGMENT_CHARS: int = get_int_env("VOICE_TTS_SEGMENT_CHARS", 48)
-    VOICE_TTS_BUFFER_CHARS: int = get_int_env("VOICE_TTS_BUFFER_CHARS", 96)
-    VOICE_VAD_ENABLED: bool = get_bool_env("VOICE_VAD_ENABLED", True)
-    VOICE_VAD_MIN_SPEECH_BYTES: int = get_int_env("VOICE_VAD_MIN_SPEECH_BYTES", 1024)
-    VOICE_DUPLEX_ENABLED: bool = get_bool_env("VOICE_DUPLEX_ENABLED", True)
-    VOICE_VAD_INTERRUPT_MIN_BYTES: int = get_int_env("VOICE_VAD_INTERRUPT_MIN_BYTES", 384)
-    WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "base")
-    VOICE_WS_MAX_BYTES: int = get_int_env("VOICE_WS_MAX_BYTES", 10485760)
+    VISION_MAX_IMAGE_BYTES: int = _MULTIMODAL_SETTINGS.vision_max_image_bytes
+    ENABLE_MULTIMODAL: bool = _MULTIMODAL_SETTINGS.enable_multimodal
+    MULTIMODAL_MAX_FILE_BYTES: int = _MULTIMODAL_SETTINGS.multimodal_max_file_bytes
+    VOICE_STT_PROVIDER: str = _MULTIMODAL_SETTINGS.voice_stt_provider
+    VOICE_TTS_PROVIDER: str = _MULTIMODAL_SETTINGS.voice_tts_provider
+    VOICE_TTS_VOICE: str = _MULTIMODAL_SETTINGS.voice_tts_voice
+    VOICE_TTS_SEGMENT_CHARS: int = _MULTIMODAL_SETTINGS.voice_tts_segment_chars
+    VOICE_TTS_BUFFER_CHARS: int = _MULTIMODAL_SETTINGS.voice_tts_buffer_chars
+    VOICE_VAD_ENABLED: bool = _MULTIMODAL_SETTINGS.voice_vad_enabled
+    VOICE_VAD_MIN_SPEECH_BYTES: int = _MULTIMODAL_SETTINGS.voice_vad_min_speech_bytes
+    VOICE_DUPLEX_ENABLED: bool = _MULTIMODAL_SETTINGS.voice_duplex_enabled
+    VOICE_VAD_INTERRUPT_MIN_BYTES: int = _MULTIMODAL_SETTINGS.voice_vad_interrupt_min_bytes
+    WHISPER_MODEL: str = _MULTIMODAL_SETTINGS.whisper_model
+    VOICE_WS_MAX_BYTES: int = _MULTIMODAL_SETTINGS.voice_ws_max_bytes
     WS_AUTH_TIMEOUT_SECONDS: int = get_int_env("WS_AUTH_TIMEOUT_SECONDS", 15)
-    BROWSER_PROVIDER: str = os.getenv("BROWSER_PROVIDER", "auto")
-    BROWSER_HEADLESS: bool = get_bool_env("BROWSER_HEADLESS", True)
-    BROWSER_TIMEOUT_MS: int = get_int_env("BROWSER_TIMEOUT_MS", 15000)
-    BROWSER_ALLOWED_DOMAINS: list[str] = get_list_env("BROWSER_ALLOWED_DOMAINS", [])
-    ENABLE_LSP: bool = get_bool_env("ENABLE_LSP", True)
-    LSP_TIMEOUT_SECONDS: int = get_int_env("LSP_TIMEOUT_SECONDS", 15)
-    LSP_MAX_REFERENCES: int = get_int_env("LSP_MAX_REFERENCES", 200)
-    PYTHON_LSP_SERVER: str = os.getenv("PYTHON_LSP_SERVER", "pyright-langserver")
-    TYPESCRIPT_LSP_SERVER: str = os.getenv("TYPESCRIPT_LSP_SERVER", "typescript-language-server")
+    BROWSER_PROVIDER: str = _BROWSER_SETTINGS.browser_provider
+    BROWSER_HEADLESS: bool = _BROWSER_SETTINGS.browser_headless
+    BROWSER_TIMEOUT_MS: int = _BROWSER_SETTINGS.browser_timeout_ms
+    BROWSER_ALLOWED_DOMAINS: list[str] = _BROWSER_SETTINGS.browser_allowed_domains
+    ENABLE_LSP: bool = _LSP_SETTINGS.enable_lsp
+    LSP_TIMEOUT_SECONDS: int = _LSP_SETTINGS.lsp_timeout_seconds
+    LSP_MAX_REFERENCES: int = _LSP_SETTINGS.lsp_max_references
+    PYTHON_LSP_SERVER: str = _LSP_SETTINGS.python_lsp_server
+    TYPESCRIPT_LSP_SERVER: str = _LSP_SETTINGS.typescript_lsp_server
     ENABLE_AUTONOMOUS_CRON: bool = _ORCHESTRATOR_SETTINGS.enable_autonomous_cron
     AUTONOMOUS_CRON_INTERVAL_SECONDS: int = _ORCHESTRATOR_SETTINGS.autonomous_cron_interval_seconds
     AUTONOMOUS_CRON_PROMPT: str = _ORCHESTRATOR_SETTINGS.autonomous_cron_prompt
@@ -991,16 +1008,9 @@ class Config:
     )
     NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS: int = get_int_env("NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS", 2)
     ENABLE_EVENT_WEBHOOKS: bool = get_bool_env("ENABLE_EVENT_WEBHOOKS", True)
-    AUTONOMY_SERVICE_USER_ID: str = os.getenv(
-        "AUTONOMY_SERVICE_USER_ID", os.getenv("SYSTEM_USER_ID", "system:autonomy")
-    )
-    AUTONOMY_WEBHOOK_SECRET: str = os.getenv(
-        "AUTONOMY_WEBHOOK_SECRET", os.getenv("SIDAR_AUTONOMY_WEBHOOK_SECRET", "")
-    )
-    AUTONOMY_WEBHOOK_REQUIRE_SIGNATURE: bool = get_bool_env(
-        "AUTONOMY_WEBHOOK_REQUIRE_SIGNATURE",
-        get_bool_env("SIDAR_AUTONOMY_WEBHOOK_REQUIRE_SIGNATURE", True),
-    )
+    AUTONOMY_SERVICE_USER_ID: str = _AUTONOMY_SETTINGS.autonomy_service_user_id
+    AUTONOMY_WEBHOOK_SECRET: str = _AUTONOMY_SETTINGS.autonomy_webhook_secret
+    AUTONOMY_WEBHOOK_REQUIRE_SIGNATURE: bool = _AUTONOMY_SETTINGS.autonomy_webhook_require_signature
     ENABLE_SWARM_FEDERATION: bool = _ORCHESTRATOR_SETTINGS.enable_swarm_federation
     SWARM_FEDERATION_SHARED_SECRET: str = _ORCHESTRATOR_SETTINGS.swarm_federation_shared_secret
     ENABLE_GRAPH_RAG: bool = get_bool_env("ENABLE_GRAPH_RAG", True)
