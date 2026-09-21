@@ -45,6 +45,7 @@ from core.config_event_bus import load_event_bus_settings
 from core.config_github_hf import load_github_huggingface_settings
 from core.config_gpu_detect import HardwareInfo
 from core.config_lora_training import load_lora_training_settings
+from core.config_multimodal import load_multimodal_settings
 from core.config_observability import load_observability_settings
 from core.config_orchestrator import load_orchestrator_settings
 from core.config_rag_store import load_rag_store_settings
@@ -440,6 +441,7 @@ _COST_ROUTING_SETTINGS = load_cost_routing_settings()
 _EVENT_BUS_SETTINGS = load_event_bus_settings()
 _GITHUB_HF_SETTINGS = load_github_huggingface_settings()
 _LORA_TRAINING_SETTINGS = load_lora_training_settings()
+_MULTIMODAL_SETTINGS = load_multimodal_settings()
 _RAG_STORE_SETTINGS = load_rag_store_settings()
 _SANDBOX_SETTINGS = load_sandbox_settings(
     base_sandbox_limits=SANDBOX_LIMITS,
@@ -533,6 +535,7 @@ class Config:
     event_bus_settings = _EVENT_BUS_SETTINGS
     github_huggingface_settings = _GITHUB_HF_SETTINGS
     lora_training_settings = _LORA_TRAINING_SETTINGS
+    multimodal_settings = _MULTIMODAL_SETTINGS
     rag_store_settings = _RAG_STORE_SETTINGS
     sandbox_settings = _SANDBOX_SETTINGS
     social_integration_settings = _SOCIAL_INTEGRATION_SETTINGS
@@ -958,22 +961,22 @@ class Config:
     )
 
     # ─── Multimodal Vision (v6.0) ───────────────────────────────
-    ENABLE_VISION: bool = get_bool_env("ENABLE_VISION", True)
+    ENABLE_VISION: bool = _MULTIMODAL_SETTINGS.enable_vision
     # Maksimum görsel boyutu (byte) — varsayılan 10 MB
-    VISION_MAX_IMAGE_BYTES: int = get_int_env("VISION_MAX_IMAGE_BYTES", 10485760)
-    ENABLE_MULTIMODAL: bool = get_bool_env("ENABLE_MULTIMODAL", True)
-    MULTIMODAL_MAX_FILE_BYTES: int = get_int_env("MULTIMODAL_MAX_FILE_BYTES", 52428800)
-    VOICE_STT_PROVIDER: str = os.getenv("VOICE_STT_PROVIDER", "whisper")
-    VOICE_TTS_PROVIDER: str = os.getenv("VOICE_TTS_PROVIDER", "auto")
-    VOICE_TTS_VOICE: str = os.getenv("VOICE_TTS_VOICE", "")
-    VOICE_TTS_SEGMENT_CHARS: int = get_int_env("VOICE_TTS_SEGMENT_CHARS", 48)
-    VOICE_TTS_BUFFER_CHARS: int = get_int_env("VOICE_TTS_BUFFER_CHARS", 96)
-    VOICE_VAD_ENABLED: bool = get_bool_env("VOICE_VAD_ENABLED", True)
-    VOICE_VAD_MIN_SPEECH_BYTES: int = get_int_env("VOICE_VAD_MIN_SPEECH_BYTES", 1024)
-    VOICE_DUPLEX_ENABLED: bool = get_bool_env("VOICE_DUPLEX_ENABLED", True)
-    VOICE_VAD_INTERRUPT_MIN_BYTES: int = get_int_env("VOICE_VAD_INTERRUPT_MIN_BYTES", 384)
-    WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "base")
-    VOICE_WS_MAX_BYTES: int = get_int_env("VOICE_WS_MAX_BYTES", 10485760)
+    VISION_MAX_IMAGE_BYTES: int = _MULTIMODAL_SETTINGS.vision_max_image_bytes
+    ENABLE_MULTIMODAL: bool = _MULTIMODAL_SETTINGS.enable_multimodal
+    MULTIMODAL_MAX_FILE_BYTES: int = _MULTIMODAL_SETTINGS.multimodal_max_file_bytes
+    VOICE_STT_PROVIDER: str = _MULTIMODAL_SETTINGS.voice_stt_provider
+    VOICE_TTS_PROVIDER: str = _MULTIMODAL_SETTINGS.voice_tts_provider
+    VOICE_TTS_VOICE: str = _MULTIMODAL_SETTINGS.voice_tts_voice
+    VOICE_TTS_SEGMENT_CHARS: int = _MULTIMODAL_SETTINGS.voice_tts_segment_chars
+    VOICE_TTS_BUFFER_CHARS: int = _MULTIMODAL_SETTINGS.voice_tts_buffer_chars
+    VOICE_VAD_ENABLED: bool = _MULTIMODAL_SETTINGS.voice_vad_enabled
+    VOICE_VAD_MIN_SPEECH_BYTES: int = _MULTIMODAL_SETTINGS.voice_vad_min_speech_bytes
+    VOICE_DUPLEX_ENABLED: bool = _MULTIMODAL_SETTINGS.voice_duplex_enabled
+    VOICE_VAD_INTERRUPT_MIN_BYTES: int = _MULTIMODAL_SETTINGS.voice_vad_interrupt_min_bytes
+    WHISPER_MODEL: str = _MULTIMODAL_SETTINGS.whisper_model
+    VOICE_WS_MAX_BYTES: int = _MULTIMODAL_SETTINGS.voice_ws_max_bytes
     WS_AUTH_TIMEOUT_SECONDS: int = get_int_env("WS_AUTH_TIMEOUT_SECONDS", 15)
     BROWSER_PROVIDER: str = os.getenv("BROWSER_PROVIDER", "auto")
     BROWSER_HEADLESS: bool = get_bool_env("BROWSER_HEADLESS", True)
