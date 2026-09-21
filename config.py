@@ -66,6 +66,7 @@ from core.config_secrets import is_nonempty_secret
 from core.config_social_integrations import load_social_integration_settings
 from core.config_validators import is_valid_http_url, normalize_ai_provider
 from core.config_web_search import load_web_search_settings
+from core.config_web_server import load_web_server_settings
 
 # HuggingFace/Transformers gürültülü çıktıları .env yüklemesi başlamadan bastırılır.
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
@@ -458,6 +459,7 @@ _SANDBOX_SETTINGS = load_sandbox_settings(
 )
 _SOCIAL_INTEGRATION_SETTINGS = load_social_integration_settings()
 _WEB_SEARCH_SETTINGS = load_web_search_settings()
+_WEB_SERVER_SETTINGS = load_web_server_settings()
 
 # ═══════════════════════════════════════════════════════════════
 # DONANIM TESPİTİ
@@ -552,6 +554,7 @@ class Config:
     sandbox_settings = _SANDBOX_SETTINGS
     social_integration_settings = _SOCIAL_INTEGRATION_SETTINGS
     web_search_settings = _WEB_SEARCH_SETTINGS
+    web_server_settings = _WEB_SERVER_SETTINGS
     observability_settings = _OBSERVABILITY_SETTINGS
     orchestrator_settings = _ORCHESTRATOR_SETTINGS
     self_heal_settings = _SELF_HEAL_SETTINGS
@@ -876,9 +879,9 @@ class Config:
     MEMORY_ENCRYPTION_KEY_PREVIOUS: str = os.getenv("MEMORY_ENCRYPTION_KEY_PREVIOUS", "")
 
     # ─── Web Arayüzü ─────────────────────────────────────────
-    WEB_HOST: str = os.getenv("WEB_HOST", "127.0.0.1")
-    WEB_PORT: int = get_int_env("WEB_PORT", 7860)
-    WEB_GPU_PORT: int = get_int_env("WEB_GPU_PORT", 7861)
+    WEB_HOST: str = _WEB_SERVER_SETTINGS.web_host
+    WEB_PORT: int = _WEB_SERVER_SETTINGS.web_port
+    WEB_GPU_PORT: int = _WEB_SERVER_SETTINGS.web_gpu_port
 
     # ─── Observability Bağlantı Noktaları ───────────────────
     # GRAFANA_URL ayarlanmazsa varsayılan olarak yerel kurulum portu kullanılır.
