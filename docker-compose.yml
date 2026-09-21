@@ -33,7 +33,7 @@ services:
   #   SIDAR_TEMP_MOUNT=sidar_temp_prod
 
   redis:
-    image: redis:7.4-alpine
+    image: redis:8.10-alpine
     container_name: ${COMPOSE_PROJECT_NAME:-sidar}_redis
     restart: unless-stopped
     # Local geliştirme modundaki uygulamanın Redis'e erişebilmesi için port
