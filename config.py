@@ -24,6 +24,7 @@ import core.config_observability as config_observability
 from config_security import load_security_settings
 from core import config_dotenv, config_gpu_detect, config_postgres
 from core.config_app import load_app_runtime_settings
+from core.config_continuous_learning import load_continuous_learning_settings
 from core.config_cost_routing import load_cost_routing_settings
 from core.config_dirs import initialize_directories as initialize_required_directories
 from core.config_dirs import repair_log_file_permissions, resolve_base_dir
@@ -434,6 +435,7 @@ SANDBOX_LIMITS = {
 _RATE_LIMIT_SETTINGS = load_rate_limit_settings(
     redis_max_connections_default=LLM_SETTINGS.REDIS_MAX_CONNECTIONS
 )
+_CONTINUOUS_LEARNING_SETTINGS = load_continuous_learning_settings()
 _COST_ROUTING_SETTINGS = load_cost_routing_settings()
 _EVENT_BUS_SETTINGS = load_event_bus_settings()
 _GITHUB_HF_SETTINGS = load_github_huggingface_settings()
@@ -527,6 +529,7 @@ class Config:
     security_settings = SECURITY_SETTINGS
     rate_limit_settings = _RATE_LIMIT_SETTINGS
     cost_routing_settings = _COST_ROUTING_SETTINGS
+    continuous_learning_settings = _CONTINUOUS_LEARNING_SETTINGS
     event_bus_settings = _EVENT_BUS_SETTINGS
     github_huggingface_settings = _GITHUB_HF_SETTINGS
     lora_training_settings = _LORA_TRAINING_SETTINGS
@@ -934,23 +937,25 @@ class Config:
     LORA_USE_4BIT: bool = _LORA_TRAINING_SETTINGS.lora_use_4bit
     LORA_OUTPUT_DIR: str = _LORA_TRAINING_SETTINGS.lora_output_dir
     # Ar-Ge: Judge/feedback sinyallerinden sürekli öğrenme bundle'ı üret
-    ENABLE_CONTINUOUS_LEARNING: bool = get_bool_env("ENABLE_CONTINUOUS_LEARNING", False)
-    CONTINUOUS_LEARNING_MIN_SFT_EXAMPLES: int = get_int_env(
-        "CONTINUOUS_LEARNING_MIN_SFT_EXAMPLES", 20
+    ENABLE_CONTINUOUS_LEARNING: bool = _CONTINUOUS_LEARNING_SETTINGS.enable_continuous_learning
+    CONTINUOUS_LEARNING_MIN_SFT_EXAMPLES: int = (
+        _CONTINUOUS_LEARNING_SETTINGS.continuous_learning_min_sft_examples
     )
-    CONTINUOUS_LEARNING_MIN_PREFERENCE_EXAMPLES: int = get_int_env(
-        "CONTINUOUS_LEARNING_MIN_PREFERENCE_EXAMPLES", 10
+    CONTINUOUS_LEARNING_MIN_PREFERENCE_EXAMPLES: int = (
+        _CONTINUOUS_LEARNING_SETTINGS.continuous_learning_min_preference_examples
     )
-    CONTINUOUS_LEARNING_MAX_PENDING_SIGNALS: int = get_int_env(
-        "CONTINUOUS_LEARNING_MAX_PENDING_SIGNALS", 5000
+    CONTINUOUS_LEARNING_MAX_PENDING_SIGNALS: int = (
+        _CONTINUOUS_LEARNING_SETTINGS.continuous_learning_max_pending_signals
     )
-    CONTINUOUS_LEARNING_COOLDOWN_SECONDS: int = get_int_env(
-        "CONTINUOUS_LEARNING_COOLDOWN_SECONDS", 3600
+    CONTINUOUS_LEARNING_COOLDOWN_SECONDS: int = (
+        _CONTINUOUS_LEARNING_SETTINGS.continuous_learning_cooldown_seconds
     )
-    CONTINUOUS_LEARNING_OUTPUT_DIR: str = os.getenv(
-        "CONTINUOUS_LEARNING_OUTPUT_DIR", "data/continuous_learning"
+    CONTINUOUS_LEARNING_OUTPUT_DIR: str = (
+        _CONTINUOUS_LEARNING_SETTINGS.continuous_learning_output_dir
     )
-    CONTINUOUS_LEARNING_SFT_FORMAT: str = os.getenv("CONTINUOUS_LEARNING_SFT_FORMAT", "alpaca")
+    CONTINUOUS_LEARNING_SFT_FORMAT: str = (
+        _CONTINUOUS_LEARNING_SETTINGS.continuous_learning_sft_format
+    )
 
     # ─── Multimodal Vision (v6.0) ───────────────────────────────
     ENABLE_VISION: bool = get_bool_env("ENABLE_VISION", True)
