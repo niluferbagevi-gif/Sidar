@@ -43,6 +43,7 @@ from core.config_env_helpers import (
 from core.config_event_bus import load_event_bus_settings
 from core.config_github_hf import load_github_huggingface_settings
 from core.config_gpu_detect import HardwareInfo
+from core.config_lora_training import load_lora_training_settings
 from core.config_observability import load_observability_settings
 from core.config_orchestrator import load_orchestrator_settings
 from core.config_rag_store import load_rag_store_settings
@@ -436,6 +437,7 @@ _RATE_LIMIT_SETTINGS = load_rate_limit_settings(
 _COST_ROUTING_SETTINGS = load_cost_routing_settings()
 _EVENT_BUS_SETTINGS = load_event_bus_settings()
 _GITHUB_HF_SETTINGS = load_github_huggingface_settings()
+_LORA_TRAINING_SETTINGS = load_lora_training_settings()
 _RAG_STORE_SETTINGS = load_rag_store_settings()
 _SANDBOX_SETTINGS = load_sandbox_settings(
     base_sandbox_limits=SANDBOX_LIMITS,
@@ -527,6 +529,7 @@ class Config:
     cost_routing_settings = _COST_ROUTING_SETTINGS
     event_bus_settings = _EVENT_BUS_SETTINGS
     github_huggingface_settings = _GITHUB_HF_SETTINGS
+    lora_training_settings = _LORA_TRAINING_SETTINGS
     rag_store_settings = _RAG_STORE_SETTINGS
     sandbox_settings = _SANDBOX_SETTINGS
     social_integration_settings = _SOCIAL_INTEGRATION_SETTINGS
@@ -920,16 +923,16 @@ class Config:
     # Minimum geri bildirim puanı (bu değer ve üzeri export edilir)
     AL_MIN_RATING_FOR_TRAIN: int = get_int_env("AL_MIN_RATING_FOR_TRAIN", 1)
     # LoRA eğitimini etkinleştir (peft/transformers gerektirir)
-    ENABLE_LORA_TRAINING: bool = get_bool_env("ENABLE_LORA_TRAINING", False)
+    ENABLE_LORA_TRAINING: bool = _LORA_TRAINING_SETTINGS.enable_lora_training
     # Fine-tuning için temel model (HuggingFace hub ID)
-    LORA_BASE_MODEL: str = os.getenv("LORA_BASE_MODEL", "")
-    LORA_RANK: int = get_int_env("LORA_RANK", 8)
-    LORA_ALPHA: int = get_int_env("LORA_ALPHA", 16)
-    LORA_DROPOUT: float = get_float_env("LORA_DROPOUT", 0.05)
-    LORA_EPOCHS: int = get_int_env("LORA_EPOCHS", 3)
-    LORA_BATCH_SIZE: int = get_int_env("LORA_BATCH_SIZE", 4)
-    LORA_USE_4BIT: bool = get_bool_env("LORA_USE_4BIT", True)
-    LORA_OUTPUT_DIR: str = os.getenv("LORA_OUTPUT_DIR", "data/lora_adapters")
+    LORA_BASE_MODEL: str = _LORA_TRAINING_SETTINGS.lora_base_model
+    LORA_RANK: int = _LORA_TRAINING_SETTINGS.lora_rank
+    LORA_ALPHA: int = _LORA_TRAINING_SETTINGS.lora_alpha
+    LORA_DROPOUT: float = _LORA_TRAINING_SETTINGS.lora_dropout
+    LORA_EPOCHS: int = _LORA_TRAINING_SETTINGS.lora_epochs
+    LORA_BATCH_SIZE: int = _LORA_TRAINING_SETTINGS.lora_batch_size
+    LORA_USE_4BIT: bool = _LORA_TRAINING_SETTINGS.lora_use_4bit
+    LORA_OUTPUT_DIR: str = _LORA_TRAINING_SETTINGS.lora_output_dir
     # Ar-Ge: Judge/feedback sinyallerinden sürekli öğrenme bundle'ı üret
     ENABLE_CONTINUOUS_LEARNING: bool = get_bool_env("ENABLE_CONTINUOUS_LEARNING", False)
     CONTINUOUS_LEARNING_MIN_SFT_EXAMPLES: int = get_int_env(

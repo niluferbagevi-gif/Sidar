@@ -89,6 +89,7 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `core/config_gpu_detect.py` → `docs/module-notes/core/config_gpu_detect.py.md`
 - `core/config_hardware.py` → `docs/module-notes/core/config_hardware.py.md`
 - `core/config_logging_setup.py` → `docs/module-notes/core/config_logging_setup.py.md`
+- `core/config_lora_training.py` → `docs/module-notes/core/config_lora_training.py.md`
 - `core/config_observability.py` → `docs/module-notes/core/config_observability.py.md`
 - `core/config_orchestrator.py` → `docs/module-notes/core/config_orchestrator.py.md`
 - `core/config_postgres.py` → `docs/module-notes/core/config_postgres.py.md`
