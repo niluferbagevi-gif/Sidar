@@ -48,6 +48,7 @@ from core.config_github_hf import load_github_huggingface_settings
 from core.config_gpu_detect import HardwareInfo
 from core.config_lora_training import load_lora_training_settings
 from core.config_lsp import load_lsp_settings
+from core.config_memory_security import load_memory_security_settings
 from core.config_multimodal import load_multimodal_settings
 from core.config_observability import load_observability_settings
 from core.config_orchestrator import load_orchestrator_settings
@@ -449,6 +450,7 @@ _EVENT_BUS_SETTINGS = load_event_bus_settings()
 _GITHUB_HF_SETTINGS = load_github_huggingface_settings()
 _LORA_TRAINING_SETTINGS = load_lora_training_settings()
 _LSP_SETTINGS = load_lsp_settings()
+_MEMORY_SECURITY_SETTINGS = load_memory_security_settings()
 _MULTIMODAL_SETTINGS = load_multimodal_settings()
 _RAG_ENTITY_SETTINGS = load_rag_entity_settings()
 _RAG_STORE_SETTINGS = load_rag_store_settings()
@@ -548,6 +550,7 @@ class Config:
     github_huggingface_settings = _GITHUB_HF_SETTINGS
     lora_training_settings = _LORA_TRAINING_SETTINGS
     lsp_settings = _LSP_SETTINGS
+    memory_security_settings = _MEMORY_SECURITY_SETTINGS
     multimodal_settings = _MULTIMODAL_SETTINGS
     rag_entity_settings = _RAG_ENTITY_SETTINGS
     rag_store_settings = _RAG_STORE_SETTINGS
@@ -875,8 +878,8 @@ class Config:
     # Boş bırakılırsa şifreleme devre dışı (varsayılan).
     # Fernet anahtarı üretmek için:
     #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-    MEMORY_ENCRYPTION_KEY: str = os.getenv("MEMORY_ENCRYPTION_KEY", "")
-    MEMORY_ENCRYPTION_KEY_PREVIOUS: str = os.getenv("MEMORY_ENCRYPTION_KEY_PREVIOUS", "")
+    MEMORY_ENCRYPTION_KEY: str = _MEMORY_SECURITY_SETTINGS.memory_encryption_key
+    MEMORY_ENCRYPTION_KEY_PREVIOUS: str = _MEMORY_SECURITY_SETTINGS.memory_encryption_key_previous
 
     # ─── Web Arayüzü ─────────────────────────────────────────
     WEB_HOST: str = _WEB_SERVER_SETTINGS.web_host
