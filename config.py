@@ -46,6 +46,7 @@ from core.config_event_bus import load_event_bus_settings
 from core.config_github_hf import load_github_huggingface_settings
 from core.config_gpu_detect import HardwareInfo
 from core.config_lora_training import load_lora_training_settings
+from core.config_lsp import load_lsp_settings
 from core.config_multimodal import load_multimodal_settings
 from core.config_observability import load_observability_settings
 from core.config_orchestrator import load_orchestrator_settings
@@ -443,6 +444,7 @@ _COST_ROUTING_SETTINGS = load_cost_routing_settings()
 _EVENT_BUS_SETTINGS = load_event_bus_settings()
 _GITHUB_HF_SETTINGS = load_github_huggingface_settings()
 _LORA_TRAINING_SETTINGS = load_lora_training_settings()
+_LSP_SETTINGS = load_lsp_settings()
 _MULTIMODAL_SETTINGS = load_multimodal_settings()
 _RAG_STORE_SETTINGS = load_rag_store_settings()
 _SANDBOX_SETTINGS = load_sandbox_settings(
@@ -538,6 +540,7 @@ class Config:
     event_bus_settings = _EVENT_BUS_SETTINGS
     github_huggingface_settings = _GITHUB_HF_SETTINGS
     lora_training_settings = _LORA_TRAINING_SETTINGS
+    lsp_settings = _LSP_SETTINGS
     multimodal_settings = _MULTIMODAL_SETTINGS
     rag_store_settings = _RAG_STORE_SETTINGS
     sandbox_settings = _SANDBOX_SETTINGS
@@ -985,11 +988,11 @@ class Config:
     BROWSER_HEADLESS: bool = _BROWSER_SETTINGS.browser_headless
     BROWSER_TIMEOUT_MS: int = _BROWSER_SETTINGS.browser_timeout_ms
     BROWSER_ALLOWED_DOMAINS: list[str] = _BROWSER_SETTINGS.browser_allowed_domains
-    ENABLE_LSP: bool = get_bool_env("ENABLE_LSP", True)
-    LSP_TIMEOUT_SECONDS: int = get_int_env("LSP_TIMEOUT_SECONDS", 15)
-    LSP_MAX_REFERENCES: int = get_int_env("LSP_MAX_REFERENCES", 200)
-    PYTHON_LSP_SERVER: str = os.getenv("PYTHON_LSP_SERVER", "pyright-langserver")
-    TYPESCRIPT_LSP_SERVER: str = os.getenv("TYPESCRIPT_LSP_SERVER", "typescript-language-server")
+    ENABLE_LSP: bool = _LSP_SETTINGS.enable_lsp
+    LSP_TIMEOUT_SECONDS: int = _LSP_SETTINGS.lsp_timeout_seconds
+    LSP_MAX_REFERENCES: int = _LSP_SETTINGS.lsp_max_references
+    PYTHON_LSP_SERVER: str = _LSP_SETTINGS.python_lsp_server
+    TYPESCRIPT_LSP_SERVER: str = _LSP_SETTINGS.typescript_lsp_server
     ENABLE_AUTONOMOUS_CRON: bool = _ORCHESTRATOR_SETTINGS.enable_autonomous_cron
     AUTONOMOUS_CRON_INTERVAL_SECONDS: int = _ORCHESTRATOR_SETTINGS.autonomous_cron_interval_seconds
     AUTONOMOUS_CRON_PROMPT: str = _ORCHESTRATOR_SETTINGS.autonomous_cron_prompt
