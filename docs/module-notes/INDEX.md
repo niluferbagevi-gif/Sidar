@@ -80,6 +80,7 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `core/cache_metrics.py` → `docs/module-notes/core/cache_metrics.py.md`
 - `core/ci_remediation.py` → `docs/module-notes/core/ci_remediation.py.md`
 - `core/config_app.py` → `docs/module-notes/core/config_app.py.md`
+- `core/config_cost_routing.py` → `docs/module-notes/core/config_cost_routing.py.md`
 - `core/config_dirs.py` → `docs/module-notes/core/config_dirs.py.md`
 - `core/config_dotenv.py` → `docs/module-notes/core/config_dotenv.py.md`
 - `core/config_env_helpers.py` → `docs/module-notes/core/config_env_helpers.py.md`
@@ -88,6 +89,7 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `core/config_gpu_detect.py` → `docs/module-notes/core/config_gpu_detect.py.md`
 - `core/config_hardware.py` → `docs/module-notes/core/config_hardware.py.md`
 - `core/config_logging_setup.py` → `docs/module-notes/core/config_logging_setup.py.md`
+- `core/config_lora_training.py` → `docs/module-notes/core/config_lora_training.py.md`
 - `core/config_observability.py` → `docs/module-notes/core/config_observability.py.md`
 - `core/config_orchestrator.py` → `docs/module-notes/core/config_orchestrator.py.md`
 - `core/config_postgres.py` → `docs/module-notes/core/config_postgres.py.md`
@@ -101,6 +103,7 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `core/config_secrets.py` → `docs/module-notes/core/config_secrets.py.md`
 - `core/config_social_integrations.py` → `docs/module-notes/core/config_social_integrations.py.md`
 - `core/config_validators.py` → `docs/module-notes/core/config_validators.py.md`
+- `core/config_web_search.py` → `docs/module-notes/core/config_web_search.py.md`
 - `core/db/` → `docs/module-notes/core/db.py.md`
 - `core/db_components/` → `docs/module-notes/core/db_components.md`
 - `core/distributed_lock.py` → `docs/module-notes/core/distributed_lock.py.md`

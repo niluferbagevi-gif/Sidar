@@ -24,6 +24,7 @@ import core.config_observability as config_observability
 from config_security import load_security_settings
 from core import config_dotenv, config_gpu_detect, config_postgres
 from core.config_app import load_app_runtime_settings
+from core.config_cost_routing import load_cost_routing_settings
 from core.config_dirs import initialize_directories as initialize_required_directories
 from core.config_dirs import repair_log_file_permissions, resolve_base_dir
 from core.config_env_helpers import (
@@ -42,6 +43,7 @@ from core.config_env_helpers import (
 from core.config_event_bus import load_event_bus_settings
 from core.config_github_hf import load_github_huggingface_settings
 from core.config_gpu_detect import HardwareInfo
+from core.config_lora_training import load_lora_training_settings
 from core.config_observability import load_observability_settings
 from core.config_orchestrator import load_orchestrator_settings
 from core.config_rag_store import load_rag_store_settings
@@ -57,6 +59,7 @@ from core.config_secret_hardening import (
 from core.config_secrets import is_nonempty_secret
 from core.config_social_integrations import load_social_integration_settings
 from core.config_validators import is_valid_http_url, normalize_ai_provider
+from core.config_web_search import load_web_search_settings
 
 # HuggingFace/Transformers gürültülü çıktıları .env yüklemesi başlamadan bastırılır.
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
@@ -431,8 +434,10 @@ SANDBOX_LIMITS = {
 _RATE_LIMIT_SETTINGS = load_rate_limit_settings(
     redis_max_connections_default=LLM_SETTINGS.REDIS_MAX_CONNECTIONS
 )
+_COST_ROUTING_SETTINGS = load_cost_routing_settings()
 _EVENT_BUS_SETTINGS = load_event_bus_settings()
 _GITHUB_HF_SETTINGS = load_github_huggingface_settings()
+_LORA_TRAINING_SETTINGS = load_lora_training_settings()
 _RAG_STORE_SETTINGS = load_rag_store_settings()
 _SANDBOX_SETTINGS = load_sandbox_settings(
     base_sandbox_limits=SANDBOX_LIMITS,
@@ -440,6 +445,7 @@ _SANDBOX_SETTINGS = load_sandbox_settings(
     get_external_bool_prefixed_env=_get_external_bool_prefixed_env,
 )
 _SOCIAL_INTEGRATION_SETTINGS = load_social_integration_settings()
+_WEB_SEARCH_SETTINGS = load_web_search_settings()
 
 # ═══════════════════════════════════════════════════════════════
 # DONANIM TESPİTİ
@@ -520,11 +526,14 @@ class Config:
     quality_gate_settings = _QUALITY_GATE_SETTINGS
     security_settings = SECURITY_SETTINGS
     rate_limit_settings = _RATE_LIMIT_SETTINGS
+    cost_routing_settings = _COST_ROUTING_SETTINGS
     event_bus_settings = _EVENT_BUS_SETTINGS
     github_huggingface_settings = _GITHUB_HF_SETTINGS
+    lora_training_settings = _LORA_TRAINING_SETTINGS
     rag_store_settings = _RAG_STORE_SETTINGS
     sandbox_settings = _SANDBOX_SETTINGS
     social_integration_settings = _SOCIAL_INTEGRATION_SETTINGS
+    web_search_settings = _WEB_SEARCH_SETTINGS
     observability_settings = _OBSERVABILITY_SETTINGS
     orchestrator_settings = _ORCHESTRATOR_SETTINGS
     self_heal_settings = _SELF_HEAL_SETTINGS
@@ -789,12 +798,12 @@ class Config:
     SIDAR_EVENT_BUS_CB_OPEN_SECONDS: float = _EVENT_BUS_SETTINGS.sidar_event_bus_cb_open_seconds
 
     # ─── Web Arama ───────────────────────────────────────────
-    SEARCH_ENGINE: str = os.getenv("SEARCH_ENGINE", "auto")
-    TAVILY_API_KEY: str = os.getenv("TAVILY_API_KEY", "")
-    GOOGLE_SEARCH_API_KEY: str = os.getenv("GOOGLE_SEARCH_API_KEY", "")
-    GOOGLE_SEARCH_CX: str = os.getenv("GOOGLE_SEARCH_CX", "")
-    WEB_SEARCH_MAX_RESULTS: int = get_int_env("WEB_SEARCH_MAX_RESULTS", 5)
-    WEB_FETCH_TIMEOUT: int = get_int_env("WEB_FETCH_TIMEOUT", 15)
+    SEARCH_ENGINE: str = _WEB_SEARCH_SETTINGS.search_engine
+    TAVILY_API_KEY: str = _WEB_SEARCH_SETTINGS.tavily_api_key
+    GOOGLE_SEARCH_API_KEY: str = _WEB_SEARCH_SETTINGS.google_search_api_key
+    GOOGLE_SEARCH_CX: str = _WEB_SEARCH_SETTINGS.google_search_cx
+    WEB_SEARCH_MAX_RESULTS: int = _WEB_SEARCH_SETTINGS.web_search_max_results
+    WEB_FETCH_TIMEOUT: int = _WEB_SEARCH_SETTINGS.web_fetch_timeout
     # Eski ad geriye dönük uyumluluk için tutulur; tercih edilen anahtar WEB_SCRAPE_MAX_CHARS.
     WEB_FETCH_MAX_CHARS: int = _RAG_STORE_SETTINGS.web_fetch_max_chars
     # Yeni ad (tercih edilen): scrape/okuma karakter limiti
@@ -878,26 +887,28 @@ class Config:
     JUDGE_RESPONSE_MODEL: str = _QUALITY_GATE_SETTINGS.JUDGE_RESPONSE_MODEL
 
     # ─── Cost-Aware Model Routing (v5.0) ──────────────────────
-    ENABLE_COST_ROUTING: bool = get_bool_env("ENABLE_COST_ROUTING", False)
+    ENABLE_COST_ROUTING: bool = _COST_ROUTING_SETTINGS.enable_cost_routing
     # 0.0–1.0: Bu eşiğin altındaki sorgular lokal modele yönlendirilir
-    COST_ROUTING_COMPLEXITY_THRESHOLD: float = get_float_env(
-        "COST_ROUTING_COMPLEXITY_THRESHOLD", 0.55
+    COST_ROUTING_COMPLEXITY_THRESHOLD: float = (
+        _COST_ROUTING_SETTINGS.cost_routing_complexity_threshold
     )
     # Lokal sağlayıcı (basit sorgular için)
-    COST_ROUTING_LOCAL_PROVIDER: str = os.getenv("COST_ROUTING_LOCAL_PROVIDER", "ollama")
-    COST_ROUTING_LOCAL_MODEL: str = os.getenv("COST_ROUTING_LOCAL_MODEL", "")
+    COST_ROUTING_LOCAL_PROVIDER: str = _COST_ROUTING_SETTINGS.cost_routing_local_provider
+    COST_ROUTING_LOCAL_MODEL: str = _COST_ROUTING_SETTINGS.cost_routing_local_model
     # Bulut sağlayıcı (karmaşık sorgular için; boşsa varsayılan sağlayıcı kullanılır)
-    COST_ROUTING_CLOUD_PROVIDER: str = os.getenv("COST_ROUTING_CLOUD_PROVIDER", "")
-    COST_ROUTING_CLOUD_MODEL: str = os.getenv("COST_ROUTING_CLOUD_MODEL", "")
+    COST_ROUTING_CLOUD_PROVIDER: str = _COST_ROUTING_SETTINGS.cost_routing_cloud_provider
+    COST_ROUTING_CLOUD_MODEL: str = _COST_ROUTING_SETTINGS.cost_routing_cloud_model
     # Bu günlük bütçe (USD) aşılırsa tüm sorgular lokal modele yönlendirilir
-    COST_ROUTING_DAILY_BUDGET_USD: float = get_float_env("COST_ROUTING_DAILY_BUDGET_USD", 1.0)
+    COST_ROUTING_DAILY_BUDGET_USD: float = _COST_ROUTING_SETTINGS.cost_routing_daily_budget_usd
     # Tek bir isteğin yaklaşık token eşiği; aşılırsa lokal modele fallback uygulanır.
-    COST_ROUTING_TOKEN_THRESHOLD: int = get_int_env("COST_ROUTING_TOKEN_THRESHOLD", 0)
+    COST_ROUTING_TOKEN_THRESHOLD: int = _COST_ROUTING_SETTINGS.cost_routing_token_threshold
     # Çoklu worker/pod Redis bütçe sayaçlarında çakışmayı önleyen key namespace.
-    COST_ROUTING_SHARED_BUDGET_DB_PATH: str = os.getenv("COST_ROUTING_SHARED_BUDGET_DB_PATH", "")
-    COST_ROUTING_REDIS_BUDGET_URL: str = os.getenv("COST_ROUTING_REDIS_BUDGET_URL", "")
-    COST_ROUTING_REDIS_BUDGET_NAMESPACE: str = os.getenv(
-        "COST_ROUTING_REDIS_BUDGET_NAMESPACE", "sidar"
+    COST_ROUTING_SHARED_BUDGET_DB_PATH: str = (
+        _COST_ROUTING_SETTINGS.cost_routing_shared_budget_db_path
+    )
+    COST_ROUTING_REDIS_BUDGET_URL: str = _COST_ROUTING_SETTINGS.cost_routing_redis_budget_url
+    COST_ROUTING_REDIS_BUDGET_NAMESPACE: str = (
+        _COST_ROUTING_SETTINGS.cost_routing_redis_budget_namespace
     )
 
     # ─── Entity/Persona Memory (v5.0) ─────────────────────────
@@ -912,16 +923,16 @@ class Config:
     # Minimum geri bildirim puanı (bu değer ve üzeri export edilir)
     AL_MIN_RATING_FOR_TRAIN: int = get_int_env("AL_MIN_RATING_FOR_TRAIN", 1)
     # LoRA eğitimini etkinleştir (peft/transformers gerektirir)
-    ENABLE_LORA_TRAINING: bool = get_bool_env("ENABLE_LORA_TRAINING", False)
+    ENABLE_LORA_TRAINING: bool = _LORA_TRAINING_SETTINGS.enable_lora_training
     # Fine-tuning için temel model (HuggingFace hub ID)
-    LORA_BASE_MODEL: str = os.getenv("LORA_BASE_MODEL", "")
-    LORA_RANK: int = get_int_env("LORA_RANK", 8)
-    LORA_ALPHA: int = get_int_env("LORA_ALPHA", 16)
-    LORA_DROPOUT: float = get_float_env("LORA_DROPOUT", 0.05)
-    LORA_EPOCHS: int = get_int_env("LORA_EPOCHS", 3)
-    LORA_BATCH_SIZE: int = get_int_env("LORA_BATCH_SIZE", 4)
-    LORA_USE_4BIT: bool = get_bool_env("LORA_USE_4BIT", True)
-    LORA_OUTPUT_DIR: str = os.getenv("LORA_OUTPUT_DIR", "data/lora_adapters")
+    LORA_BASE_MODEL: str = _LORA_TRAINING_SETTINGS.lora_base_model
+    LORA_RANK: int = _LORA_TRAINING_SETTINGS.lora_rank
+    LORA_ALPHA: int = _LORA_TRAINING_SETTINGS.lora_alpha
+    LORA_DROPOUT: float = _LORA_TRAINING_SETTINGS.lora_dropout
+    LORA_EPOCHS: int = _LORA_TRAINING_SETTINGS.lora_epochs
+    LORA_BATCH_SIZE: int = _LORA_TRAINING_SETTINGS.lora_batch_size
+    LORA_USE_4BIT: bool = _LORA_TRAINING_SETTINGS.lora_use_4bit
+    LORA_OUTPUT_DIR: str = _LORA_TRAINING_SETTINGS.lora_output_dir
     # Ar-Ge: Judge/feedback sinyallerinden sürekli öğrenme bundle'ı üret
     ENABLE_CONTINUOUS_LEARNING: bool = get_bool_env("ENABLE_CONTINUOUS_LEARNING", False)
     CONTINUOUS_LEARNING_MIN_SFT_EXAMPLES: int = get_int_env(
