@@ -98,6 +98,7 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `core/config_observability.py` → `docs/module-notes/core/config_observability.py.md`
 - `core/config_orchestrator.py` → `docs/module-notes/core/config_orchestrator.py.md`
 - `core/config_postgres.py` → `docs/module-notes/core/config_postgres.py.md`
+- `core/config_rag_entity.py` → `docs/module-notes/core/config_rag_entity.py.md`
 - `core/config_rag_store.py` → `docs/module-notes/core/config_rag_store.py.md`
 - `core/config_rate_limit.py` → `docs/module-notes/core/config_rate_limit.py.md`
 - `core/config_runtime_env.py` → `docs/module-notes/core/config_runtime_env.py.md`
