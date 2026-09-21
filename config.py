@@ -24,6 +24,7 @@ import core.config_observability as config_observability
 from config_security import load_security_settings
 from core import config_dotenv, config_gpu_detect, config_postgres
 from core.config_app import load_app_runtime_settings
+from core.config_autonomy import load_autonomy_settings
 from core.config_browser import load_browser_settings
 from core.config_continuous_learning import load_continuous_learning_settings
 from core.config_cost_routing import load_cost_routing_settings
@@ -435,6 +436,7 @@ SANDBOX_LIMITS = {
     "timeout": get_int_env("SANDBOX_TIMEOUT", 10),
 }
 
+_AUTONOMY_SETTINGS = load_autonomy_settings()
 _BROWSER_SETTINGS = load_browser_settings()
 _RATE_LIMIT_SETTINGS = load_rate_limit_settings(
     redis_max_connections_default=LLM_SETTINGS.REDIS_MAX_CONNECTIONS
@@ -533,6 +535,7 @@ class Config:
     llm_settings = LLM_SETTINGS
     quality_gate_settings = _QUALITY_GATE_SETTINGS
     security_settings = SECURITY_SETTINGS
+    autonomy_settings = _AUTONOMY_SETTINGS
     browser_settings = _BROWSER_SETTINGS
     rate_limit_settings = _RATE_LIMIT_SETTINGS
     cost_routing_settings = _COST_ROUTING_SETTINGS
@@ -1005,16 +1008,9 @@ class Config:
     )
     NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS: int = get_int_env("NIGHTLY_MEMORY_RAG_KEEP_RECENT_DOCS", 2)
     ENABLE_EVENT_WEBHOOKS: bool = get_bool_env("ENABLE_EVENT_WEBHOOKS", True)
-    AUTONOMY_SERVICE_USER_ID: str = os.getenv(
-        "AUTONOMY_SERVICE_USER_ID", os.getenv("SYSTEM_USER_ID", "system:autonomy")
-    )
-    AUTONOMY_WEBHOOK_SECRET: str = os.getenv(
-        "AUTONOMY_WEBHOOK_SECRET", os.getenv("SIDAR_AUTONOMY_WEBHOOK_SECRET", "")
-    )
-    AUTONOMY_WEBHOOK_REQUIRE_SIGNATURE: bool = get_bool_env(
-        "AUTONOMY_WEBHOOK_REQUIRE_SIGNATURE",
-        get_bool_env("SIDAR_AUTONOMY_WEBHOOK_REQUIRE_SIGNATURE", True),
-    )
+    AUTONOMY_SERVICE_USER_ID: str = _AUTONOMY_SETTINGS.autonomy_service_user_id
+    AUTONOMY_WEBHOOK_SECRET: str = _AUTONOMY_SETTINGS.autonomy_webhook_secret
+    AUTONOMY_WEBHOOK_REQUIRE_SIGNATURE: bool = _AUTONOMY_SETTINGS.autonomy_webhook_require_signature
     ENABLE_SWARM_FEDERATION: bool = _ORCHESTRATOR_SETTINGS.enable_swarm_federation
     SWARM_FEDERATION_SHARED_SECRET: str = _ORCHESTRATOR_SETTINGS.swarm_federation_shared_secret
     ENABLE_GRAPH_RAG: bool = get_bool_env("ENABLE_GRAPH_RAG", True)
