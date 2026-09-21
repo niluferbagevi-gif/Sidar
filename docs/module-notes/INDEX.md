@@ -80,6 +80,7 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `core/cache_metrics.py` → `docs/module-notes/core/cache_metrics.py.md`
 - `core/ci_remediation.py` → `docs/module-notes/core/ci_remediation.py.md`
 - `core/config_app.py` → `docs/module-notes/core/config_app.py.md`
+- `core/config_browser.py` → `docs/module-notes/core/config_browser.py.md`
 - `core/config_continuous_learning.py` → `docs/module-notes/core/config_continuous_learning.py.md`
 - `core/config_cost_routing.py` → `docs/module-notes/core/config_cost_routing.py.md`
 - `core/config_dirs.py` → `docs/module-notes/core/config_dirs.py.md`

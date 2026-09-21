@@ -24,6 +24,7 @@ import core.config_observability as config_observability
 from config_security import load_security_settings
 from core import config_dotenv, config_gpu_detect, config_postgres
 from core.config_app import load_app_runtime_settings
+from core.config_browser import load_browser_settings
 from core.config_continuous_learning import load_continuous_learning_settings
 from core.config_cost_routing import load_cost_routing_settings
 from core.config_dirs import initialize_directories as initialize_required_directories
@@ -433,6 +434,7 @@ SANDBOX_LIMITS = {
     "timeout": get_int_env("SANDBOX_TIMEOUT", 10),
 }
 
+_BROWSER_SETTINGS = load_browser_settings()
 _RATE_LIMIT_SETTINGS = load_rate_limit_settings(
     redis_max_connections_default=LLM_SETTINGS.REDIS_MAX_CONNECTIONS
 )
@@ -529,6 +531,7 @@ class Config:
     llm_settings = LLM_SETTINGS
     quality_gate_settings = _QUALITY_GATE_SETTINGS
     security_settings = SECURITY_SETTINGS
+    browser_settings = _BROWSER_SETTINGS
     rate_limit_settings = _RATE_LIMIT_SETTINGS
     cost_routing_settings = _COST_ROUTING_SETTINGS
     continuous_learning_settings = _CONTINUOUS_LEARNING_SETTINGS
@@ -978,10 +981,10 @@ class Config:
     WHISPER_MODEL: str = _MULTIMODAL_SETTINGS.whisper_model
     VOICE_WS_MAX_BYTES: int = _MULTIMODAL_SETTINGS.voice_ws_max_bytes
     WS_AUTH_TIMEOUT_SECONDS: int = get_int_env("WS_AUTH_TIMEOUT_SECONDS", 15)
-    BROWSER_PROVIDER: str = os.getenv("BROWSER_PROVIDER", "auto")
-    BROWSER_HEADLESS: bool = get_bool_env("BROWSER_HEADLESS", True)
-    BROWSER_TIMEOUT_MS: int = get_int_env("BROWSER_TIMEOUT_MS", 15000)
-    BROWSER_ALLOWED_DOMAINS: list[str] = get_list_env("BROWSER_ALLOWED_DOMAINS", [])
+    BROWSER_PROVIDER: str = _BROWSER_SETTINGS.browser_provider
+    BROWSER_HEADLESS: bool = _BROWSER_SETTINGS.browser_headless
+    BROWSER_TIMEOUT_MS: int = _BROWSER_SETTINGS.browser_timeout_ms
+    BROWSER_ALLOWED_DOMAINS: list[str] = _BROWSER_SETTINGS.browser_allowed_domains
     ENABLE_LSP: bool = get_bool_env("ENABLE_LSP", True)
     LSP_TIMEOUT_SECONDS: int = get_int_env("LSP_TIMEOUT_SECONDS", 15)
     LSP_MAX_REFERENCES: int = get_int_env("LSP_MAX_REFERENCES", 200)
