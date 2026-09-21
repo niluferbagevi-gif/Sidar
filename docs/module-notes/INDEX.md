@@ -94,6 +94,7 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `core/config_logging_setup.py` → `docs/module-notes/core/config_logging_setup.py.md`
 - `core/config_lora_training.py` → `docs/module-notes/core/config_lora_training.py.md`
 - `core/config_lsp.py` → `docs/module-notes/core/config_lsp.py.md`
+- `core/config_memory_security.py` → `docs/module-notes/core/config_memory_security.py.md`
 - `core/config_multimodal.py` → `docs/module-notes/core/config_multimodal.py.md`
 - `core/config_observability.py` → `docs/module-notes/core/config_observability.py.md`
 - `core/config_orchestrator.py` → `docs/module-notes/core/config_orchestrator.py.md`
