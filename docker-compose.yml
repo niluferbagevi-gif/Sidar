@@ -85,7 +85,7 @@ services:
     # `docker compose pull` sonrası sessizce farklı davranış/API değişikliği
     # getirebilir. Diğerleriyle aynı desende belirli bir sürüme pinlendi
     # (Docker Hub'daki en güncel stabil etiket).
-    image: ollama/ollama:0.34.1
+    image: ollama/ollama:0.34.2
     container_name: ${COMPOSE_PROJECT_NAME:-sidar}_ollama
     restart: unless-stopped
     environment:
