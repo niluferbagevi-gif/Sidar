@@ -365,7 +365,7 @@ def test_helm_chart_rejects_inline_postgresql_password_generation():
 def test_observability_compose_pins_tracing_and_exports_infra_metrics():
     services = _merged_compose_services()
 
-    assert services["redis"]["image"] == "redis:7.4-alpine"
+    assert services["redis"]["image"] == "redis:8.10-alpine"
     assert services["postgres"]["image"] == "pgvector/pgvector:0.8.6-pg16"
 
     assert services["jaeger"]["image"] == "jaegertracing/all-in-one:1.76.0"
