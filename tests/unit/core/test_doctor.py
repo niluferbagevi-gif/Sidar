@@ -9,6 +9,7 @@ import pytest
 from core import doctor
 from core.doctor import DoctorCheck
 from core.doctor.checks import database as database_checks
+from core.doctor.checks import rag as rag_checks
 from core.doctor.checks import security as security_checks
 
 # scripts.secret_strength.is_weak_secret rejects low-uniqueness/repeated-character
@@ -2183,7 +2184,7 @@ def test_ensure_rag_index_placeholder_preserves_existing_index(tmp_path) -> None
     index_path = rag_dir / "index.json"
     index_path.write_text('{"existing": true}', encoding="utf-8")
 
-    assert doctor._ensure_rag_index_placeholder(rag_dir) == index_path
+    assert rag_checks._ensure_rag_index_placeholder(rag_dir) == index_path
     assert index_path.read_text(encoding="utf-8") == '{"existing": true}'
 
 
