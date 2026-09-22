@@ -7,9 +7,7 @@ opaque installation phase.
 
 from __future__ import annotations
 
-import argparse
 import asyncio
-import contextlib
 import importlib.util
 import json
 import os
@@ -29,9 +27,6 @@ from core.doctor.models import (
     validate_auto_fix_command,
     validate_doctor_check_contract,
 )
-from core.doctor.models import (
-    redact_sensitive_text as _redact_sensitive_text,
-)
 from core.doctor.reporting import build_doctor_report, write_doctor_report
 from core.rag.readiness import build_readiness_report
 from core.utils.trusted_subprocess import run_trusted_command
@@ -43,10 +38,12 @@ DEFAULT_OUTPUT = BASE_DIR / "artifacts" / "install" / "doctor.json"
 __all__ = [
     "DoctorCheck",
     "DoctorCheckContract",
+    "build_doctor_report",
     "main",
     "run_doctor_report",
     "validate_auto_fix_command",
     "validate_doctor_check_contract",
+    "write_doctor_report",
 ]
 
 
@@ -127,10 +124,6 @@ def check_prometheus_runtime() -> DoctorCheck:
     )
 
 
-def _is_postgres_url(parsed: Any) -> bool:
-    return bool(parsed and str(parsed.scheme).startswith("postgresql"))
-
-
 def _postgres_dsn_from_components(*, host: str | None = None) -> str:
     user = os.getenv("POSTGRES_USER", "sidar").strip() or "sidar"
     password = os.getenv("POSTGRES_PASSWORD", "sidar")
@@ -179,211 +172,6 @@ def _parse_url(database_url: str) -> tuple[Any, str]:
         return urlparse(database_url), ""
     except ValueError as exc:
         return None, str(exc)
-
-
-def _redact_url(database_url: str) -> str:
-    text = str(database_url or "").strip()
-    if not text or "://" not in text:
-        return text
-    scheme, rest = text.split("://", 1)
-    if "@" not in rest:
-        return text
-    credentials, host_part = rest.split("@", 1)
-    if ":" not in credentials:
-        return text
-    username = credentials.split(":", 1)[0]
-    return f"{scheme}://{username}:***@{host_part}"
-
-
-def _redact_exception_text(exc: BaseException, *, database_url: str = "") -> str:
-    text = _redact_sensitive_text(str(exc))
-    candidates = {database_url, _normalize_postgres_dsn(database_url), _redact_url(database_url)}
-    parsed, _ = _parse_url(database_url)
-    password = unquote(str(getattr(parsed, "password", "") or "")) if parsed else ""
-    if password:
-        candidates.add(password)
-    for candidate in sorted((value for value in candidates if value), key=len, reverse=True):
-        text = text.replace(candidate, "***" if candidate == password else _redact_url(candidate))
-    return _redact_sensitive_text(text)
-
-
-def _postgres_connectivity_failure_guidance(exc: BaseException) -> tuple[str, dict[str, Any]]:
-    text = f"{type(exc).__name__} {exc}".lower()
-    common_commands = [
-        "docker compose ps postgres",
-        "uv run python -m core.doctor artifacts/install/doctor.json",
-    ]
-    if any(
-        marker in text
-        for marker in (
-            "password authentication failed",
-            "authentication failed",
-            "invalid password",
-            "28p01",
-            "permission denied",
-            "auth",
-        )
-    ):
-        return (
-            "PostgreSQL authentication failed; verify "
-            "DATABASE_URL/SIDAR_CONTAINER_DATABASE_URL/POSTGRES_PASSWORD parity. "
-            "If a Docker volume already existed, sync the stored PostgreSQL user password or reset "
-            "the dev volume. "
-            "Sidar will enter SQLite degraded mode and pgvector will fall back to BM25.",
-            {
-                "failure_category": "authentication",
-                "root_cause_hints": [
-                    "DATABASE_URL password does not match POSTGRES_PASSWORD",
-                    "SIDAR_CONTAINER_DATABASE_URL uses different credentials than DATABASE_URL",
-                    "PostgreSQL Docker volume was initialized with an older password",
-                    "sidar user exists with a different password in PostgreSQL",
-                ],
-                "remediation_steps": [
-                    "If Doctor/database_env is already pass but auth still fails, synchronize the "
-                    "stored PostgreSQL role password in the existing Docker volume.",
-                    "Run uv run python -m scripts.sync_postgres_password so the password is read "
-                    "from POSTGRES_PASSWORD without exposing it in the shell command.",
-                    "Restart PostgreSQL and rerun `uv run python -m core.doctor "
-                    "artifacts/install/doctor.json`.",
-                ],
-                "auto_fix": "uv run python -m scripts.sync_postgres_password",
-                "recommended_commands": [
-                    "uv run python -m scripts.sync_postgres_password",
-                    *common_commands,
-                    "# development only: docker compose down && docker volume rm "
-                    "<sidar_postgres_data> && docker compose up -d postgres",
-                ],
-            },
-        )
-    if any(
-        marker in text for marker in ("role", "does not exist", "3d000", "invalid catalog name")
-    ):
-        return (
-            "PostgreSQL is reachable but the expected user/database is missing; verify "
-            "POSTGRES_USER and POSTGRES_DB initialization.",
-            {
-                "failure_category": "missing_role_or_database",
-                "root_cause_hints": [
-                    "sidar user or sidar database was not created",
-                    "DATABASE_URL points to a database name that differs from POSTGRES_DB",
-                    "Existing Docker volume was initialized before current .env values",
-                ],
-                "remediation_steps": [
-                    "Check POSTGRES_USER and POSTGRES_DB in .env.",
-                    "Create the missing role/database or reset the development PostgreSQL volume.",
-                ],
-                "auto_fix": "uv run python -m scripts.create_missing_databases",
-                "recommended_commands": common_commands,
-            },
-        )
-    if "ssl" in text and any(
-        marker in text for marker in ("cannot be changed now", "cantchangeruntimeparamerror")
-    ):
-        return (
-            'DATABASE_URL contains an unsupported ssl query value (e.g. "ssl=disable") that '
-            "asyncpg forwards to PostgreSQL as a startup parameter; PostgreSQL rejects it "
-            "because ssl is a server-only GUC. This is not a certificate/handshake problem.",
-            {
-                "failure_category": "invalid_ssl_query_param",
-                "root_cause_hints": [
-                    "DATABASE_URL/SIDAR_CONTAINER_DATABASE_URL has a libpq-style sslmode value "
-                    '(e.g. "?ssl=disable") that asyncpg does not understand as a client-side '
-                    "flag",
-                    "asyncpg passes the unrecognized value through as a server startup "
-                    'parameter, and PostgreSQL refuses it with `parameter "ssl" cannot be '
-                    "changed now`",
-                    "This is usually a legacy value left over from an older install/config; "
-                    "the current auto-derivation path never emits ssl=<value>",
-                ],
-                "remediation_steps": [
-                    "Run uv run python -m scripts.sync_database_passwords "
-                    "--remove-explicit-urls to drop the explicit DATABASE_URL/"
-                    "SIDAR_CONTAINER_DATABASE_URL and let Sidar re-derive them from "
-                    "POSTGRES_* parts.",
-                    "If an explicit URL must be kept, remove the ssl query parameter "
-                    "entirely (asyncpg does not accept libpq sslmode strings such as "
-                    "disable/allow/prefer/require).",
-                ],
-                "auto_fix": (
-                    "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
-                ),
-                "recommended_commands": [
-                    "uv run python -m scripts.sync_database_passwords --remove-explicit-urls",
-                    *common_commands,
-                ],
-            },
-        )
-    if any(
-        marker in text
-        for marker in (
-            "ssl",
-            "tls",
-            "certificate verify failed",
-            "handshake",
-        )
-    ):
-        return (
-            "PostgreSQL TLS/SSL handshake failed; verify certificate trust, SSL mode and "
-            "proxy/network interception settings.",
-            {
-                "failure_category": "tls",
-                "root_cause_hints": [
-                    "PostgreSQL certificate is untrusted or expired",
-                    "DATABASE_URL SSL mode does not match the server configuration",
-                    "A proxy or network appliance interrupted the TLS handshake",
-                ],
-                "recommended_commands": common_commands,
-            },
-        )
-    if any(marker in text for marker in ("timeout", "timed out", "zaman aş")):
-        return (
-            "PostgreSQL connectivity smoke timed out; verify the service, host, port and container "
-            "networking.",
-            {
-                "failure_category": "timeout",
-                "root_cause_hints": [
-                    "PostgreSQL service is slow or unavailable",
-                    "DATABASE_URL host/port is unreachable from this process",
-                ],
-                "recommended_commands": common_commands,
-            },
-        )
-    if any(
-        marker in text
-        for marker in (
-            "connectionrefusederror",
-            "connection refused",
-            "could not connect",
-            "server closed",
-            "connection failed",
-            "connection reset",
-        )
-    ):
-        return (
-            "PostgreSQL connectivity smoke failed; verify that the container/service is running "
-            "and DATABASE_URL host/port are correct.",
-            {
-                "failure_category": "connection",
-                "root_cause_hints": [
-                    "PostgreSQL container is not running",
-                    "DATABASE_URL points to localhost from the wrong runtime context",
-                    "Port 5432 is not published or reachable",
-                ],
-                "recommended_commands": common_commands,
-            },
-        )
-    return (
-        "PostgreSQL connectivity smoke failed; Sidar will enter SQLite degraded mode and "
-        "pgvector/BM25 fallback may be used",
-        {
-            "failure_category": "unknown",
-            "root_cause_hints": [
-                "Verify .env database credentials",
-                "Verify PostgreSQL service status and networking",
-            ],
-            "recommended_commands": common_commands,
-        },
-    )
 
 
 def _get_bool_env(name: str, default: bool) -> bool:
@@ -455,278 +243,11 @@ def _dotenv_source_report(keys: tuple[str, ...]) -> dict[str, Any]:
     return {"sources": sources, "definitions": definitions}
 
 
-def _source_message(key: str, sources: dict[str, dict[str, str]]) -> str:
-    source = sources.get(key) or {}
-    path = source.get("path", "")
-    label = source.get("label", "")
-    if not path or label == "base":
-        return ""
-    return f"{key} is overridden in {path}"
-
-
-def _database_name(parsed: Any) -> str:
-    return str(getattr(parsed, "path", "") or "").lstrip("/").split("/", 1)[0]
-
-
-def _validate_postgres_env_sync(
-    *,
-    label: str,
-    parsed: Any,
-    postgres_user: str,
-    postgres_password: str,
-    postgres_db: str,
-) -> tuple[list[str], list[str]]:
-    failures: list[str] = []
-    warnings: list[str] = []
-    if not _is_postgres_url(parsed):
-        return failures, warnings
-
-    # ``parse_qsl`` is deliberately avoided here: Doctor only needs the key and
-    # malformed percent escapes in a DSN must not make the readiness report crash.
-    query_keys = {
-        item.partition("=")[0].strip().lower()
-        for item in str(getattr(parsed, "query", "") or "").split("&")
-        if item.partition("=")[0].strip()
-    }
-    if "ssl" in query_keys:
-        failures.append(
-            f"{label} contains unsupported ssl query parameter; remove it instead of using "
-            "libpq-style ssl=disable/allow/prefer/require with asyncpg"
-        )
-
-    url_user = unquote(str(getattr(parsed, "username", "") or ""))
-    url_password = unquote(str(getattr(parsed, "password", "") or ""))
-    url_db = _database_name(parsed)
-
-    if _is_weak_secret(url_password):
-        failures.append(f"{label} contains an empty or weak database password")
-    if postgres_user and url_user and url_user != postgres_user:
-        failures.append(f"{label} user does not match POSTGRES_USER")
-    if postgres_password and url_password and url_password != postgres_password:
-        failures.append(
-            f"{label} password does not match POSTGRES_PASSWORD; PostgreSQL may reject "
-            f"authentication"
-        )
-    if postgres_db and url_db and url_db != postgres_db:
-        warnings.append(f"{label} database name does not match POSTGRES_DB")
-    return failures, warnings
-
-
-def _validate_database_url_pair_sync(
-    *,
-    database_parsed: Any,
-    container_parsed: Any,
-) -> tuple[list[str], list[str]]:
-    failures: list[str] = []
-    warnings: list[str] = []
-    if not (_is_postgres_url(database_parsed) and _is_postgres_url(container_parsed)):
-        return failures, warnings
-
-    database_user = unquote(str(getattr(database_parsed, "username", "") or ""))
-    container_user = unquote(str(getattr(container_parsed, "username", "") or ""))
-    database_password = unquote(str(getattr(database_parsed, "password", "") or ""))
-    container_password = unquote(str(getattr(container_parsed, "password", "") or ""))
-    database_name = _database_name(database_parsed)
-    container_name = _database_name(container_parsed)
-
-    if database_user and container_user and database_user != container_user:
-        failures.append("DATABASE_URL user does not match SIDAR_CONTAINER_DATABASE_URL user")
-    if database_password and container_password and database_password != container_password:
-        failures.append(
-            "DATABASE_URL password does not match SIDAR_CONTAINER_DATABASE_URL password; "
-            "local and Docker PostgreSQL authentication will drift"
-        )
-    if database_name and container_name and database_name != container_name:
-        warnings.append("DATABASE_URL database name does not match SIDAR_CONTAINER_DATABASE_URL")
-    return failures, warnings
-
-
 def check_database_env() -> DoctorCheck:
-    database_url, container_url, explicit_database_url, explicit_container_url = (
-        _resolved_database_urls()
-    )
-    postgres_user = os.getenv("POSTGRES_USER", "").strip()
-    postgres_password = os.getenv("POSTGRES_PASSWORD", "").strip()
-    postgres_db = os.getenv("POSTGRES_DB", "").strip()
-    parsed, database_url_parse_error = _parse_url(database_url)
-    container_parsed, container_url_parse_error = _parse_url(container_url)
-    source_report = _dotenv_source_report(
-        ("DATABASE_URL", "SIDAR_CONTAINER_DATABASE_URL", "POSTGRES_PASSWORD")
-    )
-    env_sources = source_report.get("sources", {})
-    env_definitions = source_report.get("definitions", {})
+    """Real implementation lives in core.doctor.checks.database (thin pass-through)."""
+    from core.doctor.checks.database import check_database_env as _impl
 
-    failures: list[str] = []
-    warnings: list[str] = []
-    if database_url_parse_error:
-        failures.append(f"DATABASE_URL is malformed: {database_url_parse_error}")
-    if container_url_parse_error:
-        failures.append(f"SIDAR_CONTAINER_DATABASE_URL is malformed: {container_url_parse_error}")
-    if not database_url:
-        warnings.append(
-            "DATABASE_URL could not be resolved; database readiness cannot be fully verified"
-        )
-    else:
-        sync_failures, sync_warnings = _validate_postgres_env_sync(
-            label="DATABASE_URL",
-            parsed=parsed,
-            postgres_user=postgres_user,
-            postgres_password=postgres_password,
-            postgres_db=postgres_db,
-        )
-        failures.extend(sync_failures)
-        warnings.extend(sync_warnings)
-    if postgres_password and _is_weak_secret(postgres_password):
-        failures.append("POSTGRES_PASSWORD is weak")
-    if container_url:
-        container_failures, container_warnings = _validate_postgres_env_sync(
-            label="SIDAR_CONTAINER_DATABASE_URL",
-            parsed=container_parsed,
-            postgres_user=postgres_user,
-            postgres_password=postgres_password,
-            postgres_db=postgres_db,
-        )
-        failures.extend(container_failures)
-        warnings.extend(container_warnings)
-    if database_url and container_url:
-        pair_failures, pair_warnings = _validate_database_url_pair_sync(
-            database_parsed=parsed,
-            container_parsed=container_parsed,
-        )
-        failures.extend(pair_failures)
-        warnings.extend(pair_warnings)
-    if container_url and "sidar:sidar@" in container_url:
-        failures.append("SIDAR_CONTAINER_DATABASE_URL uses the legacy default password")
-
-    # An explicit DATABASE_URL/SIDAR_CONTAINER_DATABASE_URL that isn't defined in any
-    # dotenv file Sidar itself loads (env_sources) is inherited from the parent
-    # process/shell environment (an old `export`, a Docker Compose `environment:`/
-    # `env_file` injection, systemd, etc.). scripts.sync_database_passwords only edits
-    # dotenv files, so it reports "no explicit URL found" and cannot fix this — without
-    # this note, Doctor keeps flagging the same drift after every "successful" auto-fix.
-    database_url_unattributed = bool(explicit_database_url) and "DATABASE_URL" not in env_sources
-    container_url_unattributed = (
-        bool(explicit_container_url) and "SIDAR_CONTAINER_DATABASE_URL" not in env_sources
-    )
-    for key, unattributed in (
-        ("DATABASE_URL", database_url_unattributed),
-        ("SIDAR_CONTAINER_DATABASE_URL", container_url_unattributed),
-    ):
-        if not unattributed:
-            continue
-        if not any(msg.startswith(f"{key} ") for msg in (*failures, *warnings)):
-            continue
-        source_diagnostic = (
-            f"{key} is set but not defined in Sidar's dotenv chain (.env, .env.advanced, "
-            ".env.<SIDAR_ENV>, DOTENV_FILE, SIDAR_KEYS_FILE); it is inherited from the parent "
-            "process/shell environment (or a Docker Compose environment:/env_file injection), "
-            "so scripts.sync_database_passwords cannot edit it. Unset it in the parent shell or "
-            "Docker Compose config, or restart the launcher, before rechecking."
-        )
-        # Keep source attribution visible in the top-level message even when the
-        # underlying URL defect is a failure (Doctor otherwise renders failures
-        # instead of warnings).
-        (failures if failures else warnings).append(source_diagnostic)
-
-    if (explicit_database_url or explicit_container_url) and failures:
-        warnings.append(
-            "Explicit DATABASE_URL/SIDAR_CONTAINER_DATABASE_URL is set; prefer derived "
-            "POSTGRES_* flow and run scripts.sync_database_passwords --remove-explicit-urls "
-            "for long-term safety"
-        )
-
-    if failures:
-        for key in ("DATABASE_URL", "SIDAR_CONTAINER_DATABASE_URL"):
-            source_note = _source_message(key, env_sources)
-            if source_note and source_note not in failures:
-                failures.append(source_note)
-
-    status = "fail" if failures else ("warn" if warnings else "pass")
-    message = "; ".join(failures or warnings or ["database environment looks secure"])
-    failure_reason = "; ".join(failures) if failures else ""
-    database_config_missing = not database_url and not postgres_password
-    bootstrap_command = "uv run python -m scripts.bootstrap_env --profile development"
-    sync_command = "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
-    auto_fix = bootstrap_command if database_config_missing else sync_command
-    recommended_commands = (
-        [
-            bootstrap_command,
-            "SIDAR_ENV=development uv run python -m core.doctor artifacts/install/doctor.json",
-            "docker compose up -d postgres",
-        ]
-        if database_config_missing
-        else [
-            *(
-                ["unset DATABASE_URL SIDAR_CONTAINER_DATABASE_URL"]
-                if database_url_unattributed or container_url_unattributed
-                else []
-            ),
-            sync_command,
-            "uv run python -m scripts.sync_database_passwords",
-            "uv run python -m core.doctor artifacts/install/doctor.json",
-            "docker compose ps postgres",
-        ]
-    )
-    return DoctorCheck(
-        "database_env",
-        status,
-        message,
-        {
-            "database_url_set": bool(database_url),
-            "container_database_url_set": bool(container_url),
-            "database_url_explicit": explicit_database_url,
-            "container_database_url_explicit": explicit_container_url,
-            "database_url_derived": bool(database_url) and not explicit_database_url,
-            "container_database_url_derived": bool(container_url) and not explicit_container_url,
-            "postgres_user_set": bool(postgres_user),
-            "postgres_password_set": bool(postgres_password),
-            "postgres_db_set": bool(postgres_db),
-            "failure_reason": failure_reason,
-            "scheme": parsed.scheme if parsed else "",
-            "container_scheme": container_parsed.scheme if container_parsed else "",
-            "database_url_source": (env_sources.get("DATABASE_URL") or {}).get("path", ""),
-            "container_database_url_source": (
-                env_sources.get("SIDAR_CONTAINER_DATABASE_URL") or {}
-            ).get("path", ""),
-            "database_url_source_unattributed": database_url_unattributed,
-            "container_database_url_source_unattributed": container_url_unattributed,
-            "postgres_password_source": (env_sources.get("POSTGRES_PASSWORD") or {}).get(
-                "path", ""
-            ),
-            "env_source_definitions": env_definitions,
-            "auto_fix": auto_fix,
-            "recommended_commands": recommended_commands,
-            "root_cause_hints": [
-                "DATABASE_URL ve SIDAR_CONTAINER_DATABASE_URL aktif dotenv zincirinde tanımlı "
-                "değilse Sidar bunları POSTGRES_* parçalarından otomatik üretir",
-                "Açık PostgreSQL URL tanımları tutulacaksa URL içindeki parola "
-                "POSTGRES_PASSWORD ile eşleşmeli ve URL-encoded olmalı",
-            ],
-            "remediation_steps": [
-                *(
-                    [
-                        "DATABASE_URL veya SIDAR_CONTAINER_DATABASE_URL parent shell/process "
-                        "ortamından geliyorsa önce `unset DATABASE_URL "
-                        "SIDAR_CONTAINER_DATABASE_URL` çalıştırın; bir alt süreç parent shell "
-                        "değişkenlerini silemeyeceği için dosya tabanlı auto-fix tek başına bu "
-                        "override'ı düzeltemez. Ardından Doctor'ı aynı shell'de yeniden çalıştırın."
-                    ]
-                    if database_url_unattributed or container_url_unattributed
-                    else []
-                ),
-                "Kalıcı çözüm için uv run python -m scripts.sync_database_passwords "
-                "--remove-explicit-urls ile dotenv zincirindeki açık DATABASE_URL ve "
-                "SIDAR_CONTAINER_DATABASE_URL tanımlarını kaldırıp Sidar'ın POSTGRES_* "
-                "parçalarından üretmesine izin verin.",
-                "Açık URL tutmanız gerekiyorsa uv run python -m scripts.sync_database_passwords "
-                "ile dotenv zincirindeki PostgreSQL URL parolalarını POSTGRES_PASSWORD ile "
-                "eşitleyin.",
-                "Env değerleri doğruysa fakat bağlantı hâlâ başarısızsa PostgreSQL "
-                "kullanıcısının kayıtlı parolasını ALTER USER ile güncelleyin veya yalnız "
-                "geliştirme ortamında volume resetleyin.",
-            ],
-        },
-    )
+    return _impl()
 
 
 def _run_coro_sync(coro: Any) -> Any:
@@ -774,215 +295,19 @@ async def _probe_postgres_connectivity(
 
 
 def check_database_connectivity() -> DoctorCheck:
-    database_url, _, explicit_database_url, _ = _resolved_database_urls()
-    parsed, parse_error = _parse_url(database_url)
-    details: dict[str, Any] = {
-        "database_url_set": bool(database_url),
-        "database_url_explicit": explicit_database_url,
-        "database_url_derived": bool(database_url) and not explicit_database_url,
-        "database_url": _redact_url(database_url),
-        "scheme": parsed.scheme if parsed else "",
-        "recommended_commands": [
-            "docker compose ps postgres",
-            "uv run python -m core.doctor artifacts/install/doctor.json",
-        ],
-    }
-    source_report = _dotenv_source_report(("DATABASE_URL",))
-    database_url_source = (source_report.get("sources", {}).get("DATABASE_URL") or {}).get(
-        "path", ""
-    )
-    database_url_unattributed = bool(explicit_database_url) and not database_url_source
-    details["database_url_source"] = database_url_source
-    details["database_url_source_unattributed"] = database_url_unattributed
-    if not database_url:
-        return DoctorCheck(
-            "database_connectivity",
-            "warn",
-            "DATABASE_URL could not be resolved; PostgreSQL connectivity smoke was skipped",
-            details,
-        )
-    if parse_error:
-        details["error"] = parse_error
-        details["failure_category"] = "invalid_dsn"
-        return DoctorCheck(
-            "database_connectivity",
-            "warn",
-            "DATABASE_URL is malformed; PostgreSQL connectivity smoke was skipped",
-            details,
-        )
-    if not _is_postgres_url(parsed):
-        return DoctorCheck(
-            "database_connectivity",
-            "pass",
-            "non-PostgreSQL DATABASE_URL configured; PostgreSQL connectivity smoke skipped",
-            details,
-        )
+    """Real implementation lives in core.doctor.checks.database (thin pass-through)."""
+    from core.doctor.checks.database import check_database_connectivity as _impl
 
-    timeout_seconds = max(0.1, int(os.getenv("HEALTHCHECK_CONNECT_TIMEOUT_MS", "250")) / 1000)
-    details["timeout_seconds"] = timeout_seconds
-    try:
-        probe = _run_coro_sync(
-            _probe_postgres_connectivity(database_url, timeout_seconds=timeout_seconds)
-        )
-        details.update(probe)
-    except ModuleNotFoundError as exc:
-        details["error"] = _redact_exception_text(exc, database_url=database_url)
-        return DoctorCheck(
-            "database_connectivity",
-            "warn",
-            "asyncpg is unavailable; run `uv sync --all-extras` before PostgreSQL smoke checks",
-            details,
-        )
-    except Exception as exc:
-        details["error"] = _redact_exception_text(exc, database_url=database_url)
-        details["error_type"] = type(exc).__name__
-        message, guidance = _postgres_connectivity_failure_guidance(exc)
-        details.update(guidance)
-        if database_url_unattributed and guidance.get("failure_category") == (
-            "invalid_ssl_query_param"
-        ):
-            unset_command = "unset DATABASE_URL SIDAR_CONTAINER_DATABASE_URL"
-            message += (
-                " The effective DATABASE_URL is inherited from the parent process/shell; the "
-                "dotenv repair command cannot change it. Unset it there and rerun Doctor."
-            )
-            details["parent_environment_remediation"] = unset_command
-            details.setdefault("remediation_steps", []).insert(
-                0,
-                "Run `unset DATABASE_URL SIDAR_CONTAINER_DATABASE_URL` in the parent shell, "
-                "then rerun Doctor from that same shell.",
-            )
-            recommended = details.setdefault("recommended_commands", [])
-            recommended.insert(0, unset_command)
-        return DoctorCheck("database_connectivity", "warn", message, details)
-
-    if os.getenv("RAG_VECTOR_BACKEND", "chroma").strip().lower() == "pgvector" and not details.get(
-        "pgvector_extension_installed"
-    ):
-        return DoctorCheck(
-            "database_connectivity",
-            "warn",
-            "PostgreSQL is reachable, but pgvector extension is not installed yet",
-            details,
-        )
-    return DoctorCheck(
-        "database_connectivity",
-        "pass",
-        "PostgreSQL connectivity smoke passed",
-        details,
-    )
+    return _impl()
 
 
 def check_pgvector_ready(
     database_connectivity: DoctorCheck | None = None,
 ) -> DoctorCheck:
-    """Check pgvector after reusing an optional PostgreSQL connectivity result."""
-    vector_backend = os.getenv("RAG_VECTOR_BACKEND", "chroma").strip().lower()
-    details: dict[str, Any] = {
-        "vector_backend": vector_backend,
-        "required": vector_backend == "pgvector",
-    }
-    if vector_backend != "pgvector":
-        return DoctorCheck(
-            "pgvector_ready",
-            "pass",
-            "RAG_VECTOR_BACKEND is not pgvector; pgvector readiness check skipped",
-            details,
-        )
+    """Real implementation lives in core.doctor.checks.database (thin pass-through)."""
+    from core.doctor.checks.database import check_pgvector_ready as _impl
 
-    database_url, _, explicit_database_url, _ = _resolved_database_urls()
-    parsed, parse_error = _parse_url(database_url)
-    details.update(
-        {
-            "database_url_set": bool(database_url),
-            "database_url_explicit": explicit_database_url,
-            "database_url_derived": bool(database_url) and not explicit_database_url,
-            "database_url": _redact_url(database_url),
-            "scheme": parsed.scheme if parsed else "",
-            "recommended_commands": [
-                "docker compose pull postgres && docker compose up -d postgres",
-                "uv run python -m scripts.create_missing_databases",
-                "uv run python -m core.doctor artifacts/install/doctor.json",
-            ],
-            "auto_fix": "docker compose pull postgres && docker compose up -d postgres",
-        }
-    )
-    if not database_url:
-        return DoctorCheck("pgvector_ready", "warn", "DATABASE_URL could not be resolved", details)
-    if parse_error:
-        details["error"] = parse_error
-        details["failure_category"] = "invalid_dsn"
-        return DoctorCheck("pgvector_ready", "warn", "DATABASE_URL is malformed", details)
-    if not _is_postgres_url(parsed):
-        return DoctorCheck(
-            "pgvector_ready",
-            "warn",
-            "RAG_VECTOR_BACKEND=pgvector but DATABASE_URL is not PostgreSQL",
-            details,
-        )
-
-    if database_connectivity is not None:
-        details["database_connectivity_status"] = database_connectivity.status
-        connectivity_details = database_connectivity.details
-        if connectivity_details.get("select_1"):
-            details.update(
-                {
-                    key: connectivity_details[key]
-                    for key in ("select_1", "pgvector_extension_installed")
-                    if key in connectivity_details
-                }
-            )
-        elif database_connectivity.status != "pass":
-            details["blocked_by"] = "database_connectivity"
-            for key in ("error", "error_type", "failure_category"):
-                if key in connectivity_details:
-                    details[key] = connectivity_details[key]
-            return DoctorCheck(
-                "pgvector_ready",
-                "warn",
-                "pgvector readiness is blocked by the PostgreSQL connectivity check",
-                details,
-            )
-
-    timeout_seconds = max(0.1, int(os.getenv("HEALTHCHECK_CONNECT_TIMEOUT_MS", "250")) / 1000)
-    details["timeout_seconds"] = timeout_seconds
-    if "select_1" not in details:
-        try:
-            probe = _run_coro_sync(
-                _probe_postgres_connectivity(database_url, timeout_seconds=timeout_seconds)
-            )
-            details.update(probe)
-        except Exception as exc:
-            details["error"] = _redact_exception_text(exc, database_url=database_url)
-            details["error_type"] = type(exc).__name__
-            return DoctorCheck(
-                "pgvector_ready",
-                "warn",
-                (
-                    "pgvector readiness could not be verified because PostgreSQL "
-                    "connectivity probe failed"
-                ),
-                details,
-            )
-
-    if not details.get("pgvector_extension_installed"):
-        return DoctorCheck(
-            "pgvector_ready",
-            "fail",
-            "RAG_VECTOR_BACKEND=pgvector but 'vector' extension is not installed",
-            details,
-        )
-    return DoctorCheck(
-        "pgvector_ready",
-        "pass",
-        (
-            "pgvector extension is installed (this check verifies extension presence only; "
-            "it does not confirm the application's own pgvector connection pool actually "
-            "initializes at runtime - see core.rag.backends.pgvector.pgvector_runtime_status() "
-            "for that)"
-        ),
-        details,
-    )
+    return _impl(database_connectivity=database_connectivity)
 
 
 def _rag_readiness_state() -> dict[str, Any]:
@@ -1093,15 +418,6 @@ def _rag_readiness_state() -> dict[str, Any]:
     }
 
 
-def _ensure_rag_index_placeholder(rag_dir: Path) -> Path:
-    """Create an empty doctor-facing RAG index placeholder when missing."""
-    rag_dir.mkdir(parents=True, exist_ok=True)
-    index_path = rag_dir / "index.json"
-    if not index_path.exists():
-        index_path.write_text("{}", encoding="utf-8")
-    return index_path
-
-
 def _query_entity_graph_counts_from_store(rag_dir: Path) -> dict[str, Any]:
     """Read GraphRAG entity counts from DocumentStore for post-fix verification."""
     try:
@@ -1139,326 +455,41 @@ def _query_entity_graph_counts_from_store(rag_dir: Path) -> dict[str, Any]:
 
 
 def check_rag_index_ready() -> DoctorCheck:
-    state = _rag_readiness_state()
-    details = state["details"]
-    blockers = state["blockers"]
-    warnings = state["warnings"]
-    document_count = int(state["document_count"])
-    entity_memory_empty = bool(state["entity_memory_empty"])
-    rag_dir = Path(str(details.get("rag_dir", BASE_DIR / "data/rag")))
-    if not rag_dir.is_absolute():
-        rag_dir = BASE_DIR / rag_dir
-    index_path = rag_dir / "index.json"
-    index_missing_before_fix = not index_path.exists()
-    if index_missing_before_fix:
-        _ensure_rag_index_placeholder(rag_dir)
-        details["index_auto_placeholder_created"] = True
-        details["index_exists"] = True
-        details["index_path"] = str(index_path)
-    else:
-        details["index_auto_placeholder_created"] = False
-    index_warnings = [w for w in warnings if "RAG index" in w or "indexed documents" in w]
-    if index_missing_before_fix:
-        index_warnings = [w for w in index_warnings if "RAG index file is missing" not in w]
-        warnings = [w for w in warnings if "RAG index file is missing" not in w]
+    """Real implementation lives in core.doctor.checks.rag (thin pass-through)."""
+    from core.doctor.checks.rag import check_rag_index_ready as _impl
 
-    if blockers:
-        auto_fix_steps = [details["database_env_auto_fix"]]
-        if document_count == 0:
-            auto_fix_steps.append("uv run python -m scripts.seed_rag")
-        details["auto_fix"] = auto_fix_steps[0]
-        details["auto_fix_steps"] = auto_fix_steps
-        details["recommended_commands"] = [
-            *auto_fix_steps,
-            'uv run python cli.py -c "belge ekle <url>"',
-            "uv run python -m core.doctor artifacts/install/doctor.json",
-            "docker compose ps postgres",
-        ]
-        status = "warn"
-        message = "; ".join(blockers + index_warnings)
-    elif document_count == 0:
-        details["auto_fix"] = [
-            "uv run python -m scripts.seed_rag",
-            'uv run python cli.py -c "belge ekle <url>"',
-        ]
-        details["recommended_commands"] = [
-            "uv run python -m scripts.seed_rag",
-            'uv run python cli.py -c "belge ekle <url>"',
-            "uv run python -m core.doctor artifacts/install/doctor.json",
-        ]
-        details["advisory_only"] = True
-        status = "warn"
-        message = (
-            "; ".join(index_warnings)
-            if index_warnings
-            else "RAG index is empty; this is optional and can be seeded later"
-        )
-    else:
-        if entity_memory_empty:
-            details["graphrag_entity_memory_warning"] = True
-        details["auto_fix"] = ""
-        details["recommended_commands"] = [
-            "uv run python -m core.doctor artifacts/install/doctor.json"
-        ]
-        status = "pass"
-        message = "RAG index readiness looks healthy"
-    return DoctorCheck("rag_index_ready", status, message, details)
+    return _impl()
 
 
 def check_graphrag_entity_memory_ready() -> DoctorCheck:
-    state = _rag_readiness_state()
-    details = state["details"]
-    warnings = state["warnings"]
-    entity_memory_empty = bool(state["entity_memory_empty"])
-    graph_enabled = bool(details.get("graph_rag_enabled"))
-    entity_warnings = [w for w in warnings if "GraphRAG entity memory is empty" in w]
-    rag_dir = Path(str(details.get("rag_dir", BASE_DIR / "data/rag")))
-    if not rag_dir.is_absolute():
-        rag_dir = BASE_DIR / rag_dir
-    store_counts = _query_entity_graph_counts_from_store(rag_dir)
-    details["entity_store_probe"] = store_counts
-    if store_counts.get("ok"):
-        details["entity_node_count_store"] = int(store_counts.get("entity_node_count", 0))
-        details["entity_edge_count_store"] = int(store_counts.get("entity_edge_count", 0))
-        if details["entity_node_count_store"] != int(details.get("entity_node_count", 0)):
-            details["entity_count_mismatch"] = True
-            details["entity_count_mismatch_note"] = (
-                "entity_node_count (doctor state) and store probe node count differ; verify "
-                "GraphRAG projection persistence"
-            )
-        entity_memory_empty = details["entity_node_count_store"] == 0
-        if entity_memory_empty:
-            entity_warnings = [
-                "GraphRAG entity memory is empty after store probe; run metadata seed and verify "
-                "real entity node count"
-            ]
+    """Real implementation lives in core.doctor.checks.rag (thin pass-through)."""
+    from core.doctor.checks.rag import check_graphrag_entity_memory_ready as _impl
 
-    if not graph_enabled:
-        details["auto_fix"] = ""
-        details["recommended_commands"] = [
-            "uv run python -m core.doctor artifacts/install/doctor.json"
-        ]
-        return DoctorCheck(
-            "graphrag_entity_memory_ready", "warn", "GraphRAG is disabled by configuration", details
-        )
-
-    if entity_memory_empty:
-        details["auto_fix"] = "uv run python -m scripts.seed_rag --metadata-only"
-        details["advisory_only"] = True
-        details["recommended_commands"] = [
-            "uv run python -m scripts.seed_rag --metadata-only",
-            "uv run python -m core.doctor artifacts/install/doctor.json",
-        ]
-        return DoctorCheck(
-            "graphrag_entity_memory_ready", "warn", "; ".join(entity_warnings), details
-        )
-
-    details["auto_fix"] = ""
-    details["recommended_commands"] = ["uv run python -m core.doctor artifacts/install/doctor.json"]
-    return DoctorCheck(
-        "graphrag_entity_memory_ready", "pass", "GraphRAG entity memory looks healthy", details
-    )
+    return _impl()
 
 
 def check_rag_readiness() -> DoctorCheck:
-    """Backward-compatible aggregate check; prefer split checks in launcher."""
-    state = _rag_readiness_state()
-    base_details = state.get("details", {}) if isinstance(state, dict) else {}
-    vector_backend = str(base_details.get("vector_backend", "") or "").lower()
-    database_url, _, _, _ = _resolved_database_urls()
-    postgres_password = os.getenv("POSTGRES_PASSWORD", "").strip()
-    parsed_database_url, _ = _parse_url(database_url)
-    database_password = (
-        unquote(str(parsed_database_url.password or "")) if parsed_database_url else ""
-    )
-    mismatch_block = (
-        vector_backend == "pgvector"
-        and bool(database_url)
-        and bool(postgres_password)
-        and database_password != postgres_password
-    )
-    index_check = check_rag_index_ready()
-    graph_check = check_graphrag_entity_memory_ready()
-    status = "pass"
-    if "fail" in {index_check.status, graph_check.status}:
-        status = "fail"
-    elif "warn" in {index_check.status, graph_check.status}:
-        status = "warn"
-    details = {
-        "rag_index_ready_status": index_check.status,
-        "graphrag_entity_memory_ready_status": graph_check.status,
-        "document_count": int(
-            base_details.get("document_count", index_check.details.get("document_count", 0))
-        ),
-        "index_exists": bool(
-            base_details.get("index_exists", index_check.details.get("index_exists", False))
-        ),
-        "blocked_by": (
-            "database_env"
-            if mismatch_block
-            else base_details.get("blocked_by", index_check.details.get("blocked_by"))
-        ),
-        "auto_fix": index_check.details.get("auto_fix", ""),
-        "recommended_commands": list(
-            dict.fromkeys(
-                [
-                    *index_check.details.get("recommended_commands", []),
-                    *graph_check.details.get("recommended_commands", []),
-                ]
-            )
-        ),
-    }
-    if details.get("blocked_by") == "database_env":
-        sync_cmd = "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
-        seed_cmd = "uv run python -m scripts.seed_rag"
-        auto_fix_steps = [sync_cmd]
-        if int(details.get("document_count", 0)) == 0:
-            auto_fix_steps.append(seed_cmd)
-        details["database_env_status"] = "fail"
-        details["database_env_auto_fix"] = sync_cmd
-        details["auto_fix"] = sync_cmd
-        details["auto_fix_steps"] = auto_fix_steps
-        details["follow_up_commands"] = [seed_cmd]
-        details["recommended_commands"] = list(
-            dict.fromkeys([*auto_fix_steps, *details.get("recommended_commands", [])])
-        )
-        if not details.get("index_exists", False):
-            message = "RAG index file is missing; blocked until database_env is fixed"
-        else:
-            message = (
-                "rag_index_ready=warn; graphrag_entity_memory_ready="
-                f"{graph_check.status}; blocked until database_env is fixed"
-            )
-    elif details.get("document_count", 0) == 0:
-        auto_fix_value = details.get("auto_fix")
-        if isinstance(auto_fix_value, list) and auto_fix_value:
-            details["auto_fix"] = auto_fix_value[0]
-        # Preserve the split-check contract on the backward-compatible aggregate:
-        # an empty, otherwise unblocked index means "not seeded yet", not a
-        # production defect. Consumers that still call check_rag_readiness() can
-        # therefore distinguish this advisory warning from a blocked backend.
-        details["advisory_only"] = True
-        if not details.get("index_exists", False):
-            message = "RAG index file is missing; no indexed documents yet; entity memory is empty"
-        else:
-            message = (
-                "RAG has no indexed documents; no indexed documents yet; entity memory is empty"
-            )
-    else:
-        message = (
-            f"rag_index_ready={index_check.status}; "
-            f"graphrag_entity_memory_ready={graph_check.status}"
-        )
-    return DoctorCheck("rag_readiness", status, message, details)
+    """Backward-compatible aggregate check; prefer split checks in launcher.
 
+    Real implementation lives in core.doctor.checks.rag (thin pass-through).
+    """
+    from core.doctor.checks.rag import check_rag_readiness as _impl
 
-def _read_env_file_assignments(path: Path) -> dict[str, str]:
-    """Read simple KEY=VALUE assignments from a dotenv file without expanding secrets."""
-    values: dict[str, str] = {}
-    if not path.exists():
-        return values
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        if key.startswith("export "):
-            key = key.removeprefix("export ").strip()
-        if not key:  # pragma: no cover - stripping a non-empty assignment key cannot empty it
-            continue
-        values[key] = value.strip().strip('"').strip("'")
-    return values
+    return _impl()
 
 
 def check_environment_profile() -> DoctorCheck:
-    """Validate that the selected SIDAR_ENV profile has an isolated dotenv file."""
-    profile = os.getenv("SIDAR_ENV", "").strip().lower()
-    details: dict[str, Any] = {
-        "sidar_env": profile,
-        "base_env_path": str(BASE_DIR / ".env"),
-        "advanced_env_path": str(BASE_DIR / ".env.advanced"),
-        "recommended_commands": [
-            "uv run python -m scripts.bootstrap_env --profile development",
-            "cp .env.development.example .env.development",
-        ],
-    }
-    if not profile:
-        return DoctorCheck(
-            "environment_profile",
-            "pass",
-            "SIDAR_ENV profile is not set; base dotenv/default settings are in use",
-            details,
-        )
+    """Validate that the selected SIDAR_ENV profile has an isolated dotenv file.
 
-    profile_path = BASE_DIR / f".env.{profile}"
-    template_path = BASE_DIR / f".env.{profile}.example"
-    details.update(
-        {
-            "profile_env_path": str(profile_path),
-            "profile_env_exists": profile_path.exists(),
-            "profile_template_path": str(template_path),
-            "profile_template_exists": template_path.exists(),
-        }
-    )
+    The real implementation lives in ``core.doctor.checks.security``; this
+    thin pass-through keeps ``core.doctor.check_environment_profile`` valid as
+    a monkeypatch target for ``run_doctor_report()`` (deferred import to avoid
+    a circular import with ``core.doctor.checks.security``, which itself
+    imports ``BASE_DIR``/``DoctorCheck`` from this module at import time).
+    """
+    from core.doctor.checks.security import check_environment_profile as _impl
 
-    if profile == "test":
-        return DoctorCheck(
-            "environment_profile",
-            "pass",
-            "SIDAR_ENV=test uses test fixtures/process environment isolation",
-            details,
-        )
-    if profile_path.exists():
-        profile_values = _read_env_file_assignments(profile_path)
-        effective_postgres_db = profile_values.get("POSTGRES_DB") or os.getenv("POSTGRES_DB", "")
-        details["profile_postgres_db"] = effective_postgres_db
-        if profile in {"development", "dev", "local"} and effective_postgres_db in {
-            "sidar",
-            "postgres",
-        }:
-            details["recommended_commands"] = [
-                f"uv run python -m scripts.bootstrap_env --profile {profile} --force",
-                (
-                    f"edit .env.{profile} and set "
-                    f"POSTGRES_DB=sidar_{profile if profile != 'dev' else 'development'}"
-                ),
-            ]
-            return DoctorCheck(
-                "environment_profile",
-                "warn",
-                (
-                    f"SIDAR_ENV={profile} has .env.{profile}, but "
-                    f"POSTGRES_DB={effective_postgres_db!r} is not isolated from the "
-                    "base/production database"
-                ),
-                details,
-            )
-        return DoctorCheck(
-            "environment_profile",
-            "pass",
-            f"SIDAR_ENV={profile} isolated dotenv file is present",
-            details,
-        )
-
-    if template_path.exists():
-        command = f"uv run python -m scripts.bootstrap_env --profile {profile}"
-        details["recommended_commands"] = [command, f"cp .env.{profile}.example .env.{profile}"]
-        return DoctorCheck(
-            "environment_profile",
-            "warn",
-            f"SIDAR_ENV={profile} is active but .env.{profile} is missing; create it from "
-            f".env.{profile}.example to isolate local settings",
-            details,
-        )
-
-    return DoctorCheck(
-        "environment_profile",
-        "warn",
-        f"SIDAR_ENV={profile} is active but no .env.{profile} or .env.{profile}.example file "
-        f"exists",
-        details,
-    )
+    return _impl()
 
 
 def _docker_image_exists_local(image: str) -> bool:
@@ -1483,132 +514,17 @@ def _docker_image_exists_local(image: str) -> bool:
 
 
 def check_gpu_memory_config() -> DoctorCheck:
-    """Report effective local model and VRAM budget settings."""
-    from config import Config
-    from core.config_gpu_detect import normalize_gpu_memory_fractions
+    """Real implementation lives in core.doctor.checks.gpu (thin pass-through)."""
+    from core.doctor.checks.gpu import check_gpu_memory_config as _impl
 
-    # Config.GPU_INFO/GPU_COUNT/etc. are lazy-loaded on first Config() instantiation
-    # (see Config._ensure_hardware_info_loaded). Reading the class attribute below
-    # before anything else in this process has constructed a Config() leaves
-    # GPU_INFO frozen at its "Devre Dışı / CPU Modu" placeholder even when USE_GPU
-    # is true, producing a self-contradictory report. Force the hardware probe so
-    # both fields agree; suppress errors so a broken .env doesn't turn this
-    # diagnostic check itself into a crash.
-    with contextlib.suppress(Exception):
-        Config._ensure_hardware_info_loaded()
-
-    provider = str(getattr(Config, "AI_PROVIDER", "ollama") or "ollama").strip().lower()
-    coding_model = str(getattr(Config, "CODING_MODEL", "") or "").strip()
-    access_level = str(getattr(Config, "ACCESS_LEVEL", "") or "").strip().lower()
-    use_gpu = bool(getattr(Config, "USE_GPU", False))
-    gpu_info = str(getattr(Config, "GPU_INFO", "") or "").strip()
-    docker_image = str(getattr(Config, "DOCKER_IMAGE", "") or "").strip()
-    llm_fraction = float(getattr(Config, "LLM_GPU_MEMORY_FRACTION", 0.0) or 0.0)
-    rag_fraction = float(getattr(Config, "RAG_GPU_MEMORY_FRACTION", 0.0) or 0.0)
-    legacy_fraction = float(getattr(Config, "GPU_MEMORY_FRACTION", 0.0) or 0.0)
-    budget = normalize_gpu_memory_fractions(llm_fraction, rag_fraction)
-    total = llm_fraction + rag_fraction
-    details: dict[str, Any] = {
-        "ai_provider": provider,
-        "coding_model": coding_model,
-        "access_level": access_level,
-        "use_gpu": use_gpu,
-        "gpu_info": gpu_info,
-        "docker_image": docker_image,
-        "gpu_memory_fraction": legacy_fraction,
-        "llm_gpu_memory_fraction": llm_fraction,
-        "rag_gpu_memory_fraction": rag_fraction,
-        "total_gpu_memory_fraction": round(total, 4),
-        "effective_gpu_memory_fraction": budget["gpu"],
-        "effective_llm_gpu_memory_fraction": budget["llm"],
-        "effective_rag_gpu_memory_fraction": budget["rag"],
-        "normalized": budget["normalized"],
-        "recommended_commands": [
-            "uv run python -m scripts.bootstrap_env --profile development",
-            "uv run python -m core.doctor artifacts/install/doctor.json",
-        ],
-    }
-
-    warnings: list[str] = []
-    if budget["normalized"]:
-        warnings.append(
-            "LLM/RAG VRAM fractions exceed the safe 80% target or are non-positive; Sidar will "
-            "normalize the effective GPU budget to 80%"
-        )
-    if provider == "ollama" and coding_model != "qwen2.5-coder:7b":
-        warnings.append(
-            "local Ollama coding model differs from the Sidar standard qwen2.5-coder:7b"
-        )
-    if not use_gpu and (docker_image and "gpu" in docker_image.lower()):
-        warnings.append(
-            "Docker image suggests GPU profile but runtime is CPU mode; verify NVIDIA Container "
-            "Toolkit, CUDA visibility, and USE_GPU settings"
-        )
-    if access_level != "sandbox":
-        warnings.append("CLI access level is not sandbox; verify this is intentional")
-    status = "warn" if warnings else "pass"
-    message = "; ".join(warnings or ["Local model and VRAM configuration look safe"])
-    return DoctorCheck("gpu_memory_config", status, message, details)
+    return _impl()
 
 
 def check_docker_test_image() -> DoctorCheck:
-    """Report Docker test-image readiness independently from GPU configuration."""
-    from config import Config
+    """Real implementation lives in core.doctor.checks.gpu (thin pass-through)."""
+    from core.doctor.checks.gpu import check_docker_test_image as _impl
 
-    docker_test_image = str(getattr(Config, "DOCKER_TEST_IMAGE", "") or "").strip()
-    auto_build = os.getenv("AUTO_BUILD_DOCKER_TEST_IMAGE", "0") == "1"
-    production_readiness = os.getenv("SIDAR_PRODUCTION_READINESS", "0") == "1"
-    image_exists = _docker_image_exists_local(docker_test_image)
-    details: dict[str, Any] = {
-        "docker_test_image": docker_test_image,
-        "image_exists": image_exists,
-        "auto_build_docker_test_image": auto_build,
-        "production_readiness": production_readiness,
-        "recommended_commands": [],
-    }
-
-    if docker_test_image == "python:3.11-slim":
-        message = (
-            "DOCKER_TEST_IMAGE points to python:3.11-slim; Docker tests may miss Sidar test "
-            "dependencies"
-        )
-        details["docker_image_container_note"] = (
-            "Docker image is the reusable template, container is a running instance. Having a "
-            "running sidar-* container does not prove sidar:latest exists locally."
-        )
-        details.setdefault("recommended_commands", []).extend(
-            [
-                "docker image ls | rg 'sidar|python'",
-                "docker build -t sidar:latest .",
-                "echo 'DOCKER_TEST_IMAGE=sidar:latest' >> .env.development",
-            ]
-        )
-        return DoctorCheck("docker_test_image", "warn", message, details)
-    if image_exists:
-        return DoctorCheck("docker_test_image", "pass", "Docker test image is available", details)
-    details["recommended_commands"] = [
-        "AUTO_BUILD_DOCKER_TEST_IMAGE=1 DOCKER_TEST_IMAGE=sidar:latest bash run_tests.sh"
-    ]
-    if auto_build:
-        return DoctorCheck(
-            "docker_test_image",
-            "pass",
-            "Docker test image is missing; enabled auto-build will create it before tests",
-            details,
-        )
-    if production_readiness:
-        return DoctorCheck(
-            "docker_test_image",
-            "fail",
-            "Docker test image is missing for production-readiness and auto-build is disabled",
-            details,
-        )
-    return DoctorCheck(
-        "docker_test_image",
-        "pass",
-        "Docker test image is not built yet; make dev-full enables its automatic build",
-        {**details, "hint_level": "info"},
-    )
+    return _impl()
 
 
 def _parse_migration_revisions() -> tuple[list[str], list[str]]:
@@ -1760,42 +676,10 @@ def check_websocket_routes() -> DoctorCheck:
 
 
 def check_gpu() -> DoctorCheck:
-    details: dict[str, Any] = {"detected": False, "run_gpu_stress": False}
-    nvidia_smi = shutil.which("nvidia-smi")
-    if nvidia_smi:
-        rc, output = _run_command(
-            [nvidia_smi, "--query-gpu=name", "--format=csv,noheader"], timeout=10
-        )
-        if rc == 0 and output:
-            details.update(
-                {"detected": True, "source": "nvidia-smi", "devices": output.splitlines()}
-            )
-    if not details["detected"]:
-        try:
-            import torch
+    """Real implementation lives in core.doctor.checks.gpu (thin pass-through)."""
+    from core.doctor.checks.gpu import check_gpu as _impl
 
-            if torch.cuda.is_available():
-                details.update(
-                    {
-                        "detected": True,
-                        "source": "torch",
-                        "devices": [
-                            torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())
-                        ],
-                    }
-                )
-        except Exception as exc:
-            details["torch_error"] = str(exc)
-
-    details["run_gpu_stress"] = bool(details["detected"])
-    return DoctorCheck(
-        "gpu",
-        "pass" if details["detected"] else "warn",
-        "GPU detected; RUN_GPU_STRESS should be enabled"
-        if details["detected"]
-        else "GPU not detected; GPU stress tests remain opt-in",
-        details,
-    )
+    return _impl()
 
 
 def _ollama_base_url() -> str:
@@ -1855,134 +739,24 @@ def run_doctor_report(
     output_path: str | Path = DEFAULT_OUTPUT,
     include_model_smoke: bool = True,
 ) -> dict[str, Any]:
-    from core.doctor.checks.database import (
-        check_database_connectivity as database_connectivity_check,
-    )
-    from core.doctor.checks.database import check_database_env as database_env_check
-    from core.doctor.checks.database import check_pgvector_ready as pgvector_ready_check
-    from core.doctor.checks.gpu import check_docker_test_image as docker_test_image_check
-    from core.doctor.checks.gpu import check_gpu as gpu_check
-    from core.doctor.checks.gpu import check_gpu_memory_config as gpu_memory_config_check
-    from core.doctor.checks.media import check_media_tools as media_tools_check
-    from core.doctor.checks.rag import (
-        check_graphrag_entity_memory_ready as graphrag_entity_memory_ready_check,
-    )
-    from core.doctor.checks.rag import check_rag_index_ready as rag_index_ready_check
-    from core.doctor.checks.redis import check_redis as redis_check
-    from core.doctor.checks.security import check_environment_profile as environment_profile_check
+    """Real implementation lives in core.doctor.facade (thin pass-through)."""
+    from core.doctor.facade import run_doctor_report as _impl
 
-    checks = [
-        check_uv(),
-        check_prometheus_runtime(),
-        environment_profile_check(),
-        gpu_memory_config_check(),
-        docker_test_image_check(),
-        database_env_check(),
-    ]
-    database_connectivity = database_connectivity_check()
-    checks.extend(
-        [
-            database_connectivity,
-            pgvector_ready_check(database_connectivity=database_connectivity),
-        ]
-    )
-    checks.extend(
-        [
-            rag_index_ready_check(),
-            graphrag_entity_memory_ready_check(),
-            check_migrations(),
-            check_agent_catalog(),
-            check_supervisor_routing(),
-            check_websocket_routes(),
-            redis_check(),
-            gpu_check(),
-            media_tools_check(),
-            check_model(smoke=include_model_smoke),
-        ]
-    )
-    report = build_doctor_report(checks)
-    write_doctor_report(report, output_path)
-    return report
+    return _impl(output_path=output_path, include_model_smoke=include_model_smoke)
 
 
 def _apply_database_env_fix() -> dict[str, Any]:
-    """Apply the allowlisted database environment repair and return its audit record.
+    """Real implementation lives in core.doctor.facade (thin pass-through)."""
+    from core.doctor.facade import _apply_database_env_fix as _impl
 
-    The repair is deliberately limited to ``database_env``.  Doctor never starts
-    services, runs migrations, or seeds user data implicitly; those operations stay
-    visible as follow-up recommendations in the resulting report.
-    """
-    check = check_database_env()
-    result: dict[str, Any] = {
-        "check": check.name,
-        "before_status": check.status,
-        "attempted": False,
-        "success": check.status == "pass",
-    }
-    if check.status == "pass":
-        result["message"] = "database environment already healthy; no repair was needed"
-        return result
-
-    command = str(check.details.get("auto_fix", "") or "").strip()
-    if not command:
-        result["message"] = "database environment check did not publish an auto-fix"
-        return result
-
-    try:
-        tokens = validate_auto_fix_command(command)
-    except ValueError as exc:
-        result["message"] = f"database environment auto-fix was rejected: {exc}"
-        return result
-
-    result["attempted"] = True
-    result["command"] = command
-    return_code, output = _run_command(tokens, timeout=120)
-    result["return_code"] = return_code
-    result["output"] = _redact_sensitive_text(output)
-    result["success"] = return_code == 0
-    result["message"] = (
-        "database environment auto-fix completed"
-        if return_code == 0
-        else "database environment auto-fix failed"
-    )
-
-    # --remove-explicit-urls edits dotenv files in a subprocess. Remove only values
-    # that Doctor proved came from those editable files, so the report in this same
-    # process observes the newly derived POSTGRES_* DSNs. Inherited shell values are
-    # intentionally preserved because the repair command cannot safely own them.
-    if return_code == 0:
-        for env_key, source_key in (
-            ("DATABASE_URL", "database_url_source"),
-            ("SIDAR_CONTAINER_DATABASE_URL", "container_database_url_source"),
-        ):
-            if check.details.get(source_key):
-                os.environ.pop(env_key, None)
-    return result
-
-
-def _parse_cli_args(argv: list[str] | None = None) -> argparse.Namespace:
-    """Parse the standalone Doctor CLI while preserving its positional output path."""
-    parser = argparse.ArgumentParser(description="Sidar installation/readiness Doctor")
-    parser.add_argument("output", nargs="?", default=str(DEFAULT_OUTPUT), help="JSON report path")
-    parser.add_argument(
-        "--fix",
-        action="store_true",
-        help="Safely repair editable database environment drift before running checks",
-    )
-    return parser.parse_args(argv)
+    return _impl()
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _parse_cli_args(argv)
-    output = Path(args.output)
-    repair = _apply_database_env_fix() if args.fix else None
-    report = run_doctor_report(output_path=output)
-    if repair is not None:
-        report["repairs"] = [repair]
-        write_doctor_report(report, output)
-    print(json.dumps(report, ensure_ascii=False, indent=2))
-    repair_failed = repair is not None and repair.get("attempted") and not repair.get("success")
-    return 0 if report["overall_status"] in {"pass", "warn"} and not repair_failed else 1
+    """Real implementation lives in core.doctor.facade (thin pass-through)."""
+    from core.doctor.facade import main as _impl
+
+    return _impl(argv)
 
 
 if __name__ == "__main__":
