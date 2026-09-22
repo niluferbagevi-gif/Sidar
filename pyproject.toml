@@ -200,7 +200,7 @@ slack = [
   "slack-sdk>=3.43,<3.45",
 ]
 browser = [
-  "playwright>=1.62.0,<1.63",
+  "playwright>=1.62.0,<1.64",
   "selenium>=4.46,<4.50",
 ]
 voice = [
@@ -860,5 +860,5 @@ ignore_missing_imports = true
 
 [dependency-groups]
 dev = [
-    "playwright>=1.62.0,<1.63",
+    "playwright>=1.62.0,<1.64",
 ]
