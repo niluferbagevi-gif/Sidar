@@ -98,6 +98,7 @@ class LLMClientSettings(BaseSettings):
     OLLAMA_CONTEXT_MAX_CHARS: int = 12000
     OLLAMA_STREAM_MAX_BUFFER_CHARS: int = 1_000_000
     CODING_MODEL: str = "qwen2.5-coder:7b"
+    TEXT_MODEL: str = "gemma2:9b"
     REDIS_MAX_CONNECTIONS: int = 50
     SEMANTIC_CACHE_TTL: int = 3600
     SEMANTIC_CACHE_MAX_ITEMS: int = 500
