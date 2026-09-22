@@ -33,7 +33,7 @@ jobs:
             --minimum-online 1
       - name: Open or update benchmark runner capacity alert
         if: steps.runner_capacity.outcome == 'failure'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const title = "Benchmark CI runner capacity is not release-ready";

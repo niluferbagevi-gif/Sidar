@@ -61,8 +61,8 @@ def test_codeql_covers_both_languages_with_security_extended_queries() -> None:
     assert "push:" in workflow
     assert "pull_request:" in workflow
     assert "schedule:" in workflow
-    assert "github/codeql-action/init@v3" in workflow
-    assert "github/codeql-action/analyze@v3" in workflow
+    assert "github/codeql-action/init@v4" in workflow
+    assert "github/codeql-action/analyze@v4" in workflow
 
 
 def test_workflows_do_not_reintroduce_python_312_or_multi_version_matrix():
@@ -121,7 +121,7 @@ def test_benchmark_seed_uses_reusable_workflow_and_keepalive_alerts() -> None:
     assert "compare_name" in seed_workflow
     assert "seed_benchmark_baseline:" in ci_workflow
     assert "Open or update missing baseline alert" in keepalive
-    assert "actions/github-script@v8" in keepalive
+    assert "actions/github-script@v9" in keepalive
     assert "Ortak reusable seed workflow" in docs
 
 

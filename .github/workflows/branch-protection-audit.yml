@@ -53,7 +53,7 @@ jobs:
 
       - name: Open or update branch-protection alert
         if: steps.audit.outcome == 'failure' && github.event_name != 'pull_request_target'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const title = "Branch protection audit is failing";
