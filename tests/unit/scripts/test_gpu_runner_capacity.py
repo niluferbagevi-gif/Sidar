@@ -19,7 +19,7 @@ def test_watchdog_workflow_guards_gate_variable_and_runner_capacity() -> None:
     assert "--minimum-online 1" in workflow
     assert "--minimum-idle" not in workflow
     assert "types: [requested]" in workflow
-    assert "actions/github-script@v8" in workflow
+    assert "actions/github-script@v9" in workflow
 
 
 def test_runbook_provisions_and_verifies_repository_control_plane() -> None:
