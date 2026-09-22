@@ -1,26 +1,26 @@
 {
   "schemaVersion": 1,
-  "reviewedAt": "2026-09-19",
-  "source": "Issue #2776 reviewed bundle baseline",
+  "reviewedAt": "2026-09-22",
+  "source": "dependabot frontend-minor-patch group (react 19.3.0, vite 8.3.0, playwright 1.63.0): +8.39 KB gzip JS reviewed and accepted, driven by react-dom-Cp9XQrBK.js growing from React 19.2.8 to 19.3.0 (still within its 220 KB chunk budget at 93.39%).",
   "totals": {
-    "jsBytes": 482193,
-    "jsKb": 470.89,
-    "gzipBytes": 153559,
-    "gzipKb": 149.96
+    "jsBytes": 511442,
+    "jsKb": 499.46,
+    "gzipBytes": 162152,
+    "gzipKb": 158.35
   },
   "namedChunks": [
     {
       "label": "React DOM",
       "chunks": [
         {
-          "name": "react-dom-DUTx1zrx.js",
-          "sizeBytes": 181513,
-          "gzipBytes": 56453,
-          "sizeKb": 177.26,
-          "gzipKb": 55.13
+          "name": "react-dom-Cp9XQrBK.js",
+          "sizeBytes": 210396,
+          "gzipBytes": 64932,
+          "sizeKb": 205.46,
+          "gzipKb": 63.41
         },
         {
-          "name": "react-dom-client-CGt-YsI_.js",
+          "name": "react-dom-client-Rpv3y0i9.js",
           "sizeBytes": 338,
           "gzipBytes": 237,
           "sizeKb": 0.33,
@@ -32,7 +32,7 @@
       "label": "ChatMarkdownRenderer",
       "chunks": [
         {
-          "name": "ChatMarkdownRenderer-7OxCfjlb.js",
+          "name": "ChatMarkdownRenderer-BYoL0PZy.js",
           "sizeBytes": 154291,
           "gzipBytes": 45645,
           "sizeKb": 150.67,
