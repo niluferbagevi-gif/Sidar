@@ -42,7 +42,7 @@ dependencies = [
   "pydantic-settings>=2.15.0,<3.0.0",
   "cachetools~=5.5.0",
   "redis>=5.2.1,<8.2.0",
-  "psutil~=6.0.0",
+  "psutil>=6.0,<7.3",
   # ── Web sunucu ─────────────────────────────────────────────────────────
   "fastapi>=0.141.1,<0.142.0",
   # Starlette 1.6.0 is the validated security baseline for request parsing and URL validation.
