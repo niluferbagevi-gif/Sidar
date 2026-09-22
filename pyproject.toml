@@ -42,7 +42,7 @@ dependencies = [
   "pydantic-settings>=2.15.0,<3.0.0",
   "cachetools~=5.5.0",
   "redis>=5.2.1,<8.2.0",
-  "psutil~=6.0.0",
+  "psutil>=6.0,<7.3",
   # ── Web sunucu ─────────────────────────────────────────────────────────
   "fastapi>=0.141.1,<0.142.0",
   # Starlette 1.6.0 is the validated security baseline for request parsing and URL validation.
@@ -200,7 +200,7 @@ slack = [
   "slack-sdk>=3.43,<3.45",
 ]
 browser = [
-  "playwright>=1.62.0,<1.63",
+  "playwright>=1.62.0,<1.64",
   "selenium>=4.46,<4.50",
 ]
 voice = [
@@ -860,5 +860,5 @@ ignore_missing_imports = true
 
 [dependency-groups]
 dev = [
-    "playwright>=1.62.0,<1.63",
+    "playwright>=1.62.0,<1.64",
 ]

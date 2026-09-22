@@ -13,7 +13,7 @@ def test_repository_toolchain_surfaces_match_canonical_file() -> None:
     assert pins["NODE_VERSION"] == "20.20.2"
     assert (contract.ROOT / "web_ui_react/.nvmrc").read_text(encoding="utf-8").strip() == "20.20.2"
     assert pins["PLAYWRIGHT_PYTHON_MIN"] == "1.62.0"
-    assert pins["PLAYWRIGHT_PYTHON_MAX"] == "1.63"
+    assert pins["PLAYWRIGHT_PYTHON_MAX"] == "1.64"
     assert pins["PLAYWRIGHT_NODE_MIN"] == "1.60.0"
     assert pins["PLAYWRIGHT_NODE_MAX"] == "1.64.0"
     assert contract.contract_errors(contract.ROOT, pins) == []
