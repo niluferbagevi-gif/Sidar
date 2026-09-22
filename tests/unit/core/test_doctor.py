@@ -8,6 +8,9 @@ import pytest
 
 from core import doctor
 from core.doctor import DoctorCheck
+from core.doctor.checks import database as database_checks
+from core.doctor.checks import rag as rag_checks
+from core.doctor.checks import security as security_checks
 
 # scripts.secret_strength.is_weak_secret rejects low-uniqueness/repeated-character
 # strings (e.g. "a" * 24), so fixtures standing in for a genuinely strong secret
@@ -161,10 +164,10 @@ def test_runtime_and_redaction_helpers_cover_edge_cases(monkeypatch, tmp_path):
     monkeypatch.setattr(doctor.importlib.util, "find_spec", lambda name: object())
     assert doctor.check_prometheus_runtime().status == "pass"
 
-    assert doctor._redact_url("postgresql://sidar@localhost/sidar") == (
+    assert database_checks._redact_url("postgresql://sidar@localhost/sidar") == (
         "postgresql://sidar@localhost/sidar"
     )
-    redacted = doctor._redact_exception_text(
+    redacted = database_checks._redact_exception_text(
         RuntimeError("password secret-value in postgresql://sidar:secret-value@localhost/sidar"),
         database_url="postgresql://sidar:secret-value@localhost/sidar",
     )
@@ -188,7 +191,7 @@ def test_runtime_and_redaction_helpers_cover_edge_cases(monkeypatch, tmp_path):
     ],
 )
 def test_postgres_connectivity_failure_guidance_classifies_errors(error, category):
-    message, details = doctor._postgres_connectivity_failure_guidance(error)
+    message, details = database_checks._postgres_connectivity_failure_guidance(error)
 
     assert message
     assert details["failure_category"] == category
@@ -210,7 +213,7 @@ def test_postgres_connectivity_guidance_distinguishes_invalid_ssl_query_param_fr
         pass
 
     error = CantChangeRuntimeParamError('parameter "ssl" cannot be changed now')
-    message, details = doctor._postgres_connectivity_failure_guidance(error)
+    message, details = database_checks._postgres_connectivity_failure_guidance(error)
 
     assert details["failure_category"] == "invalid_ssl_query_param"
     assert "remove-explicit-urls" in details["auto_fix"]
@@ -227,7 +230,7 @@ def test_dotenv_helpers_parse_assignments_and_report_effective_sources(monkeypat
     monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:test@localhost/sidar")
 
     values = doctor._parse_env_file_values(env_file)
-    assignments = doctor._read_env_file_assignments(env_file)
+    assignments = security_checks._read_env_file_assignments(env_file)
 
     assert values == {
         "DATABASE_URL": "postgresql://sidar:test@localhost/sidar",
@@ -2132,17 +2135,17 @@ def test_rag_readiness_warns_when_graph_disabled_and_resolves_relative_path(
 
 def test_read_env_file_assignments_handles_missing_comments_and_empty_export_key(tmp_path) -> None:
     missing = tmp_path / "missing.env"
-    assert doctor._read_env_file_assignments(missing) == {}
+    assert security_checks._read_env_file_assignments(missing) == {}
 
     env_file = tmp_path / ".env"
     env_file.write_text("# comment\ninvalid-line\nexport VALID=value\n", encoding="utf-8")
 
-    assert doctor._read_env_file_assignments(env_file) == {"VALID": "value"}
+    assert security_checks._read_env_file_assignments(env_file) == {"VALID": "value"}
 
 
 def test_redact_exception_text_without_database_password_keeps_safe_text() -> None:
     assert (
-        doctor._redact_exception_text(
+        database_checks._redact_exception_text(
             RuntimeError("connection refused"), database_url="postgresql://localhost/sidar"
         )
         == "connection refused"
@@ -2181,7 +2184,7 @@ def test_ensure_rag_index_placeholder_preserves_existing_index(tmp_path) -> None
     index_path = rag_dir / "index.json"
     index_path.write_text('{"existing": true}', encoding="utf-8")
 
-    assert doctor._ensure_rag_index_placeholder(rag_dir) == index_path
+    assert rag_checks._ensure_rag_index_placeholder(rag_dir) == index_path
     assert index_path.read_text(encoding="utf-8") == '{"existing": true}'
 
 
