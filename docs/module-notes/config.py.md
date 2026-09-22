@@ -9,8 +9,8 @@ modüllerden beslenir:
 
 - `core/config_postgres.py`: PostgreSQL DSN üretimi, container DB URL'i ve pool
   varsayılanlarının canonical modülü; `config.py` bu helperları doğrudan re-export eder.
-- `config_llm.py`: LLM provider/model ayarları, `LLMClientSettings` ve Ollama batch
-  policy.
+- `config_llm.py`: LLM provider/model ayarları (coding ve text model seçimi dahil),
+  `LLMClientSettings` ve Ollama batch policy.
 - `config_rag_defaults.py`: RAG chunk/top-k/semantic-cache varsayılanları; legacy `config_rag.py` yalnız backward-compatible shim olarak kalır.
 - `config_security.py`: API/JWT/security secret ayarları ve production validation
   yardımcıları.

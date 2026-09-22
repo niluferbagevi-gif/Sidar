@@ -127,6 +127,7 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `core/doctor/checks/rag.py` → `docs/module-notes/core/doctor/checks/rag.py.md`
 - `core/doctor/checks/redis.py` → `docs/module-notes/core/doctor/checks/redis.py.md`
 - `core/doctor/checks/security.py` → `docs/module-notes/core/doctor/checks/security.py.md`
+- `core/doctor/facade.py` → `docs/module-notes/core/doctor/facade.py.md`
 - `core/doctor/launcher_preflight.py` → `docs/module-notes/core/doctor/launcher_preflight.py.md`
 - `core/doctor/models.py` → `docs/module-notes/core/doctor/models.py.md`
 - `core/doctor/reporting.py` → `docs/module-notes/core/doctor/reporting.py.md`
