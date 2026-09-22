@@ -8,6 +8,7 @@ import pytest
 
 from core import doctor
 from core.doctor import DoctorCheck
+from core.doctor.checks import security as security_checks
 
 # scripts.secret_strength.is_weak_secret rejects low-uniqueness/repeated-character
 # strings (e.g. "a" * 24), so fixtures standing in for a genuinely strong secret
@@ -227,7 +228,7 @@ def test_dotenv_helpers_parse_assignments_and_report_effective_sources(monkeypat
     monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:test@localhost/sidar")
 
     values = doctor._parse_env_file_values(env_file)
-    assignments = doctor._read_env_file_assignments(env_file)
+    assignments = security_checks._read_env_file_assignments(env_file)
 
     assert values == {
         "DATABASE_URL": "postgresql://sidar:test@localhost/sidar",
@@ -2132,12 +2133,12 @@ def test_rag_readiness_warns_when_graph_disabled_and_resolves_relative_path(
 
 def test_read_env_file_assignments_handles_missing_comments_and_empty_export_key(tmp_path) -> None:
     missing = tmp_path / "missing.env"
-    assert doctor._read_env_file_assignments(missing) == {}
+    assert security_checks._read_env_file_assignments(missing) == {}
 
     env_file = tmp_path / ".env"
     env_file.write_text("# comment\ninvalid-line\nexport VALID=value\n", encoding="utf-8")
 
-    assert doctor._read_env_file_assignments(env_file) == {"VALID": "value"}
+    assert security_checks._read_env_file_assignments(env_file) == {"VALID": "value"}
 
 
 def test_redact_exception_text_without_database_password_keeps_safe_text() -> None:
