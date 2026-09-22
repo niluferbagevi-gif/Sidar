@@ -67,7 +67,7 @@ jobs:
 
       - name: Open or update missing baseline alert
         if: steps.baseline_evidence.outcome == 'failure'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const title = `Benchmark baseline missing for ${process.env.RUNNER_NAME}`;

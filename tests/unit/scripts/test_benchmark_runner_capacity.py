@@ -29,7 +29,7 @@ def test_watchdog_workflow_uses_hosted_control_plane_and_checks_capacity() -> No
     assert "--minimum-online 1" in workflow
     assert "--minimum-idle" not in workflow
     assert "types: [requested]" in workflow
-    assert "actions/github-script@v8" in workflow
+    assert "actions/github-script@v9" in workflow
 
 
 def test_watchdog_token_is_documented_in_advanced_env_template() -> None:

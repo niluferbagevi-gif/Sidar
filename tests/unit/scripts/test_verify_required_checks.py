@@ -343,7 +343,7 @@ def test_audit_workflow_injects_dedicated_admin_read_token() -> None:
     assert "pull_request_target:" in workflow
     assert "branches: [main]" in workflow
     assert "issues: write" in workflow
-    assert "actions/github-script@v8" in workflow
+    assert "actions/github-script@v9" in workflow
     assert "if: steps.audit.outcome == 'failure'" in workflow
     assert "GITHUB_TOKEN: ${{ github.token }}" in workflow
 
