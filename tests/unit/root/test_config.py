@@ -365,6 +365,15 @@ def test_load_llm_settings_can_skip_scoped_dotenv(tmp_path, monkeypatch):
     assert settings.OLLAMA_TIMEOUT == 600
 
 
+def test_llm_client_settings_text_model_default_and_environment(monkeypatch):
+    """TEXT_MODEL belongs to the typed LLM settings domain."""
+    monkeypatch.delenv("TEXT_MODEL", raising=False)
+    assert config_llm.LLMClientSettings().TEXT_MODEL == "gemma2:9b"
+
+    monkeypatch.setenv("TEXT_MODEL", "qwen2.5:7b")
+    assert config_llm.LLMClientSettings().TEXT_MODEL == "qwen2.5:7b"
+
+
 _QUALITY_GATE_ENV_KEYS = (
     "DLP_ENABLED",
     "HITL_ENABLED",

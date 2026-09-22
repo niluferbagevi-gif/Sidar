@@ -635,7 +635,7 @@ class Config:
     )
     OLLAMA_FORCE_KILL_ON_SHUTDOWN: bool = get_bool_env("OLLAMA_FORCE_KILL_ON_SHUTDOWN", False)
     CODING_MODEL: str = LLM_SETTINGS.CODING_MODEL
-    TEXT_MODEL: str = os.getenv("TEXT_MODEL", "gemma2:9b")
+    TEXT_MODEL: str = LLM_SETTINGS.TEXT_MODEL
 
     # ─── Erişim Seviyesi (OpenClaw) ──────────────────────────
     SIDAR_SKIP_DEFAULT_DOTENV: bool = SECURITY_SETTINGS.sidar_skip_default_dotenv
