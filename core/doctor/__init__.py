@@ -7,7 +7,6 @@ opaque installation phase.
 
 from __future__ import annotations
 
-import argparse
 import asyncio
 import importlib.util
 import json
@@ -28,9 +27,6 @@ from core.doctor.models import (
     validate_auto_fix_command,
     validate_doctor_check_contract,
 )
-from core.doctor.models import (
-    redact_sensitive_text as _redact_sensitive_text,
-)
 from core.doctor.reporting import build_doctor_report, write_doctor_report
 from core.rag.readiness import build_readiness_report
 from core.utils.trusted_subprocess import run_trusted_command
@@ -42,10 +38,12 @@ DEFAULT_OUTPUT = BASE_DIR / "artifacts" / "install" / "doctor.json"
 __all__ = [
     "DoctorCheck",
     "DoctorCheckContract",
+    "build_doctor_report",
     "main",
     "run_doctor_report",
     "validate_auto_fix_command",
     "validate_doctor_check_contract",
+    "write_doctor_report",
 ]
 
 
@@ -741,121 +739,24 @@ def run_doctor_report(
     output_path: str | Path = DEFAULT_OUTPUT,
     include_model_smoke: bool = True,
 ) -> dict[str, Any]:
-    from core.doctor.checks.media import check_media_tools as media_tools_check
-    from core.doctor.checks.redis import check_redis as redis_check
+    """Real implementation lives in core.doctor.facade (thin pass-through)."""
+    from core.doctor.facade import run_doctor_report as _impl
 
-    checks = [
-        check_uv(),
-        check_prometheus_runtime(),
-        check_environment_profile(),
-        check_gpu_memory_config(),
-        check_docker_test_image(),
-        check_database_env(),
-    ]
-    database_connectivity = check_database_connectivity()
-    checks.extend(
-        [
-            database_connectivity,
-            check_pgvector_ready(database_connectivity=database_connectivity),
-        ]
-    )
-    checks.extend(
-        [
-            check_rag_index_ready(),
-            check_graphrag_entity_memory_ready(),
-            check_migrations(),
-            check_agent_catalog(),
-            check_supervisor_routing(),
-            check_websocket_routes(),
-            redis_check(),
-            check_gpu(),
-            media_tools_check(),
-            check_model(smoke=include_model_smoke),
-        ]
-    )
-    report = build_doctor_report(checks)
-    write_doctor_report(report, output_path)
-    return report
+    return _impl(output_path=output_path, include_model_smoke=include_model_smoke)
 
 
 def _apply_database_env_fix() -> dict[str, Any]:
-    """Apply the allowlisted database environment repair and return its audit record.
+    """Real implementation lives in core.doctor.facade (thin pass-through)."""
+    from core.doctor.facade import _apply_database_env_fix as _impl
 
-    The repair is deliberately limited to ``database_env``.  Doctor never starts
-    services, runs migrations, or seeds user data implicitly; those operations stay
-    visible as follow-up recommendations in the resulting report.
-    """
-    check = check_database_env()
-    result: dict[str, Any] = {
-        "check": check.name,
-        "before_status": check.status,
-        "attempted": False,
-        "success": check.status == "pass",
-    }
-    if check.status == "pass":
-        result["message"] = "database environment already healthy; no repair was needed"
-        return result
-
-    command = str(check.details.get("auto_fix", "") or "").strip()
-    if not command:
-        result["message"] = "database environment check did not publish an auto-fix"
-        return result
-
-    try:
-        tokens = validate_auto_fix_command(command)
-    except ValueError as exc:
-        result["message"] = f"database environment auto-fix was rejected: {exc}"
-        return result
-
-    result["attempted"] = True
-    result["command"] = command
-    return_code, output = _run_command(tokens, timeout=120)
-    result["return_code"] = return_code
-    result["output"] = _redact_sensitive_text(output)
-    result["success"] = return_code == 0
-    result["message"] = (
-        "database environment auto-fix completed"
-        if return_code == 0
-        else "database environment auto-fix failed"
-    )
-
-    # --remove-explicit-urls edits dotenv files in a subprocess. Remove only values
-    # that Doctor proved came from those editable files, so the report in this same
-    # process observes the newly derived POSTGRES_* DSNs. Inherited shell values are
-    # intentionally preserved because the repair command cannot safely own them.
-    if return_code == 0:
-        for env_key, source_key in (
-            ("DATABASE_URL", "database_url_source"),
-            ("SIDAR_CONTAINER_DATABASE_URL", "container_database_url_source"),
-        ):
-            if check.details.get(source_key):
-                os.environ.pop(env_key, None)
-    return result
-
-
-def _parse_cli_args(argv: list[str] | None = None) -> argparse.Namespace:
-    """Parse the standalone Doctor CLI while preserving its positional output path."""
-    parser = argparse.ArgumentParser(description="Sidar installation/readiness Doctor")
-    parser.add_argument("output", nargs="?", default=str(DEFAULT_OUTPUT), help="JSON report path")
-    parser.add_argument(
-        "--fix",
-        action="store_true",
-        help="Safely repair editable database environment drift before running checks",
-    )
-    return parser.parse_args(argv)
+    return _impl()
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _parse_cli_args(argv)
-    output = Path(args.output)
-    repair = _apply_database_env_fix() if args.fix else None
-    report = run_doctor_report(output_path=output)
-    if repair is not None:
-        report["repairs"] = [repair]
-        write_doctor_report(report, output)
-    print(json.dumps(report, ensure_ascii=False, indent=2))
-    repair_failed = repair is not None and repair.get("attempted") and not repair.get("success")
-    return 0 if report["overall_status"] in {"pass", "warn"} and not repair_failed else 1
+    """Real implementation lives in core.doctor.facade (thin pass-through)."""
+    from core.doctor.facade import main as _impl
+
+    return _impl(argv)
 
 
 if __name__ == "__main__":
