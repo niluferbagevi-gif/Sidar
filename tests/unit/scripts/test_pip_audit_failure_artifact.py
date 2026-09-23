@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from scripts.pip_audit_failure_artifact import build_artifact, classify_failure
 
 
@@ -136,3 +138,39 @@ def test_classify_failure_pure_function_ignores_unrelated_stderr() -> None:
     assert classify_failure([], "completely unrelated note") == "unknown"
     assert classify_failure([], "Max retries exceeded with url ...") == "network"
     assert classify_failure([{"package": "x"}], "Max retries exceeded") == "vulnerability"
+
+
+def test_classify_failure_flags_pypi_server_errors_as_network(tmp_path: Path) -> None:
+    raw_report = tmp_path / "pip-audit-report.raw.json"
+    output = tmp_path / "pip-audit-failure.json"
+    stderr_log = tmp_path / "pip-audit-stderr.log"
+    # Tail of a real CI run where PyPI's CDN returned 503 mid-audit and
+    # pip-audit aborted before writing any report.
+    stderr_log.write_text(
+        "requests.exceptions.HTTPError: 503 Server Error: Backend is unhealthy for url: "
+        "https://pypi.org/pypi/pyproject-hooks/1.3.0/json\n"
+        "\n"
+        "The above exception was the direct cause of the following exception:\n"
+        "pip_audit._service.interface.ServiceError\n",
+        encoding="utf-8",
+    )
+
+    artifact = build_artifact(raw_report, output, timeout="30", stderr_log_path=stderr_log)
+
+    assert artifact["failure_category"] == "network"
+    assert artifact["vulnerability_count"] == 0
+
+
+@pytest.mark.parametrize(
+    "stderr_text",
+    [
+        "pip_audit._service.interface.ServiceError",
+        "HTTPError: 502 Server Error: Bad Gateway for url: https://pypi.org/pypi/x/1.0/json",
+        "HTTPError: 504 Server Error: Gateway Timeout for url: https://api.osv.dev/v1/query",
+        "HTTPError: 429 Client Error: Too Many Requests for url: https://pypi.org/pypi/x/json",
+    ],
+)
+def test_classify_failure_treats_vulnerability_service_errors_as_network(stderr_text: str) -> None:
+    assert classify_failure([], stderr_text) == "network"
+    # A real finding still wins over a transient service error.
+    assert classify_failure([{"package": "x"}], stderr_text) == "vulnerability"
