@@ -38,7 +38,7 @@ redis:
   # docker-compose.yml ile aynı pinlenmiş sürüm (bir kod incelemesi Compose
   # ile Helm arasındaki sürüm uyuşmazlığını işaret etti — daha önce burada
   # sürümsüz "redis:alpine" vardı).
-  image: redis:7.4-alpine
+  image: redis:8.10-alpine
   port: 6379
   maxConnections: 100
   storage:
