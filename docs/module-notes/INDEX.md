@@ -89,8 +89,10 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `core/config_env_helpers.py` → `docs/module-notes/core/config_env_helpers.py.md`
 - `core/config_event_bus.py` → `docs/module-notes/core/config_event_bus.py.md`
 - `core/config_github_hf.py` → `docs/module-notes/core/config_github_hf.py.md`
+- `core/config_gpu.py` → `docs/module-notes/core/config_gpu.py.md`
 - `core/config_gpu_detect.py` → `docs/module-notes/core/config_gpu_detect.py.md`
 - `core/config_hardware.py` → `docs/module-notes/core/config_hardware.py.md`
+- `core/config_llm.py` → `docs/module-notes/core/config_llm.py.md`
 - `core/config_logging_setup.py` → `docs/module-notes/core/config_logging_setup.py.md`
 - `core/config_lora_training.py` → `docs/module-notes/core/config_lora_training.py.md`
 - `core/config_lsp.py` → `docs/module-notes/core/config_lsp.py.md`
@@ -99,6 +101,8 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `core/config_observability.py` → `docs/module-notes/core/config_observability.py.md`
 - `core/config_orchestrator.py` → `docs/module-notes/core/config_orchestrator.py.md`
 - `core/config_postgres.py` → `docs/module-notes/core/config_postgres.py.md`
+- `core/config_quality.py` → `docs/module-notes/core/config_quality.py.md`
+- `core/config_rag_defaults.py` → `docs/module-notes/core/config_rag_defaults.py.md`
 - `core/config_rag_entity.py` → `docs/module-notes/core/config_rag_entity.py.md`
 - `core/config_rag_store.py` → `docs/module-notes/core/config_rag_store.py.md`
 - `core/config_rate_limit.py` → `docs/module-notes/core/config_rate_limit.py.md`
@@ -108,6 +112,8 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `core/config_scoped_settings.py` → `docs/module-notes/core/config_scoped_settings.py.md`
 - `core/config_secret_hardening.py` → `docs/module-notes/core/config_secret_hardening.py.md`
 - `core/config_secrets.py` → `docs/module-notes/core/config_secrets.py.md`
+- `core/config_security.py` → `docs/module-notes/core/config_security.py.md`
+- `core/config_self_heal.py` → `docs/module-notes/core/config_self_heal.py.md`
 - `core/config_social_integrations.py` → `docs/module-notes/core/config_social_integrations.py.md`
 - `core/config_validators.py` → `docs/module-notes/core/config_validators.py.md`
 - `core/config_web_search.py` → `docs/module-notes/core/config_web_search.py.md`

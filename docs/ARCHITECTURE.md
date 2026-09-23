@@ -67,8 +67,10 @@ Legacy vanilla JS `web_ui/` arayüzü kaldırılmıştır; `web_server.py` yaln�
 
 - `core/config_dotenv.py`: dotenv reload planı.
 - `core/config_hardware.py`: WSL2 algılama, donanım kontrolü ve VRAM fraction politikası.
-- `core/config_security.py`, `config_llm.py`, `config_gpu.py`, `config_quality.py`,
-  `config_rag.py`, `config_autonomy.py`: domain ayarları.
+- `core/config_security.py`, `core/config_llm.py`, `core/config_gpu.py`,
+  `core/config_quality.py`, `core/config_rag_defaults.py`, `core/config_self_heal.py`
+  ve diğer `core/config_*.py` modülleri: domain ayarları. Kök dizinde yalnız
+  `config.py` facade'ı bulunur; yeni domain ayar modülleri `core/` altına eklenir.
 
 Paket ve runtime sürüm doğruluk zinciri `pyproject.toml` ile `sidar_version.py`dır.
 

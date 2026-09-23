@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import config_security
+from core import config_security
 
 
 def test_load_security_settings_generates_runtime_jwt_without_api_key_fallback(monkeypatch):

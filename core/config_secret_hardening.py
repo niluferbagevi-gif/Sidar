@@ -8,8 +8,8 @@ from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
-from config_security import get_missing_security_runtime_keys, has_weak_postgres_runtime_secret
 from core.config_secrets import is_nonempty_secret, is_weak_secret
+from core.config_security import get_missing_security_runtime_keys, has_weak_postgres_runtime_secret
 from core.config_validators import is_valid_http_url, normalize_ai_provider
 
 PRODUCTION_SECRET_KEYS: tuple[str, ...] = (

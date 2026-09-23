@@ -9,12 +9,14 @@ modüllerden beslenir:
 
 - `core/config_postgres.py`: PostgreSQL DSN üretimi, container DB URL'i ve pool
   varsayılanlarının canonical modülü; `config.py` bu helperları doğrudan re-export eder.
-- `config_llm.py`: LLM provider/model ayarları (coding ve text model seçimi dahil),
+- `core/config_llm.py`: LLM provider/model ayarları (coding ve text model seçimi dahil),
   `LLMClientSettings` ve Ollama batch policy.
-- `config_rag_defaults.py`: RAG chunk/top-k/semantic-cache varsayılanları; legacy `config_rag.py` yalnız backward-compatible shim olarak kalır.
-- `config_security.py`: API/JWT/security secret ayarları ve production validation
+- `core/config_quality.py`: DLP/HITL/LLM-judge kalite kapısı ayarları (`QualityGateSettings`).
+- `core/config_rag_defaults.py`: RAG chunk/top-k/semantic-cache varsayılanları.
+- `core/config_security.py`: API/JWT/security secret ayarları ve production validation
   yardımcıları.
-- `config_autonomy.py`, `config_gpu.py`: self-heal/otonomi ve GPU varsayılanları.
+- `core/config_self_heal.py`, `core/config_gpu.py`: self-heal ve GPU varsayılanları.
+  (`core/config_autonomy.py` ayrı bir modüldür: otonomi servisi webhook ayarları.)
 - `core/config_app.py`: uygulama adı, sürüm, debug, log ve runtime dil ayarları.
 - `core/config_dotenv.py`, `core/config_env_helpers.py`, `core/config_runtime_env.py`:
   dotenv zinciri, type-safe env okuma ve reload-time override akışları.
@@ -24,7 +26,7 @@ modüllerden beslenir:
   artık yalnızca ayar yükleme değil, `Config.init_telemetry()`'nin gerçek
   OpenTelemetry enstrümantasyon mantığını da barındırır (bkz. aşağıdaki
   "Devam eden konsolidasyon" bölümü).
-- `core/config_scoped_settings.py`: `config_llm.py` ve `config_quality.py`'nin
+- `core/config_scoped_settings.py`: `core/config_llm.py` ve `core/config_quality.py`'nin
   paylaştığı, dotenv'e scoped `BaseSettings` alt sınıfı üreten `build_scoped_settings_type()`
   helper'ı — mypy `--strict` altında pydantic-settings'in `_env_file=...` dinamik
   init kwarg'ından kaçınmak için `type(...)` ile throwaway subclass üretir; bir
@@ -69,16 +71,15 @@ kararı bunun runtime ayarlarının tek doğruluk kaynağı olmasından değil, 
 `from config import Config` ve `import config` tüketicilerini kırmadan yaklaşık yirmi
 domain ayar modülünü birleştiren compatibility facade olmasından kaynaklanır.
 Tekrarlayan business logic bu dosyaya eklenmemelidir; yeni davranış önce
-`config_llm.py`, `config_security.py`, `config_rag_defaults.py` veya `core/config_*.py`
-modüllerindeki canonical helper/settings objesine konmalıdır.
+ilgili `core/config_*.py` modülündeki canonical helper/settings objesine konmalıdır.
 
 Düşük riskli iyileştirmenin ilk adımı olarak `Config` artık canonical loader
 sonuçlarını typed domain settings facade alias'larıyla da expose eder; tekil
 `Config.FOO` alias'ları geriye dönük uyum için korunur. Devam eden hedefler:
 
-- `Config.llm_settings` → `config_llm.LLM_SETTINGS` / `LLMClientSettings`
+- `Config.llm_settings` → `core.config_llm.LLM_SETTINGS` / `LLMClientSettings`
   tüketimini yeni kodda yaygınlaştırmak.
-- `Config.security_settings` → `config_security.load_security_settings()`
+- `Config.security_settings` → `core.config_security.load_security_settings()`
   sonucunu yeni güvenlik tüketicilerinde tercih etmek.
 - `Config.sandbox_settings`, `Config.observability_settings`,
   `Config.rate_limit_settings`, `Config.event_bus_settings` ve
@@ -92,18 +93,19 @@ her adım `tests/unit/root/test_config.py` içindeki import contract testleriyle
 korunmalıdır.
 
 
-## Kök/Core yerleşim kuralı
+## Yerleşim kuralı
 
-Config split modülleri için yerleşim kuralı:
+Tüm config split modülleri tek pakette, `core/config_*.py` altında durur. Kök
+dizinde yalnız `config.py` facade'ı bulunur; kökte yeni `config_*.py` modülü
+eklenmemelidir (`tests/unit/root/test_config.py` bunu doğrular). Sıfır ek mantık
+içeren pass-through wrapper eklenmemelidir; facade doğrudan canonical core
+modülünden re-export etmelidir.
 
-- `core/config_*.py`: Runtime domain helperları, provider/domain-specific ayarlar ve
-  başka modüller tarafından doğrudan tüketilebilen saf yardımcılar için canonical
-  konumdur. PostgreSQL DSN/pool helperları bu nedenle `core/config_postgres.py`
-  altında tutulur.
-- Kök `config_*.py`: `config.py` facade'ına yakın, üst seviye orkestrasyon veya
-  legacy import uyumluluğu gerektiren ayar grupları için kullanılır. Sıfır ek mantık
-  içeren pass-through wrapper eklenmemelidir; facade doğrudan canonical core
-  modülünden re-export etmelidir.
+Eski kök modüller `core/` altına taşınmıştır: `config_gpu.py`, `config_llm.py`,
+`config_quality.py`, `config_rag_defaults.py`, `config_security.py` aynı adla;
+kök `config_autonomy.py` (self-heal varsayılanları) mevcut `core/config_autonomy.py`
+ile çakışmaması için `core/config_self_heal.py` adıyla. Tüketicisi kalmayan legacy
+`config_rag.py` shim'i kaldırılmıştır.
 
 ## Import uyumluluk sözleşmesi
 
@@ -119,8 +121,7 @@ Bu yüzey `tests/unit/root/test_config.py` içinde korunur. Yeni kod, yalnızca 
 domain helper'a ihtiyaç duyuyorsa doğrudan split modülü tercih etmelidir:
 
 ```python
-import config_llm
-from core import config_env_helpers, config_postgres
+from core import config_env_helpers, config_llm, config_postgres
 ```
 
 Yeni split modül eklendiğinde iki güvence birlikte sağlanmalıdır:
