@@ -14,21 +14,28 @@ _YELLOW = "\033[93m"
 _RED = "\033[91m"
 _RESET = "\033[0m"
 
-PROVIDER_API_KEY_SETTINGS: dict[str, str] = {
-    "gemini": "GEMINI_API_KEY",
-    "openai": "OPENAI_API_KEY",
-    "anthropic": "ANTHROPIC_API_KEY",
-}
-
 
 def warn_missing_provider_api_key(provider: str, cfg: Any, *, logger_obj: logging.Logger) -> None:
-    """Bulut sağlayıcı seçildiyse ve API anahtarı boşsa uyarı yazar."""
-    key_name = PROVIDER_API_KEY_SETTINGS.get(provider)
-    if key_name is None or getattr(cfg, key_name, None):
-        return
-    message = f"Uyarı: {key_name} boş görünüyor. API çağrıları başarısız olabilir."
-    logger_obj.warning(message)
-    print(f"{_RED}⚠ {message}{_RESET}")
+    """Bulut sağlayıcı seçildiyse ve API anahtarı boşsa uyarı yazar.
+
+    Mesajlar bilinçli olarak sabit metinlerdir: ayar adından türetilmiş bir
+    değeri log'a yazmak, statik analiz (CodeQL) tarafından hassas veri
+    loglaması olarak işaretlenir.
+    """
+    if provider == "gemini" and not getattr(cfg, "GEMINI_API_KEY", None):
+        message = "Uyarı: GEMINI_API_KEY boş görünüyor. API çağrıları başarısız olabilir."
+        logger_obj.warning(message)
+        print(f"{_RED}⚠ {message}{_RESET}")
+
+    if provider == "openai" and not getattr(cfg, "OPENAI_API_KEY", None):
+        message = "Uyarı: OPENAI_API_KEY boş görünüyor. API çağrıları başarısız olabilir."
+        logger_obj.warning(message)
+        print(f"{_RED}⚠ {message}{_RESET}")
+
+    if provider == "anthropic" and not getattr(cfg, "ANTHROPIC_API_KEY", None):
+        message = "Uyarı: ANTHROPIC_API_KEY boş görünüyor. API çağrıları başarısız olabilir."
+        logger_obj.warning(message)
+        print(f"{_RED}⚠ {message}{_RESET}")
 
 
 def check_ollama_reachability(cfg: Any, *, logger_obj: logging.Logger) -> None:
