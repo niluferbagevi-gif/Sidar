@@ -683,6 +683,48 @@ makinede üretilen donanıma özgü baseline başka bir makinede sessizce kullan
 Benchmark runner'ında CPU governor, container/VM katmanı ve arka plan yükü sabitlenmeli;
 uygun runner çevrimdışıysa job'ın queued kalması gate'i GitHub-hosted gürültülü bir
 makineye düşürmekten daha güvenli, fail-closed davranıştır.
+
+#### Dizüstü / WSL2 self-hosted runner: güç modu ve arka plan yükü
+
+Benchmark ve GPU runner'ı bir geliştirici dizüstü bilgisayarında (WSL2) çalışıyorsa,
+CI job'ları çalışırken aşağıdaki koşullar sağlanmalıdır. Aksi hâlde ölçümler koddan bağımsız
+biçimde sapar:
+
+- **Bilgisayar fişe takılı olmalıdır.** Pilde Windows; NVMe disk güç durumlarını, CPU turbo
+  ve C-state davranışını ve dizüstü GPU güç limitini kısar. WSL2 içindeki runner da bu
+  kısıtlamadan etkilenir.
+- **Windows güç modu "En iyi performans" olmalıdır** (Ayarlar → Sistem → Güç ve pil →
+  Güç modu). NVIDIA sürücüsünde güç yönetimi modu "Maksimum performansı tercih et" olarak
+  ayarlanabilir.
+- **Aynı host'ta ağır geliştirme yükü çalışmamalıdır.** Sidar web/CLI, yüklenmiş Ollama
+  modelleri, `docker compose` altyapı servisleri (`postgres`, `redis`, observability) ve
+  kurulum/test koşuları arka planda disk ve GPU kullanır. Runner job'ı alırken bunları
+  durdurun.
+
+Tipik belirti: `test_multi_user_session_message_workload_scales_with_concurrency[sqlite]`
+I/O benchmark'ı baseline'ın ~2 katına çıkar (`mean` > `BENCHMARK_IO_COMPARE_FAIL` eşiği),
+ancak aynı job'daki CPU/parola benchmark'ları baseline içinde kalır. Buna ek olarak GPU
+kalite kapısı TTFT/latency bütçelerini karşılasa bile `Inference varyansı çok yüksek`
+(CV > %30) hatasıyla düşebilir. Bu durumda PR'ı suçlamadan önce aynı host'ta iki ref'i
+art arda karşılaştırın:
+
+```bash
+git fetch origin
+for ref in origin/main origin/<pr-dalı>; do
+  git checkout -q "$ref"
+  DOTENV_FILE=.env.test uv run pytest -q -p no:cacheprovider --no-cov tests/performance/test_benchmark.py \
+    -k test_multi_user_session_message_workload_scales_with_concurrency --benchmark-only --benchmark-disable-gc \
+    2>&1 | grep -E "sqlite\]" | head -1
+done
+git checkout -q main
+```
+
+İki ref de baseline'a yakınsa sapma host kaynaklıdır. Makine fişe takılı ve boşta iken
+GitHub Actions'tan **Re-run failed jobs** ile yalnız başarısız job'ları yeniden çalıştırın.
+Yalnız PR ref'i yavaşsa regresyon gerçektir ve kod tarafında araştırılmalıdır. Baseline'ı
+host gürültüsünü örtmek için yeniden seed etmeyin; seed yalnız donanım/runner gerçekten
+değiştiğinde yapılır.
+
 GitHub-hosted `test` job'ı performans testlerini `RUN_BENCHMARKS=0` ile bilinçli
 olarak dışlar; bu job'ın özeti tek başına production-ready kanıtı değildir. Nihai
 `production-readiness` aggregate sonucu ancak base test, sabit donanımdaki
