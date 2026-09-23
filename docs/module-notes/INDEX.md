@@ -170,10 +170,15 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `gui_launcher.py` → `docs/module-notes/gui_launcher.py.md`
 - `install_sidar.sh` → `docs/module-notes/install_sidar.sh.md`
 - `launcher/__init__.py` → `docs/module-notes/launcher/__init__.py.md`
+- `launcher/cli_args.py` → `docs/module-notes/launcher/cli_args.py.md`
 - `launcher/doctor.py` → `docs/module-notes/launcher/doctor.py.md`
+- `launcher/env_reload.py` → `docs/module-notes/launcher/env_reload.py.md`
+- `launcher/preflight.py` → `docs/module-notes/launcher/preflight.py.md`
 - `launcher/process.py` → `docs/module-notes/launcher/process.py.md`
 - `launcher/selection.py` → `docs/module-notes/launcher/selection.py.md`
+- `launcher/session.py` → `docs/module-notes/launcher/session.py.md`
 - `launcher/ui.py` → `docs/module-notes/launcher/ui.py.md`
+- `launcher/wizard.py` → `docs/module-notes/launcher/wizard.py.md`
 - `main.py` → `docs/module-notes/main.py.md`
 - `managers/__init__.py` → `docs/module-notes/managers/__init__.py.md`
 - `managers/browser_manager.py` → `docs/module-notes/managers/browser_manager.py.md`

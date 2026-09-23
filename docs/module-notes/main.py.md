@@ -1,4 +1,4 @@
-# `main.py` — Akıllı Başlatıcı (1241 satır)
+# `main.py` — Akıllı Başlatıcı (848 satır)
 
 **Amaç:** Sidar'ı başlatmak için etkileşimli sihirbaz veya `--quick` hızlı mod sağlar.
 
@@ -23,6 +23,25 @@ akışını çalıştırıp sonunda `cli.py`'yi (gerçek REPL giriş noktası) v
 | `_run_with_streaming(cmd, child_log_path)` | Çocuk süreç stdout/stderr canlı yayınlar; opsiyonel dosya logu |
 | `execute_command(cmd, capture_output, child_log_path)` | `subprocess.run` veya streaming ile çalıştırır |
 | `run_wizard()` | 4 adımlı etkileşimli menü |
+
+## `launcher/` altına taşınan mantık (2026-09, 1232 → 848 satır)
+
+`main.py`'de aynı adlı ince sarmalayıcılar kaldı; testlerin `main` üzerinde patch
+ettiği isimler (`confirm`, `ask_choice`, `cfg`, `MAX_AUTOFIX_RETRIES`,
+`_run_doctor_auto_fix_command` vb.) çağrı anında çözülüp parametre olarak geçirilir.
+
+| `main.py` | Yeni konum |
+|---|---|
+| `_launcher_session_lock`, `_save_launcher_session`, `_load_launcher_session` | `launcher/session.py` |
+| `_parse_doctor_env_source_file`, `_reload_doctor_env_source_definitions`, `_reload_database_env_from_loaded_dotenv_chain` | `launcher/env_reload.py` |
+| `_run_doctor_auto_fix_command`, `_run_doctor_auto_fix`, `_revalidate_doctor_check_after_auto_fix` | `launcher/doctor.py` |
+| `main()` argparse tanımı ve `--port` doğrulaması | `launcher/cli_args.py` |
+| `preflight()` API anahtarı ve Ollama kontrolleri | `launcher/preflight.py` |
+| `run_wizard()` seçenek tabloları ve varsayılanlar | `launcher/wizard.py` |
+
+`main.py`'de bilinçli olarak kalanlar: `cfg`/`config_module` ve Doctor durum
+global'leri, `_reload_config_environment` (global `cfg`'yi yeniden atar) ve
+sihirbazın `ask_*` çağrıları.
 
 ## `run_wizard()` 4 Adımlı Etkileşimli Menü
 
