@@ -713,7 +713,6 @@ exclude = [
   "build",
   "dist",
   "temp",
-  "web_ui",
   "web_ui_react",
   "launcher_gui",
   "models--*",

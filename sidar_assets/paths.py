@@ -17,7 +17,6 @@ _ASSET_PACKAGE: Final = "sidar_assets"
 
 _FALLBACKS: Final[dict[str, Path]] = {
     "web_ui_react/dist": _REPO_ROOT / "web_ui_react" / "dist",
-    "web_ui": _REPO_ROOT / "web_ui",
     "helm/sidar": _REPO_ROOT / "helm" / "sidar",
     "migrations": _REPO_ROOT / "migrations",
     "alembic.ini": _REPO_ROOT / "alembic.ini",
