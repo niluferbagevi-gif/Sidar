@@ -2844,6 +2844,27 @@ def test_reload_environment_refreshes_dotenv_managed_base_values(monkeypatch, tm
     assert config.Config.DATABASE_URL == "postgresql://sidar:new@localhost:5432/sidar"
 
 
+def test_reload_environment_drops_blank_hf_cache_paths(monkeypatch, tmp_path):
+    """A template line like ``HF_HUB_CACHE=`` must not reach huggingface_hub as ""."""
+    (tmp_path / ".env").write_text(
+        "HF_HUB_CACHE=\nHF_HOME=~/.cache/huggingface\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config, "BASE_DIR", tmp_path)
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.delenv("DOTENV_FILE", raising=False)
+    monkeypatch.setenv("SIDAR_KEYS_FILE", "")
+    monkeypatch.delenv("HF_HUB_CACHE", raising=False)
+    monkeypatch.delenv("HF_HOME", raising=False)
+    monkeypatch.setattr(config.Config, "_ensure_hardware_info_loaded", lambda: None)
+    monkeypatch.setattr(config.Config, "_apply_gpu_memory_safety_check", lambda: None)
+
+    config.reload_environment()
+
+    assert "HF_HUB_CACHE" not in os.environ
+    assert os.environ["HF_HOME"] == "~/.cache/huggingface"
+
+
 def test_reload_environment_loads_new_development_profile(monkeypatch, tmp_path):
     (tmp_path / ".env.development").write_text(
         "SIDAR_ENV=development\n"

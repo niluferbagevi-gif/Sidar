@@ -307,6 +307,9 @@ _load_dotenv_if_exists(_explicit_dotenv, override=True, label="explicit:DOTENV_F
 _sidar_keys_file = os.getenv("SIDAR_KEYS_FILE", "~/.sidar_keys.env").strip()
 _validate_sidar_keys_file_path(_sidar_keys_file)
 _load_dotenv_if_exists(_sidar_keys_file, override=True, label="secret:SIDAR_KEYS_FILE")
+# Boş HF cache yolları (örn. şablondaki `HF_HUB_CACHE=`) huggingface_hub import
+# edilmeden önce temizlenir; aksi hâlde hub cache kökü "" olur ve model bulunamaz.
+config_dotenv.drop_empty_path_overrides(os.environ)
 
 ENV_PATH = base_env_path
 SECURITY_SETTINGS = load_security_settings()
@@ -1639,6 +1642,7 @@ def _reload_dotenv_chain(*, profile: str | None = None) -> None:
         _load_dotenv_into_effective_env(
             effective_env, plan.sidar_keys_file, override=True, label="secret:SIDAR_KEYS_FILE"
         )
+        config_dotenv.drop_empty_path_overrides(effective_env)
 
         removed_managed_keys = previous_managed_keys - set(effective_env)
         for key in removed_managed_keys:

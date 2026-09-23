@@ -3704,6 +3704,27 @@ async def test_pgvector_failure_action_message_specific_branches() -> None:
     )
 
 
+async def test_pgvector_failure_action_message_surfaces_unclassified_embedding_error(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        rag,
+        "postgres_failure_diagnosis",
+        lambda _reason, _exc: "PostgreSQL bağlantı nedeni sınıflandırılamadı",
+    )
+    message = rag._pgvector_failure_action_message(
+        OSError(
+            "We couldn't connect to 'https://huggingface.co' to load the files.\n"
+            "Check your internet connection"
+        )
+    )
+
+    assert "extension-migrasyon" not in message
+    assert "sınıflandırılamadı" not in message
+    assert "OSError: We couldn't connect to 'https://huggingface.co'" in message
+    assert "Check your internet connection" not in message
+
+
 async def test_entity_graph_loading_normalization_and_json_extraction_branches(
     tmp_path: Path,
 ) -> None:

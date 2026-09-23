@@ -115,9 +115,27 @@ def is_valid_pgvector_identifier(identifier: str) -> bool:
     return is_safe_sql_identifier(identifier)
 
 
+UNCLASSIFIED_POSTGRES_DIAGNOSIS = "PostgreSQL bağlantı nedeni sınıflandırılamadı"
+
+
+def describe_unclassified_pgvector_failure(diagnosis: str, exc: BaseException) -> str:
+    """Replace the generic PostgreSQL fallback with the redacted exception summary.
+
+    pgvector init also loads the embedding model, so an unclassified failure is often
+    not a database problem at all (e.g. a missing Hugging Face cache entry).
+    """
+    if diagnosis != UNCLASSIFIED_POSTGRES_DIAGNOSIS:
+        return diagnosis
+    first_line = redact_sensitive_text(str(exc)).strip().splitlines()
+    detail = first_line[0][:200] if first_line else ""
+    return f"{type(exc).__name__}: {detail}" if detail else type(exc).__name__
+
+
 def pgvector_failure_action_message(exc: BaseException) -> str:
     """Return a single-line pgvector fallback message using DB diagnostics."""
-    diagnosis = postgres_failure_diagnosis("pgvector backend başlatılamadı", exc)
+    diagnosis = describe_unclassified_pgvector_failure(
+        postgres_failure_diagnosis("pgvector backend başlatılamadı", exc), exc
+    )
     if "yetki/parola" in diagnosis:
         return (
             "pgvector pasif, BM25 fallback aktif edildi. DATABASE_URL, "

@@ -370,3 +370,17 @@ def test_load_dotenv_into_effective_env_and_reload_baseline(tmp_path):
         key_sources=sources,
         plan=plan_base_skipped,
     ) == {"MANAGED": "from-old-dotenv", "KEPT": "original", "NEW": "value"}
+
+
+def test_drop_empty_path_overrides_removes_only_blank_cache_paths():
+    environ = {
+        "HF_HUB_CACHE": "",
+        "HF_HOME": "   ",
+        "TRANSFORMERS_CACHE": "/data/hf",
+        "UNRELATED": "",
+    }
+
+    removed = config_dotenv.drop_empty_path_overrides(environ)
+
+    assert removed == ["HF_HOME", "HF_HUB_CACHE"]
+    assert environ == {"TRANSFORMERS_CACHE": "/data/hf", "UNRELATED": ""}

@@ -2947,6 +2947,15 @@ def test_doctor_database_env_reason_and_remaining_diagnosis_fallbacks(monkeypatc
     assert core_db.postgres_failure_diagnosis("unexpected") == (
         "PostgreSQL bağlantı nedeni sınıflandırılamadı"
     )
+    # Context text ("pgvector ...") must not turn unrelated exceptions into an
+    # extension diagnosis; only the exception itself decides that branch.
+    assert core_db.postgres_failure_diagnosis(
+        "pgvector backend başlatılamadı",
+        OSError("We couldn't connect to 'https://huggingface.co' to load the files"),
+    ) == ("PostgreSQL bağlantı nedeni sınıflandırılamadı")
+    assert core_db.postgres_failure_diagnosis(
+        "pgvector backend başlatılamadı", RuntimeError('extension "vector" is not available')
+    ) == ("pgvector hazırlığı / extension-migrasyon tamamlanamadı")
     assert "PostgreSQL bağlantısı başarısız." in core_db._postgres_user_action_message("unexpected")
     assert "yetki/parola hatası" in core_db._postgres_user_action_message(
         "password authentication failed"

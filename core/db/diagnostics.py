@@ -71,7 +71,11 @@ def postgres_failure_diagnosis(reason: str, exc: BaseException | None = None) ->
         )
     ):
         return "TCP bağlantısı kurulamadı veya koptu"
-    if "extension" in combined or "vector" in combined:
+    # Callers pass context such as "pgvector backend başlatılamadı" as ``reason``;
+    # matching "vector" against that context would label every unrelated failure
+    # (e.g. an embedding model that cannot be loaded) as an extension problem.
+    extension_scope = (f"{type(exc).__name__} {exc}" if exc is not None else reason).lower()
+    if "extension" in extension_scope or "vector" in extension_scope:
         return "pgvector hazırlığı / extension-migrasyon tamamlanamadı"
     if doctor_reason:
         return f"Doctor/database_env: {doctor_reason}"

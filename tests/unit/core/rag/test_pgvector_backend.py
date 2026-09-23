@@ -158,3 +158,17 @@ def test_pgvector_ddl_builder_validates_table_indexes_and_dimension() -> None:
         pgvector._pgvector_ddl("rag; DROP TABLE users", 384)
     with pytest.raises(ValueError, match="Invalid SQL integer literal"):
         pgvector._pgvector_ddl("rag_embeddings", -1)
+
+
+def test_describe_unclassified_pgvector_failure_uses_redacted_exception_summary():
+    pgvector = importlib.reload(pgvector_module)
+    unclassified = pgvector.UNCLASSIFIED_POSTGRES_DIAGNOSIS
+
+    assert pgvector.describe_unclassified_pgvector_failure("known", OSError("x")) == "known"
+    assert pgvector.describe_unclassified_pgvector_failure(unclassified, OSError()) == "OSError"
+    summary = pgvector.describe_unclassified_pgvector_failure(
+        unclassified, OSError("postgresql://sidar:secret@db/x unreachable\nsecond line")
+    )
+    assert summary.startswith("OSError: ")
+    assert "secret" not in summary
+    assert "second line" not in summary
