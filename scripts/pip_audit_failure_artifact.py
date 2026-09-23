@@ -35,6 +35,16 @@ NETWORK_ERROR_PATTERNS: tuple[str, ...] = (
     "TLSV1_ALERT",
     "tunnel",
     "proxy",
+    # PyPI/OSV answered but could not serve the lookup (e.g. Fastly
+    # "503 Server Error: Backend is unhealthy"). pip-audit then aborts with its
+    # vulnerability-service ServiceError instead of producing a report.
+    "pip_audit._service.interface.ServiceError",
+    "500 Server Error",
+    "502 Server Error",
+    "503 Server Error",
+    "504 Server Error",
+    "429 Client Error",
+    "Backend is unhealthy",
 )
 
 
