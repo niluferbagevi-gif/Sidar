@@ -180,7 +180,7 @@ import sys
 path, model, num_ctx, num_batch = sys.argv[1:5]
 # core/llm/ollama.py's real chat() call only sets num_ctx/num_batch when
 # they resolve to a positive value (0/negative means "let Ollama use its
-# own default" - see config_llm.OLLAMA_BATCH_POLICY.auto_batch_for_context).
+# own default" - see core.config_llm.OLLAMA_BATCH_POLICY.auto_batch_for_context).
 # Mirror that here so the smoke test sends the exact same options shape.
 options = {}
 num_ctx_int = int(num_ctx)

@@ -47,7 +47,7 @@ sidar_ollama_read_runtime_setting() {
 # core/llm/ollama.py::chat() içinde GERÇEKTE göndereceği num_ctx/num_batch
 # çiftini STDOUT'a iki satır halinde yazar (1. satır num_ctx, 2. satır
 # num_batch). Kaynak tek: config.py'nin VRAM'e göre otomatik ayarladığı
-# Config.OLLAMA_CODING_NUM_CTX ve config_llm.OLLAMA_BATCH_POLICY ile
+# Config.OLLAMA_CODING_NUM_CTX ve core.config_llm.OLLAMA_BATCH_POLICY ile
 # hesaplanan efektif num_batch — ollama.py'deki clamp()/auto_batch_for_context()
 # çağrılarının birebir aynısı, burada tekrar uygulanıyor.
 #
@@ -86,7 +86,7 @@ _real_stdout = sys.stdout
 sys.stdout = io.StringIO()
 try:
     import config
-    from config_llm import OLLAMA_BATCH_POLICY
+    from core.config_llm import OLLAMA_BATCH_POLICY
 
     config.Config._ensure_hardware_info_loaded()
     num_ctx = int(config.Config.OLLAMA_CODING_NUM_CTX)
@@ -139,7 +139,7 @@ sidar_ollama_runtime_num_batch() {
     if py_output=$(sidar_ollama_python_effective_ctx_batch "$env_file"); then
         py_batch="${py_output#*$'\n'}"
     fi
-    # 0 config_llm.OLLAMA_BATCH_POLICY.auto_batch_for_context()'in geçerli bir
+    # 0 core.config_llm.OLLAMA_BATCH_POLICY.auto_batch_for_context()'in geçerli bir
     # sonucu (ollama.py bunu "num_batch seçeneğini hiç gönderme" olarak okur),
     # bu yüzden ctx'in aksine burada >0 şartı aranmıyor.
     if [[ "$py_batch" =~ ^[0-9]+$ ]]; then

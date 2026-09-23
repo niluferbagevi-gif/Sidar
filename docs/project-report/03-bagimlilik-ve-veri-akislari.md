@@ -54,9 +54,9 @@ Aşağıdaki şema, güncel çalışma zamanındaki ana bağımlılık yönünü
 
 [ 4. Çekirdek AI ve Veri Servisleri ]
   ├── core/llm_client.py (Ollama, Gemini, Anthropic, OpenAI-uyumlu, LiteLLM gateway)
-  ├── core/rag.py (pgvector, ChromaDB, BM25 hibrit arama)
+  ├── core/rag/ (pgvector, ChromaDB, BM25 hibrit arama)
   ├── core/memory.py + core/entity_memory.py (kalıcı oturum + persona belleği)
-  ├── core/db.py (oturum, kullanıcı, kota, prompt, policy, audit)
+  ├── core/db/ (oturum, kullanıcı, kota, prompt, policy, audit)
   └── redis (semantic cache / rate-limit altyapısı)
 
                  | (araçlar ve dış dünya eylemleri)
@@ -90,7 +90,7 @@ Aşağıdaki şema, güncel çalışma zamanındaki ana bağımlılık yönünü
 
 ### 9.4 DB Merkezli Bellek ve Kimlik Hiyerarşisi
 
-- `core/memory.py` içindeki `ConversationMemory`, kalıcılık için doğrudan `core/db.py::Database` katmanına bağlıdır.
+- `core/memory.py` içindeki `ConversationMemory`, kalıcılık için doğrudan `core/db/` `Database` katmanına bağlıdır.
 - Web katmanı (`web_server.py`) token tabanlı kimlik doğrulama/oturum çözümlemesinde DB kayıtlarını kullanır.
 - `agent/core/memory_hub.py` ise DB yerine kısa ömürlü role/global notlar tutan hafif bir orchestrasyon belleğidir; DB merkezli uzun ömürlü oturum belleğinin yerini almaz, onu tamamlar.
 
@@ -104,7 +104,7 @@ Aşağıdaki şema, güncel çalışma zamanındaki ana bağımlılık yönünü
 
 **Döngüsel bağımlılık:** Tespit edilmedi. `config.py` hâlâ bağımlılık ağacının kökü konumundadır.
 
-**Ortak Kullanım Notu (Multi-Agent):** `Supervisor` ve rol ajanları; araç dispatch için `agent/tooling.py`, kalıcı konuşma verisi için `core/memory.py` + `core/db.py`, canlı durum akışı için `agent/core/event_stream.py`, maliyet/telemetri için `core/llm_metrics.py` katmanlarını birlikte kullanır.
+**Ortak Kullanım Notu (Multi-Agent):** `Supervisor` ve rol ajanları; araç dispatch için `agent/tooling.py`, kalıcı konuşma verisi için `core/memory.py` + `core/db/`, canlı durum akışı için `agent/core/event_stream.py`, maliyet/telemetri için `core/llm_metrics.py` katmanlarını birlikte kullanır.
 
 ---
 
@@ -162,7 +162,7 @@ ConversationMemory.aadd(role, content)
     │
     ├─► in-memory turns güncelle (RLock korumalı)
     │
-    └─► core/db.py.add_message(...)
+    └─► core/db/ Database.add_message(...)
            ├─► `sessions` tablosu (oturum meta)
            └─► `messages` tablosu (kalıcı konuşma)
                  (tenant izolasyonu: user_id zorunlu)
@@ -215,7 +215,7 @@ docs_add / docs_add_file
 
 6. **HITL, Yayın ve Kalıcılık:**
    - Üretilen eylem planı sistem bütünlüğünü etkiliyorsa `core/hitl.py` devreye girer ve akış açık onay gelene kadar duraklar.
-   - Onaylanan işlem veya standart yanıt; `AgentEventBus` üzerinden canlı durum olarak yayınlanır, `ConversationMemory` + `core/db.py` ile kalıcı yazılır ve WebSocket/HTTP akışıyla kullanıcıya döner.
+   - Onaylanan işlem veya standart yanıt; `AgentEventBus` üzerinden canlı durum olarak yayınlanır, `ConversationMemory` + `core/db/` ile kalıcı yazılır ve WebSocket/HTTP akışıyla kullanıcıya döner.
 
 > **Not:** Bu 6 adımın tamamı boyunca OpenTelemetry ve metrik toplayıcıları (`core/llm_metrics.py`, `core/agent_metrics.py`, `core/cache_metrics.py`) arka planda span, maliyet, gecikme ve cache davranışını Jaeger / OTLP / Prometheus yüzeylerine aktarır.
 

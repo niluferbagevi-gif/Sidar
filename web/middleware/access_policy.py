@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -142,3 +144,45 @@ async def access_policy_middleware_impl(
             content={"error": "Yetki yok", "resource": resource_type, "action": action},
         )
     return await call_next(request)
+
+
+def schedule_access_audit_log(
+    *,
+    user: Any,
+    resource_type: str,
+    action: str,
+    resource_id: str,
+    ip_address: str,
+    allowed: bool,
+    build_audit_resource: Callable[[str, str], str],
+    resolve_agent_instance: Callable[[], Awaitable[Any]],
+    get_user_tenant: Callable[[Any], str],
+    logger_obj: logging.Logger,
+) -> None:
+    """Persist an ACL allow/deny decision to the audit log in a background task."""
+    resource = build_audit_resource(resource_type, resource_id)
+    if not resource:
+        return
+
+    async def _persist() -> None:
+        try:
+            agent = await resolve_agent_instance()
+            recorder = getattr(agent.memory.db, "record_audit_log", None)
+            if recorder is None:
+                return
+            await recorder(
+                user_id=str(getattr(user, "id", "") or ""),
+                tenant_id=get_user_tenant(user),
+                action=action,
+                resource=resource,
+                ip_address=ip_address,
+                allowed=allowed,
+            )
+        except Exception as exc:
+            logger_obj.debug("ACL audit log yazımı atlandı: %s", exc)
+
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_persist())
+    except RuntimeError:
+        logger_obj.debug("ACL audit log planlanamadı: event loop yok.")

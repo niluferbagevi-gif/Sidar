@@ -18,7 +18,7 @@ Sidar; CLI, FastAPI/WebSocket sunucusu ve React SPA üzerinden kullanılan, asyn
    `agent/swarm.py`, `agent/registry.py` ve `agent/roles/`.
 3. **Domain servisleri:** self-heal için `agent/self_heal/`, dış olaylar için
    `agent/triggers.py`, CI teşhisi için `core/ci_remediation.py`.
-4. **AI ve bilgi katmanı:** `core/llm_client.py`, `core/rag.py`, `core/memory.py`,
+4. **AI ve bilgi katmanı:** `core/llm_client.py`, `core/rag/`, `core/memory.py`,
    `core/voice.py`, `core/vision.py`, `core/multimodal.py`.
 5. **Veri katmanı:** `core/db/` facade'ı, `core/db_components/`, PostgreSQL/pgvector,
    Redis ve Alembic migrasyonları.
@@ -58,7 +58,8 @@ voice protokolü `useVoiceAssistant.ts` üzerinden tipli olarak tüketilir. Dupl
 akışı `/ws/voice`, VAD/commit ve barge-in kararlarını backend `core/voice.py` sözleşmesiyle
 birlikte uygular.
 
-Legacy `web_ui/` yalnız geriye dönük fallback'tir; yeni özellik geliştirme hedefi değildir.
+Legacy vanilla JS `web_ui/` arayüzü kaldırılmıştır; `web_server.py` yalnız
+`web_ui_react/dist` çıktısını sunar ve fallback yolu yoktur.
 
 ## 5. Yapılandırma ve donanım
 
@@ -66,8 +67,10 @@ Legacy `web_ui/` yalnız geriye dönük fallback'tir; yeni özellik geliştirme 
 
 - `core/config_dotenv.py`: dotenv reload planı.
 - `core/config_hardware.py`: WSL2 algılama, donanım kontrolü ve VRAM fraction politikası.
-- `core/config_security.py`, `config_llm.py`, `config_gpu.py`, `config_quality.py`,
-  `config_rag.py`, `config_autonomy.py`: domain ayarları.
+- `core/config_security.py`, `core/config_llm.py`, `core/config_gpu.py`,
+  `core/config_quality.py`, `core/config_rag_defaults.py`, `core/config_self_heal.py`
+  ve diğer `core/config_*.py` modülleri: domain ayarları. Kök dizinde yalnız
+  `config.py` facade'ı bulunur; yeni domain ayar modülleri `core/` altına eklenir.
 
 Paket ve runtime sürüm doğruluk zinciri `pyproject.toml` ile `sidar_version.py`dır.
 

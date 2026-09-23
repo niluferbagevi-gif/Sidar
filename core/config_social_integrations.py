@@ -5,11 +5,21 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+from core.config_env_helpers import get_bool_env
+
+# Sosyal medya yayını (Meta Graph / WhatsApp) deneysel bir özelliktir ve opt-in'dir.
+EXPERIMENTAL_SOCIAL_PUBLISHING_ENV = "ENABLE_EXPERIMENTAL_SOCIAL_PUBLISHING"
+EXPERIMENTAL_SOCIAL_PUBLISHING_DISABLED_REASON = (
+    "Deneysel sosyal medya yayını kapalı; açmak için "
+    f"{EXPERIMENTAL_SOCIAL_PUBLISHING_ENV}=true ayarlayın"
+)
+
 
 @dataclass(frozen=True)
 class SocialIntegrationSettings:
     """Meta/Instagram/Facebook/WhatsApp, Slack, Jira and Teams integration settings."""
 
+    enable_experimental_social_publishing: bool
     meta_graph_api_token: str
     meta_graph_api_version: str
     instagram_business_account_id: str
@@ -32,6 +42,10 @@ def load_social_integration_settings() -> SocialIntegrationSettings:
     jira_url = os.getenv("JIRA_URL", "")
     jira_token = os.getenv("JIRA_TOKEN", "")
     return SocialIntegrationSettings(
+        # Deneysel: Meta Graph/WhatsApp yayını açıkça opt-in edilmeden dış API'ye gitmez.
+        enable_experimental_social_publishing=get_bool_env(
+            EXPERIMENTAL_SOCIAL_PUBLISHING_ENV, False
+        ),
         meta_graph_api_token=os.getenv("META_GRAPH_API_TOKEN", ""),
         meta_graph_api_version=os.getenv("META_GRAPH_API_VERSION", "v20.0"),
         instagram_business_account_id=os.getenv("INSTAGRAM_BUSINESS_ACCOUNT_ID", ""),

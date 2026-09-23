@@ -95,9 +95,6 @@ sessions/
 *.note
 *.todo
 
-# Web vendor libraries (install_sidar.sh tarafından indirilir, repoya dahil edilmez)
-web_ui/vendor/
-
 # Docker volume data
 prometheus_data/
 grafana_data/

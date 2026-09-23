@@ -18,21 +18,24 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
-import fcntl
-import json
+import fcntl as fcntl  # explicit legacy module export (tests patch main.fcntl)
 import logging
 import os
 import subprocess
 import sys
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, cast
 
 from core.utils.trusted_subprocess import run_trusted_command
+from launcher import cli_args as launcher_cli_args
 from launcher import doctor as launcher_doctor
+from launcher import env_reload as launcher_env_reload
+from launcher import preflight as launcher_preflight
 from launcher import process as launcher_process
 from launcher import selection as launcher_selection
+from launcher import session as launcher_session
 from launcher import ui as launcher_ui
+from launcher import wizard as launcher_wizard
 
 LAUNCHER_SESSION_FILENAME = ".sidar_session.json"
 LAUNCHER_SESSION_VERSION = 1
@@ -229,67 +232,31 @@ def _default_launch_selection() -> dict[str, Any]:
     return launcher_selection.default_launch_selection(cfg=cfg)
 
 
-@contextlib.contextmanager
-def _launcher_session_lock(session_path: Path, *, exclusive: bool) -> Iterator[None]:
+def _launcher_session_lock(
+    session_path: Path, *, exclusive: bool
+) -> contextlib.AbstractContextManager[None]:
     """Lock launcher session cache access across concurrent terminal processes."""
-    lock_path = session_path.with_suffix(session_path.suffix + ".lock")
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(lock_path, "a+", encoding="utf-8") as lock_file:
-        with contextlib.suppress(OSError):
-            os.chmod(lock_path, 0o600)
-        operation = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
-        fcntl.flock(lock_file.fileno(), operation)
-        try:
-            yield
-        finally:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+    return launcher_session.session_lock(session_path, exclusive=exclusive)
 
 
 def _save_launcher_session(selection: dict[str, object], path: Path | None = None) -> Path:
     """Sihirbaz seçimlerini atomik şekilde .sidar_session.json cache'ine yazar."""
-    session_path = path or _launcher_session_path()
-    payload = {
-        "version": LAUNCHER_SESSION_VERSION,
-        "selection": _normalize_launch_selection(selection),
-    }
-    session_path.parent.mkdir(parents=True, exist_ok=True)
-    with _launcher_session_lock(session_path, exclusive=True):
-        tmp_path = session_path.with_suffix(f"{session_path.suffix}.{os.getpid()}.tmp")
-        tmp_path.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-        )
-        # Session cache may contain provider/model choices and future auth/session metadata;
-        # keep it readable only by the current user before and after the atomic replace.
-        os.chmod(tmp_path, 0o600)
-        tmp_path.replace(session_path)
-        os.chmod(session_path, 0o600)
-    return session_path
+    return launcher_session.save_session(
+        selection,
+        path or _launcher_session_path(),
+        normalize=_normalize_launch_selection,
+        version=LAUNCHER_SESSION_VERSION,
+    )
 
 
 def _load_launcher_session(path: Path | None = None) -> dict[str, Any] | None:
     """Son sihirbaz seçimlerini cache'den güvenli şekilde okur."""
-    session_path = path or _launcher_session_path()
-    try:
-        with _launcher_session_lock(session_path, exclusive=False):
-            payload = json.loads(session_path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        logger.debug(
-            "Launcher oturum cache'i henüz yok (ilk çalıştırma olabilir): %s", session_path
-        )
-        return None
-    except (json.JSONDecodeError, OSError) as exc:
-        logger.warning("Launcher oturum cache'i okunamadı (%s): %s", session_path, exc)
-        return None
-
-    if not isinstance(payload, dict) or payload.get("version") != LAUNCHER_SESSION_VERSION:
-        logger.warning("Launcher oturum cache'i desteklenmeyen biçimde: %s", session_path)
-        return None
-
-    selection = payload.get("selection")
-    if not isinstance(selection, dict):
-        logger.warning("Launcher oturum cache'i seçim alanı içermiyor: %s", session_path)
-        return None
-    return _normalize_launch_selection(selection)
+    return launcher_session.load_session(
+        path or _launcher_session_path(),
+        normalize=_normalize_launch_selection,
+        version=LAUNCHER_SESSION_VERSION,
+        logger_obj=logger,
+    )
 
 
 def _reload_config_environment(*, profile: str | None, reason: str) -> bool:
@@ -323,97 +290,20 @@ def _reload_environment_after_bootstrap(profile: str = "development") -> bool:
     return _reload_config_environment(profile=profile, reason="Bootstrap")
 
 
-def _parse_doctor_env_source_file(path: Path) -> dict[str, str]:
-    """Parse simple dotenv assignments for Doctor source reloads without logging values."""
-    values: dict[str, str] = {}
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return values
-    for line in lines:
-        stripped = line.lstrip()
-        if stripped.startswith("export "):
-            stripped = stripped[len("export ") :]
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            continue
-        key, raw_value = stripped.split("=", 1)
-        key = key.strip()
-        if not key or any(char.isspace() for char in key):
-            continue
-        value = raw_value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
-            value = value[1:-1]
-        values[key] = value
-    return values
+_parse_doctor_env_source_file = launcher_env_reload.parse_env_source_file
 
 
-def _reload_doctor_env_source_definitions(details: dict[str, Any] | None) -> bool:
-    """Best-effort reload of Doctor-reported dotenv source files into ``os.environ``."""
-    if not isinstance(details, dict):
-        return False
-    definitions = details.get("env_source_definitions")
-    if not isinstance(definitions, dict):
-        return False
-
-    applied = False
-    for key, sources in definitions.items():
-        if not isinstance(key, str) or not isinstance(sources, list):
-            continue
-        for source in sources:
-            if not isinstance(source, dict):
-                continue
-            raw_path = str(source.get("path", "") or "").strip()
-            if not raw_path:
-                continue
-            values = _parse_doctor_env_source_file(Path(raw_path).expanduser())
-            if key in values:
-                os.environ[key] = values[key]
-                applied = True
-    return applied
+_reload_doctor_env_source_definitions = launcher_env_reload.reload_env_source_definitions
 
 
-_DATABASE_AUTO_FIX_ENV_KEYS = ("DATABASE_URL", "SIDAR_CONTAINER_DATABASE_URL", "POSTGRES_PASSWORD")
+_DATABASE_AUTO_FIX_ENV_KEYS = launcher_env_reload.DATABASE_AUTO_FIX_ENV_KEYS
 
 
 def _reload_database_env_from_loaded_dotenv_chain() -> bool:
     """Force Doctor auto-fixed database keys from loaded dotenv files into this process."""
-    if config_module is None or not hasattr(config_module, "get_dotenv_load_report"):
-        return False
-
-    try:
-        events = config_module.get_dotenv_load_report()
-    except (RuntimeError, ValueError, OSError, TypeError, AttributeError) as exc:
-        logger.debug("Doctor auto-fix dotenv raporu okunamadı: %s", exc)
-        return False
-
-    effective_values: dict[str, str] = {}
-    applied = False
-    for event in events:
-        if not event.get("loaded"):
-            continue
-        raw_path = str(event.get("path", "") or "").strip()
-        if not raw_path:
-            continue
-        values = _parse_doctor_env_source_file(Path(raw_path).expanduser())
-        override = bool(event.get("override"))
-        for key in _DATABASE_AUTO_FIX_ENV_KEYS:
-            if key not in values:
-                continue
-            if override or key not in effective_values:
-                effective_values[key] = values[key]
-
-    for key, value in effective_values.items():
-        if os.environ.get(key) != value:
-            os.environ[key] = value
-            applied = True
-
-    if applied and hasattr(config_module, "Config"):
-        config_cls = config_module.Config
-        if hasattr(config_module, "get_database_url"):
-            config_cls.DATABASE_URL = config_module.get_database_url()
-        if hasattr(config_module, "get_container_database_url"):
-            config_cls.CONTAINER_DATABASE_URL = config_module.get_container_database_url()
-    return applied
+    return launcher_env_reload.reload_database_env_from_dotenv_chain(
+        config_module, logger_obj=logger
+    )
 
 
 def _reload_environment_after_auto_fix(
@@ -551,33 +441,13 @@ def _launcher_auto_fix_command(cmd: list[str]) -> list[str]:
 
 def _run_doctor_auto_fix_command(auto_fix: str) -> bool:
     """Run one validated Doctor auto-fix command without invoking a shell."""
-    try:
-        from core.doctor import validate_auto_fix_command
-
-        cmd = validate_auto_fix_command(auto_fix)
-    except ValueError as exc:
-        logger.warning("Doctor auto_fix komutu reddedildi: %s", exc)
-        print(f"{RED}   • Auto-fix komutu güvenlik doğrulamasından geçmedi: {exc}{RESET}")
-        return False
-    cmd = _launcher_auto_fix_command(cmd)
-    print(f"{CYAN}   • Auto-fix çalışıyor: {_format_cmd(cmd)}{RESET}")
-    try:
-        completed = run_trusted_command(
-            cmd, check=False, cwd=_project_base_dir(), env=_launcher_child_env()
-        )
-    except OSError as exc:
-        error = DoctorCheckError("Doctor auto_fix başlatılamadı")
-        logger.warning("%s: %s", error, exc)
-        print(f"{RED}   • Auto-fix başlatılamadı: {exc}{RESET}")
-        return False
-    returncode = int(completed.returncode)
-
-    if returncode == 0:
-        print(f"{GREEN}   • Auto-fix tamamlandı.{RESET}")
-        return True
-
-    print(f"{YELLOW}   • Auto-fix {returncode} koduyla tamamlandı.{RESET}")
-    return False
+    return launcher_doctor.run_doctor_auto_fix_command(
+        auto_fix,
+        cwd=_project_base_dir(),
+        env=_launcher_child_env(),
+        format_cmd=_format_cmd,
+        logger_obj=logger,
+    )
 
 
 def _run_doctor_auto_fix(
@@ -586,60 +456,16 @@ def _run_doctor_auto_fix(
     """Run Doctor auto-fix command(s), optionally revalidating after each successful step."""
     global _LAST_DOCTOR_AUTO_FIX_REVALIDATION
     _LAST_DOCTOR_AUTO_FIX_REVALIDATION = None
-    details = getattr(check, "details", {}) or {}
-    check_name = str(getattr(check, "name", "doctor") or "doctor")
-    status = str(getattr(check, "status", "warn") or "warn")
-    if status not in {"warn", "fail"} or not isinstance(details, dict):
-        return False
-
-    auto_fix_commands = _doctor_auto_fix_commands(details)
-    if not auto_fix_commands or not sys.stdin.isatty():
-        return False
-    if apply_all_mode:
-        selected_auto_fix_commands = auto_fix_commands
-    else:
-        selected_auto_fix_commands = _select_doctor_auto_fix_commands(check_name, auto_fix_commands)
-        prompt_suffix = "adımları" if len(selected_auto_fix_commands) > 1 else "komutu"
-        if not confirm(
-            f"Doctor/{getattr(check, 'name', 'doctor')} için önerilen auto-fix {prompt_suffix} "
-            "şimdi çalıştırılsın mı?",
-            False,
-        ):
-            return False
-
-    ran_any = False
-    pending_commands = list(selected_auto_fix_commands)
-    fallback_commands = _doctor_auto_fix_fallback_commands(details)
-    used_fallback = False
-    index = 0
-    attempts = 0
-    while index < len(pending_commands):
-        if attempts >= MAX_AUTOFIX_RETRIES:
-            print(
-                f"{YELLOW}   • Auto-fix tekrar limiti aşıldı "
-                f"({MAX_AUTOFIX_RETRIES}); kalan komutlar atlandı.{RESET}"
-            )
-            return ran_any
-        attempts += 1
-        auto_fix = pending_commands[index]
-        index += 1
-        if not _run_doctor_auto_fix_command(auto_fix):
-            if not used_fallback and fallback_commands:
-                used_fallback = True
-                pending_commands.extend(fallback_commands)
-                print(f"{YELLOW}   • Auto-fix başarısız; fallback komutları denenecek.{RESET}")
-                continue
-            return ran_any
-        ran_any = True
-        if check_func is None:
-            continue
-
-        updated_check = _revalidate_doctor_check_after_auto_fix(check_name, check_func, details)
-        updated_status = str(getattr(updated_check, "status", "warn") or "warn")
-        if updated_status == "pass":
-            return True
-
-    return ran_any
+    return launcher_doctor.run_doctor_auto_fix(
+        check,
+        check_func,
+        apply_all_mode=apply_all_mode,
+        confirm=confirm,
+        run_command=_run_doctor_auto_fix_command,
+        revalidate=_revalidate_doctor_check_after_auto_fix,
+        max_retries=MAX_AUTOFIX_RETRIES,
+        stdin_isatty=sys.stdin.isatty,
+    )
 
 
 def _invoke_doctor_auto_fix(check: Any, check_func: Any, apply_all_mode: bool) -> bool:
@@ -664,79 +490,22 @@ def _revalidate_doctor_check_after_auto_fix(
 ) -> Any | None:
     """Run a Doctor check once after a successful auto-fix and print the result."""
     global _LAST_DOCTOR_AUTO_FIX_REVALIDATION
-    if callable(check_name_or_func):
-        check_name = "database_env"
-        check_func = check_name_or_func
-        if isinstance(check_func_or_details, dict):
-            source_details = check_func_or_details
-    else:
-        check_name = str(check_name_or_func or "doctor")
-        check_func = check_func_or_details
-
-    try:
-        _reload_environment_after_auto_fix(source_details, check_name=check_name)
-    except TypeError:
-        _reload_environment_after_auto_fix(source_details)
-    try:
-        updated_check = check_func()
-    except (
-        DoctorCheckError,
-        RuntimeError,
-        ValueError,
-        OSError,
-        TypeError,
-        AttributeError,
-    ) as exc:  # pragma: no cover - defensive launcher path
-        logger.warning("Doctor auto-fix sonrası doğrulama çalıştırılamadı: %s", exc)
-        print(f"{YELLOW}   • Auto-fix sonrası doğrulama çalıştırılamadı: {exc}{RESET}")
-        _LAST_DOCTOR_AUTO_FIX_REVALIDATION = None
-        return None
-
-    updated_status = str(getattr(updated_check, "status", "warn") or "warn")
-    if updated_status == "fail":
-        doctor_checks: dict[str, str] = {
-            "database_env": "check_database_env",
-            "database_connectivity": "check_database_connectivity",
-            "rag_readiness": "check_rag_readiness",
-            "graphrag_entity_memory_ready": "check_graphrag_entity_memory_ready",
-        }
-        check_attr = doctor_checks.get(check_name)
-        if check_attr and check_name != "database_env":
-            with contextlib.suppress(Exception):
-                from core import doctor as doctor_module
-
-                fresh_check = getattr(doctor_module, check_attr, None)
-                if callable(fresh_check):
-                    refreshed = fresh_check()
-                    refreshed_status = str(getattr(refreshed, "status", "warn") or "warn")
-                    if refreshed_status != "fail":
-                        updated_check = refreshed
-                        updated_status = refreshed_status
-
-    _LAST_DOCTOR_AUTO_FIX_REVALIDATION = updated_check
-    print(f"{CYAN}   • Auto-fix sonrası yeniden doğrulama:{RESET}")
-    _print_doctor_check_summary(updated_check)
-    updated_name = str(getattr(updated_check, "name", "doctor") or "doctor")
-    lost_env_keys = _doctor_auto_fix_lost_env_keys(source_details, updated_check)
-    if lost_env_keys:
-        print(
-            f"{RED}   • Auto-fix Doctor/{updated_name} regresyon üretti: "
-            f"önceden set olan {', '.join(lost_env_keys)} yeniden doğrulamada boş görünüyor. "
-            f"Bu durum düzeltilmiş kabul edilmedi; env reload zincirini manuel inceleyin.{RESET}"
-        )
-    elif updated_status == "fail":
-        print(
-            f"{RED}   • Auto-fix Doctor/{updated_name} sorununu gideremedi; "
-            f"yukarıdaki önerileri manuel uygulayın.{RESET}"
-        )
-    elif updated_status == "pass":
-        print(f"{GREEN}   • Auto-fix Doctor/{updated_name} kontrolünü düzeltti.{RESET}")
-    else:
-        print(
-            f"{YELLOW}   • Auto-fix Doctor/{updated_name} kontrolünü yeniden çalıştırdı; "
-            f"kalan uyarıları inceleyin.{RESET}"
-        )
-    return updated_check
+    _LAST_DOCTOR_AUTO_FIX_REVALIDATION = launcher_doctor.revalidate_doctor_check_after_auto_fix(
+        check_name_or_func,
+        check_func_or_details,
+        source_details,
+        reload_environment=_reload_environment_after_auto_fix,
+        handled_exceptions=(
+            DoctorCheckError,
+            RuntimeError,
+            ValueError,
+            OSError,
+            TypeError,
+            AttributeError,
+        ),
+        logger_obj=logger,
+    )
+    return _LAST_DOCTOR_AUTO_FIX_REVALIDATION
 
 
 def _clear_doctor_auto_fix_revalidation_cache() -> None:
@@ -823,44 +592,10 @@ def preflight(provider: str, *, doctor_apply_all_yes: bool = False) -> None:
     except TypeError:
         _run_launcher_doctor_preflight()
 
-    if provider == "gemini" and not getattr(cfg, "GEMINI_API_KEY", None):
-        message = "Uyarı: GEMINI_API_KEY boş görünüyor. API çağrıları başarısız olabilir."
-        logger.warning(message)
-        print(f"{RED}⚠ {message}{RESET}")
-
-    if provider == "openai" and not getattr(cfg, "OPENAI_API_KEY", None):
-        message = "Uyarı: OPENAI_API_KEY boş görünüyor. API çağrıları başarısız olabilir."
-        logger.warning(message)
-        print(f"{RED}⚠ {message}{RESET}")
-
-    if provider == "anthropic" and not getattr(cfg, "ANTHROPIC_API_KEY", None):
-        message = "Uyarı: ANTHROPIC_API_KEY boş görünüyor. API çağrıları başarısız olabilir."
-        logger.warning(message)
-        print(f"{RED}⚠ {message}{RESET}")
+    launcher_preflight.warn_missing_provider_api_key(provider, cfg, logger_obj=logger)
 
     if provider == "ollama":
-        try:
-            import httpx
-
-            httpx_http_error: type[BaseException] = getattr(httpx, "HTTPError", RuntimeError)
-            base = getattr(cfg, "OLLAMA_URL", "http://localhost:11434").rstrip("/")
-            tags_url = base + "/tags" if base.endswith("/api") else base + "/api/tags"
-            with httpx.Client(timeout=2) as client:
-                code = client.get(tags_url).status_code
-            if code == 200:
-                print(f"{GREEN}✅ Ollama erişimi başarılı ({base}).{RESET}")
-            else:
-                logger.warning("Ollama health kontrolü beklenmeyen durum kodu döndürdü: %s", code)
-                print(f"{YELLOW}⚠ Ollama yanıt kodu: {code}{RESET}")
-        except ImportError:
-            logger.warning("'httpx' kütüphanesi kurulu değil, Ollama ağ kontrolü atlandı.")
-            print(f"{YELLOW}⚠ 'httpx' kütüphanesi kurulu değil, Ollama ağ kontrolü atlandı.{RESET}")
-        except (httpx_http_error, RuntimeError, OSError) as exc:
-            logger.warning("Ollama erişimi doğrulanamadı: %s", exc)
-            print(
-                f"{RED}⚠ Ollama erişimi doğrulanamadı. Servisin (Ollama) çalıştığından emin "
-                f"olun.{RESET}"
-            )
+        launcher_preflight.check_ollama_reachability(cfg, logger_obj=logger)
 
 
 def build_command(
@@ -908,98 +643,40 @@ def run_wizard() -> int:
     has_last = last_selection is not None
     default_badge = "Son seçim" if has_last else "Varsayılan"
 
-    mode_options = {
-        "1": ("Web Arayüzü Sunucusu (FastAPI + UI)", "web"),
-        "2": ("CLI Terminal Arayüzü", "cli"),
-    }
-    mode_default = "1"
-    if has_last and last_selection is not None:
-        mode_default = "2" if last_selection.get("mode") == "cli" else "1"
+    defaults = launcher_wizard.wizard_default_keys(last_selection, cfg=cfg)
     mode = ask_choice(
         "1. Hangi arayüzle başlatmak istiyorsunuz?",
-        mode_options,
-        mode_default,
+        dict(launcher_wizard.MODE_OPTIONS),
+        defaults["mode"],
         default_badge=default_badge,
     )
     print("-" * 50)
 
-    default_provider_map = {"ollama": "1", "gemini": "2", "openai": "3", "anthropic": "4"}
-    provider_default_source = (
-        last_selection.get("provider")
-        if has_last and last_selection is not None
-        else getattr(cfg, "AI_PROVIDER", "ollama")
-    )
-    default_provider_value = _safe_choice(
-        provider_default_source,
-        "ollama",
-        {"ollama", "gemini", "openai", "anthropic"},
-    )
-    default_provider = default_provider_map.get(default_provider_value, "1")
-    provider_options = {
-        "1": ("Ollama (Yerel LLM)", "ollama"),
-        "2": ("Gemini (Bulut LLM)", "gemini"),
-        "3": ("OpenAI (Bulut LLM)", "openai"),
-        "4": ("Anthropic Claude (Bulut LLM)", "anthropic"),
-    }
     provider = ask_choice(
         "2. Hangi AI Sağlayıcısı kullanılsın?",
-        provider_options,
-        default_provider,
+        dict(launcher_wizard.PROVIDER_OPTIONS),
+        defaults["provider"],
         default_badge=default_badge,
     )
     print("-" * 50)
 
-    level_default_source = (
-        last_selection.get("level")
-        if has_last and last_selection is not None
-        else getattr(cfg, "ACCESS_LEVEL", "full")
-    )
-    default_level_val = _safe_choice(
-        level_default_source,
-        "full",
-        {"restricted", "sandbox", "full"},
-    )
-    default_level = (
-        "1" if default_level_val == "full" else "2" if default_level_val == "sandbox" else "3"
-    )
-    level_options = {
-        "1": ("Full (Sınırsız Sistem Erişimi)", "full"),
-        "2": ("Sandbox (Docker İzolasyonlu Sınırlandırılmış Erişim)", "sandbox"),
-        "3": ("Restricted (Sadece Okuma ve Sohbet)", "restricted"),
-    }
     level = ask_choice(
         "3. Güvenlik/Yetki seviyesi ne olsun?",
-        level_options,
-        default_level,
+        dict(launcher_wizard.LEVEL_OPTIONS),
+        defaults["level"],
         default_badge=default_badge,
     )
     print("-" * 50)
 
-    log_options = {
-        "1": ("INFO (Standart)", "info"),
-        "2": ("DEBUG (Detaylı Geliştirici Logları)", "debug"),
-        "3": ("WARNING (Sadece Uyarılar ve Hatalar)", "warning"),
-    }
-    log_default_source = (
-        last_selection.get("log") if has_last and last_selection is not None else "info"
-    )
-    default_log = {"info": "1", "debug": "2", "warning": "3", "error": "3"}.get(
-        _safe_choice(log_default_source, "info", {"info", "debug", "warning", "error"}),
-        "1",
-    )
     log_level = ask_choice(
-        "4. Log seviyesini seçin:", log_options, default_log, default_badge=default_badge
+        "4. Log seviyesini seçin:",
+        dict(launcher_wizard.LOG_OPTIONS),
+        defaults["log"],
+        default_badge=default_badge,
     )
 
     extra_args = {}
-    last_extra_args = (
-        last_selection.get("extra_args")
-        if has_last
-        and last_selection is not None
-        and isinstance(last_selection.get("extra_args"), dict)
-        else {}
-    )
-    args = last_extra_args or {}
+    args = launcher_wizard.last_extra_args(last_selection)
     if provider == "ollama" and mode == "cli":
         extra_args["model"] = ask_text(
             "\nKullanılacak Ollama modeli",
@@ -1085,64 +762,12 @@ def main() -> None:
     if hasattr(cfg, "init_telemetry"):
         cfg.init_telemetry(service_name="sidar-launcher")
 
-    parser = argparse.ArgumentParser(description="Sidar Akıllı Başlatıcı")
-    parser.add_argument(
-        "--quick", choices=["cli", "web"], help="Sihirbazı atla ve belirtilen modda hızlı başlat"
-    )
-    parser.add_argument(
-        "--skip-wizard",
-        action="store_true",
-        help="Sihirbaz sorularını atla ve config/default seçimlerle başlat",
-    )
-    parser.add_argument(
-        "--last",
-        action="store_true",
-        help=f"Son {LAUNCHER_SESSION_FILENAME} sihirbaz seçimleriyle başlat",
-    )
-    parser.add_argument(
-        "--use-last",
-        action="store_true",
-        help=f"--last ile aynı: son {LAUNCHER_SESSION_FILENAME} seçimlerini kullan",
-    )
-    parser.add_argument(
-        "--provider",
-        choices=["ollama", "gemini", "openai", "anthropic"],
-        help="Hızlı başlat için AI sağlayıcı",
-    )
-    parser.add_argument(
-        "--level",
-        choices=["restricted", "sandbox", "full"],
-        help="Hızlı başlat için erişim seviyesi",
-    )
-    parser.add_argument("--model", help="Hızlı CLI başlat için Ollama modeli")
-    parser.add_argument("--host", help="Hızlı web başlat için host adresi")
-    parser.add_argument("--port", help="Hızlı web başlat için port numarası")
-    parser.add_argument("--log", default="info", help="Log seviyesi (info, debug, warning)")
-    parser.add_argument(
-        "--capture-output",
-        action="store_true",
-        help="Alt süreç stdout/stderr çıktısını launcherdan yakala ve yazdır",
-    )
-    parser.add_argument(
-        "--child-log",
-        help="Alt süreç stdout/stderr çıktısını dosyaya kaydet (ör. logs/child.log)",
-    )
-    parser.add_argument(
-        "--yes",
-        "-y",
-        action="store_true",
-        help="Doctor preflight için tüm auto-fix önerilerini tek onayla uygula",
-    )
+    parser = launcher_cli_args.build_arg_parser(session_filename=LAUNCHER_SESSION_FILENAME)
     args = parser.parse_args()
     global _LAUNCHER_DOCTOR_AUTO_FIX_YES
     _LAUNCHER_DOCTOR_AUTO_FIX_YES = bool(args.yes)
 
-    use_last_env = os.getenv("SIDAR_LAUNCHER_USE_LAST", "").strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    use_last_env = launcher_cli_args.use_last_from_env()
     use_last = bool(args.last or args.use_last or use_last_env)
     launch_modes = [bool(args.quick), bool(args.skip_wizard), bool(use_last)]
     if sum(launch_modes) > 1:
@@ -1152,16 +777,7 @@ def main() -> None:
         print(f"{RED}❌ Kritik yapılandırma doğrulaması başarısız. Çıkılıyor.{RESET}")
         sys.exit(2)
 
-    # --port değeri verilmişse 1-65535 aralığında olduğunu doğrula
-    if args.port is not None:
-        try:
-            _port_val = int(args.port)
-            if not (1 <= _port_val <= 65535):
-                raise ValueError
-        except ValueError:
-            parser.error(
-                f"--port değeri 1-65535 arasında tam sayı olmalıdır (verilen: {args.port!r})"
-            )
+    launcher_cli_args.validate_port_argument(parser, args.port)
 
     if use_last:
         selection = _load_launcher_session()

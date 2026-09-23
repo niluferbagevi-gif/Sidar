@@ -22,3 +22,13 @@ sözleşmeleri üzerinden) kurar/çalıştırır.
   çalıştırır.
 - `embed_event_driven_federation_payload(...)` — sonucu event payload'ına
   gömer.
+- `dispatch_autonomy_trigger(...)` (async) — `web_server.py`'den taşındı;
+  `ExternalTrigger` kurar, ajan `handle_external_trigger` sunmuyorsa
+  `ActionFeedback`/federasyon prompt'u ile yanıt toplar ve sonucu normalize eder.
+  Ajan çözümleyici, bellek bağlamı hazırlayıcı ve yanıt toplayıcı enjekte edilir.
+- `fallback_ci_failure_context(event_name, payload)` — `core.ci_remediation`
+  bağlam üretmediğinde `workflow_run`/`check_run`/`check_suite` ve genel CI
+  hata payload'larını yerelde normalize eder.
+- `autonomous_cron_loop(...)`, `nightly_memory_loop(...)` (async) — cron
+  tetikleyicisi ve gece bellek bakımı döngüleri; `cfg`, tetikleyici/ajan
+  çözümleyici ve logger enjekte edilir.

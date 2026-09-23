@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-import config_rag_defaults
+from core import config_rag_defaults
 from core.config_env_helpers import get_int_env, get_web_scrape_max_chars
 
 

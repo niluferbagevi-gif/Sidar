@@ -175,7 +175,7 @@
 
 ### ✅ Kurumsal SaaS Altyapısı ve Çoklu Kullanıcı
 
-- **PostgreSQL ve Alembic:** Veritabanı izolasyonu ile çoklu kullanıcı oturum yönetimi (`core/db.py`).
+- **PostgreSQL ve Alembic:** Veritabanı izolasyonu ile çoklu kullanıcı oturum yönetimi (`core/db/`).
 - **Kimlik Doğrulama:** JWT/Bearer Token tabanlı güvenli erişim ve yetkilendirme.
 - **Uyum / Denetim:** Tenant RBAC kararları `audit_logs` trail’ine kullanıcı, tenant, kaynak, IP ve allow/deny sonucu ile yazılır.
 - **Admin Paneli:** Sistem kullanımını, aktif kullanıcıları ve global kotaları izleyebileceğiniz Web UI yönetim arayüzü.
@@ -426,7 +426,7 @@ uv run python main.py
 
 ### Opsiyonel: Masaüstü GUI Launcher
 
-`main.py` mimarisini koruyan, `web_ui/` klasöründen bağımsız bir Eel tabanlı launcher vardır.
+`main.py` mimarisini koruyan, `launcher_gui/` arayüzünü kullanan Eel tabanlı bir launcher vardır.
 
 ```bash
 uv pip install eel
@@ -1005,7 +1005,6 @@ Web arayüzü özellikleri:
 - React SPA rotaları: sohbet, P2P diyalog, swarm akışı, prompt admin, agent manager, tenant admin
 - Streaming chat (daktilo efekti) + araç görselleştirmesi
 - Çoklu oturum yönetimi, markdown/kod blokları ve Bearer token toolbar
-- Legacy `web_ui/` için geriye dönük fallback desteği
 
 ### 🚀 Akıllı Launcher (main.py)
 
@@ -1108,27 +1107,27 @@ Sidar/
 ├── core/                   # LLM istemcisi, DB, RAG, DLP, HITL, Judge, Vision, metrics
 ├── managers/               # Kod, güvenlik, GitHub, sistem sağlığı, paket ve web arama yöneticileri
 ├── plugins/                # Marketplace ajan örnekleri
-├── tests/                  # 149 test modülü / 151 Python test dosyası
-├── web_ui/                 # Legacy vanilla JS arayüzü (fallback)
+├── tests/                  # pytest test paketi (unit, integration, e2e)
+├── web/                    # FastAPI uygulama fabrikası, route'lar, middleware
 ├── web_ui_react/           # React + Vite SPA (Chat, P2P, Swarm, Prompt/Agent/Tenant admin)
-├── migrations/             # Alembic zinciri: 0001_baseline_schema, 0002_prompt_registry, 0003_audit_trail
+├── migrations/             # Alembic zinciri: 0001_baseline_schema → 0007_faz_e_defaults_parity
 ├── scripts/                # Audit, env parity, SQLite→PostgreSQL migration, DB load test betikleri
 ├── runbooks/               # Production cutover, observability, plugin marketplace, tenant RBAC kılavuzları
 ├── helm/sidar/             # Kubernetes chart; web, ai-worker, redis, PostgreSQL, otel-collector, Jaeger, Zipkin
-├── docker/                 # Prometheus + Grafana provisioning dosyaları
+├── docker_setup/           # Prometheus, Grafana ve PostgreSQL provisioning dosyaları
 ├── grafana/                # Semantic cache / LLM overview dashboard varlıkları
 ├── config.py               # Merkezi yapılandırma; runtime sürümü `v5.2.0`
-├── web_server.py           # 86 REST endpoint + `/ws/chat` + `/ws/voice`
+├── web_server.py           # FastAPI giriş noktası (`web/routes/`), `/ws/chat` + `/ws/voice`
 ├── docker-compose.yml      # Core: redis, postgres, ollama, sidar-migrate, docker-socket-proxy, sidar-ai, sidar-web
 ├── docker-compose.gpu.yml  # GPU profili: ollama-gpu, sidar-gpu, sidar-web-gpu (-f ile core'a eklenir)
 ├── docker-compose.observability.yml  # jaeger, exporter'lar, cadvisor, prometheus, grafana (-f ile core'a eklenir)
 ├── README.md               # Ürün ve kurulum rehberi
-└── docs/                   # Mimari, denetim, runbook ve modül notu belgeleri (115 md dosyası)
+└── docs/                   # Mimari, denetim, runbook ve modül notu belgeleri
     ├── ARCHITECTURE.md      # Aktif v5.2.0 mimari doğruluk kaynağı
     ├── PROJE_RAPORU.md      # Bölümlenmiş kapsamlı rapor indeksi
     ├── project-report/      # Konu bazlı proje raporu bölümleri (6 dosya)
     ├── AUDIT_REPORT_v5.0.md # Güvenlik/coverage denetim raporu (tarihsel snapshot, ARŞİV NOTU ile işaretli)
-    ├── module-notes/        # Modül bazlı geliştirici notları (77 dosya)
+    ├── module-notes/        # Modül bazlı geliştirici notları
     └── TEKNIK_REFERANS.md   # Operasyonel/uygulama seviyesi sözleşmeler
 ```
 

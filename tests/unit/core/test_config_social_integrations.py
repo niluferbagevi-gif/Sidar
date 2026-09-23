@@ -3,6 +3,7 @@
 from core.config_social_integrations import load_social_integration_settings
 
 _ALL_KEYS = (
+    "ENABLE_EXPERIMENTAL_SOCIAL_PUBLISHING",
     "META_GRAPH_API_TOKEN",
     "META_GRAPH_API_VERSION",
     "INSTAGRAM_BUSINESS_ACCOUNT_ID",
@@ -32,6 +33,7 @@ def test_defaults_are_empty_except_meta_graph_api_version(monkeypatch):
 
     settings = load_social_integration_settings()
 
+    assert settings.enable_experimental_social_publishing is False
     assert settings.meta_graph_api_token == ""
     assert settings.meta_graph_api_version == "v20.0"
     assert settings.instagram_business_account_id == ""
@@ -107,3 +109,11 @@ def test_jira_base_url_and_api_token_are_independently_overridable(monkeypatch):
     assert settings.jira_token == "primary-token"
     assert settings.jira_base_url == "https://sidar-alt.atlassian.net"
     assert settings.jira_api_token == "alternate-token"
+
+
+def test_experimental_social_publishing_is_opt_in(monkeypatch):
+    """Social publishing stays off unless ENABLE_EXPERIMENTAL_SOCIAL_PUBLISHING is truthy."""
+    _clear_all(monkeypatch)
+    monkeypatch.setenv("ENABLE_EXPERIMENTAL_SOCIAL_PUBLISHING", "true")
+
+    assert load_social_integration_settings().enable_experimental_social_publishing is True

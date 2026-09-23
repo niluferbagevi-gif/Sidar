@@ -639,7 +639,7 @@ explicit = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["agent*", "core*", "launcher*", "managers*", "plugins*", "sidar_assets*", "web*"]
+include = ["agent*", "core*", "launcher*", "managers*", "plugins*", "sidar_assets*", "uploader*", "web*"]
 exclude = ["tests*", "docs*", "scripts*", "data*", "logs*", "*.tests"]
 
 [tool.setuptools]
@@ -650,13 +650,6 @@ py-modules = [
   "web_server",
   "gui_launcher",
   "config",
-  "config_autonomy",
-  "config_gpu",
-  "config_llm",
-  "config_quality",
-  "config_rag",
-  "config_rag_defaults",
-  "config_security",
   "scripts.version_probe",
   "sidar_version",
   "github_upload",
@@ -713,7 +706,6 @@ exclude = [
   "build",
   "dist",
   "temp",
-  "web_ui",
   "web_ui_react",
   "launcher_gui",
   "models--*",
