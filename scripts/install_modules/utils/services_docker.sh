@@ -113,7 +113,7 @@ from_zero_cleanup_if_requested() {
     local postgres_volume="${SIDAR_POSTGRES_VOLUME_NAME:-sidar_postgres_data}"
     local -a volumes_to_remove=("$postgres_volume" "${compose_project}_redis_data")
     local -a images_to_remove=(
-        redis:7.4-alpine
+        redis:8.10-alpine
         pgvector/pgvector:0.8.6-pg16
         jaegertracing/all-in-one:1.76.0
         oliver006/redis_exporter:v1.91.1
