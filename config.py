@@ -1041,7 +1041,10 @@ class Config:
     RAG_LLM_ENTITY_MODEL: str = _RAG_ENTITY_SETTINGS.rag_llm_entity_model
     RAG_LLM_ENTITY_REVIEW_TARGET: str = _RAG_ENTITY_SETTINGS.rag_llm_entity_review_target
 
-    # ─── Sosyal / Meta Graph Entegrasyonları (v6.0) ─────────────
+    # ─── Sosyal / Meta Graph Entegrasyonları (v6.0, deneysel yayın) ─────────────
+    ENABLE_EXPERIMENTAL_SOCIAL_PUBLISHING: bool = (
+        _SOCIAL_INTEGRATION_SETTINGS.enable_experimental_social_publishing
+    )
     META_GRAPH_API_TOKEN: str = _SOCIAL_INTEGRATION_SETTINGS.meta_graph_api_token
     META_GRAPH_API_VERSION: str = _SOCIAL_INTEGRATION_SETTINGS.meta_graph_api_version
     INSTAGRAM_BUSINESS_ACCOUNT_ID: str = _SOCIAL_INTEGRATION_SETTINGS.instagram_business_account_id

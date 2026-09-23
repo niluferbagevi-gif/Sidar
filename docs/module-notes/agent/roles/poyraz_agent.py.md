@@ -15,3 +15,7 @@ kampanya/içerik/landing-page üretim uç noktalarının arkasındaki ajan mant�
 - `PoyrazAgent(BaseAgent)` — kampanya kopyası, landing page taslağı, sosyal
   medya/pazarlama araç çağrılarını yürüten ana ajan sınıfı; riskli/dış-etkili
   aksiyonlar `core/hitl.py` üzerinden onaya tabi tutulabilir.
+- **Deneysel sosyal yayın kapısı:** `publish_social`/`publish_instagram_post`/
+  `publish_facebook_post`/`send_whatsapp_message` araçları
+  `ENABLE_EXPERIMENTAL_SOCIAL_PUBLISHING` kapalıyken (varsayılan) HITL onayı
+  istemeden `[<PLATFORM>:ERROR] reason=...` döner; dış API çağrısı yapılmaz.
