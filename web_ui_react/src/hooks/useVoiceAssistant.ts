@@ -4,6 +4,10 @@ import { getStoredToken } from "../lib/api.js";
 const VOICE_WS_URL = () =>
   `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/voice`;
 
+// Must match web/security.py SIDAR_WS_VOICE_PROTOCOL; see useWebSocket.ts for why
+// the fixed protocol has to accompany the token.
+export const SIDAR_WS_VOICE_PROTOCOL = "sidar.voice.v1";
+
 const VAD_THRESHOLD = 0.035;
 const VAD_SILENCE_MS = 640;
 const MEDIA_TIMESLICE_MS = 250;
@@ -414,7 +418,7 @@ export function useVoiceAssistant({
       // Token is carried only via the WebSocket subprotocol handshake, never
       // in the URL — a query-string token would land in plaintext in proxy
       // access logs and browser history.
-      const ws = new WebSocket(VOICE_WS_URL(), [token]);
+      const ws = new WebSocket(VOICE_WS_URL(), [SIDAR_WS_VOICE_PROTOCOL, token]);
       wsRef.current = ws;
 
       ws.onmessage = (event) => {

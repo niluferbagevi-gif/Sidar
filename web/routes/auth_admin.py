@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import logging
 from collections.abc import Awaitable, Callable
 from typing import Annotated, Any
 
@@ -9,6 +10,8 @@ from fastapi.responses import JSONResponse
 
 from web.routes import LegacyExportRouter
 from web.security import is_reserved_username
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_payload(model: type[Any], payload: Any) -> Any:
@@ -80,6 +83,7 @@ def build_auth_admin_router(
             maybe = await_if_needed(register_result)
             user = await maybe if inspect.isawaitable(maybe) else maybe
         except Exception as exc:
+            logger.exception("Kullanıcı kaydı başarısız: username=%s", username)
             raise HTTPException(
                 status_code=500, detail="Kullanıcı kaydı işlenirken beklenmeyen bir hata oluştu"
             ) from exc
@@ -104,6 +108,7 @@ def build_auth_admin_router(
             )
             user = await maybe if inspect.isawaitable(maybe) else maybe
         except Exception as exc:
+            logger.exception("Giriş sırasında veritabanı hatası: username=%s", username)
             raise HTTPException(
                 status_code=500, detail="Veritabanı hatası nedeniyle giriş yapılamadı"
             ) from exc

@@ -2352,7 +2352,7 @@ describe("useVoiceAssistant — ek hedefli branch testleri", () => {
     await act(async () => {
       await result.current.start();
     });
-    expect(wsCtor).toHaveBeenCalledWith("wss://example.test/ws/voice", ["token"]);
+    expect(wsCtor).toHaveBeenCalledWith("wss://example.test/ws/voice", ["sidar.voice.v1", "token"]);
 
     Object.defineProperty(globalThis, "location", { configurable: true, value: originalLocation });
   });
