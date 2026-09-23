@@ -181,7 +181,7 @@ describe("useWebSocket — token değişimi", () => {
     expect(firstSocket.onclose).toBeNull();
     expect(firstSocket.onerror).toBeNull();
     expect(firstSocket.onmessage).toBeNull();
-    expect(currentWebSocketCtor()).toHaveBeenNthCalledWith(2, expect.any(String), ["yeni-token"]);
+    expect(currentWebSocketCtor()).toHaveBeenNthCalledWith(2, expect.any(String), ["sidar.chat.v1", "yeni-token"]);
   });
 
   it("starts a connection on token-change events when no previous socket exists", () => {
@@ -195,7 +195,7 @@ describe("useWebSocket — token değişimi", () => {
     });
 
     expect(currentWebSocketCtor()).toHaveBeenCalledTimes(1);
-    expect(currentWebSocketCtor()).toHaveBeenNthCalledWith(1, expect.any(String), ["ilk-token"]);
+    expect(currentWebSocketCtor()).toHaveBeenNthCalledWith(1, expect.any(String), ["sidar.chat.v1", "ilk-token"]);
   });
 
   it("cleans up an open previous socket before restarting for the token-change event", () => {
@@ -217,7 +217,7 @@ describe("useWebSocket — token değişimi", () => {
     expect(firstSocket.onclose).toBeNull();
     expect(firstSocket.onerror).toBeNull();
     expect(firstSocket.onmessage).toBeNull();
-    expect(currentWebSocketCtor()).toHaveBeenNthCalledWith(2, expect.any(String), ["yeni-token"]);
+    expect(currentWebSocketCtor()).toHaveBeenNthCalledWith(2, expect.any(String), ["sidar.chat.v1", "yeni-token"]);
   });
 
   it("restarts the connection for a cross-tab storage event affecting the token", () => {
@@ -235,7 +235,7 @@ describe("useWebSocket — token değişimi", () => {
     });
 
     expect(firstSocket.close).toHaveBeenCalledTimes(1);
-    expect(currentWebSocketCtor()).toHaveBeenNthCalledWith(2, expect.any(String), ["sekme-token"]);
+    expect(currentWebSocketCtor()).toHaveBeenNthCalledWith(2, expect.any(String), ["sidar.chat.v1", "sekme-token"]);
   });
 
   it("ignores cross-tab storage events for unrelated keys", () => {
@@ -679,7 +679,7 @@ describe("useWebSocket — eksik branch testleri (100% Coverage için)", () => {
     localStorage.setItem("sidar_access_token", "tok");
     renderHook(() => useWebSocket("s1", {}));
 
-    expect(currentWebSocketCtor()).toHaveBeenCalledWith("wss://localhost/ws/chat", ["tok"]);
+    expect(currentWebSocketCtor()).toHaveBeenCalledWith("wss://localhost/ws/chat", ["sidar.chat.v1", "tok"]);
 
     globalThis.location = originalLocation;
   });
