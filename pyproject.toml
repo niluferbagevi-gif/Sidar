@@ -639,7 +639,7 @@ explicit = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["agent*", "core*", "launcher*", "managers*", "plugins*", "sidar_assets*", "web*"]
+include = ["agent*", "core*", "launcher*", "managers*", "plugins*", "sidar_assets*", "uploader*", "web*"]
 exclude = ["tests*", "docs*", "scripts*", "data*", "logs*", "*.tests"]
 
 [tool.setuptools]

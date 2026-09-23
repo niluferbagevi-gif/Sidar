@@ -227,6 +227,13 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `scripts/install_host_sandbox.sh` → `docs/module-notes/scripts/install_host_sandbox.sh.md`
 - `scripts/load_test_db_pool.py` → `docs/module-notes/scripts/load_test_db_pool.py.md`
 - `scripts/migrate_sqlite_to_pg.py` → `docs/module-notes/scripts/migrate_sqlite_to_pg.py.md`
+- `uploader/__init__.py` → `docs/module-notes/uploader/__init__.py.md`
+- `uploader/console.py` → `docs/module-notes/uploader/console.py.md`
+- `uploader/files.py` → `docs/module-notes/uploader/files.py.md`
+- `uploader/gates.py` → `docs/module-notes/uploader/gates.py.md`
+- `uploader/git_ops.py` → `docs/module-notes/uploader/git_ops.py.md`
+- `uploader/github_api.py` → `docs/module-notes/uploader/github_api.py.md`
+- `uploader/manifests.py` → `docs/module-notes/uploader/manifests.py.md`
 - `web/__init__.py` → `docs/module-notes/web/__init__.py.md`
 - `web/app_factory.py` → `docs/module-notes/web/app_factory.py.md`
 - `web/autonomy_bridge.py` → `docs/module-notes/web/autonomy_bridge.py.md`
