@@ -6,7 +6,7 @@
 **Amaç:** Pazarlama ve dijital operasyon odaklı uzman ajan; `web/routes/operations.py`'nin
 kampanya/içerik/landing-page üretim uç noktalarının arkasındaki ajan mantığı.
 `core/hitl.py`'nin onay kapısını, `managers/social_media_manager.py` ve
-`managers/web_search.py`'yi, `core/rag.py`'nin `DocumentStore`'unu kullanır.
+`managers/web_search.py`'yi, `core/rag/` paketinin `DocumentStore`'unu kullanır.
 
 **Özellikler:**
 - `_resolve_multimodal_pipeline_class()` — görsel/çoklu-medya üretim

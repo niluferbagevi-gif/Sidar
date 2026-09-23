@@ -18,7 +18,7 @@ Sidar; CLI, FastAPI/WebSocket sunucusu ve React SPA üzerinden kullanılan, asyn
    `agent/swarm.py`, `agent/registry.py` ve `agent/roles/`.
 3. **Domain servisleri:** self-heal için `agent/self_heal/`, dış olaylar için
    `agent/triggers.py`, CI teşhisi için `core/ci_remediation.py`.
-4. **AI ve bilgi katmanı:** `core/llm_client.py`, `core/rag.py`, `core/memory.py`,
+4. **AI ve bilgi katmanı:** `core/llm_client.py`, `core/rag/`, `core/memory.py`,
    `core/voice.py`, `core/vision.py`, `core/multimodal.py`.
 5. **Veri katmanı:** `core/db/` facade'ı, `core/db_components/`, PostgreSQL/pgvector,
    Redis ve Alembic migrasyonları.
@@ -58,7 +58,8 @@ voice protokolü `useVoiceAssistant.ts` üzerinden tipli olarak tüketilir. Dupl
 akışı `/ws/voice`, VAD/commit ve barge-in kararlarını backend `core/voice.py` sözleşmesiyle
 birlikte uygular.
 
-Legacy `web_ui/` yalnız geriye dönük fallback'tir; yeni özellik geliştirme hedefi değildir.
+Legacy vanilla JS `web_ui/` arayüzü kaldırılmıştır; `web_server.py` yalnız
+`web_ui_react/dist` çıktısını sunar ve fallback yolu yoktur.
 
 ## 5. Yapılandırma ve donanım
 

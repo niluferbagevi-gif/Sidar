@@ -134,7 +134,7 @@ Aşağıdaki matris, sistemin sahip olduğu kurumsal yeteneklerin hangi teknik g
 | **Maliyet Optimizasyonu (Semantic Cache)** | Redis tabanlı semantic cache, cosine similarity eşleşmesi, TTL/LRU davranışı ve cache metrikleri (`core/llm_client.py`, `core/cache_metrics.py`) | ✅ Tamamlandı |
 | **Veri Güvenliği ve İzolasyon (DLP)** | LLM çağrısından önce hassas verilerin maskelenmesi (`core/dlp.py`) | ✅ Tamamlandı |
 | **Güvenli Otonomi (HITL)** | Yıkıcı eylemler öncesi insan onayı bekleyen asenkron karar kapısı (`core/hitl.py`, `web_server.py`) | ✅ Tamamlandı |
-| **Çoklu-Kiracı (Multi-Tenant) & RBAC** | Tenant tabanlı kullanıcı/politika modeli, access policy enforcement ve audit trail (`core/db.py`, `web_server.py`, `migrations/versions/0003_audit_trail.py`) | ✅ Tamamlandı |
+| **Çoklu-Kiracı (Multi-Tenant) & RBAC** | Tenant tabanlı kullanıcı/politika modeli, access policy enforcement ve audit trail (`core/db/`, `web_server.py`, `migrations/versions/0003_audit_trail.py`) | ✅ Tamamlandı |
 | **Modern Asenkron Arayüz (SPA)** | React + Vite + WebSocket/event-driven sunum katmanı (`web_ui_react/`, `web_server.py`) | ✅ Tamamlandı |
 | **Model Ağ Geçidi (LLM Gateway)** | OpenAI/Anthropic/Ollama/LiteLLM yollarını tekleştiren sağlayıcı soyutlama katmanı (`core/llm_client.py`, `core/router.py`) | ✅ Tamamlandı |
 | **Dinamik Genişletilebilirlik** | Runtime kayıt edilen ajan pazaryeri ve plugin yükleme akışı (`agent/registry.py`, `plugins/`, `web_server.py`) | ✅ Tamamlandı |
@@ -143,7 +143,7 @@ Aşağıdaki matris, sistemin sahip olduğu kurumsal yeteneklerin hangi teknik g
 | **Prompt Registry ve Yönetim Denetimi** | DB tabanlı prompt versiyonlama ve typed admin paneli (`migrations/versions/0002_prompt_registry.py`, `web_server.py`, `web_ui_react/src/components/PromptAdminPanel.tsx`) | ✅ Tamamlandı |
 | **Multimodal Perception + Duplex Voice** | Medya ingestion, frame/audio çıkarma, `/ws/voice`, assistant turn metadata'sı, duplex buffer ve VAD/barge-in olayları (`core/multimodal.py`, `core/voice.py`, `web_server.py`) | ✅ Tamamlandı |
 | **Dynamic Browser Automation** | Playwright/Selenium tabanlı, HITL ve audit trail ile kontrollü tarayıcı yönetimi (`managers/browser_manager.py`) | ✅ Tamamlandı |
-| **GraphRAG + Reviewer Impact Gate** | Modül bağımlılık grafiği, etki analizi ve LSP diagnostics birleşik reviewer kalite kapısı (`core/rag.py`, `agent/roles/reviewer_agent.py`) | ✅ Tamamlandı |
+| **GraphRAG + Reviewer Impact Gate** | Modül bağımlılık grafiği, etki analizi ve LSP diagnostics birleşik reviewer kalite kapısı (`core/rag/`, `agent/roles/reviewer_agent.py`) | ✅ Tamamlandı |
 | **Coverage Test Quality Gate** | CoverageAgent aday testlerini reviewer LLM öncesinde AST ile denetler; `assert True`, sabit/trivial assertion, import-only kontrat ve hedef davranışına bağlanmayan testler yazılmadan fail-closed reddedilir (`agent/roles/coverage_agent.py`) | ✅ Tamamlandı |
 | **Poyraz + Coverage REST Köprüleri** | React/REST istemcileri artık Poyraz operasyon araçlarını ve CoverageAgent analiz/batch akışını script yerine `/api/operations/...` ve `/api/qa/coverage/...` uçlarıyla çalıştırır (`web_server.py`) | ✅ Tamamlandı |
 | **Swarm Decision Graph + Live Operation Surface** | Node/edge tabanlı handoff görselleştirmesi, canlı karar görünürlüğü ve seçili node üzerinden operatör müdahalesi (`agent/swarm.py`, `web_ui_react/src/components/SwarmFlowPanel.tsx`, `core/hitl.py`) | ✅ Tamamlandı |

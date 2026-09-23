@@ -24,7 +24,7 @@
 | Symlink koruması | ✓ Aktif | `managers/security.py` |
 | Hassas yol engelleme | ✓ Aktif | `managers/security.py` |
 | Bearer Token Auth | ✓ Aktif (DB tabanlı) | `web_server.py` — `basic_auth_middleware`, `/auth/login`, `/auth/register`, `/auth/me` |
-| Çoklu Kullanıcı (Tenant) İzolasyonu | ✓ Aktif (`user_id` tabanlı) | `core/db.py` — `users`, `auth_tokens`, `sessions`, `messages`, `provider_usage_daily`, `user_quotas` |
+| Çoklu Kullanıcı (Tenant) İzolasyonu | ✓ Aktif (`user_id` tabanlı) | `core/db/` — `users`, `auth_tokens`, `sessions`, `messages`, `provider_usage_daily`, `user_quotas` |
 | WebSocket zorunlu Auth Handshake | ✓ Aktif (policy violation `1008`) | `web_server.py` — `/ws/chat`, `_ws_close_policy_violation()` |
 | Fail-Closed Bellek Erişimi | ✓ Aktif (`MemoryAuthError`) | `core/memory.py` — `_require_active_user()` |
 | Zero-Trust Docker Sandbox | ✓ Aktif (`network_mode="none"`, `mem_limit`, `nano_cpus`) | `managers/code_manager.py` — `execute_code()` |
@@ -34,8 +34,8 @@
 | Rate limiting | ✓ Aktif (HTTP + WS + Redis fallback) | `web_server.py` |
 | DLP / PII Maskeleme | ✓ Aktif (`[MASKED]` temelli) | `core/dlp.py`, `core/llm_client.py` |
 | HITL Onay Geçidi | ✓ Aktif (yüksek riskli eylemler için duraklatma/onay) | `core/hitl.py`, `web_server.py` |
-| Tenant RBAC | ✓ Aktif (tenant + resource/action policy) | `web_server.py`, `core/db.py` |
-| Audit Trail | ✓ Aktif (DB kalıcılığı) | `migrations/versions/0003_audit_trail.py`, `core/db.py`, `web_server.py` |
+| Tenant RBAC | ✓ Aktif (tenant + resource/action policy) | `web_server.py`, `core/db/` |
+| Audit Trail | ✓ Aktif (DB kalıcılığı) | `migrations/versions/0003_audit_trail.py`, `core/db/`, `web_server.py` |
 | LLM QA Devre Kesici | ✓ Aktif (`MAX_QA_RETRIES=3`) | `agent/sidar_agent.py` |
 | GitHub binary engelleme | ✓ Aktif | `managers/github_manager.py` |
 | Git upload blacklist | ✓ Aktif | `github_upload.py` |
@@ -111,7 +111,7 @@ Güncel depoda test envanteri kurumsal kalite kapılarına göre agresif biçimd
 - **`test_*.py` modül sayısı:** **213**
 - **`tests/*.py` toplamı (`conftest.py` + `__init__.py` dahil):** **215**
 - **Toplam test satırı (`tests/*.py`):** **65.729**
-- **Kapsama politikası:** `.coveragerc`, `pytest.ini`, `run_tests.sh` ve CI hattı ile yönetilen **%90 hard gate**
+- **Kapsama politikası:** `pyproject.toml` (`[tool.coverage.*]`, `[tool.pytest.ini_options]`), `run_tests.sh` ve CI hattı ile yönetilen **%90 hard gate**
 
 **Öne çıkan test kategorileri (v5.0.0-alpha):**
 - **Coverage / Sert kalite kapısı:** `test_quick_100.py`, `test_ultimate_coverage.py`, `pytest-cov`, `.coveragerc`, `run_tests.sh`
@@ -162,7 +162,7 @@ bir tabandır; release öncesi güncel baseline local/CI ve campaign için `%100
 
 Doğrudan `COVERAGE_FAIL_UNDER` her zaman tüm profillerin önüne geçer
 (geri uyumluluk). Rapor görünürlüğü `pyproject.toml` coverage ayarlarıyla
-`show_missing = true` olarak korunur, `pytest.ini` `python_files = test_*.py`
+`show_missing = true` olarak korunur, `[tool.pytest.ini_options]` `python_files = test_*.py`
 ve `asyncio_mode = auto` ile test evrenini deterministik koşturur.
 
 CI hattı (`.github/workflows/ci.yml`) coverage eşiğinden hemen önce
@@ -184,9 +184,9 @@ ratchet üst sınırını birlikte loglar.
 
 ### 6.4 Asenkron Test Altyapısı
 
-- `pytest.ini` içinde `python_files = test_*.py`, `asyncio_mode = auto` ve `asyncio_default_fixture_loop_scope = session` ayarları ile tüm async testler otomatik olarak session kapsamlı event loop'ta çalışır.
-- `tests/conftest.py` standart `pytest-asyncio` mimarisine geçirilmiştir: deprecated `event_loop` override kaldırılmış, session kapsamlı event loop yönetimi `pytest.ini` üzerinden yapılandırılmıştır.
-- `pytest.ini`'ye `slow` ve `pg_stress` marker'ları eklenmiştir; PostgreSQL bağlantı havuzu stres testleri `-m pg_stress` ile izole çalıştırılabilir.
+- `pyproject.toml` `[tool.pytest.ini_options]` içinde `python_files = test_*.py`, `asyncio_mode = auto` ve `asyncio_default_fixture_loop_scope = "function"` ayarları ile async testler otomatik olarak test başına ayrı event loop'ta çalışır.
+- `tests/conftest.py` standart `pytest-asyncio` mimarisine geçirilmiştir: deprecated `event_loop` override kaldırılmış, event loop kapsamı `pyproject.toml` `[tool.pytest.ini_options]` üzerinden yapılandırılmıştır.
+- `[tool.pytest.ini_options]` altına `slow` ve `pg_stress` marker'ları eklenmiştir; PostgreSQL bağlantı havuzu stres testleri `-m pg_stress` ile izole çalıştırılabilir.
 - CI (`.github/workflows/ci.yml`) üzerinde ayrı `pg-stress` job'ı yer alır; PostgreSQL 16 service container, Alembic migration ve `tests/test_db_postgresql_branches.py` üstünden bağlantı havuzu yük testi otomatik olarak çalışır.
 
 ---
@@ -195,7 +195,7 @@ ratchet üst sınırını birlikte loglar.
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Bu bölüm, güncel `pyproject.toml`, `requirements-dev.txt`, `environment.yml` ve `web_ui_react/package.json` dosyalarına göre v5.0.0-alpha bağımlılık setini kurumsal kategorilerle özetler. (`requirements.txt` diskte bulunmaz; Python bağımlılıkları `pyproject.toml` PEP 621 standardında, React SPA bağımlılıkları ise `web_ui_react/package.json` içinde yönetilir.)
+Bu bölüm, güncel `pyproject.toml`, `uv.lock` ve `web_ui_react/package.json` dosyalarına göre v5.0.0-alpha bağımlılık setini kurumsal kategorilerle özetler. (`requirements.txt` diskte bulunmaz; Python bağımlılıkları `pyproject.toml` PEP 621 standardında, React SPA bağımlılıkları ise `web_ui_react/package.json` içinde yönetilir.)
 
 > **Sistem bağımlılığı notu (multimodal ingest):** `core/multimodal.py` içindeki dış video/ses işleme akışlarının (özellikle `ingest_video_insights`) sorunsuz çalışabilmesi için host/container seviyesinde `yt-dlp`, `ffmpeg` ve `whisper` CLI araçlarının kurulu olması gerekir.
 
@@ -265,14 +265,14 @@ Bu bölüm, güncel `pyproject.toml`, `requirements-dev.txt`, `environment.yml` 
 |-------|-------|---------------|
 | `pytest`, `pytest-asyncio`, `pytest-cov`, `pytest-benchmark` | ✓ Zorunlu (CI/QA) | Test yürütme, async test, coverage gate, benchmark |
 | `ruff format --check`, `ruff check`, `mypy` | ✓ Zorunlu (CI/QA) | Format, lint ve statik analiz kalite kapıları |
-| `uv` | Ortam/araç bağımlılığı | `environment.yml` ve `uv.lock` ile hızlı kilit/paket yönetimi iş akışı |
+| `uv` | Ortam/araç bağımlılığı | `uv.lock` ile hızlı kilit/paket yönetimi iş akışı |
 
 **Geçiş Notu (v3.0):**
 - `requests` bağımlılığı doğrudan runtime listesinde yer almamaktadır; ana HTTP akışı `httpx` ile asenkron modele taşınmıştır.
 - `rank-bm25` bağımlılığı ise mevcut bağımlılık dosyalarında hâlen tanımlıdır; hibrit RAG/BM25 uyumluluğu için opsiyonel katmanda korunmaktadır.
 - `chardet` şu an doğrudan bağımlılık listesinde pinlenmemiştir; encoding fallback davranışı uygulama katmanında güvenli decode stratejileriyle yönetilmektedir.
 
-**Auth Notu (v3.0):** Güncel kod tabanında kimlik doğrulama bearer token + DB tabanlı oturum modeli ile yürütülür. Şifre doğrulama `core/db.py` içinde Argon2id varsayılanı ve legacy PBKDF2-HMAC doğrulamasıyla yapılır; **`PyJWT~=2.9.0`** `pyproject.toml` çekirdek bağımlılıkları arasında yer alır ve `web_server.py` içinde stateless JWT token üretimi/doğrulaması için kullanılır.
+**Auth Notu (v3.0):** Güncel kod tabanında kimlik doğrulama bearer token + DB tabanlı oturum modeli ile yürütülür. Şifre doğrulama `core/db/` içinde Argon2id varsayılanı ve legacy PBKDF2-HMAC doğrulamasıyla yapılır; **`PyJWT~=2.9.0`** `pyproject.toml` çekirdek bağımlılıkları arasında yer alır ve `web_server.py` içinde stateless JWT token üretimi/doğrulaması için kullanılır.
 
 ---
 
