@@ -25,13 +25,11 @@ import hmac as hmac  # explicit legacy module export
 import importlib
 import importlib.util
 import inspect
-import ipaddress
 import logging
 import os
 import re
 import secrets
 import signal
-import sys
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -60,12 +58,12 @@ from agent.base_agent import BaseAgent
 from agent.core.contracts import (
     LEGACY_FEDERATION_PROTOCOL_V1,
     ActionFeedback,
-    ExternalTrigger,
     FederationTaskEnvelope,
     FederationTaskResult,
     derive_correlation_id,
     normalize_federation_protocol,
 )
+from agent.core.contracts import ExternalTrigger as ExternalTrigger  # explicit legacy export
 from agent.core.event_stream import get_agent_event_bus
 from agent.registry import AgentRegistry
 from agent.sidar_agent import SidarAgent
@@ -87,12 +85,15 @@ from web import bootstrap as web_bootstrap
 from web import security as web_security
 from web.bootstrap import make_static_files_with_staticfiles as _make_static_files_with_staticfiles
 from web.middleware import access_policy as access_policy_helpers
+from web.middleware import ratelimit as ratelimit_helpers
 from web.middleware.access_policy import access_policy_middleware_impl
+from web.middleware.auth import basic_auth_middleware_impl
 from web.middleware.cors import configure_loopback_cors
 from web.middleware.ratelimit import (
     ddos_rate_limit_middleware_impl,
     rate_limit_middleware_impl,
 )
+from web.plugins import loader as plugin_loader
 from web.plugins import sandbox as plugin_sandbox
 from web.routes import autonomy as autonomy_routes
 from web.routes import collaboration as collaboration_routes
@@ -638,214 +639,18 @@ async def _dispatch_autonomy_trigger(
     meta: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Webhook/cron/federation kaynaklı otonom tetikleyiciyi ajana ilet."""
-    agent = await _resolve_agent_instance()
-    await _prepare_autonomy_memory_context(agent, trigger_source)
-    trigger = ExternalTrigger(
-        trigger_id=f"trigger-{secrets.token_hex(6)}",
-        source=trigger_source,
+    return await autonomy_bridge.dispatch_autonomy_trigger(
+        trigger_source=trigger_source,
         event_name=event_name,
         payload=payload,
-        meta=dict(meta or {}),
+        meta=meta,
+        resolve_agent_instance=_resolve_agent_instance,
+        prepare_memory_context=_prepare_autonomy_memory_context,
+        collect_agent_response=_collect_agent_response,
     )
-    fallback_prompt = (
-        str(payload.get("federation_prompt") or "").strip() if isinstance(payload, dict) else ""
-    )
-    if (
-        not fallback_prompt
-        and isinstance(payload, dict)
-        and payload.get("kind") == "action_feedback"
-    ):
-        fallback_prompt = ActionFeedback(
-            feedback_id=str(payload.get("feedback_id") or trigger.trigger_id),
-            source_system=str(payload.get("source_system") or trigger.source),
-            source_agent=str(payload.get("source_agent") or "external"),
-            action_name=str(payload.get("action_name") or trigger.event_name),
-            status=str(payload.get("status") or "received"),
-            summary=str(payload.get("summary") or "Dış sistem action feedback sinyali alındı."),
-            related_task_id=str(payload.get("related_task_id") or ""),
-            related_trigger_id=str(payload.get("related_trigger_id") or ""),
-            details=dict(payload.get("details") or {}),
-            meta=dict(trigger.meta or {}),
-            correlation_id=str(payload.get("correlation_id") or trigger.correlation_id),
-        ).to_prompt()
-    if hasattr(agent, "handle_external_trigger"):
-        result = await agent.handle_external_trigger(trigger)
-    else:
-        summary = await _collect_agent_response(agent, fallback_prompt or trigger.to_prompt())
-        result = {
-            "trigger_id": trigger.trigger_id,
-            "source": trigger.source,
-            "event_name": trigger.event_name,
-            "summary": summary,
-            "status": "success" if summary else "empty",
-            "meta": dict(trigger.meta or {}),
-            "created_at": time.time(),
-            "completed_at": time.time(),
-        }
-    return {
-        "trigger_id": result["trigger_id"],
-        "source": result["source"],
-        "event_name": result["event_name"],
-        "summary": result["summary"],
-        "status": result["status"],
-        "meta": result.get("meta", {}),
-        "created_at": result.get("created_at"),
-        "completed_at": result.get("completed_at"),
-        "remediation": result.get("remediation"),
-    }
 
 
-def _fallback_ci_failure_context(event_name: str, payload: dict[str, Any]) -> dict[str, Any]:
-    """CI remediation import'u stublandığında temel bağlamı yerelde normalize eder."""
-    data = dict(payload or {})
-    normalized = str(event_name or "").strip().lower()
-    failure_conclusions = {
-        "failure",
-        "timed_out",
-        "cancelled",
-        "startup_failure",
-        "action_required",
-    }
-
-    if bool(data.get("ci_failure") or data.get("pipeline_failed")) or normalized in {
-        "ci_failure_remediation",
-        "ci_pipeline_failed",
-        "pipeline_failed",
-    }:
-        return {
-            "kind": "generic_ci_failure",
-            "repo": str(data.get("repo") or data.get("repository") or "").strip(),
-            "workflow_name": str(
-                data.get("workflow_name")
-                or data.get("pipeline")
-                or data.get("job_name")
-                or "ci_failure"
-            ).strip(),
-            "run_id": str(
-                data.get("run_id") or data.get("pipeline_id") or data.get("build_id") or ""
-            ).strip(),
-            "run_number": str(data.get("run_number") or data.get("pipeline_number") or "").strip(),
-            "branch": str(data.get("branch") or data.get("ref") or "").strip(),
-            "base_branch": str(
-                data.get("base_branch") or data.get("target_branch") or "main"
-            ).strip(),
-            "sha": str(data.get("sha") or data.get("commit") or "").strip(),
-            "conclusion": str(data.get("conclusion") or "failure").strip(),
-            "status": str(data.get("status") or "completed").strip(),
-            "html_url": str(data.get("html_url") or data.get("pipeline_url") or "").strip(),
-            "jobs_url": str(data.get("jobs_url") or "").strip(),
-            "logs_url": str(data.get("logs_url") or data.get("log_url") or "").strip(),
-            "log_excerpt": str(
-                data.get("log_excerpt")
-                or data.get("logs")
-                or data.get("error")
-                or data.get("details")
-                or ""
-            ).strip(),
-            "failure_summary": str(
-                data.get("failure_summary")
-                or data.get("summary")
-                or data.get("message")
-                or "ci failure"
-            ).strip(),
-            "failed_jobs": list(data.get("failed_jobs") or data.get("jobs") or []),
-        }
-
-    repository = dict(data.get("repository") or {})
-    repo_name = str(repository.get("full_name") or repository.get("name") or "").strip()
-
-    if normalized == "workflow_run":
-        workflow = dict(data.get("workflow_run") or {})
-        if (
-            str(workflow.get("status") or "").strip().lower() == "completed"
-            and str(workflow.get("conclusion") or "").strip().lower() in failure_conclusions
-        ):
-            pull_requests = list(workflow.get("pull_requests") or [])
-            base_branch = ""
-            if pull_requests:
-                base_branch = str(
-                    (pull_requests[0] or {}).get("base", {}).get("ref", "") or ""
-                ).strip()
-            return {
-                "kind": "workflow_run",
-                "repo": repo_name,
-                "workflow_name": str(workflow.get("name") or "workflow_run").strip(),
-                "run_id": str(workflow.get("id") or "").strip(),
-                "run_number": str(workflow.get("run_number") or "").strip(),
-                "branch": str(workflow.get("head_branch") or "").strip(),
-                "base_branch": base_branch
-                or str(repository.get("default_branch") or "main").strip(),
-                "sha": str(workflow.get("head_sha") or "").strip(),
-                "conclusion": str(workflow.get("conclusion") or "").strip(),
-                "status": str(workflow.get("status") or "").strip(),
-                "html_url": str(workflow.get("html_url") or "").strip(),
-                "jobs_url": str(workflow.get("jobs_url") or "").strip(),
-                "logs_url": str(workflow.get("logs_url") or "").strip(),
-                "log_excerpt": str(
-                    workflow.get("display_title") or workflow.get("name") or ""
-                ).strip(),
-                "failure_summary": str(workflow.get("conclusion") or "failure").strip(),
-                "failed_jobs": list(workflow.get("failed_jobs") or workflow.get("jobs") or []),
-            }
-
-    if normalized == "check_run":
-        check_run = dict(data.get("check_run") or {})
-        if str(check_run.get("conclusion") or "").strip().lower() in failure_conclusions:
-            output = dict(check_run.get("output") or {})
-            return {
-                "kind": "check_run",
-                "repo": repo_name,
-                "workflow_name": str(check_run.get("name") or "check_run").strip(),
-                "run_id": str(check_run.get("id") or "").strip(),
-                "run_number": "",
-                "branch": str(check_run.get("check_suite", {}).get("head_branch") or "").strip(),
-                "base_branch": str(repository.get("default_branch") or "main").strip(),
-                "sha": str(check_run.get("head_sha") or "").strip(),
-                "conclusion": str(check_run.get("conclusion") or "").strip(),
-                "status": str(check_run.get("status") or "").strip(),
-                "html_url": str(check_run.get("html_url") or "").strip(),
-                "jobs_url": str(check_run.get("details_url") or "").strip(),
-                "logs_url": str(check_run.get("details_url") or "").strip(),
-                "log_excerpt": "\n\n".join(
-                    filter(
-                        None,
-                        [
-                            str(output.get("summary") or "").strip(),
-                            str(output.get("text") or "").strip(),
-                        ],
-                    )
-                ),
-                "failure_summary": str(
-                    output.get("title") or check_run.get("name") or "check failed"
-                ).strip(),
-                "failed_jobs": list(check_run.get("failed_jobs") or check_run.get("jobs") or []),
-            }
-
-    if normalized == "check_suite":
-        suite = dict(data.get("check_suite") or {})
-        if str(suite.get("conclusion") or "").strip().lower() in failure_conclusions:
-            return {
-                "kind": "check_suite",
-                "repo": repo_name,
-                "workflow_name": str(suite.get("app", {}).get("name") or "check_suite").strip(),
-                "run_id": str(suite.get("id") or "").strip(),
-                "run_number": "",
-                "branch": str(suite.get("head_branch") or "").strip(),
-                "base_branch": str(repository.get("default_branch") or "main").strip(),
-                "sha": str(suite.get("head_sha") or "").strip(),
-                "conclusion": str(suite.get("conclusion") or "").strip(),
-                "status": str(suite.get("status") or "").strip(),
-                "html_url": str(suite.get("url") or "").strip(),
-                "jobs_url": "",
-                "logs_url": "",
-                "log_excerpt": str(
-                    suite.get("app", {}).get("name") or "check_suite_failure"
-                ).strip(),
-                "failure_summary": str(suite.get("conclusion") or "check suite failure").strip(),
-                "failed_jobs": list(suite.get("failed_jobs") or suite.get("jobs") or []),
-            }
-
-    return {}
+_fallback_ci_failure_context = autonomy_bridge.fallback_ci_failure_context
 
 
 def _resolve_ci_failure_context(event_name: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -901,57 +706,16 @@ def _embed_event_driven_federation_payload(
 
 async def _autonomous_cron_loop(stop_event: asyncio.Event) -> None:
     """Yapılandırılmış aralıklarla otonom değerlendirme tetikler."""
-    interval = max(30, int(getattr(cfg, "AUTONOMOUS_CRON_INTERVAL_SECONDS", 900) or 900))
-    prompt = str(
-        getattr(
-            cfg,
-            "AUTONOMOUS_CRON_PROMPT",
-            "Sistemdeki bekleyen otonom iş fırsatlarını değerlendir ve gerekli aksiyon planını "
-            "çıkar.",
-        )
-        or ""
-    ).strip()
-    if not prompt:
-        logger.info("Autonomous cron prompt boş; cron loop başlatılmadı.")
-        return
-
-    while not stop_event.is_set():
-        try:
-            await asyncio.wait_for(stop_event.wait(), timeout=interval)
-            break
-        except TimeoutError:
-            try:
-                result = await _dispatch_autonomy_trigger(
-                    trigger_source="cron",
-                    event_name="scheduled_tick",
-                    payload={"prompt": prompt, "interval_seconds": interval},
-                    meta={"mode": "autonomous_cron"},
-                )
-                logger.info("Autonomous cron tetiklendi: %s", result["trigger_id"])
-            except Exception as exc:
-                logger.warning("Autonomous cron tetikleme hatası: %s", exc)
+    await autonomy_bridge.autonomous_cron_loop(
+        stop_event, cfg=cfg, dispatch_trigger=_dispatch_autonomy_trigger, logger_obj=logger
+    )
 
 
 async def _nightly_memory_loop(stop_event: asyncio.Event) -> None:
     """Sistem idle iken gece hafıza konsolidasyonu ve RAG pruning çalıştırır."""
-    if not bool(getattr(cfg, "ENABLE_NIGHTLY_MEMORY_PRUNING", False)):
-        logger.info("Nightly memory pruning devre dışı; döngü başlatılmadı.")
-        return
-
-    interval = max(300, int(getattr(cfg, "NIGHTLY_MEMORY_INTERVAL_SECONDS", 86400) or 86400))
-    while not stop_event.is_set():
-        try:
-            await asyncio.wait_for(stop_event.wait(), timeout=interval)
-            break
-        except TimeoutError:
-            try:
-                agent = await _resolve_agent_instance()
-                report = await agent.run_nightly_memory_maintenance(reason="nightly_loop")
-                logger.info(
-                    "Nightly memory maintenance sonucu: %s", report.get("status", "unknown")
-                )
-            except Exception as exc:
-                logger.warning("Nightly memory maintenance hatası: %s", exc)
+    await autonomy_bridge.nightly_memory_loop(
+        stop_event, cfg=cfg, resolve_agent_instance=_resolve_agent_instance, logger_obj=logger
+    )
 
 
 # ─────────────────────────────────────────────
@@ -1063,66 +827,17 @@ async def basic_auth_middleware(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
     """Bearer token ile stateless JWT kullanıcı doğrulaması uygular."""
-    open_paths = {
-        "/",
-        "/health",
-        "/healthz",
-        "/readyz",
-        "/docs",
-        "/redoc",
-        "/openapi.json",
-        "/auth/login",
-        "/auth/register",
-    }
-    webhook_signature_paths = {"/api/webhook"}
-    webhook_signature_prefixes = ("/api/autonomy/webhook/",)
-    is_signature_verified_webhook = request.method == "POST" and (
-        request.url.path in webhook_signature_paths
-        or request.url.path.startswith(webhook_signature_prefixes)
+    return await basic_auth_middleware_impl(
+        request,
+        call_next,
+        config=cfg,
+        authenticate_metrics_service=authenticate_metrics_service,
+        resolve_user_from_token=_resolve_user_from_token,
+        resolve_agent_instance=_resolve_agent_instance,
+        await_if_needed=_await_if_needed,
+        set_metrics_user_id=set_current_metrics_user_id,
+        reset_metrics_user_id=reset_current_metrics_user_id,
     )
-    if (
-        request.method == "OPTIONS"
-        or request.url.path in open_paths
-        or is_signature_verified_webhook
-        or request.url.path.startswith("/static/")
-        or request.url.path.startswith("/vendor/")
-        or request.url.path.startswith("/assets/")
-        or request.url.path == "/favicon.ico"
-        or request.url.path == "/favicon.svg"
-    ):
-        return await call_next(request)
-
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        return JSONResponse({"error": "Yetkisiz erişim"}, status_code=401)
-
-    access_token = auth_header[7:].strip()
-    if not access_token:
-        return JSONResponse({"error": "Geçersiz token"}, status_code=401)
-
-    metrics_user = authenticate_metrics_service(request, config=cfg)
-    if metrics_user is not None:
-        request.state.user = metrics_user
-        metrics_context = set_current_metrics_user_id(metrics_user.id)
-        try:
-            return await call_next(request)
-        finally:
-            reset_current_metrics_user_id(metrics_context)
-
-    user = await _resolve_user_from_token(None, access_token)
-    if not user:
-        return JSONResponse({"error": "Oturum geçersiz veya süresi dolmuş"}, status_code=401)
-
-    agent = await _await_if_needed(_resolve_agent_instance())
-    request.state.user = user
-    set_active_user = getattr(agent.memory, "set_active_user", None)
-    if callable(set_active_user):
-        await set_active_user(user.id, user.username)
-    metrics_token = set_current_metrics_user_id(user.id)
-    try:
-        return await call_next(request)
-    finally:
-        reset_current_metrics_user_id(metrics_token)
 
 
 # ─────────────────────────────────────────────
@@ -1197,32 +912,18 @@ def _schedule_access_audit_log(
     ip_address: str,
     allowed: bool,
 ) -> None:
-    resource = _build_audit_resource(resource_type, resource_id)
-    if not resource:
-        return
-
-    async def _persist() -> None:
-        try:
-            agent = await _resolve_agent_instance()
-            recorder = getattr(agent.memory.db, "record_audit_log", None)
-            if recorder is None:
-                return
-            await recorder(
-                user_id=str(getattr(user, "id", "") or ""),
-                tenant_id=_get_user_tenant(user),
-                action=action,
-                resource=resource,
-                ip_address=ip_address,
-                allowed=allowed,
-            )
-        except Exception as exc:
-            logger.debug("ACL audit log yazımı atlandı: %s", exc)
-
-    try:
-        loop = asyncio.get_running_loop()
-        loop.create_task(_persist())
-    except RuntimeError:
-        logger.debug("ACL audit log planlanamadı: event loop yok.")
+    access_policy_helpers.schedule_access_audit_log(
+        user=user,
+        resource_type=resource_type,
+        action=action,
+        resource_id=resource_id,
+        ip_address=ip_address,
+        allowed=allowed,
+        build_audit_resource=_build_audit_resource,
+        resolve_agent_instance=_resolve_agent_instance,
+        get_user_tenant=_get_user_tenant,
+        logger_obj=logger,
+    )
 
 
 # Faz 4 compatibility aliases: direct imports retain their historical names while
@@ -1254,20 +955,13 @@ _serialize_campaign = operations_routes.serialize_campaign
 _serialize_content_asset = operations_routes.serialize_content_asset
 _serialize_operation_checklist = operations_routes.serialize_operation_checklist
 
-_PLUGIN_ROLE_RE = re.compile(r"^[a-zA-Z0-9_-]{2,64}$")
+_PLUGIN_ROLE_RE = plugin_loader.PLUGIN_ROLE_RE
 
 
-def _validate_plugin_role_name(role_name: str) -> str:
-    normalized = (role_name or "").strip().lower()
-    if not _PLUGIN_ROLE_RE.match(normalized):
-        raise HTTPException(status_code=400, detail="Geçersiz role_name")
-    return normalized
+_validate_plugin_role_name = plugin_loader.validate_plugin_role_name
 
 
-def _sanitize_capabilities(capabilities: list[str] | None) -> list[str]:
-    if not capabilities:
-        return []
-    return [c.strip() for c in capabilities if str(c).strip()]
+_sanitize_capabilities = plugin_loader.sanitize_capabilities
 
 
 def _plugin_source_filename(module_label: str) -> str:
@@ -1336,100 +1030,20 @@ def _run_plugin_source_in_sandbox(source_code: str, module_label: str) -> dict[s
 def _load_plugin_agent_class(
     source_code: str, class_name: str | None, module_label: str
 ) -> type[BaseAgent]:
-    if plugin_sandbox.plugin_sandbox_backend() == "docker":
-        try:
-            return plugin_sandbox.build_isolated_plugin_proxy(source_code, class_name, module_label)
-        except plugin_sandbox.PluginSandboxError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
-
-    def _baseagent_candidates() -> list[Any]:
-        # Resolve the canonical class on every call so stale monkeypatches or reloads of
-        # the web_server module cannot override an available agent.base_agent module.
-        base_agent_module = sys.modules.get("agent.base_agent")
-        canonical_base = (
-            getattr(base_agent_module, "BaseAgent", None) if base_agent_module is not None else None
-        )
-        candidates: list[Any] = []
-        seen: set[int] = set()
-        for base in (canonical_base, BaseAgent):
-            if (
-                base is not None
-                and base is not object
-                and inspect.isclass(base)
-                and id(base) not in seen
-            ):
-                seen.add(id(base))
-                candidates.append(base)
-        return candidates
-
-    def _is_baseagent_derived(candidate: Any) -> bool:
-        if not inspect.isclass(candidate):
-            return False
-        for base_cls in _baseagent_candidates():
-            try:
-                if issubclass(candidate, base_cls):
-                    return candidate is not base_cls
-            except TypeError as exc:
-                raise HTTPException(
-                    status_code=400, detail="Plugin BaseAgent doğrulanamadı"
-                ) from exc
-        # Bazı ortamlarda BaseAgent birden fazla modül kimliğiyle yüklenebilir.
-        # Bu durumda isim bazlı MRO kontrolü ile eşdeğer türevleri yakalayalım.
-        for base in inspect.getmro(candidate)[1:]:
-            if base is object:
-                continue
-            base_name = getattr(base, "__name__", "")
-            base_qualname = getattr(base, "__qualname__", "")
-            base_module = getattr(base, "__module__", "")
-            if base_name == "BaseAgent" or base_qualname.endswith("BaseAgent"):
-                return True
-            if base_module == "agent.base_agent":
-                return True
-        return False
-
-    namespace = _run_plugin_source_in_sandbox(source_code, module_label)
-
-    if class_name:
-        candidate = namespace.get(class_name)
-        if not inspect.isclass(candidate):
-            raise HTTPException(
-                status_code=400, detail=f"Belirtilen sınıf bulunamadı: {class_name}"
-            )
-        if not _is_baseagent_derived(candidate):
-            raise HTTPException(status_code=400, detail="Plugin sınıfı BaseAgent türetmelidir")
-        return candidate
-
-    discovered: list[type[BaseAgent]] = []
-    for obj in namespace.values():
-        if _is_baseagent_derived(obj):
-            discovered.append(cast(type[BaseAgent], obj))
-
-    if not discovered:
-        raise HTTPException(
-            status_code=400, detail="Plugin içinde BaseAgent türevi bir sınıf bulunamadı"
-        )
-    return discovered[0]
+    return plugin_loader.load_plugin_agent_class(
+        source_code,
+        class_name,
+        module_label,
+        run_in_sandbox=_run_plugin_source_in_sandbox,
+        fallback_base=BaseAgent,
+    )
 
 
 def _validate_and_persist_plugin_file(filename: str, source_code: str, module_label: str) -> Path:
     """Validate uploaded plugin source in the shared sandbox before persisting it."""
-    if plugin_sandbox.plugin_sandbox_backend() == "docker":
-        try:
-            plugin_sandbox.DockerPluginSandboxBackend().describe(source_code, None, module_label)
-        except plugin_sandbox.PluginSandboxError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
-    else:
-        _run_plugin_source_in_sandbox(source_code, module_label)
-
-    safe_name = Path(filename or "plugin.py").name
-    if not safe_name.endswith(".py"):
-        safe_name = f"{safe_name}.py"
-
-    plugins_dir = Path("plugins")
-    plugins_dir.mkdir(parents=True, exist_ok=True)
-    plugin_path = plugins_dir / safe_name
-    plugin_path.write_text(source_code, encoding="utf-8")
-    return plugin_path
+    return plugin_loader.validate_and_persist_plugin_file(
+        filename, source_code, module_label, run_in_sandbox=_run_plugin_source_in_sandbox
+    )
 
 
 def _persist_and_import_plugin_file(filename: str, data: bytes, module_label: str) -> Path:
@@ -1514,30 +1128,16 @@ def _register_plugin_agent(
     description: str,
     version: str,
 ) -> dict[str, Any]:
-    normalized_role = _validate_plugin_role_name(role_name)
-    module_label = f"sidar_plugin_{normalized_role}_{secrets.token_hex(4)}"
-    plugin_cls = _load_plugin_agent_class(source_code, class_name, module_label)
-    plugin_description = (description or "").strip() or (plugin_cls.__doc__ or "").strip().split(
-        "\n"
-    )[0]
-
-    AgentRegistry.register_type(
-        role_name=normalized_role,
-        agent_class=plugin_cls,
-        capabilities=_sanitize_capabilities(capabilities),
-        description=plugin_description,
-        version=(version or "1.0.0").strip() or "1.0.0",
-        is_builtin=False,
+    return plugin_loader.register_plugin_agent(
+        role_name=role_name,
+        source_code=source_code,
+        class_name=class_name,
+        capabilities=capabilities,
+        description=description,
+        version=version,
+        load_agent_class=_load_plugin_agent_class,
+        agent_registry=AgentRegistry,
     )
-    spec = AgentRegistry.get(normalized_role)
-    return {
-        "role_name": normalized_role,
-        "class_name": plugin_cls.__name__,
-        "capabilities": list(spec.capabilities if spec else []),
-        "description": str(spec.description if spec else plugin_description),
-        "version": str(spec.version if spec else version),
-        "is_builtin": bool(spec.is_builtin if spec else False),
-    }
 
 
 # ─────────────────────────────────────────────
@@ -1691,59 +1291,23 @@ async def _redis_is_rate_limited(namespace: str, key: str, limit: int, window_se
         return await _local_is_rate_limited(redis_key, limit, window_sec)
 
 
-def _parse_forwarded_ip(value: str) -> str | None:
-    """Return a normalized IP from a proxy header or None when invalid."""
-    candidate = str(value or "").strip()
-    if not candidate:
-        return None
-    if any(ch in candidate for ch in "\r\n\t "):
-        return None
-    try:
-        return str(ipaddress.ip_address(candidate))
-    except ValueError:
-        return None
+_parse_forwarded_ip = ratelimit_helpers.parse_forwarded_ip
 
 
 def _trusted_proxy_matches(direct_ip: str) -> bool:
     """Return whether the direct peer is allowed to supply forwarding headers."""
-    trusted_proxies: frozenset[str] = getattr(Config, "TRUSTED_PROXIES", frozenset())
-    if "*" in trusted_proxies:
-        return True
-    if direct_ip in trusted_proxies:
-        return True
-    try:
-        peer_ip = ipaddress.ip_address(direct_ip)
-    except ValueError:
-        return False
-    for proxy in trusted_proxies:
-        try:
-            if peer_ip in ipaddress.ip_network(str(proxy), strict=False):
-                return True
-        except ValueError:
-            continue
-    return False
+    return ratelimit_helpers.trusted_proxy_matches(
+        direct_ip, getattr(Config, "TRUSTED_PROXIES", frozenset())
+    )
 
 
 def _get_client_ip(request: Request) -> str:
-    """İstemci IP'sini doğrulanmış proxy başlıklarından ya da direkt bağlantıdan döndürür.
-
-    Proxy başlıkları (X-Forwarded-For, X-Real-IP) yalnızca direkt bağlantının
-    Config.TRUSTED_PROXIES listesindeki bir adresten gelmesi durumunda okunur.
-    Header değeri IP parser ile doğrulanır; boş, çok satırlı, port ekli veya
-    IP olmayan değerler header injection/rate-limit bypass riskine karşı yok sayılır.
-    """
-    client = getattr(request, "client", None)
-    direct_ip = getattr(client, "host", "unknown")
-    if _trusted_proxy_matches(direct_ip):
-        xff = request.headers.get("X-Forwarded-For", "")
-        first_forwarded = xff.split(",", 1)[0] if xff else ""
-        parsed_xff = _parse_forwarded_ip(first_forwarded)
-        if parsed_xff:
-            return parsed_xff
-        parsed_real_ip = _parse_forwarded_ip(request.headers.get("X-Real-IP", ""))
-        if parsed_real_ip:
-            return parsed_real_ip
-    return direct_ip
+    """İstemci IP'sini doğrulanmış proxy başlıklarından ya da direkt bağlantıdan döndürür."""
+    return ratelimit_helpers.get_client_ip(
+        request,
+        trusted_proxy_matches=_trusted_proxy_matches,
+        parse_forwarded_ip=_parse_forwarded_ip,
+    )
 
 
 def _get_rate_limit_key(request: Request, fallback_ip: str) -> str:
@@ -2145,25 +1709,17 @@ async def register_agent_plugin_file(
 ) -> Any:
     data = await file.read()
     await file.close()
-    if not data:
-        raise HTTPException(status_code=400, detail="Yüklü dosya boş")
-    if len(data) > MAX_FILE_CONTENT_BYTES:
-        raise HTTPException(status_code=413, detail="Dosya çok büyük")
-    try:
-        source_code = data.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise HTTPException(status_code=400, detail="Plugin dosyası UTF-8 olmalıdır") from exc
-    parsed_capabilities = [c.strip() for c in capabilities.split(",") if c.strip()]
-    target_role_name = role_name.strip() or Path(file.filename or "").stem
-    module_label = f"sidar_uploaded_plugin_{secrets.token_hex(4)}"
-    _validate_and_persist_plugin_file(file.filename or target_role_name, source_code, module_label)
-    result = _register_plugin_agent(
-        role_name=target_role_name,
-        source_code=source_code,
-        class_name=class_name.strip() or None,
-        capabilities=parsed_capabilities,
+    result = plugin_loader.register_uploaded_plugin(
+        data=data,
+        filename=file.filename or "",
+        role_name=role_name,
+        class_name=class_name,
+        capabilities=capabilities,
         description=description,
         version=version,
+        max_bytes=MAX_FILE_CONTENT_BYTES,
+        persist_file=_validate_and_persist_plugin_file,
+        register_agent=_register_plugin_agent,
     )
     return JSONResponse({"success": True, "agent": result})
 

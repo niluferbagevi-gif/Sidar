@@ -1,4 +1,4 @@
-# 3.4 `web_server.py` — FastAPI Web Sunucusu (2.635 satır)
+# 3.4 `web_server.py` — FastAPI Web Sunucusu (2.181 satır)
 
 ## Büyüme Politikası (Zorunlu — CI'da Denetlenir)
 
@@ -25,6 +25,26 @@ yükseltmek yalnızca dosyadan gerçekten mantık çıkarılamayan, incelenmiş 
 istisna durumunda yapılmalıdır — script bunu otomatik ratchetlemez (bkz.
 `check_web_server_size_baseline.py`'nin kendi docstring'i); gerçek bir
 azaltım sonrası ise değer elle düşürülmelidir.
+
+## `web/` altına taşınan mantık (2026-09, 2.625 → 2.181 satır)
+
+Aşağıdaki gerçek iş mantığı `web_server.py`'den çıkarıldı; `web_server.py`'de aynı
+isimli ince sarmalayıcılar kaldı. Sarmalayıcılar işbirlikçilerini (`_resolve_agent_instance`,
+`BaseAgent`, `AgentRegistry`, `set_current_metrics_user_id`, `MAX_FILE_CONTENT_BYTES`
+vb.) çağrı anında modül global'i olarak çözüp açık argüman olarak geçirir; böylece
+`web_server` üzerinde bu isimleri monkeypatch eden testler değişmeden çalışır.
+
+| `web_server.py` sarmalayıcısı | Yeni kanonik konum |
+|---|---|
+| `basic_auth_middleware` | `web/middleware/auth.py::basic_auth_middleware_impl` |
+| `_parse_forwarded_ip`, `_trusted_proxy_matches`, `_get_client_ip` | `web/middleware/ratelimit.py` |
+| `_schedule_access_audit_log` | `web/middleware/access_policy.py::schedule_access_audit_log` |
+| `_dispatch_autonomy_trigger`, `_fallback_ci_failure_context`, `_autonomous_cron_loop`, `_nightly_memory_loop` | `web/autonomy_bridge.py` |
+| `_validate_plugin_role_name`, `_sanitize_capabilities`, `_load_plugin_agent_class`, `_validate_and_persist_plugin_file`, `_register_plugin_agent`, `register_agent_plugin_file` gövdesi | `web/plugins/loader.py` |
+
+Bilinçli olarak `web_server.py`'de bırakılanlar: testlerin doğrudan patch ettiği modül
+seviyesi durumu tutan kod (ajan singleton'ı, Redis istemcisi ve local rate-limit
+sözlükleri, shutdown bayrağı, lifespan) ve zaten ince olan route/DI kablolaması.
 
 ## Rapor İçeriği (Taşınan Bölüm)
 

@@ -230,9 +230,11 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `web/collaboration_service.py` → `docs/module-notes/web/collaboration_service.py.md`
 - `web/middleware/__init__.py` → `docs/module-notes/web/middleware/__init__.py.md`
 - `web/middleware/access_policy.py` → `docs/module-notes/web/middleware/access_policy.py.md`
+- `web/middleware/auth.py` → `docs/module-notes/web/middleware/auth.py.md`
 - `web/middleware/cors.py` → `docs/module-notes/web/middleware/cors.py.md`
 - `web/middleware/ratelimit.py` → `docs/module-notes/web/middleware/ratelimit.py.md`
 - `web/plugins/__init__.py` → `docs/module-notes/web/plugins/__init__.py.md`
+- `web/plugins/loader.py` → `docs/module-notes/web/plugins/loader.py.md`
 - `web/plugins/sandbox.py` → `docs/module-notes/web/plugins/sandbox.py.md`
 - `web/plugins/worker.py` → `docs/module-notes/web/plugins/worker.py.md`
 - `web/process_lifecycle.py` → `docs/module-notes/web/process_lifecycle.py.md`
