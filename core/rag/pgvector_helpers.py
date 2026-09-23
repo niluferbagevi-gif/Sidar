@@ -18,7 +18,9 @@ def pgvector_failure_action_message(
     diagnosis_func: Callable[[str, BaseException | None], str] = postgres_failure_diagnosis,
 ) -> str:
     """Return a single-line pgvector fallback message using shared DB diagnostics."""
-    diagnosis = diagnosis_func("pgvector backend başlatılamadı", exc)
+    diagnosis = pgvector_backend.describe_unclassified_pgvector_failure(
+        diagnosis_func("pgvector backend başlatılamadı", exc), exc
+    )
     if "yetki/parola" in diagnosis:
         return (
             "pgvector pasif, BM25 fallback aktif edildi. DATABASE_URL, "

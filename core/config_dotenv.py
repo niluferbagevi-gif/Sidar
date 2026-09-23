@@ -388,6 +388,32 @@ def dotenv_reload_baseline_environment(
     return effective_env
 
 
+# Hugging Face treats a *set but empty* cache variable as a literal "" path, so a
+# template line such as ``HF_HUB_CACHE=`` silently redirects hub lookups to the
+# current working directory while Sidar's own cache probe ignores the empty value.
+EMPTY_UNSAFE_PATH_ENV_KEYS: tuple[str, ...] = (
+    "HF_HOME",
+    "HF_HUB_CACHE",
+    "HUGGINGFACE_HUB_CACHE",
+    "TRANSFORMERS_CACHE",
+    "SENTENCE_TRANSFORMERS_HOME",
+)
+
+
+def drop_empty_path_overrides(environ: MutableMapping[str, str]) -> list[str]:
+    """Remove blank cache-path variables so libraries fall back to their defaults.
+
+    Returns the removed keys for diagnostics/tests.
+    """
+    removed: list[str] = []
+    for key in EMPTY_UNSAFE_PATH_ENV_KEYS:
+        value = environ.get(key)
+        if value is not None and not value.strip():
+            environ.pop(key, None)
+            removed.append(key)
+    return removed
+
+
 def skip_default_dotenv_layers(env: dict[str, str] | None = None) -> bool:
     """Return whether repository-local dotenv layers should be skipped."""
     values = os.environ if env is None else env
