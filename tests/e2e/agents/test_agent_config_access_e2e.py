@@ -38,6 +38,7 @@ def test_agents_and_integrations_read_authorized_keys_from_config_dotenv_chain(
                 "JIRA_URL=https://sidar.atlassian.net",
                 "JIRA_EMAIL=ops@example.test",
                 "JIRA_DEFAULT_PROJECT=SID",
+                "ENABLE_EXPERIMENTAL_SOCIAL_PUBLISHING=true",
                 "META_GRAPH_API_TOKEN=meta-env-token",
                 "INSTAGRAM_BUSINESS_ACCOUNT_ID=ig-env-id",
                 "FACEBOOK_PAGE_ID=fb-env-id",
@@ -130,6 +131,7 @@ def test_agents_and_integrations_read_authorized_keys_from_config_dotenv_chain(
         assert poyraz.social.instagram_business_account_id == "ig-env-id"
         assert poyraz.social.facebook_page_id == "fb-env-id"
         assert poyraz.social.whatsapp_phone_number_id == "wa-env-id"
+        assert poyraz.social.experimental_publishing_enabled is True
         assert poyraz.social.is_available("instagram") is True
 
         assert slack.token == "xoxb-keys-token"
