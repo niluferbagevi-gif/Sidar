@@ -497,6 +497,17 @@ def test_quality_gate_settings_accepts_boundary_values(monkeypatch):
     assert settings.JUDGE_AUTO_FEEDBACK_THRESHOLD == 10.0
 
 
+def test_quality_gate_legacy_judge_validator_keeps_blank_value_without_field_name(monkeypatch):
+    """A blank judge string is returned unchanged when pydantic gives no field name."""
+    monkeypatch.setenv("JUDGE_MODEL", "legacy-judge")
+
+    result = config_quality.QualityGateSettings.use_non_blank_legacy_string(
+        "  ", types.SimpleNamespace(field_name=None)
+    )
+
+    assert result == "  "
+
+
 def test_load_quality_gate_settings_reads_scoped_dotenv_without_dynamic_init_kwargs(
     tmp_path, monkeypatch
 ):
