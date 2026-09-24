@@ -83,9 +83,11 @@ geçiren ince `classmethod` sarmalayıcı) tek tek taşınıyor:
   globallerinden okunup açık keyword argüman olarak geçirilir. `PRODUCTION_SECRET_KEYS`
   ve `config_postgres.postgres_password_drift_messages` ise parametre olarak
   geçirilmez; `core/config_validation.py` onları çağrı anında kendi modüllerinden okur.
-  Parametre adında "secret"/"password" geçtiğinde CodeQL anahtar adlarını ve drift
-  açıklamalarını loglayan satırları "hassas veri loglama" olarak işaretliyor; loglanan
-  şey değer değil, anahtar adıdır.
+  CodeQL (`py/clear-text-logging-sensitive-data`) bu iki log satırını, `config.py`'deki
+  hâlleri gibi, "hassas veri loglama" olarak işaretler: kaynak olarak
+  `PRODUCTION_SECRET_KEYS` içindeki "SECRET" geçen anahtar adı sabitlerini ve drift
+  kontrolündeki parola karşılaştırmasını görür. Loglanan şey değer değil, anahtar adı
+  ve uyuşmayan URL açıklamasıdır; bu uyarılar false positive olarak kapatılır.
 
 ## God object değil, compatibility facade
 
