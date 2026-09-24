@@ -79,9 +79,13 @@ geçiren ince `classmethod` sarmalayıcı) tek tek taşınıyor:
   `core/config_runtime_env.py`'nin zaten izlediği desen kullanıldı: `Config` sınıfı
   parametre olarak geçer, facade kancaları hâlâ `cls` üzerinden çağrılır. Böylece
   `monkeypatch.setattr(config.Config, ...)` ile yazılmış testler davranışı birebir
-  korur. `logger`, `_log_once_env`, `localized_log_message`, `PRODUCTION_SECRET_KEYS` ve
-  `config_postgres.postgres_password_drift_messages` ise her çağrıda `config.py`
-  globallerinden okunup açık keyword argüman olarak geçirilir.
+  korur. `logger`, `_log_once_env` ve `localized_log_message` her çağrıda `config.py`
+  globallerinden okunup açık keyword argüman olarak geçirilir. `PRODUCTION_SECRET_KEYS`
+  ve `config_postgres.postgres_password_drift_messages` ise parametre olarak
+  geçirilmez; `core/config_validation.py` onları çağrı anında kendi modüllerinden okur.
+  Parametre adında "secret"/"password" geçtiğinde CodeQL anahtar adlarını ve drift
+  açıklamalarını loglayan satırları "hassas veri loglama" olarak işaretliyor; loglanan
+  şey değer değil, anahtar adıdır.
 
 ## God object değil, compatibility facade
 

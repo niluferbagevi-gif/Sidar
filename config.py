@@ -65,7 +65,6 @@ from core.config_runtime_env import apply_runtime_env_overrides, safe_choice_for
 from core.config_runtime_paths import apply_reload_runtime_paths, load_runtime_path_settings
 from core.config_sandbox import load_sandbox_settings
 from core.config_secret_hardening import (
-    PRODUCTION_SECRET_KEYS,
     collect_missing_critical_runtime_keys,
     warn_on_silent_security_fallbacks,
 )
@@ -1266,8 +1265,6 @@ class Config:
             logger=logger,
             log_once_env=_log_once_env,
             localized_log_message=localized_log_message,
-            production_secret_keys=PRODUCTION_SECRET_KEYS,
-            postgres_password_drift_messages=config_postgres.postgres_password_drift_messages,
         )
 
     @classmethod

@@ -14,6 +14,7 @@ import os
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
+from core import config_postgres, config_secret_hardening
 from core.config_secrets import is_nonempty_secret
 from core.config_validators import is_valid_http_url, normalize_ai_provider
 
@@ -149,10 +150,13 @@ def validate_critical_settings(
     logger: logging.Logger,
     log_once_env: Callable[..., Any],
     localized_log_message: Callable[[str], str],
-    production_secret_keys: Iterable[str],
-    postgres_password_drift_messages: Callable[[], Iterable[str]],
 ) -> bool:
-    """Validate critical settings and log warnings; exit on unsafe production secrets."""
+    """Validate critical settings and log warnings; exit on unsafe production secrets.
+
+    The production key list and the PostgreSQL drift check are read from their
+    modules at call time, so tests that patch ``config.config_postgres`` keep working.
+    Only key names and drift diagnostics are logged, never secret values.
+    """
     is_valid = True
     config_cls._ensure_hardware_info_loaded()
     config_cls._apply_gpu_memory_safety_check()
@@ -162,7 +166,9 @@ def validate_critical_settings(
 
     if os.getenv("SIDAR_ENV", "").strip().lower() == "production":
         unsafe_production_secrets = [
-            key for key in production_secret_keys if key in missing_runtime_keys
+            key
+            for key in config_secret_hardening.PRODUCTION_SECRET_KEYS
+            if key in missing_runtime_keys
         ]
         if unsafe_production_secrets:
             logger.critical(
@@ -196,7 +202,7 @@ def validate_critical_settings(
 
     is_valid = config_cls._validate_ai_provider_settings() and is_valid
 
-    for drift_message in postgres_password_drift_messages():
+    for drift_message in config_postgres.postgres_password_drift_messages():
         logger.error(
             "❌ %s Önce scripts/sync_database_passwords.py veya POSTGRES_* tek kaynak akışını "
             "kullanın.",

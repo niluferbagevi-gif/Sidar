@@ -10,7 +10,7 @@ import httpx
 import pytest
 from cryptography.fernet import Fernet
 
-from core import config_validation
+from core import config_postgres, config_validation
 
 _VALID_FERNET_KEY = Fernet.generate_key().decode()
 
@@ -73,10 +73,14 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("SIDAR_ALLOW_FULL_ACCESS", raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _no_postgres_drift(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(config_postgres, "postgres_password_drift_messages", lambda: [])
+
+
 def _validate(
     config_cls: Any,
     *,
-    drift: tuple[str, ...] = (),
     log_once_calls: list[tuple[Any, ...]] | None = None,
 ) -> bool:
     once = log_once_calls if log_once_calls is not None else []
@@ -85,8 +89,6 @@ def _validate(
         logger=logging.getLogger("test.config_validation"),
         log_once_env=lambda *args: once.append(args),
         localized_log_message=lambda key: f"<{key}> %s",
-        production_secret_keys=("API_KEY", "JWT_SECRET_KEY"),
-        postgres_password_drift_messages=lambda: drift,
     )
 
 
@@ -199,9 +201,15 @@ def test_failed_provider_check_makes_result_invalid(fake_config) -> None:
     assert _validate(fake_config) is False
 
 
-def test_postgres_password_drift_messages_are_logged_and_invalid(fake_config, caplog) -> None:
+def test_postgres_password_drift_messages_are_logged_and_invalid(
+    fake_config, monkeypatch, caplog
+) -> None:
+    monkeypatch.setattr(
+        config_postgres, "postgres_password_drift_messages", lambda: ["drift-one", "drift-two"]
+    )
+
     with caplog.at_level(logging.ERROR):
-        ok = _validate(fake_config, drift=("drift-one", "drift-two"))
+        ok = _validate(fake_config)
 
     assert ok is False
     assert "drift-one" in caplog.text
