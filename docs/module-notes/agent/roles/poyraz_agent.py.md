@@ -6,7 +6,7 @@
 **Amaç:** Pazarlama ve dijital operasyon odaklı uzman ajan; `web/routes/operations.py`'nin
 kampanya/içerik/landing-page üretim uç noktalarının arkasındaki ajan mantığı.
 `core/hitl.py`'nin onay kapısını, `managers/social_media_manager.py` ve
-`managers/web_search.py`'yi, `core/rag.py`'nin `DocumentStore`'unu kullanır.
+`managers/web_search.py`'yi, `core/rag/` paketinin `DocumentStore`'unu kullanır.
 
 **Özellikler:**
 - `_resolve_multimodal_pipeline_class()` — görsel/çoklu-medya üretim
@@ -15,3 +15,7 @@ kampanya/içerik/landing-page üretim uç noktalarının arkasındaki ajan mant�
 - `PoyrazAgent(BaseAgent)` — kampanya kopyası, landing page taslağı, sosyal
   medya/pazarlama araç çağrılarını yürüten ana ajan sınıfı; riskli/dış-etkili
   aksiyonlar `core/hitl.py` üzerinden onaya tabi tutulabilir.
+- **Deneysel sosyal yayın kapısı:** `publish_social`/`publish_instagram_post`/
+  `publish_facebook_post`/`send_whatsapp_message` araçları
+  `ENABLE_EXPERIMENTAL_SOCIAL_PUBLISHING` kapalıyken (varsayılan) HITL onayı
+  istemeden `[<PLATFORM>:ERROR] reason=...` döner; dış API çağrısı yapılmaz.

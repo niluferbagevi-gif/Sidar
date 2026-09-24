@@ -8,9 +8,17 @@ from typing import Any
 
 import httpx
 
+from core.config_social_integrations import (
+    EXPERIMENTAL_SOCIAL_PUBLISHING_DISABLED_REASON as EXPERIMENTAL_PUBLISHING_DISABLED_REASON,
+)
+
 
 class SocialMediaManager:
-    """Instagram, Facebook ve WhatsApp gönderimlerini tek noktadan yöneten istemci."""
+    """Instagram, Facebook ve WhatsApp gönderimlerini tek noktadan yöneten istemci.
+
+    Sosyal medya yayını deneysel bir özelliktir: ``experimental_publishing_enabled``
+    açıkça ``True`` verilmedikçe hiçbir yayın yöntemi dış API'ye istek atmaz.
+    """
 
     API_BASE = "https://graph.facebook.com"
     TIMEOUT = 15.0
@@ -24,7 +32,9 @@ class SocialMediaManager:
         whatsapp_phone_number_id: str = "",
         api_version: str = "v20.0",
         http_client_factory: Callable[..., Any] | None = None,
+        experimental_publishing_enabled: bool = False,
     ) -> None:
+        self.experimental_publishing_enabled = bool(experimental_publishing_enabled)
         self.graph_api_token = (graph_api_token or "").strip()
         self.instagram_business_account_id = (instagram_business_account_id or "").strip()
         self.facebook_page_id = (facebook_page_id or "").strip()
@@ -34,7 +44,7 @@ class SocialMediaManager:
 
     def is_available(self, platform: str = "") -> bool:
         normalized = (platform or "").strip().lower()
-        if not self.graph_api_token:
+        if not self.experimental_publishing_enabled or not self.graph_api_token:
             return False
         if normalized == "instagram":
             return bool(self.instagram_business_account_id)
@@ -54,6 +64,8 @@ class SocialMediaManager:
         return f"{self.API_BASE}/{self.api_version}/{path.lstrip('/')}"
 
     async def _post(self, path: str, payload: dict[str, Any]) -> tuple[bool, dict[str, Any] | str]:
+        if not self.experimental_publishing_enabled:
+            return False, EXPERIMENTAL_PUBLISHING_DISABLED_REASON
         if not self.graph_api_token:
             return False, "META_GRAPH_API_TOKEN ayarlanmamış"
 
@@ -95,6 +107,8 @@ class SocialMediaManager:
         return True, body if isinstance(body, dict) else {"raw": body}
 
     async def publish_instagram_post(self, *, caption: str, image_url: str) -> tuple[bool, str]:
+        if not self.experimental_publishing_enabled:
+            return False, EXPERIMENTAL_PUBLISHING_DISABLED_REASON
         if not self.instagram_business_account_id:
             return False, "INSTAGRAM_BUSINESS_ACCOUNT_ID ayarlanmamış"
         if not image_url.strip():
@@ -124,6 +138,8 @@ class SocialMediaManager:
         return True, str(publish.get("id") or creation_id)
 
     async def publish_facebook_post(self, *, message: str, link_url: str = "") -> tuple[bool, str]:
+        if not self.experimental_publishing_enabled:
+            return False, EXPERIMENTAL_PUBLISHING_DISABLED_REASON
         if not self.facebook_page_id:
             return False, "FACEBOOK_PAGE_ID ayarlanmamış"
 
@@ -140,6 +156,8 @@ class SocialMediaManager:
     async def send_whatsapp_message(
         self, *, to: str, text: str, preview_url: bool = False
     ) -> tuple[bool, str]:
+        if not self.experimental_publishing_enabled:
+            return False, EXPERIMENTAL_PUBLISHING_DISABLED_REASON
         if not self.whatsapp_phone_number_id:
             return False, "WHATSAPP_PHONE_NUMBER_ID ayarlanmamış"
         if not to.strip():

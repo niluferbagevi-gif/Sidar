@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import config_security
+from core import config_security
 
 
 def test_load_security_settings_generates_runtime_jwt_without_api_key_fallback(monkeypatch):
@@ -105,4 +105,34 @@ def test_has_weak_postgres_runtime_secret_accepts_strong_embedded_url_password()
         database_url=(
             "postgresql://sidar:ProdDbPw-2026-07-03-H7sQ9vL2mR5xT8nB!@db.example.test:5432/sidar"
         ),
+    )
+
+
+def test_has_weak_postgres_runtime_secret_ignores_unparseable_database_url():
+    """A DATABASE_URL urlsplit rejects yields no embedded password, so weak stays weak."""
+    malformed_url = "postgresql://sidar:ProdDbPw-2026-07-03@[not-an-ipv6/sidar"
+
+    assert config_security._postgres_password_from_database_url(malformed_url) is None
+    assert config_security.has_weak_postgres_runtime_secret(
+        postgres_password="", database_url=malformed_url
+    )
+
+
+def test_has_weak_postgres_runtime_secret_ignores_non_postgresql_scheme():
+    """A strong password on a non-PostgreSQL URL does not count as a PostgreSQL credential."""
+    mysql_url = "mysql://sidar:ProdDbPw-2026-07-03-H7sQ9vL2mR5xT8nB!@db.example.test:3306/sidar"
+
+    assert config_security._postgres_password_from_database_url(mysql_url) is None
+    assert config_security.has_weak_postgres_runtime_secret(
+        postgres_password="", database_url=mysql_url
+    )
+
+
+def test_has_weak_postgres_runtime_secret_flags_database_url_without_password():
+    """A PostgreSQL DATABASE_URL with only a username provides no embedded credential."""
+    passwordless_url = "postgresql://sidar@db.example.test:5432/sidar"
+
+    assert config_security._postgres_password_from_database_url(passwordless_url) is None
+    assert config_security.has_weak_postgres_runtime_secret(
+        postgres_password="", database_url=passwordless_url
     )

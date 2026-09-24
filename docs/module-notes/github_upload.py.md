@@ -1,5 +1,28 @@
 # 3.19 `github_upload.py` — GitHub Yükleme Aracı
 
+## `uploader/` paketine bölünme (2026-09, 1618 → 1011 satır)
+
+`github_upload.py` giriş noktası (`main()`) ve testlerin doğrudan patch ettiği
+çekirdek (`run_command`, `reexec_after_external_branch_merge` — bandit `nosec`
+B606 satırı dahil —, `resolve_github_token`, `resolve_upload_version`,
+`direct_main_upload_allowed`, doğrulayıcılar) burada kalır. Diğer yardımcılar
+`uploader/` altına taşındı; `github_upload.py`'de aynı imzalı ince sarmalayıcılar
+kardeş yardımcıları ve `run_command`'ı çağrı anında modül global'i olarak çözüp
+anahtar kelime argümanı olarak geçirir. Böylece `monkeypatch.setattr(gu,
+"run_command", ...)` gibi patch'ler taşınan kodda da etkili olur.
+
+| Konu | Modül |
+|---|---|
+| `Colors` | `uploader/console.py` |
+| yasaklı/üretilmiş yol filtresi, güvenli dosya toplama | `uploader/files.py` |
+| GitHub PR API / `gh` fallback | `uploader/github_api.py` |
+| dal, merge, stage işlemleri | `uploader/git_ops.py` |
+| installer manifest senkronu ve pin damgası | `uploader/manifests.py` |
+| commit öncesi/sonrası ve push öncesi kalite kapıları | `uploader/gates.py` |
+
+`github_upload.shutil`, `.time`, `.urllib` açık legacy export olarak korunur
+(testler bu modül nesneleri üzerinden patch eder).
+
 ## Rapor İçeriği (Taşınan Bölüm)
 
 **Amaç:** Projeyi otomatik olarak GitHub'a yükler/yedekler.

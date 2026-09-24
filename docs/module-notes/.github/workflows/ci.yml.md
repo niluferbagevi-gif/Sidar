@@ -33,7 +33,7 @@ Bu workflow, kod kalitesini sadece “test geçti” seviyesinde değil, ölçü
    - Python 3.11 ortamı hazırlanır.
 
 3. **Bağımlılık kurulumu**
-   - `requirements.txt` + `requirements-dev.txt` yüklenir.
+   - `uv sync --frozen --all-extras` ile `uv.lock` kilidinden kurulum yapılır.
 
 4. **Repository metrics**
    - `bash scripts/collect_repo_metrics.sh`

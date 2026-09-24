@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+import ipaddress
+from collections.abc import Awaitable, Callable, Iterable
+from typing import Any
 
 from fastapi import Request
 from fastapi.responses import JSONResponse, Response
@@ -110,3 +112,62 @@ async def rate_limit_middleware_impl(
                 )
 
     return await call_next(request)
+
+
+def parse_forwarded_ip(value: str) -> str | None:
+    """Return a normalized IP from a proxy header or None when invalid."""
+    candidate = str(value or "").strip()
+    if not candidate:
+        return None
+    if any(ch in candidate for ch in "\r\n\t "):
+        return None
+    try:
+        return str(ipaddress.ip_address(candidate))
+    except ValueError:
+        return None
+
+
+def trusted_proxy_matches(direct_ip: str, trusted_proxies: Iterable[Any]) -> bool:
+    """Return whether the direct peer is allowed to supply forwarding headers."""
+    if "*" in trusted_proxies:
+        return True
+    if direct_ip in trusted_proxies:
+        return True
+    try:
+        peer_ip = ipaddress.ip_address(direct_ip)
+    except ValueError:
+        return False
+    for proxy in trusted_proxies:
+        try:
+            if peer_ip in ipaddress.ip_network(str(proxy), strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def get_client_ip(
+    request: Request,
+    *,
+    trusted_proxy_matches: Callable[[str], bool],
+    parse_forwarded_ip: Callable[[str], str | None],
+) -> str:
+    """İstemci IP'sini doğrulanmış proxy başlıklarından ya da direkt bağlantıdan döndürür.
+
+    Proxy başlıkları (X-Forwarded-For, X-Real-IP) yalnızca direkt bağlantının
+    Config.TRUSTED_PROXIES listesindeki bir adresten gelmesi durumunda okunur.
+    Header değeri IP parser ile doğrulanır; boş, çok satırlı, port ekli veya
+    IP olmayan değerler header injection/rate-limit bypass riskine karşı yok sayılır.
+    """
+    client = getattr(request, "client", None)
+    direct_ip = getattr(client, "host", "unknown")
+    if trusted_proxy_matches(direct_ip):
+        xff = request.headers.get("X-Forwarded-For", "")
+        first_forwarded = xff.split(",", 1)[0] if xff else ""
+        parsed_xff = parse_forwarded_ip(first_forwarded)
+        if parsed_xff:
+            return parsed_xff
+        parsed_real_ip = parse_forwarded_ip(request.headers.get("X-Real-IP", ""))
+        if parsed_real_ip:
+            return parsed_real_ip
+    return direct_ip

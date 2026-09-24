@@ -10,29 +10,32 @@ from pathlib import Path
 import pytest
 
 import config
-import config_autonomy
-import config_gpu
-import config_llm
-import config_quality
-import config_rag_defaults
-from core import config_env_helpers, config_postgres, config_validators
+from core import (
+    config_env_helpers,
+    config_gpu,
+    config_llm,
+    config_postgres,
+    config_quality,
+    config_rag_defaults,
+    config_self_heal,
+    config_validators,
+)
 
 
 def test_rag_defaults_module_name_disambiguates_runtime_rag_modules() -> None:
-    import config_rag  # noqa: PLC0415 - verifies legacy compatibility shim.
-
     docs = Path("docs/module-notes/config.py.md").read_text(encoding="utf-8")
     refactor_plan = Path("docs/REFACTOR_PLAN.md").read_text(encoding="utf-8")
 
-    assert config_rag.SEMANTIC_CACHE_THRESHOLD_DEFAULT == (
-        config_rag_defaults.SEMANTIC_CACHE_THRESHOLD_DEFAULT
-    )
     assert config.Config.SEMANTIC_CACHE_THRESHOLD == (
         config_rag_defaults.SEMANTIC_CACHE_THRESHOLD_DEFAULT
     )
-    assert "config_rag_defaults.py" in docs
-    assert "legacy `config_rag.py` yalnız backward-compatible shim" in docs
-    assert "config_rag_defaults.py" in refactor_plan
+    assert "core/config_rag_defaults.py" in docs
+    assert "core/config_rag_defaults.py" in refactor_plan
+
+
+def test_domain_config_modules_live_only_in_core_package() -> None:
+    """All ``config_*`` domain modules live under ``core/``; only the facade stays at root."""
+    assert sorted(path.name for path in Path(".").glob("config*.py")) == ["config.py"]
 
 
 def test_llm_and_quality_gate_loaders_share_the_scoped_settings_builder() -> None:
@@ -43,8 +46,8 @@ def test_llm_and_quality_gate_loaders_share_the_scoped_settings_builder() -> Non
     verbatim across config_llm.py/config_quality.py before both were switched
     to `core.config_scoped_settings.build_scoped_settings_type`.
     """
-    llm_source = Path("config_llm.py").read_text(encoding="utf-8")
-    quality_source = Path("config_quality.py").read_text(encoding="utf-8")
+    llm_source = Path("core/config_llm.py").read_text(encoding="utf-8")
+    quality_source = Path("core/config_quality.py").read_text(encoding="utf-8")
 
     for source in (llm_source, quality_source):
         assert "from core.config_scoped_settings import build_scoped_settings_type" in source
@@ -86,7 +89,7 @@ def test_config_uses_split_domain_modules() -> None:
         config.Config.SEMANTIC_CACHE_THRESHOLD
         == config_rag_defaults.SEMANTIC_CACHE_THRESHOLD_DEFAULT
     )
-    assert config._SELF_HEAL_SETTINGS == config_autonomy.load_self_heal_settings()
+    assert config._SELF_HEAL_SETTINGS == config_self_heal.load_self_heal_settings()
     assert config.QualityGateSettings is config_quality.QualityGateSettings
 
 
@@ -492,6 +495,17 @@ def test_quality_gate_settings_accepts_boundary_values(monkeypatch):
 
     assert settings.JUDGE_SAMPLE_RATE == 0.0
     assert settings.JUDGE_AUTO_FEEDBACK_THRESHOLD == 10.0
+
+
+def test_quality_gate_legacy_judge_validator_keeps_blank_value_without_field_name(monkeypatch):
+    """A blank judge string is returned unchanged when pydantic gives no field name."""
+    monkeypatch.setenv("JUDGE_MODEL", "legacy-judge")
+
+    result = config_quality.QualityGateSettings.use_non_blank_legacy_string(
+        "  ", types.SimpleNamespace(field_name=None)
+    )
+
+    assert result == "  "
 
 
 def test_load_quality_gate_settings_reads_scoped_dotenv_without_dynamic_init_kwargs(

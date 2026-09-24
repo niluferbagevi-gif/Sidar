@@ -12,72 +12,48 @@ Normal yükleme varsayılan olarak ``sidar/upload-*`` dalı açıp PR oluşturur
 Doğrudan main push yalnız ``SIDAR_GITHUB_UPLOAD_DIRECT_MAIN=1`` ile açılır.
 """
 
-import json
 import os
 import re
-import shutil
+import shutil as shutil  # explicit legacy module export (tests patch gu.shutil)
 import subprocess
 import sys
-import time
-import urllib.error
-import urllib.parse
-import urllib.request
+import time as time  # explicit legacy module export (tests patch gu.time)
+import urllib.error  # noqa: F401 - legacy export: tests reach gu.urllib.error/request
+import urllib.request  # noqa: F401 - legacy export: tests reach gu.urllib.error/request
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
 
 from config import Config
 from core.utils.trusted_subprocess import run_trusted_command
-from core.utils.trusted_urlopen import urlopen_trusted_request
 from managers.code.git_validation import is_valid_git_ref_name
 from sidar_version import PRODUCT_VERSION
+from uploader import console as upload_console
+from uploader import files as upload_files
+from uploader import gates as upload_gates
+from uploader import git_ops as upload_git_ops
+from uploader import github_api as upload_github_api
+from uploader import manifests as upload_manifests
 
 cfg = Config()
 
-# ASLA YÜKLENMEMESİ GEREKENLER (kritik güvenlik katmanı)
-FORBIDDEN_PATHS = [
-    ".env",
-    ".sidar_keys.env",
-    ".sidar_keys.env.",
-    "sessions/",
-    "chroma_db/",
-    "__pycache__/",
-    ".git/",
-    "logs/",
-    "models/",
-]
+FORBIDDEN_PATHS = upload_files.FORBIDDEN_PATHS
 
 # Test ve kalite kapısı çıktıları kaynak kod değildir; .gitignore drift veya
 # otomatik stage akışındaki geniş .json izinleri nedeniyle repoya girmemelidir.
 SUBPROCESS_ENV_VALUE_MAX_BYTES = 32 * 1024
 
-GENERATED_ARTIFACT_PATHS = {
-    "coverage.json",
-    "coverage.xml",
-    "coverage-final.json",
-    "htmlcov/",
-    "artifacts/",
-    "web_ui_react/coverage/",
-    "web_ui_react/playwright-report/",
-    "web_ui_react/test-results/",
-}
+GENERATED_ARTIFACT_PATHS = upload_files.GENERATED_ARTIFACT_PATHS
 
-GITHUB_PR_API_MAX_ATTEMPTS = 3
-GITHUB_PR_API_RETRY_BASE_SECONDS = 1.0
-GITHUB_PR_API_RETRYABLE_HTTP_CODES = {408, 429, 500, 502, 503, 504}
+GITHUB_PR_API_MAX_ATTEMPTS = upload_github_api.GITHUB_PR_API_MAX_ATTEMPTS
+GITHUB_PR_API_RETRY_BASE_SECONDS = upload_github_api.GITHUB_PR_API_RETRY_BASE_SECONDS
+GITHUB_PR_API_RETRYABLE_HTTP_CODES = upload_github_api.GITHUB_PR_API_RETRYABLE_HTTP_CODES
 
 
 # ═══════════════════════════════════════════════════════════════
 # RENK KODLARI
 # ═══════════════════════════════════════════════════════════════
-class Colors:
-    HEADER = "\033[95m"
-    OKBLUE = "\033[94m"
-    OKGREEN = "\033[92m"
-    WARNING = "\033[93m"
-    FAIL = "\033[91m"
-    ENDC = "\033[0m"
-    BOLD = "\033[1m"
+Colors = upload_console.Colors
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -189,16 +165,7 @@ def _is_valid_branch_name(branch_name: str) -> bool:
 
 
 def _normalize_path(path: str) -> str:
-    """Yol formatını güvenlik kontrolleri için normalize eder."""
-    normalized = path.replace("\\", "/")
-    if normalized.startswith("./"):
-        normalized = normalized[2:]
-    elif normalized.startswith("/"):
-        normalized = normalized[1:]
-    while "//" in normalized:
-        normalized = normalized.replace("//", "/")
-    normalized = normalized.lstrip("/")
-    return normalized
+    return upload_files.normalize_path(path=path)
 
 
 def resolve_github_token() -> str:
@@ -244,22 +211,13 @@ def direct_main_upload_allowed(env: Mapping[str, str] | None = None) -> bool:
 
 
 def create_upload_branch() -> str:
-    """Create the timestamped branch used by the default PR-first upload flow."""
-    branch = f"sidar/upload-{datetime.now():%Y%m%d-%H%M%S}"
-    success, error = run_command(["git", "switch", "-c", branch], show_output=False)
-    if not success:
-        raise RuntimeError(error or "Upload dalı oluşturulamadı.")
-    return branch
+    return upload_git_ops.create_upload_branch(run_command=run_command)
 
 
 def _github_repo_slug(remote_url: str) -> str:
-    """Extract an ``owner/repository`` slug from a validated GitHub remote URL."""
-    normalized = str(remote_url or "").strip().removesuffix("/").removesuffix(".git")
-    if not _is_valid_repo_url(remote_url):
-        return ""
-    if normalized.startswith("git@github.com:"):
-        return normalized.removeprefix("git@github.com:")
-    return normalized.removeprefix("https://github.com/")
+    return upload_github_api.github_repo_slug(
+        remote_url=remote_url, _is_valid_repo_url=_is_valid_repo_url
+    )
 
 
 def _github_api_request(
@@ -270,733 +228,168 @@ def _github_api_request(
     timeout: float,
     payload: Mapping[str, object] | None = None,
 ) -> object:
-    """Send JSON to the allowlisted GitHub API origin through one audited sink."""
-    normalized_method = method.upper()
-    if normalized_method not in {"GET", "POST"}:
-        raise ValueError("GitHub API isteği yalnızca GET veya POST kullanabilir.")
-    if timeout <= 0:
-        raise ValueError("GitHub API timeout değeri pozitif olmalıdır.")
-    parsed = urllib.parse.urlsplit(url)
-    try:
-        port = parsed.port
-    except ValueError as exc:
-        raise ValueError("GitHub API URL portu geçersiz.") from exc
-    if (
-        parsed.scheme != "https"
-        or parsed.hostname != "api.github.com"
-        or port is not None
-        or parsed.username is not None
-        or parsed.password is not None
-        or parsed.fragment
-    ):
-        raise ValueError(
-            "GitHub API isteği yalnızca https://api.github.com hedefine gönderilebilir."
-        )
-
-    data = json.dumps(payload).encode("utf-8") if payload is not None else None
-    headers = {
-        "Accept": "application/vnd.github+json",
-        "Authorization": f"Bearer {github_token}",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
-    if data is not None:
-        headers["Content-Type"] = "application/json"
-    request = urllib.request.Request(url, data=data, headers=headers, method=normalized_method)
-    # URL origin'i yukarıdaki allowlist ile doğrulanır; tek denetlenmiş ağ sink'i budur.
-    with urlopen_trusted_request(request, timeout=timeout) as response:
-        return json.loads(response.read().decode("utf-8"))
+    return upload_github_api.github_api_request(
+        url=url, method=method, github_token=github_token, timeout=timeout, payload=payload
+    )
 
 
 def _find_existing_upload_pull_request(repo_slug: str, branch: str, github_token: str) -> str:
-    """Return an existing open upload PR after an ambiguous create response."""
-    owner = repo_slug.partition("/")[0]
-    query = urllib.parse.urlencode({"state": "open", "head": f"{owner}:{branch}", "base": "main"})
-    try:
-        result = _github_api_request(
-            f"https://api.github.com/repos/{repo_slug}/pulls?{query}",
-            method="GET",
-            github_token=github_token,
-            timeout=30,
-        )
-    except (
-        urllib.error.HTTPError,
-        urllib.error.URLError,
-        OSError,
-        UnicodeDecodeError,
-        json.JSONDecodeError,
-        ValueError,
-    ):
-        return ""
-    if not isinstance(result, list):
-        return ""
-    for pull_request in result:
-        if isinstance(pull_request, Mapping):
-            pr_url = str(pull_request.get("html_url", "")).strip()
-            if pr_url:
-                return pr_url
-    return ""
+    return upload_github_api.find_existing_upload_pull_request(
+        repo_slug=repo_slug,
+        branch=branch,
+        github_token=github_token,
+        _github_api_request=_github_api_request,
+    )
 
 
 def _open_upload_pull_request_via_api(branch: str, github_token: str) -> tuple[bool, str]:
-    """Create the upload PR through GitHub's API when the optional ``gh`` CLI is absent."""
-    remote_ok, remote_url = run_command(["git", "remote", "get-url", "origin"], show_output=False)
-    repo_slug = _github_repo_slug(remote_url) if remote_ok else ""
-    if not repo_slug:
-        return False, "GitHub origin adresinden owner/repository bilgisi çözülemedi."
-
-    payload = {
-        "title": f"Sidar {resolve_upload_version()} otomatik yükleme",
-        "head": branch,
-        "base": "main",
-        "body": "Sidar github_upload.py tarafından PR-first yükleme akışıyla oluşturuldu.",
-    }
-    result: object = {}
-    last_error = ""
-    for attempt in range(1, GITHUB_PR_API_MAX_ATTEMPTS + 1):
-        try:
-            result = _github_api_request(
-                f"https://api.github.com/repos/{repo_slug}/pulls",
-                method="POST",
-                github_token=github_token,
-                timeout=30,
-                payload=payload,
-            )
-            break
-        except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace").strip()
-            if exc.code == 401:
-                return (
-                    False,
-                    "GitHub token reddedildi (HTTP 401 / Bad credentials). "
-                    "Tokenı GitHub'da yenileyip GITHUB_TOKEN (veya GH_TOKEN/GITHUB_PAT) "
-                    "değerini SIDAR_KEYS_FILE ya da ~/.sidar_keys.env içinde güncelleyin. "
-                    "Fine-grained token kullanıyorsanız ilgili repository için Pull requests: "
-                    "Read and write izni verin.",
-                )
-            if exc.code == 422:
-                existing_url = _find_existing_upload_pull_request(repo_slug, branch, github_token)
-                if existing_url:
-                    return True, existing_url
-            last_error = f"GitHub API PR isteği HTTP {exc.code} ile reddedildi: {detail}"
-            retryable = exc.code in GITHUB_PR_API_RETRYABLE_HTTP_CODES
-        except (
-            urllib.error.URLError,
-            OSError,
-            UnicodeDecodeError,
-            json.JSONDecodeError,
-            ValueError,
-        ) as exc:
-            existing_url = _find_existing_upload_pull_request(repo_slug, branch, github_token)
-            if existing_url:
-                return True, existing_url
-            last_error = f"GitHub API üzerinden PR oluşturulamadı: {exc}"
-            retryable = True
-
-        if not retryable or attempt == GITHUB_PR_API_MAX_ATTEMPTS:
-            return False, last_error
-        time.sleep(GITHUB_PR_API_RETRY_BASE_SECONDS * (2 ** (attempt - 1)))
-
-    pr_url = str(result.get("html_url", "")).strip() if isinstance(result, Mapping) else ""
-    if not pr_url:
-        return False, "GitHub API PR yanıtında html_url bulunamadı."
-    return True, pr_url
+    return upload_github_api.open_upload_pull_request_via_api(
+        branch=branch,
+        github_token=github_token,
+        _find_existing_upload_pull_request=_find_existing_upload_pull_request,
+        _github_api_request=_github_api_request,
+        _github_repo_slug=_github_repo_slug,
+        resolve_upload_version=resolve_upload_version,
+        run_command=run_command,
+    )
 
 
 def open_upload_pull_request(branch: str, github_token: str) -> tuple[bool, str]:
-    """Open a GitHub PR, using ``gh`` when installed and the API otherwise."""
-    if shutil.which("gh") is None:
-        return _open_upload_pull_request_via_api(branch, github_token)
-    return run_command(
-        ["gh", "pr", "create", "--base", "main", "--head", branch, "--fill"],
-        show_output=False,
-        extra_env={"GH_TOKEN": github_token},
+    return upload_github_api.open_upload_pull_request(
+        branch=branch,
+        github_token=github_token,
+        _open_upload_pull_request_via_api=_open_upload_pull_request_via_api,
+        run_command=run_command,
     )
 
 
 def is_forbidden_path(path: str) -> bool:
-    """Hard blacklist: .gitignore'dan bağımsız kesin engel."""
-    normalized = _normalize_path(path)
-
-    # .env*.example dosyalarının güvenlik filtresine takılmasını önleyen istisna
-    # Örn: .env.example, .env.test.example, .env.prod.example
-    base_name = os.path.basename(normalized)
-    if base_name.startswith(".env") and base_name.endswith(".example"):
-        return False
-
-    blocked_paths = [*FORBIDDEN_PATHS, *GENERATED_ARTIFACT_PATHS]
-    return any(
-        normalized == forbidden.rstrip("/") or normalized.startswith(forbidden)
-        for forbidden in blocked_paths
-    )
+    return upload_files.is_forbidden_path(path=path, _normalize_path=_normalize_path)
 
 
 def get_file_content(path: str) -> str | None:
-    """UTF-8 güvenli okuma; binary/hatalı dosyaları atlar."""
-    if is_forbidden_path(path):
-        return None
-
-    try:
-        with open(path, encoding="utf-8") as file:
-            return file.read()
-    except (UnicodeDecodeError, OSError):
-        return None
+    return upload_files.get_file_content(path=path, is_forbidden_path=is_forbidden_path)
 
 
-CONFLICT_MARKER_RE = re.compile(r"^<{7}(?:\s|$)|^={7}$|^>{7}(?:\s|$)", re.MULTILINE)
+CONFLICT_MARKER_RE = upload_files.CONFLICT_MARKER_RE
 
 
 def get_unmerged_files() -> list[str]:
-    """Çözülmemiş Git merge çakışması bulunan dosyaları döndürür."""
-    success, output = run_command(
-        ["git", "diff", "--name-only", "--diff-filter=U"], show_output=False
-    )
-    if not success or not output:
-        return []
-    return [line.strip() for line in output.splitlines() if line.strip()]
+    return upload_git_ops.get_unmerged_files(run_command=run_command)
 
 
 def switch_back_to_original_branch(original_branch: str) -> None:
-    """Commit/push'a ulaşmayan erken çıkışlarda kullanıcıyı başladığı dala geri döndürür.
-
-    ``main()`` işleyişini her zaman 'main' üzerinde sürdürmek için otomatik olarak
-    'main'e (gerekirse stash ile) geçer. Bu geçişten sonra henüz hiçbir commit/push
-    gerçekleşmeden bir hata ("çakışmış dosya", kalite kapısı hatası, upload dalı
-    oluşturulamadı vb.) ya da "yüklenecek değişiklik yok" durumuyla çıkılırsa,
-    kullanıcı fark etmeden 'main'den türetilmiş bir dalda bırakılmamalıdır.
-
-    Commit SONRASI başarısız olan kalite kapıları için bu fonksiyon KASITLI
-    OLARAK çağrılmaz — bkz. ``describe_post_commit_gate_failure``: orada
-    kullanıcının çalışması (upload dalı + commit) bilerek korunur ve elle geri
-    dönüş talimatı verilir.
-    """
-    if not original_branch or original_branch == "main":
-        return
-
-    _, active_branch = run_command(["git", "branch", "--show-current"], show_output=False)
-    active_branch = active_branch.strip()
-    if not active_branch or active_branch == original_branch:
-        return
-
-    checkout_success, checkout_err = run_command(
-        ["git", "checkout", original_branch], show_output=False
+    return upload_git_ops.switch_back_to_original_branch(
+        original_branch=original_branch, run_command=run_command
     )
-    if checkout_success:
-        print(f"{Colors.OKBLUE}ℹ️ '{original_branch}' dalına geri dönüldü.{Colors.ENDC}")
-    else:
-        print(
-            f"{Colors.WARNING}⚠️ '{original_branch}' dalına otomatik geri dönülemedi:\n"
-            f"{checkout_err}\nManuel olarak 'git checkout {original_branch}' "
-            f"çalıştırabilirsiniz.{Colors.ENDC}"
-        )
 
 
 def assert_no_unmerged_files(original_branch: str | None = None) -> None:
-    """Unmerged dosya varsa commit/push akışını fail-closed durdurur."""
-    unmerged_files = get_unmerged_files()
-    if not unmerged_files:
-        return
-
-    conflict_message = "❌ Çözülmemiş Git çakışmaları var; commit/push durduruldu:"
-    print(f"{Colors.FAIL}{conflict_message}{Colors.ENDC}")
-    for file_path in unmerged_files:
-        print(f"  - {file_path}")
-    print(
-        f"{Colors.WARNING}Çakışmaları çözüp `git add` ile işaretledikten sonra "
-        f"aracı tekrar çalıştırın.{Colors.ENDC}"
+    return upload_git_ops.assert_no_unmerged_files(
+        original_branch=original_branch,
+        get_unmerged_files=get_unmerged_files,
+        switch_back_to_original_branch=switch_back_to_original_branch,
     )
-    if original_branch:
-        switch_back_to_original_branch(original_branch)
-    sys.exit(1)
 
 
 def print_unmerged_files(prefix: str = "Çakışan dosyalar") -> None:
-    """Kullanıcıya açması gereken unmerged dosyaları okunur biçimde listeler."""
-    unmerged_files = get_unmerged_files()
-    if not unmerged_files:
-        return
-    print(f"{Colors.WARNING}{prefix}:{Colors.ENDC}")
-    for file_path in unmerged_files:
-        print(f"  - {file_path}")
+    return upload_git_ops.print_unmerged_files(prefix=prefix, get_unmerged_files=get_unmerged_files)
 
 
 def abort_in_progress_merge() -> None:
-    """Başarısız pull/merge sonrası çalışma ağacını temiz state'e döndürmeye çalışır."""
-    merge_active, _ = run_command(
-        ["git", "rev-parse", "-q", "--verify", "MERGE_HEAD"], show_output=False
-    )
-    if not merge_active:
-        return
-    abort_success, abort_err = run_command(["git", "merge", "--abort"], show_output=False)
-    if abort_success:
-        print(
-            f"{Colors.OKGREEN}✅ Başarısız merge otomatik olarak geri alındı; "
-            f"çalışma ağacı temizlendi.{Colors.ENDC}"
-        )
-    elif abort_err:
-        print(
-            f"{Colors.WARNING}⚠️ Otomatik `git merge --abort` başarısız oldu; "
-            f"manuel kontrol gerekebilir:\n{abort_err}{Colors.ENDC}"
-        )
+    return upload_git_ops.abort_in_progress_merge(run_command=run_command)
 
 
 def has_conflict_markers(path: str) -> bool:
-    """Metin dosyasında kalmış klasik merge conflict marker satırlarını tespit eder."""
-    content = get_file_content(path)
-    return bool(content and CONFLICT_MARKER_RE.search(content))
+    return upload_files.has_conflict_markers(path=path, get_file_content=get_file_content)
 
 
 def create_rollback_backup_tag() -> str:
-    """Force-push rollback öncesi mevcut HEAD için kurtarma etiketi oluşturur."""
-    tag_name = f"backup/pre-rollback-{datetime.now():%Y%m%d%H%M%S}"
-    tag_success, tag_err = run_command(["git", "tag", tag_name], show_output=False)
-    if tag_success:
-        tag_message = f"🛟 Rollback öncesi yedek tag oluşturuldu: {tag_name}"
-        print(f"{Colors.OKGREEN}{tag_message}{Colors.ENDC}")
-    else:
-        print(
-            f"{Colors.WARNING}⚠️ Rollback yedek tag'i oluşturulamadı; "
-            "işlem güvenlik için durduruldu:\n"
-            f"{tag_err}{Colors.ENDC}"
-        )
-        sys.exit(1)
-    return tag_name
+    return upload_git_ops.create_rollback_backup_tag(run_command=run_command)
 
 
 def report_ours_strategy_changes() -> None:
-    """`-X ours` merge sonrasında değişen dosyaları görünür hale getirir."""
-    _, changed = run_command(
-        ["git", "diff", "--name-only", "ORIG_HEAD..HEAD"],
-        show_output=False,
-    )
-    changed_files = [line.strip() for line in changed.splitlines() if line.strip()]
-    if not changed_files:
-        return
-    print(
-        f"{Colors.WARNING}⚠️ `-X ours` stratejisi sonrası değişen/yerel "
-        f"sürümün korunduğu dosyalar:{Colors.ENDC}"
-    )
-    for file_path in changed_files:
-        print(f"  - {file_path}")
+    return upload_git_ops.report_ours_strategy_changes(run_command=run_command)
 
 
 def get_deleted_files() -> list[str]:
-    """Sistemden silinmiş ama Git'in geçmişte takip ettiği dosyaları bulur."""
-    success, output = run_command(["git", "ls-files", "-d"], show_output=False)
-    if not success or not output:
-        return []
-
-    return [line.strip() for line in output.splitlines() if line.strip()]
+    return upload_git_ops.get_deleted_files(run_command=run_command)
 
 
 def get_commit_count() -> int:
-    """Aktif dalda rollback için kullanılabilir commit sayısını güvenli biçimde döndürür."""
-    success, output = run_command(["git", "rev-list", "--count", "HEAD"], show_output=False)
-    if not success or not output:
-        return 0
-
-    try:
-        return int(output.strip())
-    except ValueError:
-        return 0
+    return upload_git_ops.get_commit_count(run_command=run_command)
 
 
 def collect_safe_files(deleted_files_list: list[str] | None = None) -> tuple[list[str], list[str]]:
-    """Yalnızca güvenli dosyaları stage listesine alır."""
-    if deleted_files_list is None:
-        deleted_files_list = []
-
-    success, output = run_command(
-        ["git", "ls-files", "-co", "--exclude-standard"], show_output=False
+    return upload_files.collect_safe_files(
+        deleted_files_list=deleted_files_list,
+        get_file_content=get_file_content,
+        has_conflict_markers=has_conflict_markers,
+        is_forbidden_path=is_forbidden_path,
+        run_command=run_command,
     )
-    if not success:
-        return [], []
-
-    safe_files = []
-    blocked_files = []
-
-    TEXT_EXTENSIONS = {
-        ".py",
-        ".md",
-        ".txt",
-        ".json",
-        ".yml",
-        ".yaml",
-        ".html",
-        ".css",
-        ".js",
-        ".sh",
-        ".csv",
-        ".example",
-    }
-
-    for line in output.splitlines():
-        file_path = line.strip()
-        if not file_path:
-            continue
-        if os.path.isdir(file_path):
-            continue
-        if file_path in deleted_files_list:
-            continue
-
-        if is_forbidden_path(file_path):
-            blocked_files.append(file_path)
-            continue
-
-        _, ext = os.path.splitext(file_path)
-        if ext.lower() in TEXT_EXTENSIONS:
-            if get_file_content(file_path) is None:
-                blocked_files.append(file_path)
-                continue
-            if has_conflict_markers(file_path):
-                blocked_files.append(file_path)
-                continue
-
-        safe_files.append(file_path)
-
-    return safe_files, blocked_files
 
 
 def stage_files(file_paths: list[str]) -> tuple[bool, str]:
-    """Dosyaları git'e literal pathspec ile güvenli biçimde ekler."""
-    if not file_paths:
-        return True, ""
-
-    unmerged_files = get_unmerged_files()
-    if unmerged_files:
-        return False, "Çözülmemiş çakışmalar var: " + ", ".join(unmerged_files)
-
-    literal_paths = [f":(literal){path}" for path in file_paths]
-    return run_command(["git", "add", "--"] + literal_paths, show_output=False)
+    return upload_git_ops.stage_files(
+        file_paths=file_paths, get_unmerged_files=get_unmerged_files, run_command=run_command
+    )
 
 
 def stage_deleted_files(file_paths: list[str]) -> tuple[bool, str]:
-    """Silinen dosyaları option injection ve pathspec globbing olmadan stage eder."""
-    if not file_paths:
-        return True, ""
-    literal_paths = [f":(literal){path}" for path in file_paths]
-    return run_command(
-        ["git", "rm", "--ignore-unmatch", "--"] + literal_paths,
-        show_output=False,
-    )
+    return upload_git_ops.stage_deleted_files(file_paths=file_paths, run_command=run_command)
 
 
 def sync_install_manifests_before_commit() -> tuple[bool, str]:
-    """Commit öncesi install manifestlerini tazeler ve drift düzeltmelerini stage eder."""
-    sync_steps = [
-        ["bash", "scripts/sync_install_module_hashes.sh"],
-        ["bash", "scripts/sync_install_manifest.sh"],
-        ["git", "add", "install_sidar.sh", ".sidar_manifest.txt"],
-    ]
-
-    for cmd in sync_steps:
-        success, output = run_command(cmd, show_output=False)
-        if not success:
-            return False, output
-
-    return True, ""
+    return upload_manifests.sync_install_manifests_before_commit(run_command=run_command)
 
 
 def stamp_install_manifest_pin_after_commit() -> tuple[bool, str]:
-    """Az önce oluşturulan commit'i install_sidar.sh'ın embedded modül pinine damgalar.
-
-    Pin, commit oluşturulmadan ÖNCE damgalanırsa HEAD hâlâ PARENT commit'i işaret
-    eder; scripts/install_modules/* bu commit'te değiştiyse pin, gömülü modül
-    hash'leriyle asla eşleşmeyen bir commit'e sabitlenmiş olur ve raw tek dosya
-    kurulumu kırılır (bkz. docs/CI_REQUIRED_CHECKS.md "Installer manifest and
-    smoke gate"). Bu yüzden damgalama burada, commit gerçekten oluşturulduktan
-    SONRA çalışır. Pin, kendi içinde bulunduğu commit'e değil (bu, commit
-    hash'i kendi içeriğine bağlı olduğu için imkânsızdır), bu commit'i takip
-    eden ayrı ve küçük bir fixup commit'ine yazılır.
-
-    Damganın yazdığı SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT satırı 40 karakter
-    hex bir commit SHA'sı olduğu için detect-secrets bunu "Hex High Entropy
-    String" olarak işaretler; .secrets.baseline bu satırın hash'ini sabitler ve
-    pin her değiştiğinde baseline bayatlar (bkz. commit 5ccfe56 — o zaman
-    baseline elle tazelendi). Bu, tek seferlik değil, pin her damgalandığında
-    tekrar eden bir durum olduğundan burada da otomatik tazeleniyor: dosyayı
-    detect-secrets ile yeniden tarayıp baseline'ı güncelliyoruz ve değiştiyse
-    aynı fixup commit'ine dahil ediyoruz — aksi halde pre-commit hook'u bu
-    fixup commit'ini her seferinde reddeder.
-    """
-    head_success, head_out = run_command(["git", "rev-parse", "HEAD"], show_output=False)
-    if not head_success:
-        return False, head_out
-    commit = head_out.strip()
-
-    stamp_success, stamp_err = run_command(
-        [
-            "uv",
-            "run",
-            "python",
-            "scripts/tools/update_install_module_hash_manifest.py",
-            "--target",
-            "install_sidar.sh",
-            "--stamp-commit",
-            commit,
-        ],
-        show_output=False,
+    return upload_manifests.stamp_install_manifest_pin_after_commit(
+        run_command=run_command, stage_files=stage_files
     )
-    if not stamp_success:
-        return False, stamp_err
-
-    diff_success, diff_out = run_command(
-        ["git", "diff", "--name-only", "--", "install_sidar.sh"], show_output=False
-    )
-    if not diff_success:
-        return False, diff_out
-    if not diff_out.strip():
-        return True, ""
-
-    rescan_success, rescan_err = run_command(
-        [
-            "uv",
-            "run",
-            "detect-secrets",
-            "scan",
-            "--baseline",
-            ".secrets.baseline",
-            "install_sidar.sh",
-        ],
-        show_output=False,
-    )
-    if not rescan_success:
-        return False, rescan_err
-
-    fixup_paths = ["install_sidar.sh"]
-    baseline_diff_success, baseline_diff_out = run_command(
-        ["git", "diff", "--name-only", "--", ".secrets.baseline"], show_output=False
-    )
-    if not baseline_diff_success:
-        return False, baseline_diff_out
-    if baseline_diff_out.strip():
-        fixup_paths.append(".secrets.baseline")
-
-    add_success, add_err = stage_files(fixup_paths)
-    if not add_success:
-        return False, add_err
-
-    commit_success, commit_err = run_command(
-        ["git", "commit", "-m", f"Pin install_sidar.sh embedded module commit to {commit}"],
-        show_output=False,
-    )
-    if not commit_success:
-        return False, commit_err
-
-    return True, ""
 
 
 def ensure_full_git_history_for_manifest_checks() -> tuple[bool, str]:
-    """--check-pin doğrulamasının shallow clone'larda yanlış pozitif vermesini önler.
-
-    ``update_install_module_hash_manifest.py``'nin ``--check``/``--check-pin``
-    adımları, ``SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT`` pinini ``git show
-    <pin>:<path>`` ile doğrular. Yerel klon shallow ise (ör. sınırlı derinlikte
-    bir clone) pinlenen commit hiç yerel object database'de bulunmayabilir;
-    bu durumda her dosya için "yok" (okunamadı) sonucu döner ve gerçek bir
-    drift olmamasına rağmen 36 modülün tamamı hatalı biçimde drift olarak
-    raporlanır. CI bunu ``fetch-depth: 0`` ile önlüyor (bkz. ci.yml); burada da
-    aynı garantiyi shallow ise ``git fetch --unshallow`` ile sağlıyoruz.
-    """
-    shallow_success, shallow_out = run_command(
-        ["git", "rev-parse", "--is-shallow-repository"], show_output=False
-    )
-    if not shallow_success:
-        return False, shallow_out
-    if shallow_out.strip() != "true":
-        return True, ""
-
-    return run_command(["git", "fetch", "--unshallow", "origin"], show_output=False)
+    return upload_manifests.ensure_full_git_history_for_manifest_checks(run_command=run_command)
 
 
 def _run_quality_steps(
     quality_steps: list[tuple[list[str], dict[str, str] | None]],
 ) -> tuple[bool, str]:
-    for cmd, extra_env in quality_steps:
-        success, output = run_command(cmd, show_output=False, extra_env=extra_env)
-        if not success:
-            failure = f"{' '.join(cmd)}\n{output}".strip()
-            if cmd == ["uv", "run", "ruff", "format", "--check", "."]:
-                failure += "\n\nDüzeltmek için: uv run ruff format ."
-            return False, failure
-
-    return True, ""
+    return upload_gates.run_quality_steps(quality_steps=quality_steps, run_command=run_command)
 
 
 def run_pre_commit_fast_gate() -> tuple[bool, str]:
-    """Kod/test sözleşmesini branch veya commit oluşturulmadan ÖNCE fail-closed çalıştırır.
-
-    Bu kapı yalnızca çalışma ağacındaki mevcut dosyaları kontrol eder (Ruff format,
-    Ruff lint, unit testleri); git durumundan bağımsızdır. Kasıtlı olarak
-    ``run_post_commit_integrity_gate()``'ten ÖNCE ve upload dalı/commit
-    oluşturulmadan önce çalışır: en sık görülen hata sınıfı (bozuk format, kırık
-    unit test) burada yakalanınca kullanıcı hiçbir geçici upload dalında/commit'te
-    kalmaz — ortada temizlenecek bir şey olmaz.
-    """
-    return _run_quality_steps(
-        [
-            (["uv", "run", "ruff", "format", "--check", "."], None),
-            (["uv", "run", "ruff", "check", "."], None),
-            (["uv", "run", "pytest", "tests/unit", "-q", "--no-cov", "-x"], None),
-        ]
-    )
+    return upload_gates.run_pre_commit_fast_gate(_run_quality_steps=_run_quality_steps)
 
 
 def run_post_commit_integrity_gate() -> tuple[bool, str]:
-    """Push öncesi installer/manifest bütünlük kapılarını fail-closed çalıştırır.
-
-    Bu adımlar yalnızca commit alındıktan SONRA anlamlıdır: pin damgalama
-    (``stamp_install_manifest_pin_after_commit``) HEAD'in gerçek commit'ini
-    gerektirir ve sha256/manifest/installer-smoke kontrolleri de o commit'in
-    içeriğini doğrular. Bu kapı, "Installer manifest and smoke gate" job'ının
-    (installer-smoke, .github/workflows/ci.yml) pin-drift'i yakalayan kısımlarını
-    yerelde tekrarlar; böylece direkt push öncesinde installer drift hataları
-    yerelde yakalanır.
-
-    Bu kapı başarısız olursa, o ana kadar oluşturulan upload dalı/commit
-    ÖNCEDEN ``run_pre_commit_fast_gate()`` geçmiş demektir — yani kod/test
-    sözleşmesi sağlamdır, sadece installer/manifest bütünlüğü eksiktir. Bu
-    yüzden çağıran taraf (``main``) burada branch/commit'i sessizce atmak
-    yerine kullanıcıya devam/iptal talimatı vermelidir (bkz.
-    ``describe_post_commit_gate_failure``).
-    """
-    history_success, history_err = ensure_full_git_history_for_manifest_checks()
-    if not history_success:
-        return False, f"git fetch --unshallow origin\n{history_err}".strip()
-
-    return _run_quality_steps(
-        [
-            (["make", "installer-shellcheck"], None),
-            (["sha256sum", "-c", ".sidar_manifest.txt"], None),
-            (
-                ["uv", "run", "python", "scripts/tools/update_core_install_manifest.py", "--check"],
-                None,
-            ),
-            (
-                [
-                    "uv",
-                    "run",
-                    "python",
-                    "scripts/tools/update_install_module_hash_manifest.py",
-                    "--target",
-                    "install_sidar.sh",
-                    "--check",
-                ],
-                None,
-            ),
-            (
-                [
-                    "uv",
-                    "run",
-                    "python",
-                    "scripts/tools/update_install_module_hash_manifest.py",
-                    "--target",
-                    "install_sidar.sh",
-                    "--check-pin",
-                ],
-                None,
-            ),
-            (["bash", "-n", "install_sidar.sh"], None),
-            (
-                ["bash", "install_sidar.sh"],
-                {"SIDAR_INSTALL_TEST_MODE": "1", "SIDAR_INSTALL_ABORT_AFTER_HASH_VERIFY": "1"},
-            ),
-            (
-                [
-                    "uv",
-                    "run",
-                    "pytest",
-                    "-q",
-                    "--no-cov",
-                    "tests/smoke/test_install_verification.py"
-                    "::test_install_sidar_embedded_manifests_in_sync",
-                ],
-                None,
-            ),
-        ]
+    return upload_gates.run_post_commit_integrity_gate(
+        _run_quality_steps=_run_quality_steps,
+        ensure_full_git_history_for_manifest_checks=ensure_full_git_history_for_manifest_checks,
     )
 
 
 def run_pre_push_quality_gate() -> tuple[bool, str]:
-    """Push öncesi unit/static/installer kapılarının tamamını fail-closed çalıştırır.
-
-    ``run_pre_commit_fast_gate()`` + ``run_post_commit_integrity_gate()``'in
-    birleşimidir. Bu tamamı, commit zaten mevcutken tekrar doğrulama yapılan
-    akışlarda kullanılır (ör. push reddi sonrası uzak birleştirme retry'ı);
-    ilk (varsayılan) upload denemesi bunun yerine iki kapıyı ayrı ayrı,
-    branch/commit oluşturulmadan önce ve sonra çağırır — bkz. ``main()``.
-    """
-    fast_success, fast_err = run_pre_commit_fast_gate()
-    if not fast_success:
-        return False, fast_err
-
-    return run_post_commit_integrity_gate()
+    return upload_gates.run_pre_push_quality_gate(
+        run_post_commit_integrity_gate=run_post_commit_integrity_gate,
+        run_pre_commit_fast_gate=run_pre_commit_fast_gate,
+    )
 
 
 def describe_post_commit_gate_failure(current_branch: str, *, direct_main: bool) -> str:
-    """Kalite kapısı commit sonrası başarısız olduğunda kurtarma talimatlarını üretir.
-
-    ``run_post_commit_integrity_gate()`` başarısız olduğunda upload dalı ve
-    commit BİLEREK atılmaz (kullanıcı çalışmasını kaybetmesin diye); bunun
-    yerine mevcut durumu ve devam/iptal komutlarını açıkça yazdırırız.
-    """
-    _, head_out = run_command(["git", "rev-parse", "--short", "HEAD"], show_output=False)
-    commit = head_out.strip() if head_out and head_out.strip() else "bilinmiyor"
-
-    lines = [
-        "",
-        "Upload başarısız.",
-        f"  Korunan branch : {current_branch}",
-        f"  Korunan commit : {commit}",
-        "  GitHub'a push  : yapılmadı",
-        "",
-    ]
-    if direct_main:
-        lines += [
-            "SIDAR_GITHUB_UPLOAD_DIRECT_MAIN açıkken bu commit doğrudan 'main' dalına "
-            "alındı; GitHub'a hiçbir şey gönderilmedi.",
-            "Devam etmek: sorunu düzeltip aracı tekrar çalıştırın.",
-            f"İptal etmek: git reset --hard {commit}~1  (pin damgalama ayrı bir fixup "
-            "commit'i oluşturduysa ~2 gerekebilir)",
-        ]
-    else:
-        lines += [
-            "Devam etmek (zaten bu daldasınız):",
-            f"  git switch {current_branch}",
-            "",
-            "İptal etmek:",
-            "  git switch main",
-            f"  git branch -D {current_branch}",
-        ]
-    return "\n".join(lines)
+    return upload_gates.describe_post_commit_gate_failure(
+        current_branch=current_branch, direct_main=direct_main, run_command=run_command
+    )
 
 
 def record_upload_source_head() -> tuple[bool, str]:
-    """Resolve the immutable source revision used by upload evidence and logs."""
-    success, output = run_command(["git", "rev-parse", "HEAD"], show_output=False)
-    revision = output.strip()
-    if not success:
-        return False, output
-    if not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", revision):
-        return False, f"git rev-parse HEAD geçersiz revision döndürdü: {revision or '<boş>'}"
-    return True, revision.lower()
+    return upload_git_ops.record_upload_source_head(run_command=run_command)
 
 
 def run_direct_main_readiness_gate() -> tuple[bool, str]:
-    """Require local static and production-readiness evidence for direct main pushes.
-
-    PR-first uploads rely on required remote checks after the branch is pushed.
-    Direct-main bypasses that review boundary, so it must first pass both the
-    explicit static gate and the repository's canonical release-readiness gate.
-    """
-    commands = [
-        ["bash", "run_tests.sh", "--stage", "static"],
-        ["make", "production-readiness"],
-    ]
-    for command in commands:
-        success, output = run_command(command, show_output=False)
-        if not success:
-            return False, f"{' '.join(command)}\n{output}".strip()
-    return True, ""
+    return upload_gates.run_direct_main_readiness_gate(run_command=run_command)
 
 
 # ═══════════════════════════════════════════════════════════════

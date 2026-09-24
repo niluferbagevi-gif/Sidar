@@ -25,3 +25,9 @@ ayarları `cfg.SLACK_TOKEN` gibi mevcut alan adlarıyla tüketmeye devam eder.
   değişkeninden okur; `JIRA_BASE_URL`/`JIRA_API_TOKEN` açıkça verilmemişse
   sırasıyla `JIRA_URL`/`JIRA_TOKEN` değerine düşen geriye dönük/alternatif
   adlandırma uyumluluğunu korur.
+- `enable_experimental_social_publishing` — `ENABLE_EXPERIMENTAL_SOCIAL_PUBLISHING`
+  (varsayılan `false`); Meta Graph/WhatsApp yayınını açan deneysel opt-in bayrağı.
+  `Config.ENABLE_EXPERIMENTAL_SOCIAL_PUBLISHING` olarak expose edilir.
+- `EXPERIMENTAL_SOCIAL_PUBLISHING_ENV`, `EXPERIMENTAL_SOCIAL_PUBLISHING_DISABLED_REASON`
+  — bayrak adı ve kapalıyken döndürülen gerekçe metni için tek kaynak
+  (`SocialMediaManager` ve `PoyrazAgent` buradan okur).

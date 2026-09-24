@@ -7,7 +7,7 @@ tek noktada toplamak için hazırlanmıştır.
 
 - **Proje adı:** Sidar (`pyproject.toml`)
 - **Python sürümü:** `>=3.11`
-- **Paket yöneticisi:** `uv` (requirements kilidi `uv pip compile` ile üretilir)
+- **Paket yöneticisi:** `uv` (kilit dosyası `uv.lock`)
 - **Ana backend:** FastAPI + async mimari
 - **Mimari:** Multi-agent (coder/reviewer/researcher/qa/coverage/poyraz)
 
@@ -16,10 +16,11 @@ tek noktada toplamak için hazırlanmıştır.
 - Uygulama ve ekstra bağımlılıklar `pyproject.toml` içinde tanımlıdır.
 - Geliştirme bağımlılıkları (`pytest`, `pytest-asyncio`, `ruff`, `mypy`, `pytest-cov` vb.)
   `project.optional-dependencies.dev` altında tutulur.
-- Kilitli dev bağımlılıkları `requirements-dev.txt` dosyasına derlenir:
+- Bağımlılıklar `uv.lock` ile kilitlenir; ayrı bir `requirements*.txt` dosyası tutulmaz.
+  Standart geliştirme kurulumu:
 
 ```bash
-uv pip compile pyproject.toml --extra dev -o requirements-dev.txt
+uv sync --frozen --all-extras
 ```
 
 ## 3) Test / kalite kapısı standartları
@@ -43,7 +44,7 @@ mypy .
 
 ### ChatGPT / sandbox çalışan araçlar
 
-- `requirements-dev.txt` dosyasını **bağlam** olarak kullan.
+- `pyproject.toml` (extras) ve `uv.lock` dosyalarını **bağlam** olarak kullan.
 - Paket kurmayı veya internetten bağımlılık çekmeyi varsayma.
 - Özel kütüphaneler (ör. `litellm`, `chromadb`, `google-genai`) gerekliyse:
   - Kod/testi çalıştırmadan yaz,
@@ -52,7 +53,7 @@ mypy .
 
 Örnek istek kalıbı:
 
-> "AI_CONTEXT.md ve requirements-dev.txt dosyalarını referans al.
+> "AI_CONTEXT.md ve pyproject.toml dosyalarını referans al.
 > Pytest uyumlu test yaz; kodu çalıştırmayı deneme. Gerekli doğrulama komutlarını ayrıca ver."
 
 ### Claude / IDE bağlam okuyucular

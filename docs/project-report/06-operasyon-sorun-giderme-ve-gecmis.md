@@ -39,7 +39,7 @@ Kurumsal hata yönetimi tek bir ajan veya tek bir model başarısız olduğunda 
 
 ### 16.4 Kurumsal Denetim İzleri (Audit Logging)
 
-Gözlemlenebilirlik katmanı yalnızca teknik hata ayıklama için değil, çok kiracılı (multi-tenant) kurumsal denetlenebilirlik için de tasarlanmıştır. `web_server.py` içindeki `_schedule_access_audit_log(...)` akışı ve `core/db.py` içindeki `audit_logs` şeması; kullanıcı, tenant, kaynak, aksiyon, IP adresi ve allow/deny sonucunu kalıcı denetim izi olarak kaydeder.
+Gözlemlenebilirlik katmanı yalnızca teknik hata ayıklama için değil, çok kiracılı (multi-tenant) kurumsal denetlenebilirlik için de tasarlanmıştır. `web_server.py` içindeki `_schedule_access_audit_log(...)` akışı ve `core/db/` içindeki `audit_logs` şeması; kullanıcı, tenant, kaynak, aksiyon, IP adresi ve allow/deny sonucunu kalıcı denetim izi olarak kaydeder.
 
 Bu audit trail yaklaşımı, güvenlik kararlarının sonradan yeniden üretilebilmesini sağlar. İnsan onayı gerektiren işlemler için `core/hitl.py` ve ilgili API uçları üzerinden yürüyen Human-in-the-Loop (HITL) süreçlerinde reddedilen veya zaman aşımına uğrayan eylemler de görünür kalır. Sonuç olarak hata yönetimi, loglama ve observability katmanı; operasyonel arıza teşhisi, güvenlik denetimi ve tenant izolasyonu için ortak bir kurumsal kayıt sistemi haline gelmiştir.
 ---

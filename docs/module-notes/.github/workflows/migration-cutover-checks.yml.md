@@ -31,7 +31,7 @@ Böylece production cutover öncesi kritik veritabanı geçiş adımları CI iç
 ## 3) Adım adım iş akışı
 
 1. **Checkout + Python setup (3.11)**
-2. **Dependency install** (`requirements.txt` + `requirements-dev.txt`)
+2. **Dependency install** (`uv sync --frozen --all-extras`)
 3. **Alembic zinciri**
    - `upgrade head`
    - `downgrade base`

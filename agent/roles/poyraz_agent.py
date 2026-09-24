@@ -12,6 +12,10 @@ from typing import TYPE_CHECKING, Any, cast
 from agent.base_agent import BaseAgent
 from agent.registry import AgentCatalog
 from config import Config
+from core.config_social_integrations import (
+    EXPERIMENTAL_SOCIAL_PUBLISHING_DISABLED_REASON,
+    EXPERIMENTAL_SOCIAL_PUBLISHING_ENV,
+)
 from core.hitl import get_hitl_gate
 from core.rag import DocumentStore
 from managers.security import SecurityManager
@@ -102,12 +106,18 @@ class PoyrazAgent(BaseAgent):
         super().__init__(cfg=resolved_cfg, role_name="poyraz")
         self.security = SecurityManager(cfg=self.cfg)
         self.web = WebSearchManager(self.cfg)
+        # Sosyal medya yayını deneysel ve opt-in: bayrak kapalıyken araçlar HITL
+        # onayı istemeden reddeder ve dış API'ye istek atılmaz.
+        self._experimental_social_publishing = bool(
+            getattr(self.cfg, EXPERIMENTAL_SOCIAL_PUBLISHING_ENV, False)
+        )
         self.social = SocialMediaManager(
             graph_api_token=getattr(self.cfg, "META_GRAPH_API_TOKEN", ""),
             instagram_business_account_id=getattr(self.cfg, "INSTAGRAM_BUSINESS_ACCOUNT_ID", ""),
             facebook_page_id=getattr(self.cfg, "FACEBOOK_PAGE_ID", ""),
             whatsapp_phone_number_id=getattr(self.cfg, "WHATSAPP_PHONE_NUMBER_ID", ""),
             api_version=getattr(self.cfg, "META_GRAPH_API_VERSION", "v20.0"),
+            experimental_publishing_enabled=self._experimental_social_publishing,
         )
         self.docs = DocumentStore(
             Path(self.cfg.RAG_DIR),
@@ -217,6 +227,11 @@ class PoyrazAgent(BaseAgent):
             else:
                 parts = (raw_parts[:5] + ["", "", "", "", ""])[:5]
                 platform, text, destination, media_url, link_url = (part.strip() for part in parts)
+        if not self._experimental_social_publishing:
+            return (
+                f"[SOCIAL:ERROR] platform={platform} "
+                f"reason={EXPERIMENTAL_SOCIAL_PUBLISHING_DISABLED_REASON}"
+            )
         blocked = await self._authorize_external_publication(
             action="social_publish",
             content="\n".join((platform, text, destination, media_url, link_url)),
@@ -247,6 +262,8 @@ class PoyrazAgent(BaseAgent):
 
     async def _tool_publish_instagram_post(self, arg: str) -> str:
         payload = parse_tool_argument("publish_instagram_post", arg)
+        if not self._experimental_social_publishing:
+            return f"[INSTAGRAM:ERROR] reason={EXPERIMENTAL_SOCIAL_PUBLISHING_DISABLED_REASON}"
         blocked = await self._authorize_external_publication(
             action="instagram_publish",
             content="\n".join((payload.caption.strip(), payload.image_url.strip())),
@@ -264,6 +281,8 @@ class PoyrazAgent(BaseAgent):
 
     async def _tool_publish_facebook_post(self, arg: str) -> str:
         payload = parse_tool_argument("publish_facebook_post", arg)
+        if not self._experimental_social_publishing:
+            return f"[FACEBOOK:ERROR] reason={EXPERIMENTAL_SOCIAL_PUBLISHING_DISABLED_REASON}"
         blocked = await self._authorize_external_publication(
             action="facebook_publish",
             content="\n".join((payload.message.strip(), payload.link_url.strip())),
@@ -281,6 +300,8 @@ class PoyrazAgent(BaseAgent):
 
     async def _tool_send_whatsapp_message(self, arg: str) -> str:
         payload = parse_tool_argument("send_whatsapp_message", arg)
+        if not self._experimental_social_publishing:
+            return f"[WHATSAPP:ERROR] reason={EXPERIMENTAL_SOCIAL_PUBLISHING_DISABLED_REASON}"
         blocked = await self._authorize_external_publication(
             action="whatsapp_send",
             content="\n".join((payload.to.strip(), payload.text.strip())),

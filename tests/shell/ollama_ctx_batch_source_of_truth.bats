@@ -94,7 +94,7 @@ run_ollama_snippet() {
     SCRIPT_DIR="$tmpdir"
     printf "OLLAMA_NUM_CTX=\nOLLAMA_NUM_BATCH=\nOLLAMA_CODING_NUM_CTX=\n" > "$tmpdir/.env"
 
-    # config_llm.OLLAMA_BATCH_POLICY.auto_batch_for_context() legitimately
+    # core.config_llm.OLLAMA_BATCH_POLICY.auto_batch_for_context() legitimately
     # returns 0 at the context floor (meaning "omit num_batch, let Ollama
     # use its own default") - this must NOT be treated as "Python failed".
     uv(){
