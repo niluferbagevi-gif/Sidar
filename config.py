@@ -13,16 +13,19 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-import config_autonomy
-import config_gpu
-import config_llm
-import config_quality
-import config_rag_defaults
 import core.config_hardware as config_hardware
 import core.config_logging_setup as config_logging_setup
 import core.config_observability as config_observability
-from config_security import load_security_settings
-from core import config_dotenv, config_gpu_detect, config_postgres
+from core import (
+    config_dotenv,
+    config_gpu,
+    config_gpu_detect,
+    config_llm,
+    config_postgres,
+    config_quality,
+    config_rag_defaults,
+    config_self_heal,
+)
 from core.config_app import load_app_runtime_settings
 from core.config_autonomy import load_autonomy_settings
 from core.config_browser import load_browser_settings
@@ -64,6 +67,7 @@ from core.config_secret_hardening import (
     warn_on_silent_security_fallbacks,
 )
 from core.config_secrets import is_nonempty_secret
+from core.config_security import load_security_settings
 from core.config_social_integrations import load_social_integration_settings
 from core.config_validators import is_valid_http_url, normalize_ai_provider
 from core.config_web_search import load_web_search_settings
@@ -524,7 +528,7 @@ _APP_SETTINGS = load_app_runtime_settings()
 _RUNTIME_PATHS = load_runtime_path_settings(base_dir=BASE_DIR)
 _OBSERVABILITY_SETTINGS = load_observability_settings()
 _ORCHESTRATOR_SETTINGS = load_orchestrator_settings()
-_SELF_HEAL_SETTINGS = config_autonomy.load_self_heal_settings()
+_SELF_HEAL_SETTINGS = config_self_heal.load_self_heal_settings()
 
 
 class Config:
@@ -647,7 +651,7 @@ class Config:
     API_KEY: str = SECURITY_SETTINGS.api_key
 
     # ─── JWT Auth (stateless) ─────────────────────────────────
-    # Security defaults live in config_security.py so JWT/API key handling and
+    # Security defaults live in core/config_security.py so JWT/API key handling and
     # production validation can evolve outside the large Config surface.
     _JWT_SECRET_KEY_EXPLICITLY_CONFIGURED: bool = (
         SECURITY_SETTINGS.jwt_secret_key_explicitly_configured
@@ -1037,7 +1041,10 @@ class Config:
     RAG_LLM_ENTITY_MODEL: str = _RAG_ENTITY_SETTINGS.rag_llm_entity_model
     RAG_LLM_ENTITY_REVIEW_TARGET: str = _RAG_ENTITY_SETTINGS.rag_llm_entity_review_target
 
-    # ─── Sosyal / Meta Graph Entegrasyonları (v6.0) ─────────────
+    # ─── Sosyal / Meta Graph Entegrasyonları (v6.0, deneysel yayın) ─────────────
+    ENABLE_EXPERIMENTAL_SOCIAL_PUBLISHING: bool = (
+        _SOCIAL_INTEGRATION_SETTINGS.enable_experimental_social_publishing
+    )
     META_GRAPH_API_TOKEN: str = _SOCIAL_INTEGRATION_SETTINGS.meta_graph_api_token
     META_GRAPH_API_VERSION: str = _SOCIAL_INTEGRATION_SETTINGS.meta_graph_api_version
     INSTAGRAM_BUSINESS_ACCOUNT_ID: str = _SOCIAL_INTEGRATION_SETTINGS.instagram_business_account_id

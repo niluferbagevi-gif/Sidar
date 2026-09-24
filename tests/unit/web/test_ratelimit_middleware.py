@@ -6,7 +6,11 @@ import pytest
 from fastapi import Request
 from starlette.datastructures import Headers
 
-from web.middleware.ratelimit import ddos_rate_limit_middleware_impl, rate_limit_middleware_impl
+from web.middleware.ratelimit import (
+    ddos_rate_limit_middleware_impl,
+    rate_limit_middleware_impl,
+    trusted_proxy_matches,
+)
 
 
 def _request(path: str, method: str = "GET") -> Request:
@@ -169,3 +173,12 @@ async def test_rate_limit_impl_uses_principal_key_resolver() -> None:
 
     assert response.status_code == 200
     assert calls == [("mut", "user:t1:u1", 3, 60)]
+
+
+def test_trusted_proxy_matches_wildcard_trusts_every_peer():
+    assert trusted_proxy_matches("203.0.113.9", {"*"})
+
+
+def test_trusted_proxy_matches_skips_invalid_proxy_networks():
+    assert not trusted_proxy_matches("10.0.0.5", ["not-a-network", "192.168.0.0/24"])
+    assert trusted_proxy_matches("10.0.0.5", ["not-a-network", "10.0.0.0/24"])

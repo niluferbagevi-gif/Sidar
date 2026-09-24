@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import secrets
-from collections.abc import Callable
+import time
+from collections.abc import Awaitable, Callable
 from dataclasses import asdict
 from typing import Any
 
-from agent.core.contracts import FederationTaskEnvelope, FederationTaskResult
+from agent.core.contracts import (
+    ActionFeedback,
+    ExternalTrigger,
+    FederationTaskEnvelope,
+    FederationTaskResult,
+)
 from agent.swarm import SwarmTask
 
 
@@ -361,3 +369,295 @@ def embed_event_driven_federation_payload(
         "target_agent": str((workflow.get("federation_task") or {}).get("target_agent", "") or ""),
         "correlation_id": str(workflow.get("correlation_id") or ""),
     }
+
+
+async def dispatch_autonomy_trigger(
+    *,
+    trigger_source: str,
+    event_name: str,
+    payload: dict[str, Any],
+    meta: dict[str, str] | None,
+    resolve_agent_instance: Callable[[], Awaitable[Any]],
+    prepare_memory_context: Callable[[Any, str], Awaitable[None]],
+    collect_agent_response: Callable[[Any, str], Awaitable[str]],
+) -> dict[str, Any]:
+    """Webhook/cron/federation kaynaklı otonom tetikleyiciyi ajana ilet.
+
+    Collaborators are injected so ``web_server`` can keep resolving its own
+    (monkeypatchable) module globals at call time.
+    """
+    agent = await resolve_agent_instance()
+    await prepare_memory_context(agent, trigger_source)
+    trigger = ExternalTrigger(
+        trigger_id=f"trigger-{secrets.token_hex(6)}",
+        source=trigger_source,
+        event_name=event_name,
+        payload=payload,
+        meta=dict(meta or {}),
+    )
+    fallback_prompt = (
+        str(payload.get("federation_prompt") or "").strip() if isinstance(payload, dict) else ""
+    )
+    if (
+        not fallback_prompt
+        and isinstance(payload, dict)
+        and payload.get("kind") == "action_feedback"
+    ):
+        fallback_prompt = ActionFeedback(
+            feedback_id=str(payload.get("feedback_id") or trigger.trigger_id),
+            source_system=str(payload.get("source_system") or trigger.source),
+            source_agent=str(payload.get("source_agent") or "external"),
+            action_name=str(payload.get("action_name") or trigger.event_name),
+            status=str(payload.get("status") or "received"),
+            summary=str(payload.get("summary") or "Dış sistem action feedback sinyali alındı."),
+            related_task_id=str(payload.get("related_task_id") or ""),
+            related_trigger_id=str(payload.get("related_trigger_id") or ""),
+            details=dict(payload.get("details") or {}),
+            meta=dict(trigger.meta or {}),
+            correlation_id=str(payload.get("correlation_id") or trigger.correlation_id),
+        ).to_prompt()
+    if hasattr(agent, "handle_external_trigger"):
+        result = await agent.handle_external_trigger(trigger)
+    else:
+        summary = await collect_agent_response(agent, fallback_prompt or trigger.to_prompt())
+        result = {
+            "trigger_id": trigger.trigger_id,
+            "source": trigger.source,
+            "event_name": trigger.event_name,
+            "summary": summary,
+            "status": "success" if summary else "empty",
+            "meta": dict(trigger.meta or {}),
+            "created_at": time.time(),
+            "completed_at": time.time(),
+        }
+    return {
+        "trigger_id": result["trigger_id"],
+        "source": result["source"],
+        "event_name": result["event_name"],
+        "summary": result["summary"],
+        "status": result["status"],
+        "meta": result.get("meta", {}),
+        "created_at": result.get("created_at"),
+        "completed_at": result.get("completed_at"),
+        "remediation": result.get("remediation"),
+    }
+
+
+def fallback_ci_failure_context(event_name: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """CI remediation import'u stublandığında temel bağlamı yerelde normalize eder."""
+    data = dict(payload or {})
+    normalized = str(event_name or "").strip().lower()
+    failure_conclusions = {
+        "failure",
+        "timed_out",
+        "cancelled",
+        "startup_failure",
+        "action_required",
+    }
+
+    if bool(data.get("ci_failure") or data.get("pipeline_failed")) or normalized in {
+        "ci_failure_remediation",
+        "ci_pipeline_failed",
+        "pipeline_failed",
+    }:
+        return {
+            "kind": "generic_ci_failure",
+            "repo": str(data.get("repo") or data.get("repository") or "").strip(),
+            "workflow_name": str(
+                data.get("workflow_name")
+                or data.get("pipeline")
+                or data.get("job_name")
+                or "ci_failure"
+            ).strip(),
+            "run_id": str(
+                data.get("run_id") or data.get("pipeline_id") or data.get("build_id") or ""
+            ).strip(),
+            "run_number": str(data.get("run_number") or data.get("pipeline_number") or "").strip(),
+            "branch": str(data.get("branch") or data.get("ref") or "").strip(),
+            "base_branch": str(
+                data.get("base_branch") or data.get("target_branch") or "main"
+            ).strip(),
+            "sha": str(data.get("sha") or data.get("commit") or "").strip(),
+            "conclusion": str(data.get("conclusion") or "failure").strip(),
+            "status": str(data.get("status") or "completed").strip(),
+            "html_url": str(data.get("html_url") or data.get("pipeline_url") or "").strip(),
+            "jobs_url": str(data.get("jobs_url") or "").strip(),
+            "logs_url": str(data.get("logs_url") or data.get("log_url") or "").strip(),
+            "log_excerpt": str(
+                data.get("log_excerpt")
+                or data.get("logs")
+                or data.get("error")
+                or data.get("details")
+                or ""
+            ).strip(),
+            "failure_summary": str(
+                data.get("failure_summary")
+                or data.get("summary")
+                or data.get("message")
+                or "ci failure"
+            ).strip(),
+            "failed_jobs": list(data.get("failed_jobs") or data.get("jobs") or []),
+        }
+
+    repository = dict(data.get("repository") or {})
+    repo_name = str(repository.get("full_name") or repository.get("name") or "").strip()
+
+    if normalized == "workflow_run":
+        workflow = dict(data.get("workflow_run") or {})
+        if (
+            str(workflow.get("status") or "").strip().lower() == "completed"
+            and str(workflow.get("conclusion") or "").strip().lower() in failure_conclusions
+        ):
+            pull_requests = list(workflow.get("pull_requests") or [])
+            base_branch = ""
+            if pull_requests:
+                base_branch = str(
+                    (pull_requests[0] or {}).get("base", {}).get("ref", "") or ""
+                ).strip()
+            return {
+                "kind": "workflow_run",
+                "repo": repo_name,
+                "workflow_name": str(workflow.get("name") or "workflow_run").strip(),
+                "run_id": str(workflow.get("id") or "").strip(),
+                "run_number": str(workflow.get("run_number") or "").strip(),
+                "branch": str(workflow.get("head_branch") or "").strip(),
+                "base_branch": base_branch
+                or str(repository.get("default_branch") or "main").strip(),
+                "sha": str(workflow.get("head_sha") or "").strip(),
+                "conclusion": str(workflow.get("conclusion") or "").strip(),
+                "status": str(workflow.get("status") or "").strip(),
+                "html_url": str(workflow.get("html_url") or "").strip(),
+                "jobs_url": str(workflow.get("jobs_url") or "").strip(),
+                "logs_url": str(workflow.get("logs_url") or "").strip(),
+                "log_excerpt": str(
+                    workflow.get("display_title") or workflow.get("name") or ""
+                ).strip(),
+                "failure_summary": str(workflow.get("conclusion") or "failure").strip(),
+                "failed_jobs": list(workflow.get("failed_jobs") or workflow.get("jobs") or []),
+            }
+
+    if normalized == "check_run":
+        check_run = dict(data.get("check_run") or {})
+        if str(check_run.get("conclusion") or "").strip().lower() in failure_conclusions:
+            output = dict(check_run.get("output") or {})
+            return {
+                "kind": "check_run",
+                "repo": repo_name,
+                "workflow_name": str(check_run.get("name") or "check_run").strip(),
+                "run_id": str(check_run.get("id") or "").strip(),
+                "run_number": "",
+                "branch": str(check_run.get("check_suite", {}).get("head_branch") or "").strip(),
+                "base_branch": str(repository.get("default_branch") or "main").strip(),
+                "sha": str(check_run.get("head_sha") or "").strip(),
+                "conclusion": str(check_run.get("conclusion") or "").strip(),
+                "status": str(check_run.get("status") or "").strip(),
+                "html_url": str(check_run.get("html_url") or "").strip(),
+                "jobs_url": str(check_run.get("details_url") or "").strip(),
+                "logs_url": str(check_run.get("details_url") or "").strip(),
+                "log_excerpt": "\n\n".join(
+                    filter(
+                        None,
+                        [
+                            str(output.get("summary") or "").strip(),
+                            str(output.get("text") or "").strip(),
+                        ],
+                    )
+                ),
+                "failure_summary": str(
+                    output.get("title") or check_run.get("name") or "check failed"
+                ).strip(),
+                "failed_jobs": list(check_run.get("failed_jobs") or check_run.get("jobs") or []),
+            }
+
+    if normalized == "check_suite":
+        suite = dict(data.get("check_suite") or {})
+        if str(suite.get("conclusion") or "").strip().lower() in failure_conclusions:
+            return {
+                "kind": "check_suite",
+                "repo": repo_name,
+                "workflow_name": str(suite.get("app", {}).get("name") or "check_suite").strip(),
+                "run_id": str(suite.get("id") or "").strip(),
+                "run_number": "",
+                "branch": str(suite.get("head_branch") or "").strip(),
+                "base_branch": str(repository.get("default_branch") or "main").strip(),
+                "sha": str(suite.get("head_sha") or "").strip(),
+                "conclusion": str(suite.get("conclusion") or "").strip(),
+                "status": str(suite.get("status") or "").strip(),
+                "html_url": str(suite.get("url") or "").strip(),
+                "jobs_url": "",
+                "logs_url": "",
+                "log_excerpt": str(
+                    suite.get("app", {}).get("name") or "check_suite_failure"
+                ).strip(),
+                "failure_summary": str(suite.get("conclusion") or "check suite failure").strip(),
+                "failed_jobs": list(suite.get("failed_jobs") or suite.get("jobs") or []),
+            }
+
+    return {}
+
+
+async def autonomous_cron_loop(
+    stop_event: asyncio.Event,
+    *,
+    cfg: Any,
+    dispatch_trigger: Callable[..., Awaitable[dict[str, Any]]],
+    logger_obj: logging.Logger,
+) -> None:
+    """Yapılandırılmış aralıklarla otonom değerlendirme tetikler."""
+    interval = max(30, int(getattr(cfg, "AUTONOMOUS_CRON_INTERVAL_SECONDS", 900) or 900))
+    prompt = str(
+        getattr(
+            cfg,
+            "AUTONOMOUS_CRON_PROMPT",
+            "Sistemdeki bekleyen otonom iş fırsatlarını değerlendir ve gerekli aksiyon planını "
+            "çıkar.",
+        )
+        or ""
+    ).strip()
+    if not prompt:
+        logger_obj.info("Autonomous cron prompt boş; cron loop başlatılmadı.")
+        return
+
+    while not stop_event.is_set():
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=interval)
+            break
+        except TimeoutError:
+            try:
+                result = await dispatch_trigger(
+                    trigger_source="cron",
+                    event_name="scheduled_tick",
+                    payload={"prompt": prompt, "interval_seconds": interval},
+                    meta={"mode": "autonomous_cron"},
+                )
+                logger_obj.info("Autonomous cron tetiklendi: %s", result["trigger_id"])
+            except Exception as exc:
+                logger_obj.warning("Autonomous cron tetikleme hatası: %s", exc)
+
+
+async def nightly_memory_loop(
+    stop_event: asyncio.Event,
+    *,
+    cfg: Any,
+    resolve_agent_instance: Callable[[], Awaitable[Any]],
+    logger_obj: logging.Logger,
+) -> None:
+    """Sistem idle iken gece hafıza konsolidasyonu ve RAG pruning çalıştırır."""
+    if not bool(getattr(cfg, "ENABLE_NIGHTLY_MEMORY_PRUNING", False)):
+        logger_obj.info("Nightly memory pruning devre dışı; döngü başlatılmadı.")
+        return
+
+    interval = max(300, int(getattr(cfg, "NIGHTLY_MEMORY_INTERVAL_SECONDS", 86400) or 86400))
+    while not stop_event.is_set():
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=interval)
+            break
+        except TimeoutError:
+            try:
+                agent = await resolve_agent_instance()
+                report = await agent.run_nightly_memory_maintenance(reason="nightly_loop")
+                logger_obj.info(
+                    "Nightly memory maintenance sonucu: %s", report.get("status", "unknown")
+                )
+            except Exception as exc:
+                logger_obj.warning("Nightly memory maintenance hatası: %s", exc)

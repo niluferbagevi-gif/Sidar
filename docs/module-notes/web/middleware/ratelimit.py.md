@@ -19,4 +19,11 @@ kovası ve GET-IO hız sınırlaması sağlar.
   değil).
 - Bağımlılıklar `Callable` tip takma adları (`RedisRateLimitChecker`,
   `ClientIpResolver`, `RateLimitKeyResolver`) üzerinden enjekte edilir —
-  gerçek Redis/istemci-IP çözümleme mantığı `web_server.py`'de yaşar.
+  Redis istemcisi ve local rate-limit durumu `web_server.py`'de yaşar.
+- `parse_forwarded_ip()`, `trusted_proxy_matches(direct_ip, trusted_proxies)`,
+  `get_client_ip(request, *, trusted_proxy_matches, parse_forwarded_ip)` —
+  `web_server.py`'den taşınan istemci-IP çözümlemesi. Proxy başlıkları
+  (`X-Forwarded-For`, `X-Real-IP`) yalnız doğrudan bağlantı
+  `Config.TRUSTED_PROXIES` içindeyse okunur; `*` joker, tekil IP ve CIDR ağları
+  desteklenir, geçersiz ağ girdileri atlanır, geçersiz/çok satırlı başlık
+  değerleri yok sayılır.

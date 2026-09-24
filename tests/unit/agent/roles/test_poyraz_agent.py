@@ -283,6 +283,7 @@ def fake_cfg(tmp_path):
         FACEBOOK_PAGE_ID="fb",
         WHATSAPP_PHONE_NUMBER_ID="wa",
         META_GRAPH_API_VERSION="v20.0",
+        ENABLE_EXPERIMENTAL_SOCIAL_PUBLISHING=True,
     )
 
 
@@ -987,6 +988,8 @@ async def test_poyraz_social_and_video_flows_use_shared_fakes(
 
     monkeypatch.setattr("agent.roles.poyraz_agent.get_hitl_gate", lambda: DummyHITLGate())
     agent = agent_factory(PoyrazAgent)
+    # Sosyal yayın deneysel ve opt-in; MagicMock config'e güvenmeden açıkça aç.
+    agent._experimental_social_publishing = True
     agent.social = fake_social_api
     agent.docs = SimpleNamespace()
     agent.llm = object()
@@ -1027,6 +1030,8 @@ async def test_poyraz_agent_error_flows(
 
     monkeypatch.setattr("agent.roles.poyraz_agent.get_hitl_gate", lambda: DummyHITLGate())
     agent = agent_factory(PoyrazAgent)
+    # Sosyal yayın deneysel ve opt-in; MagicMock config'e güvenmeden açıkça aç.
+    agent._experimental_social_publishing = True
     agent.social = fake_social_api
     agent.docs = SimpleNamespace()
     agent.llm = object()
@@ -1066,3 +1071,37 @@ def test_search_docs_falls_back_when_graph_response_is_not_a_tuple(poyraz_module
 
     agent = _agent(poyraz_module, fake_cfg, docstore=ScalarGraphDocStore)
     assert asyncio.run(agent._tool_search_docs("k")) == "bm25 fallback"
+
+
+@pytest.mark.parametrize(
+    ("tool", "arg", "prefix"),
+    [
+        (
+            "_tool_publish_social",
+            "instagram|||text|||dest|||m|||l",
+            "[SOCIAL:ERROR] platform=instagram",
+        ),
+        (
+            "_tool_publish_instagram_post",
+            '{"caption": "c", "image_url": "https://img"}',
+            "[INSTAGRAM:ERROR]",
+        ),
+        ("_tool_publish_facebook_post", '{"message": "m", "link_url": ""}', "[FACEBOOK:ERROR]"),
+        ("_tool_send_whatsapp_message", '{"to": "905", "text": "t"}', "[WHATSAPP:ERROR]"),
+    ],
+)
+def test_social_publish_tools_refuse_without_hitl_when_experimental_flag_is_off(
+    poyraz_module, fake_cfg, monkeypatch, tool, arg, prefix
+):
+    fake_cfg.ENABLE_EXPERIMENTAL_SOCIAL_PUBLISHING = False
+    gate = DummyHITLGate(approved=True)
+    monkeypatch.setattr(poyraz_module, "get_hitl_gate", lambda: gate)
+    agent = _agent(poyraz_module, fake_cfg)
+
+    result = asyncio.run(getattr(agent, tool)(arg))
+
+    assert result.startswith(prefix)
+    assert "ENABLE_EXPERIMENTAL_SOCIAL_PUBLISHING=true" in result
+    assert gate.calls == []
+    assert agent.social.calls == []
+    assert agent.social.kwargs["experimental_publishing_enabled"] is False

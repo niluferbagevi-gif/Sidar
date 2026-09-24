@@ -214,7 +214,7 @@ Senin loguna göre hızlı kazanım için düşük coverage ve nispeten izole mo
 - `agent/roles/coder_agent.py`
 - `core/router.py`
 
-Büyük dosyalar (`web_server.py`, `core/rag.py`, `core/db.py`) tek seferde yükseltmesi pahalı olduğu için ilk dalgada küçük/orta dosyalardan coverage toplamak daha verimli olur.
+Büyük dosyalar (`web_server.py`, `core/rag/`, `core/db/`) tek seferde yükseltmesi pahalı olduğu için ilk dalgada küçük/orta dosyalardan coverage toplamak daha verimli olur.
 
 ## 6) Doğrulama
 

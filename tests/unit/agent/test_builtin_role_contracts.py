@@ -395,7 +395,7 @@ def test_sidar_uv_qwen_development_contract() -> None:
             "README.md",
             "agent/registry.py",
             "config.py",
-            "config_llm.py",
+            "core/config_llm.py",
             "gui_launcher.py",
         ]
     }
@@ -406,7 +406,7 @@ def test_sidar_uv_qwen_development_contract() -> None:
     assert "Güncel ürün adı **Sidar**" in text_by_file["AGENTS.md"]
     assert "uv sync --all-extras" in text_by_file["AGENTS.md"]
     assert "CODING_MODEL=qwen2.5-coder:7b" in text_by_file["README.md"]
-    assert 'CODING_MODEL: str = "qwen2.5-coder:7b"' in text_by_file["config_llm.py"]
+    assert 'CODING_MODEL: str = "qwen2.5-coder:7b"' in text_by_file["core/config_llm.py"]
     assert 'REVIEWER_TEST_COMMAND", "uv run pytest"' in text_by_file["config.py"]
     assert 'CODE_MOD="qwen2.5-coder:7b"' in text_by_file["install_sidar.sh"]
     assert "uv run pytest" in text_by_file["install_sidar.sh"]

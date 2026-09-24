@@ -36,9 +36,9 @@ DEFAULT_BASELINE = ROOT / "docs" / "module-notes" / "inventory-debt-baseline.jso
 
 # Same production surface the coverage gate measures (see
 # scripts/test_gates/coverage_helpers.sh's --cov=agent --cov=core --cov=managers
-# --cov=plugins --cov=web), plus launcher/ and the handful of root entry-point
-# scripts that ship as the CLI/web/upload surface.
-PRODUCTION_DIRS = ("agent", "core", "managers", "plugins", "web", "launcher")
+# --cov=plugins --cov=web), plus launcher/, uploader/ and the handful of root
+# entry-point scripts that ship as the CLI/web/upload surface.
+PRODUCTION_DIRS = ("agent", "core", "managers", "plugins", "web", "launcher", "uploader")
 PRODUCTION_ROOT_FILES = (
     "main.py",
     "cli.py",

@@ -170,6 +170,12 @@ aşağıda belirtilir.
   `store_content_asset`) ve operasyon planlama araçlarını kullanır. Harici yayınlama
   veya müşteri iletişimi etkisi olan adımlarda konfigürasyon, onay ve platform
   kısıtları dikkate alınmalıdır.
+- **Deneysel özellik — sosyal medya yayını:** `publish_social`,
+  `publish_instagram_post`, `publish_facebook_post` ve `send_whatsapp_message`
+  deneyseldir ve opt-in'dir. `ENABLE_EXPERIMENTAL_SOCIAL_PUBLISHING=true`
+  verilmedikçe (varsayılan `false`) bu araçlar HITL onayı istemeden reddeder ve
+  Meta Graph/WhatsApp API'sine istek atılmaz; `SocialMediaManager` da aynı kapıyı
+  (`experimental_publishing_enabled`, varsayılan kapalı) fail-closed uygular.
 - **Etkileşim:** `researcher` tarafından doğrulanan pazar/SEO bulgularını kampanya
   çıktısına dönüştürür. `search_docs` çağrılarında Poyraz önce RAG entity extraction
   pipeline'ının ürettiği ilişkisel GraphRAG belleğini (kampanya -> hedef kitle ->

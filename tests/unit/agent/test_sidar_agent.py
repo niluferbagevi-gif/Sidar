@@ -2896,6 +2896,8 @@ async def test_poyraz_rate_limit_returns_graceful_message_in_sidar_suite(fake_so
     from agent.roles.poyraz_agent import PoyrazAgent
 
     poyraz = PoyrazAgent.__new__(PoyrazAgent)
+    # Sosyal yayın deneysel ve opt-in; __init__ atlandığı için bayrağı açıkça aç.
+    poyraz._experimental_social_publishing = True
     poyraz.social = fake_social_api
     poyraz.social.set_rate_limit_error()
     poyraz.social.publish_content = AsyncMock(side_effect=RuntimeError("API Rate Limit"))

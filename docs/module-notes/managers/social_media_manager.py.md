@@ -18,6 +18,12 @@ ajanının kampanya/içerik yayınlama akışlarının altyapısı.
 - `publish_instagram_post()`, `publish_facebook_post()`,
   `send_whatsapp_message()` — platforma özel gönderim uç noktaları;
   hepsi ortak `_post()` yardımcısı üzerinden Graph API'ye istek atar.
+- **Deneysel / opt-in kapı:** `experimental_publishing_enabled` (varsayılan
+  `False`) açık değilse `publish_*`, `send_whatsapp_message()` ve `_post()`
+  hiçbir HTTP istemcisi oluşturmadan `(False, EXPERIMENTAL_PUBLISHING_DISABLED_REASON)`
+  döner; `is_available()` da `False` döner. `PoyrazAgent` bu bayrağı
+  `ENABLE_EXPERIMENTAL_SOCIAL_PUBLISHING` ayarından geçirir; gerekçe metni
+  `core/config_social_integrations.py` içinde tanımlıdır.
 - `publish_content()` — platform adına göre yukarıdaki üç metottan
   birine yönlendiren tek giriş noktası.
 - `build_content_preview()` — gönderim öncesi UI'da gösterilecek özet
