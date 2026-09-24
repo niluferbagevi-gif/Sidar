@@ -53,16 +53,35 @@ geçiren ince `classmethod` sarmalayıcı) tek tek taşınıyor:
   artık yalnızca `cls.ENABLE_TRACING`/`cls.OTEL_*` değerlerini (testlerin
   doğrudan monkeypatch ettiği canlı class attribute'lar) çözüp saf
   fonksiyona geçiren ~20 satırlık bir sarmalayıcı.
-- ⏳ **Henüz taşınmadı (düşük öncelikli, biriktiğinde maliyetli bir sonraki
-  iş kalemi):** `Config.validate_critical_settings()` (~126 satır — provider/
-  secret/GPU/memory-encryption doğrulaması), `Config._reload_dotenv_chain()`
-  ve `Config._log_dotenv_load_status()` (~60'ar satır — muhtemel hedef:
-  `core/config_dotenv.py`), `Config._autoselect_ollama_coding_ctx_window()`
-  (~46 satır), `Config.get_system_info()`/`Config.print_config_summary()`
-  (~40'ar satır). Her biri `cls`'e (dolayısıyla testlerin monkeypatch ettiği
-  canlı `Config.FOO` attribute'larına) bağımlı olduğu için aynı desen
-  gerektirir: saf fonksiyon + değerleri açıkça geçiren ince sarmalayıcı,
-  `cls`'in kendisini asla alt modüle sızdırmadan.
+- ✅ **Taşındı (2026-09, 1.801 → 1.475 satır):**
+  - `Config.validate_critical_settings()` ve `Config._validate_ai_provider_settings()` →
+    `core/config_validation.py` (`validate_critical_settings`,
+    `validate_ai_provider_settings`; Fernet anahtar kontrolü ve Ollama `/api/tags`
+    probu kendi yardımcılarına ayrıldı).
+  - `Config._log_dotenv_load_status()` ve modül seviyesindeki `_reload_dotenv_chain()` →
+    `core/config_dotenv_reload.py` (`log_dotenv_load_status`, `reload_dotenv_chain`).
+    Değiştirilebilir dotenv kayıtları (`_DOTENV_LOAD_EVENTS`, `_DOTENV_KEY_SOURCES`,
+    `_DOTENV_MANAGED_KEYS`, `_LAST_DOTENV_LOAD_CHAIN_SIGNATURE`) `config.py`'de kalır ve
+    her çağrıda parametre olarak geçirilir; böylece `importlib.reload(config)` ve bu
+    globalleri değiştiren testler tek doğruluk kaynağını görmeye devam eder.
+  - `Config._autoselect_ollama_coding_ctx_window()` içindeki VRAM kademe tablosu ve
+    saha raporu gerekçesi → `core/config_gpu.py::ollama_coding_ctx_for_vram()`.
+    Env override ve `USE_GPU` kontrolü facade'da kalır.
+  - `Config.get_system_info()` / `Config.print_config_summary()` →
+    `core/config_summary.py` (`build_system_info`, `print_config_summary`). Donanım
+    bilgisinin lazy yüklenmesi facade'da kalır.
+
+  Plandaki "yalnız değerleri geçir, `cls`'i alt modüle verme" hedefi bu dört blokta
+  uygulanmadı: doğrulama akışı `cls._ensure_hardware_info_loaded()`,
+  `cls._validate_ai_provider_settings()` gibi facade kancalarını çağırıyor ve
+  `cls.AI_PROVIDER`'ı normalize ederek yeniden atıyor; özet görünümleri ise 30'dan fazla
+  alan okuyor. Bu yüzden `core/config_secret_hardening.py` ve
+  `core/config_runtime_env.py`'nin zaten izlediği desen kullanıldı: `Config` sınıfı
+  parametre olarak geçer, facade kancaları hâlâ `cls` üzerinden çağrılır. Böylece
+  `monkeypatch.setattr(config.Config, ...)` ile yazılmış testler davranışı birebir
+  korur. `logger`, `_log_once_env`, `localized_log_message`, `PRODUCTION_SECRET_KEYS` ve
+  `config_postgres.postgres_password_drift_messages` ise her çağrıda `config.py`
+  globallerinden okunup açık keyword argüman olarak geçirilir.
 
 ## God object değil, compatibility facade
 

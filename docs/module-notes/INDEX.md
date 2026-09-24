@@ -86,6 +86,7 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `core/config_cost_routing.py` → `docs/module-notes/core/config_cost_routing.py.md`
 - `core/config_dirs.py` → `docs/module-notes/core/config_dirs.py.md`
 - `core/config_dotenv.py` → `docs/module-notes/core/config_dotenv.py.md`
+- `core/config_dotenv_reload.py` → `docs/module-notes/core/config_dotenv_reload.py.md`
 - `core/config_env_helpers.py` → `docs/module-notes/core/config_env_helpers.py.md`
 - `core/config_event_bus.py` → `docs/module-notes/core/config_event_bus.py.md`
 - `core/config_github_hf.py` → `docs/module-notes/core/config_github_hf.py.md`
@@ -115,6 +116,8 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `core/config_security.py` → `docs/module-notes/core/config_security.py.md`
 - `core/config_self_heal.py` → `docs/module-notes/core/config_self_heal.py.md`
 - `core/config_social_integrations.py` → `docs/module-notes/core/config_social_integrations.py.md`
+- `core/config_summary.py` → `docs/module-notes/core/config_summary.py.md`
+- `core/config_validation.py` → `docs/module-notes/core/config_validation.py.md`
 - `core/config_validators.py` → `docs/module-notes/core/config_validators.py.md`
 - `core/config_web_search.py` → `docs/module-notes/core/config_web_search.py.md`
 - `core/config_web_server.py` → `docs/module-notes/core/config_web_server.py.md`
