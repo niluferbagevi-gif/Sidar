@@ -10,6 +10,7 @@
 > Bu bölümdeki maddelerin tam kök-neden analizi, araştırma süreci ve test referansları için bkz. [`docs/archive/unreleased_root_cause_detail.md`](docs/archive/unreleased_root_cause_detail.md) (2026-09-10 tarihli P3 bulgusu sonrası arşivlendi).
 
 ### Düzeltmeler
+- **Production-minimal runtime kanıt incelemesinin 2026-08-15 tarihi kaçırılmıştı:** tarih hiçbir kapı tarafından izlenmiyordu. İnceleme yeşil `production-profile-dry-run` koşusu üzerinden 2026-09-25'te yapıldı; sonraki tarih 2027-03-31'e taşındı ve `check_policy_dates.py` bu tarihi artık fail-closed izliyor ve süresi yaklaşınca uyarıyor.
 - **Frontend TypeScript migrasyonunda son untyped dosya kalmıştı:** `useVoiceAssistant` testleri (71 test) davranışları değiştirilmeden `.ts`'e taşındı; mikrofon/WebSocket/ses fake'leri `any` kullanılmadan tiplendi. Baseline 0 untyped / 72 typed'a sıkılaştırıldı; 2027-03-31 kapanış hedefi karşılandı ve migrasyon tamamlandı.
 - **Frontend TypeScript ratchet'inde 3 untyped test dosyası kalmıştı:** `routerShim` ve `SwarmFlowPanel` testleri (80 test) davranışları değiştirilmeden `.tsx`'e taşındı; `test:critical` betiği yeni yola güncellendi. Baseline 1 untyped / 71 typed'a sıkılaştırıldı; yalnız `useVoiceAssistant.test.js` kaldı.
 - **Frontend TypeScript ratchet'inde 5 untyped test dosyası kalmıştı:** `OperationsQaPanel` ve `TenantAdminPanel` testleri (48 test) davranışları değiştirilmeden `.tsx`'e taşındı; `fetchJson` mock'u tipli `Mock` imzasıyla görülür hale getirildi. Baseline 3 untyped / 69 typed'a sıkılaştırıldı.

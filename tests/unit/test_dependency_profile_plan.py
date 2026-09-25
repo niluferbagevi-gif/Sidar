@@ -185,7 +185,8 @@ def test_ci_has_blocking_production_profile_runtime_validation() -> None:
     ]
 
     assert validation["status"] == "release-blocking"
-    assert validation["review_by"] == "2026-08-15"
+    assert validation["last_reviewed_on"] == "2026-09-25"
+    assert validation["review_by"] == "2027-03-31"
     assert validation["blocking_transition_pr_required"] is False
     assert validation["release_artifact"] == "production-minimal-runtime-evidence"
     assert validation["release_artifact_path"] == (

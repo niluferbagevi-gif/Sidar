@@ -384,7 +384,11 @@ summary = "Phase 1 moved dev/test quality tools out of the main runtime dependen
 [tool.sidar.dependency_profile_plan.production_minimal_runtime_validation]
 status = "release-blocking"
 owner = "qa+release"
-review_by = "2026-08-15"
+# The 2026-08-15 evidence review was missed (no gate tracked it); it was
+# performed on 2026-09-25 against a green production-profile-dry-run run, and
+# scripts/ci/check_policy_dates.py now fails closed on this date.
+last_reviewed_on = "2026-09-25"
+review_by = "2027-03-31"
 required_command = "SIDAR_DEPENDENCY_PROFILE=production-minimal ./install_sidar.sh sync-deps --skip-models --skip-smoke-test --ci --no-interaction"
 web_boot_smoke_command = "uv run --no-sync python -c \"from web.app_factory import create_app; app = create_app(register_handlers=False); assert '/docs' in [route.path for route in app.routes]\""
 db_migration_smoke_command = "DATABASE_URL=sqlite+aiosqlite:///./artifacts/production-minimal/migration-smoke.db uv run --no-sync alembic upgrade head"
@@ -392,7 +396,7 @@ follow_up_gate = "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SID
 current_ci_job = "production-profile-dry-run"
 release_artifact = "production-minimal-runtime-evidence"
 release_artifact_path = "artifacts/production-minimal/runtime-evidence.json"
-next_action = "Keep the production-minimal runtime validation job release-blocking and review evidence freshness by 2026-08-15."
+next_action = "Keep the production-minimal runtime validation job release-blocking and review evidence freshness by 2027-03-31."
 blocking_transition_pr_required = false
 summary = "production-minimal is now backed by a release-blocking CI gate that runs installer sync, web boot smoke, DB migration smoke, and uploads runtime evidence artifacts."
 

@@ -207,6 +207,12 @@ kaldığında terfi edebilir:
 6. Release/merge için ayrı production-readiness gate'i yine çalışır:
    `TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all`.
 
+> **Kanıt tazeliği incelemesi:** 2026-08-15 hedefli inceleme hiçbir kapı tarafından
+> izlenmediği için kaçırılmış, 2026-09-25'te yeşil `production-profile-dry-run`
+> koşusu üzerinden yapılmıştır (`last_reviewed_on`). Sonraki inceleme `review_by`
+> = **2027-03-31**'dir (sahip: qa+release) ve `scripts/ci/check_policy_dates.py`
+> bu tarihi artık fail-closed izler; tarih geçerse CI kırmızıya döner.
+
 ## Ruff docstring / ASYNC borç kapatma takibi
 
 > **Aktif takip durumu (2026-09-25):** E501, seçili D200-D417 ve ASYNC240

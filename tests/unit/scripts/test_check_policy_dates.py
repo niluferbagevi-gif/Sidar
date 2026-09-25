@@ -125,3 +125,68 @@ def test_check_policy_dates_cli_returns_nonzero_for_expired_policy(tmp_path: Pat
     )
 
     assert main(["--pyproject", str(pyproject), "--today", "2026-09-16"]) == 1
+
+
+def _write_runtime_validation_pyproject(path: Path, *, review: str | None) -> None:
+    """Write a pyproject whose only live date is the runtime validation review."""
+    review_line = f'review_by = "{review}"\n' if review is not None else ""
+    path.write_text(
+        f"""
+[tool.sidar.ruff_debt]
+docstring_ratchet_review_by = "2099-01-01"
+
+[tool.sidar.dependency_profile_plan.torch_upgrade_reminder]
+status = "resolved"
+
+[tool.sidar.dependency_profile_plan.production_minimal_runtime_validation]
+status = "release-blocking"
+{review_line}""",
+        encoding="utf-8",
+    )
+
+
+def test_check_policy_dates_fails_after_runtime_validation_review(tmp_path: Path) -> None:
+    """An overdue production-minimal evidence review fails closed."""
+    pyproject = tmp_path / "pyproject.toml"
+    _write_runtime_validation_pyproject(pyproject, review="2027-03-31")
+
+    assert check_policy_dates(pyproject, today=date(2027, 3, 31)) == []
+    assert check_policy_dates(pyproject, today=date(2027, 4, 1)) == [
+        (
+            "Production-minimal runtime evidence review "
+            "(tool.sidar.dependency_profile_plan.production_minimal_runtime_validation.review_by) "
+            "expired on 2027-03-31"
+        ),
+    ]
+
+
+def test_check_policy_dates_warns_before_runtime_validation_review(tmp_path: Path) -> None:
+    """The production-minimal evidence review warns inside the window."""
+    pyproject = tmp_path / "pyproject.toml"
+    _write_runtime_validation_pyproject(pyproject, review="2027-03-31")
+
+    warnings = check_policy_date_warnings(pyproject, today=date(2027, 3, 21), warn_within_days=45)
+
+    assert warnings == [
+        (
+            "Production-minimal runtime evidence review "
+            "(tool.sidar.dependency_profile_plan.production_minimal_runtime_validation.review_by) "
+            "is due on 2027-03-31 (10 days remaining)"
+        ),
+    ]
+
+
+def test_check_policy_dates_requires_runtime_validation_review_date(tmp_path: Path) -> None:
+    """A runtime validation section without review_by is a config error."""
+    pyproject = tmp_path / "pyproject.toml"
+    _write_runtime_validation_pyproject(pyproject, review=None)
+
+    assert main(["--pyproject", str(pyproject), "--today", "2026-10-01"]) == 2
+
+
+def test_repository_runtime_validation_review_is_tracked() -> None:
+    """The committed production-minimal review date is live and was missed before."""
+    assert check_policy_dates(Path("pyproject.toml"), today=date(2027, 3, 31)) == []
+    failures = check_policy_dates(Path("pyproject.toml"), today=date(2027, 4, 1))
+
+    assert any("Production-minimal runtime evidence review" in f for f in failures)
