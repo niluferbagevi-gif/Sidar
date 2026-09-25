@@ -143,6 +143,10 @@ sınıflandırılmalı ve production-minimal profil etkisi ayrı PR'da değerlen
   hiçbir yayında bulunmayan chromadb (3) ve nltk (`PYSEC-2026-3740`) istisnaları, erişilemez
   kod yolu gerekçesi koddan yeniden doğrulanarak 2026-12-31'e yenilendi
   (`next_review=2026-11-30`).
+  Her istisnanın `reason` alanı zorunlu bir `next_review=YYYY-MM-DD` işareti taşır.
+  `scripts/ci/check_policy_dates.py` bu tarihi uyarı penceresinde raporlar ve tarih
+  geçince CI'ı fail-closed kırar; böylece istisnanın sert `expires` tarihi security gate'i
+  kırmadan haftalar önce inceleme zorunlu hale gelir.
 - Yeni suppress/ignore listeleri aynı standardı izlemelidir: her kayıt makine-okunur
   `expires` veya `next_review` tarihi, paket/bulgu kimliği, owner/runbook referansı ve dar kapsamlı
   gerekçe taşımalı; süresi dolan kayıtlar fail-closed davranışla kalite kapısından düşmelidir.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 import tomllib
 from datetime import date
@@ -10,6 +11,8 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_PYPROJECT = Path("pyproject.toml")
+DEFAULT_PIP_AUDIT_POLICY = Path("security/pip-audit-ignores.tsv")
+NEXT_REVIEW_RE = re.compile(r"next_review=(\d{4}-\d{2}-\d{2})")
 RUNTIME_VALIDATION_KEY = (
     "tool.sidar.dependency_profile_plan.production_minimal_runtime_validation.review_by"
 )
@@ -52,8 +55,42 @@ def _add_if_due_soon(
         )
 
 
+def pip_audit_review_dates(policy_path: Path) -> list[tuple[str, date]]:
+    """Return ``(vuln_id, next_review)`` for every active pip-audit ignore entry.
+
+    Expiry itself is enforced by ``scripts/pip_audit_ignore_args.py`` in the
+    security gate; the ``next_review=`` marker in each reason is the earlier,
+    softer date that was repeatedly missed, so it is tracked here as well.
+
+    Raises:
+        ValueError: When an entry has no ``next_review=YYYY-MM-DD`` marker.
+    """
+    if not policy_path.exists():
+        return []
+    dates: list[tuple[str, date]] = []
+    for line_number, raw_line in enumerate(
+        policy_path.read_text(encoding="utf-8").splitlines(), start=1
+    ):
+        if not raw_line.strip() or raw_line.lstrip().startswith("#"):
+            continue
+        vuln_id = raw_line.split("\t", 1)[0].strip()
+        match = NEXT_REVIEW_RE.search(raw_line)
+        if match is None:
+            raise ValueError(
+                f"{policy_path}:{line_number}: {vuln_id} has no next_review=YYYY-MM-DD marker"
+            )
+        dates.append(
+            (vuln_id, _parse_date(match.group(1), key=f"{policy_path}:{line_number} next_review"))
+        )
+    return dates
+
+
 def check_policy_date_warnings(
-    pyproject_path: Path, *, today: date | None = None, warn_within_days: int | None = None
+    pyproject_path: Path,
+    *,
+    today: date | None = None,
+    warn_within_days: int | None = None,
+    pip_audit_policy: Path | None = None,
 ) -> list[str]:
     """Return active dated policy/debt markers that are approaching review/expiry."""
     effective_today = today or date.today()
@@ -103,10 +140,22 @@ def check_policy_date_warnings(
             today=effective_today,
             warn_within_days=warning_window,
         )
+    if pip_audit_policy is not None:
+        for vuln_id, next_review in pip_audit_review_dates(pip_audit_policy):
+            _add_if_due_soon(
+                warnings,
+                label=f"pip-audit ignore review for {vuln_id}",
+                value=next_review.isoformat(),
+                key=f"{pip_audit_policy} next_review",
+                today=effective_today,
+                warn_within_days=warning_window,
+            )
     return warnings
 
 
-def check_policy_dates(pyproject_path: Path, *, today: date | None = None) -> list[str]:
+def check_policy_dates(
+    pyproject_path: Path, *, today: date | None = None, pip_audit_policy: Path | None = None
+) -> list[str]:
     """Return expired dated policy/debt markers from pyproject.toml."""
     effective_today = today or date.today()
     data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
@@ -151,6 +200,18 @@ def check_policy_dates(pyproject_path: Path, *, today: date | None = None) -> li
             key=RUNTIME_VALIDATION_KEY,
             today=effective_today,
         )
+
+    # An overdue next_review fails here, weeks before the entry's hard expiry
+    # breaks the pip-audit security gate.
+    if pip_audit_policy is not None:
+        for vuln_id, next_review in pip_audit_review_dates(pip_audit_policy):
+            _add_if_expired(
+                failures,
+                label=f"pip-audit ignore review for {vuln_id}",
+                value=next_review.isoformat(),
+                key=f"{pip_audit_policy} next_review",
+                today=effective_today,
+            )
     return failures
 
 
@@ -158,6 +219,7 @@ def main(argv: list[str] | None = None) -> int:
     """Report upcoming policy dates and fail on expired or malformed ones."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pyproject", type=Path, default=DEFAULT_PYPROJECT)
+    parser.add_argument("--pip-audit-policy", type=Path, default=DEFAULT_PIP_AUDIT_POLICY)
     parser.add_argument("--today", default="", help="Override current date for tests (YYYY-MM-DD).")
     parser.add_argument(
         "--warn-within-days",
@@ -169,9 +231,14 @@ def main(argv: list[str] | None = None) -> int:
 
     today = date.fromisoformat(args.today) if args.today else None
     try:
-        failures = check_policy_dates(args.pyproject, today=today)
+        failures = check_policy_dates(
+            args.pyproject, today=today, pip_audit_policy=args.pip_audit_policy
+        )
         warnings = check_policy_date_warnings(
-            args.pyproject, today=today, warn_within_days=args.warn_within_days
+            args.pyproject,
+            today=today,
+            warn_within_days=args.warn_within_days,
+            pip_audit_policy=args.pip_audit_policy,
         )
     except (OSError, ValueError) as exc:
         print(f"policy date check error: {exc}", file=sys.stderr)
