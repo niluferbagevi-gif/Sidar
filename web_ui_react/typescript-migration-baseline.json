@@ -1,10 +1,10 @@
 {
-  "captured_at": "2026-08-30",
+  "captured_at": "2026-09-25",
   "owner": "Frontend bakım ekibi",
-  "maximum_untyped_files": 21,
+  "maximum_untyped_files": 16,
   "maximum_production_untyped_files": 0,
-  "maximum_test_untyped_files": 21,
-  "minimum_typed_files": 51,
+  "maximum_test_untyped_files": 16,
+  "minimum_typed_files": 56,
   "milestones": [
     {
       "deadline": "2026-10-31",
@@ -23,8 +23,6 @@
     }
   ],
   "allowed_untyped_test_files": [
-    "src/App.chat-status.test.jsx",
-    "src/App.lazyFallback.test.jsx",
     "src/App.test.jsx",
     "src/components/AgentManagerPanel.test.jsx",
     "src/components/ChatInput.test.jsx",
@@ -33,16 +31,13 @@
     "src/components/ChatWindow.test.jsx",
     "src/components/OperationsQaPanel.test.jsx",
     "src/components/P2PDialoguePanel.test.jsx",
-    "src/components/PanelErrorBoundary.test.jsx",
     "src/components/PluginMarketplacePanel.test.jsx",
     "src/components/PromptAdminPanel.test.jsx",
     "src/components/StatusBar.test.jsx",
-    "src/components/SwarmFlowPanel.helpers.test.jsx",
     "src/components/SwarmFlowPanel.test.jsx",
     "src/components/TenantAdminPanel.test.jsx",
     "src/components/VoiceAssistantPanel.test.jsx",
     "src/hooks/useVoiceAssistant.test.js",
-    "src/lib/routerShim.test.jsx",
-    "src/main.test.jsx"
+    "src/lib/routerShim.test.jsx"
   ]
 }

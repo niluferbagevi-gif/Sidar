@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
-import { MemoryRouter } from "./lib/routerShim.tsx";
-import App from "./App.tsx";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "./lib/routerShim.js";
+import App from "./App.js";
 
 const chatStore = {
   sessionId: "session-integration",
@@ -22,7 +23,8 @@ const chatStore = {
 };
 
 vi.mock("./hooks/useChatStore.js", () => ({
-  useChatStore: (selector) => (typeof selector === "function" ? selector(chatStore) : chatStore),
+  useChatStore: (selector?: (state: typeof chatStore) => unknown) =>
+    typeof selector === "function" ? selector(chatStore) : chatStore,
 }));
 
 vi.mock("./hooks/useVoiceAssistant.js", () => ({
