@@ -1,3 +1,4 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ChatPanel } from "./ChatPanel.js";
@@ -6,10 +7,10 @@ const store = {
   sessionId: "session-1",
   roomId: "workspace:sidar",
   displayName: "Operatör",
-  setRoomId: vi.fn((nextRoomId) => {
+  setRoomId: vi.fn((nextRoomId: string) => {
     store.roomId = nextRoomId;
   }),
-  setDisplayName: vi.fn((nextDisplayName) => {
+  setDisplayName: vi.fn((nextDisplayName: string) => {
     store.displayName = nextDisplayName;
   }),
   hydrateRoom: vi.fn(),
@@ -29,16 +30,18 @@ const stop = vi.fn();
 let wsStatus = "connected";
 
 // 1. ADIM: Hook'lara geçilen ayarları (options) yakalamak için dışarıda değişkenler tanımlıyoruz
-let webSocketOptions = {};
-let voiceAssistantOptions = {};
+type CapturedHandler = (...args: unknown[]) => void;
+let webSocketOptions: Record<string, CapturedHandler> = {};
+let voiceAssistantOptions: Record<string, CapturedHandler> = {};
 
 vi.mock("../hooks/useChatStore.js", () => ({
-  useChatStore: (selector) => (typeof selector === "function" ? selector(store) : store),
+  useChatStore: (selector?: (state: typeof store) => unknown) =>
+    typeof selector === "function" ? selector(store) : store,
 }));
 
 // 2. ADIM: useWebSocket mock'unu options'ı yakalayacak şekilde güncelliyoruz
 vi.mock("../hooks/useWebSocket.js", () => ({
-  useWebSocket: (sessionId, options) => {
+  useWebSocket: (_sessionId: string, options: Record<string, CapturedHandler>) => {
     webSocketOptions = options;
     return { send, status: wsStatus };
   },
@@ -46,7 +49,7 @@ vi.mock("../hooks/useWebSocket.js", () => ({
 
 // 3. ADIM: useVoiceAssistant mock'unu options'ı yakalayacak şekilde güncelliyoruz
 vi.mock("../hooks/useVoiceAssistant.js", () => ({
-  useVoiceAssistant: (options) => {
+  useVoiceAssistant: (options: Record<string, CapturedHandler>) => {
     voiceAssistantOptions = options;
     return {
       stop,
@@ -75,14 +78,26 @@ vi.mock("../hooks/useVoiceAssistant.js", () => ({
 vi.mock("./ChatWindow.tsx", () => ({ ChatWindow: () => <div>ChatWindow Mock</div> }));
 vi.mock("./VoiceAssistantPanel.tsx", () => ({ VoiceAssistantPanel: () => <div>VoiceAssistant Mock</div> }));
 vi.mock("./ChatInput.jsx", () => ({
-  ChatInput: ({ onSend, disabled }) => (
+  ChatInput: ({ onSend, disabled }: { onSend: (text: string) => void; disabled?: boolean }) => (
     <button onClick={() => onSend("Merhaba SİDAR")} disabled={disabled}>
       Test Send
     </button>
   ),
 }));
 vi.mock("./StatusBar.tsx", () => ({
-  StatusBar: ({ onNewSession, collaborators, roomId, voiceStatus, wsStatus }) => (
+  StatusBar: ({
+    onNewSession,
+    collaborators,
+    roomId,
+    voiceStatus,
+    wsStatus,
+  }: {
+    onNewSession: () => void;
+    collaborators: number;
+    roomId: string;
+    voiceStatus: string;
+    wsStatus: string;
+  }) => (
     <div>
       <span>{`${wsStatus}-${voiceStatus}-${roomId}-${collaborators}`}</span>
       <button onClick={onNewSession}>Yeni Oturum</button>
