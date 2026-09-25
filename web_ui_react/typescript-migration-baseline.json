@@ -1,10 +1,10 @@
 {
   "captured_at": "2026-09-25",
   "owner": "Frontend bakım ekibi",
-  "maximum_untyped_files": 1,
+  "maximum_untyped_files": 0,
   "maximum_production_untyped_files": 0,
-  "maximum_test_untyped_files": 1,
-  "minimum_typed_files": 71,
+  "maximum_test_untyped_files": 0,
+  "minimum_typed_files": 72,
   "milestones": [
     {
       "deadline": "2026-10-31",
@@ -22,7 +22,5 @@
       "minimum_typed_files": 67
     }
   ],
-  "allowed_untyped_test_files": [
-    "src/hooks/useVoiceAssistant.test.js"
-  ]
+  "allowed_untyped_test_files": []
 }

@@ -99,12 +99,14 @@ aşağıdaki Nüans notu.
 > şekilde taşınmıştır; üçüncü dilimde `App`, `VoiceAssistantPanel`, `AgentManagerPanel`,
 > `PluginMarketplacePanel` ve `ChatPanel`, dördüncü dilimde `OperationsQaPanel` ve
 > `TenantAdminPanel`, beşinci dilimde `routerShim` ve `SwarmFlowPanel` testleri de
-> taşınmıştır. Güncel `src/` envanteri 1 `.js`, 0 `.jsx`, 26 `.ts`, 45 `.tsx`
-> dosyasıdır (untyped=1, yalnız `src/hooks/useVoiceAssistant.test.js`;
-> 2026-10-31 ve 2027-01-31 hedefleri karşılandı); kalan
-> untyped dosyaların tamamı test dosyasıdır ve tek doğruluk kaynağı
-> `web_ui_react/typescript-migration-baseline.json` ratchet'idir. Son hedef 2027-03-31
-> için 0 untyped dosyadır.
+> taşınmıştır. Altıncı ve son dilimde en büyük test dosyası
+> `hooks/useVoiceAssistant.test.js` (71 test) da `.ts`'e taşınmıştır; mikrofon,
+> WebSocket, `AudioContext` ve ses oynatma fake'leri `unknown` üzerinden daraltılmış
+> tiplerle ifade edilmiştir. **Migrasyon tamamlanmıştır:** güncel `src/` envanteri
+> 0 `.js`, 0 `.jsx`, 27 `.ts`, 45 `.tsx` dosyasıdır (untyped=0; 2026-10-31,
+> 2027-01-31 ve 2027-03-31 hedeflerinin tamamı karşılandı). Tek doğruluk kaynağı
+> `web_ui_react/typescript-migration-baseline.json` ratchet'idir ve `src/` altına
+> yeni `.js`/`.jsx` dosyası eklenmesini fail-closed reddeder.
 
 Bileşen/hook/lib ağacı tamamlandıktan sonraki dedup refactorları da (mevcut
 `.js`/`.jsx` dosyalarını taşımak yerine) doğrudan TypeScript'te yeni dosya olarak
@@ -148,10 +150,12 @@ ediyor; milestone tarihine (2026-10-31) kadar hâlâ headroom var.
 
 ## Zorunlu ratchet
 
-`typescript-migration-baseline.json`, en fazla 1 untyped (`.js` + `.jsx`) ve en az
-71 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. Envanter ayrıca bu borcu
-`production_untyped=0` ve `test_untyped=1` olarak ayırır; böylece test migrasyonu devam
-ederken production ağacına yeni JavaScript eklenmesi toplam ratchet içinde gizlenemez.
+`typescript-migration-baseline.json`, en fazla 0 untyped (`.js` + `.jsx`) ve en az
+72 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. Envanter ayrıca bu sayımı
+`production_untyped=0` ve `test_untyped=0` olarak ayırır ve `allowed_untyped_test_files`
+listesi boştur; böylece ne production ne de test ağacına yeni JavaScript eklenebilir.
+`tsconfig.json` içindeki `allowJs` yalnız testlerin kök `vite.config.js` dosyasını
+import edebilmesi için açık kalır (`checkJs: false`).
 `test`, `tests`, `__tests__` dizinleri ile `*.test.*`/`*.spec.*` dosyaları test kaynağı
 sayılır. İlk test dilimi olarak
 `hooks/useFormState.test.js`, davranış ve assertion'ları değiştirilmeden
