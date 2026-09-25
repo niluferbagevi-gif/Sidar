@@ -1,6 +1,7 @@
 # Sidar React UI
 
-Mevcut `web_ui/` (vanilla JS) ile paralel çalışan React/Vite tabanlı modern frontend.
+Sidar'ın tek web arayüzü olan React/Vite/TypeScript tabanlı frontend (legacy vanilla JS
+`web_ui/` kaldırılmıştır).
 FastAPI `web_server.py`'nin WebSocket API'si ile tam uyumludur.
 
 ## Başlatma
@@ -21,23 +22,27 @@ npm run test:coverage # Coverage raporu üretir
 npm run test:e2e    # Playwright ile WebSocket uçtan uca senaryoları
 ```
 
-`web_server.py` otomatik olarak `web_ui_react/dist/` varsa onu, yoksa legacy `web_ui/` dizinini sunar.
+`web_server.py` yalnız `web_ui_react/dist/` build çıktısını sunar; build yoksa kök sayfa
+`npm run build` çalıştırılmasını isteyen bir hata sayfası döndürür (legacy `web_ui/`
+fallback'i yoktur).
 
 ## Proje Yapısı
 
 ```
 src/
 ├── App.tsx                    # Kök bileşen — WS + store bağlantısı
-├── main.jsx                   # ReactDOM giriş noktası
+├── main.tsx                   # ReactDOM giriş noktası
 ├── index.css                  # Global stiller (koyu tema)
 ├── hooks/
-│   ├── useWebSocket.js        # WS bağlantı + akış yönetimi
-│   └── useChatStore.js        # Zustand mesaj durumu
+│   ├── useWebSocket.ts        # WS bağlantı + akış yönetimi
+│   └── useChatStore.ts        # Zustand mesaj durumu
+├── lib/                       # API istemcisi, hata tipleri, router shim vb.
 └── components/
-    ├── ChatWindow.jsx          # Mesaj listesi + akış tamponu
-    ├── ChatMessage.jsx         # Tek mesaj (Markdown + kod vurgulaması)
-    ├── ChatInput.jsx           # Giriş alanı (Enter/Shift+Enter)
-    └── StatusBar.jsx           # WS durum + yeni oturum butonu
+    ├── ChatWindow.tsx          # Mesaj listesi + akış tamponu
+    ├── ChatMessage.tsx         # Tek mesaj (Markdown + kod vurgulaması)
+    ├── ChatInput.tsx           # Giriş alanı (Enter/Shift+Enter)
+    ├── StatusBar.tsx           # WS durum + yeni oturum butonu
+    └── ...Panel.tsx            # Agent/Swarm/Prompt/Tenant/Voice vb. panelleri
 ```
 
 ## Teknoloji Seçimleri
@@ -45,7 +50,7 @@ src/
 | Paket | Neden |
 |-------|-------|
 | Vite | Hızlı HMR, sıfır config |
-| React 18 | Concurrent rendering, Strict Mode |
+| React 19 | Concurrent rendering, Strict Mode |
 | Zustand | Minimal global state (Redux olmadan) |
 | react-markdown | Güvenli Markdown render |
 | rehype-highlight | Kod blokları sözdizim renklendirme |
@@ -55,7 +60,6 @@ src/
 - `Vitest` + `@testing-library/react`: React SPA bileşenleri için native birim testleri.
 - `jsdom`: Tarayıcı DOM API'lerini emüle ederek `App`, `ChatPanel` ve `AgentManagerPanel` gibi bileşenlerin davranışını doğrular.
 - `Playwright`: `e2e/chat-websocket.spec.js` içinde token kaydetme, gerçek WebSocket handshake, presence güncellemesi ve stream yanıtını browser seviyesinde doğrular.
-- Legacy `web_ui/` tarafındaki sesli durum yardımcıları `voice_live_utils.js` içine ayrıştırılmıştır; böylece fallback arayüzü için de saf JS birim testleri yazılabilir.
 
 ### CI tarayıcı smoke kapısı ve coverage görünürlüğü
 

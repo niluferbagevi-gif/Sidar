@@ -15,7 +15,7 @@
 
 [⬆ İçindekilere Dön](#içindekiler)
 
-Projenin v4.3.0 kurumsal sürümü ile birlikte geleneksel metin tabanlı loglama stratejisi genişletilerek **"Telemetry-First" gözlemlenebilirlik mimarisine** geçilmiştir. Bu yapı yalnızca konsola hata yazan bir uygulama modeli değil; LLM çağrıları, RAG akışları, ajan delegasyonları, oran sınırlama (rate limit) olayları ve denetim izlerini aynı operasyon yüzeyinde ilişkilendiren bütüncül bir işletim modelidir. `web_server.py`, `core/llm_client.py`, `agent/core/supervisor.py`, `core/llm_metrics.py`, `core/agent_metrics.py`, `core/cache_metrics.py`, `managers/system_health.py`, `helm/sidar/` ve `docker/` altındaki gözlemlenebilirlik bileşenleri bu katmanı birlikte oluşturur.
+Projenin v4.3.0 kurumsal sürümü ile birlikte geleneksel metin tabanlı loglama stratejisi genişletilerek **"Telemetry-First" gözlemlenebilirlik mimarisine** geçilmiştir. Bu yapı yalnızca konsola hata yazan bir uygulama modeli değil; LLM çağrıları, RAG akışları, ajan delegasyonları, oran sınırlama (rate limit) olayları ve denetim izlerini aynı operasyon yüzeyinde ilişkilendiren bütüncül bir işletim modelidir. `web_server.py`, `core/llm_client.py`, `agent/core/supervisor.py`, `core/llm_metrics.py`, `core/agent_metrics.py`, `core/cache_metrics.py`, `managers/system_health.py`, `helm/sidar/` ve `docker_setup/` altındaki gözlemlenebilirlik bileşenleri bu katmanı birlikte oluşturur.
 
 ### 16.1 Dağıtık İzlenebilirlik (Distributed Tracing)
 
@@ -27,7 +27,7 @@ Bu yaklaşımın operasyonel çıktısı Jaeger/OTel Collector hattıdır: bir k
 
 Sistem sağlığı yalnızca exception sayımıyla değil, sürekli ölçülen metriklerle yönetilir. `core/llm_metrics.py`, `core/agent_metrics.py`, `core/cache_metrics.py` ve `managers/system_health.py`; LLM maliyet/latency verilerini, ajan delegasyon sürelerini, semantic cache hit-miss oranlarını, Redis hata sayılarını, API başarısızlıklarını ve servis sağlığı göstergelerini Prometheus uyumlu formatta dışarı açar. `web_server.py` üzerindeki metrics endpoint'leri bu verileri toplu biçimde yayınlar.
 
-Bu metrik yüzeyi özellikle hata durumlarının görünürlüğünü artırır: 429 rate limit olayları, 5xx sınıfı sağlayıcı hataları, cache redis hataları, ajan bazlı başarısız delegasyonlar ve yanıt süresi bozulmaları gerçek zamanlı olarak izlenir. `docker/grafana/dashboards/sidar-llm-overview.json`, `docker/grafana/provisioning/` ve `helm/sidar/templates/configmap-grafana-slo-dashboard.yaml` dosyaları sayesinde Prometheus tarafından toplanan veriler Grafana panellerine, SLO göstergelerine ve operasyonel alarm yüzeylerine dönüştürülür.
+Bu metrik yüzeyi özellikle hata durumlarının görünürlüğünü artırır: 429 rate limit olayları, 5xx sınıfı sağlayıcı hataları, cache redis hataları, ajan bazlı başarısız delegasyonlar ve yanıt süresi bozulmaları gerçek zamanlı olarak izlenir. `docker_setup/grafana/dashboards/sidar-llm-overview.json`, `docker_setup/grafana/provisioning/` ve `helm/sidar/templates/configmap-grafana-slo-dashboard.yaml` dosyaları sayesinde Prometheus tarafından toplanan veriler Grafana panellerine, SLO göstergelerine ve operasyonel alarm yüzeylerine dönüştürülür.
 
 ### 16.3 Sürü (Swarm) İçi Hata Toleransı ve Otomatik Telafi (Fallback)
 
@@ -35,7 +35,7 @@ Kurumsal hata yönetimi tek bir ajan veya tek bir model başarısız olduğunda 
 
 **Ajan düzeyinde** ise Supervisor merkezli swarm mimarisi hatayı izole eder. `agent/core/supervisor.py`, alt görevleri role ajanlara bölerek delegasyon yapar; bir uzman ajan hata verdiğinde başarısızlık ilgili görev sınırları içinde tutulur, metriklere ve trace'lere işlenir, ardından görev aynı veya farklı bir ajana yeniden yönlendirilebilir. Bu graceful degradation yaklaşımı sayesinde tek bir Coder/Researcher/Reviewer ajanının çökmesi tüm kullanıcı isteğinin kontrolsüz biçimde düşmesine neden olmaz; sistem ölçülebilir şekilde kısmi sonuç, fallback veya yeniden deneme davranışı üretir.
 
-**Chaos engineering referansı (Faz D):** `runbooks/chaos_live_rehearsal.md` ve `tests/test_system_health_dependency_checks.py`, bu fallback anlatısını prova edilebilir operasyon senaryolarına dönüştürür. Canlı prova akışında Redis kesildiğinde `/healthz` yolunun yaşam belirtisi olarak **200** üretmeye devam etmesi, buna karşılık `/readyz` çıktısının **503** dönerek `dependencies.redis.healthy=false` durumunu açığa vurması beklenir; böylece pod gereksiz restart olmadan trafikten çekilir. PostgreSQL kopmasında da aynı desen korunur: liveness ayakta kalır, readiness başarısız olur ve orchestrator yalnızca trafiği uzaklaştırır. Event bus tarafında ise bozuk/ack edilemeyen payload'lar DLQ hattına veya yerel buffer'a düşürülerek olay kaybı yerine kontrollü karantina sağlanır. Böylece swarm içi otomatik telafi, hem kod düzeyinde fallback hem de platform düzeyinde degrade-but-alive işletim modeli olarak belgelenmiş olur.
+**Chaos engineering referansı (Faz D):** `runbooks/chaos_live_rehearsal.md` ve `tests/unit/managers/test_system_health.py`, bu fallback anlatısını prova edilebilir operasyon senaryolarına dönüştürür. Canlı prova akışında Redis kesildiğinde `/healthz` yolunun yaşam belirtisi olarak **200** üretmeye devam etmesi, buna karşılık `/readyz` çıktısının **503** dönerek `dependencies.redis.healthy=false` durumunu açığa vurması beklenir; böylece pod gereksiz restart olmadan trafikten çekilir. PostgreSQL kopmasında da aynı desen korunur: liveness ayakta kalır, readiness başarısız olur ve orchestrator yalnızca trafiği uzaklaştırır. Event bus tarafında ise bozuk/ack edilemeyen payload'lar DLQ hattına veya yerel buffer'a düşürülerek olay kaybı yerine kontrollü karantina sağlanır. Böylece swarm içi otomatik telafi, hem kod düzeyinde fallback hem de platform düzeyinde degrade-but-alive işletim modeli olarak belgelenmiş olur.
 
 ### 16.4 Kurumsal Denetim İzleri (Audit Logging)
 
@@ -175,6 +175,7 @@ Son doğrulama turlarında migration akışları, swarm delegasyonları, audit t
 
 - Kök `config_rag.py` adı, `core/config_rag_store.py` ve `core/rag/` runtime modülleriyle karışmaması için statik varsayılanların canonical modülü olarak `config_rag_defaults.py` adına taşındı.
 - Geriye dönük uyumluluk için `config_rag.py` shim olarak korundu; yeni kod ve `config.py`/`core/config_rag_store.py` importları `config_rag_defaults.py` üzerinden ilerler.
+- **Güncel durum:** Sonraki "root `config_*.py` modüllerini `core/` altına toplama" refactor'ü ile kök `config_rag.py` shim'i kaldırılmıştır; canonical modüller `core/config_rag_defaults.py`, `core/config_rag_entity.py` ve `core/config_rag_store.py`'dir.
 
 
 ## Session: Frontend Bundle Near-Budget Warning

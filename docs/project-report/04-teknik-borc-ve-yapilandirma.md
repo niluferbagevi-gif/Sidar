@@ -89,7 +89,7 @@ Geçmişte çözülen teknik borçlar ve denetim bulgularının detaylı listesi
 
 ### 11.3 v5.0 Faz-6 Coverage Kapanışı
 
-- `core/voice.py`, `web_ui_react` duplex ses akışı, `managers/browser_manager.py`, `main.py`, `core/rag.py`, `agent/core/contracts.py`, `core/ci_remediation.py` ve event-driven federation/webhook zinciri için beklenen regresyon kapsamı `tests/test_voice_pipeline.py`, `tests/test_web_server_voice.py`, `tests/test_browser_manager.py`, `tests/test_main_launcher_improvements.py`, `tests/test_rag_graph.py`, `tests/test_contracts_federation.py`, `tests/test_ci_remediation.py` ve `tests/test_web_server_autonomy.py` ile repoda mevcuttur.
+- `core/voice.py`, `web_ui_react` duplex ses akışı, `managers/browser_manager.py`, `main.py`, `core/rag/` paketi (eski `core/rag.py`), `agent/core/contracts.py`, `core/ci_remediation.py` ve event-driven federation/webhook zinciri için beklenen regresyon kapsamı güncel `tests/unit/...` yerleşiminde `tests/unit/core/test_voice.py`, `tests/unit/web/routes/test_ws_voice.py`, `tests/integration/api/test_web_server_voice_and_metrics.py`, `tests/unit/managers/test_browser_manager.py`, `tests/unit/root/test_main_launcher_env_reload.py`, `tests/unit/core/test_rag.py`, `tests/unit/agent/core/test_contracts.py`, `tests/unit/core/test_ci_remediation.py`, `tests/unit/web/routes/test_autonomy_route.py` ve `tests/unit/web/routes/test_autonomy_federation.py` ile repoda mevcuttur.
 - Opsiyonel `pyttsx3` bağımlılığı, HITL onay akışları ve launcher alt süreç davranışı için mocking/fake adapter stratejileri test dosyalarında uygulanmış durumdadır; bu başlık artık aktif borç değil, sürdürülen regresyon korumasıdır.
 
 ### 11.4 Operasyonel İzleme Başlıkları

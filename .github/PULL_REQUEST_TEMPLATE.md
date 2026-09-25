@@ -38,7 +38,7 @@
 > CI veya `make production-readiness` gate'ini tekrar koşun. Yerel bootstrap için
 > `make benchmark-seed` kullanın. Seed artifact retention süresi 30 gündür; cache düşerse
 > aynı bootstrap prosedürünü tekrar uygulayın. Ayrıntılı runbook:
-> [`docs/TESTING.md#ci-benchmark-baseline-cache-boşsa-ne-yapılır`](docs/TESTING.md#ci-benchmark-baseline-cache-boşsa-ne-yapılır).
+> [`docs/TESTING.md#ci-benchmark-baseline-cache-boşsa-ne-yapılır`](../docs/TESTING.md#ci-benchmark-baseline-cache-boşsa-ne-yapılır).
 
 - [ ] CI benchmark baseline cache/artifact mevcut veya `seed_benchmark_baseline=true` ile yeniden seed edildi.
 - [ ] Yerel `.benchmarks/.../*_baseline.json` dosyalarının CI baseline yerine geçmediği doğrulandı.

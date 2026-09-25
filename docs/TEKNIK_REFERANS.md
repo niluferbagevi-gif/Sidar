@@ -50,7 +50,7 @@ Sidar v5.1.0-docs / v5.0.0-alpha runtime teknik akışının ana bileşenleri:
 
 - **Web/API katmanı:** `web_server.py` (FastAPI, WebSocket, middleware, auth, rate-limit, RAG/GitHub endpointleri)
 - **Agent katmanı:** `agent/sidar_agent.py` + `agent/core/supervisor.py` + `agent/roles/*`
-- **Veri katmanı:** `core/db.py` (SQLite + PostgreSQL uyumlu async erişim)
+- **Veri katmanı:** `core/db/` paketi (`from core.db import Database` facade'ı; SQLite + PostgreSQL uyumlu async erişim)
 - **Güvenlik/çalıştırma:** `managers/security.py`, `managers/code_manager.py`
 - **Dağıtım:** `docker-compose.yml`
 
@@ -60,7 +60,7 @@ Bu kılavuzdaki tüm başlıklar, doğrudan mevcut repo kod akışlarına göre 
 
 - **`main.py`**: Etkileşimli sihirbaz ve `--quick` akışı aynı `build_command()` hattında birleşir; `preflight()` sağlayıcı/env kontrollerini yapar, `execute_command()` ise alt süreci doğrudan veya canlı stdout/stderr aynalama ile başlatır.
 - **`cli.py`**: Tek bir `asyncio.run()` etrafında çalışan interaktif döngü kullanır; böylece `SidarAgent` lock/memory yaşam döngüsü tek event-loop üzerinde tutulur. Yerleşik `.status`, `.audit`, `.health`, `.gpu`, `.docs` ve erişim seviyesi komutları doğrudan CLI katmanında çözülür.
-- **`web_server.py`**: FastAPI kontrol düzlemi 86 REST endpoint + `/ws/chat` ve `/ws/voice` WebSocket hatlarını sunar; auth, ACL, rate-limit, RAG, swarm, HITL, Vision, multimodal ses akışı, webhook/federation tetikleyicileri ve Slack/Jira/Teams entegrasyonları bu katmanda toplanır. `web_ui_react/dist` varsa React SPA öncelikli sunulur, yoksa legacy `web_ui/` fallback olarak servis edilir.
+- **`web_server.py`**: FastAPI kontrol düzlemi 86 REST endpoint + `/ws/chat` ve `/ws/voice` WebSocket hatlarını sunar; auth, ACL, rate-limit, RAG, swarm, HITL, Vision, multimodal ses akışı, webhook/federation tetikleyicileri ve Slack/Jira/Teams entegrasyonları bu katmanda toplanır. Web arayüzü yalnız `web_ui_react/dist` React SPA build'inden sunulur; legacy `web_ui/` fallback'i kaldırılmıştır.
 - **`config.py`**: Ortam değişkeni çözümleme, donanım keşfi, dizin bootstrap'i ve telemetry başlangıcı aynı `Config` sınıfında merkezileştirilmiştir.
 - **`github_upload.py`**: `git ls-files -co --exclude-standard` üzerinden yalnızca UTF-8 okunabilir ve blackliste girmeyen dosyaları stage eder; repo URL doğrulaması, shell=False komut yürütme ve otomatik push/pull-merge akışı içerir.
 - **`gui_launcher.py`**: Eel GUI seçimlerini normalize ederek `main.py` başlatıcı hattını yeniden kullanır; web modu için varsayılan `0.0.0.0:7860` parametrelerini besler ve sonuçları yapılandırılmış JSON sözlüğü ile döndürür.

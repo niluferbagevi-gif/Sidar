@@ -51,7 +51,7 @@ sudo bash scripts/install_host_sandbox.sh --mode both --dry-run
 ## 4) Nerede kullanılır?
 
 - Operasyon/runbook tarafında host sandbox rollout adımlarında kullanılır.
-- Test tarafında `tests/test_host_sandbox_installer_assets.py` scriptin varlığını ve içerik beklentilerini doğrular.
+- Eski `tests/test_host_sandbox_installer_assets.py` kaldırılmıştır; güncel test havuzunda bu script için ayrı bir içerik testi bulunmamaktadır.
 - `PROJE_RAPORU.md` içerisinde zero-trust sandbox hazırlığı kapsamında envanterlenmiştir.
 
 ## 5) Kullanım örneği ve beklenen çıktılar

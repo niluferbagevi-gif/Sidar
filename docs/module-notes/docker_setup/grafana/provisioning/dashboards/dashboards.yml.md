@@ -1,7 +1,7 @@
 # `docker_setup/grafana/provisioning/dashboards/dashboards.yml`
 
 - **Kaynak dosya:** `docker_setup/grafana/provisioning/dashboards/dashboards.yml`
-- **Not dosyası:** `docs/module-notes/docker/grafana/provisioning/dashboards/dashboards.yml.md`
+- **Not dosyası:** `docs/module-notes/docker_setup/grafana/provisioning/dashboards/dashboards.yml.md`
 - **Kategori:** Grafana dashboard provider provisioning
 - **Çalışma tipi:** YAML provisioning konfigürasyonu
 
@@ -28,11 +28,11 @@ Bu dosya, Grafana’nın dosya tabanlı dashboard provider’ını tanımlar. B�
 
 ## 4) Nerede kullanılıyor?
 
-- `docker-compose.yml` içinde provisioning klasörü Grafana container’a mount edilir:
-  - `./docker/grafana/provisioning:/etc/grafana/provisioning:ro`
+- `docker-compose.observability.yml` içinde (`--profile observability`) provisioning klasörü Grafana container’a mount edilir:
+  - `./docker_setup/grafana/provisioning:/etc/grafana/provisioning:ro`
 - Dashboard dosyaları ayrıca şu mount ile okunur:
-  - `./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro`
-- `tests/test_grafana_dashboard_provisioning.py` bu dosyada dashboard path değerini doğrular.
+  - `./docker_setup/grafana/dashboards:/var/lib/grafana/dashboards:ro`
+- Eski `tests/test_grafana_dashboard_provisioning.py` kaldırılmıştır; `tests/shell/install_services_docker_module.bats` yalnız `docker_setup/grafana/provisioning` dizininin varlığını kontrol eder, dashboard path değeri için ayrı bir test yoktur.
 
 ## 5) İlişkili dosyalar
 

@@ -89,6 +89,13 @@ tamamı test dosyalarındadır, uygulama kaynağında sıfır hata vardır. Kala
 artık "küçük domain dilimleri" değil, mekanik test dosyası dönüşümüdür; bkz.
 aşağıdaki Nüans notu.
 
+> **Güncel durum (2026-09-25):** Bu paragraftaki sayılar 2026-08-06 anlık görüntüsüdür.
+> O tarihten beri test altyapısı da taşınmıştır: `src/test/setup.js` artık
+> `src/test/setup.ts`'dir (`vite.config.js` → `setupFiles: "./src/test/setup.ts"`).
+> Güncel `src/` envanteri 1 `.js`, 20 `.jsx`, 24 `.ts`, 27 `.tsx` dosyasıdır; kalan
+> untyped dosyaların tamamı test dosyasıdır ve tek doğruluk kaynağı
+> `web_ui_react/typescript-migration-baseline.json` ratchet'idir.
+
 Bileşen/hook/lib ağacı tamamlandıktan sonraki dedup refactorları da (mevcut
 `.js`/`.jsx` dosyalarını taşımak yerine) doğrudan TypeScript'te yeni dosya olarak
 eklenmiştir: `hooks/useAsyncStatus.ts` (4 admin panelindeki tekrarlanan

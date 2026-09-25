@@ -48,7 +48,7 @@ Böylece production cutover öncesi kritik veritabanı geçiş adımları CI iç
 
 - `runbooks/production-cutover-playbook.md` içindeki CI otomasyon notunun teknik karşılığıdır.
 - `tests/test_migration_ci_guards.py`, workflow içinde zorunlu kapı komutlarının bulunduğunu doğrular.
-- `tests/test_migration_assets.py`, cutover varlıklarının (runbook/migration dosyaları) varlığını ayrıca kontrol eder.
+- Eski `tests/test_migration_assets.py` kaldırılmıştır; cutover runbook/migration varlıklarına dair içerik kontrolleri artık `tests/test_migration_ci_guards.py` ve `tests/unit/migrations/` altındaki revizyon testleri tarafından yürütülür.
 
 ## 5) Kullanım ve sonuç örnekleri
 
