@@ -138,6 +138,11 @@ sınıflandırılmalı ve production-minimal profil etkisi ayrı PR'da değerlen
   adımında okunur. Süresi dolan istisnalar `pip-audit` komutuna aktarılmaz; script fail-closed
   döner ve kalite kapısını kırar. Torch istisnası patched lock sonrasında kaldırılmıştır;
   gelecekteki istisnalar aynı fail-closed expiry sözleşmesini korumalıdır.
+  2026-09-25 incelemesinde pip-audit istisnasız çalıştırıldı: `PYSEC-2026-597` (nltk) ve
+  `CVE-2026-69112` (accelerate) artık raporlanmadığı için kaldırıldı; düzeltme sürümü
+  hiçbir yayında bulunmayan chromadb (3) ve nltk (`PYSEC-2026-3740`) istisnaları, erişilemez
+  kod yolu gerekçesi koddan yeniden doğrulanarak 2026-12-31'e yenilendi
+  (`next_review=2026-11-30`).
 - Yeni suppress/ignore listeleri aynı standardı izlemelidir: her kayıt makine-okunur
   `expires` veya `next_review` tarihi, paket/bulgu kimliği, owner/runbook referansı ve dar kapsamlı
   gerekçe taşımalı; süresi dolan kayıtlar fail-closed davranışla kalite kapısından düşmelidir.
