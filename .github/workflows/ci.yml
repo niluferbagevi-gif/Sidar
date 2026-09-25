@@ -189,6 +189,9 @@ jobs:
       - name: Check module-notes documentation inventory
         run: uv run python scripts/ci/check_module_notes_inventory.py
 
+      - name: Check living docs for stale file/path references
+        run: uv run python scripts/ci/check_doc_links.py
+
       - name: Check web_server.py size budget
         run: uv run python scripts/ci/check_web_server_size_baseline.py
 
