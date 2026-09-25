@@ -59,6 +59,8 @@ class _NullSpan:
 class SupervisorAgent(BaseAgent):
     MAX_QA_RETRIES = 3
     MAX_TURNS = 10
+    # Minimum turns a reviewer-driven revision round needs (coder + reviewer).
+    _REVISION_ROUND_TURNS = 2
     """Supervisor merkezli orkestrasyon: coder -> reviewer -> (gerekirse coder) zinciri."""
 
     SYSTEM_PROMPT = (
@@ -145,9 +147,111 @@ class SupervisorAgent(BaseAgent):
         }
     )
 
+    _COLLABORATION_HEADER = "[COLLABORATION WORKSPACE]"
+    _COLLABORATION_COMMAND_MARKER = "Current command:"
+
+    # Question words that mark an information request rather than a code change.
+    _QUESTION_WORDS = frozenset(
+        {
+            "nedir",
+            "nelerdir",
+            "neler",
+            "ne",
+            "hangi",
+            "hangileri",
+            "hangisi",
+            "nasıl",
+            "neden",
+            "niçin",
+            "niye",
+            "kaç",
+            "kim",
+            "kimdir",
+            "nerede",
+            "mı",
+            "mi",
+            "mu",
+            "mü",
+            "açıkla",
+            "anlat",
+            "what",
+            "which",
+            "how",
+            "why",
+            "who",
+            "where",
+            "explain",
+        }
+    )
+    # Verb stems that ask for a change; a question containing one stays a code task.
+    _CODE_ACTION_STEMS = (
+        "yaz",
+        "oluştur",
+        "düzelt",
+        "ekle",
+        "güncelle",
+        "değiştir",
+        "sil",
+        "kodla",
+        "geliştir",
+        "uygula",
+    )
+    _CODE_ACTION_SUFFIXES = (
+        "",
+        "r",
+        "ar",
+        "er",
+        "ır",
+        "ir",
+        "ur",
+        "ür",
+        "abilir",
+        "ebilir",
+        "ın",
+        "in",
+        "un",
+        "ün",
+    )
+    _CODE_ACTION_WORDS = frozenset(
+        {"write", "create", "add", "fix", "implement", "refactor", "build", "update", "delete"}
+    )
+
+    @classmethod
+    def _routing_text(cls, prompt: str) -> str:
+        """Return the text intent routing should look at.
+
+        Collaboration room prompts carry participants and the recent transcript before
+        ``Current command:``; earlier messages must not steer routing of the new one.
+        """
+        text = prompt or ""
+        marker = cls._COLLABORATION_COMMAND_MARKER
+        if text.lstrip().startswith(cls._COLLABORATION_HEADER) and marker in text:
+            command = text.rsplit(marker, 1)[1].strip()
+            if command:
+                return command
+        return text
+
+    @classmethod
+    def _is_code_action_word(cls, word: str) -> bool:
+        if word in cls._CODE_ACTION_WORDS:
+            return True
+        return any(
+            word == f"{stem}{suffix}"
+            for stem in cls._CODE_ACTION_STEMS
+            for suffix in cls._CODE_ACTION_SUFFIXES
+        )
+
+    @classmethod
+    def _is_information_question(cls, text: str, words: list[str]) -> bool:
+        """True for questions that ask for information and request no code change."""
+        is_question = text.endswith("?") or any(word in cls._QUESTION_WORDS for word in words)
+        if not is_question:
+            return False
+        return not any(cls._is_code_action_word(word) for word in words)
+
     @staticmethod
     def _intent(prompt: str) -> str:
-        text = (prompt or "").strip().lower()
+        text = SupervisorAgent._routing_text(prompt).strip().lower()
         words = re.findall(r"[\w']+", text, flags=re.UNICODE)
         if words and all(word in SupervisorAgent._GREETING_WORDS for word in words):
             return "chat"
@@ -170,6 +274,8 @@ class SupervisorAgent(BaseAgent):
             for t in ("coverage", "kapsama", "pytest", "eksik test", "test yaz", "test üret")
         ):
             return "coverage"
+        if SupervisorAgent._is_information_question(text, words):
+            return "research"
         return "code"
 
     @staticmethod
@@ -622,14 +728,20 @@ class SupervisorAgent(BaseAgent):
         retries = 0
         latest_code_summary = code_summary
 
+        def _turn_limit_report() -> str:
+            # Keep the latest coder/reviewer output: a bare stop message hides
+            # everything the spent turns produced.
+            return (
+                f"{latest_code_summary}\n\n---\n"
+                f"Reviewer QA Özeti (circuit breaker):\n{review_summary}\n" + _turn_limit_message()
+            )
+
         while self._review_requires_revision(review_summary):
             retries += 1
-            if turn_count >= max_turns:
-                return (
-                    f"{latest_code_summary}\n\n---\n"
-                    f"Reviewer QA Özeti (circuit breaker):\n{review_summary}\n"
-                    + _turn_limit_message()
-                )
+            # A revision round needs at least a coder and a reviewer turn; starting
+            # one that cannot finish only burns an LLM call and loses the review.
+            if max_turns - turn_count < self._REVISION_ROUND_TURNS:
+                return _turn_limit_report()
             if retries > self._max_qa_retries():
                 return (
                     f"{latest_code_summary}\n\n---\n"
@@ -647,8 +759,7 @@ class SupervisorAgent(BaseAgent):
                 "Reviewer geri bildirimi sonrası kod turu başlatılıyor "
                 f"({retries}/{self._max_qa_retries()})...",
             )
-            if not _consume_turn():
-                return _turn_limit_message()
+            _consume_turn()  # budget for this turn was checked before the round
             next_code = await self._delegate(
                 "coder", revise_prompt, "code", parent_task_id=review_result.task_id
             )
@@ -664,7 +775,7 @@ class SupervisorAgent(BaseAgent):
             latest_code_summary = str(next_code.summary)
             await self.events.publish("supervisor", "Reviewer kontrolü tekrar çalıştırılıyor...")
             if not _consume_turn():
-                return _turn_limit_message()
+                return _turn_limit_report()
             review_result = await self._delegate(
                 "reviewer",
                 f"review_code|{latest_code_summary[:800]}",

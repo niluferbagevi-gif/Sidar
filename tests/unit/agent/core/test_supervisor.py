@@ -196,10 +196,54 @@ def _build_supervisor(*, max_qa_retries: int = 2, has_coverage: bool = True) -> 
         ("hi hello", "chat"),
         ("hey review this pr", "review"),
         ("yeni bir python fonksiyonu yaz", "code"),
+        # Information questions go to the researcher, not the coder/reviewer chain.
+        ("Sidar'daki yerleşik ajan rolleri nelerdir?", "research"),
+        ("hangi veritabanını kullanıyoruz", "research"),
+        ("How does the event bus pick a backend", "research"),
+        ("yazılım mimarisi nasıl?", "research"),
+        # A question that asks for a change is still a code task.
+        ("bu hatayı nasıl düzeltirim, düzelt?", "code"),
+        ("bir test fonksiyonu yazar mısın?", "code"),
+        ("can you write a parser?", "code"),
+        ("Bu fonksiyonu refactor et", "code"),
     ],
 )
 def test_intent_classification(prompt: str, expected_intent: str) -> None:
     assert SupervisorAgent._intent(prompt) == expected_intent
+
+
+def _room_prompt(transcript: str, command: str) -> str:
+    return (
+        "[COLLABORATION WORKSPACE]\n"
+        "room_id=workspace:demo\n"
+        "participants=eylcnc<user>\n"
+        "recent_transcript=\n"
+        f"{transcript}\n\n"
+        f"Current command:\n{command}"
+    )
+
+
+@pytest.mark.parametrize(
+    ("transcript", "command", "expected_intent"),
+    [
+        # Earlier messages mention web/docs/review; only the new command counts.
+        ("[user] a: web kaynak araştır", "yeni bir python fonksiyonu yaz", "code"),
+        ("[assistant] Sidar: github review tamam", "@Sidar ajan rolleri nelerdir?", "research"),
+        ("[user] a: seo kampanya", "selam", "chat"),
+    ],
+)
+def test_intent_uses_only_the_room_command(
+    transcript: str, command: str, expected_intent: str
+) -> None:
+    assert SupervisorAgent._intent(_room_prompt(transcript, command)) == expected_intent
+
+
+def test_routing_text_keeps_prompt_without_room_command() -> None:
+    empty_command = _room_prompt("[user] a: web", "   ")
+    assert SupervisorAgent._routing_text(empty_command) == empty_command
+    plain = "Current command: web ara"
+    assert SupervisorAgent._routing_text(plain) == plain
+    assert SupervisorAgent._routing_text(None) == ""  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(
@@ -1353,24 +1397,11 @@ def test_run_task_circuit_breaker_while_loop_start() -> None:
     assert "[P2P:STOP] Circuit breaker tetiklendi" in result
 
 
-class MockMaxTurnsForDeadCode:
-    """Defansif dal için karşılaştırma davranışını manipüle eden max_turns mock'u."""
-
-    def __le__(self, _other):
-        return False
-
-    def __ge__(self, other):
-        return other < 3
-
-    def __str__(self):
-        return "3"
-
-
-def test_run_task_circuit_breaker_before_revise_coder() -> None:
-    """While içindeki revise-coder öncesi _consume_turn dalını kapsar."""
+def test_run_task_skips_revision_round_that_cannot_finish() -> None:
+    """With one turn left a coder+reviewer round cannot finish, so none is started."""
     sup = _build_supervisor(max_qa_retries=2)
-    sup._max_turns = lambda: MockMaxTurnsForDeadCode()
-
+    sup._max_turns = lambda: 3
+    calls: list[str] = []
     responses = iter(
         [
             TaskResult(task_id="t1", status="done", summary="hatalı kod"),
@@ -1378,13 +1409,96 @@ def test_run_task_circuit_breaker_before_revise_coder() -> None:
         ]
     )
 
-    async def _delegate(*_args, **_kwargs):
+    async def _delegate(receiver: str, *_args, **_kwargs):
+        calls.append(receiver)
         return next(responses)
 
     sup._delegate = _delegate
     result = asyncio.run(sup.run_task("kod yaz"))
 
-    assert "[P2P:STOP] Circuit breaker tetiklendi" in result
+    assert calls == ["coder", "reviewer"]
+    assert "hatalı kod" in result
+    assert "risk: yüksek, düzelt" in result
+    assert result.endswith("maksimum tur limiti aşıldı (3).")
+
+
+def test_run_task_reject_loop_under_default_budget_keeps_latest_output() -> None:
+    """Regression: a reviewer that keeps rejecting used to end in a bare stop message.
+
+    Each round is coder -> reviewer -> P2P qa_feedback to coder (3 turns), so with
+    MAX_TURNS=10 the third round ran out mid-way and every produced answer was dropped.
+    """
+    sup = _build_supervisor(max_qa_retries=3)
+    sup._max_turns = lambda: SupervisorAgent.MAX_TURNS
+    calls: list[str] = []
+    code_rounds = iter(range(1, 100))
+
+    async def _delegate(receiver: str, *_args, **_kwargs):
+        calls.append(receiver)
+        if receiver == "coder":
+            return TaskResult(task_id="c", status="done", summary=f"kod-{next(code_rounds)}")
+        return TaskResult(
+            task_id="r",
+            status="done",
+            summary=DelegationRequest(
+                task_id="p2p",
+                reply_to="reviewer",
+                target_agent="coder",
+                payload='qa_feedback|{"decision": "reject"}',
+            ),
+        )
+
+    async def _route_p2p(_request, *, consume_turn, **_kwargs):
+        consume_turn()
+        return TaskResult(task_id="p", status="done", summary="[CODER:REWORK_REQUIRED] düzelt")
+
+    sup._delegate = _delegate
+    sup._route_p2p = _route_p2p
+    result = asyncio.run(sup.run_task("kod yaz"))
+
+    # 3 turns for the first pass, 3 per revision round; round 3 would not fit in 10.
+    assert calls == ["coder", "reviewer"] * 3
+    assert result.startswith("kod-3")
+    assert "Reviewer QA Özeti (circuit breaker)" in result
+    assert "[CODER:REWORK_REQUIRED] düzelt" in result
+    assert result.endswith("maksimum tur limiti aşıldı (10).")
+
+
+def test_run_task_turn_limit_before_second_reviewer_keeps_revised_code() -> None:
+    """P2P hops inside a round can still exhaust the budget before the reviewer runs."""
+    sup = _build_supervisor(max_qa_retries=2)
+    sup._max_turns = lambda: 4
+    responses = iter(
+        [
+            TaskResult(task_id="c1", status="done", summary="ilk kod"),
+            TaskResult(task_id="r1", status="done", summary="risk: yüksek"),
+            TaskResult(
+                task_id="c2",
+                status="done",
+                summary=DelegationRequest(
+                    task_id="p2p",
+                    reply_to="coder",
+                    target_agent="researcher",
+                    payload="bağlam topla",
+                ),
+            ),
+        ]
+    )
+
+    async def _delegate(*_args, **_kwargs):
+        return next(responses)
+
+    async def _route_p2p(_request, *, consume_turn, **_kwargs):
+        consume_turn()
+        return TaskResult(task_id="p", status="done", summary="düzeltilmiş kod")
+
+    sup._delegate = _delegate
+    sup._route_p2p = _route_p2p
+    result = asyncio.run(sup.run_task("kod yaz"))
+
+    assert result.startswith("düzeltilmiş kod")
+    assert "Reviewer QA Özeti (circuit breaker):\nrisk: yüksek" in result
+    assert result.endswith("maksimum tur limiti aşıldı (4).")
 
 
 def test_run_task_circuit_breaker_before_second_reviewer() -> None:
