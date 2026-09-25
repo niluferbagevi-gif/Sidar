@@ -10,6 +10,7 @@
 > Bu bölümdeki maddelerin tam kök-neden analizi, araştırma süreci ve test referansları için bkz. [`docs/archive/unreleased_root_cause_detail.md`](docs/archive/unreleased_root_cause_detail.md) (2026-09-10 tarihli P3 bulgusu sonrası arşivlendi).
 
 ### Düzeltmeler
+- **Frontend TypeScript ratchet'inde 3 untyped test dosyası kalmıştı:** `routerShim` ve `SwarmFlowPanel` testleri (80 test) davranışları değiştirilmeden `.tsx`'e taşındı; `test:critical` betiği yeni yola güncellendi. Baseline 1 untyped / 71 typed'a sıkılaştırıldı; yalnız `useVoiceAssistant.test.js` kaldı.
 - **Frontend TypeScript ratchet'inde 5 untyped test dosyası kalmıştı:** `OperationsQaPanel` ve `TenantAdminPanel` testleri (48 test) davranışları değiştirilmeden `.tsx`'e taşındı; `fetchJson` mock'u tipli `Mock` imzasıyla görülür hale getirildi. Baseline 3 untyped / 69 typed'a sıkılaştırıldı.
 - **Frontend TypeScript ratchet'inin 2027-03-31 kapanış hedefi (0 untyped) için 10 test dosyası kalmıştı:** `App`, `VoiceAssistantPanel`, `AgentManagerPanel`, `PluginMarketplacePanel` ve `ChatPanel` testleri davranışları değiştirilmeden `.tsx`'e taşındı; baseline 5 untyped / 67 typed'a sıkılaştırıldı. Kalan 5 dosya büyük testlerdir ve ayrı dilimlerde taşınacaktır.
 - **Frontend TypeScript ratchet'i 2027-01-31 ara hedefi (en fazla 10 untyped dosya) için 16'da duruyordu:** `P2PDialoguePanel`, `ChatInput`, `StatusBar`, `ChatMessage`, `ChatWindow` ve `PromptAdminPanel` testleri (73 test) davranışları değiştirilmeden `.tsx`'e taşındı; baseline 10 untyped / 62 typed'a sıkılaştırıldı.

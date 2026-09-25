@@ -1,3 +1,5 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReactElement } from "react";
 import { render, screen, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
@@ -7,14 +9,14 @@ import {
   Routes,
   Navigate,
   NavLink,
-} from "./routerShim.tsx";
+} from "./routerShim.js";
 
 // ─────────────────────────────────────────────────────────
 // Yardımcılar
 // ─────────────────────────────────────────────────────────
 
 /** Belirtilen path ile BrowserRouter render eder. */
-function renderWithRouter(ui, initialPath = "/") {
+function renderWithRouter(ui: ReactElement, initialPath = "/") {
   window.history.replaceState({}, "", initialPath);
   return render(<BrowserRouter>{ui}</BrowserRouter>);
 }
