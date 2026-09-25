@@ -3,7 +3,14 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from scripts.ci.check_policy_dates import check_policy_date_warnings, check_policy_dates, main
+import pytest
+
+from scripts.ci.check_policy_dates import (
+    check_policy_date_warnings,
+    check_policy_dates,
+    main,
+    pip_audit_review_dates,
+)
 
 
 def _write_policy_pyproject(
@@ -190,3 +197,91 @@ def test_repository_runtime_validation_review_is_tracked() -> None:
     failures = check_policy_dates(Path("pyproject.toml"), today=date(2027, 4, 1))
 
     assert any("Production-minimal runtime evidence review" in f for f in failures)
+
+
+def _write_pip_audit_policy(path: Path, *rows: str) -> Path:
+    path.write_text(
+        "# vuln_id\tpackage\texpires\treason\n" + "".join(f"{row}\n" for row in rows),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_pip_audit_review_dates_reads_next_review_markers(tmp_path: Path) -> None:
+    """Every active ignore entry exposes its next_review date."""
+    policy = _write_pip_audit_policy(
+        tmp_path / "ignores.tsv",
+        "CVE-1\tpkg\t2026-12-31\treason; next_review=2026-11-30.",
+        "CVE-2\tpkg\t2026-12-31\tother; next_review=2026-12-15.",
+    )
+
+    assert pip_audit_review_dates(policy) == [
+        ("CVE-1", date(2026, 11, 30)),
+        ("CVE-2", date(2026, 12, 15)),
+    ]
+    assert pip_audit_review_dates(tmp_path / "missing.tsv") == []
+
+
+def test_pip_audit_review_dates_require_a_marker(tmp_path: Path) -> None:
+    """An ignore entry without next_review is a config error, not a silent pass."""
+    policy = _write_pip_audit_policy(tmp_path / "ignores.tsv", "CVE-1\tpkg\t2026-12-31\tno date")
+    pyproject = tmp_path / "pyproject.toml"
+    _write_runtime_validation_pyproject(pyproject, review="2099-01-01")
+
+    with pytest.raises(ValueError, match="CVE-1 has no next_review"):
+        pip_audit_review_dates(policy)
+    assert (
+        main(
+            [
+                "--pyproject",
+                str(pyproject),
+                "--pip-audit-policy",
+                str(policy),
+                "--today",
+                "2026-10-01",
+            ]
+        )
+        == 2
+    )
+
+
+def test_overdue_pip_audit_review_fails_before_the_entry_expires(tmp_path: Path) -> None:
+    """A missed next_review turns CI red while the ignore itself is still active."""
+    policy = _write_pip_audit_policy(
+        tmp_path / "ignores.tsv", "CVE-1\tpkg\t2026-12-31\treason; next_review=2026-11-30."
+    )
+    pyproject = tmp_path / "pyproject.toml"
+    _write_runtime_validation_pyproject(pyproject, review="2099-01-01")
+
+    assert check_policy_dates(pyproject, today=date(2026, 11, 30), pip_audit_policy=policy) == []
+    assert check_policy_dates(pyproject, today=date(2026, 12, 1), pip_audit_policy=policy) == [
+        f"pip-audit ignore review for CVE-1 ({policy} next_review) expired on 2026-11-30"
+    ]
+    assert check_policy_date_warnings(
+        pyproject, today=date(2026, 11, 20), warn_within_days=45, pip_audit_policy=policy
+    ) == [
+        f"pip-audit ignore review for CVE-1 ({policy} next_review) "
+        "is due on 2026-11-30 (10 days remaining)"
+    ]
+    assert (
+        main(
+            [
+                "--pyproject",
+                str(pyproject),
+                "--pip-audit-policy",
+                str(policy),
+                "--today",
+                "2026-12-01",
+            ]
+        )
+        == 1
+    )
+
+
+def test_repository_pip_audit_ignores_carry_live_review_dates() -> None:
+    """The committed ignore policy is reviewed on schedule by the CI date gate."""
+    policy = Path("security/pip-audit-ignores.tsv")
+    reviews = pip_audit_review_dates(policy)
+
+    assert reviews
+    assert all(review < date(2027, 1, 1) for _, review in reviews)
