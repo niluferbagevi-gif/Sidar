@@ -97,8 +97,9 @@ aşağıdaki Nüans notu.
 > değiştirilmeden `.ts`/`.tsx`'e taşınmıştır; ardından `P2PDialoguePanel`, `ChatInput`,
 > `StatusBar`, `ChatMessage`, `ChatWindow` ve `PromptAdminPanel` testleri de aynı
 > şekilde taşınmıştır; üçüncü dilimde `App`, `VoiceAssistantPanel`, `AgentManagerPanel`,
-> `PluginMarketplacePanel` ve `ChatPanel` testleri de taşınmıştır. Güncel `src/`
-> envanteri 1 `.js`, 4 `.jsx`, 26 `.ts`, 41 `.tsx` dosyasıdır (untyped=5;
+> `PluginMarketplacePanel` ve `ChatPanel`, dördüncü dilimde `OperationsQaPanel` ve
+> `TenantAdminPanel` testleri de taşınmıştır. Güncel `src/` envanteri 1 `.js`, 2 `.jsx`,
+> 26 `.ts`, 43 `.tsx` dosyasıdır (untyped=3;
 > 2026-10-31 ve 2027-01-31 hedefleri karşılandı); kalan
 > untyped dosyaların tamamı test dosyasıdır ve tek doğruluk kaynağı
 > `web_ui_react/typescript-migration-baseline.json` ratchet'idir. Son hedef 2027-03-31
@@ -146,9 +147,9 @@ ediyor; milestone tarihine (2026-10-31) kadar hâlâ headroom var.
 
 ## Zorunlu ratchet
 
-`typescript-migration-baseline.json`, en fazla 5 untyped (`.js` + `.jsx`) ve en az
-67 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. Envanter ayrıca bu borcu
-`production_untyped=0` ve `test_untyped=5` olarak ayırır; böylece test migrasyonu devam
+`typescript-migration-baseline.json`, en fazla 3 untyped (`.js` + `.jsx`) ve en az
+69 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. Envanter ayrıca bu borcu
+`production_untyped=0` ve `test_untyped=3` olarak ayırır; böylece test migrasyonu devam
 ederken production ağacına yeni JavaScript eklenmesi toplam ratchet içinde gizlenemez.
 `test`, `tests`, `__tests__` dizinleri ile `*.test.*`/`*.spec.*` dosyaları test kaynağı
 sayılır. İlk test dilimi olarak

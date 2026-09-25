@@ -1,10 +1,10 @@
 {
   "captured_at": "2026-09-25",
   "owner": "Frontend bakım ekibi",
-  "maximum_untyped_files": 5,
+  "maximum_untyped_files": 3,
   "maximum_production_untyped_files": 0,
-  "maximum_test_untyped_files": 5,
-  "minimum_typed_files": 67,
+  "maximum_test_untyped_files": 3,
+  "minimum_typed_files": 69,
   "milestones": [
     {
       "deadline": "2026-10-31",
@@ -23,9 +23,7 @@
     }
   ],
   "allowed_untyped_test_files": [
-    "src/components/OperationsQaPanel.test.jsx",
     "src/components/SwarmFlowPanel.test.jsx",
-    "src/components/TenantAdminPanel.test.jsx",
     "src/hooks/useVoiceAssistant.test.js",
     "src/lib/routerShim.test.jsx"
   ]
