@@ -358,10 +358,17 @@ tarihli plana bağlıdır:
 - **2026-08-15 — Core/agent public API kapısı:** `agent/`, `core/` ve `managers/code/`
   altında değişen public sınıf/fonksiyonlar için D100-D107 kapsamı PR bazında temizlenir;
   rol sözleşmeleri `tests/unit/agent/test_builtin_role_contracts.py` ile korunmaya devam eder.
-- **2026-09-30 — Kampanya kapanış denetimi:** Kalan `D100-D107` envanteri ve tarihli
-  Ruff metadata'sı kapatılır; önceden kaldırılan E501/D200-D417/ASYNC240 kurallarının
-  doğrudan uygulandığı doğrulanır. Yeni istisna yalnız açık gerekçe, sahip ve expiry
-  tarihiyle değerlendirilebilir.
+- **2026-09-30 — Kampanya kapanış denetimi (2026-09-25'te sonuçlandı):** E501 ve
+  ASYNC240 borcu 0'dır ve kuralların doğrudan uygulandığı doğrulanmıştır; bu iki tarihli
+  inceleme kapatılmıştır (`e501_async240_reviews_closed_on`). Kalan `D100-D107`
+  envanteri (5.486 bulgu) bu tarihte kapatılamadığı için tarih uzatılmak yerine
+  ratchet'e bağlanmıştır: `[tool.sidar.ruff_debt].missing_docstring_debt_baseline`
+  kural bazında tavanı tutar, `scripts/ci/check_ruff_debt_baseline.py` artışı
+  fail-closed reddeder ve azalan sayının aynı PR'da `--update` ile işlenmesini ister.
+  Ratchet ilerlemesi ve tarihli azaltma hedefleri
+  `docstring_ratchet_review_by` (**2027-03-31**, sahip: qa+reviewer) tarihinde gözden
+  geçirilir; `scripts/ci/check_policy_dates.py` bu tarihi fail-closed izler. Yeni
+  istisna yalnız açık gerekçe, sahip ve expiry tarihiyle değerlendirilebilir.
 
 Operasyonel kural: Yeni veya anlamlı şekilde değiştirilen public API'lerde docstring eklemek
 varsayılandır; ignore listesine yeni kural eklemek yerine ilgili modülde dokümantasyon borcu

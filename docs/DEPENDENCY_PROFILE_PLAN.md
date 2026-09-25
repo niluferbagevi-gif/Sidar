@@ -209,14 +209,17 @@ kaldığında terfi edebilir:
 
 ## Ruff docstring / ASYNC borç kapatma takibi
 
-> **Aktif takip durumu (2026-08-02):** E501, seçili D200-D417 ve ASYNC240
-> baseline'ları sıfıra ulaştığı için global ignore'lar hedef tarihten önce
-> kaldırılmıştır. `2026-09-30`, kalan D100-D107 envanteri ve kapanış metadata'sı
-> için son gözden geçirme tarihi olarak korunur.
+> **Aktif takip durumu (2026-09-25):** E501, seçili D200-D417 ve ASYNC240
+> baseline'ları sıfıra ulaştığı için global ignore'lar 2026-08-02'de kaldırılmış;
+> 2026-09-30 tarihli E501/ASYNC240 incelemeleri 2026-09-25'te kapatılmıştır. Kalan
+> D100-D107 envanteri (5.486 bulgu) tarih uzatılmak yerine
+> `missing_docstring_debt_baseline` ratchet'ine bağlanmıştır; ilerleme
+> `docstring_ratchet_review_by` (2027-03-31) tarihinde gözden geçirilir.
 
-`pyproject.toml` içindeki `[tool.sidar.ruff_debt]` bloğu sıfır ratchet'i ve
-`2026-09-30` kapanış incelemesini taşır. Kurallar normal Ruff çalıştırmasında artık
-doğrudan etkindir; bu tarihe kadar savunma amaçlı doğrulama komutları:
+`pyproject.toml` içindeki `[tool.sidar.ruff_debt]` bloğu sıfır ratchet'i, D100-D107
+ratchet tavanını ve 2027-03-31 inceleme tarihini taşır. E501/D200-D417/ASYNC240
+kuralları normal Ruff çalıştırmasında doğrudan etkindir; savunma amaçlı doğrulama
+komutları:
 
 ```bash
 uv run ruff check . --select D,ASYNC
@@ -229,7 +232,8 @@ yeni async I/O yollarında blocking pathlib metadata çağrılarını büyütmem
 100 karakter satır sınırına uymak zorunludur; kaldırılan ignore'lar yeniden
 eklenmemelidir. CI, mevcut E501 toplamını `e501_debt_baseline`, D200-D417 ve
 ASYNC240 sayımlarını ise `docstring_async_debt_baseline` ratchet sınırıyla
-karşılaştırır. Yeni veya anlamlı düzenlenen kod bu baseline'ları artırırsa
+karşılaştırır; D100-D107 sayımları da `missing_docstring_debt_baseline` ile aynı
+kurala tabidir. Yeni veya anlamlı düzenlenen kod bu baseline'ları artırırsa
 `scripts/ci/check_ruff_debt_baseline.py` fail-closed davranır. Ölçülen sayı
 baseline'ın altına düştüğünde de komut fail-closed olur ve operatörden
 `uv run python scripts/ci/check_ruff_debt_baseline.py --update` ile committed

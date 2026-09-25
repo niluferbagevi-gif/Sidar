@@ -83,25 +83,9 @@ def check_policy_date_warnings(
         )
     _add_if_due_soon(
         warnings,
-        label="Ruff E501 global ignore review",
-        value=ruff_debt.get("e501_global_ignore_review_by", ""),
-        key="tool.sidar.ruff_debt.e501_global_ignore_review_by",
-        today=effective_today,
-        warn_within_days=warning_window,
-    )
-    _add_if_due_soon(
-        warnings,
-        label="Ruff docstring debt campaign close",
-        value=ruff_debt.get("close_docstring_campaign_by", ""),
-        key="tool.sidar.ruff_debt.close_docstring_campaign_by",
-        today=effective_today,
-        warn_within_days=warning_window,
-    )
-    _add_if_due_soon(
-        warnings,
-        label="Ruff ASYNC240 debt campaign close",
-        value=ruff_debt.get("close_async240_campaign_by", ""),
-        key="tool.sidar.ruff_debt.close_async240_campaign_by",
+        label="Ruff D100-D107 docstring ratchet review",
+        value=ruff_debt.get("docstring_ratchet_review_by", ""),
+        key="tool.sidar.ruff_debt.docstring_ratchet_review_by",
         today=effective_today,
         warn_within_days=warning_window,
     )
@@ -118,23 +102,9 @@ def check_policy_dates(pyproject_path: Path, *, today: date | None = None) -> li
     ruff_debt = sidar.get("ruff_debt", {})
     _add_if_expired(
         failures,
-        label="Ruff E501 global ignore review",
-        value=ruff_debt.get("e501_global_ignore_review_by", ""),
-        key="tool.sidar.ruff_debt.e501_global_ignore_review_by",
-        today=effective_today,
-    )
-    _add_if_expired(
-        failures,
-        label="Ruff docstring debt campaign close",
-        value=ruff_debt.get("close_docstring_campaign_by", ""),
-        key="tool.sidar.ruff_debt.close_docstring_campaign_by",
-        today=effective_today,
-    )
-    _add_if_expired(
-        failures,
-        label="Ruff ASYNC240 debt campaign close",
-        value=ruff_debt.get("close_async240_campaign_by", ""),
-        key="tool.sidar.ruff_debt.close_async240_campaign_by",
+        label="Ruff D100-D107 docstring ratchet review",
+        value=ruff_debt.get("docstring_ratchet_review_by", ""),
+        key="tool.sidar.ruff_debt.docstring_ratchet_review_by",
         today=effective_today,
     )
 
@@ -158,6 +128,7 @@ def check_policy_dates(pyproject_path: Path, *, today: date | None = None) -> li
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Report upcoming policy dates and fail on expired or malformed ones."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pyproject", type=Path, default=DEFAULT_PYPROJECT)
     parser.add_argument("--today", default="", help="Override current date for tests (YYYY-MM-DD).")
