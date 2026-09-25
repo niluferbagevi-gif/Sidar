@@ -1,4 +1,10 @@
-"""Enforce the temporary Ruff E501, docstring, and ASYNC240 debt baseline."""
+"""Enforce the Ruff E501, docstring, and ASYNC240 debt ratchet baseline.
+
+Two inline tables under ``[tool.sidar.ruff_debt]`` hold the ceilings:
+``docstring_async_debt_baseline`` (D200-D417 and ASYNC240, all at zero) and
+``missing_docstring_debt_baseline`` (the frozen D100-D107 backlog). Any code may
+only go down; a lower measured count must be committed with ``--update``.
+"""
 
 from __future__ import annotations
 
@@ -25,7 +31,16 @@ RUFF_DEBT_CODES = (
     "D415",
     "D417",
     "ASYNC240",
+    "D100",
+    "D101",
+    "D102",
+    "D103",
+    "D104",
+    "D105",
+    "D106",
+    "D107",
 )
+BASELINE_TABLES = ("docstring_async_debt_baseline", "missing_docstring_debt_baseline")
 
 
 def _load_baseline(pyproject_path: Path) -> dict[str, int]:
@@ -35,6 +50,7 @@ def _load_baseline(pyproject_path: Path) -> dict[str, int]:
     raw_baseline = {
         "E501": ruff_debt["e501_debt_baseline"],
         **ruff_debt["docstring_async_debt_baseline"],
+        **ruff_debt.get("missing_docstring_debt_baseline", {}),
     }
     return {str(code): int(limit) for code, limit in raw_baseline.items()}
 
@@ -114,22 +130,21 @@ def _write_tightened_baseline(
     if e501_count != 1:
         raise ValueError("Missing e501_debt_baseline entry")
 
-    table_match = re.search(
-        r"(^docstring_async_debt_baseline\s*=\s*\{)(.*?)(\}\s*$)",
-        content,
-        flags=re.MULTILINE,
-    )
-    if table_match is None:
-        raise ValueError("Missing docstring_async_debt_baseline inline table")
-
-    table_body = table_match.group(2)
-    for code in RUFF_DEBT_CODES:
-        if code == "E501":
-            continue
-        table_body = _replace_inline_table_value(
-            table_body, code, min(current[code], baseline[code])
+    for table in BASELINE_TABLES:
+        table_match = re.search(
+            rf"(^{table}\s*=\s*\{{)(.*?)(\}}\s*$)",
+            content,
+            flags=re.MULTILINE,
         )
-    content = content[: table_match.start(2)] + table_body + content[table_match.end(2) :]
+        if table_match is None:
+            raise ValueError(f"Missing {table} inline table")
+
+        table_body = table_match.group(2)
+        for code in re.findall(r"([A-Z]+\d+)\s*=", table_body):
+            table_body = _replace_inline_table_value(
+                table_body, code, min(current[code], baseline[code])
+            )
+        content = content[: table_match.start(2)] + table_body + content[table_match.end(2) :]
     pyproject_path.write_text(content, encoding="utf-8")
 
 

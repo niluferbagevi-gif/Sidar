@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import pytest
+
 from scripts.ci import check_ruff_debt_baseline as checker
 
 
-def _pyproject_with_baselines(*, e501: int, d202: int, async240: int = 0) -> str:
+def _pyproject_with_baselines(*, e501: int, d202: int, async240: int = 0, d100: int = 0) -> str:
     return (
         "[tool.sidar.ruff_debt]\n"
         f"e501_debt_baseline = {e501}\n"
@@ -13,6 +15,10 @@ def _pyproject_with_baselines(*, e501: int, d202: int, async240: int = 0) -> str
         f"D200 = 0, D202 = {d202}, D205 = 0, D209 = 0, "
         "D212 = 0, D403 = 0, D415 = 0, D417 = 0, "
         f"ASYNC240 = {async240} "
+        "}\n"
+        "missing_docstring_debt_baseline = { "
+        f"D100 = {d100}, D101 = 0, D102 = 0, D103 = 0, "
+        "D104 = 0, D105 = 0, D106 = 0, D107 = 0 "
         "}\n"
     )
 
@@ -39,10 +45,12 @@ def test_format_counts_uses_stable_campaign_code_order() -> None:
     rendered = checker._format_counts({"E501": 4, "D200": 1, "D202": 2, "ASYNC240": 3})
 
     assert rendered.startswith("E501=4, D200=1, D202=2, D205=0")
-    assert rendered.endswith("D417=0, ASYNC240=3")
+    assert "D417=0, ASYNC240=3, D100=0" in rendered
+    assert rendered.endswith("D106=0, D107=0")
 
 
 def test_tightenable_counts_detects_lower_current_debt() -> None:
+    """Codes measured below their committed ceiling are reported as tightenable."""
     current = {code: 0 for code in checker.RUFF_DEBT_CODES}
     baseline = {code: 0 for code in checker.RUFF_DEBT_CODES}
     current["E501"] = 4
@@ -57,9 +65,12 @@ def test_tightenable_counts_detects_lower_current_debt() -> None:
 
 
 def test_write_tightened_baseline_uses_minimum_current_values(tmp_path) -> None:
+    """``--update`` writes ``min(current, baseline)`` into both inline tables."""
     pyproject = tmp_path / "pyproject.toml"
-    pyproject.write_text(_pyproject_with_baselines(e501=10, d202=20, async240=3), encoding="utf-8")
-    current = {
+    pyproject.write_text(
+        _pyproject_with_baselines(e501=10, d202=20, async240=3, d100=9), encoding="utf-8"
+    )
+    current = {code: 0 for code in checker.RUFF_DEBT_CODES} | {
         "E501": 7,
         "D200": 6,
         "D202": 12,
@@ -70,6 +81,7 @@ def test_write_tightened_baseline_uses_minimum_current_values(tmp_path) -> None:
         "D415": 5,
         "D417": 1,
         "ASYNC240": 2,
+        "D100": 5,
     }
     baseline = checker._load_baseline(pyproject)
 
@@ -80,9 +92,11 @@ def test_write_tightened_baseline_uses_minimum_current_values(tmp_path) -> None:
     assert updated["D202"] == 12
     assert updated["ASYNC240"] == 2
     assert updated["D200"] == 0
+    assert updated["D100"] == 5
 
 
 def test_main_fails_when_baseline_can_be_tightened(tmp_path, monkeypatch, capsys) -> None:
+    """A stale (too loose) baseline fails CI and points at ``--update``."""
     pyproject = tmp_path / "pyproject.toml"
     pyproject.write_text(_pyproject_with_baselines(e501=6, d202=3), encoding="utf-8")
     diagnostics = [{"code": "E501"} for _ in range(4)] + [{"code": "D202"} for _ in range(2)]
@@ -96,6 +110,7 @@ def test_main_fails_when_baseline_can_be_tightened(tmp_path, monkeypatch, capsys
 
 
 def test_main_update_ratchets_pyproject_to_current_counts(tmp_path, monkeypatch, capsys) -> None:
+    """``main --update`` lowers the committed ceilings to the measured counts."""
     pyproject = tmp_path / "pyproject.toml"
     pyproject.write_text(_pyproject_with_baselines(e501=6, d202=3), encoding="utf-8")
     diagnostics = [{"code": "E501"} for _ in range(4)] + [{"code": "D202"} for _ in range(2)]
@@ -107,3 +122,28 @@ def test_main_update_ratchets_pyproject_to_current_counts(tmp_path, monkeypatch,
     assert updated["E501"] == 4
     assert updated["D202"] == 2
     assert "ratcheted" in capsys.readouterr().out
+
+
+def test_main_fails_when_missing_docstring_debt_grows(tmp_path, monkeypatch, capsys) -> None:
+    """A new undocumented public function above the frozen D103 ceiling fails CI."""
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text(_pyproject_with_baselines(e501=0, d202=0), encoding="utf-8")
+    monkeypatch.setattr(checker, "_run_ruff_json", lambda _codes: [{"code": "D103"}])
+
+    assert checker.main(["--pyproject", str(pyproject)]) == 1
+    assert "D103: 1 > 0" in capsys.readouterr().err
+
+
+def test_write_tightened_baseline_rejects_missing_docstring_table(tmp_path) -> None:
+    """Tightening fails loudly when the D100-D107 inline table is absent."""
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text(
+        "[tool.sidar.ruff_debt]\n"
+        "e501_debt_baseline = 0\n"
+        "docstring_async_debt_baseline = { D200 = 0 }\n",
+        encoding="utf-8",
+    )
+    current = {code: 0 for code in checker.RUFF_DEBT_CODES}
+
+    with pytest.raises(ValueError, match="missing_docstring_debt_baseline"):
+        checker._write_tightened_baseline(pyproject, current, dict(current))
