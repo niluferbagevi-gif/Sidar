@@ -18,6 +18,7 @@ import core.config_logging_setup as config_logging_setup
 import core.config_observability as config_observability
 from core import (
     config_dotenv,
+    config_dotenv_reload,
     config_gpu,
     config_gpu_detect,
     config_llm,
@@ -25,6 +26,8 @@ from core import (
     config_quality,
     config_rag_defaults,
     config_self_heal,
+    config_summary,
+    config_validation,
 )
 from core.config_app import load_app_runtime_settings
 from core.config_autonomy import load_autonomy_settings
@@ -62,14 +65,14 @@ from core.config_runtime_env import apply_runtime_env_overrides, safe_choice_for
 from core.config_runtime_paths import apply_reload_runtime_paths, load_runtime_path_settings
 from core.config_sandbox import load_sandbox_settings
 from core.config_secret_hardening import (
-    PRODUCTION_SECRET_KEYS,
     collect_missing_critical_runtime_keys,
     warn_on_silent_security_fallbacks,
 )
-from core.config_secrets import is_nonempty_secret
+from core.config_secrets import is_nonempty_secret as is_nonempty_secret  # legacy re-export
 from core.config_security import load_security_settings
 from core.config_social_integrations import load_social_integration_settings
-from core.config_validators import is_valid_http_url, normalize_ai_provider
+from core.config_validators import is_valid_http_url as is_valid_http_url  # legacy re-export
+from core.config_validators import normalize_ai_provider
 from core.config_web_search import load_web_search_settings
 from core.config_web_server import load_web_server_settings
 
@@ -1090,64 +1093,15 @@ class Config:
     def _log_dotenv_load_status(cls, *, missing_keys: list[str] | None = None) -> None:
         """Log the effective dotenv load chain and actionable missing-key guidance."""
         global _FIRST_CONFIG_LOAD_LOGGED, _LAST_DOTENV_LOAD_CHAIN_SIGNATURE
-        loaded = [event for event in _DOTENV_LOAD_EVENTS if event.get("loaded")]
-        missing_files = [
-            event
-            for event in _DOTENV_LOAD_EVENTS
-            if not event.get("loaded") and event.get("reason") == "missing"
-        ]
-        if loaded:
-            chain_text = " -> ".join(f"{event['label']}={event['path']}" for event in loaded)
-            chain_signature = tuple(
-                (str(event.get("label", "")), str(event.get("path", ""))) for event in loaded
-            )
-            chain_changed = chain_signature != _LAST_DOTENV_LOAD_CHAIN_SIGNATURE
-            _LAST_DOTENV_LOAD_CHAIN_SIGNATURE = chain_signature
-            if chain_changed:
-                _log_first_load_info("Runtime env yükleme zinciri: %s", chain_text)
-            else:
-                logger.debug(
-                    "Runtime env yükleme zinciri: %s",
-                    chain_text,
-                )
-        else:
-            logger.warning(
-                "Hiçbir dotenv dosyası yüklenmedi; varsayılanlar ve proses ortam değişkenleri "
-                "kullanılacak."
-            )
-
-        missing_notice_items = [
-            f"{event['label']}={event['path']}" for event in missing_files if event.get("path")
-        ]
-        if _DOTENV_MISSING_FILE_NOTICES:
-            for notice in _DOTENV_MISSING_FILE_NOTICES:
-                if notice not in missing_notice_items:
-                    missing_notice_items.append(notice)
-            _DOTENV_MISSING_FILE_NOTICES.clear()
-        if missing_notice_items:
-            logger.info(
-                "Opsiyonel dotenv dosyaları bulunamadı: %s",
-                ", ".join(missing_notice_items),
-            )
-
-        if _DOTENV_KEY_SOURCES:
-            logger.debug(
-                "Runtime env anahtar kaynakları: %s",
-                ", ".join(
-                    f"{key}->{source['label']}={source['path']}"
-                    for key, source in sorted(_DOTENV_KEY_SOURCES.items())
-                ),
-            )
-
-        if missing_keys:
-            logger.warning(
-                "Kritik ortam anahtarları çözülemedi: %s. Yükleme zinciri: .env, .env.advanced, "
-                ".env.${SIDAR_ENV}, DOTENV_FILE, SIDAR_KEYS_FILE. Proses ortam değişkenleri "
-                "korunur; SIDAR_KEYS_FILE en son yüklenir. "
-                "Eksik değerleri .env, DOTENV_FILE veya SIDAR_KEYS_FILE (varsayılan "
-                "~/.sidar_keys.env) içine ekleyin.",
-                ", ".join(missing_keys),
-            )
+        _LAST_DOTENV_LOAD_CHAIN_SIGNATURE = config_dotenv_reload.log_dotenv_load_status(
+            load_events=_DOTENV_LOAD_EVENTS,
+            missing_file_notices=_DOTENV_MISSING_FILE_NOTICES,
+            key_sources=_DOTENV_KEY_SOURCES,
+            last_chain_signature=_LAST_DOTENV_LOAD_CHAIN_SIGNATURE,
+            missing_keys=missing_keys,
+            logger=logger,
+            log_first_load_info=_log_first_load_info,
+        )
         _FIRST_CONFIG_LOAD_LOGGED = True
 
     def __init__(self) -> None:
@@ -1220,35 +1174,9 @@ class Config:
 
         # Keep check_hardware() as the single source of truth. Importing torch
         # here can observe a different device or driver state than the hardware
-        # probe and overwrite cls.GPU_VRAM_MB with inconsistent data.
-        #
-        # Below 8 GiB this used to fall through untouched, leaving
-        # LLMClientSettings' fixed 8192 default in place for 6 GB-class cards
-        # (RTX 2060/3050, 4060 laptop, GTX 1660, ...) — the same context a
-        # 8-16 GiB card gets, with none of its VRAM headroom.
-        #
-        # A field report (RTX 3070 Ti Laptop, gpu_vram_mb=8192) then showed
-        # the >=8192 tier itself has the identical problem: a card that
-        # reports *exactly* the tier floor gets that tier's full context with
-        # zero margin for the coding model's own weights (~5 GiB for
-        # qwen2.5-coder:7b q4) plus KV cache plus OS/desktop VRAM overhead,
-        # and the installer's `/api/generate` JSON smoke test failed with
-        # HTTP 500 (VRAM OOM). 8-12 GiB cards (no comfortable headroom over a
-        # ~5 GiB model) now get the same 4096 tier as 4-8 GiB cards; only
-        # 12 GiB+ cards (RTX 3060 12GB, 4070, 3080 10-12GB, ...) keep the
-        # full 8192 window. 16 GiB+ still gets 16384. Floor at 2048 for
-        # anything below 4 GiB (including gpu_vram_mb=0, i.e. USE_GPU forced
-        # on without a successful hardware probe) — 2048 mirrors
-        # OLLAMA_BATCH_POLICY's own auto_min, the smallest context this
-        # codebase already treats as meaningful for local Ollama inference.
-        if cls.GPU_VRAM_MB >= 16384:
-            cls.OLLAMA_CODING_NUM_CTX = 16384
-        elif cls.GPU_VRAM_MB >= 12288:
-            cls.OLLAMA_CODING_NUM_CTX = 8192
-        elif cls.GPU_VRAM_MB >= 4096:
-            cls.OLLAMA_CODING_NUM_CTX = 4096
-        else:
-            cls.OLLAMA_CODING_NUM_CTX = 2048
+        # probe and overwrite cls.GPU_VRAM_MB with inconsistent data. The VRAM
+        # tiers and their field-report rationale live in config_gpu.
+        cls.OLLAMA_CODING_NUM_CTX = config_gpu.ollama_coding_ctx_for_vram(cls.GPU_VRAM_MB)
 
     @classmethod
     def trusted_proxies_as_list(cls) -> list[str]:
@@ -1322,205 +1250,28 @@ class Config:
     @classmethod
     def _validate_ai_provider_settings(cls) -> bool:
         """Validate centralized provider and credential settings from config.py."""
-        provider = normalize_ai_provider(cls.AI_PROVIDER)
-        cls.AI_PROVIDER = provider
-
-        if provider not in SUPPORTED_AI_PROVIDERS:
-            logger.error(
-                "❌ Geçersiz AI_PROVIDER=%s. Geçerli sağlayıcılar: %s",
-                provider,
-                ", ".join(sorted(SUPPORTED_AI_PROVIDERS)),
-            )
-            return False
-
-        is_valid = True
-        for setting_name in _PROVIDER_REQUIRED_SETTINGS.get(provider, ()):  # ollama has no API key
-            raw_value = getattr(cls, setting_name, "")
-            if setting_name.endswith("_GATEWAY_URL"):
-                setting_valid = is_valid_http_url(raw_value)
-                message = (
-                    f"❌ {provider} modu seçili ama {setting_name} geçerli bir http(s) URL değil!\n"
-                    "   .env dosyasını kontrol edin."
-                )
-            else:
-                setting_valid = is_nonempty_secret(raw_value)
-                message = (
-                    f"❌ {provider} modu seçili ama {setting_name} ayarlanmamış veya hatalı!\n"
-                    "   .env dosyasını kontrol edin."
-                )
-
-            if not setting_valid:
-                logger.error(message)
-                is_valid = False
-
-        return is_valid
+        return config_validation.validate_ai_provider_settings(
+            cls,
+            logger=logger,
+            supported_providers=SUPPORTED_AI_PROVIDERS,
+            provider_required_settings=_PROVIDER_REQUIRED_SETTINGS,
+        )
 
     @classmethod
     def validate_critical_settings(cls) -> bool:
         """Kritik yapılandırmaları doğrular; uyarıları loglar."""
-        is_valid = True
-        cls._ensure_hardware_info_loaded()
-        cls._apply_gpu_memory_safety_check()
-        cls.initialize_directories()
-        missing_runtime_keys = cls.get_missing_critical_runtime_keys()
-        cls._log_dotenv_load_status(missing_keys=missing_runtime_keys)
-
-        if os.getenv("SIDAR_ENV", "").strip().lower() == "production":
-            unsafe_production_secrets = [
-                key for key in PRODUCTION_SECRET_KEYS if key in missing_runtime_keys
-            ]
-            if unsafe_production_secrets:
-                logger.critical(
-                    "Production secret doğrulaması başarısız: %s. Eksik, zayıf veya "
-                    "non-production ortamlarla paylaşılan secret değerlerini rotate edin; "
-                    "değerler güvenlik nedeniyle loglanmadı.",
-                    ", ".join(unsafe_production_secrets),
-                )
-                raise SystemExit(1)
-
-        if cls.REQUIRE_GPU and not cls.USE_GPU:
-            logger.error(
-                "❌ GPU zorunlu mod aktif (REQUIRE_GPU=true) ancak CUDA/PyTorch uygun değil veya "
-                "USE_GPU=false.\n"
-                "   Çözüm: CUDA destekli PyTorch kurun ve .env içinde USE_GPU=true yapın."
-            )
-            is_valid = False
-
-        allow_full_access = os.getenv("SIDAR_ALLOW_FULL_ACCESS", "").strip().lower() in {
-            "1",
-            "true",
-            "yes",
-            "on",
-        }
-        if cls.ACCESS_LEVEL.strip().lower() == "full" and not allow_full_access:
-            logger.error(
-                "❌ ACCESS_LEVEL=full açık onay olmadan yasaktır. "
-                "Riskleri kabul ediyorsanız SIDAR_ALLOW_FULL_ACCESS=true ayarlayın."
-            )
-            is_valid = False
-
-        is_valid = cls._validate_ai_provider_settings() and is_valid
-
-        for drift_message in config_postgres.postgres_password_drift_messages():
-            logger.error(
-                "❌ %s Önce scripts/sync_database_passwords.py veya POSTGRES_* tek kaynak akışını "
-                "kullanın.",
-                drift_message,
-            )
-            is_valid = False
-
-        memory_encryption_key = (cls.MEMORY_ENCRYPTION_KEY or "").strip()
-        previous_memory_encryption_keys = [
-            key.strip()
-            for key in str(cls.MEMORY_ENCRYPTION_KEY_PREVIOUS or "").split(",")
-            if key.strip()
-        ]
-
-        if memory_encryption_key:
-            try:
-                from cryptography.fernet import Fernet  # noqa: F401
-
-                # Anahtarı ön doğrulama — geçersiz formatta erken hata ver
-                try:
-                    Fernet(memory_encryption_key.encode())
-                    for previous_key in previous_memory_encryption_keys:
-                        Fernet(previous_key.encode())
-                except Exception as key_exc:
-                    logger.error(
-                        "❌ MEMORY_ENCRYPTION_KEY geçersiz Fernet anahtarı: %s\n"
-                        "   Geçerli anahtar üretmek için:\n"
-                        '   python -c "from cryptography.fernet import Fernet; '
-                        'print(Fernet.generate_key().decode())"',
-                        key_exc,
-                    )
-                    is_valid = False
-            except ImportError:
-                logger.error(
-                    "❌ MEMORY_ENCRYPTION_KEY ayarlanmış ama 'cryptography' paketi kurulu değil.\n"
-                    "   Bu kritik bir güvenlik ayarıdır. Şifreleme olmadan devam etmek\n"
-                    "   güvenlik riskine yol açabilir. Kurmak için: uv pip install cryptography"
-                )
-                is_valid = False
-        else:
-            logger.critical(
-                "MEMORY_ENCRYPTION_KEY is not set. Please generate a valid Fernet key for memory "
-                "encryption. "
-                "Konuşma geçmişi şifrelenmeden saklanıyor. Üretim ortamında .env dosyasına güçlü "
-                "bir Fernet anahtarı eklemelisiniz.\n"
-                '   Yeni anahtar üretmek için: python -c "from cryptography.fernet import '
-                'Fernet; print(Fernet.generate_key().decode())"'
-            )
-            if os.getenv("SIDAR_ENV", "").strip().lower() == "production":
-                logger.critical(
-                    "SIDAR_ENV=production iken MEMORY_ENCRYPTION_KEY zorunludur. Güvenlik "
-                    "nedeniyle uygulama durduruluyor."
-                )
-                raise SystemExit(1)
-
-        if cls.AI_PROVIDER == "ollama":
-            try:
-                import httpx
-
-                base = cls.OLLAMA_URL.rstrip("/")
-                if base.endswith("/api"):
-                    tags_url = base + "/tags"
-                else:
-                    tags_url = base + "/api/tags"
-                with httpx.Client(timeout=2) as client:
-                    r = client.get(tags_url)
-                if r.status_code == 200:
-                    _log_once_env(
-                        "SIDAR_OLLAMA_OK_LOGGED", logger.info, localized_log_message("ollama_ok")
-                    )
-                else:
-                    logger.warning(localized_log_message("ollama_status"), r.status_code)
-            except Exception:
-                logger.warning(
-                    localized_log_message("ollama_unreachable"),
-                    cls.OLLAMA_URL,
-                )
-
-        return is_valid
+        return config_validation.validate_critical_settings(
+            cls,
+            logger=logger,
+            log_once_env=_log_once_env,
+            localized_log_message=localized_log_message,
+        )
 
     @classmethod
     def get_system_info(cls) -> dict[str, Any]:
         """Özet sistem bilgisini sözlük olarak döndürür."""
         cls._ensure_hardware_info_loaded()
-        return {
-            "project": cls.PROJECT_NAME,
-            "version": cls.VERSION,
-            "provider": cls.AI_PROVIDER,
-            "access_level": cls.ACCESS_LEVEL,
-            "gpu_enabled": cls.USE_GPU,
-            "gpu_info": cls.GPU_INFO,
-            "gpu_count": cls.GPU_COUNT,
-            "gpu_device": cls.GPU_DEVICE,
-            "cuda_version": cls.CUDA_VERSION,
-            "driver_version": cls.DRIVER_VERSION,
-            "multi_gpu": cls.MULTI_GPU,
-            "gpu_mixed_precision": cls.GPU_MIXED_PRECISION,
-            "gpu_memory_fraction": cls.GPU_MEMORY_FRACTION,
-            "llm_gpu_memory_fraction": cls.LLM_GPU_MEMORY_FRACTION,
-            "rag_gpu_memory_fraction": cls.RAG_GPU_MEMORY_FRACTION,
-            "cpu_count": cls.CPU_COUNT,
-            "debug_mode": cls.DEBUG_MODE,
-            "web_port": cls.WEB_PORT,
-            "web_gpu_port": cls.WEB_GPU_PORT,
-            "hf_hub_offline": cls.HF_HUB_OFFLINE,
-            "hf_use_local_cache_only": cls.HF_USE_LOCAL_CACHE_ONLY,
-            "rate_limit_window": cls.RATE_LIMIT_WINDOW,
-            "rate_limit_chat": cls.RATE_LIMIT_CHAT,
-            "rate_limit_mutations": cls.RATE_LIMIT_MUTATIONS,
-            "rate_limit_get_io": cls.RATE_LIMIT_GET_IO,
-            "rate_limit_ws_connections": cls.RATE_LIMIT_WS_CONNECTIONS,
-            # REDIS_URL burada yer almaz — host/port/kimlik bilgisi ifşasını önlemek için
-            "enable_tracing": cls.ENABLE_TRACING,
-            "otel_exporter_endpoint": cls.OTEL_EXPORTER_ENDPOINT,
-            "enable_semantic_cache": cls.ENABLE_SEMANTIC_CACHE,
-            "semantic_cache_threshold": cls.SEMANTIC_CACHE_THRESHOLD,
-            "semantic_cache_ttl": cls.SEMANTIC_CACHE_TTL,
-            "semantic_cache_max_items": cls.SEMANTIC_CACHE_MAX_ITEMS,
-        }
+        return config_summary.build_system_info(cls)
 
     @classmethod
     def init_telemetry(
@@ -1560,101 +1311,23 @@ class Config:
     @classmethod
     def print_config_summary(cls) -> None:
         """Konsola yapılandırma özetini yazdırır."""
-        print("\n" + "═" * 62)
-        print(f"  {cls.PROJECT_NAME} v{cls.VERSION} — Yapılandırma Özeti")
-        print("═" * 62)
-        print(f"  AI Sağlayıcı     : {cls.AI_PROVIDER.upper()}")
-        if cls.USE_GPU:
-            print(f"  GPU              : ✓ {cls.GPU_INFO}  (CUDA {cls.CUDA_VERSION})")
-            print(f"  GPU Sayısı       : {cls.GPU_COUNT}")
-            print(f"  Hedef Cihaz      : cuda:{cls.GPU_DEVICE}")
-            print(f"  Mixed Precision  : {'Açık' if cls.GPU_MIXED_PRECISION else 'Kapalı'}")
-            print(f"  LLM VRAM Payı    : {cls.LLM_GPU_MEMORY_FRACTION:.2f}")
-            print(f"  RAG VRAM Payı    : {cls.RAG_GPU_MEMORY_FRACTION:.2f}")
-            if cls.DRIVER_VERSION != "N/A":
-                print(f"  Sürücü Sürümü    : {cls.DRIVER_VERSION}")
-        else:
-            print(f"  GPU              : ✗ CPU Modu  ({cls.GPU_INFO})")
-        print(f"  CPU Çekirdek     : {cls.CPU_COUNT}")
-        print(f"  Erişim Seviyesi  : {cls.ACCESS_LEVEL.upper()}")
-        print(f"  Debug Modu       : {'Açık' if cls.DEBUG_MODE else 'Kapalı'}")
-        if cls.AI_PROVIDER == "ollama":
-            print(f"  CODING Modeli    : {cls.CODING_MODEL}")
-            print(f"  TEXT Modeli      : {cls.TEXT_MODEL}")
-        elif cls.AI_PROVIDER == "gemini":
-            print(f"  Gemini Modeli    : {cls.GEMINI_MODEL}")
-        elif cls.AI_PROVIDER == "openai":
-            print(f"  OpenAI Modeli    : {cls.OPENAI_MODEL}")
-        elif cls.AI_PROVIDER == "litellm":
-            print(f"  LiteLLM Gateway  : {cls.LITELLM_GATEWAY_URL or '-'}")
-            print(f"  LiteLLM Modeli   : {cls.LITELLM_MODEL or cls.OPENAI_MODEL}")
-        else:
-            print(f"  Anthropic Modeli : {cls.ANTHROPIC_MODEL}")
-        print(f"  RAG Dizini       : {cls.RAG_DIR.relative_to(BASE_DIR)}")
-        enc_status = "Etkin (Fernet)" if cls.MEMORY_ENCRYPTION_KEY else "Devre Dışı"
-        print(f"  Bellek Şifreleme : {enc_status}")
-        print("═" * 62 + "\n")
+        config_summary.print_config_summary(cls, base_dir=BASE_DIR)
 
 
 def _reload_dotenv_chain(*, profile: str | None = None) -> None:
     """Reload the dotenv precedence chain without re-importing the module."""
-    global _LAST_DOTENV_LOAD_CHAIN_SIGNATURE
     with _CONFIG_STATE_LOCK:
-        previous_managed_keys = set(_DOTENV_MANAGED_KEYS)
-        # Snapshot before the globals below are cleared -- needed to decide,
-        # per key, whether its supplying layer is still active this round
-        # (see _dotenv_reload_baseline_environment's docstring).
-        previous_key_sources = {key: dict(value) for key, value in _DOTENV_KEY_SOURCES.items()}
-        # Resolve the plan (SIDAR_SKIP_DEFAULT_DOTENV/DOTENV_FILE/SIDAR_KEYS_FILE)
-        # from the *real*, unmodified process environment -- never from a
-        # baseline that may have already popped a previously dotenv-managed
-        # control variable, or a direct override of one of these three keys
-        # would be invisible to this reload's own plan.
-        plan = _build_dotenv_reload_plan(dict(os.environ), profile=profile)
-        effective_env = _dotenv_reload_baseline_environment(
-            managed_keys=previous_managed_keys, key_sources=previous_key_sources, plan=plan
+        config_dotenv_reload.reload_dotenv_chain(
+            profile=profile,
+            environ=os.environ,
+            base_dir=BASE_DIR,
+            managed_keys=_DOTENV_MANAGED_KEYS,
+            load_events=_DOTENV_LOAD_EVENTS,
+            key_sources=_DOTENV_KEY_SOURCES,
+            build_dotenv_reload_plan=_build_dotenv_reload_plan,
+            dotenv_reload_baseline_environment=_dotenv_reload_baseline_environment,
+            load_dotenv_into_effective_env=_load_dotenv_into_effective_env,
         )
-        _DOTENV_MANAGED_KEYS.clear()
-        _DOTENV_LOAD_EVENTS.clear()
-        _DOTENV_KEY_SOURCES.clear()
-
-        if not plan.skip_default_layers:
-            _load_dotenv_into_effective_env(
-                effective_env, str(plan.base_path), override=False, label="base"
-            )
-            _load_dotenv_into_effective_env(
-                effective_env, str(plan.advanced_path), override=False, label="advanced"
-            )
-
-            selected_profile = DotenvReloadPlan(
-                profile=profile or effective_env.get("SIDAR_ENV", ""),
-                base_path=plan.base_path,
-                advanced_path=plan.advanced_path,
-                explicit_path=plan.explicit_path,
-                sidar_keys_file=plan.sidar_keys_file,
-                skip_default_layers=plan.skip_default_layers,
-            ).profile
-            if selected_profile:
-                effective_env["SIDAR_ENV"] = selected_profile
-                _load_dotenv_into_effective_env(
-                    effective_env,
-                    str(BASE_DIR / f".env.{selected_profile}"),
-                    override=True,
-                    label=f"environment:{selected_profile}",
-                )
-
-        _load_dotenv_into_effective_env(
-            effective_env, plan.explicit_path, override=True, label="explicit:DOTENV_FILE"
-        )
-        _load_dotenv_into_effective_env(
-            effective_env, plan.sidar_keys_file, override=True, label="secret:SIDAR_KEYS_FILE"
-        )
-        config_dotenv.drop_empty_path_overrides(effective_env)
-
-        removed_managed_keys = previous_managed_keys - set(effective_env)
-        for key in removed_managed_keys:
-            os.environ.pop(key, None)
-        os.environ.update(effective_env)
 
 
 ConfigReloadCallback = Callable[["Config"], None]
