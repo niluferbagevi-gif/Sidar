@@ -91,6 +91,15 @@ class ErrorDocStore:
         raise RuntimeError("storage backend unavailable")
 
 
+class EmptyDocStore:
+    def __init__(self, *args, **kwargs):
+        self.calls = []
+
+    def search(self, query: str, _filters, mode: str, session_id: str):
+        self.calls.append((query, mode, session_id))
+        return False, "Sonuç bulunamadı."
+
+
 @pytest.fixture
 def researcher_module(monkeypatch: pytest.MonkeyPatch):
     config_mod = types.ModuleType("config")
@@ -224,7 +233,8 @@ def test_run_task_routing(researcher_module, fake_cfg):
     assert fetch == "fetch:https://site.test"
     assert docs == "docs:scipy:optimize"
     assert rag == "sync:faiss:auto:global"
-    assert default == "web:latest ai papers"
+    # No usable LLM decision -> local RAG first (the stub store always has a hit).
+    assert default == "sync:latest ai papers:auto:global"
 
 
 def test_init_fallback_populates_tools_when_register_tool_is_noop(researcher_module, fake_cfg):
@@ -244,7 +254,7 @@ def test_init_fallback_populates_tools_when_register_tool_is_noop(researcher_mod
 def test_run_task_falls_back_to_web_search_when_llm_returns_invalid_json(
     researcher_module, fake_cfg
 ):
-    agent = _build_agent(researcher_module, fake_cfg)
+    agent = _build_agent(researcher_module, fake_cfg, docstore_cls=EmptyDocStore)
 
     async def fake_call_llm(**_kwargs):
         return "not-json"
@@ -254,10 +264,11 @@ def test_run_task_falls_back_to_web_search_when_llm_returns_invalid_json(
     result = asyncio.run(agent.run_task("state of python packaging"))
 
     assert result == "web:state of python packaging"
+    assert agent.docs.calls == [("state of python packaging", "auto", "global")]
 
 
 def test_run_task_falls_back_when_llm_selects_unknown_tool(researcher_module, fake_cfg):
-    agent = _build_agent(researcher_module, fake_cfg)
+    agent = _build_agent(researcher_module, fake_cfg, docstore_cls=EmptyDocStore)
 
     async def fake_call_llm(**_kwargs):
         return '{"tool":"unknown_tool","argument":"x"}'
@@ -272,7 +283,7 @@ def test_run_task_falls_back_when_llm_selects_unknown_tool(researcher_module, fa
 def test_run_task_falls_back_to_web_search_when_llm_hits_token_limit_error(
     researcher_module, fake_cfg
 ):
-    agent = _build_agent(researcher_module, fake_cfg)
+    agent = _build_agent(researcher_module, fake_cfg, docstore_cls=ErrorDocStore)
 
     async def fake_call_llm(**_kwargs):
         raise RuntimeError("token limit exceeded while planning tool call")
@@ -284,43 +295,34 @@ def test_run_task_falls_back_to_web_search_when_llm_hits_token_limit_error(
     assert result == "web:uzun araştırma özeti hazırla"
 
 
-def test_run_task_after_four_llm_tool_iterations_falls_back_with_latest_prompt(
-    researcher_module, fake_cfg
-):
+def test_run_task_after_max_tool_steps_returns_latest_observation(researcher_module, fake_cfg):
     agent = _build_agent(researcher_module, fake_cfg)
+    seen_messages = []
 
-    async def fake_call_llm(**_kwargs):
+    async def fake_call_llm(**kwargs):
+        seen_messages.append(list(kwargs["messages"]))
         return '{"tool":"web_search","argument":"iter-next"}'
 
     call_tool_spy = []
 
     async def fake_call_tool(name, arg):
         call_tool_spy.append((name, arg))
-        if name == "web_search":
-            return f"web:{arg}"
-        return "unexpected"
+        return f"web:{arg}"
 
     agent.call_llm = fake_call_llm
     agent.call_tool = fake_call_tool
 
     result = asyncio.run(agent.run_task("initial prompt"))
-    unexpected = asyncio.run(fake_call_tool("fetch_url", "ignored"))
 
-    assert result == "web:web:iter-next"
-    assert unexpected == "unexpected"
-    assert call_tool_spy == [
-        ("web_search", "iter-next"),
-        ("web_search", "iter-next"),
-        ("web_search", "iter-next"),
-        ("web_search", "iter-next"),
-        ("web_search", "web:iter-next"),
-        ("fetch_url", "ignored"),
-    ]
+    # The latest tool output is returned instead of being fed back into a web search.
+    assert result == "web:iter-next"
+    assert call_tool_spy == [("web_search", "iter-next")] * 4
+    # Every step still carries the original task.
+    assert all(msgs[0] == {"role": "user", "content": "initial prompt"} for msgs in seen_messages)
+    assert "Asıl soru: initial prompt" in seen_messages[-1][-1]["content"]
 
 
-def test_run_task_conflicting_llm_directions_use_latest_tool_output_as_fallback(
-    researcher_module, fake_cfg
-):
+def test_run_task_conflicting_llm_directions_return_latest_tool_output(researcher_module, fake_cfg):
     agent = _build_agent(researcher_module, fake_cfg)
     llm_payloads = iter(
         [
@@ -336,7 +338,8 @@ def test_run_task_conflicting_llm_directions_use_latest_tool_output_as_fallback(
 
     result = asyncio.run(agent.run_task("başlangıç görevi"))
 
-    assert result == "web:sync:first query:auto:global"
+    assert result == "sync:first query:auto:global"
+    assert agent.web.search_calls == []
 
 
 def test_run_task_returns_llm_final_answer_content_when_tool_is_final_answer(
@@ -352,3 +355,124 @@ def test_run_task_returns_llm_final_answer_content_when_tool_is_final_answer(
     result = asyncio.run(agent.run_task("bir özet üret"))
 
     assert result == "özet: tamamlandı"
+
+
+_COLLAB_PROMPT = (
+    "[COLLABORATION WORKSPACE]\n"
+    "room_id=workspace:sidar\n"
+    "participants=Operatör<user>\n"
+    "requesting_user=Operatör\n"
+    "requesting_role=user\n"
+    "requesting_write_scopes=read-only\n"
+    "recent_transcript=\n"
+    "[user] Operatör: @Sidar önceki soru\n\n"
+    "Kullanıcılar ortak bir çalışma alanında SİDAR ile iş birliği yapıyor.\n\n"
+    "Current command:\nAGENTS.md dokümanına göre yerleşik ajan rolleri nedir?"
+)
+
+
+def test_extract_command_strips_collaboration_wrapper(researcher_module):
+    extract = researcher_module.ResearcherAgent._extract_command
+
+    assert extract(_COLLAB_PROMPT) == "AGENTS.md dokümanına göre yerleşik ajan rolleri nedir?"
+    assert extract("plain question") == "plain question"
+    # A marker without the room header is user text, not a wrapper.
+    assert extract("Current command: x") == "Current command: x"
+    # Wrapper with an empty command keeps the full prompt rather than an empty query.
+    empty_command = "[COLLABORATION WORKSPACE]\nCurrent command:\n  "
+    assert extract(empty_command) == empty_command
+
+
+def test_room_wrapped_question_searches_local_docs_not_the_web(researcher_module, fake_cfg):
+    """Regression: the whole room wrapper used to be sent to Tavily as the query."""
+    agent = _build_agent(researcher_module, fake_cfg)
+
+    async def fake_call_llm(**_kwargs):
+        return "not-json"
+
+    agent.call_llm = fake_call_llm
+
+    result = asyncio.run(agent.run_task(_COLLAB_PROMPT))
+
+    question = "AGENTS.md dokümanına göre yerleşik ajan rolleri nedir?"
+    assert result == f"sync:{question}:auto:global"
+    assert agent.docs.calls == [(question, "auto", "global")]
+    assert agent.web.search_calls == []
+
+
+def test_room_wrapped_question_web_fallback_uses_only_the_command(researcher_module, fake_cfg):
+    agent = _build_agent(researcher_module, fake_cfg, docstore_cls=EmptyDocStore)
+
+    async def fake_call_llm(**_kwargs):
+        raise RuntimeError("llm down")
+
+    agent.call_llm = fake_call_llm
+
+    result = asyncio.run(agent.run_task(_COLLAB_PROMPT))
+
+    question = "AGENTS.md dokümanına göre yerleşik ajan rolleri nedir?"
+    assert result == f"web:{question}"
+    assert agent.web.search_calls == [question]
+
+
+def test_room_wrapped_prefix_routing_uses_the_command(researcher_module, fake_cfg):
+    agent = _build_agent(researcher_module, fake_cfg)
+    wrapped = (
+        _COLLAB_PROMPT.rsplit("Current command:", 1)[0] + "Current command:\ndocs_search|faiss"
+    )
+
+    assert asyncio.run(agent.run_task(wrapped)) == "sync:faiss:auto:global"
+
+
+def test_run_task_tool_without_argument_uses_the_command(researcher_module, fake_cfg):
+    agent = _build_agent(researcher_module, fake_cfg)
+    payloads = iter(['{"tool":"docs_search"}', '{"tool":"final_answer","argument":"bitti"}'])
+
+    async def fake_call_llm(**_kwargs):
+        return next(payloads)
+
+    agent.call_llm = fake_call_llm
+
+    result = asyncio.run(agent.run_task(_COLLAB_PROMPT))
+
+    assert result == "bitti"
+    assert agent.docs.calls == [
+        ("AGENTS.md dokümanına göre yerleşik ajan rolleri nedir?", "auto", "global")
+    ]
+
+
+def test_run_task_final_answer_without_text_returns_latest_observation(researcher_module, fake_cfg):
+    agent = _build_agent(researcher_module, fake_cfg)
+    payloads = iter(['{"tool":"docs_search","argument":"roller"}', '{"tool":"final_answer"}'])
+
+    async def fake_call_llm(**_kwargs):
+        return next(payloads)
+
+    agent.call_llm = fake_call_llm
+
+    assert asyncio.run(agent.run_task("soru")) == "sync:roller:auto:global"
+
+
+def test_run_task_non_object_json_decision_falls_back(researcher_module, fake_cfg):
+    agent = _build_agent(researcher_module, fake_cfg)
+
+    async def fake_call_llm(**_kwargs):
+        return '["docs_search"]'
+
+    agent.call_llm = fake_call_llm
+
+    assert asyncio.run(agent.run_task("soru")) == "sync:soru:auto:global"
+
+
+def test_search_local_docs_handles_awaitable_and_empty_results(researcher_module, fake_cfg):
+    agent = _build_agent(researcher_module, fake_cfg, docstore_cls=AsyncLikeDocStore)
+    assert asyncio.run(agent._search_local_docs("q")) == (True, "async:q:auto:global")
+
+    empty = _build_agent(researcher_module, fake_cfg, docstore_cls=EmptyDocStore)
+    assert asyncio.run(empty._search_local_docs("q")) == (False, "Sonuç bulunamadı.")
+
+
+def test_system_prompt_documents_tool_protocol(researcher_module):
+    prompt = researcher_module.ResearcherAgent.SYSTEM_PROMPT
+    for fragment in ('"tool"', '"argument"', "docs_search", "web_search", "final_answer"):
+        assert fragment in prompt
