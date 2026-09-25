@@ -1,3 +1,4 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AgentManagerPanel } from "./AgentManagerPanel.js";
@@ -10,18 +11,28 @@ vi.mock("../lib/api.js", async () => {
   };
 });
 
+// A fresh fetch mock per test; typed loosely because tests feed partial Response shapes.
+let fetchMock: ReturnType<typeof vi.fn>;
+
+function submitForm() {
+  fireEvent.submit(
+    screen.getByRole("button", { name: "Ajanı Kaydet" }).closest("form") as HTMLFormElement,
+  );
+}
+
 describe("AgentManagerPanel", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    global.fetch = vi.fn();
+    fetchMock = vi.fn();
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
   });
 
   it("shows a validation error when no python file is selected", async () => {
     render(<AgentManagerPanel />);
-    fireEvent.submit(screen.getByRole("button", { name: "Ajanı Kaydet" }).closest("form"));
+    submitForm();
 
     expect(screen.getByText("Lütfen bir Python ajan dosyası seçin.")).toBeInTheDocument();
-    expect(global.fetch).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("renders panel as accessible region", () => {
@@ -31,7 +42,7 @@ describe("AgentManagerPanel", () => {
 
   it("submits the selected plugin file and renders the success preview", async () => {
     const user = userEvent.setup();
-    global.fetch.mockResolvedValue({
+    fetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({
         agent: { role_name: "security-auditor", version: "2.0.0", capabilities: ["security_audit"] },
@@ -48,10 +59,10 @@ describe("AgentManagerPanel", () => {
     await user.clear(screen.getByPlaceholderText("1.0.0"));
     await user.type(screen.getByPlaceholderText("1.0.0"), "2.0.0");
 
-    fireEvent.submit(screen.getByRole("button", { name: "Ajanı Kaydet" }).closest("form"));
+    submitForm();
 
-    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
-    const [url, options] = global.fetch.mock.calls[0];
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const [url, options] = fetchMock.mock.calls[0];
     expect(url).toBe("/api/agents/register-file");
     expect(options.method).toBe("POST");
     expect(options.headers).toEqual({ Authorization: "Bearer test-token" });
@@ -63,7 +74,7 @@ describe("AgentManagerPanel", () => {
 
   it("renders backend error banner when registration fails", async () => {
     const user = userEvent.setup();
-    global.fetch.mockResolvedValue({
+    fetchMock.mockResolvedValue({
       ok: false,
       json: async () => ({ detail: "Agent kaydı başarısız" }),
     });
@@ -72,15 +83,15 @@ describe("AgentManagerPanel", () => {
     await user.upload(screen.getByLabelText(/Python dosyası/), new File(["print('bad')"], "bad_agent.py", { type: "text/x-python" }));
     await user.type(screen.getByPlaceholderText("security-auditor"), "security-auditor");
 
-    fireEvent.submit(screen.getByRole("button", { name: "Ajanı Kaydet" }).closest("form"));
+    submitForm();
 
     expect(await screen.findByText("Agent kaydı başarısız")).toBeInTheDocument();
   });
 
   it("falls back to generic backend error field and toggles submitting state", async () => {
     const user = userEvent.setup();
-    let resolveResponse;
-    global.fetch.mockReturnValue(
+    let resolveResponse: (value: unknown) => void = () => {};
+    fetchMock.mockReturnValue(
       new Promise((resolve) => {
         resolveResponse = resolve;
       }),
@@ -88,7 +99,7 @@ describe("AgentManagerPanel", () => {
 
     render(<AgentManagerPanel />);
     await user.upload(screen.getByLabelText(/Python dosyası/), new File(["print('bad')"], "bad_agent.py", { type: "text/x-python" }));
-    fireEvent.submit(screen.getByRole("button", { name: "Ajanı Kaydet" }).closest("form"));
+    submitForm();
 
     expect(screen.getByRole("button", { name: "Yükleniyor…" })).toBeDisabled();
 
@@ -104,7 +115,7 @@ describe("AgentManagerPanel", () => {
 
   it("uses default version in payload when version input is blank", async () => {
     const user = userEvent.setup();
-    global.fetch.mockResolvedValue({
+    fetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({
         agent: { role_name: "security-auditor", version: "1.0.0" },
@@ -115,10 +126,10 @@ describe("AgentManagerPanel", () => {
     await user.upload(screen.getByLabelText(/Python dosyası/), new File(["print('ok')"], "security_agent.py", { type: "text/x-python" }));
     await user.clear(screen.getByPlaceholderText("1.0.0"));
 
-    fireEvent.submit(screen.getByRole("button", { name: "Ajanı Kaydet" }).closest("form"));
+    submitForm();
 
-    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
-    const [, options] = global.fetch.mock.calls[0];
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const [, options] = fetchMock.mock.calls[0];
     expect(options.body).toBeInstanceOf(FormData);
     expect(options.body.get("version")).toBe("1.0.0");
   });
@@ -136,7 +147,7 @@ describe("AgentManagerPanel", () => {
   });
   it("uses default error message when detail and error are missing", async () => {
     const user = userEvent.setup();
-    global.fetch.mockResolvedValue({
+    fetchMock.mockResolvedValue({
       ok: false,
       json: async () => ({}),
     });
@@ -144,14 +155,14 @@ describe("AgentManagerPanel", () => {
     render(<AgentManagerPanel />);
     await user.upload(screen.getByLabelText(/Python dosyası/), new File(["print('ok')"], "test.py", { type: "text/x-python" }));
 
-    fireEvent.submit(screen.getByRole("button", { name: "Ajanı Kaydet" }).closest("form"));
+    submitForm();
 
     expect(await screen.findByText("Ajan yüklenemedi")).toBeInTheDocument();
   });
 
   it("uses default error message when the backend error payload is null", async () => {
     const user = userEvent.setup();
-    global.fetch.mockResolvedValue({
+    fetchMock.mockResolvedValue({
       ok: false,
       json: async () => null,
     });
@@ -161,21 +172,21 @@ describe("AgentManagerPanel", () => {
       screen.getByLabelText(/Python dosyası/),
       new File(["print('ok')"], "test.py", { type: "text/x-python" }),
     );
-    fireEvent.submit(screen.getByRole("button", { name: "Ajanı Kaydet" }).closest("form"));
+    submitForm();
 
     expect(await screen.findByText("Ajan yüklenemedi")).toBeInTheDocument();
   });
 
   it("rejects malformed successful registration responses", async () => {
     const user = userEvent.setup();
-    global.fetch.mockResolvedValue({ ok: true, json: async () => ({ agent: { version: 1 } }) });
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ agent: { version: 1 } }) });
 
     render(<AgentManagerPanel />);
     await user.upload(
       screen.getByLabelText(/Python dosyası/),
       new File(["print('ok')"], "test.py", { type: "text/x-python" }),
     );
-    fireEvent.submit(screen.getByRole("button", { name: "Ajanı Kaydet" }).closest("form"));
+    submitForm();
 
     expect(await screen.findByText("Ajan kayıt cevabı geçersiz")).toBeInTheDocument();
   });
@@ -187,28 +198,28 @@ describe("AgentManagerPanel", () => {
     ["non-string capability", { agent: { role_name: "invalid", version: "1", capabilities: [1] } }],
   ])("rejects %s in a successful registration payload", async (_label, responsePayload) => {
     const user = userEvent.setup();
-    global.fetch.mockResolvedValue({ ok: true, json: async () => responsePayload });
+    fetchMock.mockResolvedValue({ ok: true, json: async () => responsePayload });
 
     render(<AgentManagerPanel />);
     await user.upload(
       screen.getByLabelText(/Python dosyası/),
       new File(["print('ok')"], "test.py", { type: "text/x-python" }),
     );
-    fireEvent.submit(screen.getByRole("button", { name: "Ajanı Kaydet" }).closest("form"));
+    submitForm();
 
     expect(await screen.findByText("Ajan kayıt cevabı geçersiz")).toBeInTheDocument();
   });
 
   it("normalizes non-Error request failures", async () => {
     const user = userEvent.setup();
-    global.fetch.mockRejectedValue("network failure");
+    fetchMock.mockRejectedValue("network failure");
 
     render(<AgentManagerPanel />);
     await user.upload(
       screen.getByLabelText(/Python dosyası/),
       new File(["print('ok')"], "test.py", { type: "text/x-python" }),
     );
-    fireEvent.submit(screen.getByRole("button", { name: "Ajanı Kaydet" }).closest("form"));
+    submitForm();
 
     expect(await screen.findByText("Ajan yüklenemedi")).toBeInTheDocument();
   });

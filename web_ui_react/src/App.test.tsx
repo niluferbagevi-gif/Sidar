@@ -1,9 +1,9 @@
 import React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, beforeEach, expect, it, vi } from "vitest";
-import { MemoryRouter } from "./lib/routerShim.tsx";
-import App from "./App.tsx";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "./lib/routerShim.js";
+import App from "./App.js";
 import * as api from "./lib/api.js";
 
 const { chatPanelMountSpy } = vi.hoisted(() => ({ chatPanelMountSpy: vi.fn() }));
@@ -33,7 +33,7 @@ vi.mock("./lib/api.js", async () => {
   };
 });
 
-function makeJwt(payload) {
+function makeJwt(payload: Record<string, unknown>) {
   return ["e30", btoa(JSON.stringify(payload)).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_"), "sig"].join(".");
 }
 
@@ -51,7 +51,7 @@ function renderApp(initialPath = "/") {
 describe("App", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    api.getStoredToken.mockReturnValue(ADMIN_TOKEN);
+    vi.mocked(api.getStoredToken).mockReturnValue(ADMIN_TOKEN);
   });
 
   it("başlık bilgisini render eder ve / rotasında chat paneline yönlendirir", () => {
@@ -126,7 +126,8 @@ describe("App", () => {
   });
 
   it("shows default token hint when no token is set", () => {
-    api.getStoredToken.mockReturnValue(null);
+    // Deliberately outside the declared `string` return type: App must tolerate a null token.
+    vi.mocked(api.getStoredToken).mockReturnValue(null as unknown as string);
     renderApp("/");
     expect(screen.getByText(/varsayılan olarak yalnızca bellekte/)).toBeInTheDocument();
   });
@@ -146,7 +147,7 @@ describe("App", () => {
   });
 
   it("admin olmayan oturumlarda admin navigasyonunu gizler ve doğrudan girişte guard gösterir", () => {
-    api.getStoredToken.mockReturnValue(USER_TOKEN);
+    vi.mocked(api.getStoredToken).mockReturnValue(USER_TOKEN);
 
     renderApp("/admin/prompts");
 
