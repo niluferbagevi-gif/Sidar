@@ -1,15 +1,10 @@
 {
-  // checkJs is intentionally false. As of 2026-08-06 application/component
-  // migration is complete: every remaining .js/.jsx file under src/ is a
-  // test file (*.test.jsx, *.test.js) or test setup --
-  // zero untyped application source remains. `npm run typecheck` therefore
-  // type-checks the full component/hook/lib tree; it is a real regression
-  // gate for application logic, not just the migrated subset. Do not read a
-  // passing `npm run typecheck` as type safety for the test tree, though --
-  // flipping checkJs=true still surfaces ~2500 pre-existing errors (verified
-  // 2026-08-06), all of them inside test files, none in application source.
-  // Tracking: the Frontend bakım ekibi owns converting the remaining test
-  // files through 2027-03-31; see
+  // The src/ tree is fully TypeScript since 2026-09-25 (0 .js/.jsx files,
+  // enforced by typescript-migration-baseline.json), so `npm run typecheck`
+  // type-checks application and test sources alike under strict mode.
+  // allowJs stays on only because tests import the root JavaScript config
+  // (src/test/viteProxyConfig.test.ts -> vite.config.js); checkJs stays off so
+  // those tooling files are not type-checked. See
   // docs/development/frontend-typescript-migration.md.
   "compilerOptions": {
     "target": "ES2022",
