@@ -21,7 +21,7 @@ describe("main entrypoint", () => {
   });
 
   it("creates a root and renders the app tree", async () => {
-    await import("./main.tsx");
+    await import("./main.js");
 
     expect(createRootMock).toHaveBeenCalledTimes(1);
     expect(createRootMock).toHaveBeenCalledWith(document.getElementById("root"));
@@ -31,7 +31,7 @@ describe("main entrypoint", () => {
   it("fails clearly when the root element is missing", async () => {
     document.body.innerHTML = "";
 
-    await expect(import("./main.tsx")).rejects.toThrow("Sidar frontend root elementi bulunamadı.");
+    await expect(import("./main.js")).rejects.toThrow("Sidar frontend root elementi bulunamadı.");
     expect(createRootMock).not.toHaveBeenCalled();
   });
 });

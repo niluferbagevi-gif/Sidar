@@ -367,7 +367,7 @@ raporunda en az aşağıdakileri kaydedin:
 
 Bu kanıtlar yoksa geçmiş test sayıları “son bilinen örnek” olarak etiketlenmeli;
 mevcut dalın doğrulanmış sonucu veya kabul kriteri gibi sunulmamalıdır. TypeScript
-envanterinin görece kapsamı ve npm audit geçici istisnası sırasıyla
+envanterinin tamamlanma durumu ve ertelenen ESLint 10 geçişi sırasıyla
 `development/frontend-typescript-migration.md` ve
 `development/frontend-eslint-10-migration.md` belgelerinde izlenir.
 

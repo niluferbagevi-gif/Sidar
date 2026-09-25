@@ -1485,17 +1485,20 @@ def test_security_gate_runs_ruff_debt_baseline_before_bandit() -> None:
     debt_check = "uv run python scripts/ci/check_ruff_debt_baseline.py"
     marker_check = "uv run python scripts/ci/check_source_debt_markers.py"
     module_notes_check = "uv run python scripts/ci/check_module_notes_inventory.py"
+    doc_links_check = "uv run python scripts/ci/check_doc_links.py"
     bandit_check = "uv run python scripts/ci/check_bandit_suppression_baseline.py"
     assert tooling_check in body
     assert debt_check in body
     assert marker_check in body
     assert module_notes_check in body
+    assert doc_links_check in body
     assert bandit_check in body
     assert (
         body.index(tooling_check)
         < body.index(debt_check)
         < body.index(marker_check)
         < body.index(module_notes_check)
+        < body.index(doc_links_check)
         < body.index(bandit_check)
     )
     assert "Güvenlik analizi önkoşulları hazırlanamadı" in body
@@ -6030,10 +6033,15 @@ def test_npm_audit_safe_fails_on_high_findings_even_when_npm_exits_zero(
     assert not (artifact_dir / "npm-audit-failure.json").exists()
 
 
-def test_npm_audit_safe_accepts_only_the_verified_brace_expansion_backport(
-    tmp_path: Path,
-) -> None:
-    """The temporary advisory exception must be exact and fail closed."""
+def test_npm_audit_safe_has_no_advisory_exceptions(tmp_path: Path) -> None:
+    """Every high finding fails closed; the retired brace-expansion allowlist is gone.
+
+    The GHSA-mh99-v99m-4gvg exception was removed on 2026-09-25 once the
+    advisory chain disappeared from ``npm audit`` (the durable pin moved to the
+    real upstream fix, 1.1.18). The exact payload it used to accept -- same
+    advisory id, pinned override and lockfile -- must now fail like any other
+    finding and must not produce an exception artifact.
+    """
     audit_wrapper = Path("scripts/npm_audit_safe.js").resolve()
     npm = tmp_path / "npm"
     npm.write_text(
@@ -6051,124 +6059,69 @@ def test_npm_audit_safe_accepts_only_the_verified_brace_expansion_backport(
         ),
         encoding="utf-8",
     )
-    manifest_path = tmp_path / "package.json"
-    manifest_path.write_text(
+    (tmp_path / "package.json").write_text(
         json.dumps({"overrides": {"brace-expansion": "1.1.18"}}), encoding="utf-8"
     )
-    vulnerabilities = {
-        "brace-expansion": {
-            "severity": "high",
-            "via": [{"source": 1124334, "severity": "high"}],
+    payload = {
+        "vulnerabilities": {
+            "brace-expansion": {
+                "severity": "high",
+                "via": [{"source": 1124334, "severity": "high"}],
+            },
+            "minimatch": {"severity": "high", "via": ["brace-expansion"]},
+            "eslint": {"severity": "high", "via": ["minimatch"]},
         },
-        "minimatch": {"severity": "high", "via": ["brace-expansion"]},
-        "eslint": {"severity": "high", "via": ["minimatch"]},
+        "metadata": {"vulnerabilities": {"high": 3}},
     }
 
-    def run_audit(
-        payload: dict[str, object], *, test_now: str | None = None
-    ) -> subprocess.CompletedProcess[str]:
-        env = {
+    result = subprocess.run(
+        [
+            "node",
+            str(audit_wrapper),
+            "--level=high",
+            "--retries=1",
+            f"--artifact-dir={tmp_path / 'artifacts'}",
+        ],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+        env={
             **os.environ,
             "AUDIT_JSON": json.dumps(payload),
             "FRONTEND_NPM_AUDIT_NPM_BINARY": str(npm),
-        }
-        if test_now is not None:
-            env["FRONTEND_NPM_AUDIT_TEST_NOW"] = test_now
-        return subprocess.run(
-            [
-                "node",
-                str(audit_wrapper),
-                "--level=high",
-                "--retries=1",
-                f"--artifact-dir={tmp_path / 'artifacts'}",
-            ],
-            cwd=tmp_path,
-            check=False,
-            capture_output=True,
-            env=env,
-            text=True,
-        )
-
-    patched = run_audit(
-        {
-            "vulnerabilities": vulnerabilities,
-            "metadata": {"vulnerabilities": {"high": 3}},
-        }
-    )
-    assert patched.returncode == 0, patched.stderr
-    assert "1.1.18 güvenlik backport'unu" in patched.stderr
-    assert "docs/development/frontend-eslint-10-migration.md" in patched.stderr
-    assert "2026-09-30T00:00:00Z" in patched.stderr
-    assert "Bu tarihte kapı fail-closed kapanır" in patched.stderr
-    exception = json.loads(
-        (tmp_path / "artifacts/npm-audit-exception.json").read_text(encoding="utf-8")
-    )
-    assert exception["advisory"] == "GHSA-mh99-v99m-4gvg"
-    assert exception["backport_version"] == "1.1.18"
-    assert exception["exception_review_at"] == "2026-09-30T00:00:00Z"
-    assert exception["days_remaining"] > 0
-    assert exception["maintenance_plan"] == ("docs/development/frontend-eslint-10-migration.md")
-
-    manifest_path.write_text(json.dumps({"overrides": {}}), encoding="utf-8")
-    missing_durable_pin = run_audit(
-        {
-            "vulnerabilities": vulnerabilities,
-            "metadata": {"vulnerabilities": {"high": 3}},
-        }
-    )
-    assert missing_durable_pin.returncode == 1
-    assert "gerçek high veya üstü güvenlik bulgusu" in missing_durable_pin.stderr
-    assert not (tmp_path / "artifacts/npm-audit-exception.json").exists()
-    manifest_path.write_text(
-        json.dumps({"overrides": {"brace-expansion": "1.1.18"}}), encoding="utf-8"
-    )
-
-    expired = run_audit(
-        {
-            "vulnerabilities": vulnerabilities,
-            "metadata": {"vulnerabilities": {"high": 3}},
         },
-        test_now="2026-09-30T00:00:00Z",
+        text=True,
     )
-    assert expired.returncode == 1
-    assert "yeniden değerlendirme tarihi doldu" in expired.stderr
+
+    assert result.returncode == 1
+    assert "gerçek high veya üstü güvenlik bulgusu" in result.stderr
     failure = json.loads(
         (tmp_path / "artifacts/npm-audit-failure.json").read_text(encoding="utf-8")
     )
-    assert failure["failure_category"] == "expired_exception"
-    assert failure["exception_review_at"] == "2026-09-30T00:00:00Z"
+    assert failure["failure_category"] == "vulnerability"
+    assert "exception_review_at" not in failure
     assert not (tmp_path / "artifacts/npm-audit-exception.json").exists()
-
-    vulnerabilities["unrelated-package"] = {
-        "severity": "critical",
-        "via": [{"source": 9999999, "severity": "critical"}],
-    }
-    unrelated = run_audit(
-        {
-            "vulnerabilities": vulnerabilities,
-            "metadata": {"vulnerabilities": {"high": 3, "critical": 1}},
-        }
-    )
-    assert unrelated.returncode == 1
-    assert "gerçek high veya üstü güvenlik bulgusu" in unrelated.stderr
+    source = audit_wrapper.read_text(encoding="utf-8")
+    assert "PATCHED_BRACE_EXPANSION" not in source
+    assert "FRONTEND_NPM_AUDIT_TEST_NOW" not in source
 
 
-def test_frontend_eslint_10_exception_has_a_bounded_migration_plan() -> None:
-    """The temporary npm advisory exception must remain documented and removable."""
+def test_frontend_eslint_10_migration_plan_is_bounded() -> None:
+    """The deferred ESLint 10 upgrade must stay documented with a dated re-review."""
     plan = Path("docs/development/frontend-eslint-10-migration.md").read_text(encoding="utf-8")
 
-    assert "yedi bağımsız güvenlik açığı değildir" in plan
+    assert "istisnası 2026-09-25'te kaldırıldı" in plan
     assert "`overrides.brace-expansion` kalıcı pini" in plan
     assert "eslint-plugin-react@7.37.5" in plan
     assert "eslint-plugin-jsx-a11y@6.10.2" in plan
-    assert "**İlk yeniden değerlendirme:** 2026-09-30" in plan
-    assert "`expired_exception` kategorisiyle fail-closed" in plan
+    assert "**Sonraki yeniden değerlendirme:** 2026-12-31" in plan
+    assert "docs/reminders/frontend-eslint-10-review-2026-12-31.ics" in plan
+    assert Path("docs/reminders/frontend-eslint-10-review-2026-12-31.ics").exists()
     assert "FRONTEND_NPM_AUDIT_ALLOW_NETWORK_FAILURE=0 npm run audit:high" in plan
-    assert "`PATCHED_BRACE_EXPANSION_*` istisnasını" in plan
 
 
 def test_frontend_security_exception_has_scheduled_fail_closed_review() -> None:
-    """The dated advisory exception must be checked even without repository activity."""
+    """The strict frontend audit must run weekly even without repository activity."""
     workflow = Path(".github/workflows/frontend-security-review.yml").read_text(encoding="utf-8")
     plan = Path("docs/development/frontend-eslint-10-migration.md").read_text(encoding="utf-8")
 
@@ -6180,7 +6133,7 @@ def test_frontend_security_exception_has_scheduled_fail_closed_review() -> None:
     assert "path: artifacts/frontend-security/" in workflow
     assert "if-no-files-found: error" in workflow
     assert ".github/workflows/frontend-security-review.yml" in plan
-    assert "son tarihe yakın bir PR veya push olmasa bile" in plan
+    assert "PR veya push olmasa bile" in plan
 
 
 def test_frontend_typescript_inventory_ratchet_fails_closed(tmp_path: Path) -> None:

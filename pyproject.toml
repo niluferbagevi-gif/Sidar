@@ -384,7 +384,11 @@ summary = "Phase 1 moved dev/test quality tools out of the main runtime dependen
 [tool.sidar.dependency_profile_plan.production_minimal_runtime_validation]
 status = "release-blocking"
 owner = "qa+release"
-review_by = "2026-08-15"
+# The 2026-08-15 evidence review was missed (no gate tracked it); it was
+# performed on 2026-09-25 against a green production-profile-dry-run run, and
+# scripts/ci/check_policy_dates.py now fails closed on this date.
+last_reviewed_on = "2026-09-25"
+review_by = "2027-03-31"
 required_command = "SIDAR_DEPENDENCY_PROFILE=production-minimal ./install_sidar.sh sync-deps --skip-models --skip-smoke-test --ci --no-interaction"
 web_boot_smoke_command = "uv run --no-sync python -c \"from web.app_factory import create_app; app = create_app(register_handlers=False); assert '/docs' in [route.path for route in app.routes]\""
 db_migration_smoke_command = "DATABASE_URL=sqlite+aiosqlite:///./artifacts/production-minimal/migration-smoke.db uv run --no-sync alembic upgrade head"
@@ -392,7 +396,7 @@ follow_up_gate = "TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SID
 current_ci_job = "production-profile-dry-run"
 release_artifact = "production-minimal-runtime-evidence"
 release_artifact_path = "artifacts/production-minimal/runtime-evidence.json"
-next_action = "Keep the production-minimal runtime validation job release-blocking and review evidence freshness by 2026-08-15."
+next_action = "Keep the production-minimal runtime validation job release-blocking and review evidence freshness by 2027-03-31."
 blocking_transition_pr_required = false
 summary = "production-minimal is now backed by a release-blocking CI gate that runs installer sync, web boot smoke, DB migration smoke, and uploads runtime evidence artifacts."
 
@@ -426,8 +430,6 @@ validation_commands = [
 
 [tool.sidar.ruff_debt]
 line_length = 100
-close_docstring_campaign_by = "2026-09-30"
-close_async240_campaign_by = "2026-09-30"
 tracking_owner = "qa+reviewer"
 global_ignores_removed_on = "2026-08-02"
 planned_validation_commands = [
@@ -435,13 +437,20 @@ planned_validation_commands = [
   "uv run python scripts/ci/check_ruff_debt_baseline.py",
   "uv run ruff check .",
 ]
-e501_global_ignore_review_by = "2026-09-30"
-e501_global_ignore_reason = "Global ignore removed early on 2026-08-02; the zero ratchet remains as defense-in-depth until the scheduled review."
 e501_debt_baseline = 0
-async240_global_ignore_review_by = "2026-09-30"
-async240_global_ignore_reason = "Global ignore removed early on 2026-08-02; new async I/O paths remain directly enforced by Ruff and the zero ratchet."
+# E501/ASYNC240 scheduled reviews (due 2026-09-30) closed early: both global
+# ignores were removed on 2026-08-02, measured debt is 0, and Ruff enforces the
+# rules directly. The zero ratchet above/below stays as defense-in-depth.
+e501_async240_reviews_closed_on = "2026-09-25"
 legacy_hotspots = ["web_server.py", "main.py"]
 docstring_async_debt_baseline = { D200 = 0, D202 = 0, D205 = 0, D209 = 0, D212 = 0, D403 = 0, D415 = 0, D417 = 0, ASYNC240 = 0 }
+# D100-D107 (missing public docstrings) could not be closed by the original
+# 2026-09-30 campaign date (5,486 findings remained). Instead of letting the date
+# expire and break CI, the backlog is frozen here: it may only shrink, and every
+# reduction must be committed with `check_ruff_debt_baseline.py --update`.
+missing_docstring_debt_baseline = { D100 = 227, D101 = 194, D102 = 426, D103 = 4441, D104 = 12, D105 = 34, D106 = 1, D107 = 139 }
+docstring_ratchet_review_by = "2027-03-31"
+docstring_ratchet_reason = "Review D100-D107 ratchet progress and set dated reduction targets; owner: qa+reviewer."
 
 [[tool.sidar.dependency_profile_plan.profiles]]
 name = "runtime"
@@ -724,8 +733,10 @@ select = [
   "D",
 ]
 ignore = [
-  # D100-D107 eksik docstring kuralları AGENTS.md §2.5.6'de tarihli kademeli
-  # dokümantasyon kampanyasına bağlıdır; agent rol kontratları şimdilik
+  # D100-D107 eksik docstring kuralları AGENTS.md §2.5.6'daki ratchet'e
+  # bağlıdır: borç [tool.sidar.ruff_debt].missing_docstring_debt_baseline ile
+  # dondurulur ve scripts/ci/check_ruff_debt_baseline.py yalnız azalmasına izin
+  # verir; agent rol kontratları ayrıca
   # tests/unit/agent/test_builtin_role_contracts.py ile korunur.
   "D100",
   "D101",

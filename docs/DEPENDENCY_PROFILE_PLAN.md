@@ -138,6 +138,11 @@ sınıflandırılmalı ve production-minimal profil etkisi ayrı PR'da değerlen
   adımında okunur. Süresi dolan istisnalar `pip-audit` komutuna aktarılmaz; script fail-closed
   döner ve kalite kapısını kırar. Torch istisnası patched lock sonrasında kaldırılmıştır;
   gelecekteki istisnalar aynı fail-closed expiry sözleşmesini korumalıdır.
+  2026-09-25 incelemesinde pip-audit istisnasız çalıştırıldı: `PYSEC-2026-597` (nltk) ve
+  `CVE-2026-69112` (accelerate) artık raporlanmadığı için kaldırıldı; düzeltme sürümü
+  hiçbir yayında bulunmayan chromadb (3) ve nltk (`PYSEC-2026-3740`) istisnaları, erişilemez
+  kod yolu gerekçesi koddan yeniden doğrulanarak 2026-12-31'e yenilendi
+  (`next_review=2026-11-30`).
 - Yeni suppress/ignore listeleri aynı standardı izlemelidir: her kayıt makine-okunur
   `expires` veya `next_review` tarihi, paket/bulgu kimliği, owner/runbook referansı ve dar kapsamlı
   gerekçe taşımalı; süresi dolan kayıtlar fail-closed davranışla kalite kapısından düşmelidir.
@@ -207,16 +212,25 @@ kaldığında terfi edebilir:
 6. Release/merge için ayrı production-readiness gate'i yine çalışır:
    `TEST_PROFILE=ci RUN_BENCHMARKS=required RUN_FRONTEND_E2E=1 SIDAR_PRODUCTION_READINESS=1 bash run_tests.sh --stage all`.
 
+> **Kanıt tazeliği incelemesi:** 2026-08-15 hedefli inceleme hiçbir kapı tarafından
+> izlenmediği için kaçırılmış, 2026-09-25'te yeşil `production-profile-dry-run`
+> koşusu üzerinden yapılmıştır (`last_reviewed_on`). Sonraki inceleme `review_by`
+> = **2027-03-31**'dir (sahip: qa+release) ve `scripts/ci/check_policy_dates.py`
+> bu tarihi artık fail-closed izler; tarih geçerse CI kırmızıya döner.
+
 ## Ruff docstring / ASYNC borç kapatma takibi
 
-> **Aktif takip durumu (2026-08-02):** E501, seçili D200-D417 ve ASYNC240
-> baseline'ları sıfıra ulaştığı için global ignore'lar hedef tarihten önce
-> kaldırılmıştır. `2026-09-30`, kalan D100-D107 envanteri ve kapanış metadata'sı
-> için son gözden geçirme tarihi olarak korunur.
+> **Aktif takip durumu (2026-09-25):** E501, seçili D200-D417 ve ASYNC240
+> baseline'ları sıfıra ulaştığı için global ignore'lar 2026-08-02'de kaldırılmış;
+> 2026-09-30 tarihli E501/ASYNC240 incelemeleri 2026-09-25'te kapatılmıştır. Kalan
+> D100-D107 envanteri (5.486 bulgu) tarih uzatılmak yerine
+> `missing_docstring_debt_baseline` ratchet'ine bağlanmıştır; ilerleme
+> `docstring_ratchet_review_by` (2027-03-31) tarihinde gözden geçirilir.
 
-`pyproject.toml` içindeki `[tool.sidar.ruff_debt]` bloğu sıfır ratchet'i ve
-`2026-09-30` kapanış incelemesini taşır. Kurallar normal Ruff çalıştırmasında artık
-doğrudan etkindir; bu tarihe kadar savunma amaçlı doğrulama komutları:
+`pyproject.toml` içindeki `[tool.sidar.ruff_debt]` bloğu sıfır ratchet'i, D100-D107
+ratchet tavanını ve 2027-03-31 inceleme tarihini taşır. E501/D200-D417/ASYNC240
+kuralları normal Ruff çalıştırmasında doğrudan etkindir; savunma amaçlı doğrulama
+komutları:
 
 ```bash
 uv run ruff check . --select D,ASYNC
@@ -229,7 +243,8 @@ yeni async I/O yollarında blocking pathlib metadata çağrılarını büyütmem
 100 karakter satır sınırına uymak zorunludur; kaldırılan ignore'lar yeniden
 eklenmemelidir. CI, mevcut E501 toplamını `e501_debt_baseline`, D200-D417 ve
 ASYNC240 sayımlarını ise `docstring_async_debt_baseline` ratchet sınırıyla
-karşılaştırır. Yeni veya anlamlı düzenlenen kod bu baseline'ları artırırsa
+karşılaştırır; D100-D107 sayımları da `missing_docstring_debt_baseline` ile aynı
+kurala tabidir. Yeni veya anlamlı düzenlenen kod bu baseline'ları artırırsa
 `scripts/ci/check_ruff_debt_baseline.py` fail-closed davranır. Ölçülen sayı
 baseline'ın altına düştüğünde de komut fail-closed olur ve operatörden
 `uv run python scripts/ci/check_ruff_debt_baseline.py --update` ile committed

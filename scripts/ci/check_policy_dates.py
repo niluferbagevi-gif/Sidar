@@ -10,6 +10,9 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_PYPROJECT = Path("pyproject.toml")
+RUNTIME_VALIDATION_KEY = (
+    "tool.sidar.dependency_profile_plan.production_minimal_runtime_validation.review_by"
+)
 
 
 def _parse_date(value: Any, *, key: str) -> date:
@@ -57,7 +60,9 @@ def check_policy_date_warnings(
     data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
     sidar = data.get("tool", {}).get("sidar", {})
     ruff_debt = sidar.get("ruff_debt", {})
-    torch_reminder = sidar.get("dependency_profile_plan", {}).get("torch_upgrade_reminder", {})
+    dependency_plan = sidar.get("dependency_profile_plan", {})
+    torch_reminder = dependency_plan.get("torch_upgrade_reminder", {})
+    runtime_validation = dependency_plan.get("production_minimal_runtime_validation")
     configured_window = torch_reminder.get("warning_window_days", 45)
     warning_window = (
         warn_within_days if warn_within_days is not None else int(configured_window or 45)
@@ -83,28 +88,21 @@ def check_policy_date_warnings(
         )
     _add_if_due_soon(
         warnings,
-        label="Ruff E501 global ignore review",
-        value=ruff_debt.get("e501_global_ignore_review_by", ""),
-        key="tool.sidar.ruff_debt.e501_global_ignore_review_by",
+        label="Ruff D100-D107 docstring ratchet review",
+        value=ruff_debt.get("docstring_ratchet_review_by", ""),
+        key="tool.sidar.ruff_debt.docstring_ratchet_review_by",
         today=effective_today,
         warn_within_days=warning_window,
     )
-    _add_if_due_soon(
-        warnings,
-        label="Ruff docstring debt campaign close",
-        value=ruff_debt.get("close_docstring_campaign_by", ""),
-        key="tool.sidar.ruff_debt.close_docstring_campaign_by",
-        today=effective_today,
-        warn_within_days=warning_window,
-    )
-    _add_if_due_soon(
-        warnings,
-        label="Ruff ASYNC240 debt campaign close",
-        value=ruff_debt.get("close_async240_campaign_by", ""),
-        key="tool.sidar.ruff_debt.close_async240_campaign_by",
-        today=effective_today,
-        warn_within_days=warning_window,
-    )
+    if runtime_validation is not None:
+        _add_if_due_soon(
+            warnings,
+            label="Production-minimal runtime evidence review",
+            value=runtime_validation.get("review_by", ""),
+            key=RUNTIME_VALIDATION_KEY,
+            today=effective_today,
+            warn_within_days=warning_window,
+        )
     return warnings
 
 
@@ -118,27 +116,14 @@ def check_policy_dates(pyproject_path: Path, *, today: date | None = None) -> li
     ruff_debt = sidar.get("ruff_debt", {})
     _add_if_expired(
         failures,
-        label="Ruff E501 global ignore review",
-        value=ruff_debt.get("e501_global_ignore_review_by", ""),
-        key="tool.sidar.ruff_debt.e501_global_ignore_review_by",
-        today=effective_today,
-    )
-    _add_if_expired(
-        failures,
-        label="Ruff docstring debt campaign close",
-        value=ruff_debt.get("close_docstring_campaign_by", ""),
-        key="tool.sidar.ruff_debt.close_docstring_campaign_by",
-        today=effective_today,
-    )
-    _add_if_expired(
-        failures,
-        label="Ruff ASYNC240 debt campaign close",
-        value=ruff_debt.get("close_async240_campaign_by", ""),
-        key="tool.sidar.ruff_debt.close_async240_campaign_by",
+        label="Ruff D100-D107 docstring ratchet review",
+        value=ruff_debt.get("docstring_ratchet_review_by", ""),
+        key="tool.sidar.ruff_debt.docstring_ratchet_review_by",
         today=effective_today,
     )
 
-    torch_reminder = sidar.get("dependency_profile_plan", {}).get("torch_upgrade_reminder", {})
+    dependency_plan = sidar.get("dependency_profile_plan", {})
+    torch_reminder = dependency_plan.get("torch_upgrade_reminder", {})
     if torch_reminder.get("status") != "resolved":
         _add_if_expired(
             failures,
@@ -154,10 +139,23 @@ def check_policy_dates(pyproject_path: Path, *, today: date | None = None) -> li
             key="tool.sidar.dependency_profile_plan.torch_upgrade_reminder.expires",
             today=effective_today,
         )
+
+    # Once the section exists its review date is mandatory: a missing or
+    # malformed value is a config error rather than a silent pass.
+    runtime_validation = dependency_plan.get("production_minimal_runtime_validation")
+    if runtime_validation is not None:
+        _add_if_expired(
+            failures,
+            label="Production-minimal runtime evidence review",
+            value=runtime_validation.get("review_by", ""),
+            key=RUNTIME_VALIDATION_KEY,
+            today=effective_today,
+        )
     return failures
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Report upcoming policy dates and fail on expired or malformed ones."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pyproject", type=Path, default=DEFAULT_PYPROJECT)
     parser.add_argument("--today", default="", help="Override current date for tests (YYYY-MM-DD).")

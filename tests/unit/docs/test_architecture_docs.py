@@ -155,30 +155,22 @@ def test_frontend_typescript_migration_narrative_reflects_component_completion()
     ts=10, tsx=22) was correct but tsconfig.json's comment and the migration
     doc still described "most of the app remains .jsx/.js" / a "component
     tree" needing type coverage -- even though every remaining untyped file
-    under web_ui_react/src is a test file, not application source. This test
-    pins both the corrected narrative and the underlying fact it depends on,
-    so the two can't drift apart again.
+    under web_ui_react/src is a test file, not application source. Since
+    2026-09-25 the test tree is migrated too, so this test now pins the final
+    state (no .js/.jsx under src) alongside the narrative describing it.
     """
     src_dir = Path("web_ui_react/src")
     untyped_files = sorted(
         [*src_dir.rglob("*.js"), *src_dir.rglob("*.jsx")], key=lambda p: p.as_posix()
     )
-    assert untyped_files, "expected at least one untyped file to exist"
-    non_test_app_files = [
-        path
-        for path in untyped_files
-        if ".test." not in path.name and path != src_dir / "test" / "setup.js"
-    ]
-    assert non_test_app_files == [], (
-        "found untyped application source outside the test tree -- update the "
-        "migration narrative back to describing real remaining component work: "
-        f"{non_test_app_files}"
+    assert untyped_files == [], (
+        "web_ui_react/src is fully TypeScript since 2026-09-25 -- the baseline "
+        f"ratchet should have rejected these files: {untyped_files}"
     )
 
     tsconfig = Path("web_ui_react/tsconfig.json").read_text(encoding="utf-8")
-    assert "application/component" in tsconfig
-    assert "migration is complete" in tsconfig
-    assert "zero untyped application source remains" in tsconfig
+    assert "fully TypeScript" in tsconfig
+    assert "application and test sources alike" in tsconfig
     assert "most of the app remains .jsx/.js" not in tsconfig
 
     migration_doc = Path("docs/development/frontend-typescript-migration.md").read_text(

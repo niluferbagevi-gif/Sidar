@@ -258,7 +258,7 @@ docker compose ps
 
 Grafana ayağa kalktıktan sonra aşağıdaki dashboard dosyalarının yüklendiğini doğrulayın:
 
-- `docker/grafana/dashboards/sidar-llm-overview.json`
+- `docker_setup/grafana/dashboards/sidar-llm-overview.json`
 - `grafana/dashboards/sidar_overview.json`
 
 Operasyon başlangıcında şu sinyalleri izleyin:

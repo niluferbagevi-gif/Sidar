@@ -1,7 +1,7 @@
 # `docker_setup/grafana/dashboards/sidar-llm-overview.json`
 
 - **Kaynak dosya:** `docker_setup/grafana/dashboards/sidar-llm-overview.json`
-- **Not dosyası:** `docs/module-notes/docker/grafana/dashboards/sidar-llm-overview.json.md`
+- **Not dosyası:** `docs/module-notes/docker_setup/grafana/dashboards/sidar-llm-overview.json.md`
 - **Kategori:** Grafana dashboard tanımı (LLM maliyet/kullanım)
 - **Çalışma tipi:** JSON dashboard schema (Grafana)
 
@@ -46,8 +46,8 @@ Grafana container içinde dashboard yolu:
 
 ## 4) Nerede kullanılıyor?
 
-- `docker-compose.yml` içinde Grafana volume mount’u ile container’a taşınır.
-- `tests/test_grafana_dashboard_provisioning.py` bu dosyanın varlığını, panel başlıklarını ve kritik PromQL ifadelerini doğrular.
+- `docker-compose.observability.yml` içinde (`--profile observability`) Grafana volume mount’u ile container’a taşınır.
+- Eski `tests/test_grafana_dashboard_provisioning.py` kaldırılmıştır; güncel test havuzunda bu dashboard JSON'unun panel/PromQL içeriğini doğrulayan ayrı bir test yoktur. `tests/shell/install_services_docker_module.bats` yalnız `docker_setup/grafana/dashboards` dizininin varlığını kontrol eder.
 - Prometheus tarafında ölçüm kaynağı `web_server.py` içinde sunulan `/metrics/llm/prometheus` endpoint’idir.
 
 ## 5) Önemli metadata alanları

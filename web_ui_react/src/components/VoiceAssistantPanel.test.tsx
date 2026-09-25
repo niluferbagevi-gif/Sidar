@@ -1,8 +1,14 @@
+import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { VoiceAssistantPanel } from "./VoiceAssistantPanel.tsx";
+import type { ComponentProps } from "react";
+import { VoiceAssistantPanel } from "./VoiceAssistantPanel.js";
 
-const makeVoice = (overrides = {}) => ({
+type VoiceProp = ComponentProps<typeof VoiceAssistantPanel>["voice"];
+
+// Loose fixture (string statuses, partial overrides) cast once to the panel prop type.
+const makeVoice = (overrides: Record<string, unknown> = {}) =>
+  ({
   state: {
     status: "idle",
     isMicActive: false,
@@ -22,7 +28,7 @@ const makeVoice = (overrides = {}) => ({
   interrupt: vi.fn(),
   supported: true,
   ...overrides,
-});
+  }) as unknown as VoiceProp;
 
 describe("VoiceAssistantPanel — temel render", () => {
   it("renders section with voice-panel class", () => {

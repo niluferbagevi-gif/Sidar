@@ -58,7 +58,7 @@ curl -s -X POST http://localhost:7860/admin/policies \
 ## 4) Otomatik doğrulama (repo testi)
 
 ```bash
-pytest -q tests/test_tenant_rbac_scenarios.py
+uv run pytest -q tests/unit/web/test_access_policy_middleware.py
 ```
 
 Bu test dosyası şu iki şeyi kanıtlar:

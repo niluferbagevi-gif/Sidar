@@ -21,9 +21,9 @@ Bu dosya, Sidar projesinin derleme, çalıştırma, test ve kodlama standartlar�
 - **Docker observability profili:** `docker compose -f docker-compose.yml -f docker-compose.observability.yml --profile cpu --profile observability up` (bkz. `docker-compose.observability.yml`)
 
 ### Test ve Denetim
-- **Tüm Testleri Çalıştır:** `pytest`
-- **Belirli Testi Çalıştır:** `pytest tests/test_sidar.py`
-- **Kapsam Analizi:** `pytest --cov=.`
+- **Tüm Testleri Çalıştır:** `uv run pytest` (tam kalite kapısı için `./run_tests.sh`)
+- **Belirli Testi Çalıştır:** `uv run pytest tests/unit/agent/test_sidar_agent.py`
+- **Kapsam Analizi:** `uv run pytest --cov=.`
 
 ### Veritabanı ve Migration
 - **Veritabanı Şemasını Güncelle (PostgreSQL/SQLite):** `alembic upgrade head`

@@ -7,7 +7,7 @@
 > Not (Doğrulama): Bu rapordaki satır sayısı, güncel depoda `wc -l core/memory.py` çıktısına göre **316** olarak ölçülmüştür.
 
 **v3.0 Mimari Değişim:**
-- Eski JSON dosya temelli kalıcılık yerine `core/db.py` üzerinden **asenkron veritabanı** kalıcılığı kullanılır.
+- Eski JSON dosya temelli kalıcılık yerine `core.db` (`core/db/` paketi) üzerinden **asenkron veritabanı** kalıcılığı kullanılır.
 - Oturum ve mesaj işlemleri kullanıcı kimliği (`user_id`) ile izole edilir.
 - Kimliği doğrulanmamış kullanım `MemoryAuthError` ile **fail-closed** engellenir (`_require_active_user`).
 

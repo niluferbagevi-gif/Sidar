@@ -2,8 +2,8 @@ name: Frontend security review
 
 on:
   schedule:
-    # Keep the temporary ESLint advisory exception under active review even
-    # when no pull request happens near its 2026-09-30 expiry date.
+    # Run the strict frontend audit weekly so a newly published advisory in
+    # the (production-excluded) lint toolchain surfaces even without a PR.
     - cron: "17 6 * * 1"
   workflow_dispatch:
 

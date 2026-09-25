@@ -1,3 +1,4 @@
+import { describe, expect, it } from "vitest";
 import {
   buildTaskDraftFromNode,
   clampText,
@@ -13,6 +14,10 @@ import {
   buildTelemetryEdges,
   buildTelemetryNodes,
 } from "../lib/swarmFlowGraph.js";
+import type { GraphNode, Lane, SwarmResult } from "../lib/swarmFlowGraph.js";
+
+// These tests deliberately pass partial fixtures to exercise fallback branches.
+const asNode = (partial: Partial<GraphNode>) => partial as GraphNode;
 
 describe("SwarmFlowPanel helper utilities", () => {
   it("covers helper fallback branches", () => {
@@ -26,9 +31,13 @@ describe("SwarmFlowPanel helper utilities", () => {
     expect(inferTelemetryActor({ content: "reviewer did something", kind: "status" }, ["reviewer"])).toBe("reviewer");
     expect(inferTelemetryActor({ content: "no role text", kind: "tool_call" }, [])).toBe("supervisor");
     expect(inferTelemetryActor({ content: "no role text", kind: "status" }, [])).toBe("system");
-    expect(buildTaskDraftFromNode({ title: "Fallback", body: "Node" }).intent).toBe("mixed");
-    expect(buildTaskDraftFromNode({ subtitle: "   ", actor: "", laneId: "", title: "T", body: "B" }).intent).toBe("mixed");
-    expect(inferHitlActionFromNode()).toBe("graph_review");
+    expect(buildTaskDraftFromNode(asNode({ title: "Fallback", body: "Node" })).intent).toBe("mixed");
+    expect(
+      buildTaskDraftFromNode(
+        asNode({ subtitle: "   ", actor: "", laneId: "", title: "T", body: "B" }),
+      ).intent,
+    ).toBe("mixed");
+    expect(inferHitlActionFromNode(undefined as unknown as GraphNode)).toBe("graph_review");
   });
 
   it("fails closed when a graph has neither the requested nor supervisor lane", () => {
@@ -39,7 +48,7 @@ describe("SwarmFlowPanel helper utilities", () => {
 
   it("covers graph source and telemetry fallbacks", () => {
     const supervisorLane = { id: "lane-supervisor", role: "supervisor", x: 10 };
-    const laneMap = new Map([["supervisor", supervisorLane]]);
+    const laneMap = new Map([["supervisor", supervisorLane as unknown as Lane]]);
     const telemetryNodes = buildTelemetryNodes(
       [{ id: "empty-kind", actor: "unknown", kind: "", content: "status", ts: "" }],
       laneMap,
@@ -47,19 +56,20 @@ describe("SwarmFlowPanel helper utilities", () => {
     );
     expect(telemetryNodes[0].type).toBe("status");
 
-    const supervisorNode = { id: "agent-supervisor" };
+    const supervisorNode = asNode({ id: "agent-supervisor" });
     expect(
-      buildResultEdges([{ id: "result-1" }], [], [], [], supervisorNode, "parallel")[0].from,
+      buildResultEdges([asNode({ id: "result-1" })], [], [], [], supervisorNode, "parallel")[0]
+        .from,
     ).toBe("agent-supervisor");
 
-    const resultNodes = [{ id: "result-coder" }];
-    const responseResults = [{ agent_role: "coder" }];
+    const resultNodes = [asNode({ id: "result-coder" })];
+    const responseResults = [{ agent_role: "coder" } as SwarmResult];
     const telemetry = [
       { id: "telemetry-first", actor: "coder", title: "Status", type: "status" },
       { id: "telemetry-second", actor: "coder", title: "Thought", type: "thought" },
       { id: "telemetry-system", actor: "system", title: "Status", type: "status" },
       { id: "telemetry-no-actor", actor: "", title: "Status", type: "status" },
-    ];
+    ].map(asNode);
     expect(buildTelemetryEdges(telemetry, resultNodes, responseResults).map((edge) => edge.from))
       .toEqual(["result-coder", "telemetry-first", "agent-system", "agent-system"]);
   });

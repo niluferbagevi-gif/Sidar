@@ -1,9 +1,18 @@
+import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { ChatMessage } from "./ChatMessage.tsx";
+import type { ReactNode } from "react";
+import { ChatMessage } from "./ChatMessage.js";
+import type { ChatMessage as ChatMessageModel } from "../hooks/useChatStore.js";
 
 // ReactMarkdown ve eklentilerini stub'la — jsdom ortamında sorunsuz çalışsın
 vi.mock("react-markdown", () => ({
-  default: ({ children, components }) => {
+  default: ({
+    children,
+    components,
+  }: {
+    children?: ReactNode;
+    components?: { pre?: (props: { children: ReactNode }) => ReactNode };
+  }) => {
     const text = String(children || "");
     if (text.includes("```") && components?.pre) {
       return <div data-testid="markdown">{components.pre({ children: <code>demo</code> })}</div>;
@@ -14,14 +23,17 @@ vi.mock("react-markdown", () => ({
 vi.mock("remark-gfm", () => ({ default: () => {} }));
 vi.mock("../lib/rehypeSidarHighlight.js", () => ({ default: () => {} }));
 
-const makeMsg = (overrides = {}) => ({
-  id: "msg-1",
-  role: "user",
-  content: "Merhaba SİDAR",
-  ts: new Date("2024-01-01T10:00:00").getTime(),
-  author_name: "",
-  ...overrides,
-});
+// The fixtures intentionally use a numeric epoch `ts` (the component also accepts
+// numbers at runtime), so they are cast to the store model type.
+const makeMsg = (overrides: Record<string, unknown> = {}) =>
+  ({
+    id: "msg-1",
+    role: "user",
+    content: "Merhaba SİDAR",
+    ts: new Date("2024-01-01T10:00:00").getTime(),
+    author_name: "",
+    ...overrides,
+  }) as unknown as ChatMessageModel;
 
 describe("ChatMessage — kullanıcı mesajı", () => {
   it("renders user message text as plain span", () => {
@@ -53,7 +65,7 @@ describe("ChatMessage — kullanıcı mesajı", () => {
     const { container } = render(<ChatMessage message={makeMsg()} />);
     const timeEl = container.querySelector("time");
     expect(timeEl).toBeTruthy();
-    expect(timeEl.dateTime).toContain("2024-01-01");
+    expect((timeEl as HTMLTimeElement).dateTime).toContain("2024-01-01");
   });
 });
 

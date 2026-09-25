@@ -4,9 +4,9 @@
 
 - **Sahip:** Frontend bakım ekibi
 - **Başlangıç envanteri:** 2026-07-30
-- **İlk ilerleme değerlendirmesi:** 2026-09-30
-- **Hedef tamamlanma:** 2027-03-31
-- **Takvim kaydı:** `docs/reminders/frontend-typescript-review-2026-09-30.ics`
+- **İlk ilerleme değerlendirmesi:** 2026-09-30 (migrasyon 2026-09-25'te tamamlandığı
+  için gereksizleşti; takvim kaydı kaldırıldı)
+- **Hedef tamamlanma:** 2027-03-31 (2026-09-25'te karşılandı)
 
 Başlangıçta `web_ui_react/src` altında 16 `.js`, 42 `.jsx`, 1 `.ts` ve 0 `.tsx`
 dosyası vardı. İlk dilimde `src/hooks/useFormState.ts` de TypeScript'e taşındı;
@@ -89,6 +89,25 @@ tamamı test dosyalarındadır, uygulama kaynağında sıfır hata vardır. Kala
 artık "küçük domain dilimleri" değil, mekanik test dosyası dönüşümüdür; bkz.
 aşağıdaki Nüans notu.
 
+> **Güncel durum (2026-09-25):** Bu paragraftaki sayılar 2026-08-06 anlık görüntüsüdür.
+> O tarihten beri test altyapısı da taşınmıştır: `src/test/setup.js` artık
+> `src/test/setup.ts`'dir (`vite.config.js` → `setupFiles: "./src/test/setup.ts"`).
+> 2026-09-25'te `App.lazyFallback`, `App.chat-status`, `main`,
+> `PanelErrorBoundary` ve `SwarmFlowPanel.helpers` testleri de davranışları
+> değiştirilmeden `.ts`/`.tsx`'e taşınmıştır; ardından `P2PDialoguePanel`, `ChatInput`,
+> `StatusBar`, `ChatMessage`, `ChatWindow` ve `PromptAdminPanel` testleri de aynı
+> şekilde taşınmıştır; üçüncü dilimde `App`, `VoiceAssistantPanel`, `AgentManagerPanel`,
+> `PluginMarketplacePanel` ve `ChatPanel`, dördüncü dilimde `OperationsQaPanel` ve
+> `TenantAdminPanel`, beşinci dilimde `routerShim` ve `SwarmFlowPanel` testleri de
+> taşınmıştır. Altıncı ve son dilimde en büyük test dosyası
+> `hooks/useVoiceAssistant.test.js` (71 test) da `.ts`'e taşınmıştır; mikrofon,
+> WebSocket, `AudioContext` ve ses oynatma fake'leri `unknown` üzerinden daraltılmış
+> tiplerle ifade edilmiştir. **Migrasyon tamamlanmıştır:** güncel `src/` envanteri
+> 0 `.js`, 0 `.jsx`, 27 `.ts`, 45 `.tsx` dosyasıdır (untyped=0; 2026-10-31,
+> 2027-01-31 ve 2027-03-31 hedeflerinin tamamı karşılandı). Tek doğruluk kaynağı
+> `web_ui_react/typescript-migration-baseline.json` ratchet'idir ve `src/` altına
+> yeni `.js`/`.jsx` dosyası eklenmesini fail-closed reddeder.
+
 Bileşen/hook/lib ağacı tamamlandıktan sonraki dedup refactorları da (mevcut
 `.js`/`.jsx` dosyalarını taşımak yerine) doğrudan TypeScript'te yeni dosya olarak
 eklenmiştir: `hooks/useAsyncStatus.ts` (4 admin panelindeki tekrarlanan
@@ -131,10 +150,12 @@ ediyor; milestone tarihine (2026-10-31) kadar hâlâ headroom var.
 
 ## Zorunlu ratchet
 
-`typescript-migration-baseline.json`, en fazla 21 untyped (`.js` + `.jsx`) ve en az
-51 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. Envanter ayrıca bu borcu
-`production_untyped=0` ve `test_untyped=21` olarak ayırır; böylece test migrasyonu devam
-ederken production ağacına yeni JavaScript eklenmesi toplam ratchet içinde gizlenemez.
+`typescript-migration-baseline.json`, en fazla 0 untyped (`.js` + `.jsx`) ve en az
+72 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. Envanter ayrıca bu sayımı
+`production_untyped=0` ve `test_untyped=0` olarak ayırır ve `allowed_untyped_test_files`
+listesi boştur; böylece ne production ne de test ağacına yeni JavaScript eklenebilir.
+`tsconfig.json` içindeki `allowJs` yalnız testlerin kök `vite.config.js` dosyasını
+import edebilmesi için açık kalır (`checkJs: false`).
 `test`, `tests`, `__tests__` dizinleri ile `*.test.*`/`*.spec.*` dosyaları test kaynağı
 sayılır. İlk test dilimi olarak
 `hooks/useFormState.test.js`, davranış ve assertion'ları değiştirilmeden
