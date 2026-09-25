@@ -173,6 +173,13 @@ run_security_analysis_gates() {
     return 1
   fi
 
+  if ! uv run python scripts/ci/check_doc_links.py; then
+    echo "❌ Dokümanlarda var olmayan dosya/yol referansı veya kırık bağlantı bulundu."
+    record_backend_failure "security_failed"
+    BACKEND_EXIT_CODE=1
+    return 1
+  fi
+
   if ! uv run python scripts/ci/check_bandit_suppression_baseline.py; then
     echo "❌ Bandit güvenlik taraması veya suppression ratchet başarısız."
     record_backend_failure "security_failed"
