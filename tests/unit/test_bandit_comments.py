@@ -34,14 +34,16 @@ def test_bandit_suppression_baseline_matches_current_scan_and_quality_gates() ->
     ci = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
     assert baseline["maximum_skipped_tests"] == 8
-    assert [target["maximum_skipped_tests"] for target in baseline["reduction_targets"]] == [
-        0,
-    ]
+    assert baseline["reduction_targets"] == []
     assert baseline["completed_targets"] == [
         {"due_date": "2027-01-31", "maximum_skipped_tests": 40, "achieved_at": "2026-08-28"},
         {"due_date": "2027-04-30", "maximum_skipped_tests": 20, "achieved_at": "2026-09-10"},
     ]
-    assert suppression_baseline._reduction_targets(root / "bandit-suppression-baseline.json")
+    assert [target["maximum_skipped_tests"] for target in baseline["retired_targets"]] == [0]
+    assert suppression_baseline._reduction_targets(root / "bandit-suppression-baseline.json") == []
+    floor = suppression_baseline._structural_floor(root / "bandit-suppression-baseline.json")
+    assert floor is not None
+    assert floor[0] == baseline["maximum_skipped_tests"]
     assert suppression_baseline._requires_exact_baseline(root / "bandit-suppression-baseline.json")
     owner, review_order = suppression_baseline._debt_plan(root / "bandit-suppression-baseline.json")
     assert owner == "security-review"
@@ -234,3 +236,91 @@ def test_db_schema_uses_audited_builder_without_b608_suppressions() -> None:
 
     assert not _NOSEC_B608_RE.search(source)
     assert "from core.db.dialect import render_sql_identifier_template" in source
+
+
+def _write_floor_baseline(path: Path, **floor_overrides: object) -> Path:
+    floor: dict[str, object] = {
+        "maximum_skipped_tests": 8,
+        "decided_at": "2026-09-25",
+        "review_by": "2027-07-31",
+        "reason": "Remaining suppressions are structurally unavoidable.",
+    }
+    floor.update(floor_overrides)
+    path.write_text(
+        json.dumps(
+            {"maximum_skipped_tests": 8, "reduction_targets": [], "structural_floor": floor}
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_empty_reduction_roadmap_requires_a_structural_floor(tmp_path: Path) -> None:
+    """Dropping every dated target is only allowed with a reviewed floor."""
+    baseline = tmp_path / "baseline.json"
+    baseline.write_text(
+        json.dumps({"maximum_skipped_tests": 8, "reduction_targets": []}), encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="structural_floor"):
+        suppression_baseline._reduction_targets(baseline)
+    assert suppression_baseline._reduction_targets(_write_floor_baseline(baseline)) == []
+
+
+def test_structural_floor_is_validated(tmp_path: Path) -> None:
+    """The floor must match the ceiling, explain itself and carry a later review date."""
+    baseline = tmp_path / "baseline.json"
+    assert suppression_baseline._structural_floor(_write_floor_baseline(baseline)) == (
+        8,
+        suppression_baseline.dt.date(2027, 7, 31),
+    )
+
+    for overrides, message in (
+        ({"maximum_skipped_tests": 7}, "mevcut tavana eşit"),
+        ({"maximum_skipped_tests": True}, "mevcut tavana eşit"),
+        ({"reason": "  "}, "reason"),
+        ({"review_by": "someday"}, "YYYY-MM-DD"),
+        ({"review_by": "2026-09-25"}, "decided_at sonrasında"),
+    ):
+        with pytest.raises(ValueError, match=message):
+            suppression_baseline._structural_floor(_write_floor_baseline(baseline, **overrides))
+
+    baseline.write_text(json.dumps({"maximum_skipped_tests": 8}), encoding="utf-8")
+    assert suppression_baseline._structural_floor(baseline) is None
+
+
+def test_overdue_structural_floor_review_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A floor is not permanent: once review_by passes, the gate fails."""
+    baseline = _write_floor_baseline(tmp_path / "baseline.json")
+    json_payload = json.loads(baseline.read_text(encoding="utf-8"))
+    json_payload["debt_plan"] = {
+        "owner": "security-review",
+        "review_order": ["a.py"],
+        "rule": "Do not bulk-remove suppressions.",
+    }
+    json_payload["require_exact_baseline"] = True
+    baseline.write_text(json.dumps(json_payload), encoding="utf-8")
+
+    def fake_run(command: list[str], **_: object) -> object:
+        report = Path(command[command.index("-o") + 1])
+        report.write_text('{"metrics":{"_totals":{"skipped_tests":8}}}', encoding="utf-8")
+        return type("Completed", (), {"returncode": 0})()
+
+    class FakeDate(suppression_baseline.dt.date):
+        current = suppression_baseline.dt.date(2027, 7, 31)
+
+        @classmethod
+        def today(cls) -> suppression_baseline.dt.date:
+            return cls.current
+
+    monkeypatch.setattr(suppression_baseline.subprocess, "run", fake_run)
+    monkeypatch.setattr(suppression_baseline.dt, "date", FakeDate)
+
+    assert suppression_baseline.main(["--baseline", str(baseline), "--root", str(tmp_path)]) == 0
+    assert "yapısal tabanı: maximum=8, review_by=2027-07-31" in capsys.readouterr().out
+
+    FakeDate.current = suppression_baseline.dt.date(2027, 8, 1)
+    assert suppression_baseline.main(["--baseline", str(baseline), "--root", str(tmp_path)]) == 1
+    assert "yeniden inceleme tarihi geçti" in capsys.readouterr().err

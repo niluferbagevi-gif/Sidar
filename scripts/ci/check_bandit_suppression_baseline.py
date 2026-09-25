@@ -36,8 +36,17 @@ def _reduction_targets(path: Path) -> list[tuple[dt.date, int]]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     initial = payload.get("maximum_skipped_tests")
     raw_targets = payload.get("reduction_targets")
-    if not isinstance(initial, int) or not isinstance(raw_targets, list) or not raw_targets:
+    if not isinstance(initial, int) or not isinstance(raw_targets, list):
         raise ValueError("reduction_targets boş olmayan bir liste olmalıdır")
+    if not raw_targets:
+        # An empty roadmap is only acceptable once a reviewed structural floor
+        # documents why no further reduction is possible (see _structural_floor).
+        if not isinstance(payload.get("structural_floor"), dict):
+            raise ValueError(
+                "reduction_targets boş olmayan bir liste olmalıdır "
+                "(ya da gerekçeli bir structural_floor tanımlanmalıdır)"
+            )
+        return []
     targets: list[tuple[dt.date, int]] = []
     previous_limit = initial
     for item in raw_targets:
@@ -55,6 +64,40 @@ def _reduction_targets(path: Path) -> list[tuple[dt.date, int]]:
         targets.append((due_date, limit))
         previous_limit = limit
     return targets
+
+
+def _structural_floor(path: Path) -> tuple[int, dt.date] | None:
+    """Return the reviewed irreducible suppression floor and its review date.
+
+    A floor replaces the dated reduction roadmap once a source-level review has
+    shown the remaining suppressions cannot be removed without dropping
+    functionality. It must equal the current ceiling, carry its reasoning and
+    expire on a ``review_by`` date so it is re-examined rather than permanent.
+    """
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    floor = payload.get("structural_floor")
+    if floor is None:
+        return None
+    if not isinstance(floor, dict):
+        raise ValueError("structural_floor object olmalıdır")
+    value = floor.get("maximum_skipped_tests")
+    if (
+        not isinstance(value, int)
+        or isinstance(value, bool)
+        or value != payload.get("maximum_skipped_tests")
+    ):
+        raise ValueError("structural_floor.maximum_skipped_tests mevcut tavana eşit olmalıdır")
+    reason = floor.get("reason")
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValueError("structural_floor.reason boş olmayan string olmalıdır")
+    try:
+        decided_at = dt.date.fromisoformat(floor["decided_at"])
+        review_by = dt.date.fromisoformat(floor["review_by"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("structural_floor.decided_at/review_by YYYY-MM-DD olmalıdır") from exc
+    if review_by <= decided_at:
+        raise ValueError("structural_floor.review_by decided_at sonrasında olmalıdır")
+    return value, review_by
 
 
 def _debt_plan(path: Path) -> tuple[str, tuple[str, ...]]:
@@ -99,6 +142,7 @@ def main(argv: list[str] | None = None) -> int:
         limit = _baseline_limit(args.baseline)
         require_exact = _requires_exact_baseline(args.baseline)
         targets = _reduction_targets(args.baseline)
+        floor = _structural_floor(args.baseline)
         owner, review_order = _debt_plan(args.baseline)
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         print(f"Bandit suppression baseline geçersiz: {exc}", file=sys.stderr)
@@ -140,6 +184,20 @@ def main(argv: list[str] | None = None) -> int:
             "Bandit suppression azaltma hedefi: "
             f"due_date={effective_target[0].isoformat()}, maximum={effective_target[1]}"
         )
+    if floor:
+        floor_value, floor_review_by = floor
+        print(
+            "Bandit suppression yapısal tabanı: "
+            f"maximum={floor_value}, review_by={floor_review_by.isoformat()}"
+        )
+        if floor_review_by < today:
+            print(
+                "Bandit suppression yapısal tabanının yeniden inceleme tarihi geçti "
+                f"(review_by={floor_review_by.isoformat()}). Kalan suppression'ları "
+                "yeniden inceleyip tabanı yeni bir tarihle onaylayın veya azaltın.",
+                file=sys.stderr,
+            )
+            return 1
     overdue = [(date, value) for date, value in targets if date < today and skipped > value]
     if overdue:
         due_date, target = overdue[-1]
