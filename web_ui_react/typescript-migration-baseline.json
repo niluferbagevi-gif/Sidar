@@ -1,10 +1,10 @@
 {
   "captured_at": "2026-09-25",
   "owner": "Frontend bakım ekibi",
-  "maximum_untyped_files": 16,
+  "maximum_untyped_files": 10,
   "maximum_production_untyped_files": 0,
-  "maximum_test_untyped_files": 16,
-  "minimum_typed_files": 56,
+  "maximum_test_untyped_files": 10,
+  "minimum_typed_files": 62,
   "milestones": [
     {
       "deadline": "2026-10-31",
@@ -25,15 +25,9 @@
   "allowed_untyped_test_files": [
     "src/App.test.jsx",
     "src/components/AgentManagerPanel.test.jsx",
-    "src/components/ChatInput.test.jsx",
-    "src/components/ChatMessage.test.jsx",
     "src/components/ChatPanel.test.jsx",
-    "src/components/ChatWindow.test.jsx",
     "src/components/OperationsQaPanel.test.jsx",
-    "src/components/P2PDialoguePanel.test.jsx",
     "src/components/PluginMarketplacePanel.test.jsx",
-    "src/components/PromptAdminPanel.test.jsx",
-    "src/components/StatusBar.test.jsx",
     "src/components/SwarmFlowPanel.test.jsx",
     "src/components/TenantAdminPanel.test.jsx",
     "src/components/VoiceAssistantPanel.test.jsx",

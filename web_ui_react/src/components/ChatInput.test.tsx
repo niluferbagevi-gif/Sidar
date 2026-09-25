@@ -1,12 +1,14 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ChatInput } from "./ChatInput.jsx";
+import { ChatInput } from "./ChatInput.js";
 
 // useChatStore mock — isStreaming kontrolü için
 const mockStore = { isStreaming: false };
 
 vi.mock("../hooks/useChatStore.js", () => ({
-  useChatStore: (selector) => (typeof selector === "function" ? selector(mockStore) : mockStore),
+  useChatStore: (selector?: (state: typeof mockStore) => unknown) =>
+    typeof selector === "function" ? selector(mockStore) : mockStore,
 }));
 
 describe("ChatInput", () => {
