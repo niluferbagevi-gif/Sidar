@@ -1,5 +1,7 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { GraphNode } from "../lib/swarmFlowGraph.js";
 import {
   SwarmFlowPanel,
   buildTaskDraftFromNode,
@@ -22,7 +24,7 @@ const { telemetryState } = vi.hoisted(() => ({
 }));
 
 vi.mock("../hooks/useChatStore.js", () => ({
-  useChatStore: (selector) => {
+  useChatStore: (selector?: (state: { telemetryEvents: unknown }) => unknown) => {
     const state = { telemetryEvents: telemetryState.events };
     return typeof selector === "function" ? selector(state) : state;
   },
@@ -30,7 +32,9 @@ vi.mock("../hooks/useChatStore.js", () => ({
 
 vi.mock("../lib/api.js", () => ({ fetchJson }));
 
-const bootstrapApiMock = ({ activityItems = [], pending = [] } = {}) => async (url) => {
+const bootstrapApiMock =
+  ({ activityItems = [] as unknown[], pending = [] as unknown[] } = {}) =>
+  async (url: string) => {
   if (url === "/api/autonomy/activity?limit=8") {
     return {
       activity: {
@@ -59,9 +63,15 @@ describe("SwarmFlowPanel helper exports", () => {
     expect(inferTelemetryActor({ content: "reviewer did something", kind: "status" }, ["reviewer"])).toBe("reviewer");
     expect(inferTelemetryActor({ content: "no role text", kind: "tool_call" }, [])).toBe("supervisor");
     expect(inferTelemetryActor({ content: "no role text", kind: "status" }, [])).toBe("system");
-    expect(buildTaskDraftFromNode({ title: "Fallback", body: "Node" }).intent).toBe("mixed");
-    expect(buildTaskDraftFromNode({ subtitle: "   ", actor: "", laneId: "", title: "T", body: "B" }).intent).toBe("mixed");
-    expect(inferHitlActionFromNode()).toBe("graph_review");
+    // Partial fixtures deliberately exercise the fallback branches.
+    const asNode = (partial: Partial<GraphNode>) => partial as GraphNode;
+    expect(buildTaskDraftFromNode(asNode({ title: "Fallback", body: "Node" })).intent).toBe("mixed");
+    expect(
+      buildTaskDraftFromNode(
+        asNode({ subtitle: "   ", actor: "", laneId: "", title: "T", body: "B" }),
+      ).intent,
+    ).toBe("mixed");
+    expect(inferHitlActionFromNode(undefined as unknown as GraphNode)).toBe("graph_review");
   });
 });
 
@@ -518,7 +528,9 @@ describe("SwarmFlowPanel", () => {
     render(<SwarmFlowPanel />);
     const goalBoxes = await screen.findAllByPlaceholderText("Görevin açıklaması");
     await user.type(goalBoxes[0], "X");
-    expect(screen.getAllByPlaceholderText("Görevin açıklaması")[0].value).toContain("X");
+    expect(
+      (screen.getAllByPlaceholderText("Görevin açıklaması")[0] as HTMLTextAreaElement).value,
+    ).toContain("X");
   });
 
   it("covers inferHitlActionFromNode branches for task, result-warning and handoff nodes", async () => {
@@ -551,10 +563,10 @@ describe("SwarmFlowPanel", () => {
     await user.click(await screen.findByRole("button", { name: "Swarm Başlat" }));
     await waitFor(() => expect(screen.getByText("handoff outcome")).toBeInTheDocument());
 
-    const openReviewForNode = async (predicate) => {
+    const openReviewForNode = async (predicate: (button: HTMLElement) => boolean) => {
       const node = screen.getAllByRole("button").find(predicate);
       expect(node).toBeTruthy();
-      node.focus();
+      (node as HTMLElement).focus();
       await user.keyboard("[Enter]");
       await user.click(screen.getByRole("button", { name: "İnceleme İsteği Aç" }));
     };
@@ -657,7 +669,7 @@ describe("SwarmFlowPanel", () => {
 
     const hitlCall = fetchJson.mock.calls.find(([url]) => url === "/api/hitl/request");
     expect(hitlCall).toBeTruthy();
-    expect(hitlCall[1].body).toContain('"action":"graph_review"');
+    expect((hitlCall as [string, { body: string }])[1].body).toContain('"action":"graph_review"');
   });
 
   it("preserves previous error state when multiple fetches fail concurrently", async () => {
@@ -680,8 +692,8 @@ describe("SwarmFlowPanel", () => {
 
   it("covers disabled states during actionBusy and running", async () => {
     const user = userEvent.setup();
-    let resolveSwarm;
-    let resolveHitl;
+    let resolveSwarm: (value: unknown) => void = () => {};
+    let resolveHitl: (value: unknown) => void = () => {};
 
     fetchJson.mockImplementation((url, options) => {
       if (url === "/api/autonomy/activity?limit=8") {
@@ -708,7 +720,7 @@ describe("SwarmFlowPanel", () => {
     await screen.findByRole("button", { name: "Swarm Başlat" });
     const firstNode = screen.getAllByRole("button").find((node) => node.className?.includes("swarm-graph__node"));
     expect(firstNode).toBeTruthy();
-    firstNode.focus();
+    (firstNode as HTMLElement).focus();
     await user.keyboard("[Enter]");
 
     await user.click(screen.getByRole("button", { name: "Swarm Başlat" }));
@@ -767,7 +779,7 @@ describe("SwarmFlowPanel", () => {
 
     const firstNode = screen.getAllByRole("button").find((node) => node.className?.includes("swarm-graph__node"));
     expect(firstNode).toBeTruthy();
-    firstNode.focus();
+    (firstNode as HTMLElement).focus();
     await user.keyboard("[Enter]");
 
     await user.click(screen.getByRole("button", { name: "Run node" }));
@@ -1021,7 +1033,7 @@ describe("SwarmFlowPanel", () => {
   it("covers fallback branches for task/result/handoff linking and preserves earlier error on pending refresh failure", async () => {
     const user = userEvent.setup();
     let pendingRefreshCount = 0;
-    let resolveApproval;
+    let resolveApproval: (value: unknown) => void = () => {};
 
     fetchJson.mockImplementation((url, options) => {
       if (url === "/api/autonomy/activity?limit=8") {
@@ -1166,7 +1178,7 @@ describe("SwarmFlowPanel error and pending approval fallbacks", () => {
 
   it("disables reject action while approval response is in-flight", async () => {
     const user = userEvent.setup();
-    let resolveDecision;
+    let resolveDecision: (value: unknown) => void = () => {};
     fetchJson.mockImplementation((url, options) => {
       if (url === "/api/autonomy/activity?limit=8") {
         return Promise.resolve({ activity: { items: [], counts_by_status: {}, counts_by_source: {}, total: 0 } });
