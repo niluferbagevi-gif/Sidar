@@ -24,9 +24,12 @@ from __future__ import annotations
 
 import argparse
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+from core.utils.trusted_subprocess import run_trusted_command
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -97,9 +100,17 @@ BACKTICK_RE = re.compile(r"`([^`\s]+)`")
 
 
 def tracked_files(root: Path) -> list[str]:
-    """Return the repo-relative paths tracked by git under ``root``."""
-    output = subprocess.run(
-        ["git", "ls-files", "-z"],
+    """Return the repo-relative paths tracked by git under ``root``.
+
+    Raises:
+        OSError: When no absolute ``git`` executable is on ``PATH``.
+        subprocess.CalledProcessError: When ``git ls-files`` fails.
+    """
+    git_binary = shutil.which("git")
+    if not git_binary or not Path(git_binary).is_absolute():
+        raise OSError("git çalıştırılabilir dosyası PATH üzerinde bulunamadı")
+    output = run_trusted_command(
+        [git_binary, "ls-files", "-z"],
         cwd=root,
         check=True,
         capture_output=True,

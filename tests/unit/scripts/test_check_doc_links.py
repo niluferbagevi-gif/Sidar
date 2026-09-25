@@ -36,6 +36,16 @@ def test_tracked_files_lists_git_index(tmp_path) -> None:
     assert sorted(checker.tracked_files(tmp_path)) == ["a.md", "sub/b.py", "untracked.md"]
 
 
+def test_tracked_files_requires_an_absolute_git_binary(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(checker.shutil, "which", lambda name: None)
+    with pytest.raises(OSError, match="git"):
+        checker.tracked_files(tmp_path)
+
+    monkeypatch.setattr(checker.shutil, "which", lambda name: "git")
+    with pytest.raises(OSError, match="git"):
+        checker.tracked_files(tmp_path)
+
+
 def test_living_docs_skips_historical_records_and_non_markdown() -> None:
     files = [
         "README.md",
