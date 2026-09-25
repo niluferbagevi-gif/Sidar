@@ -108,21 +108,21 @@ FULL       → tam erişim (shell, git, npm, proje geneli yazma)
 
 Güncel depoda test envanteri kurumsal kalite kapılarına göre agresif biçimde genişletilmiştir:
 
-- **`test_*.py` modül sayısı:** **213**
-- **`tests/*.py` toplamı (`conftest.py` + `__init__.py` dahil):** **215**
-- **Toplam test satırı (`tests/*.py`):** **65.729**
-- **Kapsama politikası:** `pyproject.toml` (`[tool.coverage.*]`, `[tool.pytest.ini_options]`), `run_tests.sh` ve CI hattı ile yönetilen **%90 hard gate**
+- **`test_*.py` modül sayısı (2026-09-25 ölçümü, `tests/` altında özyinelemeli):** **299**
+- **`tests/**/*.py` toplamı (`conftest.py`, `__init__.py` ve yardımcılar dahil):** **327**
+- **Toplam test satırı (`tests/**/*.py`):** **123.031**
+- **Kapsama politikası:** `pyproject.toml` (`[tool.coverage.report].fail_under = 100`, `[tool.pytest.ini_options]`), `run_tests.sh` ve CI hattı ile yönetilen ratchet tabanlı **%100 hard gate**
 
-**Öne çıkan test kategorileri (v5.0.0-alpha):**
-- **Coverage / Sert kalite kapısı:** `test_quick_100.py`, `test_ultimate_coverage.py`, `pytest-cov`, `.coveragerc`, `run_tests.sh`
-- **Kurumsal izolasyon ve RBAC:** `test_tenant_rbac_scenarios.py`, `test_rbac_policy_runtime.py`, `test_db_postgresql_branches.py`
-- **Güvenlik (DLP & HITL):** `test_dlp_masking.py`, `test_hitl_approval.py`, `test_github_webhook.py`, `test_web_ui_security_improvements.py`
-- **Semantic Cache / Redis:** `test_semantic_cache_runtime.py`, `test_llm_client_retry_helpers.py`
-- **Çoklu ajan ve Swarm:** `test_swarm_orchestrator.py`, `test_supervisor_agent.py`, `test_reviewer_agent.py`, `test_event_stream_runtime.py`
-- **Plugin Marketplace:** `test_plugin_marketplace_flow.py` — dinamik ajan yükleme, `AgentRegistry` kaydı ve çağrı akışı doğrulaması
-- **Observability / OTel:** `test_otel_rag_spans.py`, `test_observability_stack_compose.py`, `test_llm_metrics_runtime.py`, `test_grafana_dashboard_provisioning.py`
-- **LLM-as-a-Judge ve Active Learning:** `test_llm_judge.py`, `test_active_learning.py`
-- **Altyapı ve migration:** `test_migration_assets.py`, `test_migration_ci_guards.py`, `test_observability_stack_compose.py`, `test_sandbox_runtime_profiles.py`
+**Öne çıkan test kategorileri (güncel `tests/{unit,integration,smoke,e2e,...}` yerleşimi):**
+- **Coverage / Sert kalite kapısı:** `pytest-cov`, `pyproject.toml [tool.coverage.*]`, `run_tests.sh`, `tests/unit/scripts/test_run_tests_quality_gate.py`
+- **Kurumsal izolasyon ve RBAC:** `tests/unit/web/test_access_policy_middleware.py`, `tests/integration/db/test_db_migrations_integration.py`, `tests/integration/db/test_pg_connection_pool_stress.py`
+- **Güvenlik (DLP & HITL):** `tests/unit/core/test_dlp.py`, `tests/unit/core/test_hitl.py`, `tests/unit/web/test_webhooks_router.py`, `tests/unit/web/test_security.py`
+- **Semantic Cache / Redis:** `tests/unit/core/test_semantic_cache.py`, `tests/unit/core/test_cache_metrics.py`, `tests/unit/core/test_llm_client.py`
+- **Çoklu ajan ve Swarm:** `tests/test_swarm_orchestrator.py`, `tests/unit/agent/test_swarm.py`, `tests/unit/agent/core/test_supervisor.py`, `tests/unit/agent/roles/test_reviewer_agent.py`, `tests/unit/agent/core/test_event_stream.py`
+- **Plugin Marketplace:** `tests/unit/web/routes/test_plugin_marketplace.py` — install/uninstall/reload zinciri ve canlı eklenti durumu doğrulaması
+- **Observability / Metrics:** `tests/unit/core/test_llm_metrics.py`, `tests/integration/api/test_web_server_voice_and_metrics.py`, `tests/unit/web/routes/test_health_runtime.py`
+- **LLM-as-a-Judge ve Active Learning:** `tests/unit/core/test_judge.py`, `tests/unit/core/test_active_learning.py`, `tests/test_active_learning.py`
+- **Altyapı ve migration:** `tests/unit/migrations/`, `tests/test_migration_ci_guards.py`, `tests/integration/web/test_plugin_sandbox_integration.py`, `tests/integration/web/test_plugin_sandbox_container_escape.py`
 
 > Not: Önceki audit notlarında geçen 0 bayt test artifact uyarıları tarihsel kayıt niteliğindedir; güncel pipeline `find tests -type f -size 0` kontrolüyle bu durumu bloklayıcı kalite kapısı olarak yönetir.
 
@@ -134,8 +134,8 @@ Güncel depoda test envanteri kurumsal kalite kapılarına göre agresif biçimd
 | Coverage Quality Gate (local/CI ratchet-managed baseline `fail_under=100`, tüm standart profiller fail-closed) | ✅ Zorunlu | `pyproject.toml`, `run_tests.sh`, `.github/workflows/ci.yml`, `AGENTS.md §2.5.4` |
 | Final birleşik coverage adımı (`coverage report --fail-under=${COVERAGE_FAIL_UNDER}`) | ✅ Aktif | `.github/workflows/ci.yml` |
 | Boş test artifact engeli (`find tests -size 0`) | ✅ Zorunlu | `.github/workflows/ci.yml`, `scripts/check_empty_test_artifacts.sh` |
-| `pg_stress` izolasyonu | ✅ Aktif | `.github/workflows/ci.yml`, `tests/test_db_postgresql_branches.py` |
-| Sandbox/Reviewer sertleştirme testi | ✅ Aktif | `tests/test_sandbox_runtime_profiles.py`, `tests/test_reviewer_agent.py` |
+| `pg_stress` izolasyonu | ✅ Aktif | `.github/workflows/ci.yml`, `tests/integration/db/test_pg_connection_pool_stress.py` |
+| Sandbox/Reviewer sertleştirme testi | ✅ Aktif | `tests/integration/web/test_plugin_sandbox_container_escape.py`, `tests/unit/agent/roles/test_reviewer_agent.py` |
 | Swarm + Active Learning hedefli regresyon dilimi | ✅ Aktif | `.github/workflows/ci.yml`, `tests/test_swarm_orchestrator.py`, `tests/test_active_learning.py` |
 | Production cutover rehearsal genişletmesi | ✅ Aktif | `.github/workflows/migration-cutover-checks.yml`, `tests/test_migration_ci_guards.py`, `tests/test_swarm_orchestrator.py`, `tests/test_active_learning.py` |
 
@@ -174,20 +174,20 @@ uygular. `run_tests.sh` betiği yerel kullanımda da aynı resolver'ı
 profilin seçildiğini (`local | ci | campaign | explicit-override`) ve
 ratchet üst sınırını birlikte loglar.
 - `migration-cutover-checks.yml` production rehearsal hattı da aynı Swarm + Active Learning dilimini `tests/test_migration_ci_guards.py` guard testi ile birlikte çalıştırarak veri migrasyonu, connection pool smoke ve öğrenme/orkestrasyon omurgasını tek cutover zincirinde toplar.
-- Depoda `test_quick_100.py` ve `test_ultimate_coverage.py` gibi agresif kapsama odaklı testler bulunur; bu yaklaşım, "test çalıştı" seviyesinin ötesinde **ölçülebilir kapsam** zorunluluğu getirir.
+- Kapsama kapısı ratchet ile yönetilen `fail_under = 100` baseline'ına bağlıdır (eski `test_quick_100.py` / `test_ultimate_coverage.py` gibi toplu kapsama dosyaları kaldırılmış, testler modül bazlı `tests/unit/...` yerleşimine taşınmıştır); bu yaklaşım, "test çalıştı" seviyesinin ötesinde **ölçülebilir kapsam** zorunluluğu getirir.
 
 ### 6.3 Test Havuzu ve Modüler Senaryolar
 
-- Güncel depoda `test_*.py` desenine uyan **213 test modülü** bulunur; `tests/*.py` toplamı (yardımcı dosyalar dahil) **215** adettir.
+- Güncel depoda `test_*.py` desenine uyan **299 test modülü** bulunur; `tests/**/*.py` toplamı (yardımcı dosyalar dahil) **327** adettir (2026-09-25 ölçümü).
 - Test havuzu yalnızca klasik unit testlerden oluşmaz; tenant veri izolasyonu, RBAC policy enforcement, DLP maskeleme, HITL onay akışı, semantic cache eviction/benzerlik mantığı, swarm görev dağıtımı ve plugin marketplace gibi enterprise senaryoları kapsar.
-- Örnek yüksek değerli senaryolar: `test_tenant_rbac_scenarios.py`, `test_dlp_masking.py`, `test_hitl_approval.py`, `test_semantic_cache_runtime.py`, `test_swarm_orchestrator.py`, `test_plugin_marketplace_flow.py`, `test_otel_rag_spans.py`, `test_llm_judge.py`, `test_active_learning.py`.
+- Örnek yüksek değerli senaryolar: `tests/unit/web/test_access_policy_middleware.py`, `tests/unit/core/test_dlp.py`, `tests/unit/core/test_hitl.py`, `tests/unit/core/test_semantic_cache.py`, `tests/test_swarm_orchestrator.py`, `tests/unit/web/routes/test_plugin_marketplace.py`, `tests/unit/core/test_judge.py`, `tests/unit/core/test_active_learning.py`.
 
 ### 6.4 Asenkron Test Altyapısı
 
 - `pyproject.toml` `[tool.pytest.ini_options]` içinde `python_files = test_*.py`, `asyncio_mode = auto` ve `asyncio_default_fixture_loop_scope = "function"` ayarları ile async testler otomatik olarak test başına ayrı event loop'ta çalışır.
 - `tests/conftest.py` standart `pytest-asyncio` mimarisine geçirilmiştir: deprecated `event_loop` override kaldırılmış, event loop kapsamı `pyproject.toml` `[tool.pytest.ini_options]` üzerinden yapılandırılmıştır.
 - `[tool.pytest.ini_options]` altına `slow` ve `pg_stress` marker'ları eklenmiştir; PostgreSQL bağlantı havuzu stres testleri `-m pg_stress` ile izole çalıştırılabilir.
-- CI (`.github/workflows/ci.yml`) üzerinde ayrı `pg-stress` job'ı yer alır; PostgreSQL 16 service container, Alembic migration ve `tests/test_db_postgresql_branches.py` üstünden bağlantı havuzu yük testi otomatik olarak çalışır.
+- CI (`.github/workflows/ci.yml`) üzerinde ayrı `pg-stress` job'ı yer alır; PostgreSQL 16 service container, Alembic migration ve `tests/integration/db/` altındaki `pg_stress` işaretli testler (`test_pg_connection_pool_stress.py`) üstünden bağlantı havuzu yük testi otomatik olarak çalışır.
 
 ---
 

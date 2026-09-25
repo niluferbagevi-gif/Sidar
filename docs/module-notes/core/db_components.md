@@ -6,7 +6,7 @@
 
 ## Amaç
 
-`core/db.py.md`'de anlatılan `core/db/` facade parçalanmasının bir adım
+`docs/module-notes/core/db.py.md`'de anlatılan `core/db/` facade parçalanmasının bir adım
 gerisinde duran, düşük seviyeli dialect/migration yardımcıları. `core/db/
 dialect.py` ve `core/db/alembic_runner.py`, bu paketten re-export ederek
 geriye dönük uyumluluğu korur.

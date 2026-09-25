@@ -19,7 +19,7 @@
 **Sidar**, ReAct (Reason + Act) döngüsüyle çalışan, async-first mimariye sahip bir yazılım mühendisi AI asistanıdır. Yerel LLM (Ollama) veya bulut tabanlı LLM'ler (Google Gemini, OpenAI, Anthropic ve LiteLLM Gateway/OpenRouter benzeri ara katmanlar) ile çalışabilir; CLI, FastAPI tabanlı Web UI ve opsiyonel Eel masaüstü launcher sunar.
 
 ### Temel Özellikler
-- **Arayüzler:** CLI (`cli.py`), Web (`web_server.py` + `web_ui/` veya build varsa `web_ui_react/dist`) ve opsiyonel Eel launcher (`gui_launcher.py`)
+- **Arayüzler:** CLI (`cli.py`), Web (`web_server.py` + `web_ui_react/dist` React SPA build'i; legacy `web_ui/` kaldırılmıştır) ve opsiyonel Eel launcher (`gui_launcher.py`)
 - **Çoklu LLM sağlayıcı:** Ollama (yerel), Gemini, OpenAI, Anthropic ve LiteLLM Gateway (bulut/proxy)
 - **Multi-Agent + P2P Delegasyon:** Supervisor orkestrasyonu ile görevleri uzman rollere (Coder, Researcher, Reviewer) dağıtır; `agent/core/contracts.py` ile ajanlar arası P2P görev sözleşmesi desteklenir.
 - **Dinamik Ajan Pazaryeri (Plugin Marketplace) ve Swarm API:** Çalışma zamanında yeni plugin ajanlar kayıt defterine eklenebilir; `AgentRegistry` + `SwarmOrchestrator` ile paralel veya pipeline görev akışları işletilir (`agent/registry.py`, `agent/swarm.py`).
@@ -48,7 +48,7 @@
 - **Active Learning + LoRA/QLoRA Fine-tuning:** Onaylanan çıktılardan veri seti oluşturma (jsonl/alpaca/sharegpt), SQLite/PG async FeedbackStore, PEFT entegrasyonu (`core/active_learning.py`).
 - **Multimodal Vision Pipeline:** UI mockup/görsel → kod üretimi; OpenAI/Anthropic/Gemini/Ollama provider formatları, base64 görsel yükleme (`core/vision.py`).
 - **Multimodal Perception + Duplex Voice (Tamamlandı / Faz B):** `core/multimodal.py`, `/ws/voice` ve `core/voice.py` ile medya ingestion, STT, assistant turn kimliği, duplex output buffer, VAD olayları ve barge-in destekli TTS segmentasyon akışı ürünleşmiş durumda.
-- **İstemci Tarafı Ses Deneyimi (Faz C derinleşmesi):** `VoiceAssistantPanel.jsx` ve `useVoiceAssistant.js`, mikrofon izni, `MediaRecorder` akışı, VAD durum takibi, transcript diyagnostiği ve kullanıcının SİDAR konuşmasını kesebilmesini React UI üzerinde görünür hale getirir.
+- **İstemci Tarafı Ses Deneyimi (Faz C derinleşmesi):** `VoiceAssistantPanel.tsx` ve `useVoiceAssistant.ts`, mikrofon izni, `MediaRecorder` akışı, VAD durum takibi, transcript diyagnostiği ve kullanıcının SİDAR konuşmasını kesebilmesini React UI üzerinde görünür hale getirir.
 - **Otonom Remediation / Self-Healing (Faz C):** `core/ci_remediation.py`, `agent/sidar_agent.py`, `agent/roles/reviewer_agent.py` ve `managers/code_manager.py` birlikte düşük riskli CI arızaları için patch planı üretir, sandbox'ta doğrular, gerekirse rollback yapar ve yüksek riskte HITL kapısına döner.
 - **Nightly Memory Pruning / Konsolidasyon (Faz D):** Sistem idle kaldığında `ConversationMemory` eski oturumları özetleyip sıkıştırır, `DocumentStore` aynı oturumdaki düşük değerli RAG belgelerini `memory://nightly-digest` özetine konsolide eder ve `EntityMemory` TTL bakımını çalıştırır; böylece uzun soluklu projelerde hafıza bir insan gibi tazelenir.
 - **Dynamic Browser Automation (Tamamlandı / v5.0-alpha):** `managers/browser_manager.py` Playwright/Selenium sağlayıcı soyutlaması, zorunlu HITL geçidi, audit trail ve reviewer/swarm akışına taşınabilen browser signal özetleri ile kontrollü tarayıcı oturumlarını yönetiyor.
@@ -61,10 +61,10 @@
 
 ### Mevcut Durum ve Tamamlanan Özellikler
 
-- **Plugin Marketplace (Faz D):** `PluginMarketplacePanel.tsx` çalışma zamanında yüklenen ajan eklentilerini UI üzerinden görünür kılar; `tests/test_plugin_marketplace_hot_reload.py` ise `aws_management_agent.py` ve `slack_notification_agent.py` benzeri ajanların kesintisiz hot-reload zincirini doğrular.
-- **Multiplayer Collaboration Workspace (Faz D):** `AgentManagerPanel.tsx` ve `useWebSocket.js`, çoklu operatörün aynı çalışma yüzeyini paylaşabildiği anlık durum senkronizasyonunu taşır; `tests/test_collaboration_workspace.py` bu çok kullanıcılı orkestrasyon davranışını regresyon güvencesine bağlar.
-- **Nightly Memory Maintenance (Faz D):** `tests/test_nightly_memory_maintenance.py` ile doğrulanan gece bakım döngüsü, PGVector/RAG belleğinin şişmesini önlemek için oturum özetleme, belge konsolidasyonu ve TTL temizliğini planlı biçimde uygular.
-- **Chaos Engineering Hazırlığı (Faz D):** `runbooks/chaos_live_rehearsal.md` ve `tests/test_system_health_dependency_checks.py`, PostgreSQL veya Redis kesintilerinde sistemin fail-safe davranmasını ve operasyon ekibinin tekrar prova edilebilir bir kurtarma akışı izlemesini sağlar.
+- **Plugin Marketplace (Faz D):** `PluginMarketplacePanel.tsx` çalışma zamanında yüklenen ajan eklentilerini UI üzerinden görünür kılar; `tests/unit/web/routes/test_plugin_marketplace.py` ise marketplace eklentilerinin install/uninstall/reload zincirini, `tests/unit/root/test_web_server.py` de `reload_plugin_marketplace_item` üzerinden kesintisiz hot-reload akışını doğrular.
+- **Multiplayer Collaboration Workspace (Faz D):** `AgentManagerPanel.tsx` ve `useWebSocket.ts`, çoklu operatörün aynı çalışma yüzeyini paylaşabildiği anlık durum senkronizasyonunu taşır; `tests/unit/web/routes/test_collaboration.py` bu çok kullanıcılı orkestrasyon davranışını regresyon güvencesine bağlar.
+- **Nightly Memory Maintenance (Faz D):** `tests/unit/agent/maintenance/test_nightly.py` ile doğrulanan gece bakım döngüsü, PGVector/RAG belleğinin şişmesini önlemek için oturum özetleme, belge konsolidasyonu ve TTL temizliğini planlı biçimde uygular.
+- **Chaos Engineering Hazırlığı (Faz D):** `runbooks/chaos_live_rehearsal.md` ve `tests/unit/managers/test_system_health.py`, PostgreSQL veya Redis kesintilerinde sistemin fail-safe davranmasını ve operasyon ekibinin tekrar prova edilebilir bir kurtarma akışı izlemesini sağlar.
 
 ### SİDAR'ın Geleceği: Otonom Şirket Simülasyonu
 
@@ -291,17 +291,17 @@ Bu bölüm, v4.3.0 kod tabanındaki Faz 4 (kurumsal yetenekler) ve Faz 5 (multi-
 
 | Bölüm | Modül | Modül Notu |
 |---|---|---|
-| 3.27 | `web_ui/`, `web_ui_react/`, `VoiceAssistantPanel.jsx`, `useVoiceAssistant.js` | `web_ui/` için ayrı modül notu henüz yok; React SPA için ayrı modül notu henüz yok, ancak duplex ses UX bileşenleri rapor içinde ayrıca belgelenmiştir |
+| 3.27 | `web_ui_react/`, `VoiceAssistantPanel.tsx`, `useVoiceAssistant.ts` | Legacy `web_ui/` kaldırılmıştır; React SPA için ayrı modül notu henüz yok, ancak duplex ses UX bileşenleri rapor içinde ayrıca belgelenmiştir |
 | 3.28 | `github_upload.py`, `gui_launcher.py` | [docs/module-notes/github_upload.py.md](../module-notes/github_upload.py.md); `gui_launcher.py` için ayrı modül notu henüz yok |
-| 3.29 | `migrations/` (`0001`-`0004`), `scripts/` | [docs/module-notes/migrations/env.py.md](../module-notes/migrations/env.py.md) |
-| 3.30 | `docker/`, `runbooks/`, `helm/` | [docs/module-notes/docker/prometheus/prometheus.yml.md](../module-notes/docker/prometheus/prometheus.yml.md); `helm/` için ayrı modül notu henüz yok |
+| 3.29 | `migrations/` (`0001`-`0007`), `scripts/` | [docs/module-notes/migrations/env.py.md](../module-notes/migrations/env.py.md) |
+| 3.30 | `docker_setup/`, `runbooks/`, `helm/` | [docs/module-notes/docker_setup/prometheus/prometheus.yml.md](../module-notes/docker_setup/prometheus/prometheus.yml.md); `helm/` için ayrı modül notu henüz yok |
 
 ---
 
 ### 3.D.1 React İstemci Tarafı Ses Bileşenleri
 
-- **`web_ui_react/src/components/VoiceAssistantPanel.jsx`:** Duplex ses oturumunun özet panelidir; mikrofonu başlat/durdur, aktif TTS oynatmasını kes, son transcript'i görüntüle ve VAD / buffer / turn bilgisini operatöre görünür kılar.
-- **`web_ui_react/src/hooks/useVoiceAssistant.js`:** `MediaRecorder`, `getUserMedia`, `AnalyserNode` ve `/ws/voice` WebSocket akışını tek yerde yöneten istemci orkestrasyon katmanıdır. Hook; VAD threshold/silence takibi, base64 ses paketleme, diagnostics halkası ve barge-in sırasında oynatmayı sonlandırma davranışını yönetir.
+- **`web_ui_react/src/components/VoiceAssistantPanel.tsx`:** Duplex ses oturumunun özet panelidir; mikrofonu başlat/durdur, aktif TTS oynatmasını kes, son transcript'i görüntüle ve VAD / buffer / turn bilgisini operatöre görünür kılar.
+- **`web_ui_react/src/hooks/useVoiceAssistant.ts`:** `MediaRecorder`, `getUserMedia`, `AnalyserNode` ve `/ws/voice` WebSocket akışını tek yerde yöneten istemci orkestrasyon katmanıdır. Hook; VAD threshold/silence takibi, base64 ses paketleme, diagnostics halkası ve barge-in sırasında oynatmayı sonlandırma davranışını yönetir.
 - **Backend uyumu:** Bu iki modül `core/voice.py` ve `web_server.py` içindeki `/ws/voice` akışına bağlanarak transcript, assistant turn metadata, `voice_state`, `voice_interruption` ve TTS paketleriyle tam çift yönlü bir UX sunar.
 - **Operasyonel değer:** Sesli kod inceleme, hızlı incident triage ve hands-free debugging oturumları artık yalnızca backend capability değil, React SPA üzerinde gözlemlenebilir bir kullanıcı deneyimi haline gelmiştir.
 
@@ -375,7 +375,7 @@ Bu bölüm, v4.3.0 kod tabanındaki Faz 4 (kurumsal yetenekler) ve Faz 5 (multi-
 - `web_server.py` üzerindeki `/api/agents/register` ve `/api/agents/register-file` uç noktaları ile dış kaynak plugin ajanları çalışma zamanında sisteme alınır; `_register_plugin_agent` akışı bunları `AgentRegistry` üstünden canlı ajan envanterine kaydeder.
 
 #### 4.3.8 Single Page Application (Vite/React) Arayüzü
-- Sunum katmanı, React build'i mevcutsa `web_ui_react/dist` dizinini otomatik önceliklendiren akıllı statik servisleme modeline geçirilmiştir.
+- Sunum katmanı yalnız `web_ui_react/dist` React build çıktısını statik olarak servis eder; legacy `web_ui/` fallback'i kaldırılmıştır.
 - `web_ui_react/src/App.tsx` içinde P2PDialoguePanel ve SwarmFlowPanel bileşenleriyle canlı ajan diyaloğu ve görev akışı görünürlüğü SPA deneyiminde sunulur.
 
 #### 4.3.9 Tenant Bazlı Erişim Kontrol Listeleri (ACL) ve Audit Trail

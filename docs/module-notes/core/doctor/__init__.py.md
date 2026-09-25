@@ -31,7 +31,7 @@ seam'lerini (`_run_command`, `_resolved_database_urls`, `_rag_readiness_state`,
   gerçek gövdeleri `core/doctor/checks/gpu.py`'de.
 - `check_migrations()`, `check_agent_catalog()`, `check_supervisor_routing()`,
   `check_websocket_routes()`, `check_model()` — bu modülün kendi gerçek
-  implementasyonları (taşınmadılar; bkz. `core/doctor/facade.py.md`).
+  implementasyonları (taşınmadılar; bkz. `docs/module-notes/core/doctor/facade.py.md`).
 - `run_doctor_report()` — gerçek gövdesi `core/doctor/facade.py`'de; tüm
   kontrolleri toplayıp `core/doctor/reporting.py` formatına uygun rapor
   üretir. `main(argv)` — gerçek gövdesi de `core/doctor/facade.py`'de;

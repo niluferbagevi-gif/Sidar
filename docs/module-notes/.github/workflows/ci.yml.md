@@ -50,11 +50,14 @@ Bu workflow, kod kalitesini sadece “test geçti” seviyesinde değil, ölçü
 7. **Ana test suite**
    - `bash run_tests.sh`
 
-8. **Sandbox/reviewer hardening kontrolü**
-   - `pytest -q tests/test_sandbox_runtime_profiles.py tests/test_reviewer_agent.py`
+8. **Plugin sandbox güvenlik matrisi (gerçek container)**
+   - `uv run pytest -q -rs tests/integration/web/test_plugin_sandbox_container_escape.py`
 
 9. **Coverage quality gate**
-   - `python -m pytest -q --cov=. --cov-report=term-missing --cov-fail-under=95`
+   - Eşik sabit bir `--cov-fail-under` değeri değil; ratchet ile yönetilen
+     `pyproject.toml [tool.coverage.report].fail_under` (güncel `100`) değeridir
+     (bkz. `AGENTS.md` §2.5.4). CI, `run_tests.sh` sonrası bu değerin koşu
+     sırasında değişmediğini ayrıca doğrular.
 
 ## 4) Nerede kullanılıyor / ilişkili bileşenler
 
@@ -64,8 +67,8 @@ Bu workflow, kod kalitesini sadece “test geçti” seviyesinde değil, ölçü
   - `scripts/collect_repo_metrics.sh`
   - `scripts/audit_metrics.sh`
   - `run_tests.sh`
-  - `tests/test_sandbox_runtime_profiles.py`
-  - `tests/test_reviewer_agent.py`
+  - `tests/integration/web/test_plugin_sandbox_container_escape.py`
+  - `tests/unit/agent/roles/test_reviewer_agent.py`
 
 ## 5) Örnek sonuç beklentileri
 

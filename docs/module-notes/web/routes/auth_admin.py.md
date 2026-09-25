@@ -4,7 +4,7 @@
 - **Not dosyası:** `docs/module-notes/web/routes/auth_admin.py.md`
 
 **Amaç:** Kullanıcı kaydı/kimlik doğrulama ve admin işlemleri için FastAPI
-rotalarını `web/routes/LegacyExportRouter` deseniyle dışa aktarır;
+rotalarını `web.routes.LegacyExportRouter` deseniyle dışa aktarır;
 `web/security.py`'deki `is_reserved_username()` ile kullanıcı adı
 çakışmalarını (rezerve isimler) engeller.
 

@@ -20,7 +20,7 @@
 
 **Sidar**, kod yönetimi, sistem izleme, GitHub entegrasyonu, web araştırması, gerçek zamanlı sesli etkileşim, dinamik tarayıcı otomasyonu ve güvenli dosya işlemleri konularında uzmanlaşmış bir AI asistanıdır. ReAct (Reason + Act) döngüsü ile çalışır; alias araçlar hariç **60+ çekirdek araç** üzerinden LLM destekli kararlar alır ve v5.2.0 geçişiyle proaktif bir **AI Co-Worker** davranış modeline yaklaşmıştır.
 
-> **Güncel Ürün Durumu:** Repo artık `v5.2.0` ürün baseline'ında çalışmaktadır ve Faz A + Faz B teslimleri ürünleşmiş durumdadır. React tabanlı `web_ui_react/` deneyimi varsayılan arayüz, legacy `web_ui/` geriye dönük fallback, PostgreSQL + `pgvector` + Alembic veri katmanı ise standart kurumsal omurga olmaya devam eder. Bunun üzerine **WebSocket tabanlı gerçek zamanlı sesli asistan**, **Playwright öncelikli dinamik tarayıcı otomasyonu**, **LSP destekli anlamsal kod denetimi**, multimodal medya hattı ve proaktif webhook/cron tetikleyicileri repo içinde ürünleşmiş Faz A kazanımları olarak çalışmaktadır. Faz A ve Faz B teslimleri tamamlanmıştır: GraphRAG'in Reviewer akışına bağlanması, tam duplex voice-to-voice iletişim, dış olay korelasyonu ve Swarm karar akışının canlı operasyon yüzeyine dönüşmesi repo içinde aktif hale gelmiştir. Resmî sonraki odak artık **Faz C**: proaktif remediation/self-healing, daha derin browser decisioning ve istemci tarafı ses deneyiminin daha da deterministik hale getirilmesidir.
+> **Güncel Ürün Durumu:** Repo artık `v5.2.0` ürün baseline'ında çalışmaktadır ve Faz A + Faz B teslimleri ürünleşmiş durumdadır. React tabanlı `web_ui_react/` deneyimi tek web arayüzü (legacy vanilla JS `web_ui/` kaldırılmıştır), PostgreSQL + `pgvector` + Alembic veri katmanı ise standart kurumsal omurga olmaya devam eder. Bunun üzerine **WebSocket tabanlı gerçek zamanlı sesli asistan**, **Playwright öncelikli dinamik tarayıcı otomasyonu**, **LSP destekli anlamsal kod denetimi**, multimodal medya hattı ve proaktif webhook/cron tetikleyicileri repo içinde ürünleşmiş Faz A kazanımları olarak çalışmaktadır. Faz A ve Faz B teslimleri tamamlanmıştır: GraphRAG'in Reviewer akışına bağlanması, tam duplex voice-to-voice iletişim, dış olay korelasyonu ve Swarm karar akışının canlı operasyon yüzeyine dönüşmesi repo içinde aktif hale gelmiştir. Resmî sonraki odak artık **Faz C**: proaktif remediation/self-healing, daha derin browser decisioning ve istemci tarafı ses deneyiminin daha da deterministik hale getirilmesidir.
 
 > **Mimari belgeler:** Aktif v5.2.0 bileşen ve sahiplik haritası
 > [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) dosyasındadır. v5.0/v5.1 adlı raporlar
@@ -970,7 +970,7 @@ uv run python web_server.py --level sandbox
 uv run python web_server.py --provider gemini --port 7860
 ```
 
-> `web_server.py`, `web_ui_react/dist/` mevcutsa React SPA'yı öncelikli sunar; build yoksa geriye dönük uyumluluk için legacy `web_ui/` arayüzüne düşer.
+> `web_server.py` yalnız `web_ui_react/dist/` altındaki React SPA build'ini sunar; legacy `web_ui/` fallback'i kaldırılmıştır. Build yoksa kök sayfa `web_ui_react` içinde `npm run build` çalıştırılmasını isteyen bir hata sayfası döndürür.
 
 ### ⚛️ React/Vite Geliştirme Arayüzü
 
@@ -1257,29 +1257,29 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_ and cpu_cost"
 > (`GPU_TREND_THRESHOLD_PERCENT`) ile korunur; quantization + architecture + driver
 > profiline göre ayrı baseline/history tutulur.
 
-**Test paketi (149 modül / 151 dosya):**
-- `test_sidar.py` — Temel SidarAgent, CodeManager, SecurityManager, RAG, GPU testleri
-- `test_web_server_runtime.py` — FastAPI endpoint ve WebSocket senaryoları
-- `test_web_server_api_focus_additions.py` — WebSocket auth kapanışları, HITL broadcast temizliği ve Slack/Jira/Teams + EntityMemory/Feedback API fallback senaryoları
-- `test_db_runtime.py` / `test_db_postgresql_branches.py` — SQLite/PostgreSQL yönetimi
-- `test_supervisor_agent.py` / `test_reviewer_agent.py` — Multi-agent orkestrasyon
-- `test_sandbox_runtime_profiles.py` — Docker sandbox güvenlik profilleri
-- `test_llm_metrics_runtime.py` / `test_grafana_dashboard_provisioning.py` — Telemetri
-- `test_plugin_marketplace_flow.py` — `CryptoPriceAgent` + `AgentRegistry` akışı
-- `test_tenant_rbac_scenarios.py` — Çok kullanıcı izin matrisi doğrulaması
-- `test_observability_stack_compose.py` — Jaeger/Prometheus/Grafana sağlık kontrolü
-- `test_swarm_execute_api.py` — `/api/swarm/execute` endpoint testleri
-- `test_dlp_masking.py` — DLP & PII maskeleme senaryoları
-- `test_hitl_approval.py` — Human-in-the-Loop onay geçidi akışları
-- `test_llm_judge.py` — LLM-as-a-Judge alaka + halüsinasyon ölçümü
-- `test_env_parity.py` — config.py ↔ .env.example parite doğrulaması
-- `test_cost_aware_routing.py` — Cost-Aware Model Routing ve bütçe mantığı
-- `test_entity_persona_memory.py` — Entity/Persona Memory TTL + LRU testleri
-- `test_semantic_cache_metrics.py` — Cache hit/miss sayaçları + Prometheus metrikleri
-- `test_active_learning.py` — FeedbackStore, DatasetExporter, LoRATrainer testleri
-- `test_vision.py` — Vision Pipeline provider formatları + mockup→kod
-- `test_slack_jira_teams.py` — Slack/Jira/Teams entegrasyon testleri
-- Ve daha 122 modül — edge-case, retry/fallback, migration, webhook, auth…
+**Test paketi (299 `test_*.py` modülü; 2026-09-25 ölçümü):** Testler katman bazlı
+dizinlere ayrılmıştır — `tests/unit/` (modül yapısını aynalar), `tests/integration/`,
+`tests/smoke/`, `tests/e2e/`, `tests/performance/`, `tests/quality/` ve Bats tabanlı
+`tests/shell/`. Öne çıkan dosyalar:
+- `tests/unit/agent/test_sidar_agent.py` — Temel SidarAgent davranışları
+- `tests/unit/root/test_web_server.py`, `tests/integration/api/test_web_server_api.py` — FastAPI endpoint, WebSocket ve `/api/swarm/execute` senaryoları
+- `tests/unit/core/test_db.py`, `tests/unit/core/db/`, `tests/integration/db/` — SQLite/PostgreSQL yönetimi, migration ve `pg_stress` bağlantı havuzu testleri
+- `tests/unit/agent/core/test_supervisor.py` / `tests/unit/agent/roles/test_reviewer_agent.py` / `tests/test_swarm_orchestrator.py` — Multi-agent orkestrasyon
+- `tests/integration/web/test_plugin_sandbox_container_escape.py` — Docker plugin sandbox güvenlik matrisi
+- `tests/unit/core/test_llm_metrics.py` / `tests/integration/api/test_web_server_voice_and_metrics.py` — Telemetri
+- `tests/unit/web/routes/test_plugin_marketplace.py` — Plugin marketplace install/uninstall/reload akışı
+- `tests/unit/web/test_access_policy_middleware.py` — Çok kiracılı (tenant) erişim politikası doğrulaması
+- `tests/unit/core/test_dlp.py` — DLP & PII maskeleme senaryoları
+- `tests/unit/core/test_hitl.py` — Human-in-the-Loop onay geçidi akışları
+- `tests/unit/core/test_judge.py` — LLM-as-a-Judge alaka + halüsinasyon ölçümü
+- `tests/unit/root/test_config.py` — `config.py` ↔ `.env.example` parite doğrulaması
+- `tests/unit/core/test_router.py` — Cost-Aware Model Routing ve bütçe mantığı
+- `tests/unit/core/test_entity_memory.py` — Entity/Persona Memory TTL + LRU testleri
+- `tests/unit/core/test_semantic_cache.py` / `tests/unit/core/test_cache_metrics.py` — Cache hit/miss sayaçları + Prometheus metrikleri
+- `tests/unit/core/test_active_learning.py` — FeedbackStore, DatasetExporter, LoRATrainer testleri
+- `tests/unit/core/test_vision.py` — Vision Pipeline provider formatları + mockup→kod
+- `tests/unit/managers/test_slack_manager.py`, `test_jira_manager.py`, `test_teams_manager.py` — Slack/Jira/Teams entegrasyon testleri
+- Ve daha fazlası — edge-case, retry/fallback, migration, webhook, auth…
 
 ---
 

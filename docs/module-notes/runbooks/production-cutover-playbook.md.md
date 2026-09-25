@@ -63,7 +63,7 @@ ile birlikte ele alır.
 - Operasyon/canlıya geçiş süreçlerinde ana referans runbook olarak kullanılır.
 - `README.md` içinde SQLite → PostgreSQL geçiş adımları için doğrudan bu dosyaya yönlendirme vardır.
 - `PROJE_RAPORU.md` içinde runbook envanteri içinde listelenir.
-- Test tarafında `tests/test_migration_assets.py`, bu dosyanın varlığını ve temel içerik beklentilerini doğrular.
+- Test tarafında `tests/test_migration_ci_guards.py`, bu not dosyasının desteklenen `postgresql+asyncpg://` sürücü örneğini kullandığını doğrular (eski `tests/test_migration_assets.py` kaldırılmıştır).
 
 ## 4) İlişkili CI ve script bileşenleri
 
