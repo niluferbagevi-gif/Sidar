@@ -3,13 +3,13 @@ VERSION:2.0
 PRODID:-//Sidar//Dependency Reminders//EN
 CALSCALE:GREGORIAN
 BEGIN:VEVENT
-UID:sidar-frontend-eslint-10-review-2026-09-30@sidar.local
-DTSTAMP:20260730T000000Z
-DTSTART;VALUE=DATE:20260930
-DTEND;VALUE=DATE:20261001
+UID:sidar-frontend-eslint-10-review-2026-12-31@sidar.local
+DTSTAMP:20260925T000000Z
+DTSTART;VALUE=DATE:20261231
+DTEND;VALUE=DATE:20270101
 SUMMARY:Re-evaluate the Sidar frontend ESLint 10 migration
 DESCRIPTION:Check ESLint 10 peer support in eslint-plugin-react and
- eslint-plugin-jsx-a11y\, review GHSA-mh99-v99m-4gvg metadata\, and follow
+ eslint-plugin-jsx-a11y and follow
  docs/development/frontend-eslint-10-migration.md.
 END:VEVENT
 END:VCALENDAR
