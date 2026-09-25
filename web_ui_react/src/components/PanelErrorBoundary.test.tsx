@@ -1,12 +1,13 @@
 import { render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PanelErrorBoundary } from "./PanelErrorBoundary.jsx";
 
-function BrokenPanel() {
+function BrokenPanel(): never {
   throw new Error("boom");
 }
 
 describe("PanelErrorBoundary", () => {
-  const suppressExpectedRuntimeError = (event) => {
+  const suppressExpectedRuntimeError = (event: ErrorEvent) => {
     if (event?.error?.message === "boom") {
       event.preventDefault();
     }

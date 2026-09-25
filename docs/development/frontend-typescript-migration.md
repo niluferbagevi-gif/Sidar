@@ -92,9 +92,13 @@ aşağıdaki Nüans notu.
 > **Güncel durum (2026-09-25):** Bu paragraftaki sayılar 2026-08-06 anlık görüntüsüdür.
 > O tarihten beri test altyapısı da taşınmıştır: `src/test/setup.js` artık
 > `src/test/setup.ts`'dir (`vite.config.js` → `setupFiles: "./src/test/setup.ts"`).
-> Güncel `src/` envanteri 1 `.js`, 20 `.jsx`, 24 `.ts`, 27 `.tsx` dosyasıdır; kalan
-> untyped dosyaların tamamı test dosyasıdır ve tek doğruluk kaynağı
-> `web_ui_react/typescript-migration-baseline.json` ratchet'idir.
+> 2026-09-25'te `App.lazyFallback`, `App.chat-status`, `main`,
+> `PanelErrorBoundary` ve `SwarmFlowPanel.helpers` testleri de davranışları
+> değiştirilmeden `.ts`/`.tsx`'e taşınmıştır. Güncel `src/` envanteri 1 `.js`, 15 `.jsx`,
+> 26 `.ts`, 30 `.tsx` dosyasıdır (untyped=16 ≤ 2026-10-31 hedefi 20); kalan untyped
+> dosyaların tamamı test dosyasıdır ve tek doğruluk kaynağı
+> `web_ui_react/typescript-migration-baseline.json` ratchet'idir. Sıradaki hedef
+> 2027-01-31 için en fazla 10 untyped dosyadır.
 
 Bileşen/hook/lib ağacı tamamlandıktan sonraki dedup refactorları da (mevcut
 `.js`/`.jsx` dosyalarını taşımak yerine) doğrudan TypeScript'te yeni dosya olarak
@@ -138,9 +142,9 @@ ediyor; milestone tarihine (2026-10-31) kadar hâlâ headroom var.
 
 ## Zorunlu ratchet
 
-`typescript-migration-baseline.json`, en fazla 21 untyped (`.js` + `.jsx`) ve en az
-51 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. Envanter ayrıca bu borcu
-`production_untyped=0` ve `test_untyped=21` olarak ayırır; böylece test migrasyonu devam
+`typescript-migration-baseline.json`, en fazla 16 untyped (`.js` + `.jsx`) ve en az
+56 typed (`.ts` + `.tsx`) kaynak dosyasına izin verir. Envanter ayrıca bu borcu
+`production_untyped=0` ve `test_untyped=16` olarak ayırır; böylece test migrasyonu devam
 ederken production ağacına yeni JavaScript eklenmesi toplam ratchet içinde gizlenemez.
 `test`, `tests`, `__tests__` dizinleri ile `*.test.*`/`*.spec.*` dosyaları test kaynağı
 sayılır. İlk test dilimi olarak
