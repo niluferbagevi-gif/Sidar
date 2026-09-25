@@ -1,12 +1,13 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { P2PDialoguePanel } from "./P2PDialoguePanel.tsx";
+import { P2PDialoguePanel } from "./P2PDialoguePanel.js";
 
 const { useChatStoreMock } = vi.hoisted(() => ({
   useChatStoreMock: vi.fn(),
 }));
 
 vi.mock("../hooks/useChatStore.js", () => ({
-  useChatStore: (selector) => {
+  useChatStore: (selector?: (state: unknown) => unknown) => {
     const state = useChatStoreMock();
     return typeof selector === "function" ? selector(state) : state;
   },

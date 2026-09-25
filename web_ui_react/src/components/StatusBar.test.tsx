@@ -1,14 +1,16 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { StatusBar } from "./StatusBar.tsx";
+import { StatusBar } from "./StatusBar.js";
 
-const mockStore = {
+const mockStore: { sessionId: string; messages: Array<{ id: number }> } = {
   sessionId: "session-abc",
   messages: [],
 };
 
 vi.mock("../hooks/useChatStore.js", () => ({
-  useChatStore: (selector) => (typeof selector === "function" ? selector(mockStore) : mockStore),
+  useChatStore: (selector?: (state: typeof mockStore) => unknown) =>
+    typeof selector === "function" ? selector(mockStore) : mockStore,
 }));
 
 describe("StatusBar — bağlantı durumu göstergesi", () => {

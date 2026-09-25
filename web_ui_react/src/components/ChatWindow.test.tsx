@@ -1,5 +1,6 @@
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { ChatWindow } from "./ChatWindow.tsx";
+import { ChatWindow } from "./ChatWindow.js";
 
 // jsdom'da scrollIntoView tanımlı değil — stub ekle
 beforeAll(() => {
@@ -8,7 +9,13 @@ beforeAll(() => {
 
 // ChatMessage bileşenini stub'la — içerik kontrolü için basit gösterim
 vi.mock("./ChatMessage.tsx", () => ({
-  ChatMessage: ({ message, isStreaming }) => (
+  ChatMessage: ({
+    message,
+    isStreaming,
+  }: {
+    message: { content?: string };
+    isStreaming?: boolean;
+  }) => (
     <div data-testid="chat-message" data-streaming={isStreaming ? "true" : "false"}>
       {message.content}
     </div>
@@ -16,7 +23,14 @@ vi.mock("./ChatMessage.tsx", () => ({
 }));
 
 // useChatStore mock — her testte farklı store durumu verebilmek için
-const mockStore = {
+interface MockChatStore {
+  messages: Array<{ id: string; role: string; content: string; ts: number }>;
+  streamingText: string;
+  isStreaming: boolean;
+  error: string | null;
+}
+
+const mockStore: MockChatStore = {
   messages: [],
   streamingText: "",
   isStreaming: false,
@@ -24,7 +38,8 @@ const mockStore = {
 };
 
 vi.mock("../hooks/useChatStore.js", () => ({
-  useChatStore: (selector) => (typeof selector === "function" ? selector(mockStore) : mockStore),
+  useChatStore: (selector?: (state: typeof mockStore) => unknown) =>
+    typeof selector === "function" ? selector(mockStore) : mockStore,
 }));
 
 describe("ChatWindow — boş durum", () => {
