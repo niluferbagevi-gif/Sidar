@@ -2,39 +2,25 @@
 
 ## Durum
 
-**Güncelleme:** `GHSA-mh99-v99m-4gvg` istisnası artık aktif değil. `1.1.17` backport'unu
-bypass eden yeni bir advisory (`GHSA-rgw5-rvv9-x895`, "DoS via unbounded intermediate
-arrays") yayınlandığı için `overrides.brace-expansion`, gerçek upstream düzeltmesi olan
-`1.1.18`'e yükseltildi ve `npm audit --audit-level=high` artık sıfır bulgu raporluyor.
-`scripts/npm_audit_safe.js` içindeki `PATCHED_BRACE_EXPANSION_*` istisna kodu bu yüzden
-şu an tetiklenmiyor (advisory kaynak kimliği artık `1124334` ile eşleşmiyor); kod, aynı
-tarz bir registry-gecikmesi tekrar yaşanırsa diye kasıtlı olarak yerinde bırakıldı.
-Aşağıdaki tarihsel açıklama, istisnanın aktifken nasıl çalıştığını belgeler.
+**Güncelleme (2026-09-25):** `GHSA-mh99-v99m-4gvg` için tutulan geçici npm audit
+istisnası 2026-09-25'te kaldırıldı. `1.1.17` backport'unu bypass eden
+`GHSA-rgw5-rvv9-x895` yayınlandığında `overrides.brace-expansion` kalıcı pini gerçek
+upstream düzeltmesi olan `1.1.18`'e yükseltilmişti; o tarihten beri
+`npm audit --audit-level=high` sıfır bulgu raporluyor ve istisna hiç tetiklenmiyordu.
+Planın çıkış ölçütü ("advisory zinciri kaybolduğunda istisnayı kaldır") karşılandığı
+için `scripts/npm_audit_safe.js` içindeki `brace-expansion` allowlist'i, test saati
+override'ı ve istisna artefaktı silindi. Artık istisnasız bir kapı vardır: her `high`
+veya `critical` bulgu `vulnerability` kategorisiyle fail-closed durur.
 
-Frontend `npm audit`, önceden aynı bağımlılık zincirinden yayılan yedi `high` kayıt
-gösteriyordu:
+`overrides.brace-expansion` kalıcı pini (`1.1.18`) korunur; `eslint-plugin-jsx-a11y` →
+`minimatch@3` zinciri hâlâ `brace-expansion@1.x` çeker ve pin, bu zincirin
+`GHSA-rgw5-rvv9-x895` düzeltmesini içeren sürümde kalmasını garanti eder. Pin, ancak
+ESLint 10 geçişi sonrasında dependency ağacında artık gerekmediği doğrulanırsa
+kaldırılabilir.
 
-`eslint` / ESLint yapılandırma paketleri ve React lint eklentileri → `minimatch` →
-`brace-expansion` → `GHSA-mh99-v99m-4gvg`.
-
-Bu kayıtlar yedi bağımsız güvenlik açığı değildir. Sidar, `brace-expansion` sürümünü
-upstream güvenlik backport'unu içeren tam `1.1.17` sürümüne sabitlemişti (bkz. yukarıdaki
-"Durum" — pin daha sonra ikinci, ilişkisiz bir advisory yüzünden `1.1.18`'e yükseltildi;
-`scripts/npm_audit_safe.js`'deki `PATCHED_BRACE_EXPANSION_BACKPORT` sabiti de güncel pini
-takip edecek şekilde `1.1.18`'e güncellendi). npm advisory aralığı bu backport'u
-tanımadığı sürece `scripts/npm_audit_safe.js`, yalnız aşağıdaki koşulların tümü
-sağlanırsa bu tek advisory zincirini geçici olarak kabul ediyordu:
-
-1. Advisory kaynak kimliği tam olarak `1124334` olmalıdır.
-2. `package.json` içindeki `overrides.brace-expansion` kalıcı pini ve lockfile içindeki
-   bütün `brace-expansion` örnekleri, `PATCHED_BRACE_EXPANSION_BACKPORT` sabitiyle
-   (güncel olarak `1.1.18`) tam olarak eşleşmelidir. Böylece yalnız mevcut kurulum değil,
-   sonraki temiz `npm ci` ve lockfile yenilemeleri de doğrulanır.
-3. Bütün raporlanan paketler yalnızca bu advisory zincirine ulaşmalıdır.
-4. İlişkisiz herhangi bir `high` veya `critical` bulgu kalite kapısını kapatmalıdır.
-
-Dolayısıyla bu istisna genel bir `npm audit` susturması değildir. Paket üretim
-bundle'ına dahil olmayan lint araç zincirindedir ve fail-closed allowlist ile sınırlıdır.
+Geriye yalnız ESLint 10 sürüm geçişi kalır; bu artık bir güvenlik istisnası değil,
+peer dependency desteğine bağlı bir bakım işidir. Geçmiş istisnanın ayrıntıları
+`CHANGELOG.md` ve git geçmişinde tutulur.
 
 ## ESLint 10 neden hemen uygulanmıyor?
 
@@ -53,26 +39,19 @@ bozulması veya eski eklenti sürümlerine downgrade edilmesi riskini taşır.
 ## Bakım işi ve çıkış ölçütleri
 
 **Sahip:** Frontend bakım ekibi  
-**İlk yeniden değerlendirme:** 2026-09-30 veya npm advisory aralığı/plugin peer
-dependency metadata'sı değiştiğinde (hangisi önce olursa).
-**Takvim kaydı:** `docs/reminders/frontend-eslint-10-review-2026-09-30.ics`
+**2026-09-30 yeniden değerlendirmesi (2026-09-25'te yapıldı):** npm registry'de
+`eslint@10.11.0`, `@eslint/js@10.0.1` ve `typescript-eslint@8.70.1` ESLint 10'u
+desteklerken `eslint-plugin-react@7.37.5` (`^9.7`) ve `eslint-plugin-jsx-a11y@6.10.2`
+(`^9`) hâlâ en güncel sürümlerdir ve ESLint 10'u peer dependency olarak kabul etmez.
+Engel sürdüğü için geçiş ertelendi.
+**Sonraki yeniden değerlendirme:** 2026-12-31 veya iki eklentiden birinin ESLint 10
+destekli sürümü yayımlandığında (hangisi önce olursa).
+**Takvim kaydı:** `docs/reminders/frontend-eslint-10-review-2026-12-31.ics`
 **Otomatik takip:** `.github/workflows/frontend-security-review.yml`, her pazartesi
 06:17 UTC'de strict audit'i çalıştırır ve güvenlik kanıtını artefakt olarak saklar.
-
-Bu tarih yalnız takvim hatırlatıcısı değildir. `scripts/npm_audit_safe.js`, UTC olarak
-2026-09-30 başladığında geçici allowlist'i otomatik olarak geçersiz sayar ve aynı
-advisory zinciri devam ediyorsa `expired_exception` kategorisiyle fail-closed durur.
-Haftalık güvenlik workflow'u, bu kapının son tarihe yakın bir PR veya push olmasa bile
-çalışmasını garanti eder; `workflow_dispatch` bakım PR'ında talep üzerine yeniden
-doğrulama sağlar. Workflow'un yüklediği raw rapor, stderr ve exception/failure JSON
-dosyaları yeniden değerlendirme kararının denetlenebilir kanıtıdır.
-İstisna kabul edildiği her koşuda terminal çıktısı son tarihi ve kalan gün sayısını
-gösterir; ayrıca `artifacts/frontend-security/npm-audit-exception.json` makine-okunur
-takip artefaktını üretir. CI bakım planlaması terminal metnini ayrıştırmak yerine bu
-artefaktın `exception_review_at` ve `days_remaining` alanlarını kullanabilir.
-İstisnanın süresini ileri taşımak yerine aşağıdaki yeniden değerlendirme tamamlanmalı;
-devam kararı gerekiyorsa güncel registry/upstream kanıtı ve yeni, sonlu bir tarih ayrı
-bir bakım değişikliğinde kaydedilmelidir.
+Böylece lint araç zincirinde yeni bir advisory yayımlanırsa, PR veya push olmasa bile
+en geç bir hafta içinde görünür olur; `workflow_dispatch` bakım PR'ında talep üzerine
+yeniden doğrulama sağlar.
 
 Kalıcı geçiş ayrı bir bakım PR'ında şu sırayla yapılmalıdır:
 
@@ -87,8 +66,7 @@ Kalıcı geçiş ayrı bir bakım PR'ında şu sırayla yapılmalıdır:
 4. Flat config/rule davranış değişikliklerini incele; kuralları geçici olarak kapatmak
    yerine kaynak kodu veya açık gerekçeli yapılandırmayı güncelle.
 5. Aşağıdaki doğrulama kapılarının tamamını çalıştır.
-6. Audit raporunda advisory zinciri kaybolduğunda
-   `PATCHED_BRACE_EXPANSION_*` istisnasını ve bu bakım kaydını kaldır.
+6. Geçiş tamamlandığında bu bakım kaydını ve takvim hatırlatıcısını kaldır.
 
 ```bash
 cd web_ui_react
@@ -101,5 +79,6 @@ FRONTEND_NPM_AUDIT_ALLOW_NETWORK_FAILURE=0 npm run audit:high
 ```
 
 `npm audit` yalnız registry metadata'sını yeniden sınıflandırırsa fakat kurulu ağaç
-değişmezse, istisnayı genişletmek yerine advisory kimliği, lockfile sürümleri ve upstream
-backport durumu yeniden doğrulanmalıdır.
+değişmezse, yeni bir allowlist eklemeden önce advisory kimliği, lockfile sürümleri ve
+upstream backport durumu yeniden doğrulanmalı; gerekirse istisna yeni, sonlu bir tarih ve
+fail-closed süre sonu ile ayrı bir bakım değişikliğinde eklenmelidir.

@@ -4,9 +4,9 @@
 
 - **Sahip:** Frontend bakım ekibi
 - **Başlangıç envanteri:** 2026-07-30
-- **İlk ilerleme değerlendirmesi:** 2026-09-30
-- **Hedef tamamlanma:** 2027-03-31
-- **Takvim kaydı:** `docs/reminders/frontend-typescript-review-2026-09-30.ics`
+- **İlk ilerleme değerlendirmesi:** 2026-09-30 (migrasyon 2026-09-25'te tamamlandığı
+  için gereksizleşti; takvim kaydı kaldırıldı)
+- **Hedef tamamlanma:** 2027-03-31 (2026-09-25'te karşılandı)
 
 Başlangıçta `web_ui_react/src` altında 16 `.js`, 42 `.jsx`, 1 `.ts` ve 0 `.tsx`
 dosyası vardı. İlk dilimde `src/hooks/useFormState.ts` de TypeScript'e taşındı;
