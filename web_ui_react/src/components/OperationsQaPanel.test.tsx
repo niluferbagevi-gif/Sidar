@@ -1,6 +1,7 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { OperationsQaPanel } from "./OperationsQaPanel.jsx";
+import { OperationsQaPanel } from "./OperationsQaPanel.js";
 
 const apiMocks = vi.hoisted(() => ({
   analyzeCoverage: vi.fn(),
@@ -13,11 +14,12 @@ const apiMocks = vi.hoisted(() => ({
 
 vi.mock("../lib/api.js", () => apiMocks);
 
-let webSocketOptions = {};
+type CapturedHandler = (...args: unknown[]) => void;
+let webSocketOptions: Record<string, CapturedHandler> = {};
 const wsState = { status: "connected" };
 
 vi.mock("../hooks/useWebSocket.js", () => ({
-  useWebSocket: (sessionId, options) => {
+  useWebSocket: (_sessionId: string, options: Record<string, CapturedHandler>) => {
     webSocketOptions = options;
     return { send: vi.fn(), status: wsState.status };
   },
@@ -78,14 +80,14 @@ describe("OperationsQaPanel — başlangıç render", () => {
 
 describe("OperationsQaPanel — REST tetiklemeleri", () => {
   it("çift submit'i tek isteğe indirger ve işlem sırasında aksiyonları kilitler", async () => {
-    let resolveLanding;
+    let resolveLanding: (value: unknown) => void = () => {};
     apiMocks.generateLandingPage.mockImplementation(() => new Promise((resolve) => {
       resolveLanding = resolve;
     }));
     await renderOperationsQaPanel();
 
     const landingButton = screen.getByRole("button", { name: "Landing üret" });
-    const landingForm = landingButton.closest("form");
+    const landingForm = landingButton.closest("form") as HTMLFormElement;
     expect(landingForm).not.toBeNull();
     act(() => {
       // Submit the form twice in the same React batch. The disabled-button state

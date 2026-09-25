@@ -1,12 +1,20 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { TenantAdminPanel } from "./TenantAdminPanel.jsx";
+import type { Mock } from "vitest";
+import { TenantAdminPanel } from "./TenantAdminPanel.js";
 import { fetchJson } from "../lib/api.js";
+import type { FetchJsonOptions } from "../lib/api.js";
 
 vi.mock("../lib/api.js", () => ({
   fetchJson: vi.fn(),
 }));
+
+// The module is mocked above; view it through a non-generic mock signature so
+// the per-test implementations below are type-checked.
+const fetchJsonMock = fetchJson as unknown as Mock<
+  (url: string, options?: FetchJsonOptions) => Promise<unknown>
+>;
 
 const policiesPayload = {
   items: [
@@ -45,17 +53,24 @@ const auditPayload = {
   ],
 };
 
-function mockFetchJson(url, options = {}) {
+function mockFetchJson(url: string, options: FetchJsonOptions = {}) {
   if (url.startsWith("/admin/audit-logs")) return Promise.resolve(auditPayload);
   if (url.startsWith("/admin/policies/user-1") && !options.method) return Promise.resolve(policiesPayload);
   if (url === "/admin/policies" && options.method === "POST") return Promise.resolve(policiesPayload);
   return Promise.resolve({ items: [] });
 }
 
+/** Return the parsed JSON body of the first POST /admin/policies request. */
+function postedPolicyBody(): unknown {
+  const call = fetchJsonMock.mock.calls.find(([url]) => url === "/admin/policies");
+  const request = (call as [string, FetchJsonOptions])[1];
+  return JSON.parse(request.body as string);
+}
+
 describe("TenantAdminPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    fetchJson.mockImplementation(mockFetchJson);
+    fetchJsonMock.mockImplementation(mockFetchJson);
   });
 
   it("loads tenant audit logs from backend on initial render", async () => {
@@ -88,7 +103,7 @@ describe("TenantAdminPanel", () => {
     });
     const policyCard = await screen.findByText("ALLOW · rag:*");
     expect(policyCard).toBeInTheDocument();
-    expect(within(policyCard.closest(".policy-item")).getByText(/tenant:acme/)).toBeInTheDocument();
+    expect(within(policyCard.closest(".policy-item") as HTMLElement).getByText(/tenant:acme/)).toBeInTheDocument();
   });
 
   it("upserts a real RBAC policy through the admin policy API", async () => {
@@ -103,13 +118,12 @@ describe("TenantAdminPanel", () => {
     await waitFor(() => {
       expect(fetchJson).toHaveBeenCalledWith("/admin/policies", expect.objectContaining({ method: "POST" }));
     });
-    const [, request] = fetchJson.mock.calls.find(([url]) => url === "/admin/policies");
-    expect(JSON.parse(request.body)).toMatchObject({ user_id: "user-1", tenant_id: "acme", resource_type: "rag" });
+    expect(postedPolicyBody()).toMatchObject({ user_id: "user-1", tenant_id: "acme", resource_type: "rag" });
     expect(await screen.findByText("acme tenant erişim politikası kaydedildi.")).toBeInTheDocument();
   });
 
   it("shows a controlled error banner when tenant data loading fails", async () => {
-    fetchJson.mockRejectedValueOnce(new Error("audit API unavailable"));
+    fetchJsonMock.mockRejectedValueOnce(new Error("audit API unavailable"));
 
     render(<TenantAdminPanel />);
 
@@ -118,7 +132,7 @@ describe("TenantAdminPanel", () => {
   });
 
   it("renders non-Error tenant loading failures", async () => {
-    fetchJson.mockRejectedValueOnce("tenant ham hata");
+    fetchJsonMock.mockRejectedValueOnce("tenant ham hata");
 
     render(<TenantAdminPanel />);
 
@@ -127,7 +141,7 @@ describe("TenantAdminPanel", () => {
 
   it("shows an empty-policy hint when the selected user has no tenant policies", async () => {
     const user = userEvent.setup();
-    fetchJson.mockImplementation((url) => {
+    fetchJsonMock.mockImplementation((url) => {
       if (url.startsWith("/admin/audit-logs")) return Promise.resolve({ items: [] });
       if (url.startsWith("/admin/policies/user-empty")) return Promise.resolve({ items: [] });
       return Promise.resolve({ items: [] });
@@ -141,7 +155,7 @@ describe("TenantAdminPanel", () => {
   });
 
   it("keeps invalid audit timestamps readable instead of formatting them", async () => {
-    fetchJson.mockResolvedValueOnce({
+    fetchJsonMock.mockResolvedValueOnce({
       items: [
         {
           id: 42,
@@ -163,7 +177,9 @@ describe("TenantAdminPanel", () => {
     render(<TenantAdminPanel />);
 
     await screen.findByText("Audit Trail");
-    fireEvent.submit(screen.getByRole("button", { name: "Politikayı Kaydet" }).closest("form"));
+    fireEvent.submit(
+      screen.getByRole("button", { name: "Politikayı Kaydet" }).closest("form") as HTMLFormElement,
+    );
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "RBAC politikası kaydetmek için kullanıcı ID zorunludur.",
@@ -173,7 +189,7 @@ describe("TenantAdminPanel", () => {
 
   it("shows submit errors without replacing existing policies", async () => {
     const user = userEvent.setup();
-    fetchJson.mockImplementation((url, options = {}) => {
+    fetchJsonMock.mockImplementation((url, options = {}) => {
       if (url.startsWith("/admin/audit-logs")) return Promise.resolve(auditPayload);
       if (url.startsWith("/admin/policies/user-1") && !options.method) {
         return Promise.resolve(policiesPayload);
@@ -230,8 +246,7 @@ describe("TenantAdminPanel", () => {
     await waitFor(() => {
       expect(fetchJson).toHaveBeenCalledWith("/admin/policies", expect.objectContaining({ method: "POST" }));
     });
-    const [, request] = fetchJson.mock.calls.find(([url]) => url === "/admin/policies");
-    expect(JSON.parse(request.body)).toMatchObject({
+    expect(postedPolicyBody()).toMatchObject({
       user_id: "user-1",
       tenant_id: "acme",
       resource_type: "coverage",
@@ -242,8 +257,8 @@ describe("TenantAdminPanel", () => {
   });
 
   it("disables the refresh button while tenant data is loading", async () => {
-    let resolveAudit;
-    fetchJson.mockImplementation((url) => {
+    let resolveAudit: (value: unknown) => void = () => {};
+    fetchJsonMock.mockImplementation((url) => {
       if (url.startsWith("/admin/audit-logs")) {
         return new Promise((resolve) => {
           resolveAudit = resolve;
@@ -264,7 +279,7 @@ describe("TenantAdminPanel", () => {
 
   it("renders multiple policies for the selected user", async () => {
     const user = userEvent.setup();
-    fetchJson.mockImplementation((url, options = {}) => {
+    fetchJsonMock.mockImplementation((url, options = {}) => {
       if (url.startsWith("/admin/audit-logs")) return Promise.resolve({ items: [] });
       if (url.startsWith("/admin/policies/user-1") && !options.method) {
         return Promise.resolve({
@@ -297,12 +312,12 @@ describe("TenantAdminPanel", () => {
       "/admin/audit-logs?tenant_id=default&limit=50",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
-    expect(fetchJson.mock.calls.some(([url]) => url.startsWith("/admin/policies/"))).toBe(false);
+    expect(fetchJsonMock.mock.calls.some(([url]) => url.startsWith("/admin/policies/"))).toBe(false);
     expect(screen.getByText("Politika listelemek için kullanıcı ID girin.")).toBeInTheDocument();
   });
 
   it("counts audit allowed and denied edge values from backend payloads", async () => {
-    fetchJson.mockResolvedValueOnce({
+    fetchJsonMock.mockResolvedValueOnce({
       items: [
         { id: 1, user_id: "user-1", action: "read", resource: "rag:*", allowed: false, timestamp: "" },
         { id: 2, user_id: "user-2", action: "write", resource: "github:repo", allowed: false, timestamp: "" },
@@ -322,7 +337,7 @@ describe("TenantAdminPanel", () => {
 
   it("falls back to empty arrays when audit and policy responses omit items", async () => {
     const user = userEvent.setup();
-    fetchJson.mockImplementation((url, options = {}) => {
+    fetchJsonMock.mockImplementation((url, options = {}) => {
       if (url.startsWith("/admin/audit-logs")) return Promise.resolve({});
       if (url.startsWith("/admin/policies/user-1") && !options.method) return Promise.resolve({});
       if (url === "/admin/policies" && options.method === "POST") return Promise.resolve({});
@@ -343,7 +358,7 @@ describe("TenantAdminPanel", () => {
   });
 
   it("renders anonymous audit users when backend user id is missing", async () => {
-    fetchJson.mockResolvedValueOnce({
+    fetchJsonMock.mockResolvedValueOnce({
       items: [
         { id: 1, action: "read", resource: "rag:*", allowed: true, timestamp: "" },
       ],
@@ -363,13 +378,14 @@ describe("TenantAdminPanel", () => {
     await user.clear(screen.getByLabelText("Tenant ID"));
     await user.type(screen.getByLabelText("Kullanıcı ID"), "  user-1  ");
     await user.clear(screen.getByPlaceholderText("*"));
-    fireEvent.submit(screen.getByRole("button", { name: "Politikayı Kaydet" }).closest("form"));
+    fireEvent.submit(
+      screen.getByRole("button", { name: "Politikayı Kaydet" }).closest("form") as HTMLFormElement,
+    );
 
     await waitFor(() => {
       expect(fetchJson).toHaveBeenCalledWith("/admin/policies", expect.objectContaining({ method: "POST" }));
     });
-    const [, request] = fetchJson.mock.calls.find(([url]) => url === "/admin/policies");
-    expect(JSON.parse(request.body)).toMatchObject({
+    expect(postedPolicyBody()).toMatchObject({
       user_id: "user-1",
       tenant_id: "default",
       resource_id: "*",
@@ -387,8 +403,8 @@ describe("TenantAdminPanel", () => {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(300);
       });
-      fetchJson.mockClear();
-      fetchJson.mockImplementation((_url, options = {}) => new Promise((_resolve, reject) => {
+      fetchJsonMock.mockClear();
+      fetchJsonMock.mockImplementation((_url, options = {}) => new Promise((_resolve, reject) => {
         options.signal?.addEventListener(
           "abort",
           () => {
@@ -409,7 +425,7 @@ describe("TenantAdminPanel", () => {
         await vi.advanceTimersByTimeAsync(300);
       });
       expect(fetchJson).toHaveBeenCalledTimes(2);
-      const obsoleteSignal = fetchJson.mock.calls[0][1].signal;
+      const obsoleteSignal = (fetchJsonMock.mock.calls[0][1] as FetchJsonOptions).signal as AbortSignal;
       expect(obsoleteSignal.aborted).toBe(false);
 
       fireEvent.change(screen.getByLabelText("Kullanıcı ID"), { target: { value: "user-new" } });
@@ -420,7 +436,7 @@ describe("TenantAdminPanel", () => {
         await vi.advanceTimersByTimeAsync(300);
       });
       expect(fetchJson).toHaveBeenCalledTimes(4);
-      expect(fetchJson.mock.calls.slice(2).some(([url]) => url.includes("/admin/policies/user-new?"))).toBe(true);
+      expect(fetchJsonMock.mock.calls.slice(2).some(([url]) => url.includes("/admin/policies/user-new?"))).toBe(true);
     } finally {
       vi.useRealTimers();
     }
@@ -434,9 +450,9 @@ describe("TenantAdminPanel", () => {
         await vi.advanceTimersByTimeAsync(300);
       });
 
-      let resolveOldAudit;
-      let resolveOldPolicies;
-      fetchJson.mockImplementation((url) => {
+      let resolveOldAudit: (value: unknown) => void = () => {};
+      let resolveOldPolicies: (value: unknown) => void = () => {};
+      fetchJsonMock.mockImplementation((url) => {
         if (url.includes("user-old") && url.startsWith("/admin/audit-logs")) {
           return new Promise((resolve) => { resolveOldAudit = resolve; });
         }
