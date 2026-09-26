@@ -20,6 +20,7 @@ class BaseAgent(ABC):
     SYSTEM_PROMPT = "You are a specialist agent."
 
     def __init__(self, cfg: Config | None = None, *, role_name: str = "base") -> None:
+        """Resolve config (filling missing ``Config`` defaults) and create the LLM client."""
         resolved_cfg = cfg or Config()
         if cfg is not None:
             for attr in dir(Config):
@@ -37,9 +38,11 @@ class BaseAgent(ABC):
         self.tools: dict[str, ToolFunc] = {}
 
     def register_tool(self, name: str, func: ToolFunc) -> None:
+        """Register ``func`` as the async tool named ``name``."""
         self.tools[name] = func
 
     async def call_tool(self, name: str, arg: str) -> str:
+        """Run the tool ``name`` with ``arg``; returns an error string if it is unknown."""
         if name not in self.tools:
             return f"[HATA] '{name}' aracı bu ajan için tanımlı değil."
         return await self.tools[name](arg)
@@ -53,6 +56,7 @@ class BaseAgent(ABC):
         json_mode: bool = False,
         model: str | None = None,
     ) -> str:
+        """Send ``messages`` to the LLM (non-streaming), defaulting to the role system prompt."""
         response = await self.llm.chat(
             messages=messages,
             model=model,
@@ -90,6 +94,7 @@ class BaseAgent(ABC):
 
     @staticmethod
     def is_delegation_message(result: object) -> bool:
+        """Return whether ``result`` is a delegation request to another agent."""
         return bool(is_delegation_request(result))
 
     async def handle(self, envelope: TaskEnvelope) -> TaskResult:

@@ -197,6 +197,7 @@ async def run_autonomous_coverage_batch(
 
 
 async def tool_autonomous_batch_heal(agent: CoverageAgent, arg: str) -> str:
+    """Run one autonomous coverage batch from a JSON payload and return the result as JSON."""
     payload = agent._parse_payload(arg)
     exclude_files = agent._normalize_exclude_files(
         payload.get("exclude_files") if "exclude_files" in payload else None

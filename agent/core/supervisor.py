@@ -57,6 +57,12 @@ class _NullSpan:
 
 
 class SupervisorAgent(BaseAgent):
+    """Central router that sends each task to the right role agent.
+
+    Code tasks go through coder then reviewer, with bounded QA retries
+    (``MAX_QA_RETRIES``) and turn limits (``MAX_TURNS``).
+    """
+
     MAX_QA_RETRIES = 3
     MAX_TURNS = 10
     """Supervisor merkezli orkestrasyon: coder -> reviewer -> (gerekirse coder) zinciri."""
@@ -66,6 +72,7 @@ class SupervisorAgent(BaseAgent):
     )
 
     def __init__(self, cfg: Config | None = None) -> None:
+        """Initialize the supervisor, its agent registry, memory hub and event bus."""
         self.cfg = cfg or Config()
         self.role_name = "supervisor"
         self.llm = cast(Any, None)

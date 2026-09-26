@@ -34,6 +34,7 @@ class ResearcherAgent(BaseAgent):
         *,
         config: Config | None = None,
     ) -> None:
+        """Create the researcher with web search and a RAG document store."""
         resolved_cfg = cfg or config
         super().__init__(cfg=resolved_cfg, role_name="researcher")
         self.web = WebSearchManager(self.cfg)
@@ -92,6 +93,7 @@ class ResearcherAgent(BaseAgent):
         return str(result)
 
     async def run_task(self, task_prompt: str) -> str:
+        """Handle a research task: run a ``tool|arg`` command or search and summarize."""
         prompt = (task_prompt or "").strip()
         if not prompt:
             return "[UYARI] Boş araştırma görevi verildi."

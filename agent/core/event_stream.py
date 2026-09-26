@@ -26,13 +26,22 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class AgentEvent:
+    """One progress event emitted by an agent or the supervisor."""
+
     ts: float
     source: str
     message: str
 
 
 class AgentEventBus:
+    """Process-local event fan-out with an optional remote backend (Redis/RabbitMQ/Kafka).
+
+    Remote failures fall back to local delivery; failed or unparseable remote events
+    can be kept in a dead-letter queue.
+    """
+
     def __init__(self) -> None:
+        """Read the remote backend and dead-letter queue settings from ``Config``."""
         self._subscribers: dict[int, asyncio.Queue[AgentEvent]] = {}
         self._buffered_events: dict[int, deque[AgentEvent]] = {}
         self._instance_id = uuid.uuid4().hex
@@ -145,16 +154,19 @@ class AgentEventBus:
         )
 
     def subscribe(self, maxsize: int = 200) -> tuple[int, asyncio.Queue[AgentEvent]]:
+        """Register a subscriber queue (at least 10 slots) and return ``(id, queue)``."""
         sub_id = int(time.time() * 1000) ^ id(object())
         self._subscribers[sub_id] = asyncio.Queue(maxsize=max(10, maxsize))
         self._schedule_remote_bootstrap()
         return sub_id, self._subscribers[sub_id]
 
     def unsubscribe(self, sub_id: int) -> None:
+        """Remove a subscriber and any events buffered for it."""
         self._subscribers.pop(sub_id, None)
         self._buffered_events.pop(sub_id, None)
 
     async def publish(self, source: str, message: str) -> None:
+        """Deliver an event to local subscribers, then try the remote backend."""
         evt = AgentEvent(ts=time.time(), source=source, message=message)
         self._fanout_local(evt)
         if not self._is_remote_circuit_open():
@@ -826,4 +838,5 @@ _BUS = AgentEventBus()
 
 
 def get_agent_event_bus() -> AgentEventBus:
+    """Return the process-wide ``AgentEventBus``."""
     return _BUS

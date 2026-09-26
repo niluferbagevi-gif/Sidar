@@ -42,6 +42,7 @@ class QAAgent(BaseAgent):
         *,
         config: Config | None = None,
     ) -> None:
+        """Create the QA agent with code and security managers."""
         resolved_cfg = cfg or config
         super().__init__(cfg=resolved_cfg, role_name="qa")
         self.security = SecurityManager(cfg=self.cfg)
@@ -207,6 +208,7 @@ class QAAgent(BaseAgent):
         )
 
     async def run_task(self, task_prompt: str) -> str:
+        """Handle a QA task: run a ``tool|arg`` command or plan tests with the LLM."""
         prompt = (task_prompt or "").strip()
         if not prompt:
             return "[UYARI] Boş QA/Coverage görevi verildi."

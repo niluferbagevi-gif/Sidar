@@ -32,6 +32,7 @@ def normalize_broker_protocol(protocol: object) -> str:
 
 
 def derive_broker_routing_key(*, receiver: str, intent: str, namespace: str = "sidar.swarm") -> str:
+    """Build the broker routing key ``<namespace>.<receiver>.<intent>`` (lowercased)."""
     role = str(receiver or "unknown").strip().lower() or "unknown"
     topic = str(intent or "mixed").strip().lower() or "mixed"
     ns = str(namespace or "sidar.swarm").strip().lower() or "sidar.swarm"
@@ -88,13 +89,16 @@ class P2PMessage:
 
     @property
     def sender(self) -> str:
+        """Alias of ``reply_to``: the agent that sent the message."""
         return self.reply_to
 
     @property
     def receiver(self) -> str:
+        """Alias of ``target_agent``: the agent that receives the message."""
         return self.target_agent
 
     def bumped(self) -> P2PMessage:
+        """Return a copy with ``handoff_depth`` incremented by one."""
         return type(self)(
             task_id=self.task_id,
             reply_to=self.reply_to,
@@ -137,6 +141,7 @@ class ExternalTrigger:
     correlation_id: str = ""
 
     def __post_init__(self) -> None:
+        """Derive ``correlation_id`` from the trigger, its meta/payload or its id."""
         self.correlation_id = derive_correlation_id(
             self.correlation_id,
             self.meta.get("correlation_id", ""),
@@ -146,6 +151,7 @@ class ExternalTrigger:
         )
 
     def to_prompt(self) -> str:
+        """Render the trigger as a ``[TRIGGER]`` prompt block for the agent."""
         payload_blob = json.dumps(self.payload, ensure_ascii=False, sort_keys=True)
         meta_blob = json.dumps(self.meta, ensure_ascii=False, sort_keys=True)
         return (
@@ -178,6 +184,7 @@ class FederationTaskEnvelope:
     correlation_id: str = ""
 
     def __post_init__(self) -> None:
+        """Normalize the protocol and derive ``correlation_id`` from meta or task ids."""
         self.protocol = normalize_federation_protocol(self.protocol)
         self.correlation_id = derive_correlation_id(
             self.correlation_id,
@@ -187,6 +194,7 @@ class FederationTaskEnvelope:
         )
 
     def to_task_envelope(self) -> TaskEnvelope:
+        """Convert to a local ``TaskEnvelope`` with ``system:agent`` sender/receiver."""
         return TaskEnvelope(
             task_id=self.task_id,
             sender=f"{self.source_system}:{self.source_agent}",
@@ -199,6 +207,7 @@ class FederationTaskEnvelope:
         )
 
     def to_prompt(self) -> str:
+        """Render the task as a ``[FEDERATION TASK]`` prompt block."""
         return (
             f"[FEDERATION TASK]\n"
             f"source_system={self.source_system}\n"
@@ -233,6 +242,7 @@ class FederationTaskResult:
     correlation_id: str = ""
 
     def __post_init__(self) -> None:
+        """Normalize the protocol and derive ``correlation_id`` from meta or the task id."""
         self.protocol = normalize_federation_protocol(self.protocol)
         self.correlation_id = derive_correlation_id(
             self.correlation_id,
@@ -241,6 +251,7 @@ class FederationTaskResult:
         )
 
     def to_task_result(self) -> TaskResult:
+        """Convert to a local ``TaskResult``."""
         return TaskResult(
             task_id=self.task_id,
             status=self.status,
@@ -250,6 +261,7 @@ class FederationTaskResult:
         )
 
     def to_prompt(self) -> str:
+        """Render the result as a ``[FEDERATION RESULT]`` prompt block."""
         return (
             f"[FEDERATION RESULT]\n"
             f"source_system={self.source_system}\n"
@@ -287,6 +299,7 @@ class BrokerTaskEnvelope:
     correlation_id: str = ""
 
     def __post_init__(self) -> None:
+        """Normalize the protocol, derive ``correlation_id`` and default the routing key."""
         self.protocol = normalize_broker_protocol(self.protocol)
         self.correlation_id = derive_correlation_id(
             self.correlation_id,
@@ -309,6 +322,7 @@ class BrokerTaskEnvelope:
         reply_queue: str = "",
         headers: dict[str, str] | None = None,
     ) -> BrokerTaskEnvelope:
+        """Wrap a local ``TaskEnvelope`` for dispatch through a message broker."""
         return cls(
             task_id=envelope.task_id,
             sender=envelope.sender,
@@ -326,6 +340,7 @@ class BrokerTaskEnvelope:
         )
 
     def to_task_envelope(self) -> TaskEnvelope:
+        """Convert back to a local ``TaskEnvelope``, carrying ``correlation_id`` in context."""
         return TaskEnvelope(
             task_id=self.task_id,
             sender=self.sender,
@@ -338,6 +353,7 @@ class BrokerTaskEnvelope:
         )
 
     def to_prompt(self) -> str:
+        """Render the envelope as a ``[BROKER TASK]`` prompt block."""
         return (
             f"[BROKER TASK]\n"
             f"broker={self.broker}\n"
@@ -375,6 +391,7 @@ class BrokerTaskResult:
     correlation_id: str = ""
 
     def __post_init__(self) -> None:
+        """Normalize the protocol, derive ``correlation_id`` and default the routing key."""
         self.protocol = normalize_broker_protocol(self.protocol)
         self.correlation_id = derive_correlation_id(
             self.correlation_id,
@@ -398,6 +415,7 @@ class BrokerTaskResult:
         headers: dict[str, str] | None = None,
         correlation_id: str = "",
     ) -> BrokerTaskResult:
+        """Wrap a local ``TaskResult`` for delivery through a message broker."""
         return cls(
             task_id=result.task_id,
             sender=sender,
@@ -413,6 +431,7 @@ class BrokerTaskResult:
         )
 
     def to_task_result(self) -> TaskResult:
+        """Convert back to a local ``TaskResult``."""
         return TaskResult(
             task_id=self.task_id,
             status=self.status,
@@ -422,6 +441,7 @@ class BrokerTaskResult:
         )
 
     def to_prompt(self) -> str:
+        """Render the result as a ``[BROKER RESULT]`` prompt block."""
         return (
             f"[BROKER RESULT]\n"
             f"broker={self.broker}\n"
@@ -457,6 +477,7 @@ class ActionFeedback:
     correlation_id: str = ""
 
     def __post_init__(self) -> None:
+        """Derive ``correlation_id`` from meta or the related task/trigger/feedback ids."""
         self.correlation_id = derive_correlation_id(
             self.correlation_id,
             self.meta.get("correlation_id", ""),
@@ -466,6 +487,7 @@ class ActionFeedback:
         )
 
     def to_external_trigger(self) -> ExternalTrigger:
+        """Wrap the feedback as an ``ExternalTrigger`` of kind ``action_feedback``."""
         payload = {
             "kind": "action_feedback",
             "feedback_id": self.feedback_id,
@@ -495,6 +517,7 @@ class ActionFeedback:
         )
 
     def to_prompt(self) -> str:
+        """Render the feedback as an ``[ACTION FEEDBACK]`` prompt block."""
         return (
             f"[ACTION FEEDBACK]\n"
             f"source_system={self.source_system}\n"

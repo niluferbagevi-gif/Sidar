@@ -39,6 +39,7 @@ class CoderAgent(BaseAgent):
         *,
         config: Config | None = None,
     ) -> None:
+        """Create the coder with code, package, security and TODO managers."""
         resolved_cfg = cfg or config
         super().__init__(cfg=resolved_cfg, role_name="coder")
         self.security = SecurityManager(
@@ -244,6 +245,7 @@ class CoderAgent(BaseAgent):
         return last_final or "[CODER:TOOL_LOOP_LIMIT] Araç döngüsü sınırına ulaşıldı."
 
     async def run_task(self, task_prompt: str) -> str | DelegationRequest:
+        """Handle a coding task: run a ``tool|arg`` command directly or plan with the LLM."""
         await self.events.publish("coder", "Kod görevi alındı, planlanıyor...")
         prompt = (task_prompt or "").strip()
         if not prompt:

@@ -310,6 +310,7 @@ class SidarAgent:
         return parse_tool_call_service(raw)
 
     async def initialize(self) -> None:
+        """Initialize conversation memory once; safe to call repeatedly and concurrently."""
         if self._initialized:
             return
         if self._init_lock is None:
@@ -359,10 +360,12 @@ class SidarAgent:
         yield multi_result
 
     def mark_activity(self, source: str = "runtime") -> None:
+        """Record runtime activity from ``source`` (debug log only)."""
         self._last_activity_ts = time.time()
         logger.debug("Sidar activity updated: %s", source)
 
     def seconds_since_last_activity(self) -> float:
+        """Return seconds elapsed since the last recorded activity."""
         return max(0.0, time.time() - float(getattr(self, "_last_activity_ts", 0.0) or 0.0))
 
     def _get_nightly_distributed_lock(self) -> RedisDistributedLock | None:
@@ -1084,6 +1087,7 @@ class SidarAgent:
     # ─────────────────────────────────────────────
 
     async def clear_memory(self) -> str:
+        """Clear the conversation memory and return a confirmation message."""
         await self.memory.clear()
         return "Konuşma belleği temizlendi (dosya silindi). ✓"
 
@@ -1120,6 +1124,7 @@ class SidarAgent:
         await self.memory.add(role, content)
 
     def status(self) -> str:
+        """Return a multi-line status report of provider, model, memory and autonomy."""
         self._ensure_autonomy_runtime_state()
         autonomy_total = len(self._autonomy_history)
         lines = [

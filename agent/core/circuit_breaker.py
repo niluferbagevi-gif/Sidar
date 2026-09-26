@@ -21,6 +21,7 @@ class SwarmCircuitBreaker:
     def __init__(
         self, *, max_failures: int | None = None, reset_after_seconds: float | None = None
     ) -> None:
+        """Configure the failure threshold and reset window (at least 1 failure / 1 second)."""
         self.max_failures = max(1, int(max_failures or self.MAX_FAILURES))
         self.reset_after_seconds = max(1.0, float(reset_after_seconds or self.RESET_AFTER_SECONDS))
         self._states: dict[str, _BreakerState] = {}

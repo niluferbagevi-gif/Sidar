@@ -303,6 +303,7 @@ class AgentCatalog:
 
     @classmethod
     def find_by_capability(cls, capability: str) -> list[AgentSpec]:
+        """Return the specs of all agents that declare ``capability``."""
         matches: list[AgentSpec] = []
         for spec in cls._registry.values():
             capabilities = getattr(spec, "capabilities", []) or []
@@ -312,6 +313,7 @@ class AgentCatalog:
 
     @classmethod
     def list_all(cls) -> list[AgentSpec]:
+        """Return the specs of all registered agents."""
         return list(cls._registry.values())
 
     @classmethod
@@ -321,6 +323,11 @@ class AgentCatalog:
 
     @classmethod
     def create(cls, role_name: str, **kwargs: Any) -> object:
+        """Instantiate the agent registered as ``role_name`` with ``kwargs``.
+
+        Raises:
+            KeyError: If no agent type is registered under ``role_name``.
+        """
         spec = cls.get(role_name)
         if spec is None:
             available = list(cls._registry.keys())
@@ -341,6 +348,7 @@ class AgentCatalog:
 
     @classmethod
     def unregister(cls, role_name: str) -> bool:
+        """Remove ``role_name`` from the catalog; returns whether it was registered."""
         if role_name in cls._registry:
             del cls._registry[role_name]
             return True
