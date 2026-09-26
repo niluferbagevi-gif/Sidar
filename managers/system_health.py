@@ -175,6 +175,14 @@ class SystemHealthManager:
         cpu_sample_interval: float = 0.0,
         cfg: Config | None = None,
     ) -> None:
+        """Bağımlılıkları algılar ve GPU varsa NVML'i başlatır.
+
+        Args:
+            use_gpu: GPU metriklerinin toplanıp toplanmayacağı.
+            cpu_sample_interval: `psutil.cpu_percent` örnekleme aralığı; 0.0-2.0 sn'ye
+                sınırlanır.
+            cfg: Yapılandırma; verilmezse yeni `Config` oluşturulur.
+        """
         self.cfg = cfg or Config()
         self.use_gpu = use_gpu
         self._lock = threading.RLock()
@@ -545,6 +553,10 @@ class SystemHealthManager:
             return {"healthy": False, "target": f"{host}:{port}", "kind": label, "error": str(exc)}
 
     def check_redis(self) -> dict[str, Any]:
+        """`REDIS_URL` hedefine TCP bağlantısı deneyerek Redis sağlığını raporlar.
+
+        `REDIS_URL` boşsa bağımlılık devre dışı sayılır ve sağlıklı döner.
+        """
         raw = str(getattr(self.cfg, "REDIS_URL", "") or "").strip()
         if not raw:
             return {"healthy": True, "kind": "redis", "mode": "disabled"}
@@ -556,6 +568,11 @@ class SystemHealthManager:
         return status
 
     def check_database(self) -> dict[str, Any]:
+        """Veritabanı sağlığını `DATABASE_URL` türüne göre raporlar.
+
+        SQLite için dosyanın varlığı, diğer URL'ler için TCP erişimi kontrol edilir;
+        URL boşsa bağımlılık devre dışı sayılır ve sağlıklı döner.
+        """
         raw = str(getattr(self.cfg, "DATABASE_URL", "") or "").strip()
         if not raw:
             return {"healthy": True, "kind": "database", "mode": "disabled"}
@@ -665,10 +682,12 @@ class SystemHealthManager:
                 self._nvml_initialized = False
 
     def __del__(self) -> None:
+        """Çöp toplama sırasında NVML kaynaklarını kapatmayı dener."""
         # Geriye dönük uyumluluk: GC sırasında da kapanışı dene.
         self.close()
 
     def __repr__(self) -> str:
+        """GPU, torch ve NVML durumunu içeren kısa gösterim döndürür."""
         return (
             f"<SystemHealthManager gpu={self._gpu_available} "
             f"torch={self._torch_available} "

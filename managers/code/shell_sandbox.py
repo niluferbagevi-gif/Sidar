@@ -12,6 +12,7 @@ class ShellSandboxAdapter:
     """Select sandbox images and execute shell commands in Docker sandbox."""
 
     def __init__(self, owner: Any) -> None:
+        """Bind the adapter to the CodeManager that owns sandbox settings."""
         self.owner = owner
 
     def select_shell_sandbox_image(self, command: str, image: str | None) -> str:

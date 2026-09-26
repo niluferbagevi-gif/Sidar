@@ -99,6 +99,15 @@ def _coerce_bool(value: Any, *, default: bool = False) -> bool:
 
 @dataclass(frozen=True)
 class ValidationResult:
+    """Prompt/çıktı güvenlik doğrulamasının sonucu.
+
+    Attributes:
+        allowed: Metnin güvenli kabul edilip edilmediği.
+        risk_score: Tespit edilen örüntülerden hesaplanan risk puanı.
+        reasons: Tekilleştirilmiş risk gerekçeleri.
+        source: Metnin kaynağı (ör. `user`, `agent_output`).
+    """
+
     allowed: bool
     risk_score: int = 0
     reasons: list[str] = field(default_factory=list)
@@ -124,6 +133,13 @@ class SecurityManager:
         base_dir: Path | None = None,
         cfg: Config | None = None,
     ) -> None:
+        """Erişim seviyesini ve temel dizini yapılandırmadan veya argümanlardan çözer.
+
+        Args:
+            access_level: `restricted`, `sandbox` veya `full`; verilmezse `ACCESS_LEVEL`.
+            base_dir: İzinli temel dizin; verilmezse `BASE_DIR`.
+            cfg: Yapılandırma; verilmezse yeni `Config` oluşturulur.
+        """
         self.cfg = cfg or Config()
         raw_level = (
             access_level
@@ -324,9 +340,11 @@ class SecurityManager:
         )
 
     def validate_user_input(self, text: str) -> ValidationResult:
+        """Kullanıcı girdisini `source="user"` ile prompt güvenlik kontrolünden geçirir."""
         return self.validate_prompt_text(text, source="user")
 
     def validate_agent_output(self, text: str) -> ValidationResult:
+        """Ajan çıktısını `source="agent_output"` ile prompt güvenlik kontrolünden geçirir."""
         return self.validate_prompt_text(text, source="agent_output")
 
     def is_safe_path(self, path_str: str) -> bool:
@@ -481,4 +499,5 @@ class SecurityManager:
         )
 
     def __repr__(self) -> str:
+        """Erişim seviyesini içeren kısa gösterim döndürür."""
         return f"<SecurityManager level={self.level_name}>"

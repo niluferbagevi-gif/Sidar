@@ -25,6 +25,8 @@ LEGACY_PROJECT_IMAGE_PREFIXES = {"sidar-ai": "sidar", "sidar-ai-gpu": "sidar-gpu
 
 
 class DockerSandboxOwner(Protocol):
+    """Structural type for the manager attributes Docker sandbox helpers read."""
+
     cfg: Any
     docker_mem_limit: str
     docker_exec_timeout: int
@@ -59,6 +61,7 @@ def sanitize_docker_token(
 
 
 def sanitize_docker_network(value: object) -> str:
+    """Return a lowercased allowed Docker network name, falling back to ``none``."""
     candidate = str(value if value is not None else "").strip().lower()
     if candidate not in DOCKER_NETWORK_ALLOWED:
         logger.warning(
@@ -70,6 +73,11 @@ def sanitize_docker_network(value: object) -> str:
 
 
 def sanitize_docker_image(value: object) -> str:
+    """Validate a Docker image reference, falling back to ``python:3.11-slim``.
+
+    Empty values, values starting with ``-`` and references with unexpected
+    characters are rejected so they cannot be injected as CLI options.
+    """
     candidate = str(value if value is not None else "").strip()
     if not candidate or candidate.startswith("-") or not DOCKER_IMAGE_RE.fullmatch(candidate):
         logger.warning(

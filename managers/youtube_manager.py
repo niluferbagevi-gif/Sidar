@@ -29,6 +29,13 @@ class YouTubeManager:
         *,
         http_client_factory: Callable[..., Any] | None = None,
     ) -> None:
+        """LLM istemcisini, yapılandırmayı ve transcript zaman aşımını ayarlar.
+
+        Args:
+            llm_client: Frame analizinde kullanılan vision destekli LLM istemcisi.
+            config: `YOUTUBE_TRANSCRIPT_TIMEOUT` okunacak yapılandırma.
+            http_client_factory: Test için enjekte edilebilen async HTTP istemci fabrikası.
+        """
         self.llm_client = llm_client
         self.config = config
         self.http_client_factory = http_client_factory or httpx.AsyncClient
@@ -39,6 +46,11 @@ class YouTubeManager:
 
     @staticmethod
     def extract_video_id(value: str) -> str:
+        """URL veya çıplak kimlikten 11 karakterlik YouTube video id'sini çıkarır.
+
+        `youtu.be`, `/watch?v=`, `/shorts/`, `/embed/` ve `/live/` biçimleri desteklenir;
+        eşleşme yoksa boş metin döner.
+        """
         text = str(value or "").strip()
         if not text:
             return ""
@@ -95,6 +107,14 @@ class YouTubeManager:
     async def fetch_transcript(
         self, video_url_or_id: str, *, languages: tuple[str, ...] | None = None
     ) -> dict[str, Any]:
+        """YouTube altyazısını dil tercih sırasına göre çeker.
+
+        İlk boş olmayan transcript döndürülür; `languages` verilmezse `tr`, ardından
+        `en` denenir.
+
+        Returns:
+            `success`, `video_id`, `language`, `text` ve zaman damgalı `segments`.
+        """
         video_id = self.extract_video_id(video_url_or_id)
         if not video_id:
             return {
@@ -144,6 +164,11 @@ class YouTubeManager:
         max_frames: int = 6,
         extra_notes: str = "",
     ) -> dict[str, Any]:
+        """Videodan frame çıkarıp her frame'i vision pipeline ile analiz eder.
+
+        Transcript ve frame analizleri tek bir multimodal bağlam metninde birleştirilir.
+        Dosya yoksa veya `llm_client` tanımlı değilse `success=False` döner.
+        """
         source = Path(video_path)
         if not await asyncio.to_thread(source.exists):
             return {"success": False, "reason": f"Video dosyası bulunamadı: {source}"}
@@ -198,6 +223,11 @@ class YouTubeManager:
         max_frames: int = 6,
         extra_notes: str = "",
     ) -> dict[str, Any]:
+        """Transcript çekimi ile frame analizini birleştirerek video analizi üretir.
+
+        Transcript bulunamasa da frame analizi yapılır; başarılı sonuca `video_url` ve
+        `video_id` eklenir.
+        """
         transcript = await self.fetch_transcript(video_url, languages=languages)
         analysis = await self.analyze_video_file(
             video_path,
