@@ -1,3 +1,5 @@
+"""Create the Sidar PostgreSQL databases (primary, development, test) when they are missing."""
+
 from __future__ import annotations
 
 import os

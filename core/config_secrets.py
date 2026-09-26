@@ -1,3 +1,5 @@
+"""Secret presence and weakness checks used when validating ``Config`` values."""
+
 from __future__ import annotations
 
 from scripts.secret_strength import is_weak_secret as _entropy_is_weak_secret

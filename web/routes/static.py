@@ -1,3 +1,5 @@
+"""Frontend SPA, favicon and vendored asset routes."""
+
 from __future__ import annotations
 
 import json

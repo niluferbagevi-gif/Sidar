@@ -1,3 +1,5 @@
+"""Minimal demo agent used by the uploaded-plugin flow."""
+
 from agent.base_agent import BaseAgent
 
 

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""Sync or check the installer module hash manifest and its pinned source commit."""
+
 from __future__ import annotations
 
 import argparse

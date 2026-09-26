@@ -1,3 +1,5 @@
+"""Authentication and admin (stats, prompt registry) API routes."""
+
 from __future__ import annotations
 
 import inspect

@@ -1,3 +1,9 @@
+"""SentenceTransformer embedding model loading, caching and device selection.
+
+Models are cached per (model, device, precision), loaded with a configurable
+timeout and resolved from the local Hugging Face cache when possible.
+"""
+
 from __future__ import annotations
 
 import concurrent.futures

@@ -1,3 +1,5 @@
+"""Loopback-only CORS configuration for the local web UI."""
+
 from __future__ import annotations
 
 from fastapi import FastAPI

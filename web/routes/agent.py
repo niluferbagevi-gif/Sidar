@@ -1,3 +1,5 @@
+"""Agent registration and plugin-marketplace API routes."""
+
 from __future__ import annotations
 
 import secrets

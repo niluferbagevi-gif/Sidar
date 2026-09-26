@@ -1,3 +1,5 @@
+"""Strategy interface every ``AgentEventBus`` remote transport backend implements."""
+
 from __future__ import annotations
 
 import abc

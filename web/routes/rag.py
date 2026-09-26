@@ -1,3 +1,5 @@
+"""RAG document management, upload and search API routes."""
+
 from __future__ import annotations
 
 import asyncio

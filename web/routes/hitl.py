@@ -1,3 +1,5 @@
+"""Human-in-the-loop approval routes and WebSocket stream."""
+
 from __future__ import annotations
 
 import inspect
