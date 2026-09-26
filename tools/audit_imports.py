@@ -20,6 +20,7 @@ from core.utils.trusted_subprocess import run_trusted_command  # noqa: E402
 
 
 def main() -> int:
+    """Run ruff's unused/undefined import and sorting checks on the given paths."""
     parser = argparse.ArgumentParser(description="Audit Python files for unused imports.")
     parser.add_argument("paths", nargs="+", type=Path)
     args = parser.parse_args()

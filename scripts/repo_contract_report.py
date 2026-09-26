@@ -26,6 +26,8 @@ UV_PIP_INSTALL_PATTERN = re.compile(r"(?:^|[\s`])uv\s+pip\s+install\b")
 
 @dataclass(frozen=True)
 class StandardsViolation:
+    """A repository standards violation found in a scanned file."""
+
     code: str
     path: str
     line: int
@@ -35,6 +37,8 @@ class StandardsViolation:
 
 @dataclass(frozen=True)
 class RoleContractStatus:
+    """Registration and documentation status of one built-in agent role."""
+
     role_name: str
     class_name: str
     module_name: str
@@ -50,6 +54,8 @@ class RoleContractStatus:
 
 @dataclass(frozen=True)
 class DependencyProfilePlanStatus:
+    """Sync status between pyproject dependency profiles and the profile plan doc."""
+
     status: str
     pyproject_path: str
     plan_path: str
@@ -299,6 +305,10 @@ def check_dependency_profile_plan_sync(
 def build_report(
     *, standards_paths: list[Path] | None = None, legacy_product_names: list[str] | None = None
 ) -> dict[str, Any]:
+    """Combine role contracts, standards scan and dependency plan into one report.
+
+    The report status is ``fail`` when any of the three parts drifts.
+    """
     violations = scan_repo_standards(
         standards_paths or [], legacy_product_names=legacy_product_names or []
     )
@@ -322,6 +332,11 @@ def build_report(
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Print the repository contract report as JSON or text.
+
+    Returns:
+        Process exit code; non-zero with ``--fail-on-violation`` when drift is found.
+    """
     parser = argparse.ArgumentParser(description="Sidar repo standards and role contract report")
     parser.add_argument(
         "--standards-path",

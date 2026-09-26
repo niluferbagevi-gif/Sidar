@@ -17,16 +17,20 @@ from defusedxml import ElementTree as ET
 
 @dataclass
 class FileCoverage:
+    """Covered and missed line counts for one source file."""
+
     path: str
     covered: int
     missed: int
 
     @property
     def total(self) -> int:
+        """Return the total number of measured lines."""
         return self.covered + self.missed
 
     @property
     def coverage_pct(self) -> float:
+        """Return line coverage as a percentage; files without lines count as 100%."""
         total = self.total
         if total == 0:
             return 100.0
@@ -40,6 +44,10 @@ def _normalize_path(raw: str, root: str) -> str:
 
 
 def parse_coverage_xml(xml_path: str, root: str = ".") -> list[FileCoverage]:
+    """Parse per-file line coverage from a coverage.py XML report.
+
+    Paths are normalized relative to ``root``.
+    """
     root_abs = os.path.abspath(root)
     tree = ET.parse(xml_path)
     xml_root = tree.getroot()
@@ -67,10 +75,12 @@ def parse_coverage_xml(xml_path: str, root: str = ".") -> list[FileCoverage]:
 
 
 def rank_hotspots(files: Iterable[FileCoverage], top: int = 10) -> list[FileCoverage]:
+    """Return the ``top`` files with the most missed lines, lowest coverage first on ties."""
     return sorted(files, key=lambda rec: (rec.missed, -rec.coverage_pct), reverse=True)[:top]
 
 
 def format_table(files: Iterable[FileCoverage]) -> str:
+    """Render coverage records as a Markdown table."""
     lines = [
         "| File | Coverage | Missed | Covered |",
         "|---|---:|---:|---:|",
@@ -92,6 +102,11 @@ def format_table(files: Iterable[FileCoverage]) -> str:
 
 
 def main() -> int:
+    """Print the lowest-coverage files from a coverage XML report.
+
+    Returns:
+        0 on success, 1 when the report contains no files.
+    """
     parser = argparse.ArgumentParser(description="List lowest-coverage files from coverage XML.")
     parser.add_argument(
         "--xml", default="coverage.xml", help="Path to coverage XML report (default: coverage.xml)"

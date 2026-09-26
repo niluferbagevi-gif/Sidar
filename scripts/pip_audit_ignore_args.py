@@ -13,6 +13,8 @@ DEFAULT_POLICY_PATH = Path("security/pip-audit-ignores.tsv")
 
 @dataclass(frozen=True)
 class PipAuditIgnore:
+    """One dated pip-audit ignore entry from the policy file."""
+
     vuln_id: str
     package: str
     expires: date
@@ -76,6 +78,11 @@ def build_ignore_args(ignores: list[PipAuditIgnore]) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Print ``--ignore-vuln`` arguments for the active policy entries.
+
+    Returns:
+        0 on success, 2 when the policy is invalid or expired.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--policy",

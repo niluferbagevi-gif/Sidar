@@ -39,6 +39,11 @@ async def run_load_test(
     warmup_requests: int,
     acquire_timeout_s: float,
 ) -> None:
+    """PostgreSQL havuzuna eşzamanlı sorgu yükü uygulayıp gecikme sonuçlarını yazdırır.
+
+    Havuz boyutu `concurrency` değerine (en fazla 100) ayarlanır; ölçümden önce
+    `warmup_requests` kadar ısınma isteği gönderilir.
+    """
     os.environ["DATABASE_URL"] = database_url
     os.environ["DB_POOL_SIZE"] = str(max(1, min(concurrency, 100)))
 

@@ -97,6 +97,14 @@ def _is_regression(metric_name: str, pct_delta: float, threshold_percent: float)
 
 
 def main() -> int:
+    """Compare GPU benchmark metrics with their rolling history.
+
+    Expects benchmark JSON, history JSON, window, threshold percent and profile hint
+    as positional arguments.
+
+    Returns:
+        Process exit code; 2 for usage errors.
+    """
     if len(sys.argv) != 6:
         print(
             "Usage: python scripts/ci/check_gpu_benchmark_trend.py "

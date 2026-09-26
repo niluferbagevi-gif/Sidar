@@ -105,6 +105,14 @@ async def _copy_table(conn: Any, sqlite_path: Path, table: str, dry_run: bool) -
 
 
 async def migrate(sqlite_path: Path, postgres_dsn: str, dry_run: bool) -> None:
+    """SQLite tablolarını bağımlılık sırasıyla PostgreSQL'e kopyalar.
+
+    `dry_run=True` ise yalnız satır sayıları raporlanır.
+
+    Raises:
+        RuntimeError: `asyncpg` kurulu değilse.
+        FileNotFoundError: SQLite dosyası bulunamazsa.
+    """
     try:
         import asyncpg
     except Exception as exc:  # pragma: no cover
@@ -124,6 +132,7 @@ async def migrate(sqlite_path: Path, postgres_dsn: str, dry_run: bool) -> None:
 
 
 def main() -> None:
+    """CLI argümanlarını okuyup taşıma işlemini çalıştırır."""
     parser = argparse.ArgumentParser(description="SQLite verilerini PostgreSQL'e taşır.")
     parser.add_argument("--sqlite-path", required=True, help="Kaynak sqlite db dosya yolu")
     parser.add_argument("--postgres-dsn", required=True, help="Hedef PostgreSQL DSN")

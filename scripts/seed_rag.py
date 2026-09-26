@@ -74,13 +74,17 @@ class SeedDocumentStore(Protocol):
         title: str = "",
         tags: list[str] | None = None,
         session_id: str = "global",
-    ) -> tuple[bool, str]: ...
+    ) -> tuple[bool, str]:
+        """Index a file as a document and return ``(ok, message)``."""
 
-    def delete_document(self, doc_id: str, session_id: str = "global") -> str: ...
+    def delete_document(self, doc_id: str, session_id: str = "global") -> str:
+        """Delete a document and return a status message."""
 
-    def get_index_info(self, session_id: str | None = None) -> list[dict[str, Any]]: ...
+    def get_index_info(self, session_id: str | None = None) -> list[dict[str, Any]]:
+        """Return index entries for the session."""
 
-    def close(self) -> None: ...
+    def close(self) -> None:
+        """Release store resources."""
 
 
 class SeedError(RuntimeError):
@@ -97,15 +101,19 @@ class DryRunStore:
         tags: list[str] | None = None,
         session_id: str = "global",
     ) -> tuple[bool, str]:
+        """Pretend to index the file and report the dry-run action."""
         return True, f"dry-run {title or path}"
 
     def delete_document(self, doc_id: str, session_id: str = "global") -> str:
+        """Pretend to delete the document and report the dry-run action."""
         return f"dry-run delete {doc_id}"
 
     def get_index_info(self, session_id: str | None = None) -> list[dict[str, Any]]:
+        """Return an empty index in dry-run mode."""
         return []
 
     def close(self) -> None:
+        """Do nothing; the dry-run store holds no resources."""
         return None
 
 
@@ -432,6 +440,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Seed the RAG store from command-line arguments.
+
+    Returns:
+        Process exit code.
+    """
     args = _parse_args(argv)
     return run(
         rag_dir=args.rag_dir,

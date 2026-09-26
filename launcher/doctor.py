@@ -30,6 +30,7 @@ _RESET = "\033[0m"
 
 
 def doctor_status_icon(status: str) -> str:
+    """Return the emoji icon for a doctor check status (pass/warn/fail/other)."""
     if status == "pass":
         return "✅"
     if status == "warn":
@@ -40,6 +41,11 @@ def doctor_status_icon(status: str) -> str:
 
 
 def print_doctor_check_summary(check: Any) -> None:
+    """Print a colored one-line summary of a doctor check.
+
+    For ``warn`` and ``fail`` checks, up to three root-cause hints and remediation
+    steps from ``details`` are printed as well.
+    """
     status = str(getattr(check, "status", "warn") or "warn")
     name = str(getattr(check, "name", "doctor") or "doctor")
     message = str(getattr(check, "message", "") or "")

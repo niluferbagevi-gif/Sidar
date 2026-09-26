@@ -34,6 +34,7 @@ def sync_packaged_migrations() -> list[Path]:
 
 
 def main() -> None:
+    """Copy Alembic migrations into the package and list the synced files."""
     synced = sync_packaged_migrations()
     print(f"Synced {len(synced)} packaged migration file(s).")
     for path in synced:

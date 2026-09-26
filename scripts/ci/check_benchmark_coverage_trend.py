@@ -52,6 +52,11 @@ def _pct_delta(current: float, baseline: float) -> float:
 
 
 def main() -> int:
+    """Append benchmark latency and coverage to history and gate on regressions.
+
+    Returns:
+        Process exit code; non-zero when a regression exceeds the allowed percentage.
+    """
     parser = argparse.ArgumentParser(
         description="Benchmark JSON ve coverage.xml için trend kalite kapısı"
     )

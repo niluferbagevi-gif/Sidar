@@ -162,6 +162,11 @@ def sync_env_text(text: str) -> tuple[str, dict[str, Any]]:
 
 
 def sync_env_file(env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
+    """Sync Redis URL passwords in a single dotenv file.
+
+    Raises:
+        FileNotFoundError: If the file does not exist.
+    """
     if not env_file.is_file():
         raise FileNotFoundError(f"Env dosyası bulunamadı: {env_file}")
     original = env_file.read_text(encoding="utf-8")
@@ -223,6 +228,14 @@ def sync_env_chain(
     *,
     all_envs: bool = False,
 ) -> dict[str, Any]:
+    """Sync Redis URL passwords with ``REDIS_PASSWORD`` across the dotenv chain.
+
+    With ``all_envs=True`` every variant file is repaired using the base file's
+    password.
+
+    Raises:
+        FileNotFoundError: If the base env file does not exist.
+    """
     specs = discover_env_chain(base_env_file, include_all_envs=all_envs)
     if not specs or not specs[0].path.is_file():
         raise FileNotFoundError(f"Env dosyası bulunamadı: {base_env_file}")
@@ -322,6 +335,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the Redis password sync and print the JSON summary.
+
+    Returns:
+        0 on success, 1 on failure.
+    """
     args = _parse_args(argv)
     try:
         summary = sync_env_chain(Path(args.env_file), all_envs=args.all_envs)

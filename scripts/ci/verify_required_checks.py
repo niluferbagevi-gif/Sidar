@@ -251,6 +251,14 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Compare required status checks with CI workflow job names.
+
+    Required contexts come from ``--required-contexts`` or the repository's branch
+    protection.
+
+    Returns:
+        Process exit code; non-zero when the audit finds drift or fails.
+    """
     args = _parse_args(list(argv or sys.argv[1:]))
     job_ids = tuple(args.job_ids or DEFAULT_RELEASE_JOB_IDS)
     try:

@@ -130,6 +130,11 @@ def _emit_human_feedback(summary: dict[str, Any]) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Create env files for the selected profile and print the JSON summary.
+
+    Returns:
+        Process exit code (always 0 when no exception is raised).
+    """
     args = _parse_args(argv)
     summary = bootstrap_profile_env(
         str(args.profile),

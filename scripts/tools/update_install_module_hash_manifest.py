@@ -23,6 +23,7 @@ PIN_RE = re.compile(
 
 
 def extract_embedded_source_commit(content: str) -> str | None:
+    """Return the pinned installer source commit, or None when absent."""
     match = PIN_RE.search(content)
     if match is None:
         return None
@@ -52,11 +53,13 @@ def sha256sum_git_show(commit: str, rel_path: str) -> str | None:
 
 
 def iter_modules() -> list[Path]:
+    """Return installer module ``.sh``/``.ps1`` files, sorted."""
     files = sorted(p for p in MODULES_DIR.rglob("*") if p.is_file() and p.suffix in {".sh", ".ps1"})
     return files
 
 
 def digest(path: Path) -> str:
+    """Return the SHA-256 hex digest of a file."""
     h = hashlib.sha256()
     with path.open("rb") as f:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
@@ -65,6 +68,7 @@ def digest(path: Path) -> str:
 
 
 def build_payload() -> str:
+    """Build manifest lines of digest and repository-relative path."""
     lines = [f"{digest(p)}  {p.relative_to(ROOT).as_posix()}" for p in iter_modules()]
     return "\n".join(lines)
 
@@ -78,6 +82,7 @@ def _rewrite(content: str, payload: str) -> str:
 
 
 def update_target(target: Path) -> None:
+    """Rewrite the embedded module manifest in the target installer script."""
     content = target.read_text(encoding="utf-8")
     payload = build_payload()
     updated = _rewrite(content, payload)
@@ -151,6 +156,11 @@ def diff_pinned_commit(target: Path) -> list[tuple[str, str | None, str | None]]
 
 
 def stamp_embedded_source_commit(target: Path, commit: str) -> None:
+    """Replace the pinned installer source commit in the target script.
+
+    Raises:
+        RuntimeError: If the pin line is not found.
+    """
     content = target.read_text(encoding="utf-8")
     updated, count = PIN_RE.subn(
         f'SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="{commit}"', content, count=1
@@ -189,6 +199,7 @@ def _format_pin_drift_report(target: Path, drift: list[tuple[str, str | None, st
 
 
 def check_target(target: Path) -> bool:
+    """Return whether the target's embedded manifest is up to date."""
     content = target.read_text(encoding="utf-8")
     payload = build_payload()
     updated = _rewrite(content, payload)
@@ -219,6 +230,11 @@ def _format_drift_report(target: Path, drift: list[tuple[str, str | None, str | 
 
 
 def main() -> int:
+    """Update or check the module hash manifest and source commit pin.
+
+    Returns:
+        Process exit code.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("--target", default="install_sidar.sh")
     parser.add_argument(

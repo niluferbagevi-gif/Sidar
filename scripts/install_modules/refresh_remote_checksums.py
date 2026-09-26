@@ -16,6 +16,8 @@ from core.utils.trusted_urlopen import urlopen_trusted_request
 
 @dataclass(frozen=True)
 class RemoteScriptPin:
+    """A remote installer script whose SHA-256 is pinned in the checksum env file."""
+
     env_var: str
     url: str
     label: str
@@ -34,6 +36,7 @@ REMOTE_SCRIPT_PINS = (
 
 
 def fetch_remote_bytes(url: str) -> bytes:
+    """Download a remote installer script without cache."""
     request = urllib.request.Request(
         url,
         headers={
@@ -47,6 +50,11 @@ def fetch_remote_bytes(url: str) -> bytes:
 
 
 def replace_pin(content: str, env_var: str, sha256: str) -> str:
+    """Replace the pinned SHA-256 assignment for ``env_var``.
+
+    Raises:
+        ValueError: If the assignment is not found exactly once.
+    """
     pattern = re.compile(rf'^: "\$\{{{re.escape(env_var)}:=.*\}}"$', re.MULTILINE)
     replacement = f': "${{{env_var}:={sha256}}}"'
     updated, count = pattern.subn(replacement, content)
@@ -56,6 +64,7 @@ def replace_pin(content: str, env_var: str, sha256: str) -> str:
 
 
 def build_pull_request_body(pins: dict[str, str]) -> str:
+    """Build a suggested pull request body listing the refreshed pins."""
     lines = [
         "## Summary",
         "- Refreshed reviewed remote installer SHA-256 pins for Sidar install bootstrap.",
@@ -75,6 +84,11 @@ def build_pull_request_body(pins: dict[str, str]) -> str:
 
 
 def main() -> int:
+    """Refresh the pinned checksums, or with ``--check`` verify they are set.
+
+    Returns:
+        Process exit code.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--file", type=Path, default=Path("scripts/install_modules/remote_checksums.env")

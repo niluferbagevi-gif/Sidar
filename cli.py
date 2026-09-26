@@ -325,6 +325,14 @@ def _run_doctor_command(
 
 
 def main_cli(argv: list[str] | None = None) -> int:
+    """CLI argümanlarını işler; `doctor` alt komutu veya etkileşimli/tek komut modunu çalıştırır.
+
+    Args:
+        argv: Argüman listesi; verilmezse `sys.argv` kullanılır.
+
+    Returns:
+        Süreç çıkış kodu.
+    """
     use_process_argv = argv is None
     argv = list(sys.argv[1:] if argv is None else argv)
     if len(argv) > 0 and argv[0] == "doctor":
@@ -452,6 +460,7 @@ def main_cli(argv: list[str] | None = None) -> int:
 
 
 def main() -> int:
+    """Konsol giriş noktası; doctor istekleri için çıkış kodunu `SystemExit` ile iletir."""
     argv = list(sys.argv[1:])
     if (len(argv) > 0 and argv[0] == "doctor") or "--doctor" in argv:
         raise SystemExit(main_cli(argv))

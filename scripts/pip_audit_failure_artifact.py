@@ -145,6 +145,14 @@ def build_artifact(
     timeout: str,
     stderr_log_path: Path | None = None,
 ) -> dict[str, Any]:
+    """Summarize a pip-audit report into a JSON artifact and write it to ``output_path``.
+
+    The captured stderr log, when given, helps classify network failures versus
+    real vulnerability findings.
+
+    Returns:
+        The artifact written to disk.
+    """
     report, parse_error = _load_report(raw_report_path)
     findings = _dependency_vulnerabilities(report, timeout)
     affected_packages = sorted(
@@ -186,6 +194,7 @@ def build_artifact(
 
 
 def main() -> int:
+    """Build the pip-audit failure artifact from command-line arguments."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("raw_report", type=Path)
     parser.add_argument("output", type=Path)

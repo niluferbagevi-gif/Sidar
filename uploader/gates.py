@@ -13,6 +13,11 @@ def run_quality_steps(
     *,
     run_command: Callable[..., tuple[bool, str]],
 ) -> tuple[bool, str]:
+    """Run quality commands in order and stop at the first failure.
+
+    Returns:
+        ``(True, "")`` when all pass, otherwise ``(False, command and output)``.
+    """
     for cmd, extra_env in quality_steps:
         success, output = run_command(cmd, show_output=False, extra_env=extra_env)
         if not success:

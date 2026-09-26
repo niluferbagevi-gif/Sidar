@@ -28,6 +28,11 @@ def _ms(raw_seconds: float | None) -> float | None:
 
 
 def main() -> int:
+    """Check auth benchmark percentiles in the given JSON against their budgets.
+
+    Returns:
+        Process exit code; 2 for usage errors or a missing benchmark file.
+    """
     if len(sys.argv) != 2:
         print("Usage: python scripts/ci/check_auth_benchmark_thresholds.py <benchmark.json>")
         return 2

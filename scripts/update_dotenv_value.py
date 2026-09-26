@@ -98,6 +98,11 @@ def update_dotenv_value(path: Path, key: str, value: str) -> None:
 
 
 def main() -> int:
+    """Read the value from stdin and write it to the key in the dotenv file.
+
+    Returns:
+        0 on success, 1 on failure.
+    """
     args = _parse_args()
     try:
         value = _read_value(args.max_value_bytes)

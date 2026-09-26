@@ -4,6 +4,8 @@ from __future__ import annotations
 
 
 class Colors:
+    """ANSI escape codes for colored terminal output."""
+
     HEADER = "\033[95m"
     OKBLUE = "\033[94m"
     OKGREEN = "\033[92m"

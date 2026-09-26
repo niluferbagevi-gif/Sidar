@@ -1105,6 +1105,11 @@ class Config:
         _FIRST_CONFIG_LOAD_LOGGED = True
 
     def __init__(self) -> None:
+        """Donanım bilgisini yükler ve kritik çalışma zamanı anahtarlarını doğrular.
+
+        Raises:
+            ValueError: `JWT_SECRET_KEY`, `API_KEY` veya `POSTGRES_PASSWORD` boşsa.
+        """
         # Donanım bilgisini import anında değil, ilk Config kullanımında yükle.
         self.__class__._ensure_hardware_info_loaded()
         self.__class__._apply_gpu_memory_safety_check()

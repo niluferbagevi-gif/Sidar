@@ -22,6 +22,10 @@ class CryptoPriceAgent(BaseAgent):
     }
 
     async def run_task(self, task_prompt: str) -> str:
+        """Görevdeki sembolün (btc, eth, sol) USD fiyatını CoinGecko'dan getirir.
+
+        Desteklenmeyen sembolde veya istek hatasında açıklayıcı mesaj döner.
+        """
         symbol = self._extract_symbol(task_prompt)
         coin_id = self.SYMBOL_MAP.get(symbol)
         if not coin_id:
