@@ -33,6 +33,11 @@ def build_orchestration_router(
     swarm_request_model: type[Any] | None = None,
     serialize_swarm_result: Callable[[Any], dict[str, Any]] | None = None,
 ) -> LegacyExportRouter:
+    """Swarm yürütme ile TODO, bellek temizleme ve erişim seviyesi route'larını kurar.
+
+    Raises:
+        ValueError: Swarm istek modeli verilmemişse.
+    """
     router = LegacyExportRouter()
     request_model = swarm_execute_request_model or swarm_request_model
     if request_model is None:

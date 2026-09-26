@@ -16,6 +16,8 @@ from web.security import extract_ws_header_token as default_extract_ws_header_to
 
 
 class HITLRespondRequest(BaseModel):
+    """Bekleyen HITL isteğine verilen onay/red kararı."""
+
     approved: bool
     decided_by: str = "operator"
     rejection_reason: str = ""
@@ -36,6 +38,7 @@ def build_hitl_router(
     ] = default_extract_ws_header_token,
     ws_hitl_protocol: str = SIDAR_WS_HITL_PROTOCOL,
 ) -> LegacyExportRouter:
+    """HITL bekleyen istek, istek oluşturma, yanıtlama ve `/ws/hitl` route'larını kurar."""
     router = LegacyExportRouter()
 
     async def _resolve_pending_items() -> list[Any]:

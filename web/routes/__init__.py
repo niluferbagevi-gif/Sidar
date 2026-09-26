@@ -11,5 +11,6 @@ class LegacyExportRouter(APIRouter):
     legacy_exports: dict[str, Any]
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """APIRouter'ı başlatır ve boş legacy export kaydını oluşturur."""
         super().__init__(*args, **kwargs)
         self.legacy_exports = {}

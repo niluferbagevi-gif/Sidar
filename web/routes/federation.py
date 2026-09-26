@@ -14,6 +14,8 @@ from pydantic import BaseModel, Field
 
 
 class FederationTaskRequest(BaseModel):
+    """Dış swarm platformundan Sidar'a gönderilen federation görev isteği."""
+
     task_id: str = Field(..., description="Dış platform tarafından verilen görev kimliği")
     source_system: str = Field(..., description="Gönderen swarm platformu (örn. crewai, autogen)")
     source_agent: str = Field(..., description="Gönderen ajan veya workflow adı")
@@ -28,6 +30,8 @@ class FederationTaskRequest(BaseModel):
 
 
 class FederationFeedbackRequest(BaseModel):
+    """Dış swarm sisteminin bir aksiyon için gönderdiği geri bildirim isteği."""
+
     feedback_id: str = Field(..., description="Dış sistem action feedback kaydı kimliği")
     source_system: str = Field(..., description="Feedback gönderen dış sistem")
     source_agent: str = Field(..., description="Feedback gönderen ajan/workflow")
@@ -63,6 +67,7 @@ def _resolve_federation_secret(cfg: Any) -> str:
 
 
 def configure_federation_dependencies(deps_factory: Callable[[], Any]) -> None:
+    """Federation route'larının kullanacağı bağımlılık fabrikasını kaydeder."""
     global _deps_factory
     _deps_factory = deps_factory
 
@@ -74,6 +79,7 @@ def _deps() -> Any:
 
 
 def build_federation_router(deps_factory: Callable[[], Any]) -> APIRouter:
+    """Bağımlılıkları kaydedip federation router'ını döndürür."""
     configure_federation_dependencies(deps_factory)
     return router
 
@@ -168,6 +174,7 @@ async def swarm_federation_feedback(
     req: FederationFeedbackRequest,
     x_sidar_signature: str = Header(default=""),
 ) -> Any:
+    """HMAC imzalı action feedback'i autonomy tetik akışına bağlar."""
     deps = _deps()
     if not bool(getattr(deps.cfg, "ENABLE_SWARM_FEDERATION", True)):
         raise HTTPException(status_code=503, detail="Swarm federation özelliği devre dışı.")

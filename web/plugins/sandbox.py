@@ -59,6 +59,14 @@ class DockerPluginSandboxBackend:
     """Run versioned plugin RPC requests in a disposable, locked-down container."""
 
     def __init__(self, env: Mapping[str, str] | None = None) -> None:
+        """Container imajını ve kaynak limitlerini ortam değişkenlerinden okur.
+
+        `SIDAR_PLUGIN_SANDBOX_*` değerleri güvenli token doğrulamasından geçer; geçersiz
+        imaj, bellek veya CPU değeri güvenli varsayılana döner.
+
+        Args:
+            env: Okunacak ortam; verilmezse `os.environ` kullanılır.
+        """
         environ = os.environ if env is None else env
         self.image = sanitize_docker_image(
             environ.get("SIDAR_PLUGIN_SANDBOX_IMAGE", "sidar:latest")

@@ -22,6 +22,7 @@ from web.security import (
 
 
 def build_ws_voice_router(deps_factory: Callable[[], Any]) -> APIRouter:
+    """`/ws/voice` WebSocket route'unu kurar."""
     router = APIRouter()
 
     @router.websocket("/ws/voice")

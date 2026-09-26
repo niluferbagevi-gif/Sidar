@@ -14,12 +14,16 @@ from web.routes import LegacyExportRouter
 
 
 class SlackSendRequest(BaseModel):
+    """Slack'e mesaj gönderme isteği."""
+
     text: str = Field(..., description="Gönderilecek mesaj metni")
     channel: str | None = Field(None, description="Hedef kanal (ör. #general)")
     thread_ts: str | None = Field(None, description="Thread zaman damgası")
 
 
 class JiraCreateRequest(BaseModel):
+    """Jira'da issue oluşturma isteği."""
+
     project_key: str = Field(..., description="Jira proje anahtarı (ör. SIDAR)")
     summary: str = Field(..., description="Issue başlığı")
     description: str | None = Field(None, description="Issue açıklaması")
@@ -28,6 +32,8 @@ class JiraCreateRequest(BaseModel):
 
 
 class TeamsSendRequest(BaseModel):
+    """Teams'e mesaj gönderme isteği."""
+
     text: str = Field(..., description="Gönderilecek mesaj metni")
     title: str | None = Field(None, description="Mesaj başlığı")
 
@@ -40,6 +46,10 @@ def build_integrations_router(
     teams_cache: dict[str, Any],
     require_admin_user: Callable[..., Any],
 ) -> LegacyExportRouter:
+    """Slack, Jira ve Teams entegrasyon route'larını kurar.
+
+    Manager örnekleri ilk kullanımda oluşturulup verilen önbelleklerde tutulur.
+    """
     router = LegacyExportRouter()
 
     async def get_slack_manager() -> Any:

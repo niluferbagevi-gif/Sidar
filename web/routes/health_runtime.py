@@ -17,7 +17,8 @@ from fastapi.responses import JSONResponse
 class LoggerLike(Protocol):
     """Small logger protocol used by health builders."""
 
-    def exception(self, msg: str, *args: Any) -> None: ...
+    def exception(self, msg: str, *args: Any) -> None:
+        """Log an error message together with the active exception traceback."""
 
 
 def expose_operational_error_details(app_factory: Any) -> bool:

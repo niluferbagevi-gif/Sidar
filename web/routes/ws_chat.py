@@ -33,6 +33,7 @@ async def send_json_if_connected(websocket: WebSocket, payload: dict[str, Any]) 
 
 
 def build_ws_chat_router(deps_factory: Callable[[], Any]) -> APIRouter:
+    """`/ws/chat` WebSocket route'unu kurar."""
     router = APIRouter()
 
     @router.websocket("/ws/chat")
