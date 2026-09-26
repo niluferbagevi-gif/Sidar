@@ -146,10 +146,12 @@ def pgvector_failure_action_message(exc: BaseException) -> str:
 
 
 def normalize_pg_url(url: str) -> str:
+    """Strip the ``+asyncpg`` driver suffix so the URL works with a sync engine."""
     return url.replace("+asyncpg", "")
 
 
 def format_vector_for_sql(values: builtins.list[float]) -> str:
+    """Render a vector as a pgvector literal such as ``[0.1,0.2]``."""
     return "[" + ",".join(f"{float(v):.8f}" for v in values) + "]"
 
 
@@ -239,6 +241,7 @@ def init_pgvector(store: Any) -> None:
 def pgvector_embed_texts(
     store: Any, texts: builtins.list[str]
 ) -> builtins.list[builtins.list[float]]:
+    """Embed texts with the pgvector model as normalized vectors; ``[]`` on failure."""
     if not store._pg_embedding_model or not texts:
         return []
     try:
@@ -267,6 +270,10 @@ def upsert_pgvector_chunks(
     source: str,
     chunks: builtins.list[str],
 ) -> None:
+    """Insert or update document chunks and their embeddings in the pgvector table.
+
+    Does nothing when pgvector is unavailable or the table name is invalid.
+    """
     if (
         not getattr(store, "_pgvector_available", False)
         or not getattr(store, "pg_engine", None)
@@ -310,6 +317,7 @@ def upsert_pgvector_chunks(
 
 
 def delete_pgvector_parent(store: Any, parent_id: str, session_id: str) -> None:
+    """Delete all pgvector chunks of a parent document within a session."""
     if not getattr(store, "_pgvector_available", False) or not getattr(store, "pg_engine", None):
         return
     try:
@@ -331,6 +339,7 @@ def delete_pgvector_parent(store: Any, parent_id: str, session_id: str) -> None:
 
 
 def fetch_pgvector(store: Any, query: str, top_k: int, session_id: str) -> list[dict[str, Any]]:
+    """Return the nearest pgvector chunks for ``query`` within a session."""
     if not getattr(store, "_pgvector_available", False) or not getattr(store, "pg_engine", None):
         return []
     try:
@@ -384,6 +393,7 @@ def fetch_pgvector(store: Any, query: str, top_k: int, session_id: str) -> list[
 
 
 def pgvector_search(store: Any, query: str, top_k: int, session_id: str) -> tuple[bool, str]:
+    """Run a pgvector similarity search and return formatted results."""
     results = fetch_pgvector(store, query, top_k, session_id)
     return cast(
         tuple[bool, str],

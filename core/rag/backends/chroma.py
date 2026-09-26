@@ -45,6 +45,7 @@ def init_chroma(store: Any, *, build_embedding_function: Any) -> None:
 
 
 def fetch_chroma(store: Any, query: str, top_k: int, session_id: str) -> list[dict[str, Any]]:
+    """Query ChromaDB with an enlarged candidate pool and return raw result rows."""
     collection = store._require_chroma_collection()
     try:
         collection_size = collection.count()
@@ -99,6 +100,7 @@ def fetch_chroma(store: Any, query: str, top_k: int, session_id: str) -> list[di
 
 
 def chroma_search(store: Any, query: str, top_k: int, session_id: str) -> tuple[bool, str]:
+    """Run a ChromaDB vector search and return formatted results."""
     results = fetch_chroma(store, query, top_k, session_id)
     return cast(
         tuple[bool, str],

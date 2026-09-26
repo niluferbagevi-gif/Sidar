@@ -11,6 +11,7 @@ class LLMRoutingService:
     """Wrap CostAwareRouter so the facade does not own router construction details."""
 
     def __init__(self, config: Any) -> None:
+        """Wrap a ``CostAwareRouter`` built from ``config``."""
         self._router = CostAwareRouter(config)
 
     def select(

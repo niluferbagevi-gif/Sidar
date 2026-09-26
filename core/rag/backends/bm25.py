@@ -125,6 +125,7 @@ def fetch_bm25(store: Any, query: str, top_k: int, session_id: str) -> list[dict
 
 
 def bm25_search(store: Any, query: str, top_k: int, session_id: str) -> tuple[bool, str]:
+    """Run a BM25 (SQLite FTS5) search and return formatted results."""
     results = fetch_bm25(store, query, top_k, session_id)
     return cast(
         tuple[bool, str], store._format_results_from_struct(results, query, source_name="BM25")

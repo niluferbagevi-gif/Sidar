@@ -37,6 +37,7 @@ class GraphIndex:
     HTTP_CALL_METHODS = {"get", "post", "put", "delete", "patch"}
 
     def __init__(self, root_dir: Path, *, max_files: int = 5000) -> None:
+        """Create an empty graph rooted at ``root_dir``, scanning at most ``max_files``."""
         self.root_dir = Path(root_dir).resolve()
         self.max_files = max_files
         self.nodes: dict[str, dict[str, Any]] = {}
@@ -49,18 +50,21 @@ class GraphIndex:
         return path.resolve().relative_to(root_dir.resolve()).as_posix()
 
     def clear(self) -> None:
+        """Remove all nodes, edges and edge kinds."""
         self.nodes.clear()
         self.edges.clear()
         self.reverse_edges.clear()
         self.edge_kinds.clear()
 
     def add_node(self, node_id: str, **attributes: Any) -> None:
+        """Add a node or merge non-``None`` attributes into an existing one."""
         current = self.nodes.setdefault(node_id, {})
         current.update({key: value for key, value in attributes.items() if value is not None})
         self.edges.setdefault(node_id, set())
         self.reverse_edges.setdefault(node_id, set())
 
     def add_edge(self, source: str, target: str, *, kind: str = "depends_on") -> None:
+        """Add a directed ``source -> target`` edge labelled with ``kind``."""
         self.edges.setdefault(source, set()).add(target)
         self.edges.setdefault(target, set())
         self.reverse_edges.setdefault(source, set())
@@ -297,6 +301,7 @@ class GraphIndex:
         return deps, [], self._extract_script_endpoint_calls(content)
 
     def rebuild(self, root_dir: Path | None = None) -> dict[str, int]:
+        """Rescan source files under ``root_dir`` and rebuild the dependency graph."""
         scan_root = Path(root_dir or self.root_dir).resolve()
         self.root_dir = scan_root
         self.clear()
@@ -345,12 +350,15 @@ class GraphIndex:
         return {"nodes": len(self.nodes), "edges": edge_count}
 
     def neighbors(self, node_id: str) -> builtins.list[str]:
+        """Return the sorted nodes that ``node_id`` points to."""
         return sorted(self.edges.get(node_id, set()))
 
     def reverse_neighbors(self, node_id: str) -> builtins.list[str]:
+        """Return the sorted nodes that point to ``node_id``."""
         return sorted(self.reverse_edges.get(node_id, set()))
 
     def resolve_node_id(self, query: str) -> str | None:
+        """Resolve a user query to a node id by exact, case-insensitive or suffix match."""
         normalized = query.strip()
         if not normalized:
             return None
@@ -368,6 +376,7 @@ class GraphIndex:
         return sorted(suffix_matches, key=len)[0] if len(suffix_matches) == 1 else None
 
     def explain_dependency_path(self, source: str, target: str) -> builtins.list[str]:
+        """Return the shortest dependency path from ``source`` to ``target`` (BFS), or ``[]``."""
         source_id = self.resolve_node_id(source) or source.strip()
         target_id = self.resolve_node_id(target) or target.strip()
         if source_id not in self.nodes or target_id not in self.nodes:
@@ -409,6 +418,7 @@ class GraphIndex:
     def impact_analysis(
         self, target: str, *, max_depth: int = 4, top_k: int = 10
     ) -> dict[str, Any]:
+        """Summarize what ``target`` depends on and what depends on it, up to ``max_depth``."""
         node_id = self.resolve_node_id(target)
         if not node_id or node_id not in self.nodes:
             return {}
@@ -466,6 +476,7 @@ class GraphIndex:
         }
 
     def search_related(self, query: str, top_k: int = 5) -> builtins.list[dict[str, object]]:
+        """Rank nodes by query-token matches in their id plus their edge count."""
         tokens = [token for token in re.split(r"[\s/_.:-]+", query.lower()) if token]
         scored: builtins.list[tuple[str, int]] = []
         for node_id in self.nodes:
@@ -490,6 +501,8 @@ class GraphIndex:
 
 @dataclass(frozen=True)
 class KnowledgeGraphNode:
+    """Entity node in the GraphRAG knowledge graph."""
+
     id: str
     label: str
     properties: dict[str, Any] = field(default_factory=dict)
@@ -497,6 +510,8 @@ class KnowledgeGraphNode:
 
 @dataclass(frozen=True)
 class KnowledgeGraphEdge:
+    """Labelled relation between two knowledge graph nodes."""
+
     source: str
     target: str
     relation: str
@@ -505,6 +520,8 @@ class KnowledgeGraphEdge:
 
 @dataclass(frozen=True)
 class ExtractedKnowledgeEntity:
+    """Entity extracted from a document before it is added to the graph."""
+
     id: str
     label: str
     name: str
@@ -513,6 +530,8 @@ class ExtractedKnowledgeEntity:
 
 @dataclass(frozen=True)
 class ExtractedKnowledgeRelation:
+    """Relation extracted from a document before it is added to the graph."""
+
     source: str
     target: str
     relation: str

@@ -17,6 +17,7 @@ def build_embedding_function(
     *,
     cfg: Any | None = None,
 ) -> Any:
+    """Lazily delegate to ``core.rag.build_embedding_function``."""
     from . import build_embedding_function as _build_embedding_function
 
     return _build_embedding_function(
@@ -30,6 +31,7 @@ def build_embedding_function(
 def embed_texts_for_semantic_cache(
     texts: builtins.list[str], cfg: Any | None = None
 ) -> builtins.list[builtins.list[float]]:
+    """Lazily delegate to ``core.rag.embed_texts_for_semantic_cache``."""
     from . import embed_texts_for_semantic_cache as _embed_texts_for_semantic_cache
 
     return _embed_texts_for_semantic_cache(texts, cfg=cfg)

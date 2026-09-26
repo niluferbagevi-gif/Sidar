@@ -39,6 +39,7 @@ class SharedStoreRegistry(Generic[StoreT]):
         stores: dict[StoreKey, StoreT] | None = None,
         lock: threading.Lock | None = None,
     ) -> None:
+        """Create a registry, optionally seeded with ``stores`` and a shared lock."""
         self.stores: dict[StoreKey, StoreT] = stores if stores is not None else {}
         self._lock = lock or threading.Lock()
 

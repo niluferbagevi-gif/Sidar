@@ -6,6 +6,7 @@ from typing import Any, cast
 
 
 def keyword_search(store: Any, query: str, top_k: int, session_id: str) -> tuple[bool, str]:
+    """Score session documents by keyword frequency and return formatted results."""
     keywords = query.lower().split()
     scored = []
 

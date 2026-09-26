@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 def embed_texts_for_semantic_cache(
     texts: builtins.list[str], cfg: Config | None = None
 ) -> builtins.list[builtins.list[float]]:
+    """Embed texts for the semantic cache via ``core.embeddings``."""
     from core.embeddings import embed_texts_for_semantic_cache as _embed
 
     return _embed(texts, cfg=cfg)

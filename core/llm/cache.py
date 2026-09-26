@@ -12,6 +12,7 @@ class SemanticChatCache:
     """Small facade over semantic cache get/set and stream skip metrics."""
 
     def __init__(self, config: Any) -> None:
+        """Wrap a ``SemanticCacheManager`` built from ``config``."""
         self._cache = SemanticCacheManager(config)
 
     async def get(self, user_prompt: str) -> str | None:

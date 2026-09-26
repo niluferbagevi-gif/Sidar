@@ -88,6 +88,10 @@ class AnthropicClient(BaseLLMClient):
     """Anthropic Claude sağlayıcısı istemcisi."""
 
     def json_mode_config(self) -> dict[str, Any]:
+        """Return no request options: Anthropic has no native JSON mode.
+
+        The tool schema is injected into the system prompt instead.
+        """
         # Anthropic için yerel JSON modu bulunmaz; şema talimatı system prompt'a enjekte edilir
         return {}
 
@@ -125,6 +129,11 @@ class AnthropicClient(BaseLLMClient):
         stream: bool = False,
         json_mode: bool = True,
     ) -> str | AsyncIterator[str]:
+        """Send a chat completion to Anthropic, streaming when ``stream`` is true.
+
+        Without ``ANTHROPIC_API_KEY`` a ``final_answer`` JSON error payload is returned
+        instead of raising.
+        """
         api_key = str(_setting(self.config, "ANTHROPIC_API_KEY", ""))
         if not api_key:
             msg = json.dumps(
