@@ -13,6 +13,7 @@ class BaseEventBusBackend(abc.ABC):
     """Remote transport backend strategy interface."""
 
     def __init__(self, bus: AgentEventBus) -> None:
+        """Bind the backend to the event bus it transports events for."""
         self.bus = bus
 
     @abc.abstractmethod

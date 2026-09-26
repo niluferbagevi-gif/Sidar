@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
 
 async def tool_run_pytest(agent: CoverageAgent, arg: str) -> str:
+    """Run pytest with coverage and return the collected result as JSON."""
     payload = agent._parse_payload(arg)
     default_cmd = "pytest --cov=. --cov-report=xml --cov-report=term"
     command = str(payload.get("command", default_cmd) or default_cmd).strip()
@@ -19,6 +20,7 @@ async def tool_run_pytest(agent: CoverageAgent, arg: str) -> str:
 
 
 async def tool_analyze_pytest_output(agent: CoverageAgent, arg: str) -> str:
+    """Analyze raw pytest output and return the findings as JSON."""
     payload = agent._parse_payload(arg)
     output = str(payload.get("output", arg) or arg)
     analysis = await agent._call_maybe_async(agent.code.analyze_pytest_output, output)
@@ -26,6 +28,7 @@ async def tool_analyze_pytest_output(agent: CoverageAgent, arg: str) -> str:
 
 
 async def tool_analyze_coverage_report(agent: CoverageAgent, arg: str) -> str:
+    """Combine ``coverage.xml`` and terminal coverage output into a JSON hotspot report."""
     payload = agent._parse_payload(arg)
     coverage_xml_path = str(payload.get("coverage_xml", "coverage.xml") or "coverage.xml")
     coveragerc_path = str(payload.get("coveragerc", ".coveragerc") or ".coveragerc")

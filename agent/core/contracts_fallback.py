@@ -32,6 +32,7 @@ class FallbackFederationTaskEnvelope(FederationTaskEnvelope):
         derive_correlation_id: DeriveCorrelationId = default_derive_correlation_id,
         **kwargs: Any,
     ) -> None:
+        """Build the envelope from loosely typed keyword arguments."""
         super().__init__(
             task_id=str(kwargs.get("task_id", "")),
             source_system=str(kwargs.get("source_system", "")),
@@ -64,6 +65,7 @@ class FallbackActionFeedback(ActionFeedback):
         derive_correlation_id: DeriveCorrelationId = default_derive_correlation_id,
         **kwargs: Any,
     ) -> None:
+        """Build the feedback from loosely typed keyword arguments."""
         super().__init__(
             feedback_id=str(kwargs.get("feedback_id", "")),
             source_system=str(kwargs.get("source_system", "")),

@@ -42,6 +42,7 @@ class AutoHandle:
         docs: DocumentStore,
         cfg: Any = None,
     ) -> None:
+        """Bind the managers and stores that quick commands are dispatched to."""
         self.code = code
         self.health = health
         self.github = github

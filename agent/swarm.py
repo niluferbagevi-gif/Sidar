@@ -239,9 +239,11 @@ class InMemoryDelegationBackend:
     """Test/prototip amaçlı broker uyumlu backend."""
 
     def __init__(self) -> None:
+        """Start with an empty list of dispatched envelopes."""
         self.dispatched: list[BrokerTaskEnvelope] = []
 
     async def dispatch(self, envelope: BrokerTaskEnvelope) -> BrokerTaskResult:
+        """Record the envelope and return a ``queued`` result without real delivery."""
         self.dispatched.append(envelope)
         return BrokerTaskResult(
             task_id=envelope.task_id,
@@ -337,6 +339,7 @@ class SwarmOrchestrator:
     """
 
     def __init__(self, cfg: Any = None) -> None:
+        """Configure retries, handoff limits and the idempotency cache from ``cfg``."""
         self.cfg = cfg
         self.router = TaskRouter()
         self._active_agents: dict[str, object] = {}  # task_id → agent instance

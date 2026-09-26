@@ -79,6 +79,7 @@ except Exception:  # pragma: no cover - test stub ortamında pydantic olmayabili
             return ""
 
     def parse_tool_argument(tool_name: str, raw_arg: str) -> Any:
+        """Parse a JSON tool argument without pydantic (test-stub fallback)."""
         return _FallbackPayload(json.loads(raw_arg))
 
 
@@ -102,6 +103,7 @@ class PoyrazAgent(BaseAgent):
         *,
         config: Config | None = None,
     ) -> None:
+        """Create the marketing agent; social publishing stays off unless explicitly enabled."""
         resolved_cfg = cfg or config
         super().__init__(cfg=resolved_cfg, role_name="poyraz")
         self.security = SecurityManager(cfg=self.cfg)
@@ -619,6 +621,7 @@ class PoyrazAgent(BaseAgent):
         )
 
     async def run_task(self, task_prompt: str) -> str:
+        """Handle a marketing task: run a ``tool|arg`` command or plan with the LLM."""
         prompt = (task_prompt or "").strip()
         if not prompt:
             return "[UYARI] Boş pazarlama görevi verildi."

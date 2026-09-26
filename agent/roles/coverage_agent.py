@@ -53,6 +53,7 @@ class CoverageAgent(BaseAgent):
         *,
         config: Config | None = None,
     ) -> None:
+        """Create the coverage agent with code/security managers and its tools."""
         resolved_cfg = cfg or config
         super().__init__(cfg=resolved_cfg, role_name="coverage")
         from managers.code_manager import CodeManager
@@ -1040,6 +1041,11 @@ class CoverageAgent(BaseAgent):
         max_missing_branches_per_finding: int = 10,
         exclude_files: list[str] | str | None = None,
     ) -> dict[str, Any]:
+        """Generate tests for the top coverage gaps in bounded batches.
+
+        Each candidate can be vetoed by ``reviewer_gate``; findings with too many
+        missing lines/branches or in excluded files are skipped.
+        """
         return await coverage_batch_heal.run_autonomous_coverage_batch(
             self,
             coverage_xml=coverage_xml,
@@ -1088,6 +1094,7 @@ class CoverageAgent(BaseAgent):
             )
 
     async def run_task(self, task_prompt: str) -> Any:
+        """Handle a coverage task: run a ``tool|arg`` command or the default analysis flow."""
         prompt = (task_prompt or "").strip()
         if not prompt:
             return "[UYARI] Boş coverage görevi verildi."

@@ -7,22 +7,30 @@ from pydantic import BaseModel, Field
 
 
 class WriteFileSchema(BaseModel):
+    """Arguments of ``write_file``: target path and full content."""
+
     path: str
     content: str
 
 
 class PatchFileSchema(BaseModel):
+    """Arguments of ``patch_file``: replace ``old_text`` with ``new_text`` in a file."""
+
     path: str
     old_text: str
     new_text: str
 
 
 class GithubListFilesSchema(BaseModel):
+    """Arguments of ``github_list_files``: directory path and optional branch."""
+
     path: str = ""
     branch: str | None = None
 
 
 class GithubWriteSchema(BaseModel):
+    """Arguments of ``github_write``: file path, content, commit message and branch."""
+
     path: str
     content: str
     commit_message: str
@@ -30,11 +38,15 @@ class GithubWriteSchema(BaseModel):
 
 
 class GithubCreateBranchSchema(BaseModel):
+    """Arguments of ``github_create_branch``: new branch name and optional base."""
+
     branch_name: str
     from_branch: str | None = None
 
 
 class GithubCreatePRSchema(BaseModel):
+    """Arguments of ``github_create_pr``: title, body, head and optional base branch."""
+
     title: str
     body: str
     head: str
@@ -42,34 +54,48 @@ class GithubCreatePRSchema(BaseModel):
 
 
 class GithubListPRsSchema(BaseModel):
+    """Arguments of ``github_list_prs``: state filter and result limit."""
+
     state: str = "open"
     limit: int = 10
 
 
 class GithubListIssuesSchema(BaseModel):
+    """Arguments of ``github_list_issues``: state filter and result limit."""
+
     state: str = "open"
     limit: int = 10
 
 
 class GithubCreateIssueSchema(BaseModel):
+    """Arguments of ``github_create_issue``: title and body."""
+
     title: str
     body: str
 
 
 class GithubCommentIssueSchema(BaseModel):
+    """Arguments of ``github_comment_issue``: issue number and comment body."""
+
     number: int
     body: str
 
 
 class GithubCloseIssueSchema(BaseModel):
+    """Arguments of ``github_close_issue``: issue number."""
+
     number: int
 
 
 class GithubPRDiffSchema(BaseModel):
+    """Arguments of ``github_pr_diff``: pull request number."""
+
     number: int = Field(description="Diff (fark) kodu alınacak PR numarası")
 
 
 class ScanProjectTodosSchema(BaseModel):
+    """Arguments of ``scan_project_todos``: directory and file extensions to scan."""
+
     directory: str | None = Field(
         default=None, description="Taranacak alt dizin (boş bırakılırsa tüm proje taranır)"
     )
@@ -79,12 +105,16 @@ class ScanProjectTodosSchema(BaseModel):
 
 
 class LspDiagnosticsSchema(BaseModel):
+    """Arguments of ``lsp_diagnostics``: files to diagnose."""
+
     paths: list[str] | None = Field(
         default=None, description="LSP diagnostics çalıştırılacak dosya yolları"
     )
 
 
 class LspRenameSchema(BaseModel):
+    """Arguments of ``lsp_rename``: symbol position, new name and whether to apply."""
+
     path: str
     line: int
     character: int
@@ -93,6 +123,8 @@ class LspRenameSchema(BaseModel):
 
 
 class SocialPublishSchema(BaseModel):
+    """Arguments of ``publish_social``: platform, text and optional destination/media/link."""
+
     platform: str
     text: str
     destination: str = ""
@@ -101,22 +133,30 @@ class SocialPublishSchema(BaseModel):
 
 
 class InstagramPublishSchema(BaseModel):
+    """Arguments of ``publish_instagram_post``: caption and image URL."""
+
     caption: str
     image_url: str
 
 
 class FacebookPublishSchema(BaseModel):
+    """Arguments of ``publish_facebook_post``: message and optional link."""
+
     message: str
     link_url: str = ""
 
 
 class WhatsAppMessageSchema(BaseModel):
+    """Arguments of ``send_whatsapp_message``: recipient, text and link preview flag."""
+
     to: str
     text: str
     preview_url: bool = False
 
 
 class LandingPageDraftSchema(BaseModel):
+    """Arguments of ``build_landing_page``: brand, offer, audience, CTA and sections."""
+
     brand_name: str
     offer: str
     audience: str
@@ -131,6 +171,8 @@ class LandingPageDraftSchema(BaseModel):
 
 
 class CampaignCopySchema(BaseModel):
+    """Arguments of ``generate_campaign_copy``: campaign, objective, audience and channels."""
+
     campaign_name: str
     objective: str
     audience: str
@@ -145,6 +187,8 @@ class CampaignCopySchema(BaseModel):
 
 
 class VideoInsightIngestSchema(BaseModel):
+    """Arguments of ``ingest_video_insights``: source URL and frame sampling options."""
+
     source_url: str
     prompt: str = ""
     language: str = ""
@@ -154,6 +198,8 @@ class VideoInsightIngestSchema(BaseModel):
 
 
 class MarketingCampaignCreateSchema(BaseModel):
+    """Arguments of ``create_marketing_campaign``: campaign fields and metadata."""
+
     tenant_id: str = "default"
     name: str
     channel: str = ""
@@ -166,6 +212,8 @@ class MarketingCampaignCreateSchema(BaseModel):
 
 
 class ContentAssetCreateSchema(BaseModel):
+    """Arguments of ``store_content_asset``: campaign id, asset type, title and content."""
+
     campaign_id: int
     tenant_id: str = "default"
     asset_type: str
@@ -176,6 +224,8 @@ class ContentAssetCreateSchema(BaseModel):
 
 
 class OperationChecklistSchema(BaseModel):
+    """Arguments of ``create_operation_checklist``: title, items, status and owner."""
+
     tenant_id: str = "default"
     title: str
     items: list[Any] = Field(default_factory=list)
@@ -185,6 +235,8 @@ class OperationChecklistSchema(BaseModel):
 
 
 class ServiceOperationsPlanSchema(BaseModel):
+    """Arguments of ``plan_service_operations``: service, menu, vendors and timeline."""
+
     tenant_id: str = "default"
     campaign_id: int | None = None
     campaign_name: str = ""

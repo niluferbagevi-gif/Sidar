@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 async def generate_test_candidate(
     agent: CoverageAgent, *, target_path: str, pytest_output: str, analysis: dict[str, Any]
 ) -> str:
+    """Ask the LLM for a pytest candidate covering the missing lines of ``target_path``."""
     read_ok, source_excerpt = (
         await agent._call_maybe_async(agent.code.read_file, target_path)
         if target_path
@@ -37,6 +38,7 @@ async def generate_test_candidate(
 
 
 async def tool_generate_missing_tests(agent: CoverageAgent, arg: str) -> str:
+    """Generate a missing-test candidate from a JSON payload and return it as JSON."""
     payload = agent._parse_payload(arg)
     target_path = str(payload.get("target_path", "") or "")
     pytest_output = str(payload.get("pytest_output", "") or "")
@@ -81,6 +83,7 @@ async def tool_generate_missing_tests(agent: CoverageAgent, arg: str) -> str:
 
 
 async def tool_write_missing_tests(agent: CoverageAgent, arg: str) -> str:
+    """Validate a generated test and write it to its suggested path."""
     payload = agent._parse_payload(arg)
     suggested_test_path = str(payload.get("suggested_test_path", "") or "")
     generated_test = agent._clean_code_output(str(payload.get("generated_test", "") or ""))

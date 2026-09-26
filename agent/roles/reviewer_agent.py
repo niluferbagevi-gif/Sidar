@@ -64,6 +64,7 @@ class ReviewerAgent(BaseAgent):
         *,
         config: Config | None = None,
     ) -> None:
+        """Create the reviewer with GitHub, code, security and browser managers."""
         resolved_cfg = cfg or config
         super().__init__(cfg=resolved_cfg, role_name="reviewer")
         self.config = self.cfg
@@ -1117,6 +1118,7 @@ class ReviewerAgent(BaseAgent):
         return json.dumps(signal, ensure_ascii=False)
 
     async def run_task(self, task_prompt: str) -> str | DelegationRequest:
+        """Handle a review task: run a ``tool|arg`` command or review with the LLM."""
         await self.events.publish("reviewer", "Reviewer görevi alındı, kalite kontrolü başlıyor...")
         prompt = (task_prompt or "").strip()
         if not prompt:
