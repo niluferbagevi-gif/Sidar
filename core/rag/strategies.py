@@ -56,6 +56,7 @@ class VectorOnlyStrategy:
     """Run a single vector backend search with pgvector preferred over ChromaDB."""
 
     def __init__(self, store: RagSearchStore) -> None:
+        """Bind the strategy to the document store it searches."""
         self.store = store
 
     def search(self, query: str, top_k: int, session_id: str) -> tuple[bool, str]:
@@ -73,6 +74,7 @@ class BM25OnlyStrategy:
     """Run a single SQLite FTS/BM25 backend search."""
 
     def __init__(self, store: RagSearchStore) -> None:
+        """Bind the strategy to the document store it searches."""
         self.store = store
 
     def search(self, query: str, top_k: int, session_id: str) -> tuple[bool, str]:
@@ -90,6 +92,7 @@ class HybridStrategy:
     """Merge vector and BM25 candidates with reciprocal-rank fusion."""
 
     def __init__(self, store: RagSearchStore) -> None:
+        """Bind the strategy to the document store it searches."""
         self.store = store
 
     def search(self, query: str, top_k: int, session_id: str) -> tuple[bool, str]:

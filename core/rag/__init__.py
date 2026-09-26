@@ -236,6 +236,11 @@ class DocumentStore:
         initialize_vector: bool = True,
         embedding_function_builder: EmbeddingFunctionBuilder | None = None,
     ) -> None:
+        """Open (or create) the document store under ``store_dir``.
+
+        Omitted chunking/top-k settings fall back to ``RAG_*`` config values; set
+        ``initialize_vector=False`` to skip vector backend setup.
+        """
         self.cfg = cfg or Config()
         self.store_dir = Path(store_dir)
         self.store_dir.mkdir(parents=True, exist_ok=True)
@@ -474,6 +479,7 @@ class DocumentStore:
                 self.pg_engine = None
 
     def __del__(self) -> None:  # pragma: no cover
+        """Best-effort release of backend resources when the store is garbage collected."""
         try:
             self.close()
         except Exception as exc:
@@ -685,6 +691,7 @@ class DocumentStore:
     def search_entity_graph(
         self, query: str, *, session_id: str = "global", top_k: int = 5
     ) -> builtins.list[dict[str, Any]]:
+        """Search the entity graph (GraphRAG memory) for entities related to ``query``."""
         return _search_entity_graph_impl(
             self._ensure_entity_graph(), query, session_id=session_id, top_k=top_k
         )
@@ -811,6 +818,7 @@ class DocumentStore:
         tags: builtins.list[str] | None = None,
         session_id: str = "global",
     ) -> str:
+        """Index a document off the event loop and return its document id."""
         return await asyncio.to_thread(
             self._add_document_sync,
             title,
@@ -876,6 +884,12 @@ class DocumentStore:
         tags: builtins.list[str] | None = None,
         session_id: str = "global",
     ) -> tuple[bool, str]:
+        """Fetch a web page and index its cleaned text as a document.
+
+        Every URL, including each redirect target (max 5), is validated against unsafe
+        hosts before it is requested. Returns ``(success, message)``; failures are
+        reported in the message rather than raised.
+        """
         import httpx
 
         try:
@@ -918,6 +932,11 @@ class DocumentStore:
         tags: builtins.list[str] | None = None,
         session_id: str = "global",
     ) -> tuple[bool, str]:
+        """Index a text file from the project or temp directory.
+
+        Only known text extensions are accepted and paths outside the allowed roots are
+        rejected. Returns ``(success, message)``.
+        """
         # Boş uzantı ("") kaldırıldı — uzantısız dosyalar ikili olabilir ve path traversal
         # riski taşır
         _TEXT_EXTS = {
@@ -983,6 +1002,7 @@ class DocumentStore:
             return False, f"[HATA] Dosya eklenemedi: {exc}"
 
     def get_index_info(self, session_id: str | None = None) -> builtins.list[dict[str, Any]]:
+        """Return metadata for indexed documents, optionally for one session."""
         return [
             {
                 "id": doc_id,
@@ -1360,6 +1380,12 @@ class DocumentStore:
         mode: str = "auto",
         session_id: str = "global",
     ) -> tuple[bool, str]:
+        """Search documents and return ``(found, formatted_results)``.
+
+        ``mode`` is ``auto``, ``vector``, ``bm25``, ``keyword`` or ``graph``. The search
+        runs off the event loop, is traced when OpenTelemetry is available and
+        schedules an asynchronous relevance judgement of the result.
+        """
         tracer = _otel_trace.get_tracer(__name__) if _otel_trace is not None else None
         if tracer is None:
             result = await asyncio.to_thread(self._search_sync, query, top_k, mode, session_id)
@@ -1495,6 +1521,7 @@ class DocumentStore:
         }
 
     def list_documents(self, session_id: str | None = None) -> str:
+        """Return a human-readable listing of indexed documents, optionally for one session."""
         docs = {
             k: v
             for k, v in self._index.items()
@@ -1518,6 +1545,7 @@ class DocumentStore:
         return clean.strip()
 
     def status(self) -> str:
+        """Return a one-line summary of the active search engines and document count."""
         engines = []
         if getattr(self, "_pgvector_available", False):
             engines.append("pgvector")

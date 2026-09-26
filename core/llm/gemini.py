@@ -66,6 +66,7 @@ class GeminiClient(BaseLLMClient):
     """Gemini sağlayıcısı istemcisi."""
 
     def json_mode_config(self) -> dict[str, Any]:
+        """Request JSON output through ``response_mime_type``."""
         return {"generation_config": {"response_mime_type": "application/json"}}
 
     async def chat(
@@ -76,6 +77,7 @@ class GeminiClient(BaseLLMClient):
         stream: bool = False,
         json_mode: bool = True,
     ) -> str | AsyncIterator[str]:
+        """Send a chat completion to Gemini via ``google-genai``, streaming when requested."""
         genai_client = None
         genai_types = None
         try:

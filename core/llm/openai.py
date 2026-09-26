@@ -95,6 +95,7 @@ class OpenAIClient(BaseLLMClient):
         )
 
     def json_mode_config(self) -> dict[str, Any]:
+        """Request strict JSON-schema output matching the Sidar tool schema."""
         return {
             "response_format": {
                 "type": "json_schema",
@@ -114,6 +115,11 @@ class OpenAIClient(BaseLLMClient):
         stream: bool = False,
         json_mode: bool = True,
     ) -> str | AsyncIterator[str]:
+        """Send a chat completion to OpenAI, streaming when requested.
+
+        Without ``OPENAI_API_KEY`` a ``final_answer`` JSON error payload is returned
+        instead of raising.
+        """
         api_key = getattr(self.config, "OPENAI_API_KEY", "")
         if not api_key:
             msg = json.dumps(

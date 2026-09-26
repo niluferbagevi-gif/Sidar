@@ -15,6 +15,7 @@ class RAGReadinessState:
 
     @property
     def ready(self) -> bool:
+        """Whether both the vector backend and the BM25 index are ready."""
         return self.vector_ready and self.bm25_ready
 
 

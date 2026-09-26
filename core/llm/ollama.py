@@ -119,6 +119,7 @@ class OllamaClient(BaseLLMClient):
 
     @property
     def base_url(self) -> str:
+        """Ollama server root URL (``OLLAMA_URL`` without a trailing ``/api``)."""
         return str(_setting(self.config, "OLLAMA_URL", "http://localhost:11434")).removesuffix(
             "/api"
         )
@@ -130,6 +131,7 @@ class OllamaClient(BaseLLMClient):
         return httpx.Timeout(timeout_seconds, connect=10.0)
 
     def json_mode_config(self) -> dict[str, Any]:
+        """Constrain output with the Sidar tool JSON schema via Ollama's ``format``."""
         return {"format": SIDAR_TOOL_JSON_SCHEMA}
 
     @staticmethod
@@ -204,6 +206,11 @@ class OllamaClient(BaseLLMClient):
         stream: bool = False,
         json_mode: bool = True,
     ) -> str | AsyncIterator[str]:
+        """Send a chat request to Ollama ``/api/chat``, streaming when requested.
+
+        Uses ``CODING_MODEL`` by default and applies ``OLLAMA_CODING_NUM_CTX`` as the
+        context window when it is positive.
+        """
         target_model = str(model or _setting(self.config, "CODING_MODEL", "qwen2.5-coder:7b"))
         url = f"{self.base_url}/api/chat"
 
@@ -424,6 +431,7 @@ class OllamaClient(BaseLLMClient):
                 await client.aclose()
 
     async def list_models(self) -> list[str]:
+        """Return the locally installed Ollama model names, or ``[]`` on any error."""
         url = f"{self.base_url}/api/tags"
         try:
             async with httpx.AsyncClient(timeout=10) as client:
@@ -435,6 +443,7 @@ class OllamaClient(BaseLLMClient):
             return []
 
     async def is_available(self) -> bool:
+        """Return whether the Ollama server answers ``/api/tags`` within 5 seconds."""
         url = f"{self.base_url}/api/tags"
         try:
             async with httpx.AsyncClient(timeout=5) as client:

@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class GraphRAGSearchPlan:
+    """Retrieval plan combining vector candidates, graph context and a Cypher hint."""
+
     query: str
     vector_backend: str
     vector_candidates: builtins.list[str] = field(default_factory=list)

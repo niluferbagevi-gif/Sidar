@@ -69,6 +69,7 @@ class LiteLLMClient(BaseLLMClient):
     """LiteLLM Gateway istemcisi (OpenAI uyumlu Chat Completions)."""
 
     def json_mode_config(self) -> dict[str, Any]:
+        """Request JSON output through the OpenAI-compatible ``response_format``."""
         return {"response_format": {"type": "json_object"}}
 
     def _candidate_models(self, requested_model: str | None) -> list[str]:
@@ -96,6 +97,11 @@ class LiteLLMClient(BaseLLMClient):
         stream: bool = False,
         json_mode: bool = True,
     ) -> str | AsyncIterator[str]:
+        """Send a chat completion through the LiteLLM gateway.
+
+        Without ``LITELLM_GATEWAY_URL`` a ``final_answer`` JSON error payload is returned
+        instead of raising.
+        """
         base_url = str(_setting(self.config, "LITELLM_GATEWAY_URL", "")).strip().rstrip("/")
         api_key = str(_setting(self.config, "LITELLM_API_KEY", "")).strip()
         if not base_url:
