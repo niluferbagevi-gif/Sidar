@@ -226,6 +226,7 @@ class LLMAPIError(RuntimeError):
         status_code: int | None = None,
         retryable: bool = False,
     ) -> None:
+        """Record the failing provider, optional HTTP status and whether a retry may help."""
         super().__init__(message)
         self.provider = provider
         self.status_code = status_code
@@ -642,6 +643,7 @@ class BaseLLMClient(ABC):
     """LLM sağlayıcıları için soyut istemci arayüzü."""
 
     def __init__(self, config: Any) -> None:
+        """Store the configuration shared by provider clients."""
         self.config = config
 
     @abstractmethod
@@ -760,6 +762,11 @@ class LLMClient:
     PROVIDER_REGISTRY = _PROVIDER_IMPORTS
 
     def __init__(self, provider: str, config: Any) -> None:
+        """Create the client for ``provider`` with semantic cache and cost routing.
+
+        Raises:
+            ValueError: If ``provider`` is not registered.
+        """
         self.provider = provider.lower()
         self.config = config
         self._semantic_cache = SemanticChatCache(config)
@@ -897,6 +904,11 @@ class LLMClient:
         stream: bool = False,
         json_mode: bool = True,
     ) -> str | AsyncIterator[str]:
+        """Send a chat request, applying cost-aware routing and the semantic cache.
+
+        The router may switch provider/model; non-streaming prompts are served from
+        and written to the semantic cache.
+        """
         if system_prompt:
             messages = [{"role": "system", "content": system_prompt}] + list(messages)
 
@@ -985,6 +997,7 @@ class LLMClient:
         return response
 
     async def list_ollama_models(self) -> list[str]:
+        """Return installed Ollama models, or ``[]`` when the provider is not Ollama."""
         ollama_cls = _provider_class("ollama")
         if isinstance(self._client, ollama_cls):
             ollama_client = cast("OllamaClient", self._client)
@@ -992,6 +1005,7 @@ class LLMClient:
         return []
 
     async def is_ollama_available(self) -> bool:
+        """Return whether Ollama is reachable; ``False`` when the provider is not Ollama."""
         ollama_cls = _provider_class("ollama")
         if isinstance(self._client, ollama_cls):
             ollama_client = cast("OllamaClient", self._client)

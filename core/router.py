@@ -375,6 +375,7 @@ class CostAwareRouter:
     """
 
     def __init__(self, config: object) -> None:
+        """Read cost-routing settings from ``config`` (disabled unless ``ENABLE_COST_ROUTING``)."""
         self.config = config
         _configure_budget_tracker(config)
         self._analyzer = QueryComplexityAnalyzer()

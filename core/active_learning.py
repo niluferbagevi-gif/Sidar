@@ -78,6 +78,7 @@ class FeedbackStore:
     def __init__(
         self, database_url: str = "sqlite+aiosqlite:///data/sidar.db", config: Any | None = None
     ) -> None:
+        """Configure the store from ``config``; the database engine is created in ``initialize``."""
         self._db_url = database_url
         self._engine: Any | None = None
         cfg = config
@@ -85,6 +86,7 @@ class FeedbackStore:
         self.min_rating_for_train: int = int(getattr(cfg, "AL_MIN_RATING_FOR_TRAIN", 1))
 
     async def initialize(self) -> None:
+        """Create the engine and feedback tables; a no-op when disabled or SQLAlchemy is missing."""
         if not self.enabled or not _SA_AVAILABLE:
             return
         self._engine = create_async_engine(self._db_url, echo=False, future=True)
@@ -266,6 +268,7 @@ class FeedbackStore:
         return {"total": total, "positive": pos, "negative": neg, "pending_export": pending}
 
     async def close(self) -> None:
+        """Dispose of the database engine if one was created."""
         if self._engine:
             await self._engine.dispose()
             self._engine = None
@@ -288,6 +291,7 @@ class DatasetExporter:
     SUPPORTED_FORMATS = ("jsonl", "alpaca", "sharegpt")
 
     def __init__(self, store: FeedbackStore) -> None:
+        """Bind the exporter to the feedback store it reads from."""
         self.store = store
 
     async def export(
@@ -366,6 +370,7 @@ class ContinuousLearningPipeline:
         trainer: LoRATrainer | None = None,
         config: Any | None = None,
     ) -> None:
+        """Configure the pipeline from config; off unless ``ENABLE_CONTINUOUS_LEARNING``."""
         self.store = store
         self.config = config
         self.trainer = trainer or LoRATrainer(config=config)
@@ -640,6 +645,7 @@ class LoRATrainer:
     """
 
     def __init__(self, config: Any | None = None) -> None:
+        """Read LoRA settings from ``config`` (disabled unless ``ENABLE_LORA_TRAINING``)."""
         self.enabled: bool = bool(getattr(config, "ENABLE_LORA_TRAINING", False))
         self.base_model: str = str(getattr(config, "LORA_BASE_MODEL", "") or "")
         self.model_revision: str = str(getattr(config, "LORA_MODEL_REVISION", "") or "").strip()
@@ -895,6 +901,7 @@ _continuous_learning_pipeline: ContinuousLearningPipeline | None = None
 
 
 def get_feedback_store(config: Any | None = None) -> FeedbackStore:
+    """Return the process-wide ``FeedbackStore``, creating it from config on first use."""
     global _feedback_store
     with _store_lock:
         if _feedback_store is None:

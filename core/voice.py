@@ -104,6 +104,7 @@ class VoicePipeline:
     COMMIT_EVENTS = {"speech_end", "speech_ended", "end_of_turn", "silence", "vad_commit"}
 
     def __init__(self, config: Any = None) -> None:
+        """Read TTS, VAD and duplex settings from ``config``."""
         provider = str(getattr(config, "VOICE_TTS_PROVIDER", "auto") or "auto")
         self.multimodal_enabled = bool(getattr(config, "ENABLE_MULTIMODAL", True))
         self.voice_enabled = bool(getattr(config, "VOICE_ENABLED", True))
@@ -135,9 +136,14 @@ class VoicePipeline:
 
     @property
     def enabled(self) -> bool:
+        """Whether TTS is available and neither multimodal nor voice is disabled."""
         return bool(self.adapter.available) and not self.voice_disabled_reason
 
     def extract_ready_segments(self, buffer: str, *, flush: bool = False) -> tuple[list[str], str]:
+        """Split ``buffer`` into speakable segments at sentence boundaries.
+
+        Returns ``(segments, remainder)``; ``flush`` emits whatever text remains.
+        """
         text = str(buffer or "")
         if not text.strip():
             return [], ""
@@ -165,6 +171,8 @@ class VoicePipeline:
 
     @dataclass
     class DuplexState:
+        """Per-connection state of a full-duplex assistant turn."""
+
         assistant_turn_id: int = 0
         output_sequence: int = 0
         output_text_buffer: str = ""
@@ -172,9 +180,11 @@ class VoicePipeline:
         last_interrupt_reason: str = ""
 
     def create_duplex_state(self) -> VoicePipeline.DuplexState:
+        """Return a fresh duplex state."""
         return self.DuplexState()
 
     def begin_assistant_turn(self, state: VoicePipeline.DuplexState | None) -> int:
+        """Start a new assistant turn, resetting buffers, and return its id."""
         if state is None:
             return 0
         state.assistant_turn_id += 1
@@ -190,6 +200,7 @@ class VoicePipeline:
         *,
         flush: bool = False,
     ) -> tuple[int, list[dict[str, Any]]]:
+        """Buffer streamed assistant text and return ``(turn_id, ready_segments)``."""
         if state is None:
             normalized = str(text or "")
             ready_segments, _remainder = self.extract_ready_segments(normalized, flush=flush)
@@ -231,6 +242,7 @@ class VoicePipeline:
         *,
         reason: str,
     ) -> dict[str, Any]:
+        """Cancel the current turn (barge-in) and report what was dropped."""
         if state is None:
             return {
                 "assistant_turn_id": 0,
@@ -280,6 +292,7 @@ class VoicePipeline:
         sequence: int,
         duplex_state: VoicePipeline.DuplexState | None = None,
     ) -> dict[str, Any]:
+        """Build the voice-state payload sent to the client for a streaming event."""
         normalized = str(event or "").strip().lower() or "unknown"
         output_buffer_chars = len(getattr(duplex_state, "output_text_buffer", "") or "")
         assistant_turn_id = int(getattr(duplex_state, "assistant_turn_id", 0) or 0)
@@ -299,6 +312,7 @@ class VoicePipeline:
         }
 
     async def synthesize_text(self, text: str) -> dict[str, Any]:
+        """Synthesize speech for ``text``; failures are returned with ``success=False``."""
         normalized = (text or "").strip()
         if not normalized:
             return {
@@ -362,6 +376,7 @@ class WebRTCAudioIngress:
     }
 
     def __init__(self, config: Any = None) -> None:
+        """Read the WebRTC chunk size limit (minimum 2 KiB) and default MIME type."""
         self.max_chunk_bytes = max(
             2048,
             int(
@@ -380,6 +395,11 @@ class WebRTCAudioIngress:
         self.default_channels = max(1, int(getattr(config, "VOICE_WEBRTC_CHANNELS", 1) or 1))
 
     def decode_packet(self, payload: dict[str, Any]) -> BrowserAudioPacket:
+        """Decode and validate one browser audio packet.
+
+        Raises:
+            ValueError: If the audio is empty, too large or has an unsupported MIME type.
+        """
         raw_bytes = self._decode_audio_bytes(payload)
         if not raw_bytes:
             raise ValueError("WebRTC paketi boş ses verisi içeriyor.")

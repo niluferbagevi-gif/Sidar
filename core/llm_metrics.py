@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class LLMMetricEvent:
+    """One recorded LLM call with latency, token usage, cost and outcome."""
+
     timestamp: float
     provider: str
     model: str
@@ -69,30 +71,38 @@ _CURRENT_USER_ID: contextvars.ContextVar[str] = contextvars.ContextVar(
 
 
 def set_current_metrics_user_id(user_id: str) -> contextvars.Token[str]:
+    """Set the user id attached to metrics in the current context; returns a reset token."""
     return _CURRENT_USER_ID.set((user_id or "").strip())
 
 
 def reset_current_metrics_user_id(token: contextvars.Token[str]) -> None:
+    """Restore the metrics user id saved in ``token``."""
     _CURRENT_USER_ID.reset(token)
 
 
 def get_current_metrics_user_id() -> str:
+    """Return the metrics user id of the current context (empty if unset)."""
     return _CURRENT_USER_ID.get()
 
 
 class LLMMetricsCollector:
+    """Thread-safe ring buffer of recent LLM calls with aggregated snapshots."""
+
     def __init__(self, max_events: int = 200) -> None:
+        """Keep at most ``max_events`` recent events."""
         self._lock = threading.Lock()
         self._events: deque[LLMMetricEvent] = deque(maxlen=max_events)
         self._usage_sink: Callable[[LLMMetricEvent], Any] | None = None
 
     def set_usage_sink(self, sink: Callable[[LLMMetricEvent], Any] | None) -> None:
+        """Register a callback that receives every recorded event (``None`` to remove)."""
         self._usage_sink = sink
 
     @staticmethod
     def estimate_cost_usd(
         provider: str, model: str, prompt_tokens: int, completion_tokens: int
     ) -> float:
+        """Estimate the USD cost from per-million-token prices; ``0.0`` for unknown models."""
         key = f"{(provider or '').lower()}:{(model or '').lower()}"
         pricing = _MODEL_PRICES_PER_1M.get(key)
         if not pricing:
@@ -116,6 +126,7 @@ class LLMMetricsCollector:
         judge_score: float | None = None,
         hallucination_risk: float | None = None,
     ) -> None:
+        """Record one LLM call, deriving totals, cost, rate-limit flag and user id."""
         prompt_tokens = max(0, int(prompt_tokens or 0))
         completion_tokens = max(0, int(completion_tokens or 0))
         total_tokens = prompt_tokens + completion_tokens
@@ -161,6 +172,7 @@ class LLMMetricsCollector:
                 logger.warning("usage_sink çağrısında beklenmeyen hata: %s", exc)
 
     def snapshot(self) -> dict[str, Any]:
+        """Return totals plus per-provider and per-user aggregates of recorded calls."""
         with self._lock:
             events = list(self._events)
 
@@ -295,4 +307,5 @@ _COLLECTOR = LLMMetricsCollector()
 
 
 def get_llm_metrics_collector() -> LLMMetricsCollector:
+    """Return the process-wide ``LLMMetricsCollector``."""
     return _COLLECTOR

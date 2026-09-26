@@ -62,6 +62,7 @@ class SemanticCacheManager:
         config: Any,
         embedding_fn: Callable[..., list[list[float]]] | None = None,
     ) -> None:
+        """Read cache settings from ``config``; the Redis client is created lazily."""
         self.config = config
         self.enabled = bool(getattr(config, "ENABLE_SEMANTIC_CACHE", False))
         self.threshold = max(0.0, float(_setting(config, "SEMANTIC_CACHE_THRESHOLD", 0.90)))
@@ -167,6 +168,11 @@ class SemanticCacheManager:
         return []
 
     async def get(self, prompt: str) -> str | None:
+        """Return the cached response most similar to ``prompt`` above the threshold, if any.
+
+        Returns ``None`` when the cache is disabled, Redis is unavailable or the
+        circuit breaker is open.
+        """
         redis = await self._get_redis()
         if redis is None or not prompt:
             return None
@@ -224,6 +230,7 @@ class SemanticCacheManager:
             return None
 
     async def set(self, prompt: str, response: str) -> None:
+        """Store ``response`` under the embedding of ``prompt`` with TTL and size eviction."""
         redis = await self._get_redis()
         if redis is None or not prompt or not response:
             return

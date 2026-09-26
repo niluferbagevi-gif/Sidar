@@ -86,6 +86,7 @@ class EntityMemory:
         ttl_days: int | None = None,
         max_per_user: int | None = None,
     ) -> None:
+        """Configure TTL, per-user limit and enablement from config or explicit arguments."""
         self._db_url = database_url
         self._engine: Any | None = None
 

@@ -41,6 +41,7 @@ def is_safe_literal_eval_candidate(
     max_len: int = MAX_JSON_REPAIR_INPUT_CHARS,
     max_depth: int = MAX_JSON_REPAIR_NESTING,
 ) -> bool:
+    """Return whether ``text`` is small and shallow enough for a bounded literal eval."""
     candidate = (text or "").strip()
     if not candidate or len(candidate) > max_len:
         return False

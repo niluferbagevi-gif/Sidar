@@ -480,6 +480,7 @@ def _build_diagnostic_hints(
 
 
 def is_ci_failure_event(event_name: str, payload: dict[str, Any]) -> bool:
+    """Return whether a GitHub webhook event describes a failed CI run."""
     normalized = str(event_name or "").strip().lower()
     data = dict(payload or {})
 
@@ -502,6 +503,7 @@ def is_ci_failure_event(event_name: str, payload: dict[str, Any]) -> bool:
 
 
 def build_ci_failure_context(event_name: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Extract a normalized CI failure context from a webhook payload, or ``None``."""
     generic = _generic_ci_context(event_name, payload)
     if generic:
         return generic
@@ -732,6 +734,7 @@ def build_local_failure_context(
 
 
 def build_ci_failure_prompt(context: dict[str, Any]) -> str:
+    """Build the ``[CI_REMEDIATION]`` prompt asking the agent to diagnose and patch."""
     info = dict(context or {})
     suspected_targets = ", ".join(info.get("suspected_targets") or [])
     diagnostic_hints = " | ".join(info.get("diagnostic_hints") or [])
@@ -969,6 +972,7 @@ def normalize_self_heal_plan(
 
 
 def build_root_cause_summary(context: dict[str, Any], diagnosis: str) -> str:
+    """Return a one-line root-cause summary from the diagnosis or the failure logs."""
     info = dict(context or {})
     diagnosis_text = str(diagnosis or "").strip()
     if diagnosis_text:
@@ -990,6 +994,7 @@ def build_root_cause_summary(context: dict[str, Any], diagnosis: str) -> str:
 
 
 def build_pr_proposal(context: dict[str, Any], diagnosis: str) -> dict[str, Any]:
+    """Build a remediation PR proposal (title, branch suggestion, body) for the failure."""
     info = dict(context or {})
     workflow_name = str(info.get("workflow_name", "") or "CI")
     run_id = str(info.get("run_id", "") or "manual")
@@ -1302,6 +1307,7 @@ def build_remediation_loop(context: dict[str, Any], diagnosis: str) -> dict[str,
 
 
 def build_ci_remediation_payload(context: dict[str, Any], diagnosis: str) -> dict[str, Any]:
+    """Bundle the context, prompt, root cause, remediation loop and PR proposal."""
     info = dict(context or {})
     pr_proposal = build_pr_proposal(info, diagnosis)
     root_cause = pr_proposal.get("root_cause_summary") or build_root_cause_summary(info, diagnosis)

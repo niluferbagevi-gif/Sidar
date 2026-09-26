@@ -167,6 +167,7 @@ def build_mockup_prompt(
     language: str = "TypeScript",
     extra_instructions: str = "",
 ) -> str:
+    """Build the prompt that turns a UI mockup image into framework code."""
     framework = framework or "React"
     css_framework = css_framework or "Tailwind CSS"
     language = language or "TypeScript"
@@ -221,6 +222,7 @@ class VisionPipeline:
     """
 
     def __init__(self, llm_client: Any, config: Any | None = None) -> None:
+        """Bind the LLM client and read vision limits from ``config``."""
         self._llm = llm_client
         self._provider: str = getattr(llm_client, "provider", "openai")
         self.enabled: bool = bool(getattr(config, "ENABLE_VISION", True))
