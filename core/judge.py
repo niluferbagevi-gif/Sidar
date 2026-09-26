@@ -129,6 +129,7 @@ class ResponseEvaluation:
 
     @property
     def weak(self) -> bool:
+        """Whether the evaluation scored below 8."""
         return self.score < 8
 
 
@@ -152,6 +153,7 @@ class LLMJudge:
     response_model: str
 
     def __init__(self) -> None:
+        """Load judge settings from config and ``SIDAR_JUDGE_*``/``JUDGE_*`` env overrides."""
         # Config remains lazy here to avoid reintroducing startup/circular import
         # pressure; env helpers are imported from their dependency-light source at
         # module import time above.

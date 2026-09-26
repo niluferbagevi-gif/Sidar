@@ -26,6 +26,7 @@ def _token_estimate_multiplier(model: str = "") -> float:
 
 
 def estimate_tokens(text: str, *, model: str = "") -> int:
+    """Estimate tokens with ``tiktoken`` (or ~3.5 chars/token) times a model multiplier."""
     normalized = text or ""
     if not normalized:
         return 0
@@ -41,6 +42,7 @@ def estimate_tokens(text: str, *, model: str = "") -> int:
 
 @lru_cache(maxsize=64)
 def get_tiktoken_encoding(model: str = "") -> Any:
+    """Return the ``tiktoken`` encoding for ``model``, defaulting to ``cl100k_base``."""
     import tiktoken
 
     model_name = (model or "").strip()

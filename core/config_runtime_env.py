@@ -8,6 +8,7 @@ from typing import Any
 
 
 def safe_choice_for_reload(value: object, default: str, allowed: set[str]) -> str:
+    """Return ``value`` lowercased if it is an allowed choice, otherwise ``default``."""
     normalized = str(value or "").strip().lower()
     return normalized if normalized in allowed else default
 

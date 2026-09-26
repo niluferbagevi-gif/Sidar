@@ -36,6 +36,7 @@ class RedisDistributedLock:
     """
 
     def __init__(self, redis: Any, *, timeout_seconds: float = 0.25) -> None:
+        """Wrap a Redis client; ``timeout_seconds`` is clamped to at least 0.05s."""
         self._redis = redis
         self._timeout_seconds = max(0.05, float(timeout_seconds or 0.25))
 
@@ -47,6 +48,7 @@ class RedisDistributedLock:
         max_connections: int = 10,
         timeout_seconds: float = 0.25,
     ) -> RedisDistributedLock:
+        """Create a lock backed by a new Redis client for ``redis_url``."""
         client = Redis.from_url(
             redis_url,
             decode_responses=True,
@@ -80,6 +82,7 @@ class RedisDistributedLock:
         return int(released or 0) == 1
 
     async def close(self) -> None:
+        """Close the underlying Redis client, awaiting it when needed."""
         close = getattr(self._redis, "aclose", None) or getattr(self._redis, "close", None)
         if close is None:
             return

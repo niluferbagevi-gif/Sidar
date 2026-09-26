@@ -20,6 +20,7 @@ def _ensure_rag_index_placeholder(rag_dir: Path) -> Path:
 
 
 def check_rag_index_ready() -> DoctorCheck:
+    """Check that the RAG index exists and has documents."""
     state = _doctor._rag_readiness_state()
     details = state["details"]
     blockers = state["blockers"]
@@ -87,6 +88,7 @@ def check_rag_index_ready() -> DoctorCheck:
 
 
 def check_graphrag_entity_memory_ready() -> DoctorCheck:
+    """Check whether the GraphRAG entity memory is populated."""
     state = _doctor._rag_readiness_state()
     details = state["details"]
     warnings = state["warnings"]

@@ -18,6 +18,7 @@ def run_doctor_report(
     output_path: str | Path = DEFAULT_OUTPUT,
     include_model_smoke: bool = True,
 ) -> dict[str, Any]:
+    """Run every doctor check, write the JSON report and return it."""
     from core.doctor.checks.media import check_media_tools as media_tools_check
     from core.doctor.checks.redis import check_redis as redis_check
 
@@ -123,6 +124,7 @@ def _parse_cli_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """CLI entry point; exits 0 when the report is pass/warn and any repair succeeded."""
     args = _parse_cli_args(argv)
     output = Path(args.output)
     repair = _doctor._apply_database_env_fix() if args.fix else None

@@ -161,6 +161,11 @@ class DLPEngine:
         replacement: str = _DEFAULT_MASK,
         log_detections: bool = False,
     ) -> None:
+        """Select which secret/PII detectors mask their matches.
+
+        All detectors are on by default except long hex strings, which produce many
+        false positives.
+        """
         self.mask_bearer = mask_bearer
         self.mask_sk_keys = mask_sk_keys
         self.mask_github_tokens = mask_github_tokens

@@ -13,6 +13,7 @@ class OllamaBatchPolicy:
     """Central Ollama num_batch bounds used by config and runtime clients."""
 
     def __init__(self, default: int = 2048, maximum: int = 4096, auto_min: int = 2048) -> None:
+        """Store the default, maximum and auto-selection minimum Ollama batch sizes."""
         self.default = default
         self.maximum = maximum
         self.auto_min = auto_min

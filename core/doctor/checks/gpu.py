@@ -141,6 +141,7 @@ def check_docker_test_image() -> DoctorCheck:
 
 
 def check_gpu() -> DoctorCheck:
+    """Detect GPUs via ``nvidia-smi`` and report the GPU runtime status."""
     details: dict[str, Any] = {"detected": False, "run_gpu_stress": False}
     nvidia_smi = shutil.which("nvidia-smi")
     if nvidia_smi:

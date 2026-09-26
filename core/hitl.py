@@ -43,6 +43,8 @@ _MAX_QUEUE_SIZE = 200  # bellekte tutulan maks. istek
 
 
 class HITLDecision(StrEnum):
+    """Lifecycle state of a human-in-the-loop approval request."""
+
     PENDING = "pending"
     APPROVED = "approved"
     REJECTED = "rejected"
@@ -66,9 +68,11 @@ class HITLRequest:
     rejection_reason: str = ""
 
     def is_expired(self) -> bool:
+        """Whether a still-pending request has passed its deadline."""
         return time.time() > self.expires_at and self.decision == HITLDecision.PENDING
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize the request, with ``decision`` as its string value."""
         d = asdict(self)
         d["decision"] = self.decision.value
         return d
@@ -137,6 +141,7 @@ _STORE = _HITLStore()
 
 
 def get_hitl_store() -> _HITLStore:
+    """Return the process-wide HITL request store."""
     return _STORE
 
 
@@ -195,6 +200,7 @@ class HITLGate:
     """
 
     def __init__(self) -> None:
+        """Read ``HITL_ENABLED`` and ``HITL_TIMEOUT_SECONDS`` (minimum 10s) from the environment."""
         self.enabled = os.getenv("HITL_ENABLED", "true").lower() in ("1", "true", "yes")
         self.timeout = max(
             10, int(os.getenv("HITL_TIMEOUT_SECONDS", str(_DEFAULT_TIMEOUT)) or _DEFAULT_TIMEOUT)

@@ -63,6 +63,7 @@ class AgentMetricsCollector:
     """Thread-safe ajan delegasyon ve step metrik toplayıcısı."""
 
     def __init__(self) -> None:
+        """Create empty, lock-protected delegation and step metric tables."""
         self._lock = threading.Lock()
         # key: (receiver, intent, status) → _DelegationHistogram
         self._histograms: dict[tuple[str, str, str], _DelegationHistogram] = {}
@@ -246,6 +247,7 @@ _COLLECTOR_LOCK = threading.Lock()
 
 
 def get_agent_metrics_collector() -> AgentMetricsCollector:
+    """Return the process-wide ``AgentMetricsCollector`` (thread-safe lazy singleton)."""
     global _COLLECTOR
     if _COLLECTOR is None:
         with _COLLECTOR_LOCK:

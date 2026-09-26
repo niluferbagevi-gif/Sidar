@@ -8,6 +8,8 @@ from typing import Any, TypedDict
 
 
 class GpuMemoryBudget(TypedDict):
+    """Normalized GPU memory fractions for the LLM and RAG workloads."""
+
     llm: float
     rag: float
     gpu: float
@@ -18,6 +20,8 @@ class GpuMemoryBudget(TypedDict):
 
 @dataclass
 class HardwareInfo:
+    """Detected CPU/GPU hardware facts used to configure the runtime."""
+
     has_cuda: bool
     gpu_name: str
     gpu_count: int = 0
@@ -28,6 +32,7 @@ class HardwareInfo:
 
 
 def is_wsl2() -> bool:
+    """Return whether the process runs under WSL2."""
     try:
         return "microsoft" in Path("/proc/sys/kernel/osrelease").read_text().lower()
     except Exception:
@@ -41,6 +46,7 @@ def normalize_gpu_memory_fractions(
     target_total: float = 0.8,
     min_fraction: float = 0.05,
 ) -> GpuMemoryBudget:
+    """Scale LLM/RAG GPU memory fractions to ``target_total`` with a per-share floor."""
     llm = float(llm_fraction or 0.0)
     rag = float(rag_fraction or 0.0)
     total = llm + rag
@@ -121,6 +127,7 @@ def resolve_adaptive_gpu_pool_size(
 def detect_gpu(
     *, get_bool_env: Any, get_int_env: Any, get_float_env: Any, logger: Any
 ) -> HardwareInfo:
+    """Detect CPU count, WSL2 and CUDA GPUs, honoring the GPU env overrides."""
     info = HardwareInfo(has_cuda=False, gpu_name="N/A")
     try:
         import multiprocessing

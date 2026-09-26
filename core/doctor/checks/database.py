@@ -311,6 +311,7 @@ def _validate_database_url_pair_sync(
 
 
 def check_database_env() -> DoctorCheck:
+    """Check that database environment variables are present and consistent."""
     database_url, container_url, explicit_database_url, explicit_container_url = (
         _doctor._resolved_database_urls()
     )
@@ -499,6 +500,7 @@ def check_database_env() -> DoctorCheck:
 
 
 def check_database_connectivity() -> DoctorCheck:
+    """Check that the configured database URL is reachable."""
     database_url, _, explicit_database_url, _ = _doctor._resolved_database_urls()
     parsed, parse_error = _doctor._parse_url(database_url)
     details: dict[str, Any] = {
