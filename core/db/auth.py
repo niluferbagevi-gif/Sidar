@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class UserRecord:
+    """Authenticated user identity as returned by the user repository."""
+
     id: str
     username: str
     role: str
@@ -26,6 +28,8 @@ class UserRecord:
 
 @dataclass
 class AuthTokenRecord:
+    """Issued JWT access token together with its owner and expiry."""
+
     token: str
     user_id: str
     expires_at: str

@@ -23,6 +23,11 @@ async def record_audit_log(
     allowed: bool,
     timestamp: str | None = None,
 ) -> None:
+    """Persist one audit log entry for an access decision.
+
+    Raises:
+        ValueError: If ``action`` or ``resource`` is empty.
+    """
     del record_cls
     event_time = (timestamp or utc_now_iso()).strip() or utc_now_iso()
     event_time_dt = parse_iso_datetime(event_time)
@@ -82,6 +87,7 @@ async def list_audit_logs(
     tenant_id: str | None = None,
     limit: int = 100,
 ) -> list[Any]:
+    """List recent audit log entries, newest first, filtered by user and/or tenant."""
     max_items = max(1, min(int(limit or 100), 1000))
     normalized_user = (user_id or "").strip() or None
     normalized_tenant = (tenant_id or "").strip() or None

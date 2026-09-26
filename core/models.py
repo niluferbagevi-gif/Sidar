@@ -29,11 +29,13 @@ class SidarUUID(TypeDecorator[str]):
     cache_ok = True
 
     def load_dialect_impl(self, dialect):  # type: ignore[no-untyped-def]
+        """Use native ``UUID`` on PostgreSQL and ``CHAR(36)`` elsewhere."""
         if dialect.name == "postgresql":
             return dialect.type_descriptor(postgresql.UUID(as_uuid=True))
         return dialect.type_descriptor(CHAR(36))
 
     def process_bind_param(self, value: object, dialect):  # type: ignore[no-untyped-def]
+        """Normalize a bound value to ``uuid.UUID`` (PostgreSQL) or canonical text."""
         if value is None:
             return None
         parsed = value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
@@ -42,6 +44,7 @@ class SidarUUID(TypeDecorator[str]):
         return str(parsed)
 
     def process_result_value(self, value: object, dialect):  # type: ignore[no-untyped-def]
+        """Return stored UUIDs as canonical strings."""
         if value is None:
             return None
         return str(value)
@@ -53,6 +56,7 @@ class PGVector384(UserDefinedType[Any]):
     cache_ok = True
 
     def get_col_spec(self, **_kwargs: object) -> str:
+        """Render the column type as ``vector(384)``."""
         return "vector(384)"
 
 
@@ -61,6 +65,8 @@ class Base(DeclarativeBase):
 
 
 class User(Base):
+    """Application user with optional password hash, role and tenant."""
+
     __tablename__ = "users"
 
     id: Mapped[str] = mapped_column(SidarUUID(), primary_key=True)
@@ -72,6 +78,8 @@ class User(Base):
 
 
 class AuthToken(Base):
+    """Issued auth token belonging to a user."""
+
     __tablename__ = "auth_tokens"
 
     token: Mapped[str] = mapped_column(sa.Text(), primary_key=True)
@@ -83,6 +91,8 @@ class AuthToken(Base):
 
 
 class UserQuota(Base):
+    """Per-user daily token and request limits (``0`` means unlimited)."""
+
     __tablename__ = "user_quotas"
 
     user_id: Mapped[str] = mapped_column(
@@ -95,6 +105,8 @@ class UserQuota(Base):
 
 
 class ProviderUsageDaily(Base):
+    """Per-user, per-provider daily request and token usage counters."""
+
     __tablename__ = "provider_usage_daily"
     __table_args__ = (
         sa.UniqueConstraint("user_id", "provider", "usage_date", name="uq_provider_usage_daily"),
@@ -111,6 +123,8 @@ class ProviderUsageDaily(Base):
 
 
 class Session(Base):
+    """Chat session owned by a user."""
+
     __tablename__ = "sessions"
 
     id: Mapped[str] = mapped_column(SidarUUID(), primary_key=True)
@@ -123,6 +137,8 @@ class Session(Base):
 
 
 class Message(Base):
+    """Chat message stored in a session."""
+
     __tablename__ = "messages"
 
     id: Mapped[int] = mapped_column(sa.BigInteger(), primary_key=True, autoincrement=True)
@@ -136,6 +152,8 @@ class Message(Base):
 
 
 class SchemaVersion(Base):
+    """Applied schema version marker for the lightweight SQLite bootstrap."""
+
     __tablename__ = "schema_versions"
 
     version: Mapped[int] = mapped_column(sa.Integer(), primary_key=True)
@@ -144,6 +162,8 @@ class SchemaVersion(Base):
 
 
 class PromptRegistry(Base):
+    """Versioned system prompt per agent role; one version is active at a time."""
+
     __tablename__ = "prompt_registry"
     __table_args__ = (
         sa.UniqueConstraint("role_name", "version", name="uq_prompt_registry_role_version"),
@@ -162,6 +182,8 @@ class PromptRegistry(Base):
 
 
 class AuditLog(Base):
+    """Audit trail entry for an access decision."""
+
     __tablename__ = "audit_logs"
     __table_args__ = (
         sa.Index("idx_audit_logs_user_timestamp", "user_id", "timestamp"),
@@ -181,6 +203,8 @@ class AuditLog(Base):
 
 
 class MarketingCampaign(Base):
+    """Tenant-scoped marketing campaign managed by the Poyraz agent."""
+
     __tablename__ = "marketing_campaigns"
     __table_args__ = (
         sa.Index("idx_marketing_campaigns_tenant_status", "tenant_id", "status", "updated_at"),
@@ -200,6 +224,8 @@ class MarketingCampaign(Base):
 
 
 class ContentAsset(Base):
+    """Generated content asset attached to a marketing campaign."""
+
     __tablename__ = "content_assets"
     __table_args__ = (
         sa.Index("idx_content_assets_campaign_tenant", "campaign_id", "tenant_id", "asset_type"),
@@ -220,6 +246,8 @@ class ContentAsset(Base):
 
 
 class OperationChecklist(Base):
+    """Operational checklist, optionally linked to a marketing campaign."""
+
     __tablename__ = "operation_checklists"
     __table_args__ = (
         sa.Index("idx_operation_checklists_campaign_tenant", "campaign_id", "tenant_id", "status"),
@@ -239,6 +267,8 @@ class OperationChecklist(Base):
 
 
 class CoverageTask(Base):
+    """CoverageAgent task created from a pytest/coverage run."""
+
     __tablename__ = "coverage_tasks"
     __table_args__ = (
         sa.Index("idx_coverage_tasks_tenant_status", "tenant_id", "status", "updated_at"),
@@ -258,6 +288,8 @@ class CoverageTask(Base):
 
 
 class CoverageFinding(Base):
+    """Finding reported for a coverage task."""
+
     __tablename__ = "coverage_findings"
     __table_args__ = (
         sa.Index("idx_coverage_findings_task", "task_id", "finding_type", "severity"),
@@ -276,6 +308,8 @@ class CoverageFinding(Base):
 
 
 class RagEmbedding(Base):
+    """RAG document chunk with its 384-dimension pgvector embedding."""
+
     __tablename__ = "rag_embeddings"
     __table_args__ = (
         sa.Index("idx_rag_embeddings_session", "session_id"),
@@ -293,6 +327,8 @@ class RagEmbedding(Base):
 
 
 class AccessPolicy(Base):
+    """Allow/deny rule for a user, tenant, resource and action."""
+
     __tablename__ = "access_policies"
     __table_args__ = (
         sa.UniqueConstraint(

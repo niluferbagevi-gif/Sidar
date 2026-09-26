@@ -28,6 +28,7 @@ def _session_record(record_cls: Callable[..., T], row: Any) -> T:
 
 
 async def list_sessions(db: Any, record_cls: Callable[..., T], user_id: str) -> list[T]:
+    """List a user's chat sessions, most recently updated first."""
     if db._backend == "postgresql":
         assert db._pg_pool is not None
         async with db._pg_pool.acquire() as conn:
@@ -57,6 +58,7 @@ async def list_sessions(db: Any, record_cls: Callable[..., T], user_id: str) -> 
 
 
 async def count_sessions_total(db: Any) -> int:
+    """Return the total number of chat sessions across all users."""
     if db._backend == "postgresql":
         assert db._pg_pool is not None
         async with db._pg_pool.acquire() as conn:
@@ -81,6 +83,7 @@ async def load_session(
     session_id: str,
     user_id: str | None = None,
 ) -> T | None:
+    """Load one session by id, restricted to ``user_id`` when given."""
     if db._backend == "postgresql":
         assert db._pg_pool is not None
         async with db._pg_pool.acquire() as conn:
@@ -119,6 +122,7 @@ async def load_session(
 
 
 async def update_session_title(db: Any, session_id: str, title: str) -> bool:
+    """Rename a session and bump its ``updated_at``; ``False`` if it does not exist."""
     now_dt = datetime.now(UTC)
     now = now_dt.isoformat()
     if db._backend == "postgresql":
@@ -147,6 +151,7 @@ async def update_session_title(db: Any, session_id: str, title: str) -> bool:
 
 
 async def delete_session(db: Any, session_id: str, user_id: str | None = None) -> bool:
+    """Delete a session (owned by ``user_id`` when given); ``False`` if nothing matched."""
     if db._backend == "postgresql":
         assert db._pg_pool is not None
         async with db._pg_pool.acquire() as conn:
@@ -181,6 +186,7 @@ async def create_session(
     user_id: str,
     title: str,
 ) -> T:
+    """Create a new chat session for a user and return its record."""
     session_id = new_entity_id()
     now_dt = datetime.now(UTC)
     now = now_dt.isoformat()
@@ -227,6 +233,7 @@ async def add_message(
     content: str,
     tokens_used: int = 0,
 ) -> T:
+    """Append a message to a session and return the stored record."""
     now_dt = datetime.now(UTC)
     now = now_dt.isoformat()
     tokens = max(0, int(tokens_used or 0))
@@ -272,6 +279,7 @@ async def add_message(
 
 
 async def add_messages_bulk(db: Any, items: list[dict[str, object]]) -> int:
+    """Insert many messages in one transaction and return the inserted row count."""
     prepared: list[tuple[str, str, str, int, datetime, str]] = []
     for item in items:
         session_id = str(item.get("session_id", "") or "").strip()
@@ -323,12 +331,14 @@ async def add_messages_bulk(db: Any, items: list[dict[str, object]]) -> int:
 
 
 async def get_session_messages(db: Any, session_id: str) -> list[Any]:
+    """Return a session's messages in insertion order."""
     return [
         db._to_message_record(r) for r in await db._fetch_message_rows_by_session_ids([session_id])
     ]
 
 
 async def get_messages_for_sessions(db: Any, session_ids: list[str]) -> dict[str, list[Any]]:
+    """Return messages for several sessions in one query, grouped by session id."""
     normalized_ids = [
         str(session_id).strip() for session_id in session_ids if str(session_id).strip()
     ]
@@ -346,6 +356,7 @@ async def get_messages_for_sessions(db: Any, session_ids: list[str]) -> dict[str
 async def replace_session_messages(
     db: Any, session_id: str, messages: list[dict[str, object]]
 ) -> int:
+    """Atomically replace a session's messages, skipping entries with empty content."""
     normalized_messages = [
         {
             "role": str(item.get("role", "") or "").strip() or "assistant",

@@ -259,6 +259,12 @@ class Database(DatabaseConnectionMixin):
     def __init__(
         self, cfg: Config | None = None, *, pg_pool_factory: Callable[..., Any] | None = None
     ) -> None:
+        """Resolve the database URL and pool settings from ``cfg``.
+
+        Args:
+            cfg: Configuration to read; a fresh ``Config`` is used when omitted.
+            pg_pool_factory: Optional asyncpg pool factory, injectable for tests.
+        """
         self.cfg = cfg or Config()
         self.database_url = _resolve_database_url(self.cfg)
         self.pool_size = max(1, int(getattr(self.cfg, "DB_POOL_SIZE", 5) or 5))
@@ -356,6 +362,7 @@ class Database(DatabaseConnectionMixin):
         return await self._run_sqlite_op(_run, write=False)
 
     async def init_schema(self) -> None:
+        """Create or migrate the schema for the configured backend."""
         await db_schema.init_schema(self)
 
     async def _ensure_access_control_schema_sqlite(self) -> None:
@@ -386,17 +393,20 @@ class Database(DatabaseConnectionMixin):
         await db_schema.init_schema_postgresql(self)
 
     async def ensure_default_prompt_registry(self) -> None:
+        """Seed the default ``system`` prompt when no active one exists."""
         await db_prompt_registry.ensure_default_prompt_registry(
             self, prompt_record_cls=PromptRecord
         )
 
     async def list_prompts(self, role_name: str | None = None) -> list[PromptRecord]:
+        """List stored prompt versions, optionally for one role."""
         return cast(
             list[PromptRecord],
             await db_prompt_registry.list_prompts(self, role_name, prompt_record_cls=PromptRecord),
         )
 
     async def get_active_prompt(self, role_name: str) -> PromptRecord | None:
+        """Return the active prompt for ``role_name``, if any."""
         return cast(
             PromptRecord | None,
             await db_prompt_registry.get_active_prompt(
@@ -407,6 +417,7 @@ class Database(DatabaseConnectionMixin):
     async def upsert_prompt(
         self, role_name: str, prompt_text: str, *, activate: bool = True
     ) -> PromptRecord:
+        """Store a new prompt version for a role, activating it by default."""
         return cast(
             PromptRecord,
             await db_prompt_registry.upsert_prompt(
@@ -419,6 +430,7 @@ class Database(DatabaseConnectionMixin):
         )
 
     async def activate_prompt(self, prompt_id: int) -> PromptRecord | None:
+        """Activate the prompt with ``prompt_id`` for its role."""
         return cast(
             PromptRecord | None,
             await db_prompt_registry.activate_prompt(
@@ -433,25 +445,31 @@ class Database(DatabaseConnectionMixin):
         await db_schema.ensure_schema_version_postgresql(self)
 
     async def ensure_user(self, username: str, role: str = "user") -> UserRecord:
+        """Return the user named ``username``, creating it if needed."""
         return await db_users.ensure_user(self, username, role)
 
     async def list_sessions(self, user_id: str) -> list[SessionRecord]:
+        """List a user's chat sessions, most recently updated first."""
         return await db_sessions.list_sessions(self, SessionRecord, user_id)
 
     async def count_sessions_total(self) -> int:
+        """Return the total number of chat sessions."""
         return await db_sessions.count_sessions_total(self)
 
     async def load_session(
         self, session_id: str, user_id: str | None = None
     ) -> SessionRecord | None:
+        """Load one session, restricted to ``user_id`` when given."""
         return await db_sessions.load_session(
             self, SessionRecord, _sqlite_fetchone, session_id, user_id
         )
 
     async def update_session_title(self, session_id: str, title: str) -> bool:
+        """Rename a session; ``False`` if it does not exist."""
         return await db_sessions.update_session_title(self, session_id, title)
 
     async def delete_session(self, session_id: str, user_id: str | None = None) -> bool:
+        """Delete a session; ``False`` if nothing matched."""
         return await db_sessions.delete_session(self, session_id, user_id)
 
     async def create_user(
@@ -461,14 +479,17 @@ class Database(DatabaseConnectionMixin):
         password: str | None = None,
         tenant_id: str = "default",
     ) -> UserRecord:
+        """Create a user, hashing ``password`` with Argon2id when given."""
         return await db_users.create_user(self, username, role, password, tenant_id, _hash_password)
 
     async def register_user(
         self, username: str, password: str, role: str = "user", tenant_id: str = "default"
     ) -> UserRecord:
+        """Register a password-protected user."""
         return await db_users.register_user(self, username, password, role, tenant_id)
 
     async def authenticate_user(self, username: str, password: str) -> UserRecord | None:
+        """Return the user if ``password`` is correct, otherwise ``None``."""
         return await db_users.authenticate_user(self, username, password, _verify_password)
 
     async def _get_user_by_id(self, user_id: str) -> UserRecord | None:
@@ -492,6 +513,11 @@ class Database(DatabaseConnectionMixin):
         username: str | None = None,
         tenant_id: str | None = None,
     ) -> AuthTokenRecord:
+        """Issue a signed JWT for a user.
+
+        The token carries ``sub``, ``role``, ``username`` and ``tenant_id`` claims and
+        expires after ``ttl_days`` (``JWT_TTL_DAYS`` from config by default).
+        """
         created_at = _utc_now_iso()
         effective_ttl_days = (
             ttl_days if ttl_days is not None else int(getattr(self.cfg, "JWT_TTL_DAYS", 7) or 7)
@@ -519,6 +545,11 @@ class Database(DatabaseConnectionMixin):
         )
 
     def verify_auth_token(self, token: str) -> UserRecord | None:
+        """Decode and validate a JWT without a database lookup.
+
+        Returns ``None`` for invalid signatures, expired tokens, missing claims or a
+        non-UUID subject.
+        """
         try:
             secret_key = _require_jwt_secret(self.cfg)
             algorithm = str(getattr(self.cfg, "JWT_ALGORITHM", "HS256") or "HS256")
@@ -560,6 +591,7 @@ class Database(DatabaseConnectionMixin):
     async def list_access_policies(
         self, user_id: str, tenant_id: str | None = None
     ) -> list[AccessPolicyRecord]:
+        """List a user's access policies, optionally for one tenant."""
         return await db_access_policy.list_access_policies(self, user_id, tenant_id)
 
     async def upsert_access_policy(
@@ -572,6 +604,7 @@ class Database(DatabaseConnectionMixin):
         action: str,
         effect: str = "allow",
     ) -> None:
+        """Create or update one allow/deny access policy."""
         await db_access_policy.upsert_access_policy(
             self,
             user_id=user_id,
@@ -591,6 +624,7 @@ class Database(DatabaseConnectionMixin):
         action: str,
         resource_id: str = "*",
     ) -> bool:
+        """Return whether a user may perform an action on a resource (deny wins)."""
         return await db_access_policy.check_access_policy(
             self,
             user_id=user_id,
@@ -611,6 +645,7 @@ class Database(DatabaseConnectionMixin):
         allowed: bool,
         timestamp: str | None = None,
     ) -> None:
+        """Persist one audit log entry."""
         await db_audit.record_audit_log(
             self,
             record_cls=AuditLogRecord,
@@ -632,6 +667,7 @@ class Database(DatabaseConnectionMixin):
         tenant_id: str | None = None,
         limit: int = 100,
     ) -> list[AuditLogRecord]:
+        """List recent audit log entries, filtered by user and/or tenant."""
         return await db_audit.list_audit_logs(
             self,
             record_cls=AuditLogRecord,
@@ -653,6 +689,7 @@ class Database(DatabaseConnectionMixin):
         metadata: dict[str, Any] | None = None,
         campaign_id: int | None = None,
     ) -> MarketingCampaignRecord:
+        """Insert or update a marketing campaign."""
         return await db_marketing.upsert_marketing_campaign(
             self,
             tenant_id=tenant_id,
@@ -673,6 +710,7 @@ class Database(DatabaseConnectionMixin):
         status: str | None = None,
         limit: int = 100,
     ) -> list[MarketingCampaignRecord]:
+        """List a tenant's marketing campaigns, optionally by status."""
         return await db_marketing.list_marketing_campaigns(
             self, tenant_id=tenant_id, status=status, limit=limit
         )
@@ -688,6 +726,7 @@ class Database(DatabaseConnectionMixin):
         channel: str = "",
         metadata: dict[str, Any] | None = None,
     ) -> ContentAssetRecord:
+        """Store a content asset for a campaign."""
         return await db_marketing.add_content_asset(
             self,
             campaign_id=campaign_id,
@@ -706,6 +745,7 @@ class Database(DatabaseConnectionMixin):
         campaign_id: int | None = None,
         limit: int = 100,
     ) -> list[ContentAssetRecord]:
+        """List a tenant's content assets, optionally for one campaign."""
         return await db_marketing.list_content_assets(
             self, tenant_id=tenant_id, campaign_id=campaign_id, limit=limit
         )
@@ -720,6 +760,7 @@ class Database(DatabaseConnectionMixin):
         owner_user_id: str = "",
         campaign_id: int | None = None,
     ) -> OperationChecklistRecord:
+        """Store an operation checklist."""
         return await db_marketing.add_operation_checklist(
             self,
             tenant_id=tenant_id,
@@ -737,6 +778,7 @@ class Database(DatabaseConnectionMixin):
         campaign_id: int | None = None,
         limit: int = 100,
     ) -> list[OperationChecklistRecord]:
+        """List a tenant's operation checklists, optionally for one campaign."""
         return await db_marketing.list_operation_checklists(
             self, tenant_id=tenant_id, campaign_id=campaign_id, limit=limit
         )
@@ -753,6 +795,7 @@ class Database(DatabaseConnectionMixin):
         suggested_test_path: str = "",
         review_payload_json: str = "{}",
     ) -> CoverageTaskRecord:
+        """Create a coverage task from a pytest run."""
         return await db_coverage.create_coverage_task(
             self,
             tenant_id=tenant_id,
@@ -775,6 +818,7 @@ class Database(DatabaseConnectionMixin):
         severity: str = "medium",
         details: dict[str, Any] | None = None,
     ) -> CoverageFindingRecord:
+        """Attach a finding to a coverage task."""
         return await db_coverage.add_coverage_finding(
             self,
             task_id=task_id,
@@ -792,6 +836,7 @@ class Database(DatabaseConnectionMixin):
         status: str | None = None,
         limit: int = 100,
     ) -> list[CoverageTaskRecord]:
+        """List a tenant's coverage tasks, optionally by status."""
         return await db_coverage.list_coverage_tasks(
             self, tenant_id=tenant_id, status=status, limit=limit
         )
@@ -799,16 +844,19 @@ class Database(DatabaseConnectionMixin):
     async def upsert_user_quota(
         self, user_id: str, daily_token_limit: int = 0, daily_request_limit: int = 0
     ) -> None:
+        """Set a user's daily token and request limits."""
         await db_metrics.upsert_user_quota(self, user_id, daily_token_limit, daily_request_limit)
 
     async def record_provider_usage_daily(
         self, user_id: str, provider: str, tokens_used: int, requests_inc: int = 1
     ) -> None:
+        """Add today's request and token usage for a user/provider pair."""
         await db_metrics.record_provider_usage_daily(
             self, user_id, provider, tokens_used, requests_inc
         )
 
     async def get_user_quota_status(self, user_id: str, provider: str) -> dict[str, int | bool]:
+        """Return a user's daily limits, usage and exceeded flags for a provider."""
         return await db_metrics.get_user_quota_status(self, user_id, provider, _sqlite_fetchone)
 
     async def list_users_with_quotas(self) -> list[dict[str, Any]]:
@@ -816,14 +864,17 @@ class Database(DatabaseConnectionMixin):
         return await db_metrics.list_users_with_quotas(self)
 
     async def get_admin_stats(self) -> dict[str, Any]:
+        """Return aggregate usage statistics for the admin dashboard."""
         return await db_metrics.get_admin_stats(self, _sqlite_fetchone)
 
     async def create_session(self, user_id: str, title: str) -> SessionRecord:
+        """Create a new chat session for a user."""
         return await db_sessions.create_session(self, SessionRecord, _new_entity_id, user_id, title)
 
     async def add_message(
         self, session_id: str, role: str, content: str, tokens_used: int = 0
     ) -> MessageRecord:
+        """Append a message to a session."""
         return await db_sessions.add_message(
             self, MessageRecord, session_id, role, content, tokens_used
         )
@@ -833,6 +884,7 @@ class Database(DatabaseConnectionMixin):
         return await db_sessions.add_messages_bulk(self, items)
 
     async def get_session_messages(self, session_id: str) -> list[MessageRecord]:
+        """Return a session's messages in insertion order."""
         return await db_sessions.get_session_messages(self, session_id)
 
     async def get_messages_for_sessions(

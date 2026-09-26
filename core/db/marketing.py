@@ -34,6 +34,11 @@ async def upsert_marketing_campaign(
     metadata: dict[str, Any] | None = None,
     campaign_id: int | None = None,
 ) -> MarketingCampaignRecord:
+    """Insert a marketing campaign, or update it when ``campaign_id`` is given.
+
+    Raises:
+        ValueError: If ``name`` is empty.
+    """
     tenant = (tenant_id or "default").strip() or "default"
     campaign_name = (name or "").strip()
     if not campaign_name:
@@ -194,6 +199,11 @@ async def add_content_asset(
     channel: str = "",
     metadata: dict[str, Any] | None = None,
 ) -> ContentAssetRecord:
+    """Store a content asset for a campaign.
+
+    Raises:
+        ValueError: If ``asset_type``, ``title`` or ``content`` is empty.
+    """
     now_dt, now = utc_now_pair()
     tenant = (tenant_id or "default").strip() or "default"
     asset_kind = (asset_type or "").strip().lower()
@@ -296,6 +306,11 @@ async def add_operation_checklist(
     owner_user_id: str = "",
     campaign_id: int | None = None,
 ) -> OperationChecklistRecord:
+    """Store an operation checklist after dropping empty items.
+
+    Raises:
+        ValueError: If ``title`` is empty.
+    """
     tenant = (tenant_id or "default").strip() or "default"
     checklist_title = (title or "").strip()
     if not checklist_title:
@@ -401,6 +416,7 @@ async def list_marketing_campaigns(
     status: str | None = None,
     limit: int = 100,
 ) -> list[MarketingCampaignRecord]:
+    """List a tenant's campaigns, optionally by status, most recently updated first."""
     tenant = (tenant_id or "default").strip() or "default"
     normalized_status = (status or "").strip().lower() or None
     max_items = max(1, min(int(limit or 100), 500))
@@ -476,6 +492,7 @@ async def list_content_assets(
     campaign_id: int | None = None,
     limit: int = 100,
 ) -> list[ContentAssetRecord]:
+    """List a tenant's content assets, optionally for one campaign, newest first."""
     tenant = (tenant_id or "default").strip() or "default"
     max_items = max(1, min(int(limit or 100), 500))
     if db._backend == "postgresql":
@@ -549,6 +566,7 @@ async def list_operation_checklists(
     campaign_id: int | None = None,
     limit: int = 100,
 ) -> list[OperationChecklistRecord]:
+    """List a tenant's operation checklists, optionally for one campaign, newest first."""
     tenant = (tenant_id or "default").strip() or "default"
     max_items = max(1, min(int(limit or 100), 500))
     if db._backend == "postgresql":

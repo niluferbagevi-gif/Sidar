@@ -15,6 +15,7 @@ from core.db.helpers import utc_now_pair as _utc_now_pair
 
 
 async def ensure_user(db: Any, username: str, role: str = "user") -> UserRecord:
+    """Return the user with ``username``, creating it with ``role`` if missing."""
     if db._backend == "postgresql":
         assert db._pg_pool is not None
         async with db._pg_pool.acquire() as conn:
@@ -63,6 +64,7 @@ async def create_user(
     tenant_id: str,
     hash_password: Callable[[str], str],
 ) -> UserRecord:
+    """Insert a user, hashing ``password`` off the event loop when one is given."""
     user_id = _new_entity_id()
     created_at_dt, created_at = _utc_now_pair()
     password_hash = await asyncio.to_thread(hash_password, password) if password else None
@@ -108,6 +110,7 @@ async def register_user(
     role: str = "user",
     tenant_id: str = "default",
 ) -> UserRecord:
+    """Register a password-protected user through the facade's ``create_user``."""
     return cast(
         UserRecord,
         await db.create_user(username=username, role=role, password=password, tenant_id=tenant_id),
@@ -120,6 +123,7 @@ async def authenticate_user(
     password: str,
     verify_password: Callable[[str, str], bool],
 ) -> UserRecord | None:
+    """Return the user when ``password`` verifies against the stored hash, else ``None``."""
     if db._backend == "postgresql":
         assert db._pg_pool is not None
         async with db._pg_pool.acquire() as conn:
@@ -168,6 +172,7 @@ async def authenticate_user(
 
 
 async def get_user_by_id(db: Any, user_id: str) -> UserRecord | None:
+    """Return the user with ``user_id``, or ``None`` if it does not exist."""
     if db._backend == "postgresql":
         assert db._pg_pool is not None
         async with db._pg_pool.acquire() as conn:

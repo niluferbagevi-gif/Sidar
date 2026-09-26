@@ -7,6 +7,8 @@ from dataclasses import dataclass
 
 @dataclass
 class AccessPolicyRecord:
+    """Row of ``access_policies``: one allow/deny rule for a user and resource."""
+
     id: int
     user_id: str
     tenant_id: str
@@ -20,6 +22,8 @@ class AccessPolicyRecord:
 
 @dataclass
 class PromptRecord:
+    """Row of ``prompt_registry``: one versioned system prompt for an agent role."""
+
     id: int
     role_name: str
     prompt_text: str
@@ -31,6 +35,8 @@ class PromptRecord:
 
 @dataclass
 class AuditLogRecord:
+    """Row of ``audit_logs``: one recorded access decision."""
+
     id: int
     user_id: str
     tenant_id: str
@@ -43,6 +49,8 @@ class AuditLogRecord:
 
 @dataclass
 class MarketingCampaignRecord:
+    """Row of ``marketing_campaigns`` owned by a tenant."""
+
     id: int
     tenant_id: str
     name: str
@@ -58,6 +66,8 @@ class MarketingCampaignRecord:
 
 @dataclass
 class ContentAssetRecord:
+    """Row of ``content_assets``: generated content attached to a campaign."""
+
     id: int
     campaign_id: int
     tenant_id: str
@@ -72,6 +82,8 @@ class ContentAssetRecord:
 
 @dataclass
 class OperationChecklistRecord:
+    """Row of ``operation_checklists``: a JSON item list, optionally tied to a campaign."""
+
     id: int
     campaign_id: int | None
     tenant_id: str

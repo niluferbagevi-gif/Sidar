@@ -72,6 +72,7 @@ class DatabaseConnectionMixin:
         self._sqlite_path = path
 
     async def connect(self) -> None:
+        """Open the PostgreSQL pool or the SQLite connection for the configured backend."""
         if self._backend == "postgresql":
             await self._connect_postgresql()
             return
@@ -317,6 +318,7 @@ class DatabaseConnectionMixin:
             await self._enter_degraded_mode(reason, exc)
 
     async def close(self) -> None:
+        """Close the SQLite connection and its executor, or the PostgreSQL pool."""
         if self._sqlite_conn is not None:
             conn = self._sqlite_conn
             executor = self._sqlite_executor
