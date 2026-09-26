@@ -23,6 +23,7 @@ class WebSocketLifecycle:
     """Owns deterministic task cancellation and disconnect cleanup for a websocket."""
 
     def __init__(self, websocket: WebSocket, *, logger: Any | None = None) -> None:
+        """WebSocket'i ve temizlik callback'leri ile görev kayıtlarını hazırlar."""
         self.websocket = websocket
         self.logger = logger
         self._cleanup_callbacks: list[Callable[[], Awaitable[Any]]] = []

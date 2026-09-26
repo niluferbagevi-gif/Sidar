@@ -8,12 +8,16 @@ from pydantic import BaseModel, Field
 
 
 class OperationChecklistCreateRequest(BaseModel):
+    """Operasyon checklisti oluşturma isteği."""
+
     title: str = Field(..., min_length=1, max_length=160)
     items: list[str] = Field(default_factory=list)
     status: str = Field(default="pending", min_length=1, max_length=32)
 
 
 class ContentAssetCreateRequest(BaseModel):
+    """Kampanyaya içerik varlığı ekleme isteği."""
+
     asset_type: str = Field(..., min_length=1, max_length=64)
     title: str = Field(..., min_length=1, max_length=160)
     content: str = Field(..., min_length=1)
@@ -22,6 +26,8 @@ class ContentAssetCreateRequest(BaseModel):
 
 
 class CampaignCreateRequest(BaseModel):
+    """Başlangıç varlık ve checklistleriyle kampanya oluşturma isteği."""
+
     name: str = Field(..., min_length=1, max_length=160)
     channel: str = Field(default="", max_length=64)
     objective: str = Field(default="", max_length=400)
@@ -33,12 +39,16 @@ class CampaignCreateRequest(BaseModel):
 
 
 class PoyrazToolRunRequest(BaseModel):
+    """Poyraz aracını REST köprüsüyle çalıştırma isteği."""
+
     tool_name: str = Field(..., min_length=1, max_length=80)
     payload: dict[str, Any] = Field(default_factory=dict)
     room_id: str = Field(default="ops:control", max_length=120)
 
 
 class LandingPageDraftRequest(BaseModel):
+    """Poyraz landing page taslağı üretme isteği."""
+
     brand_name: str = Field(..., min_length=1, max_length=160)
     offer: str = Field(..., min_length=1, max_length=600)
     audience: str = Field(..., min_length=1, max_length=400)
@@ -53,6 +63,8 @@ class LandingPageDraftRequest(BaseModel):
 
 
 class CampaignCopyGenerateRequest(BaseModel):
+    """Poyraz kampanya kopyası üretme isteği."""
+
     campaign_name: str = Field(..., min_length=1, max_length=160)
     objective: str = Field(..., min_length=1, max_length=400)
     audience: str = Field(..., min_length=1, max_length=400)
@@ -67,6 +79,8 @@ class CampaignCopyGenerateRequest(BaseModel):
 
 
 class ServiceOperationsPlanRequest(BaseModel):
+    """Poyraz servis operasyon planı üretme isteği."""
+
     campaign_id: int | None = Field(default=None)
     campaign_name: str = Field(default="", max_length=160)
     service_name: str = Field(default="", max_length=160)
@@ -81,6 +95,8 @@ class ServiceOperationsPlanRequest(BaseModel):
 
 
 class CoverageAnalyzeRequest(BaseModel):
+    """Coverage raporu analiz isteği."""
+
     coverage_xml: str = Field(default="coverage.xml", max_length=512)
     coveragerc: str = Field(default=".coveragerc", max_length=512)
     coverage_output: str = Field(default="")
@@ -89,6 +105,8 @@ class CoverageAnalyzeRequest(BaseModel):
 
 
 class CoverageGenerateRequest(BaseModel):
+    """Coverage bulgusu için test adayı üretme isteği."""
+
     coverage_finding: dict[str, Any] = Field(default_factory=dict)
     coveragerc: dict[str, Any] = Field(default_factory=dict)
     target_path: str = Field(default="", max_length=512)
@@ -98,6 +116,8 @@ class CoverageGenerateRequest(BaseModel):
 
 
 class CoverageBatchRequest(BaseModel):
+    """Coverage otonom batch iyileştirme isteği."""
+
     coverage_xml: str = Field(default="coverage.xml", max_length=512)
     coveragerc: str = Field(default=".coveragerc", max_length=512)
     limit: int = Field(default=10, ge=1, le=100)

@@ -12,6 +12,10 @@ def build_health_router(
     health_response: Callable[[bool], Awaitable[Any]],
     status_response: Callable[[], Awaitable[Any]] | None = None,
 ) -> LegacyExportRouter:
+    """`/health`, `/healthz`, `/readyz` ve isteğe bağlı `/status` route'larını kurar.
+
+    `/readyz` readiness kontrolünü, diğer sağlık uçları liveness kontrolünü çağırır.
+    """
     router = LegacyExportRouter()
 
     @router.get(

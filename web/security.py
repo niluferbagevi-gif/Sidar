@@ -31,6 +31,11 @@ class WebhookReplayGuard:
     """Bounded, thread-safe replay cache for signed webhook deliveries."""
 
     def __init__(self, *, ttl_seconds: float = 600.0, max_entries: int = 10_000) -> None:
+        """Configure the replay window and cache size.
+
+        Raises:
+            ValueError: If ``ttl_seconds`` or ``max_entries`` is not positive.
+        """
         if ttl_seconds <= 0:
             raise ValueError("ttl_seconds pozitif olmalıdır")
         if max_entries <= 0:

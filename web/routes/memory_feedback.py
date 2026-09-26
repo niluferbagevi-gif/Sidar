@@ -13,6 +13,8 @@ from web.routes import LegacyExportRouter
 
 
 class EntityUpsertRequest(BaseModel):
+    """Kullanıcıya ait entity bellek kaydını ekleme/güncelleme isteği."""
+
     user_id: str = Field(..., description="Kullanıcı kimliği")
     key: str = Field(..., description="Bellek anahtarı")
     value: str = Field(..., description="Saklanacak değer")
@@ -20,6 +22,8 @@ class EntityUpsertRequest(BaseModel):
 
 
 class FeedbackRecordRequest(BaseModel):
+    """Model yanıtına verilen kullanıcı puanını kaydetme isteği."""
+
     user_id: str = Field(..., description="Kullanıcı kimliği")
     prompt: str = Field(..., description="Kullanıcı girdisi")
     response: str = Field(..., description="Model çıktısı")
@@ -34,6 +38,10 @@ def build_memory_feedback_router(
     feedback_store_cache: dict[str, Any],
     get_request_user: Callable[..., Any],
 ) -> LegacyExportRouter:
+    """Entity bellek ve geri bildirim route'larını kurar.
+
+    EntityMemory ve geri bildirim deposu ilk kullanımda başlatılıp önbellekte tutulur.
+    """
     router = LegacyExportRouter()
 
     async def get_entity_memory() -> Any:

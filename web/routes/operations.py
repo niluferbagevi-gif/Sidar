@@ -50,6 +50,7 @@ serialize_coverage_task = coverage_ops.serialize_coverage_task
 
 
 def configure_operations_dependencies(deps_factory: Callable[[], Any]) -> None:
+    """Operations ve coverage route'larının bağımlılık fabrikasını kaydeder."""
     global _deps_factory
     _deps_factory = deps_factory
     coverage_ops.configure_coverage_dependencies(deps_factory)
@@ -66,11 +67,13 @@ async def _get_request_user_proxy(request: Request) -> Any:
 
 
 def build_operations_router(deps_factory: Callable[[], Any]) -> APIRouter:
+    """Bağımlılıkları kaydedip operations router'ını döndürür."""
     configure_operations_dependencies(deps_factory)
     return router
 
 
 def serialize_campaign(record: Any) -> dict[str, Any]:
+    """Kampanya kaydını API yanıtına uygun sözlüğe dönüştürür."""
     return {
         "id": int(getattr(record, "id", 0) or 0),
         "tenant_id": str(getattr(record, "tenant_id", "default") or "default"),
@@ -87,6 +90,7 @@ def serialize_campaign(record: Any) -> dict[str, Any]:
 
 
 def serialize_content_asset(record: Any) -> dict[str, Any]:
+    """İçerik varlığı kaydını API yanıtına uygun sözlüğe dönüştürür."""
     return {
         "id": int(getattr(record, "id", 0) or 0),
         "campaign_id": int(getattr(record, "campaign_id", 0) or 0),
@@ -102,6 +106,7 @@ def serialize_content_asset(record: Any) -> dict[str, Any]:
 
 
 def serialize_operation_checklist(record: Any) -> dict[str, Any]:
+    """Operasyon checklist kaydını API yanıtına uygun sözlüğe dönüştürür."""
     campaign_id = getattr(record, "campaign_id", None)
     return {
         "id": int(getattr(record, "id", 0) or 0),
@@ -153,6 +158,7 @@ async def api_operations_list_campaigns(
     limit: int = 50,
     _user: Any = Depends(_get_request_user_proxy),
 ) -> JSONResponse:
+    """Kiracıya ait pazarlama kampanyalarını listeler."""
     deps = _deps()
     try:
         db = await _resolve_operations_db(deps)
@@ -176,6 +182,7 @@ async def api_operations_create_campaign(
     req: CampaignCreateRequest,
     _user: Any = Depends(_get_request_user_proxy),
 ) -> JSONResponse:
+    """Kampanya oluşturur ve istekteki başlangıç varlıklarını/checklistlerini ekler."""
     deps = _deps()
     try:
         db = await _resolve_operations_db(deps)
@@ -238,6 +245,7 @@ async def api_operations_list_assets(
     limit: int = 100,
     _user: Any = Depends(_get_request_user_proxy),
 ) -> JSONResponse:
+    """Kampanyanın içerik varlıklarını listeler."""
     deps = _deps()
     try:
         db = await _resolve_operations_db(deps)
@@ -264,6 +272,7 @@ async def api_operations_add_asset(
     req: ContentAssetCreateRequest,
     _user: Any = Depends(_get_request_user_proxy),
 ) -> JSONResponse:
+    """Kampanyaya içerik varlığı ekler."""
     deps = _deps()
     try:
         db = await _resolve_operations_db(deps)
@@ -294,6 +303,7 @@ async def api_operations_list_checklists(
     limit: int = 100,
     _user: Any = Depends(_get_request_user_proxy),
 ) -> JSONResponse:
+    """Kampanyanın operasyon checklistlerini listeler."""
     deps = _deps()
     try:
         db = await _resolve_operations_db(deps)
@@ -323,6 +333,7 @@ async def api_operations_add_checklist(
     req: OperationChecklistCreateRequest,
     _user: Any = Depends(_get_request_user_proxy),
 ) -> JSONResponse:
+    """Kampanyaya operasyon checklisti ekler."""
     deps = _deps()
     try:
         db = await _resolve_operations_db(deps)
@@ -371,6 +382,10 @@ async def api_operations_poyraz_run(
     req: PoyrazToolRunRequest,
     _user: Any = Depends(_get_request_user_proxy),
 ) -> JSONResponse:
+    """İzin verilen bir Poyraz aracını REST üzerinden çalıştırır.
+
+    İzin listesi dışındaki araçlar 400 ile reddedilir.
+    """
     deps = _deps()
     tool_name = req.tool_name.strip()
     if tool_name not in ALLOWED_POYRAZ_REST_TOOLS:
@@ -436,6 +451,7 @@ async def api_operations_generate_landing_page(
     req: LandingPageDraftRequest,
     _user: Any = Depends(_get_request_user_proxy),
 ) -> JSONResponse:
+    """Poyraz ile landing page taslağı üretir."""
     return await _run_named_poyraz_request(
         req,
         _user,
@@ -452,6 +468,7 @@ async def api_operations_generate_campaign_copy(
     req: CampaignCopyGenerateRequest,
     _user: Any = Depends(_get_request_user_proxy),
 ) -> JSONResponse:
+    """Poyraz ile kampanya kopyası üretir."""
     return await _run_named_poyraz_request(
         req,
         _user,
@@ -470,6 +487,7 @@ async def api_operations_plan_service(
     req: ServiceOperationsPlanRequest,
     _user: Any = Depends(_get_request_user_proxy),
 ) -> JSONResponse:
+    """Poyraz ile servis operasyon planı üretir."""
     return await _run_named_poyraz_request(
         req,
         _user,

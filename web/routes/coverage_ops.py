@@ -88,6 +88,7 @@ async def api_qa_coverage_tasks(
     limit: int = 50,
     _user: Any = Depends(_get_request_user_proxy),
 ) -> JSONResponse:
+    """Kiracıya ait coverage görevlerini isteğe bağlı durum filtresiyle listeler."""
     deps = _deps()
     try:
         db = await _resolve_operations_db(deps)
@@ -111,6 +112,7 @@ async def api_qa_coverage_analyze(
     req: CoverageAnalyzeRequest,
     _user: Any = Depends(_get_request_user_proxy),
 ) -> JSONResponse:
+    """Coverage raporunu CoverageAgent ile analiz eder."""
     deps = _deps()
     coverage_agent = await deps.await_if_needed(deps.get_coverage_agent_instance())
     payload = req.model_dump()
@@ -139,6 +141,7 @@ async def api_qa_coverage_generate(
     req: CoverageGenerateRequest,
     _user: Any = Depends(_get_request_user_proxy),
 ) -> JSONResponse:
+    """Coverage bulgusu için test adayı üretir ve kalite kapısından geçirir."""
     deps = _deps()
     coverage_agent = await deps.await_if_needed(deps.get_coverage_agent_instance())
     payload = req.model_dump()
@@ -183,6 +186,7 @@ async def api_qa_coverage_batch(
     req: CoverageBatchRequest,
     _user: Any = Depends(_get_request_user_proxy),
 ) -> JSONResponse:
+    """CoverageAgent'ın otonom coverage batch iyileştirmesini çalıştırır."""
     deps = _deps()
     coverage_agent = await deps.await_if_needed(deps.get_coverage_agent_instance())
     await deps.emit_control_room_event(

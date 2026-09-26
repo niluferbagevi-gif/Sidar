@@ -38,6 +38,12 @@ class CollaborationParticipant:
         *,
         now_iso: Callable[[], str] | None = None,
     ) -> None:
+        """Odaya katılan kullanıcının kimlik, rol ve yazma yetkisi bilgisini tutar.
+
+        Eski çağrılar `joined_at` değerini beşinci konumsal argüman (`role`) olarak
+        geçirdiği için zaman damgasına benzeyen bir rol değeri `joined_at` sayılır ve
+        rol `user` olur.
+        """
         normalized_role = normalize_collaboration_role(role)
         normalized_joined_at = joined_at
 
@@ -74,6 +80,7 @@ class CollaborationRoom:
         telemetry: list[dict[str, Any]] | None = None,
         active_task: asyncio.Task[Any] | None = None,
     ) -> None:
+        """Oda kimliğini, katılımcıları, mesaj/telemetri geçmişini ve aktif görevi tutar."""
         self.room_id = room_id
         self.participants = participants if participants is not None else {}
         self.messages = messages if messages is not None else []
@@ -82,10 +89,16 @@ class CollaborationRoom:
 
 
 def collaboration_now_iso() -> str:
+    """Geçerli UTC zamanını ISO 8601 metni olarak döndürür."""
     return datetime.now(UTC).isoformat()
 
 
 def normalize_room_id(room_id: str) -> str:
+    """Oda kimliğini doğrular; boşsa `workspace:default` kullanır.
+
+    Raises:
+        HTTPException: Kimlik izin verilen biçime uymuyorsa (400).
+    """
     normalized = (room_id or "").strip() or "workspace:default"
     if not COLLAB_ROOM_RE.match(normalized):
         raise HTTPException(status_code=400, detail="Geçersiz room_id")
@@ -93,12 +106,14 @@ def normalize_room_id(room_id: str) -> str:
 
 
 def socket_key(websocket: WebSocket) -> int:
+    """WebSocket bağlantısı için süreç içi benzersiz anahtar döndürür."""
     return id(websocket)
 
 
 def serialize_collaboration_participant(
     participant: CollaborationParticipant,
 ) -> dict[str, Any]:
+    """Katılımcıyı API/WebSocket yanıtına uygun sözlüğe dönüştürür."""
     return {
         "user_id": participant.user_id,
         "username": participant.username,
@@ -111,12 +126,18 @@ def serialize_collaboration_participant(
 
 
 def normalize_collaboration_role(role: str) -> str:
+    """Rolü normalize eder; tanınmayan roller `user` olur."""
     allowed_roles = {"admin", "maintainer", "developer", "editor", "user"}
     normalized = (role or "").strip().lower()
     return normalized if normalized in allowed_roles else "user"
 
 
 def collaboration_write_scopes_for_role(role: str, room_id: str, *, base_dir: Path) -> list[str]:
+    """Role göre yazma izni verilen dizinleri döndürür.
+
+    `admin` tüm `base_dir`'e, yazma rolleri yalnız odaya ait
+    `workspaces/<room_id>` dizinine yazabilir; diğer roller salt okunurdur.
+    """
     normalized_role = normalize_collaboration_role(role)
     resolved_base_dir = base_dir.resolve()
     if normalized_role == "admin":
@@ -127,6 +148,7 @@ def collaboration_write_scopes_for_role(role: str, room_id: str, *, base_dir: Pa
 
 
 def collaboration_command_requires_write(command: str) -> bool:
+    """Komut yazma/değiştirme niyeti içeriyorsa `True` döndürür."""
     return bool(COLLAB_WRITE_INTENT_RE.search(str(command or "")))
 
 
@@ -136,6 +158,10 @@ def mask_collaboration_text(
     import_module: Callable[[str], Any],
     logger_obj: Any,
 ) -> str:
+    """Metni `core.dlp.mask_pii` ile maskeler.
+
+    DLP modülü yüklenemezse veya hata verirse metin maskelenmeden döndürülür.
+    """
     try:
         dlp_module = import_module("core.dlp")
         mask_pii = getattr(dlp_module, "mask_pii", None)
@@ -147,6 +173,7 @@ def mask_collaboration_text(
 
 
 def serialize_collaboration_room(room: CollaborationRoom) -> dict[str, Any]:
+    """Odayı katılımcılar ve son 120 mesaj/telemetri kaydıyla serileştirir."""
     return {
         "room_id": room.room_id,
         "participants": [
@@ -163,6 +190,7 @@ def serialize_collaboration_room(room: CollaborationRoom) -> dict[str, Any]:
 def append_room_message(
     room: CollaborationRoom, payload: dict[str, Any], *, limit: int = 200
 ) -> None:
+    """Mesajı odaya ekler ve geçmişi son `limit` kayıtla sınırlar."""
     room.messages.append(payload)
     if len(room.messages) > limit:
         room.messages = room.messages[-limit:]
@@ -175,6 +203,10 @@ def append_room_telemetry(
     mask_text: Callable[[str], str],
     limit: int = 200,
 ) -> None:
+    """Telemetri kaydını `content`/`error` alanları maskelenmiş olarak ekler.
+
+    Geçmiş son `limit` kayıtla sınırlanır.
+    """
     safe_payload = dict(payload)
     if "content" in safe_payload:
         safe_payload["content"] = mask_text(str(safe_payload.get("content", "") or ""))
@@ -197,6 +229,7 @@ def build_room_message(
     kind: str = "message",
     request_id: str = "",
 ) -> dict[str, Any]:
+    """İçeriği maskelenmiş, benzersiz kimlikli oda mesajı oluşturur."""
     return {
         "id": secrets.token_hex(8),
         "room_id": room_id,
@@ -211,6 +244,7 @@ def build_room_message(
 
 
 async def broadcast_room_payload(room: CollaborationRoom, payload: dict[str, Any]) -> None:
+    """Yükü odadaki tüm katılımcılara gönderir; gönderilemeyenleri odadan çıkarır."""
     stale: list[int] = []
     for key, participant in list(room.participants.items()):
         try:
@@ -262,6 +296,14 @@ async def join_collaboration_room(
     leave_room: Callable[[WebSocket], Awaitable[None]] | None = None,
     now_iso: Callable[[], str] = collaboration_now_iso,
 ) -> CollaborationRoom:
+    """WebSocket'i odaya katar ve güncel oda durumu ile presence bilgisini yayınlar.
+
+    Bağlantı başka bir odadaysa `leave_room` verilmişse önce oradan çıkarılır.
+    Yazma kapsamı kullanıcının rolüne göre belirlenir.
+
+    Returns:
+        Katılınan oda.
+    """
     normalized = normalize_room_id(room_id)
     current_room_id = str(getattr(websocket, "_sidar_room_id", "") or "")
     if current_room_id and current_room_id != normalized and leave_room is not None:
@@ -299,6 +341,11 @@ async def leave_collaboration_room(
     *,
     socket_key_func: Callable[[WebSocket], int] = socket_key,
 ) -> None:
+    """WebSocket'i bulunduğu odadan çıkarır.
+
+    Odada katılımcı kalırsa presence güncellemesi yayınlanır; oda boşalırsa
+    aktif görevi iptal edilir ve oda silinir.
+    """
     room_id = str(getattr(websocket, "_sidar_room_id", "") or "")
     if not room_id:
         return
@@ -323,15 +370,22 @@ async def leave_collaboration_room(
 
 
 def is_sidar_mention(message: str) -> bool:
+    """Mesaj `@sidar` bahsi içeriyorsa `True` döndürür."""
     return bool(re.search(r"(^|\s)@sidar\b", message, flags=re.IGNORECASE))
 
 
 def strip_sidar_mention(message: str) -> str:
+    """İlk `@sidar` bahsini kaldırır ve boşlukları sadeleştirir."""
     stripped = re.sub(r"(^|\s)@sidar\b", " ", message, count=1, flags=re.IGNORECASE)
     return " ".join(stripped.split()).strip()
 
 
 def build_collaboration_prompt(room: CollaborationRoom, *, actor_name: str, command: str) -> str:
+    """Oda bağlamını içeren ajan prompt'u üretir.
+
+    Prompt; katılımcıları, son 10 mesajı ve isteği yapan kullanıcının rolünü ve
+    yazma kapsamını içerir.
+    """
     transcript: list[str] = []
     for item in room.messages[-10:]:
         transcript.append(

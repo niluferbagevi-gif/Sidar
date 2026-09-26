@@ -13,6 +13,8 @@ from pydantic import BaseModel, Field
 
 
 class AutonomyWakeRequest(BaseModel):
+    """`/api/autonomy/wake` ile ajana manuel proaktif tetik gönderme isteği."""
+
     event_name: str = Field("manual_wake", description="Manuel/proaktif tetik olay adı")
     prompt: str = Field(..., description="Ajanın değerlendireceği proaktif prompt")
     source: str = Field("manual", description="Tetik kaynağı etiketi")
@@ -93,6 +95,7 @@ def _validate_autonomy_webhook_signature(
 
 
 def configure_autonomy_dependencies(deps_factory: Callable[[], Any]) -> None:
+    """Autonomy route'larının kullanacağı bağımlılık fabrikasını kaydeder."""
     global _deps_factory
     _deps_factory = deps_factory
 
@@ -110,6 +113,7 @@ def _require_autonomy_admin(request: Request) -> Any:
 
 
 def build_autonomy_router(deps_factory: Callable[[], Any]) -> APIRouter:
+    """Bağımlılıkları kaydedip autonomy webhook/wake/activity router'ını döndürür."""
     configure_autonomy_dependencies(deps_factory)
     return router
 

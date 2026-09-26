@@ -131,6 +131,7 @@ def build_project_ops_router(
     cfg: Any,
     logger: Any,
 ) -> LegacyExportRouter:
+    """Oturum, dosya, git ve GitHub repo/PR route'larını kurar."""
     router = LegacyExportRouter()
     resolve_server_root = server_root if callable(server_root) else (lambda: server_root)
     _resolve_mfcb = (

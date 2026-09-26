@@ -14,6 +14,8 @@ from web.routes import LegacyExportRouter
 
 
 class VisionAnalyzeRequest(BaseModel):
+    """Base64 görüntü analizi isteği."""
+
     image_base64: str = Field(..., description="Base64 kodlu görüntü verisi")
     mime_type: str = Field("image/png", description="Görüntü MIME türü")
     analysis_type: str = Field("general", description="Analiz türü: general, ui, chart, document")
@@ -21,6 +23,8 @@ class VisionAnalyzeRequest(BaseModel):
 
 
 class VisionMockupRequest(BaseModel):
+    """Mockup görüntüsünden frontend kodu üretme isteği."""
+
     image_base64: str = Field(..., description="Base64 kodlu mockup görüntüsü")
     mime_type: str = Field("image/png", description="Görüntü MIME türü")
     framework: str = Field("html", description="Hedef framework: html, react, vue")
@@ -42,6 +46,7 @@ def build_vision_router(
     resolve_agent_instance: Callable[[], Any],
     resolve_vision_components: Callable[[], tuple[Any, Any]],
 ) -> LegacyExportRouter:
+    """`/api/vision/analyze` ve `/api/vision/mockup` route'larını kurar."""
     router = LegacyExportRouter()
 
     @router.post("/api/vision/analyze", summary="Görüntü Analizi", tags=["Vision"])

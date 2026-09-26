@@ -33,6 +33,7 @@ def build_metrics_router(
     reset_current_metrics_user_id: Callable[[Any], None],
     logger: Any,
 ) -> LegacyExportRouter:
+    """Prometheus/JSON metrik ve LLM bütçe route'larını kurar."""
     router = LegacyExportRouter()
     get_local_rate_limits = (
         local_rate_limits if callable(local_rate_limits) else (lambda: local_rate_limits)

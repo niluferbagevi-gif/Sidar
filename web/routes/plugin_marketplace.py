@@ -61,12 +61,14 @@ PLUGIN_MARKETPLACE_CATALOG: dict[str, dict[str, Any]] = {
 
 
 def plugin_marketplace_state_path() -> Path:
+    """Marketplace durum dosyasının yolunu döndürür; `plugins/` dizinini oluşturur."""
     plugins_dir = Path("plugins")
     plugins_dir.mkdir(parents=True, exist_ok=True)
     return plugins_dir / ".marketplace_state.json"
 
 
 def read_plugin_marketplace_state(*, logger_obj: Any = logger) -> dict[str, Any]:
+    """Kurulu plugin durumunu okur; dosya yoksa veya okunamazsa boş sözlük döndürür."""
     path = plugin_marketplace_state_path()
     if not path.exists():
         return {}
@@ -84,6 +86,7 @@ def read_plugin_marketplace_state(*, logger_obj: Any = logger) -> dict[str, Any]
 
 
 def write_plugin_marketplace_state(state: dict[str, Any]) -> None:
+    """Kurulu plugin durumunu JSON olarak yazar."""
     path = plugin_marketplace_state_path()
     path.write_text(
         json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8"
@@ -93,6 +96,11 @@ def write_plugin_marketplace_state(state: dict[str, Any]) -> None:
 def get_plugin_marketplace_entry(
     plugin_id: str, *, catalog: dict[str, dict[str, Any]]
 ) -> dict[str, Any]:
+    """Katalogdan plugin girdisini döndürür.
+
+    Raises:
+        HTTPException: Plugin katalogda yoksa (404).
+    """
     normalized = (plugin_id or "").strip().lower()
     entry = catalog.get(normalized)
     if not entry:
@@ -108,6 +116,7 @@ def serialize_marketplace_plugin(
     read_state: Callable[[], dict[str, Any]],
     installed_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """Plugin'i katalog, kayıt ve kurulum durumu bilgisiyle serileştirir."""
     entry = get_plugin_marketplace_entry(plugin_id, catalog=catalog)
     state = installed_state or read_state().get(plugin_id, {})
     spec = agent_registry.get(str(entry["role_name"]))
@@ -155,6 +164,13 @@ def install_marketplace_plugin(
     serialize: Callable[..., dict[str, Any]],
     persist: bool = True,
 ) -> dict[str, Any]:
+    """Plugin kaynağını okuyup ajan kaydına yeniden kaydeder.
+
+    `persist=True` ise kurulum ve yeniden yükleme zamanları durum dosyasına yazılır.
+
+    Raises:
+        HTTPException: Plugin katalogda yoksa (404) veya kaynağı bulunamazsa (500).
+    """
     entry = get_plugin_marketplace_entry(plugin_id, catalog=catalog)
     source_path = Path(entry["entrypoint"])
     if not source_path.exists():
@@ -199,6 +215,7 @@ def uninstall_marketplace_plugin(
     write_state: Callable[[dict[str, Any]], None],
     serialize: Callable[..., dict[str, Any]],
 ) -> dict[str, Any]:
+    """Plugin'in ajan kaydını siler ve kurulum durumundan çıkarır."""
     entry = get_plugin_marketplace_entry(plugin_id, catalog=catalog)
     removed = agent_registry.unregister(str(entry["role_name"]))
     state = read_state()
@@ -218,6 +235,10 @@ def reload_persisted_marketplace_plugins(
     install: Callable[[str], dict[str, Any]],
     logger_obj: Any = logger,
 ) -> list[dict[str, Any]]:
+    """Durum dosyasındaki katalog plugin'lerini yeniden kurar.
+
+    Kurulamayan plugin'ler uyarı olarak loglanır ve atlanır.
+    """
     results: list[dict[str, Any]] = []
     for plugin_id in list(read_state().keys()):
         if plugin_id not in catalog:
