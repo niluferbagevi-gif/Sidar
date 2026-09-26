@@ -109,6 +109,11 @@ class GitHubManager:
         return func(*args, **kwargs)
 
     def __init__(self, token: str, repo_name: str = "", require_token: bool = False) -> None:
+        """Token'ı temizler ve ayarları saklar; istemci ilk ihtiyaçta başlatılır.
+
+        Raises:
+            ValueError: Token boşken `require_token` açıksa veya `repo_name` verilmişse.
+        """
         # Token sonuna yanlışlıkla eklenen boşluk veya hatalı karakterleri temizle
         self.token = str(token).strip() if token else ""
         # Olası Türkçe karakter kazalarını önlemek için ascii formatına zorla
@@ -748,6 +753,7 @@ class GitHubManager:
     # ─────────────────────────────────────────────
 
     def is_available(self) -> bool:
+        """GitHub token'ı tanımlıysa `True` döndürür; bağlantıyı doğrulamaz."""
         if not self.token:
             logger.debug(
                 "GitHub: Token eksik. .env dosyasına GITHUB_TOKEN=<token> ekleyin. "
@@ -756,6 +762,7 @@ class GitHubManager:
         return bool(self.token)
 
     def status(self) -> str:
+        """Bağlantı ve aktif depo durumunu kullanıcıya gösterilecek metinle özetler."""
         if not self._available:
             if not self.token:
                 return (
@@ -810,4 +817,5 @@ class GitHubManager:
             return False, [], str(exc)
 
     def __repr__(self) -> str:
+        """Erişilebilirlik ve depo adını içeren kısa gösterim döndürür."""
         return f"<GitHubManager available={self._available} repo={self.repo_name or 'None'}>"

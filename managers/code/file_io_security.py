@@ -115,6 +115,12 @@ def write_generated_test(
 def patch_file(
     manager: Any, path: str, target_block: str, replacement_block: str
 ) -> tuple[bool, str]:
+    """Replace exactly one ``target_block`` occurrence in a file and write it back.
+
+    The file is read and written through the manager, so its security checks and
+    syntax validation apply. Returns ``(False, message)`` when reading fails or the
+    block is missing or ambiguous.
+    """
     ok, content = manager.read_file(path, line_numbers=False)
     if not ok:
         return False, content

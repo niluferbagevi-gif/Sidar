@@ -25,9 +25,16 @@ class DockerLifecycleAdapter:
     """Manage Docker SDK/CLI availability and project test-image discovery."""
 
     def __init__(self, owner: Any) -> None:
+        """Bind the adapter to the CodeManager whose Docker state it updates."""
         self.owner = owner
 
     def resolve_runtime(self) -> str:
+        """Return the Docker runtime to use, or an empty string for the default.
+
+        MicroVM modes imply ``runsc`` (gvisor) or ``kata-runtime`` when no runtime is
+        set. A runtime missing from the allowlist is logged and replaced by the
+        default runtime.
+        """
         owner = self.owner
         runtime = owner.docker_runtime
         if owner.docker_microvm_mode in ("gvisor", "runsc") and not runtime:
@@ -50,6 +57,11 @@ class DockerLifecycleAdapter:
         return cast(str, runtime)
 
     def try_wsl_socket_fallback(self, docker_module: Any) -> bool:
+        """Try known WSL2 Docker sockets and adopt the first one that answers ping.
+
+        Returns:
+            True when a socket client was stored on the owner, otherwise False.
+        """
         owner = self.owner
         wsl_sockets = [
             "unix:///var/run/docker.sock",
@@ -79,6 +91,11 @@ class DockerLifecycleAdapter:
         return False
 
     def try_docker_cli_fallback(self) -> bool:
+        """Enable CLI-only Docker mode when ``docker info`` succeeds without the SDK.
+
+        Returns:
+            True when the docker CLI is reachable, otherwise False.
+        """
         owner = self.owner
         docker_bin = shutil.which("docker")
         if not docker_bin:

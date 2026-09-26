@@ -170,6 +170,15 @@ def run_shell_in_sandbox(
 
 
 def analyze_pytest_output(output: str) -> dict[str, Any]:
+    """Parse pytest output into coverage-gap and test-failure findings.
+
+    Coverage rows under ``tests/`` and the ``TOTAL`` row are skipped. When a
+    ``N failed`` summary appears without parseable failure sections, a generic
+    failure finding is added.
+
+    Returns:
+        Summary text, findings, coverage/failure targets and boolean flags.
+    """
     text = str(output or "")
     findings: list[dict[str, Any]] = []
     coverage_targets: list[dict[str, Any]] = []
@@ -246,6 +255,11 @@ def analyze_pytest_output(output: str) -> dict[str, Any]:
 
 
 def normalize_pytest_command(command: str) -> str:
+    """Extract the pytest invocation from free-form command text.
+
+    Leading list markers and trailing `` #`` comments are removed. Empty input
+    defaults to ``pytest -q``; text without a pytest command is kept whole.
+    """
     raw_command = (command or "").strip() or "pytest -q"
     normalized = ""
     pytest_cmd_pattern = re.compile(
@@ -272,6 +286,13 @@ def normalize_pytest_command(command: str) -> str:
 def run_pytest_and_collect(
     manager: Any, command: str = "pytest -q", cwd: str | None = None
 ) -> dict[str, Any]:
+    """Run a pytest command in the test sandbox and analyze its output.
+
+    Non-pytest commands are rejected without running anything.
+
+    Returns:
+        ``success``, the normalized ``command``, raw ``output`` and ``analysis``.
+    """
     normalized = normalize_pytest_command(command)
     if not re.match(
         r"^(pytest|python\s+-m\s+pytest|uv\s+run\s+pytest)\b", normalized, re.IGNORECASE

@@ -40,6 +40,7 @@ class Task:
     updated_at: float = field(default_factory=time.time)
 
     def update_status(self, new_status: str) -> None:
+        """Görev durumunu değiştirir ve güncellenme zamanını yeniler."""
         self.status = new_status
         self.updated_at = time.time()
 
@@ -59,6 +60,7 @@ class TodoManager:
     """
 
     def __init__(self, cfg: Config | None = None) -> None:
+        """Görev dosyasını `BASE_DIR/todos.json` olarak belirler ve kayıtlı görevleri yükler."""
         self.cfg = cfg or Config()
         base_dir = Path(getattr(self.cfg, "BASE_DIR", ".")).resolve()
         self.base_dir = base_dir
@@ -376,10 +378,12 @@ class TodoManager:
             return sum(1 for t in self._tasks if t.status != STATUS_COMPLETED)
 
     def __len__(self) -> int:
+        """Tüm görevlerin (tamamlananlar dahil) sayısını döndürür."""
         with self._lock:
             return len(self._tasks)
 
     def __repr__(self) -> str:
+        """Toplam görev sayısını içeren kısa gösterim döndürür."""
         return f"<TodoManager tasks={len(self)}>"
 
     def scan_project_todos(

@@ -41,6 +41,12 @@ class JiraManager:
         base_url: str = "",
         api_token: str | None = None,
     ) -> None:
+        """Jira bağlantı ayarlarını normalize eder ve kimlik doğrulamayı hazırlar.
+
+        `base_url` ve `api_token`, `url` ve `token` için geriye dönük uyumlu
+        alternatif adlardır. E-posta verilirse Basic Auth, verilmezse Bearer token
+        kullanılır.
+        """
         resolved_url = url or base_url
         resolved_token = token or api_token
         self.url = (resolved_url or "").rstrip("/")
@@ -73,6 +79,7 @@ class JiraManager:
         logger.info("Jira bağlantısı yapılandırıldı: %s", self.url)
 
     def is_available(self) -> bool:
+        """URL ve token yapılandırılmışsa `True` döndürür."""
         return self._available
 
     # ─────────────────────────────────────────────

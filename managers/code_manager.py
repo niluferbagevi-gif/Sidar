@@ -151,6 +151,15 @@ class CodeManager:
         docker_exec_timeout: int | None = None,
         cfg: Config | None = None,
     ) -> None:
+        """Güvenlik politikasını, çalışma dizinini ve Docker sandbox ayarlarını bağlar.
+
+        Args:
+            security: Dosya erişim kararlarını veren `SecurityManager`.
+            base_dir: Göreli yolların çözüldüğü proje kökü.
+            docker_image: Sandbox REPL imajı; verilmezse yapılandırmadan okunur.
+            docker_exec_timeout: Sandbox çalıştırma zaman aşımı (saniye).
+            cfg: Yapılandırma; verilmezse yeni `Config` oluşturulur.
+        """
         self.security = security
         self.security_adapter = CodeSecurityAdapter(security)
         self.base_dir = Path(base_dir).resolve()
@@ -653,6 +662,7 @@ class CodeManager:
 
     @staticmethod
     def analyze_pytest_output(output: str) -> dict[str, Any]:
+        """Pytest çıktısını coverage açığı ve test hatası bulgularına ayrıştırır."""
         return test_runner_orchestrator.analyze_pytest_output(output)
 
     def run_pytest_and_collect(
@@ -660,6 +670,10 @@ class CodeManager:
         command: str = "pytest -q",
         cwd: str | None = None,
     ) -> dict[str, Any]:
+        """Pytest komutunu test sandbox'ında çalıştırır ve çıktısını analiz eder.
+
+        Pytest dışındaki komutlar çalıştırılmadan reddedilir.
+        """
         return test_runner_orchestrator.run_pytest_and_collect(self, command=command, cwd=cwd)
 
     def run_shell(
@@ -744,11 +758,13 @@ class CodeManager:
     # ─────────────────────────────────────────────
 
     def validate_python_syntax(self, code: str) -> tuple[bool, str]:
+        """Python kodunun sözdizimini doğrular ve sözdizimi kontrol sayacını artırır."""
         with self._lock:
             self._syntax_checks += 1
         return linter_runners.validate_python_syntax(code)
 
     def validate_json(self, content: str) -> tuple[bool, str]:
+        """İçeriğin geçerli JSON olup olmadığını doğrular."""
         return linter_runners.validate_json(content)
 
     def _detect_language_id(self, path: Path) -> str | None:
@@ -1293,6 +1309,11 @@ class CodeManager:
         exclude_dirs: list[str] | None = None,
         max_files: int = 5000,
     ) -> str:
+        """`root` altındaki Python dosyalarının sözdizimini denetleyip metin raporu üretir.
+
+        `exclude_dirs` verilmezse `.git`, sanal ortamlar, `node_modules` ve build
+        çıktıları atlanır; en fazla `max_files` dosya taranır.
+        """
         with self._lock:
             self._audits_done += 1
 
@@ -1350,6 +1371,7 @@ class CodeManager:
     # ─────────────────────────────────────────────
 
     def get_metrics(self) -> dict[str, int]:
+        """Okunan/yazılan dosya, sözdizimi kontrolü ve denetim sayaçlarını döndürür."""
         with self._lock:
             return {
                 "files_read": self._files_read,
@@ -1369,6 +1391,7 @@ class CodeManager:
         )
 
     def __repr__(self) -> str:
+        """Metrikleri ve Docker durumunu içeren kısa gösterim döndürür."""
         m = self.get_metrics()
         return (
             f"<CodeManager reads={m['files_read']} "

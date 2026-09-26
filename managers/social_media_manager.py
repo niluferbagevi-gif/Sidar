@@ -34,6 +34,17 @@ class SocialMediaManager:
         http_client_factory: Callable[..., Any] | None = None,
         experimental_publishing_enabled: bool = False,
     ) -> None:
+        """Meta Graph API kimliklerini ve deneysel yayın kapısını ayarlar.
+
+        Args:
+            graph_api_token: Meta Graph API erişim token'ı.
+            instagram_business_account_id: Instagram işletme hesabı kimliği.
+            facebook_page_id: Facebook sayfa kimliği.
+            whatsapp_phone_number_id: WhatsApp Business telefon numarası kimliği.
+            api_version: Graph API sürümü.
+            http_client_factory: Test için enjekte edilebilen async HTTP istemci fabrikası.
+            experimental_publishing_enabled: `True` değilse hiçbir yayın isteği atılmaz.
+        """
         self.experimental_publishing_enabled = bool(experimental_publishing_enabled)
         self.graph_api_token = (graph_api_token or "").strip()
         self.instagram_business_account_id = (instagram_business_account_id or "").strip()
@@ -43,6 +54,10 @@ class SocialMediaManager:
         self.http_client_factory = http_client_factory or httpx.AsyncClient
 
     def is_available(self, platform: str = "") -> bool:
+        """Yayın açık, token tanımlı ve ilgili platform kimliği varsa `True` döndürür.
+
+        `platform` boşsa herhangi bir platform kimliğinin varlığı yeterlidir.
+        """
         normalized = (platform or "").strip().lower()
         if not self.experimental_publishing_enabled or not self.graph_api_token:
             return False
@@ -107,6 +122,13 @@ class SocialMediaManager:
         return True, body if isinstance(body, dict) else {"raw": body}
 
     async def publish_instagram_post(self, *, caption: str, image_url: str) -> tuple[bool, str]:
+        """Instagram'da görselli gönderi paylaşır.
+
+        Önce media container oluşturur, ardından yayınlar.
+
+        Returns:
+            `(True, gönderi kimliği)` ya da `(False, hata mesajı)`.
+        """
         if not self.experimental_publishing_enabled:
             return False, EXPERIMENTAL_PUBLISHING_DISABLED_REASON
         if not self.instagram_business_account_id:
@@ -138,6 +160,11 @@ class SocialMediaManager:
         return True, str(publish.get("id") or creation_id)
 
     async def publish_facebook_post(self, *, message: str, link_url: str = "") -> tuple[bool, str]:
+        """Facebook sayfasına isteğe bağlı bağlantılı gönderi paylaşır.
+
+        Returns:
+            `(True, gönderi kimliği)` ya da `(False, hata mesajı)`.
+        """
         if not self.experimental_publishing_enabled:
             return False, EXPERIMENTAL_PUBLISHING_DISABLED_REASON
         if not self.facebook_page_id:
@@ -156,6 +183,11 @@ class SocialMediaManager:
     async def send_whatsapp_message(
         self, *, to: str, text: str, preview_url: bool = False
     ) -> tuple[bool, str]:
+        """WhatsApp Business üzerinden metin mesajı gönderir.
+
+        Returns:
+            `(True, mesaj kimliği)` ya da `(False, hata mesajı)`.
+        """
         if not self.experimental_publishing_enabled:
             return False, EXPERIMENTAL_PUBLISHING_DISABLED_REASON
         if not self.whatsapp_phone_number_id:
@@ -185,6 +217,11 @@ class SocialMediaManager:
         link_url: str = "",
         destination: str = "",
     ) -> tuple[bool, str]:
+        """İçeriği `instagram`, `facebook` veya `whatsapp` yayın yöntemine yönlendirir.
+
+        WhatsApp'ta `destination` alıcı numarasıdır ve `link_url` verilirse bağlantı
+        önizlemesi açılır. Bilinmeyen platform `(False, mesaj)` döndürür.
+        """
         normalized = (platform or "").strip().lower()
         if normalized == "instagram":
             return await self.publish_instagram_post(caption=text, image_url=media_url)
@@ -200,6 +237,7 @@ class SocialMediaManager:
     def build_content_preview(
         platform: str, text: str, *, media_url: str = "", link_url: str = "", destination: str = ""
     ) -> str:
+        """Yayınlanacak içeriğin normalize edilmiş JSON önizlemesini döndürür."""
         payload = {
             "platform": (platform or "").strip().lower(),
             "text": (text or "").strip(),

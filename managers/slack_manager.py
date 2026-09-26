@@ -43,6 +43,11 @@ class SlackManager:
         webhook_url: str | None = None,
         default_channel: str = "",
     ) -> None:
+        """Token, webhook ve varsayılan kanalı ayarlayıp istemciyi hazırlar.
+
+        Token varsa SDK istemcisi oluşturulur ve doğrulaması `initialize()` ile
+        yapılır. SDK kullanılamazsa ve webhook URL'si geçerliyse webhook modu açılır.
+        """
         self.token = (token or "").strip()
         self.webhook_url = (webhook_url or "").strip()
         self.default_channel = (default_channel or "").strip()
@@ -116,6 +121,7 @@ class SlackManager:
                 logger.info("SDK doğrulama başarısız; Webhook moduna geçildi.")
 
     def is_available(self) -> bool:
+        """Slack SDK veya webhook üzerinden mesaj gönderilebiliyorsa `True` döndürür."""
         return self._available
 
     # ─────────────────────────────────────────────

@@ -36,6 +36,10 @@ class TeamsManager:
         client_id: str = "",
         client_secret: str | None = None,
     ) -> None:
+        """Webhook ve Azure uygulama kimliklerini ayarlar.
+
+        Entegrasyon yalnız webhook URL'si varsa etkin sayılır.
+        """
         self.webhook_url = (webhook_url or "").strip()
         self.tenant_id = (tenant_id or "").strip()
         self.client_id = (client_id or "").strip()
@@ -47,6 +51,7 @@ class TeamsManager:
             logger.debug("Teams webhook URL ayarlanmamış. Teams özellikleri devre dışı.")
 
     def is_available(self) -> bool:
+        """Teams webhook URL'si yapılandırılmışsa `True` döndürür."""
         return self._available
 
     # ─────────────────────────────────────────────

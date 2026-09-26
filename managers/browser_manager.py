@@ -27,6 +27,12 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class BrowserSession:
+    """Tek bir tarayıcı oturumunun sağlayıcıya özgü nesnelerini ve durumunu taşır.
+
+    Playwright oturumları `page`/`browser`/`context`/`runtime`, Selenium oturumları
+    yalnız `driver` alanını doldurur; `current_url` son başarılı gezinmeyi tutar.
+    """
+
     session_id: str
     provider: str
     browser_name: str
@@ -41,6 +47,8 @@ class BrowserSession:
 
 
 class BaseBrowserProvider(abc.ABC):
+    """Tarayıcı sağlayıcıları (Playwright, Selenium) için ortak soyut arayüz."""
+
     provider_name: str
 
     @abc.abstractmethod
@@ -95,11 +103,18 @@ class BaseBrowserProvider(abc.ABC):
 
 
 class PlaywrightBrowserProvider(BaseBrowserProvider):
+    """Playwright sync API ile çalışan tarayıcı sağlayıcısı."""
+
     provider_name = "playwright"
 
     def start_session(
         self, manager: BrowserManager, browser_name: str, headless: bool
     ) -> BrowserSession:
+        """Playwright runtime'ı, tarayıcıyı, context'i ve sayfayı başlatır.
+
+        Raises:
+            ValueError: Playwright `browser_name` tarayıcı tipini tanımıyorsa.
+        """
         from playwright.sync_api import sync_playwright
 
         runtime = sync_playwright().start()
@@ -125,9 +140,11 @@ class PlaywrightBrowserProvider(BaseBrowserProvider):
         )
 
     def goto(self, manager: BrowserManager, session: BrowserSession, url: str) -> None:
+        """Sayfayı `domcontentloaded` olayına kadar bekleyerek URL'ye götürür."""
         session.page.goto(url, wait_until="domcontentloaded", timeout=manager.timeout_ms)
 
     def click(self, manager: BrowserManager, session: BrowserSession, selector: str) -> None:
+        """CSS seçicisiyle eşleşen öğeye tıklar."""
         session.page.click(selector, timeout=manager.timeout_ms)
 
     def fill(
@@ -139,6 +156,7 @@ class PlaywrightBrowserProvider(BaseBrowserProvider):
         *,
         clear: bool,
     ) -> None:
+        """Alanı doldurur; `clear=False` ise mevcut değeri silmeden tuş vuruşuyla yazar."""
         if clear:
             session.page.fill(selector, value, timeout=manager.timeout_ms)
             return
@@ -147,18 +165,22 @@ class PlaywrightBrowserProvider(BaseBrowserProvider):
     def select(
         self, manager: BrowserManager, session: BrowserSession, selector: str, value: str
     ) -> None:
+        """Seçim kutusunda `value` değerine sahip seçeneği seçer."""
         session.page.select_option(selector, value=value, timeout=manager.timeout_ms)
 
     def capture_dom(self, manager: BrowserManager, session: BrowserSession, selector: str) -> str:
+        """Seçiciyle eşleşen öğenin iç HTML'ini döndürür."""
         html = session.page.locator(selector).inner_html(timeout=manager.timeout_ms)
         return str(html)
 
     def capture_screenshot(
         self, manager: BrowserManager, session: BrowserSession, path: str, *, full_page: bool
     ) -> None:
+        """Sayfanın ekran görüntüsünü `path` konumuna kaydeder."""
         session.page.screenshot(path=path, full_page=full_page)
 
     def close(self, manager: BrowserManager, session: BrowserSession) -> None:
+        """Context, tarayıcı ve Playwright runtime'ını sırayla kapatır."""
         if session.context is not None:
             session.context.close()
         if session.browser is not None:
@@ -167,15 +189,23 @@ class PlaywrightBrowserProvider(BaseBrowserProvider):
             session.runtime.stop()
 
     def current_url(self, session: BrowserSession) -> str:
+        """Sayfanın güncel URL'sini döndürür; yoksa boş metin."""
         return str(getattr(session.page, "url", None) or "")
 
 
 class SeleniumBrowserProvider(BaseBrowserProvider):
+    """Selenium WebDriver ile çalışan fallback tarayıcı sağlayıcısı."""
+
     provider_name = "selenium"
 
     def start_session(
         self, manager: BrowserManager, browser_name: str, headless: bool
     ) -> BrowserSession:
+        """Chrome/Chromium veya Firefox WebDriver oturumu başlatır.
+
+        Raises:
+            ValueError: `browser_name` chrome, chromium veya firefox değilse.
+        """
         webdriver = cast(Any, importlib.import_module("selenium.webdriver"))
 
         if browser_name not in {"chrome", "chromium", "firefox"}:
@@ -206,9 +236,11 @@ class SeleniumBrowserProvider(BaseBrowserProvider):
         )
 
     def goto(self, manager: BrowserManager, session: BrowserSession, url: str) -> None:
+        """Sürücüyü verilen URL'ye götürür."""
         session.driver.get(url)
 
     def click(self, manager: BrowserManager, session: BrowserSession, selector: str) -> None:
+        """CSS seçicisiyle bulunan öğeye tıklar."""
         by_module = importlib.import_module("selenium.webdriver.common.by")
         By = by_module.By
         session.driver.find_element(By.CSS_SELECTOR, selector).click()
@@ -222,6 +254,7 @@ class SeleniumBrowserProvider(BaseBrowserProvider):
         *,
         clear: bool,
     ) -> None:
+        """Öğeye değeri yazar; `clear=True` ise önce mevcut değeri temizler."""
         by_module = importlib.import_module("selenium.webdriver.common.by")
         By = by_module.By
         element = session.driver.find_element(By.CSS_SELECTOR, selector)
@@ -232,6 +265,7 @@ class SeleniumBrowserProvider(BaseBrowserProvider):
     def select(
         self, manager: BrowserManager, session: BrowserSession, selector: str, value: str
     ) -> None:
+        """Seçim kutusunda `value` değerine sahip seçeneği seçer."""
         by_module = importlib.import_module("selenium.webdriver.common.by")
         select_module = importlib.import_module("selenium.webdriver.support.select")
         By = by_module.By
@@ -239,20 +273,24 @@ class SeleniumBrowserProvider(BaseBrowserProvider):
         Select(session.driver.find_element(By.CSS_SELECTOR, selector)).select_by_value(value)
 
     def capture_dom(self, manager: BrowserManager, session: BrowserSession, selector: str) -> str:
+        """Sayfanın tüm kaynağını döndürür; Selenium'da `selector` yok sayılır."""
         _ = selector
         return str(session.driver.page_source)
 
     def capture_screenshot(
         self, manager: BrowserManager, session: BrowserSession, path: str, *, full_page: bool
     ) -> None:
+        """Görünür alanın ekran görüntüsünü kaydeder; `full_page` desteklenmez."""
         _ = full_page
         session.driver.save_screenshot(path)
 
     def close(self, manager: BrowserManager, session: BrowserSession) -> None:
+        """WebDriver oturumunu sonlandırır."""
         if session.driver is not None:
             session.driver.quit()
 
     def current_url(self, session: BrowserSession) -> str:
+        """Sürücünün güncel URL'sini döndürür; yoksa boş metin."""
         return str(getattr(session.driver, "current_url", "") or "")
 
 
@@ -260,6 +298,12 @@ class BrowserManager:
     """Dinamik tarayıcı otomasyon işlemlerini güvenli ve sağlayıcıdan bağımsız yönetir."""
 
     def __init__(self, config: Config | None = None, llm_client: Any | None = None) -> None:
+        """Tarayıcı ayarlarını `Config` üzerinden okur ve sağlayıcıları hazırlar.
+
+        Args:
+            config: Yapılandırma; verilmezse yeni `Config` oluşturulur.
+            llm_client: Görsel drift analizinde kullanılacak isteğe bağlı LLM istemcisi.
+        """
         self.cfg = config or Config()
         self._llm = llm_client
         self.provider = str(getattr(self.cfg, "BROWSER_PROVIDER", "auto") or "auto").strip().lower()
@@ -363,6 +407,7 @@ class BrowserManager:
         )
 
     def list_audit_log(self) -> list[dict[str, Any]]:
+        """Kaydedilen tüm tarayıcı audit olaylarının kopyasını döndürür."""
         return list(self._audit_log)
 
     def summarize_audit_log(
@@ -567,6 +612,16 @@ class BrowserManager:
         file_name: str | None = None,
         run_multimodal_analysis: bool = True,
     ) -> dict[str, Any]:
+        """Güncel ekran görüntüsünü baseline ile karşılaştırarak görsel drift raporu üretir.
+
+        Baseline verilmezse kıyaslama yapılmaz (`reason="baseline_missing"`). Drift skoru
+        eşiğe `BROWSER_VISUAL_QA_MULTIMODAL_MARGIN` kadar yakınsa ve
+        `run_multimodal_analysis` açıksa ekran görüntüsü ayrıca multimodal analize
+        gönderilir; bu analizin hatası sonucu bozmaz.
+
+        Returns:
+            `ok`, drift metrikleri ve `multimodal_check` alanlarını içeren sözlük.
+        """
         session = self._require_session(session_id)
         if not self.visual_qa_enabled:
             return {"ok": False, "reason": "BROWSER_VISUAL_QA_ENABLED devre dışı"}
@@ -754,6 +809,7 @@ class BrowserManager:
         return provider.start_session(self, browser_name, headless)
 
     def is_available(self) -> bool:
+        """Aday sağlayıcılardan biri import edilebiliyorsa `True` döndürür."""
         for candidate in self._provider_candidates():
             try:
                 if candidate == "playwright":
@@ -770,6 +826,7 @@ class BrowserManager:
         return False
 
     def status(self) -> str:
+        """Sağlayıcı, erişilebilirlik ve aktif oturum sayısını tek satırda özetler."""
         active = len(self._sessions)
         return (
             f"BrowserManager: provider={self.provider} "
@@ -779,6 +836,13 @@ class BrowserManager:
     def start_session(
         self, browser_name: str = "chromium", headless: bool | None = None
     ) -> tuple[bool, dict[str, Any]]:
+        """Aday sağlayıcıları sırayla deneyerek yeni tarayıcı oturumu açar.
+
+        `BROWSER_PROVIDER=auto` iken önce Playwright, ardından Selenium denenir.
+
+        Returns:
+            `(True, oturum bilgisi)` ya da `(False, {"error": son hata})`.
+        """
         headless_value = self.default_headless if headless is None else bool(headless)
         last_error = "Tarayıcı sağlayıcısı başlatılamadı."
 
@@ -824,6 +888,12 @@ class BrowserManager:
         return False, {"error": last_error}
 
     def goto_url(self, session_id: str, url: str) -> tuple[bool, str]:
+        """Oturumu allowlist kontrolünden geçen http/https URL'ye götürür.
+
+        Raises:
+            ValueError: URL şeması veya alan adı izinli değilse.
+            KeyError: Oturum bulunamazsa.
+        """
         self._validate_url(url)
         session = self._require_session(session_id)
         provider = self._provider_for_session(session)
@@ -858,6 +928,11 @@ class BrowserManager:
         return await asyncio.to_thread(self._click_element_impl, session_id, selector)
 
     def click_element(self, session_id: str, selector: str) -> tuple[bool, str]:
+        """Öğeye senkron tıklar; HITL etkinse yüksek riskli tıklamaları engeller.
+
+        Engellenen tıklama için `(False, gerekçe)` döner; çağıran
+        `click_element_hitl` kullanmalıdır.
+        """
         session = self._require_session(session_id)
         blocked = self._sync_hitl_guard("browser_click", selector)
         if blocked is not None:
@@ -896,6 +971,11 @@ class BrowserManager:
         reason: str = "",
         require_confirmation: bool | None = None,
     ) -> tuple[bool, str]:
+        """Tıklamayı gerekiyorsa HITL onayı alarak async çalıştırır.
+
+        `require_confirmation` verilmezse onay yalnız yüksek riskli seçicilerde istenir.
+        Reddedilen işlem `(False, mesaj)` döndürür.
+        """
         session = self._require_session(session_id)
         must_confirm = (
             self._is_high_risk_click(selector)
@@ -966,6 +1046,10 @@ class BrowserManager:
     def fill_form(
         self, session_id: str, selector: str, value: str, clear: bool = True
     ) -> tuple[bool, str]:
+        """Form alanını senkron doldurur; HITL etkinse işlemi her zaman engeller.
+
+        Audit kaydına değerin kendisi değil maskelenmiş önizlemesi yazılır.
+        """
         session = self._require_session(session_id)
         blocked = self._sync_hitl_guard("browser_fill_form", selector, force_block=True)
         if blocked is not None:
@@ -1010,6 +1094,7 @@ class BrowserManager:
         clear: bool = True,
         reason: str = "",
     ) -> tuple[bool, str]:
+        """Form alanını HITL onayı aldıktan sonra async doldurur."""
         session = self._require_session(session_id)
         payload = {
             "session_id": session_id,
@@ -1066,6 +1151,7 @@ class BrowserManager:
         return await asyncio.to_thread(self._select_option_impl, session_id, selector, value)
 
     def select_option(self, session_id: str, selector: str, value: str) -> tuple[bool, str]:
+        """Seçim kutusunu senkron günceller; HITL etkinse işlemi her zaman engeller."""
         session = self._require_session(session_id)
         blocked = self._sync_hitl_guard("browser_select_option", selector, force_block=True)
         if blocked is not None:
@@ -1105,6 +1191,7 @@ class BrowserManager:
         *,
         reason: str = "",
     ) -> tuple[bool, str]:
+        """Seçim kutusunu HITL onayı aldıktan sonra async günceller."""
         session = self._require_session(session_id)
         payload = {
             "session_id": session_id,
@@ -1149,6 +1236,10 @@ class BrowserManager:
             raise
 
     def capture_dom(self, session_id: str, selector: str = "html") -> tuple[bool, str]:
+        """Seçiciyle eşleşen DOM içeriğini döndürür.
+
+        Hata durumunda istisna fırlatmak yerine `(False, hata mesajı)` döner.
+        """
         session = self._require_session(session_id)
         provider = self._provider_for_session(session)
         try:
@@ -1176,6 +1267,7 @@ class BrowserManager:
         file_name: str | None = None,
         full_page: bool = True,
     ) -> tuple[bool, str]:
+        """Ekran görüntüsünü artifact dizinine kaydeder ve dosya yolunu döndürür."""
         session = self._require_session(session_id)
         target_name = file_name or f"{session.session_id}.png"
         target = (self.artifact_dir / target_name).resolve()
@@ -1192,6 +1284,10 @@ class BrowserManager:
         return True, str(target)
 
     def close_session(self, session_id: str) -> tuple[bool, str]:
+        """Oturumu kapatır ve kayıttan çıkarır.
+
+        Oturum yoksa veya kapatma başarısız olursa `(False, mesaj)` döner.
+        """
         session = self._sessions.pop(session_id, None)
         if session is None:
             return False, f"Tarayıcı oturumu bulunamadı: {session_id}"

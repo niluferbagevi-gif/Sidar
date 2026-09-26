@@ -27,6 +27,11 @@ class PackageInfoManager:
     CACHE_TTL_SECONDS = 1800  # 30 dakika
 
     def __init__(self, config: Any = None) -> None:
+        """Zaman aşımı ve önbellek süresini ayarlar.
+
+        `PACKAGE_INFO_TIMEOUT` ve `PACKAGE_INFO_CACHE_TTL` config değerleri varsayılanları
+        ezer; önbellek süresi en az 60 saniyedir.
+        """
         self.cfg = config
 
         # Instance defaultlarını init başında kesinleştir.
@@ -344,9 +349,11 @@ class PackageInfoManager:
             return Version("0.0.0")
 
     def status(self) -> str:
+        """Desteklenen paket kaynaklarını belirten sabit durum satırını döndürür."""
         return "PackageInfo: PyPI + npm + GitHub Releases — Aktif (Asenkron)"
 
     def __repr__(self) -> str:
+        """Zaman aşımı ve önbellek süresini içeren kısa gösterim döndürür."""
         ttl_seconds = int(getattr(self, "cache_ttl", timedelta(seconds=60)).total_seconds())
         timeout_seconds = getattr(self, "TIMEOUT", "?")
         return f"<PackageInfoManager timeout={timeout_seconds}s cache_ttl={ttl_seconds}s>"

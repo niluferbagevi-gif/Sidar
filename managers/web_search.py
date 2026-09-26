@@ -33,6 +33,10 @@ class WebSearchManager:
     _NO_RESULTS_PREFIX = "[NO_RESULTS]"
 
     def __init__(self, config: Any = None) -> None:
+        """Arama motoru anahtarlarını ve limitleri yapılandırmadan okur.
+
+        Config verilmezse `auto` motor ve sınıf varsayılan limitleri kullanılır.
+        """
         self.cfg = config
         if config is not None:
             self.engine = getattr(config, "SEARCH_ENGINE", "auto").lower()
@@ -82,6 +86,7 @@ class WebSearchManager:
         )
 
     def status(self) -> str:
+        """Kullanılabilir arama motorlarını ve seçili modu özetler."""
         engines = []
         if self.tavily_key:
             engines.append("Tavily")
@@ -336,6 +341,11 @@ class WebSearchManager:
     # ─────────────────────────────────────────────
 
     async def search_docs(self, library: str, topic: str = "") -> tuple[bool, str]:
+        """Kütüphane dokümantasyonu için hedefli web araması yapar.
+
+        Tavily veya Google varsa resmi doküman sitelerine `site:` filtresi eklenir;
+        yalnız DuckDuckGo varsa filtre yerine hedefli arama terimi kullanılır.
+        """
         base = f"{library} {topic} documentation".strip()
         # Tavily veya Google varsa site: filtresi ekle; DDG'de OR operatörü güvenilmez
         if self.tavily_key or (self.google_key and self.google_cx):
@@ -349,6 +359,7 @@ class WebSearchManager:
         return await self.search(q, max_results=5)
 
     async def search_stackoverflow(self, query: str) -> tuple[bool, str]:
+        """Stack Overflow odaklı web araması yapar."""
         # site:stackoverflow.com Tavily/Google'da çalışır; DDG'de kısmen desteklenir
         if self.tavily_key or (self.google_key and self.google_cx):
             q = f"site:stackoverflow.com {query}"
@@ -371,6 +382,7 @@ class WebSearchManager:
         return result_text
 
     def __repr__(self) -> str:
+        """Etkin arama motorlarını içeren kısa gösterim döndürür."""
         engines = []
         if self.tavily_key:
             engines.append("Tavily")
