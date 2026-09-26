@@ -1,3 +1,5 @@
+"""Chat session, project file and git operation API routes."""
+
 from __future__ import annotations
 
 import asyncio

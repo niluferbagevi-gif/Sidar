@@ -1,3 +1,10 @@
+"""Bounded repair of malformed JSON emitted by LLMs.
+
+Tries direct parsing, fenced code blocks and a safety-checked literal-eval
+fallback under a fixed attempt/size/nesting budget so hostile input cannot
+cause unbounded parsing work.
+"""
+
 from __future__ import annotations
 
 import ast

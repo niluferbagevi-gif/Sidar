@@ -1,3 +1,5 @@
+"""Track benchmark mean latency and coverage over a rolling history and fail on regressions."""
+
 from __future__ import annotations
 
 import argparse

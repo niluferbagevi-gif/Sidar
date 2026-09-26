@@ -1,3 +1,5 @@
+"""Prometheus, LLM usage metrics and budget API routes."""
+
 from __future__ import annotations
 
 import inspect

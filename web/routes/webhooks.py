@@ -1,3 +1,5 @@
+"""Signature-validated GitHub webhook receiver that can trigger autonomous runs."""
+
 from __future__ import annotations
 
 import contextlib

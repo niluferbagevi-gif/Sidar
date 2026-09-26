@@ -1,3 +1,5 @@
+"""Filesystem helpers for ``Config``: base-dir resolution, log permissions and dir setup."""
+
 from __future__ import annotations
 
 import contextlib

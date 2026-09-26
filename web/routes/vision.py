@@ -1,3 +1,5 @@
+"""Vision analysis and mockup-to-code API routes."""
+
 from __future__ import annotations
 
 import base64

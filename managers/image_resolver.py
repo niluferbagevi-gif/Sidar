@@ -1,3 +1,5 @@
+"""Docker image name helpers: legacy-to-canonical Sidar image aliases and GPU image detection."""
+
 from __future__ import annotations
 
 

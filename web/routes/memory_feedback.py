@@ -1,3 +1,5 @@
+"""Entity-memory upsert and feedback recording API routes."""
+
 from __future__ import annotations
 
 from collections.abc import Callable

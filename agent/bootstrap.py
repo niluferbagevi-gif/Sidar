@@ -1,3 +1,5 @@
+"""Startup logging helpers shared by SidarAgent initialization."""
+
 from __future__ import annotations
 
 import logging

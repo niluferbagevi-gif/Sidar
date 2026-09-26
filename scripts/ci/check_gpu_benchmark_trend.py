@@ -1,3 +1,5 @@
+"""Compare GPU benchmark metrics (TTFT, tokens/s, VRAM, OOM) against their rolling history."""
+
 from __future__ import annotations
 
 import json

@@ -1,3 +1,5 @@
+"""Summarize per-database-backend benchmark latencies into a trend report."""
+
 from __future__ import annotations
 
 import json

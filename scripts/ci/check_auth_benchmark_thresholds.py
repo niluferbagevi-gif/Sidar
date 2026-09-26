@@ -1,3 +1,5 @@
+"""Fail CI when auth benchmark p95/p99 latencies exceed their budgets."""
+
 from __future__ import annotations
 
 import json
