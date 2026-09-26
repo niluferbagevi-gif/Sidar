@@ -1,0 +1,8 @@
+# Production web arayuzunu yalnizca bu hosttan erisilebilir tutar.
+# Bu dosya, temel/GPU/production dosyalarindan sonra uygulanmalidir.
+# `!override`, temel dosyadaki tum-arayuz port yayinini eklemek yerine tamamen
+# degistirir; normal liste birlestirmesi iki binding'i birden koruyabilir.
+services:
+  sidar-web:
+    ports: !override
+      - "127.0.0.1:${WEB_PORT:-7860}:7860"

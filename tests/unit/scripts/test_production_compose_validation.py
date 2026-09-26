@@ -12,6 +12,15 @@ import pytest
 import yaml
 
 
+def test_local_server_overlay_replaces_web_port_with_loopback_binding() -> None:
+    """The opt-in single-host overlay must not retain the all-interface binding."""
+    overlay = Path("docker-compose.local-server.yml").read_text(encoding="utf-8")
+
+    assert "ports: !override" in overlay
+    assert '"127.0.0.1:${WEB_PORT:-7860}:7860"' in overlay
+    assert '"${WEB_PORT:-7860}:7860"' not in overlay
+
+
 def test_production_compose_gate_covers_runtime_release_evidence() -> None:
     script = Path("scripts/ci/validate_production_compose.sh").read_text(encoding="utf-8")
 
