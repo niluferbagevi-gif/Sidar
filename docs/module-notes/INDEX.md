@@ -164,6 +164,7 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `data/.gitkeep` → `docs/module-notes/data/gitkeep.md`
 - `docker-compose.yml` → `docs/module-notes/docker-compose.yml.md`
 - `docker-compose.gpu.yml` → `docs/module-notes/docker-compose.gpu.yml.md`
+- `docker-compose.local-server.yml` → `docs/module-notes/docker-compose.local-server.yml.md`
 - `docker-compose.observability.yml` → `docs/module-notes/docker-compose.observability.yml.md`
 - `docker_setup/grafana/dashboards/sidar-llm-overview.json` → `docs/module-notes/docker_setup/grafana/dashboards/sidar-llm-overview.json.md`
 - `docker_setup/grafana/provisioning/dashboards/dashboards.yml` → `docs/module-notes/docker_setup/grafana/provisioning/dashboards/dashboards.yml.md`
