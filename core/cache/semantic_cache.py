@@ -1,3 +1,10 @@
+"""Embedding-similarity LLM response cache backed by Redis.
+
+``SemanticCacheManager`` stores prompt embeddings with TTL/size limits, serves
+hits above ``SEMANTIC_CACHE_THRESHOLD`` and trips a circuit breaker after
+repeated Redis failures so cache outages never block the request path.
+"""
+
 from __future__ import annotations
 
 import asyncio

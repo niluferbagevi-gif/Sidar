@@ -1,3 +1,5 @@
+"""Liveness, readiness and status routes."""
+
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable

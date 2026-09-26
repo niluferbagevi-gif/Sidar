@@ -448,7 +448,7 @@ docstring_async_debt_baseline = { D200 = 0, D202 = 0, D205 = 0, D209 = 0, D212 =
 # 2026-09-30 campaign date (5,486 findings remained). Instead of letting the date
 # expire and break CI, the backlog is frozen here: it may only shrink, and every
 # reduction must be committed with `check_ruff_debt_baseline.py --update`.
-missing_docstring_debt_baseline = { D100 = 227, D101 = 194, D102 = 426, D103 = 4441, D104 = 12, D105 = 34, D106 = 1, D107 = 139 }
+missing_docstring_debt_baseline = { D100 = 191, D101 = 194, D102 = 426, D103 = 4441, D104 = 9, D105 = 34, D106 = 1, D107 = 139 }
 docstring_ratchet_review_by = "2027-03-31"
 docstring_ratchet_reason = "Review D100-D107 ratchet progress and set dated reduction targets; owner: qa+reviewer."
 

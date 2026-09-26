@@ -1,3 +1,5 @@
+"""Model-aware token estimation with optional ``tiktoken`` encodings."""
+
 from __future__ import annotations
 
 import math

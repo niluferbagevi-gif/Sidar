@@ -1,3 +1,5 @@
+"""Reload-time environment variable overrides applied onto the ``Config`` class."""
+
 from __future__ import annotations
 
 import os

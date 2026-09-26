@@ -1,3 +1,5 @@
+"""GPU/CUDA and WSL2 detection plus GPU memory budget normalization for ``Config``."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""Sync or check the core-file SHA-256 manifest embedded in ``install_sidar.sh``."""
+
 from __future__ import annotations
 
 import argparse
