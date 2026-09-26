@@ -5477,6 +5477,19 @@ def test_ci_enables_uv_dependency_cache_for_main_test_job() -> None:
     assert test_job.index("Verify canonical toolchain contract") > first_idx
 
 
+def test_nightly_gpu_uses_persistent_local_uv_cache_instead_of_actions_cache() -> None:
+    """Self-hosted GPU runner must not upload the multi-GB uv cache to actions/cache."""
+    workflow = Path(".github/workflows/nightly-gpu-performance.yml").read_text(encoding="utf-8")
+
+    setup_uv_idx = workflow.index("uses: astral-sh/setup-uv@v10.1.0")
+    install_idx = workflow.index("run: uv sync --frozen --all-extras")
+    block = workflow[setup_uv_idx:install_idx]
+
+    assert "enable-cache: false" in block
+    assert "enable-cache: true" not in block
+    assert 'run: echo "UV_CACHE_DIR=$HOME/.cache/uv" >> "$GITHUB_ENV"' in block
+
+
 def test_ci_uses_shared_system_dependency_installer_without_duplicate_apt_step() -> None:
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 
