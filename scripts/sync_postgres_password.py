@@ -208,6 +208,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Set the live PostgreSQL role password from the effective env chain.
+
+    Returns:
+        0 on success, 1 on failure.
+    """
     args = _parse_args(argv)
     try:
         if args.method in {"docker-exec", "docker-compose"}:

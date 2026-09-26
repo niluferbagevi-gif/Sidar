@@ -89,6 +89,11 @@ def _check_docs(version: str, errors: list[str]) -> None:
 
 
 def main() -> int:
+    """Check Dockerfile, Helm charts and docs against the canonical version.
+
+    Returns:
+        0 when every declaration matches, otherwise 1.
+    """
     version = _canonical_version()
     errors: list[str] = []
     _check_dockerfile(version, errors)

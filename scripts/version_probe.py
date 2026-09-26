@@ -120,6 +120,7 @@ def resolve_pyproject_version(pyproject_path: str | Path) -> str:
 
 
 def main() -> int:
+    """Print the resolved product version from pyproject.toml."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pyproject", default="pyproject.toml", help="Path to pyproject.toml")
     args = parser.parse_args()

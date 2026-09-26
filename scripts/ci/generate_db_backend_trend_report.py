@@ -11,6 +11,8 @@ from typing import Any
 
 @dataclass
 class BackendStats:
+    """Latency statistics (milliseconds) for one database backend."""
+
     backend: str
     mean_ms: float
     stddev_ms: float
@@ -45,6 +47,11 @@ def _detect_backend(item: dict[str, Any]) -> str | None:
 
 
 def main() -> int:
+    """Write SQLite/PostgreSQL benchmark summaries into the output directory.
+
+    Returns:
+        Process exit code; 1 when no backend rows are found, 2 for usage errors.
+    """
     if len(sys.argv) != 3:
         print(
             "Usage: python scripts/ci/generate_db_backend_trend_report.py <benchmark.json> "

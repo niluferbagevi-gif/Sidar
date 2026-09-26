@@ -136,6 +136,7 @@ def validate_summary(summary: dict[str, Any], mode: str) -> list[str]:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the argument parser for summary path and validation mode."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--summary",
@@ -153,6 +154,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Validate the test summary JSON and print the result.
+
+    Returns:
+        0 when the summary passes the selected mode, otherwise 1.
+    """
     args = build_parser().parse_args(argv)
     summary = _load_summary(args.summary)
     errors = validate_summary(summary, args.mode)

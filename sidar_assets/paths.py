@@ -57,16 +57,20 @@ def asset_path(relative_path: str, *, require_exists: bool = False) -> Path:
 
 
 def web_dist_path() -> Path:
+    """Return the React build output directory; it may not exist."""
     return asset_path("web_ui_react/dist")
 
 
 def helm_chart_path() -> Path:
+    """Return the Helm chart directory, which must exist."""
     return asset_path("helm/sidar", require_exists=True)
 
 
 def migrations_path() -> Path:
+    """Return the Alembic migrations directory, which must exist."""
     return asset_path("migrations", require_exists=True)
 
 
 def alembic_ini_path() -> Path:
+    """Return the ``alembic.ini`` path, which must exist."""
     return asset_path("alembic.ini", require_exists=True)

@@ -32,6 +32,7 @@ def _io_error(action: str, path: Path, exc: OSError) -> str:
 
 
 def sha256_file(path: Path) -> str:
+    """Return the SHA-256 hex digest of a file."""
     digest = hashlib.sha256()
     with path.open("rb") as fh:
         for chunk in iter(lambda: fh.read(1024 * 1024), b""):
@@ -40,6 +41,7 @@ def sha256_file(path: Path) -> str:
 
 
 def iter_bundle_files(root: Path) -> list[Path]:
+    """Return all files under the bundle's known sections, sorted."""
     files: list[Path] = []
     for section in DEFAULT_SECTIONS:
         section_root = root / section
@@ -50,6 +52,7 @@ def iter_bundle_files(root: Path) -> list[Path]:
 
 
 def build_manifest(root: Path) -> dict[str, Any]:
+    """Build a manifest with the path, SHA-256 and size of every bundle file."""
     root = root.resolve()
     files = []
     for path in iter_bundle_files(root):
@@ -59,6 +62,11 @@ def build_manifest(root: Path) -> dict[str, Any]:
 
 
 def verify_manifest(root: Path) -> list[str]:
+    """Verify bundle files against the stored manifest.
+
+    Returns:
+        A list of problems; empty when the bundle matches the manifest.
+    """
     root = root.resolve()
     manifest_path = root / MANIFEST_NAME
     if not manifest_path.is_file():
@@ -103,6 +111,11 @@ def verify_manifest(root: Path) -> list[str]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Create or verify the offline bundle manifest.
+
+    Returns:
+        0 on success, 1 on failure.
+    """
     parser = argparse.ArgumentParser(description="Build/verify Sidar offline bundle manifest")
     parser.add_argument("command", choices=("create", "verify"))
     parser.add_argument("bundle_dir", nargs="?", default="offline_packages")

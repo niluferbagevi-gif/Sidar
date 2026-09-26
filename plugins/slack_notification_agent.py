@@ -16,6 +16,10 @@ class SlackNotificationAgent(BaseAgent):
     ROLE_NAME = "slack_notifications"
 
     async def run_task(self, task_prompt: str) -> str:
+        """Görevden kanal ve mesajı çıkarıp Slack webhook'u ile bildirim gönderir.
+
+        Mesaj boşsa veya `SLACK_WEBHOOK_URL` ayarlı değilse açıklayıcı mesaj döner.
+        """
         prompt = (task_prompt or "").strip()
         if not prompt:
             return "Slack bildirimi göndermek için mesaj gerekli."

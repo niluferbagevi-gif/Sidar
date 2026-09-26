@@ -200,6 +200,7 @@ def ratchet_coverage_gate(
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the argument parser for coverage inputs and ratchet limits."""
     parser = argparse.ArgumentParser(description="Coverage gate ratcheting helper for Sidar.")
     parser.add_argument(
         "--coverage-config",
@@ -221,6 +222,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Raise the coverage gate toward measured coverage and report the result.
+
+    Returns:
+        Process exit code.
+    """
     args = build_parser().parse_args(argv)
     result = ratchet_coverage_gate(
         coverage_config_path=args.coverage_config,

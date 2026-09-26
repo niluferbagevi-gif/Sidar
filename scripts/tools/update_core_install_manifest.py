@@ -24,6 +24,7 @@ END = "SIDAR_INSTALL_MANIFEST_EOF"
 
 
 def digest(rel: Path) -> str:
+    """Return the SHA-256 hex digest of a repository-relative file."""
     h = hashlib.sha256()
     with (ROOT / rel).open("rb") as f:
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
@@ -118,6 +119,11 @@ def _check() -> int:
 
 
 def main() -> int:
+    """Rewrite the core manifest and installer block, or verify them with ``--check``.
+
+    Returns:
+        Process exit code.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--check",

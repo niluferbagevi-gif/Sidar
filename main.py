@@ -55,6 +55,8 @@ RESET = "\033[0m"
 
 # Config yükleme denemesi (Eğer dosya yoksa varsayılan değerler oluşturulur)
 class DummyConfig:
+    """`config.py` import edilemediğinde launcher'ın kullandığı varsayılan yapılandırma."""
+
     AI_PROVIDER = "ollama"
     ACCESS_LEVEL = "full"
     # Varsayılan olarak yalnız loopback'e bağlan; harici erişim WEB_HOST env
@@ -759,6 +761,10 @@ def execute_command(
 
 
 def main() -> None:
+    """Launcher giriş noktası; argümanları doğrular ve seçilen modda Sidar'ı başlatır.
+
+    `--quick`, `--skip-wizard` ve `--last/--use-last` birlikte kullanılamaz.
+    """
     if hasattr(cfg, "init_telemetry"):
         cfg.init_telemetry(service_name="sidar-launcher")
 

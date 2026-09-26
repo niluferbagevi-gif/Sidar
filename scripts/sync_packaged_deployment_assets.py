@@ -60,6 +60,7 @@ def sync_packaged_deployment_assets() -> list[Path]:
 
 
 def main() -> None:
+    """Copy Helm chart and docker_setup assets into the package and list them."""
     synced = sync_packaged_deployment_assets()
     print(f"Synced {len(synced)} packaged deployment asset file(s).")
     for path in synced:

@@ -35,6 +35,8 @@ ENV_CHAIN_KEYS = (
 
 @dataclass(frozen=True)
 class EnvFileSpec:
+    """A dotenv file in the load chain and whether it overrides earlier files."""
+
     label: str
     path: Path
     override: bool
@@ -42,6 +44,8 @@ class EnvFileSpec:
 
 @dataclass(frozen=True)
 class EnvAssignment:
+    """A parsed ``KEY=value`` line, keeping quoting and ``export`` prefix for rewrite."""
+
     key: str
     value: str
     quote_char: str
@@ -423,6 +427,11 @@ def _effective_url_validation_warnings(effective_env: dict[str, str]) -> list[di
 
 
 def sync_env_file(env_file: Path = DEFAULT_ENV_FILE) -> dict[str, Any]:
+    """Sync PostgreSQL URL passwords in a single dotenv file.
+
+    Raises:
+        FileNotFoundError: If the file does not exist.
+    """
     if not env_file.is_file():
         raise FileNotFoundError(f"Env dosyası bulunamadı: {env_file}")
     original = env_file.read_text(encoding="utf-8")
@@ -438,6 +447,14 @@ def sync_env_chain(
     remove_explicit_urls: bool = False,
     all_envs: bool = False,
 ) -> dict[str, Any]:
+    """Sync PostgreSQL URL passwords across the dotenv chain.
+
+    With ``all_envs=True`` every variant file is repaired using the base file's
+    password. ``remove_explicit_urls=True`` removes URL overrides instead.
+
+    Raises:
+        FileNotFoundError: If the base env file does not exist.
+    """
     specs = discover_env_chain(base_env_file, include_all_envs=all_envs)
     if not specs or not specs[0].path.is_file():
         raise FileNotFoundError(f"Env dosyası bulunamadı: {base_env_file}")
@@ -580,6 +597,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the PostgreSQL password sync and print the JSON summary.
+
+    Returns:
+        0 on success, 1 on failure.
+    """
     args = _parse_args(argv)
     try:
         summary = sync_env_chain(

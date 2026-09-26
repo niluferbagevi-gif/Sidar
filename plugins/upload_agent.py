@@ -7,6 +7,7 @@ class UploadAgent(BaseAgent):
     """Yüklenen plugin akışları için minimum demo ajan."""
 
     async def run_task(self, task_prompt: str) -> str:
+        """Echo the task prompt back, or report an empty task."""
         prompt = str(task_prompt or "").strip()
         if not prompt:
             return "Boş görev alındı."

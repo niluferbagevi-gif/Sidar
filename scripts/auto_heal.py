@@ -519,6 +519,7 @@ async def _run(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
+    """CLI argümanlarını okuyup self-heal akışını çalıştırır ve çıkış kodunu döndürür."""
     args = _parse_args()
     return asyncio.run(_run(args))
 

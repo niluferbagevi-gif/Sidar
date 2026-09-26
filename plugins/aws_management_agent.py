@@ -40,6 +40,11 @@ class AWSManagementAgent(BaseAgent):
         return SecurityManager(cfg=cfg)
 
     async def run_task(self, task_prompt: str) -> str:
+        """Görev açıklamasını AWS CLI komutuna çevirip çalıştırır.
+
+        Host üzerinde komut çalıştırmak `ACCESS_LEVEL=full` gerektirir; boş görevde,
+        yetki yoksa veya `aws` CLI bulunamazsa açıklayıcı mesaj döner.
+        """
         prompt = (task_prompt or "").strip()
         if not prompt:
             return "AWS işlemi için görev açıklaması gerekli."

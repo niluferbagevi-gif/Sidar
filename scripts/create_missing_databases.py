@@ -23,6 +23,13 @@ def _read_env_file(path: Path) -> dict[str, str]:
 
 
 def main() -> int:
+    """Create the primary, development and test PostgreSQL databases if missing.
+
+    Connection settings come from ``.env`` first, then environment variables.
+
+    Returns:
+        Process exit code.
+    """
     env_values = _read_env_file(Path(".env"))
     user = env_values.get("POSTGRES_USER") or os.getenv("POSTGRES_USER") or "sidar"
     password = env_values.get("POSTGRES_PASSWORD") or os.getenv("POSTGRES_PASSWORD") or ""

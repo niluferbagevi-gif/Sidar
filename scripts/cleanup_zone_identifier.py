@@ -62,6 +62,7 @@ def remove_zone_identifier_files(root: Path, *, dry_run: bool = False) -> list[P
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the argument parser for the scan root and ``--dry-run``."""
     parser = argparse.ArgumentParser(
         description="Delete Windows Zone.Identifier sidecar files from the repository tree."
     )
@@ -75,6 +76,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Find (and unless ``--dry-run``, delete) Zone.Identifier sidecar files.
+
+    Returns:
+        Always 0; matched paths are printed.
+    """
     args = build_parser().parse_args(argv)
     matches = remove_zone_identifier_files(args.root, dry_run=args.dry_run)
 

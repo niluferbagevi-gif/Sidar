@@ -157,6 +157,12 @@ def is_weak_secret(
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Check whether a secret value is weak or a placeholder.
+
+    Returns:
+        0 when the secret is weak, 1 when it is strong, so shell callers can use
+        the exit code as an "is weak" test.
+    """
     parser = argparse.ArgumentParser(description="Detect weak/placeholder Sidar secret values.")
     parser.add_argument("value", nargs="?", help="Secret value to evaluate")
     parser.add_argument("--min-length", type=int, default=DEFAULT_MIN_LENGTH)
