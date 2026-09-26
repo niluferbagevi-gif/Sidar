@@ -78,6 +78,7 @@ def _load_default_prompt() -> str:
 
 
 async def ensure_default_prompt_registry(db: Any, *, prompt_record_cls: type[Any]) -> None:
+    """Seed the active ``system`` prompt from ``SIDAR_SYSTEM_PROMPT`` if none exists."""
     default_prompt = await asyncio.to_thread(_load_default_prompt)
 
     existing = await get_active_prompt(db, "system", prompt_record_cls=prompt_record_cls)
@@ -98,6 +99,7 @@ async def ensure_default_prompt_registry(db: Any, *, prompt_record_cls: type[Any
 async def list_prompts(
     db: Any, role_name: str | None = None, *, prompt_record_cls: type[Any]
 ) -> list[Any]:
+    """List prompt versions, optionally for one role, newest version first per role."""
     role = (role_name or "").strip() or None
     if db._backend == "postgresql":
         assert db._pg_pool is not None
@@ -126,6 +128,7 @@ async def list_prompts(
 
 
 async def get_active_prompt(db: Any, role_name: str, *, prompt_record_cls: type[Any]) -> Any | None:
+    """Return the active prompt for a role, or ``None`` if the role has none."""
     role = (role_name or "").strip().lower()
     if not role:
         return None
@@ -158,6 +161,11 @@ async def upsert_prompt(
     activate: bool = True,
     prompt_record_cls: type[Any],
 ) -> Any:
+    """Store ``prompt_text`` as the next version for a role, activating it by default.
+
+    Raises:
+        ValueError: If ``role_name`` or ``prompt_text`` is empty.
+    """
     role = (role_name or "").strip().lower()
     text = (prompt_text or "").strip()
     if not role or not text:
@@ -228,6 +236,7 @@ async def upsert_prompt(
 
 
 async def activate_prompt(db: Any, prompt_id: int, *, prompt_record_cls: type[Any]) -> Any | None:
+    """Make ``prompt_id`` the only active prompt of its role; ``None`` if it is unknown."""
     target_id = int(prompt_id)
     if target_id <= 0:
         return None

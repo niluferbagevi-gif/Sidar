@@ -51,6 +51,7 @@ async def upsert_user_quota(
 async def record_provider_usage_daily(
     db: Any, user_id: str, provider: str, tokens_used: int, requests_inc: int = 1
 ) -> None:
+    """Add today's request and token usage for a user/provider pair (upsert)."""
     provider_name = (provider or "unknown").lower().strip() or "unknown"
     today = datetime.now(UTC).date().isoformat()
     req = max(0, int(requests_inc or 0))
@@ -100,6 +101,10 @@ async def record_provider_usage_daily(
 async def get_user_quota_status(
     db: Any, user_id: str, provider: str, sqlite_fetchone: Any
 ) -> dict[str, int | bool]:
+    """Return a user's daily limits, today's usage and whether each limit is exceeded.
+
+    A limit of ``0`` means unlimited and is never reported as exceeded.
+    """
     provider_name = (provider or "unknown").lower().strip() or "unknown"
     today = datetime.now(UTC).date().isoformat()
 
@@ -162,6 +167,7 @@ async def get_user_quota_status(
 
 
 async def list_users_with_quotas(db: Any) -> list[dict[str, Any]]:
+    """Return every user with their daily token/request limits (``0`` when unset)."""
     if db._backend == "postgresql":
         assert db._pg_pool is not None
         async with db._pg_pool.acquire() as conn:
@@ -208,6 +214,7 @@ def _user_quota_row(row: Any) -> dict[str, Any]:
 
 
 async def get_admin_stats(db: Any, sqlite_fetchone: Any) -> dict[str, Any]:
+    """Return user count, total token/request usage and the per-user quota list."""
     users = await list_users_with_quotas(db)
 
     if db._backend == "postgresql":

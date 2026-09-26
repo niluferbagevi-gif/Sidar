@@ -46,6 +46,10 @@ __all__ = [
 
 
 async def init_schema(db: Any) -> None:
+    """Create or migrate the schema for the active backend and seed the default prompt.
+
+    PostgreSQL is managed by Alembic; SQLite uses the lightweight bootstrap DDL.
+    """
     if db._backend == "postgresql":
         # PostgreSQL schema is managed by Alembic as the single source of truth.
         # Keep SQLite bootstrap below because degraded/local fallback does not run
@@ -61,6 +65,7 @@ async def init_schema(db: Any) -> None:
 
 
 async def ensure_access_control_schema_sqlite(db: Any) -> None:
+    """Add ``users.tenant_id`` and the ``access_policies`` table on SQLite if missing."""
     assert db._sqlite_conn is not None
 
     def _run() -> None:
@@ -98,6 +103,7 @@ async def ensure_access_control_schema_sqlite(db: Any) -> None:
 
 
 async def ensure_access_control_schema_postgresql(db: Any) -> None:
+    """Add ``users.tenant_id`` and the ``access_policies`` table on PostgreSQL if missing."""
     assert db._pg_pool is not None
     async with db._pg_pool.acquire() as conn:
         await conn.execute(
@@ -126,6 +132,7 @@ async def ensure_access_control_schema_postgresql(db: Any) -> None:
 
 
 async def ensure_audit_log_schema_sqlite(db: Any) -> None:
+    """Create the ``audit_logs`` table and its indexes on SQLite if missing."""
     assert db._sqlite_conn is not None
 
     def _run() -> None:
@@ -157,6 +164,7 @@ async def ensure_audit_log_schema_sqlite(db: Any) -> None:
 
 
 async def ensure_audit_log_schema_postgresql(db: Any) -> None:
+    """Create the ``audit_logs`` table and its indexes on PostgreSQL if missing."""
     assert db._pg_pool is not None
     async with db._pg_pool.acquire() as conn:
         await conn.execute(
@@ -183,6 +191,7 @@ async def ensure_audit_log_schema_postgresql(db: Any) -> None:
 
 
 async def init_schema_sqlite(db: Any) -> None:
+    """Create the core SQLite tables (users, sessions, messages, quotas, ...) if missing."""
     assert db._sqlite_conn is not None
 
     # NOT NULL, added explicitly on every PRIMARY KEY column below (both TEXT
@@ -433,6 +442,7 @@ async def init_schema_postgresql(db: Any) -> None:
 
 
 async def ensure_schema_version_sqlite(db: Any) -> None:
+    """Create the SQLite schema-version table and record versions up to the target."""
     assert db._sqlite_conn is not None
 
     def _run() -> None:
@@ -467,6 +477,7 @@ async def ensure_schema_version_sqlite(db: Any) -> None:
 
 
 async def ensure_schema_version_postgresql(db: Any) -> None:
+    """Create the PostgreSQL schema-version table and record versions up to the target."""
     assert db._pg_pool is not None
     tbl = db._schema_version_table_quoted
     async with db._pg_pool.acquire() as conn:

@@ -11,6 +11,8 @@ from core.db.helpers import json_dumps, sqlite_fetchone, utc_now_pair
 
 @dataclass
 class CoverageTaskRecord:
+    """Row of ``coverage_tasks``: a CoverageAgent run awaiting or after review."""
+
     id: int
     tenant_id: str
     requester_role: str
@@ -26,6 +28,8 @@ class CoverageTaskRecord:
 
 @dataclass
 class CoverageFindingRecord:
+    """Row of ``coverage_findings``: one finding reported for a coverage task."""
+
     id: int
     task_id: int
     finding_type: str
@@ -57,6 +61,11 @@ async def create_coverage_task(
     suggested_test_path: str = "",
     review_payload_json: str = "{}",
 ) -> CoverageTaskRecord:
+    """Create a coverage task from a pytest run.
+
+    Raises:
+        ValueError: If ``command`` is empty.
+    """
     tenant = (tenant_id or "default").strip() or "default"
     now_dt, now = utc_now_pair()
     if not str(command or "").strip():
@@ -164,6 +173,11 @@ async def add_coverage_finding(
     severity: str = "medium",
     details: dict[str, Any] | None = None,
 ) -> CoverageFindingRecord:
+    """Attach a finding (with JSON details) to an existing coverage task.
+
+    Raises:
+        ValueError: If ``finding_type`` or ``summary`` is empty.
+    """
     now_dt, now = utc_now_pair()
     if not str(finding_type or "").strip() or not str(summary or "").strip():
         raise ValueError("finding_type and summary are required")
@@ -252,6 +266,7 @@ async def list_coverage_tasks(
     status: str | None = None,
     limit: int = 100,
 ) -> list[CoverageTaskRecord]:
+    """List a tenant's coverage tasks, most recently updated first (max 500)."""
     tenant = (tenant_id or "default").strip() or "default"
     normalized_status = (status or "").strip() or None
     max_items = max(1, min(int(limit or 100), 500))

@@ -7,6 +7,8 @@ from dataclasses import dataclass
 
 @dataclass
 class SessionRecord:
+    """Row of ``sessions``: one chat conversation owned by a user."""
+
     id: str
     user_id: str
     title: str
@@ -16,6 +18,8 @@ class SessionRecord:
 
 @dataclass
 class MessageRecord:
+    """Row of ``messages``: one chat message with its token usage."""
+
     id: int
     session_id: str
     role: str

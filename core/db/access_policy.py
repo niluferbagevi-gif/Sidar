@@ -19,6 +19,7 @@ __all__ = [
 async def list_access_policies(
     db: Any, user_id: str, tenant_id: str | None = None
 ) -> list[AccessPolicyRecord]:
+    """List a user's access policies, optionally limited to one tenant."""
     effective_tenant = (tenant_id or "").strip()
     if db._backend == "postgresql":
         assert db._pg_pool is not None
@@ -104,6 +105,11 @@ async def upsert_access_policy(
     action: str,
     effect: str = "allow",
 ) -> None:
+    """Create or update one allow/deny policy for a user, resource and action.
+
+    Raises:
+        ValueError: If ``effect`` is not allow/deny or resource type/action is empty.
+    """
     now_dt, now = utc_now_pair()
     tenant = (tenant_id or "default").strip() or "default"
     r_type = (resource_type or "").strip().lower()
@@ -164,6 +170,12 @@ async def check_access_policy(
     action: str,
     resource_id: str = "*",
 ) -> bool:
+    """Return whether a user may perform ``action`` on a resource.
+
+    Policies of the tenant are used (falling back to the ``default`` tenant when the
+    tenant has none); an exact or ``*`` resource match is required, any matching
+    ``deny`` wins, and no match means access is denied.
+    """
     tenant = (tenant_id or "default").strip() or "default"
     r_type = (resource_type or "").strip().lower()
     act = (action or "").strip().lower()
