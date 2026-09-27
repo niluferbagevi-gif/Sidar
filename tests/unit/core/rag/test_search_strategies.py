@@ -6,7 +6,10 @@ from core.rag.strategies import BM25OnlyStrategy, HybridStrategy, VectorOnlyStra
 
 
 class FakeStore:
+    """RAG store double that records backend search calls and returns preset results."""
+
     def __init__(self) -> None:
+        """Start with every backend unavailable and empty result lists."""
         self.calls: list[tuple[str, str, int, str]] = []
         self._pgvector_available = False
         self._chroma_available = False
@@ -58,6 +61,7 @@ def _doc(doc_id: str) -> dict[str, object]:
 
 
 def test_vector_strategy_prefers_pgvector() -> None:
+    """Vector strategy prefers pgvector."""
     store = FakeStore()
     store._pgvector_available = True
 
@@ -68,6 +72,7 @@ def test_vector_strategy_prefers_pgvector() -> None:
 
 
 def test_vector_strategy_uses_chroma_when_pgvector_unavailable() -> None:
+    """Vector strategy uses chroma when pgvector unavailable."""
     store = FakeStore()
     store._chroma_available = True
     store.collection = object()
@@ -79,6 +84,7 @@ def test_vector_strategy_uses_chroma_when_pgvector_unavailable() -> None:
 
 
 def test_bm25_strategy_reports_unavailable_index() -> None:
+    """Bm25 strategy reports unavailable index."""
     store = FakeStore()
 
     result = BM25OnlyStrategy(store).search("q", 2, "s")
@@ -88,6 +94,7 @@ def test_bm25_strategy_reports_unavailable_index() -> None:
 
 
 def test_hybrid_strategy_merges_vector_and_bm25_with_rrf() -> None:
+    """Hybrid strategy merges vector and bm25 with rrf."""
     store = FakeStore()
     store._pgvector_available = True
     store._bm25_available = True
@@ -107,6 +114,7 @@ def test_hybrid_strategy_merges_vector_and_bm25_with_rrf() -> None:
 
 
 def test_hybrid_strategy_uses_chroma_vector_candidates_when_pgvector_unavailable() -> None:
+    """Hybrid strategy uses chroma vector candidates when pgvector unavailable."""
     store = FakeStore()
     store._chroma_available = True
     store.collection = object()
@@ -123,6 +131,7 @@ def test_hybrid_strategy_uses_chroma_vector_candidates_when_pgvector_unavailable
 
 
 def test_hybrid_strategy_formats_empty_result_when_top_k_zero() -> None:
+    """Hybrid strategy formats empty result when top k zero."""
     store = FakeStore()
     store._pgvector_available = True
     store.pgvector_results = [_doc("vector")]
@@ -135,6 +144,7 @@ def test_hybrid_strategy_formats_empty_result_when_top_k_zero() -> None:
 
 
 def test_hybrid_strategy_falls_back_to_keyword_when_no_candidates() -> None:
+    """Hybrid strategy falls back to keyword when no candidates."""
     store = FakeStore()
     store._bm25_available = True
 
@@ -149,6 +159,7 @@ def test_hybrid_strategy_falls_back_to_keyword_when_no_candidates() -> None:
 
 
 def test_hybrid_strategy_logs_when_bm25_is_only_available_candidate(caplog) -> None:
+    """Hybrid strategy logs when bm25 is only available candidate."""
     store = FakeStore()
     store._bm25_available = True
     store.bm25_results = [_doc("bm25-only")]
@@ -161,6 +172,7 @@ def test_hybrid_strategy_logs_when_bm25_is_only_available_candidate(caplog) -> N
 
 
 def test_bm25_strategy_logs_explicit_fallback_selection(caplog) -> None:
+    """Bm25 strategy logs explicit fallback selection."""
     store = FakeStore()
     store._bm25_available = True
 

@@ -1,3 +1,5 @@
+"""``core.judge`` modülü için unit testler."""
+
 import asyncio
 import json
 import sys
@@ -9,6 +11,8 @@ import core.judge as judge
 
 
 class DummyConfig:
+    """Judge'ı açık, örnekleme oranı 1.0 ve otomatik geri bildirimi etkin test config'i."""
+
     TEXT_MODEL = "text-model"
     CODING_MODEL = "coding-model"
     JUDGE_ENABLED = True
@@ -62,13 +66,17 @@ def _install_config_module(monkeypatch, *, isolate_env=True, patch_env_helpers=T
 
 
 class FakeLLMClient:
+    """Son çağrı argümanlarını kaydedip sınıf düzeyi ``response`` döndüren LLM taklidi."""
+
     response = "0.75"
 
     def __init__(self, provider, config):
+        """Sağlayıcı ve config değerlerini saklar."""
         self.provider = provider
         self.config = config
 
     async def chat(self, **kwargs):
+        """Argümanları kaydeder; ``response`` bir exception ise onu fırlatır, değilse döndürür."""
         self.last_kwargs = kwargs
         value = self.response
         if isinstance(value, Exception):
@@ -84,11 +92,13 @@ def _install_llm_client_module(monkeypatch, client_cls=FakeLLMClient):
 
 @pytest.fixture
 def judge_instance(monkeypatch):
+    """Sahte config modülü kurulmuş bir ``LLMJudge`` örneği döndürür."""
     _install_config_module(monkeypatch)
     return judge.LLMJudge()
 
 
 def test_judge_result_properties():
+    """Judge result properties."""
     result = judge.JudgeResult(0.9, 0.1, 1.0, "m", "p")
     assert result.passed is True
     assert result.quality_score == 0.9
@@ -106,6 +116,7 @@ def test_judge_result_properties():
     ],
 )
 def test_response_eval_model_selection(monkeypatch, provider, model, expected):
+    """Response eval model selection."""
     _install_config_module(monkeypatch)
     monkeypatch.setattr(DummyConfig, "JUDGE_PROVIDER", provider)
     instance = judge.LLMJudge()
@@ -114,6 +125,7 @@ def test_response_eval_model_selection(monkeypatch, provider, model, expected):
 
 
 def test_response_evaluation_weak_flag():
+    """Response evaluation weak flag."""
     strong = judge.ResponseEvaluation(8, "ok", 1.0, "model", "provider")
     weak = judge.ResponseEvaluation(7, "needs work", 1.0, "model", "provider")
 
@@ -130,6 +142,7 @@ def test_response_evaluation_weak_flag():
     ],
 )
 def test_response_eval_model_provider_defaults(monkeypatch, provider, expected):
+    """Response eval model provider defaults."""
     _install_config_module(monkeypatch)
     monkeypatch.setattr(DummyConfig, "JUDGE_PROVIDER", provider)
 
@@ -140,6 +153,7 @@ def test_response_eval_model_provider_defaults(monkeypatch, provider, expected):
 
 @pytest.mark.asyncio
 async def test_evaluate_response_returns_valid_score(monkeypatch, judge_instance):
+    """Evaluate response returns valid score."""
     monkeypatch.setattr(judge, "_inc_prometheus", lambda *args, **kwargs: None)
 
     async def fake_json(system, payload, *, model=None):
@@ -161,6 +175,7 @@ async def test_evaluate_response_returns_valid_score(monkeypatch, judge_instance
 
 
 def test_response_eval_model_env_override(monkeypatch):
+    """Response eval model env override."""
     _install_config_module(monkeypatch)
     monkeypatch.setattr(DummyConfig, "JUDGE_RESPONSE_MODEL", "explicit")
     instance = judge.LLMJudge()
@@ -168,6 +183,7 @@ def test_response_eval_model_env_override(monkeypatch):
 
 
 def test_init_uses_bound_env_helpers(monkeypatch):
+    """Init uses bound env helpers."""
     _install_config_module(monkeypatch, isolate_env=False, patch_env_helpers=False)
     monkeypatch.setenv("SIDAR_JUDGE_ENABLED", "false")
     monkeypatch.setenv("SIDAR_JUDGE_PROVIDER", "anthropic")
@@ -179,6 +195,7 @@ def test_init_uses_bound_env_helpers(monkeypatch):
 
 
 def test_should_evaluate(monkeypatch, judge_instance):
+    """Should evaluate."""
     monkeypatch.setattr(judge._SAMPLING_RANDOM, "random", lambda: 0.3)
     assert judge_instance.should_evaluate() is True
     judge_instance.enabled = False
@@ -187,12 +204,15 @@ def test_should_evaluate(monkeypatch, judge_instance):
 
 @pytest.mark.asyncio
 async def test_call_llm_success(monkeypatch, judge_instance):
+    """Call llm success."""
     _install_llm_client_module(monkeypatch)
     assert await judge_instance._call_llm("sys", "user") == 0.75
 
 
 @pytest.mark.asyncio
 async def test_call_llm_non_string_returns_none(monkeypatch, judge_instance):
+    """Call llm non string returns none."""
+
     class NonStringClient(FakeLLMClient):
         response = {"v": 1}
 
@@ -202,6 +222,8 @@ async def test_call_llm_non_string_returns_none(monkeypatch, judge_instance):
 
 @pytest.mark.asyncio
 async def test_call_llm_parses_and_clamps(monkeypatch, judge_instance):
+    """Call llm parses and clamps."""
+
     class ParseClient(FakeLLMClient):
         response = "score 1.4"
 
@@ -211,6 +233,8 @@ async def test_call_llm_parses_and_clamps(monkeypatch, judge_instance):
 
 @pytest.mark.asyncio
 async def test_call_llm_no_number_returns_none(monkeypatch, judge_instance):
+    """Call llm no number returns none."""
+
     class NoNumberClient(FakeLLMClient):
         response = "not a number"
 
@@ -220,6 +244,8 @@ async def test_call_llm_no_number_returns_none(monkeypatch, judge_instance):
 
 @pytest.mark.asyncio
 async def test_call_llm_exception_and_cancel(monkeypatch, judge_instance):
+    """Call llm exception and cancel."""
+
     class BoomClient(FakeLLMClient):
         response = RuntimeError("boom")
 
@@ -237,6 +263,7 @@ async def test_call_llm_exception_and_cancel(monkeypatch, judge_instance):
 
 @pytest.mark.asyncio
 async def test_call_llm_json_paths(monkeypatch, judge_instance):
+    """Call llm json paths."""
     _install_llm_client_module(monkeypatch)
     FakeLLMClient.response = json.dumps({"score": 9, "reasoning": "ok"})
     assert await judge_instance._call_llm_json("sys", "msg") == {"score": 9, "reasoning": "ok"}
@@ -250,6 +277,8 @@ async def test_call_llm_json_paths(monkeypatch, judge_instance):
 
 @pytest.mark.asyncio
 async def test_call_llm_json_non_string_and_cancel(monkeypatch, judge_instance):
+    """Call llm json non string and cancel."""
+
     class NonStringClient(FakeLLMClient):
         response = {"score": 7}
 
@@ -267,6 +296,7 @@ async def test_call_llm_json_non_string_and_cancel(monkeypatch, judge_instance):
 
 @pytest.mark.asyncio
 async def test_evaluate_response_success_and_fallback(monkeypatch, judge_instance):
+    """Evaluate response success and fallback."""
     monkeypatch.setattr(judge, "_inc_prometheus", lambda *args, **kwargs: None)
 
     async def ok_json(*args, **kwargs):
@@ -295,6 +325,7 @@ async def test_evaluate_response_success_and_fallback(monkeypatch, judge_instanc
 
 @pytest.mark.asyncio
 async def test_evaluate_response_disabled_or_empty(judge_instance):
+    """Evaluate response disabled or empty."""
     judge_instance.enabled = False
     assert await judge_instance.evaluate_response("p", "r", "c") is None
     judge_instance.enabled = True
@@ -304,6 +335,7 @@ async def test_evaluate_response_disabled_or_empty(judge_instance):
 
 @pytest.mark.asyncio
 async def test_evaluate_rag_flow(monkeypatch, judge_instance):
+    """Evaluate rag flow."""
     monkeypatch.setattr(judge_instance, "_should_evaluate", lambda: True)
     calls = []
 
@@ -331,6 +363,7 @@ async def test_evaluate_rag_flow(monkeypatch, judge_instance):
 
 @pytest.mark.asyncio
 async def test_evaluate_rag_short_circuits(monkeypatch, judge_instance):
+    """Evaluate rag short circuits."""
     monkeypatch.setattr(judge_instance, "_should_evaluate", lambda: False)
     assert await judge_instance.evaluate_rag("q", ["d"]) is None
     monkeypatch.setattr(judge_instance, "_should_evaluate", lambda: True)
@@ -340,6 +373,7 @@ async def test_evaluate_rag_short_circuits(monkeypatch, judge_instance):
 
 @pytest.mark.asyncio
 async def test_evaluate_rag_defaults_when_llm_none(monkeypatch, judge_instance):
+    """Evaluate rag defaults when llm none."""
     monkeypatch.setattr(judge_instance, "_should_evaluate", lambda: True)
 
     async def none_llm(*args, **kwargs):
@@ -359,6 +393,7 @@ async def test_evaluate_rag_defaults_when_llm_none(monkeypatch, judge_instance):
 
 @pytest.mark.asyncio
 async def test_evaluate_rag_without_answer_skips_hallucination(monkeypatch, judge_instance):
+    """Evaluate rag without answer skips hallucination."""
     monkeypatch.setattr(judge_instance, "_should_evaluate", lambda: True)
     calls = {"n": 0}
 
@@ -380,6 +415,7 @@ async def test_evaluate_rag_without_answer_skips_hallucination(monkeypatch, judg
 
 @pytest.mark.asyncio
 async def test_maybe_record_feedback_paths(judge_instance):
+    """Maybe record feedback paths."""
     result = judge.JudgeResult(0.2, 0.9, 1.0, "m", "p")
 
     judge_instance.auto_feedback_enabled = False
@@ -410,6 +446,7 @@ async def test_maybe_record_feedback_paths(judge_instance):
 
 @pytest.mark.asyncio
 async def test_maybe_record_feedback_success_and_exceptions(monkeypatch, judge_instance):
+    """Maybe record feedback success and exceptions."""
     result = judge.JudgeResult(0.2, 0.9, 1.0, "m", "p")
     judge_instance.auto_feedback_enabled = True
     judge_instance.auto_feedback_threshold = 9.5
@@ -470,6 +507,7 @@ async def test_maybe_record_feedback_success_and_exceptions(monkeypatch, judge_i
 
 @pytest.mark.asyncio
 async def test_maybe_record_feedback_cancelled(monkeypatch, judge_instance):
+    """Maybe record feedback cancelled."""
     result = judge.JudgeResult(0.2, 0.9, 1.0, "m", "p")
 
     class CancelStore:
@@ -489,6 +527,7 @@ async def test_maybe_record_feedback_cancelled(monkeypatch, judge_instance):
 
 @pytest.mark.asyncio
 async def test_schedule_background_evaluation(monkeypatch, judge_instance):
+    """Schedule background evaluation."""
     monkeypatch.setattr(judge_instance, "_should_evaluate", lambda: True)
     called = {"v": 0}
 
@@ -504,6 +543,7 @@ async def test_schedule_background_evaluation(monkeypatch, judge_instance):
 
 @pytest.mark.asyncio
 async def test_schedule_background_evaluation_exception(monkeypatch, judge_instance):
+    """Schedule background evaluation exception."""
     monkeypatch.setattr(judge_instance, "_should_evaluate", lambda: True)
 
     async def boom(*args, **kwargs):
@@ -517,6 +557,7 @@ async def test_schedule_background_evaluation_exception(monkeypatch, judge_insta
 
 @pytest.mark.asyncio
 async def test_schedule_background_evaluation_cancel_raises(monkeypatch, judge_instance):
+    """Schedule background evaluation cancel raises."""
     monkeypatch.setattr(judge_instance, "_should_evaluate", lambda: True)
 
     async def cancel(*args, **kwargs):
@@ -529,6 +570,7 @@ async def test_schedule_background_evaluation_cancel_raises(monkeypatch, judge_i
 
 
 def test_schedule_background_no_loop(monkeypatch, judge_instance):
+    """Schedule background no loop."""
     monkeypatch.setattr(judge_instance, "_should_evaluate", lambda: True)
 
     def no_loop():
@@ -539,11 +581,13 @@ def test_schedule_background_no_loop(monkeypatch, judge_instance):
 
 
 def test_schedule_background_skips_when_sampling_disabled(monkeypatch, judge_instance):
+    """Schedule background skips when sampling disabled."""
     monkeypatch.setattr(judge_instance, "_should_evaluate", lambda: False)
     judge_instance.schedule_background_evaluation("q", ["d"], "a")
 
 
 def test_inc_prometheus_cache_and_errors(monkeypatch):
+    """Inc prometheus cache and errors."""
     judge._prometheus_gauges.clear()
 
     class Gauge:
@@ -572,6 +616,7 @@ def test_inc_prometheus_cache_and_errors(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_record_judge_metrics_variants(monkeypatch):
+    """Record judge metrics variants."""
     result = judge.JudgeResult(0.3, 0.4, 1.0, "m", "p")
 
     class Collector:
@@ -613,6 +658,7 @@ async def test_record_judge_metrics_variants(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_record_judge_metrics_async_sink_with_running_loop(monkeypatch):
+    """Record judge metrics async sink with running loop."""
     result = judge.JudgeResult(0.3, 0.4, 1.0, "m", "p")
     task_calls = {"n": 0}
 
@@ -646,6 +692,7 @@ async def test_record_judge_metrics_async_sink_with_running_loop(monkeypatch):
 
 
 def test_record_judge_metrics_exception(monkeypatch):
+    """Record judge metrics exception."""
     bad_mod = types.ModuleType("core.llm_metrics")
     bad_mod.get_llm_metrics_collector = lambda: (_ for _ in ()).throw(RuntimeError("x"))
     monkeypatch.setitem(sys.modules, "core.llm_metrics", bad_mod)
@@ -654,6 +701,7 @@ def test_record_judge_metrics_exception(monkeypatch):
 
 
 def test_get_llm_judge_singleton(monkeypatch):
+    """Get llm judge singleton."""
     _install_config_module(monkeypatch)
     judge._JUDGE = None
     first = judge.get_llm_judge()

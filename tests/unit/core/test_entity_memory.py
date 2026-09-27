@@ -1,3 +1,5 @@
+"""``core.entity_memory`` modülü için unit testler."""
+
 import asyncio
 import types
 from pathlib import Path
@@ -15,11 +17,13 @@ requires_sqlalchemy = pytest.mark.skipif(
 
 @pytest.fixture
 def sqlite_db_url(tmp_path: Path) -> str:
+    """Geçici dizinde test başına ayrı bir aiosqlite veritabanı URL'si döndürür."""
     return f"sqlite+aiosqlite:///{tmp_path / 'entity_memory_test.db'}"
 
 
 @pytest.fixture(autouse=True)
 def reset_singleton():
+    """Her test öncesi ve sonrası modül düzeyindeki EntityMemory singleton'ını sıfırlar."""
     em_module._instance = None
     yield
     em_module._instance = None
@@ -27,6 +31,8 @@ def reset_singleton():
 
 @requires_sqlalchemy
 def test_initialize_and_crud_happy_path(sqlite_db_url: str):
+    """Initialize and crud happy path."""
+
     async def scenario():
         em = EntityMemory(database_url=sqlite_db_url)
         await em.initialize()
@@ -58,6 +64,8 @@ def test_initialize_and_crud_happy_path(sqlite_db_url: str):
 
 
 def test_validation_and_disabled_behavior(sqlite_db_url: str):
+    """Validation and disabled behavior."""
+
     async def scenario():
         disabled = EntityMemory(
             database_url=sqlite_db_url, config=types.SimpleNamespace(ENABLE_ENTITY_MEMORY=False)
@@ -86,6 +94,8 @@ def test_validation_and_disabled_behavior(sqlite_db_url: str):
 
 @requires_sqlalchemy
 def test_eviction_when_max_per_user_reached(sqlite_db_url: str):
+    """Eviction when max per user reached."""
+
     async def scenario():
         em = EntityMemory(database_url=sqlite_db_url, max_per_user=2)
         await em.initialize()
@@ -106,6 +116,8 @@ def test_eviction_when_max_per_user_reached(sqlite_db_url: str):
 
 @requires_sqlalchemy
 def test_purge_expired_and_ttl_zero(sqlite_db_url: str):
+    """Purge expired and ttl zero."""
+
     async def scenario():
         em = EntityMemory(database_url=sqlite_db_url, ttl_days=1)
         await em.initialize()
@@ -137,6 +149,7 @@ def test_purge_expired_and_ttl_zero(sqlite_db_url: str):
 
 
 def test_well_known_keys_and_singleton_creation(monkeypatch):
+    """Well known keys and singleton creation."""
     assert "coding_style" in WELL_KNOWN_KEYS
     assert "preferred_language" in WELL_KNOWN_KEYS
 
@@ -155,6 +168,8 @@ def test_well_known_keys_and_singleton_creation(monkeypatch):
 def test_initialize_when_sqlalchemy_unavailable_and_close_without_engine(
     monkeypatch, sqlite_db_url: str
 ):
+    """Initialize when sqlalchemy unavailable and close without engine."""
+
     async def scenario():
         monkeypatch.setattr(em_module, "_SA_AVAILABLE", False)
         em = EntityMemory(database_url=sqlite_db_url)
@@ -167,6 +182,8 @@ def test_initialize_when_sqlalchemy_unavailable_and_close_without_engine(
 
 @requires_sqlalchemy
 def test_purge_expired_returns_zero_when_nothing_to_delete(sqlite_db_url: str):
+    """Purge expired returns zero when nothing to delete."""
+
     async def scenario():
         em = EntityMemory(database_url=sqlite_db_url, ttl_days=30)
         await em.initialize()
@@ -184,6 +201,8 @@ def test_entity_memory_ttl_and_corrupted_record_recovery(
     fake_redis: Any,
     frozen_time,
 ):
+    """Entity memory ttl and corrupted record recovery."""
+
     async def scenario():
         # Ortak fake_redis fixture'ının hazır olduğunu doğrula (dış bağımlılık izolasyonu).
         assert await fake_redis.ping() is True
@@ -216,6 +235,8 @@ def test_entity_memory_ttl_and_corrupted_record_recovery(
 
 @requires_sqlalchemy
 def test_get_survives_corrupted_metadata_row(sqlite_db_url: str):
+    """Get survives corrupted metadata row."""
+
     async def scenario():
         em = EntityMemory(database_url=sqlite_db_url)
         await em.initialize()

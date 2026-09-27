@@ -60,6 +60,8 @@ class _FakeConfig:
 
 @pytest.fixture
 def fake_config() -> type[_FakeConfig]:
+    """Return a fresh ``_FakeConfig`` subclass so recorded state is isolated per test."""
+
     class _Cfg(_FakeConfig):
         missing_keys: list[str] = []
         calls: list[str] = []
@@ -93,6 +95,8 @@ def _validate(
 
 
 def test_validate_ai_provider_settings_normalizes_and_accepts_known_provider() -> None:
+    """Validate ai provider settings normalizes and accepts known provider."""
+
     class Cfg:
         AI_PROVIDER = "  OpenAI "
         OPENAI_API_KEY = "sk-valid"
@@ -109,6 +113,8 @@ def test_validate_ai_provider_settings_normalizes_and_accepts_known_provider() -
 
 
 def test_validate_ai_provider_settings_rejects_unknown_provider(caplog) -> None:
+    """Validate ai provider settings rejects unknown provider."""
+
     class Cfg:
         AI_PROVIDER = "mystery"
 
@@ -126,6 +132,8 @@ def test_validate_ai_provider_settings_rejects_unknown_provider(caplog) -> None:
 
 
 def test_validate_ai_provider_settings_flags_missing_key_and_bad_gateway_url(caplog) -> None:
+    """Validate ai provider settings flags missing key and bad gateway url."""
+
     class Cfg:
         AI_PROVIDER = "litellm"
         LITELLM_API_KEY = ""
@@ -145,6 +153,7 @@ def test_validate_ai_provider_settings_flags_missing_key_and_bad_gateway_url(cap
 
 
 def test_validate_critical_settings_happy_path_calls_facade_hooks_in_order(fake_config) -> None:
+    """Validate critical settings happy path calls facade hooks in order."""
     fake_config.missing_keys = ["OPTIONAL_KEY"]
 
     assert _validate(fake_config) is True
@@ -158,6 +167,7 @@ def test_validate_critical_settings_happy_path_calls_facade_hooks_in_order(fake_
 
 
 def test_production_exits_on_missing_production_secret(fake_config, monkeypatch, caplog) -> None:
+    """Production exits on missing production secret."""
     monkeypatch.setenv("SIDAR_ENV", "production")
     fake_config.missing_keys = ["JWT_SECRET_KEY", "OTHER"]
 
@@ -170,6 +180,7 @@ def test_production_exits_on_missing_production_secret(fake_config, monkeypatch,
 
 
 def test_production_without_unsafe_secrets_continues(fake_config, monkeypatch) -> None:
+    """Production without unsafe secrets continues."""
     monkeypatch.setenv("SIDAR_ENV", "production")
     fake_config.missing_keys = ["NOT_A_PRODUCTION_SECRET"]
 
@@ -178,6 +189,7 @@ def test_production_without_unsafe_secrets_continues(fake_config, monkeypatch) -
 
 
 def test_require_gpu_without_gpu_is_invalid(fake_config, caplog) -> None:
+    """Require gpu without gpu is invalid."""
     fake_config.REQUIRE_GPU = True
     fake_config.USE_GPU = False
 
@@ -188,6 +200,7 @@ def test_require_gpu_without_gpu_is_invalid(fake_config, caplog) -> None:
 
 @pytest.mark.parametrize(("allow", "expected"), [("", False), ("yes", True)])
 def test_full_access_requires_explicit_opt_in(fake_config, monkeypatch, allow, expected) -> None:
+    """Full access requires explicit opt in."""
     fake_config.ACCESS_LEVEL = " FULL "
     if allow:
         monkeypatch.setenv("SIDAR_ALLOW_FULL_ACCESS", allow)
@@ -196,6 +209,7 @@ def test_full_access_requires_explicit_opt_in(fake_config, monkeypatch, allow, e
 
 
 def test_failed_provider_check_makes_result_invalid(fake_config) -> None:
+    """Failed provider check makes result invalid."""
     fake_config.provider_result = False
 
     assert _validate(fake_config) is False
@@ -204,6 +218,7 @@ def test_failed_provider_check_makes_result_invalid(fake_config) -> None:
 def test_postgres_password_drift_messages_are_logged_and_invalid(
     fake_config, monkeypatch, caplog
 ) -> None:
+    """Postgres password drift messages are logged and invalid."""
     monkeypatch.setattr(
         config_postgres, "postgres_password_drift_messages", lambda: ["drift-one", "drift-two"]
     )
@@ -218,6 +233,7 @@ def test_postgres_password_drift_messages_are_logged_and_invalid(
 
 
 def test_invalid_current_or_previous_fernet_key_is_invalid(fake_config, caplog) -> None:
+    """Invalid current or previous fernet key is invalid."""
     fake_config.MEMORY_ENCRYPTION_KEY = _VALID_FERNET_KEY
     fake_config.MEMORY_ENCRYPTION_KEY_PREVIOUS = f" , {_VALID_FERNET_KEY}, not-a-key"
 
@@ -227,6 +243,7 @@ def test_invalid_current_or_previous_fernet_key_is_invalid(fake_config, caplog) 
 
 
 def test_valid_rotated_fernet_keys_pass(fake_config) -> None:
+    """Valid rotated fernet keys pass."""
     fake_config.MEMORY_ENCRYPTION_KEY_PREVIOUS = Fernet.generate_key().decode()
 
     assert _validate(fake_config) is True
@@ -235,6 +252,7 @@ def test_valid_rotated_fernet_keys_pass(fake_config) -> None:
 def test_encryption_key_without_cryptography_package_is_invalid(
     fake_config, monkeypatch, caplog
 ) -> None:
+    """Encryption key without cryptography package is invalid."""
     monkeypatch.setitem(sys.modules, "cryptography.fernet", None)
 
     with caplog.at_level(logging.ERROR):
@@ -243,6 +261,7 @@ def test_encryption_key_without_cryptography_package_is_invalid(
 
 
 def test_missing_encryption_key_warns_outside_production(fake_config, caplog) -> None:
+    """Missing encryption key warns outside production."""
     fake_config.MEMORY_ENCRYPTION_KEY = "   "
 
     with caplog.at_level(logging.CRITICAL):
@@ -251,6 +270,7 @@ def test_missing_encryption_key_warns_outside_production(fake_config, caplog) ->
 
 
 def test_missing_encryption_key_exits_in_production(fake_config, monkeypatch, caplog) -> None:
+    """Missing encryption key exits in production."""
     monkeypatch.setenv("SIDAR_ENV", "production")
     fake_config.MEMORY_ENCRYPTION_KEY = None
 
@@ -294,6 +314,7 @@ def _install_fake_httpx_client(
     ],
 )
 def test_ollama_probe_success_logs_once(fake_config, monkeypatch, ollama_url, expected_url) -> None:
+    """Ollama probe success logs once."""
     fake_config.AI_PROVIDER = "ollama"
     fake_config.OLLAMA_URL = ollama_url
     requested: list[str] = []
@@ -307,6 +328,7 @@ def test_ollama_probe_success_logs_once(fake_config, monkeypatch, ollama_url, ex
 
 
 def test_ollama_probe_non_200_logs_status(fake_config, monkeypatch, caplog) -> None:
+    """Ollama probe non 200 logs status."""
     fake_config.AI_PROVIDER = "ollama"
     _install_fake_httpx_client(monkeypatch, status_code=503, requested=[])
 
@@ -318,6 +340,7 @@ def test_ollama_probe_non_200_logs_status(fake_config, monkeypatch, caplog) -> N
 def test_ollama_probe_unreachable_does_not_fail_validation(
     fake_config, monkeypatch, caplog
 ) -> None:
+    """Ollama probe unreachable does not fail validation."""
     fake_config.AI_PROVIDER = "ollama"
     _install_fake_httpx_client(monkeypatch, status_code=None, requested=[])
 

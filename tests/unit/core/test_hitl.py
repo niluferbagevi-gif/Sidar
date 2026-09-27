@@ -1,3 +1,5 @@
+"""``core.hitl`` modülü için unit testler."""
+
 from __future__ import annotations
 
 import asyncio
@@ -11,6 +13,7 @@ from tests.fixtures.factories import build_hitl_request
 
 @pytest.fixture(autouse=True)
 def reset_hitl_globals(monkeypatch: pytest.MonkeyPatch) -> None:
+    """HITL store/gate/broadcast global'lerini ve ortam değişkenlerini test başına sıfırlar."""
     monkeypatch.setattr(hitl, "_STORE", hitl._HITLStore())
     monkeypatch.setattr(hitl, "_GATE", None)
     monkeypatch.setattr(hitl, "_broadcast_hook", None)
@@ -19,6 +22,7 @@ def reset_hitl_globals(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def run(coro):
+    """Coroutine'i yeni bir event loop'ta çalıştırıp sonucunu döndürür."""
     return asyncio.run(coro)
 
 
@@ -33,6 +37,7 @@ def _make_request(
 
 
 def test_hitl_request_helpers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Hitl request helpers."""
     req = _make_request(request_id="r1", expires_at=100.0)
     monkeypatch.setattr(hitl.time, "time", lambda: 99.0)
     assert req.is_expired() is False
@@ -47,6 +52,7 @@ def test_hitl_request_helpers(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_store_add_get_pending_recent_and_eviction(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
+    """Store add get pending recent and eviction."""
     store = hitl._HITLStore(max_size=2)
 
     req1 = _make_request(request_id="old", expires_at=50.0)
@@ -74,6 +80,7 @@ def test_store_add_get_pending_recent_and_eviction(
 def test_store_logs_when_evicted_request_is_already_decided(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    """Store logs when evicted request is already decided."""
     store = hitl._HITLStore(max_size=1)
     decided = _make_request(request_id="done", expires_at=50.0, decision=hitl.HITLDecision.APPROVED)
     newest = _make_request(request_id="new", expires_at=60.0)
@@ -88,6 +95,7 @@ def test_store_logs_when_evicted_request_is_already_decided(
 
 
 def test_store_pending_marks_expired_as_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Store pending marks expired as timeout."""
     store = hitl._HITLStore()
     expired = _make_request(request_id="exp", expires_at=10.0)
     run(store.add(expired))
@@ -100,6 +108,7 @@ def test_store_pending_marks_expired_as_timeout(monkeypatch: pytest.MonkeyPatch)
 def test_store_pending_and_all_recent_initialize_lock_and_skip_non_pending(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Store pending and all recent initialize lock and skip non pending."""
     store = hitl._HITLStore()
     store._requests.extend(
         [
@@ -124,6 +133,7 @@ def test_store_pending_and_all_recent_initialize_lock_and_skip_non_pending(
 
 
 def test_notify_without_hook_and_with_exception(caplog: pytest.LogCaptureFixture) -> None:
+    """Notify without hook and with exception."""
     req = _make_request(request_id="n1", expires_at=100.0)
 
     run(hitl.notify(req))
@@ -139,6 +149,7 @@ def test_notify_without_hook_and_with_exception(caplog: pytest.LogCaptureFixture
 
 
 def test_notify_uses_registered_hook() -> None:
+    """Notify uses registered hook."""
     req = _make_request(request_id="n2", expires_at=100.0)
     captured: list[dict[str, Any]] = []
 
@@ -153,6 +164,7 @@ def test_notify_uses_registered_hook() -> None:
 
 
 def test_hitl_gate_init_and_singleton(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Hitl gate init and singleton."""
     monkeypatch.setenv("HITL_ENABLED", "YES")
     monkeypatch.setenv("HITL_TIMEOUT_SECONDS", "3")
 
@@ -166,6 +178,7 @@ def test_hitl_gate_init_and_singleton(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_request_approval_returns_true_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Request approval returns true when disabled."""
     monkeypatch.setenv("HITL_ENABLED", "false")
     gate = hitl.HITLGate()
 
@@ -175,6 +188,7 @@ def test_request_approval_returns_true_when_disabled(monkeypatch: pytest.MonkeyP
 
 
 def test_request_approval_approved_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Request approval approved path."""
     monkeypatch.setenv("HITL_ENABLED", "true")
     monkeypatch.setenv("HITL_TIMEOUT_SECONDS", "30")
     gate = hitl.HITLGate()
@@ -200,6 +214,7 @@ def test_request_approval_approved_path(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 def test_request_approval_rejected_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Request approval rejected path."""
     monkeypatch.setenv("HITL_ENABLED", "1")
     monkeypatch.setenv("HITL_TIMEOUT_SECONDS", "30")
     gate = hitl.HITLGate()
@@ -225,6 +240,7 @@ def test_request_approval_rejected_path(monkeypatch: pytest.MonkeyPatch) -> None
 def test_request_approval_returns_false_when_request_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Request approval returns false when request missing."""
     monkeypatch.setenv("HITL_ENABLED", "true")
     monkeypatch.setenv("HITL_TIMEOUT_SECONDS", "30")
     gate = hitl.HITLGate()
@@ -244,6 +260,7 @@ def test_request_approval_returns_false_when_request_missing(
 
 
 def test_request_approval_timeout_updates_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Request approval timeout updates request."""
     monkeypatch.setenv("HITL_ENABLED", "true")
     monkeypatch.setenv("HITL_TIMEOUT_SECONDS", "10")
     gate = hitl.HITLGate()
@@ -270,6 +287,7 @@ def test_request_approval_timeout_updates_request(monkeypatch: pytest.MonkeyPatc
 def test_request_approval_timeout_branch_skips_timeout_update_when_decision_changed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Request approval timeout branch skips timeout update when decision changed."""
     monkeypatch.setenv("HITL_ENABLED", "true")
     monkeypatch.setenv("HITL_TIMEOUT_SECONDS", "10")
     gate = hitl.HITLGate()
@@ -299,6 +317,7 @@ def test_request_approval_timeout_branch_skips_timeout_update_when_decision_chan
 def test_request_approval_timeout_branch_skips_timeout_update_when_decision_becomes_approved(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Request approval timeout branch skips timeout update when decision becomes approved."""
     monkeypatch.setenv("HITL_ENABLED", "true")
     monkeypatch.setenv("HITL_TIMEOUT_SECONDS", "10")
     gate = hitl.HITLGate()
@@ -329,6 +348,7 @@ def test_request_approval_timeout_branch_skips_timeout_update_when_decision_beco
 def test_request_approval_timeout_branch_skips_timeout_update_when_request_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Request approval timeout branch skips timeout update when request missing."""
     monkeypatch.setenv("HITL_ENABLED", "true")
     monkeypatch.setenv("HITL_TIMEOUT_SECONDS", "10")
     gate = hitl.HITLGate()
@@ -357,6 +377,7 @@ def test_request_approval_timeout_branch_skips_timeout_update_when_request_missi
 
 
 def test_respond_none_already_decided_and_rejected_fields(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Respond none already decided and rejected fields."""
     monkeypatch.setenv("HITL_ENABLED", "true")
     gate = hitl.HITLGate()
     store = hitl.get_hitl_store()

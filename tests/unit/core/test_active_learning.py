@@ -1,3 +1,5 @@
+"""``core.active_learning`` modülü için unit testler."""
+
 import asyncio
 import builtins
 import importlib
@@ -12,6 +14,8 @@ import core.active_learning as al
 
 
 class DummyConfig:
+    """Sürekli öğrenme ve LoRA ayarlarını düşük eşiklerle açan test config'i."""
+
     ENABLE_ACTIVE_LEARNING = True
     AL_MIN_RATING_FOR_TRAIN = 1
     ENABLE_CONTINUOUS_LEARNING = True
@@ -34,24 +38,31 @@ class DummyConfig:
 
 
 class InMemoryStore:
+    """Satırları bellekte tutan ve export edilen id'leri kaydeden feedback store taklidi."""
+
     def __init__(self, rows=None, min_rating=1):
+        """Başlangıç satırlarını ve eğitim için minimum puan eşiğini ayarlar."""
         self.rows = list(rows or [])
         self.min_rating_for_train = min_rating
         self.marked = []
 
     async def get_pending_export(self, min_rating=None):
+        """Eşik puanı karşılayan ve henüz export edilmemiş satırları döndürür."""
         threshold = self.min_rating_for_train if min_rating is None else min_rating
         return [r for r in self.rows if r.get("rating", 0) >= threshold and not r.get("exported")]
 
     async def mark_exported(self, ids):
+        """Export edildi olarak işaretlenen id'leri kaydeder."""
         self.marked.extend(ids)
 
     async def get_pending_signals(self, limit=10000):
+        """İlk ``limit`` satırı bekleyen sinyal olarak döndürür."""
         return self.rows[:limit]
 
 
 @pytest.mark.asyncio
 async def test_feedback_store_noop_when_disabled_or_sqlalchemy_missing(monkeypatch):
+    """Feedback store noop when disabled or sqlalchemy missing."""
     monkeypatch.setattr(al, "_SA_AVAILABLE", False)
     store = al.FeedbackStore(config=types.SimpleNamespace(ENABLE_ACTIVE_LEARNING=True))
     await store.initialize()
@@ -67,6 +78,7 @@ async def test_feedback_store_noop_when_disabled_or_sqlalchemy_missing(monkeypat
 
 @pytest.mark.asyncio
 async def test_feedback_store_flag_weak_response_merges_tags(monkeypatch):
+    """Feedback store flag weak response merges tags."""
     store = al.FeedbackStore(config=types.SimpleNamespace(ENABLE_ACTIVE_LEARNING=True))
     called = {}
 
@@ -99,6 +111,7 @@ async def test_feedback_store_flag_weak_response_merges_tags(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_feedback_store_get_pending_signals_parses_bad_json(monkeypatch):
+    """Feedback store get pending signals parses bad json."""
     monkeypatch.setattr(al, "sql_text", lambda s: s, raising=False)
 
     class FakeRows:
@@ -133,6 +146,7 @@ async def test_feedback_store_get_pending_signals_parses_bad_json(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_feedback_store_mark_exported_uses_expanding_bind_parameter():
+    """Feedback store mark exported uses expanding bind parameter."""
     executed = []
 
     class FakeConn:
@@ -163,6 +177,7 @@ async def test_feedback_store_mark_exported_uses_expanding_bind_parameter():
 
 @pytest.mark.asyncio
 async def test_feedback_store_full_db_paths_and_close(monkeypatch):
+    """Feedback store full db paths and close."""
     monkeypatch.setattr(al, "_SA_AVAILABLE", True)
     monkeypatch.setattr(al, "sql_text", lambda s: s, raising=False)
 
@@ -253,6 +268,7 @@ async def test_feedback_store_full_db_paths_and_close(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_feedback_store_flag_weak_response_engine_missing_and_empty_reasoning(monkeypatch):
+    """Feedback store flag weak response engine missing and empty reasoning."""
     store = al.FeedbackStore(config=types.SimpleNamespace(ENABLE_ACTIVE_LEARNING=True))
 
     async def init_without_engine():
@@ -276,12 +292,14 @@ async def test_feedback_store_flag_weak_response_engine_missing_and_empty_reason
 
 @pytest.mark.asyncio
 async def test_feedback_store_flag_weak_response_returns_false_when_disabled():
+    """Feedback store flag weak response returns false when disabled."""
     store = al.FeedbackStore(config=types.SimpleNamespace(ENABLE_ACTIVE_LEARNING=False))
     assert await store.flag_weak_response("p", "r", 5, "reason") is False
 
 
 @pytest.mark.asyncio
 async def test_dataset_exporter_formats_and_empty_case(tmp_path):
+    """Dataset exporter formats and empty case."""
     rows = [
         {"id": 1, "prompt": "p1", "response": "r1", "correction": "", "rating": 1},
         {"id": 2, "prompt": "p2", "response": "r2", "correction": "c2", "rating": 1},
@@ -312,6 +330,7 @@ async def test_dataset_exporter_formats_and_empty_case(tmp_path):
 
 @pytest.mark.asyncio
 async def test_dataset_exporter_rejects_unknown_format(tmp_path):
+    """Dataset exporter rejects unknown format."""
     store = InMemoryStore([])
     with pytest.raises(ValueError):
         await al.DatasetExporter(store).export(str(tmp_path / "x"), fmt="unknown")
@@ -319,6 +338,7 @@ async def test_dataset_exporter_rejects_unknown_format(tmp_path):
 
 @pytest.mark.asyncio
 async def test_export_file_error(monkeypatch):
+    """Export file error."""
     store = InMemoryStore(
         [{"id": 1, "prompt": "p", "response": "r", "correction": "", "rating": 1}]
     )
@@ -337,6 +357,7 @@ async def test_export_file_error(monkeypatch):
 
 
 def test_pipeline_helpers_and_example_builders():
+    """Pipeline helpers and example builders."""
     pipe = al.ContinuousLearningPipeline(InMemoryStore(), config=DummyConfig())
 
     assert pipe._normalize_tags(["a", "", 1]) == ["a", "1"]
@@ -368,6 +389,7 @@ def test_pipeline_helpers_and_example_builders():
 
 
 def test_pipeline_build_preference_examples_skips_equal_and_neutral_rows():
+    """Pipeline build preference examples skips equal and neutral rows."""
     pipe = al.ContinuousLearningPipeline(InMemoryStore(), config=DummyConfig())
     rows = [
         {
@@ -384,6 +406,7 @@ def test_pipeline_build_preference_examples_skips_equal_and_neutral_rows():
 
 
 def test_pipeline_serialize_and_write_jsonl(tmp_path):
+    """Pipeline serialize and write jsonl."""
     rows = [{"instruction": "p", "output": "o", "input": "i"}, {"instruction": "", "output": "o"}]
 
     alpaca = al.ContinuousLearningPipeline._serialize_sft_examples(rows, "alpaca")
@@ -405,6 +428,7 @@ def test_pipeline_serialize_and_write_jsonl(tmp_path):
 
 @pytest.mark.asyncio
 async def test_pipeline_build_dataset_bundle_and_manifest(tmp_path):
+    """Pipeline build dataset bundle and manifest."""
     rows = [
         {"id": 1, "prompt": "p1", "response": "r1", "correction": "", "rating": 1, "tags": []},
         {"id": 2, "prompt": "p2", "response": "r2", "correction": "c2", "rating": -1, "tags": []},
@@ -436,6 +460,7 @@ async def test_pipeline_build_dataset_bundle_and_manifest(tmp_path):
 
 @pytest.mark.asyncio
 async def test_pipeline_run_cycle_paths(monkeypatch):
+    """Pipeline run cycle paths."""
     cfg = DummyConfig()
     store = InMemoryStore([])
     trainer = types.SimpleNamespace(enabled=True, train=lambda p: {"success": True, "path": p})
@@ -477,6 +502,7 @@ async def test_pipeline_run_cycle_paths(monkeypatch):
 async def test_pipeline_run_cycle_returns_default_training_result_when_trainer_disabled(
     monkeypatch,
 ):
+    """Pipeline run cycle returns default training result when trainer disabled."""
     cfg = DummyConfig()
     trainer = types.SimpleNamespace(enabled=False, train=lambda p: {"success": True, "path": p})
     pipe = al.ContinuousLearningPipeline(InMemoryStore([]), trainer=trainer, config=cfg)
@@ -495,6 +521,7 @@ async def test_pipeline_run_cycle_returns_default_training_result_when_trainer_d
 
 @pytest.mark.asyncio
 async def test_pipeline_schedule_cycle(monkeypatch):
+    """Pipeline schedule cycle."""
     cfg = DummyConfig()
     pipe = al.ContinuousLearningPipeline(InMemoryStore([]), config=cfg)
 
@@ -525,6 +552,7 @@ async def test_pipeline_schedule_cycle(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_pipeline_schedule_cycle_runner_handles_errors(monkeypatch):
+    """Pipeline schedule cycle runner handles errors."""
     cfg = DummyConfig()
     pipe = al.ContinuousLearningPipeline(InMemoryStore([]), config=cfg)
 
@@ -543,6 +571,7 @@ async def test_pipeline_schedule_cycle_runner_handles_errors(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_pipeline_schedule_cycle_disabled_and_cancelled_error(monkeypatch):
+    """Pipeline schedule cycle disabled and cancelled error."""
     disabled_pipe = al.ContinuousLearningPipeline(
         InMemoryStore([]),
         config=types.SimpleNamespace(ENABLE_CONTINUOUS_LEARNING=False),
@@ -566,6 +595,7 @@ async def test_pipeline_schedule_cycle_disabled_and_cancelled_error(monkeypatch)
 
 
 def test_lora_trainer_check_and_train_paths(monkeypatch):
+    """Lora trainer check and train paths."""
     cfg = DummyConfig()
     trainer = al.LoRATrainer(config=cfg)
 
@@ -599,6 +629,7 @@ def test_lora_trainer_check_and_train_paths(monkeypatch):
 
 
 def test_lora_trainer_check_peft_importerror(monkeypatch):
+    """Lora trainer check peft importerror."""
     trainer = al.LoRATrainer(config=DummyConfig())
     trainer._peft_available = None
 
@@ -615,6 +646,7 @@ def test_lora_trainer_check_peft_importerror(monkeypatch):
 
 
 def test_lora_trainer_check_peft_uses_cached_value():
+    """Lora trainer check peft uses cached value."""
     trainer = al.LoRATrainer(config=DummyConfig())
     trainer._peft_available = False
     assert trainer._check_peft() is False
@@ -678,6 +710,7 @@ def _install_minimal_lora_training_stubs(
 
 
 def test_lora_run_training_happy_path_with_fake_modules(monkeypatch, tmp_path):
+    """Lora run training happy path with fake modules."""
     cfg = DummyConfig()
     cfg.LORA_OUTPUT_DIR = str(tmp_path / "out")
     trainer = al.LoRATrainer(config=cfg)
@@ -755,6 +788,7 @@ def test_lora_run_training_happy_path_with_fake_modules(monkeypatch, tmp_path):
 
 
 def test_lora_run_training_4bit_importerror_fallback(monkeypatch, tmp_path):
+    """Lora run training 4bit importerror fallback."""
     cfg = DummyConfig()
     cfg.LORA_OUTPUT_DIR = str(tmp_path / "out4")
     cfg.LORA_USE_4BIT = True
@@ -823,6 +857,7 @@ def test_lora_run_training_4bit_importerror_fallback(monkeypatch, tmp_path):
 def test_lora_run_training_4bit_importerror_logs_warning_and_disables_quantization(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
+    """Lora run training 4bit importerror logs warning and disables quantization."""
     cfg = DummyConfig()
     cfg.LORA_OUTPUT_DIR = str(tmp_path / "out4-importerror")
     cfg.LORA_USE_4BIT = True
@@ -847,6 +882,7 @@ def test_lora_run_training_4bit_importerror_logs_warning_and_disables_quantizati
 def test_lora_run_training_4bit_optional_runtime_error_logs_warning_and_falls_back(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
+    """Lora run training 4bit optional runtime error logs warning and falls back."""
     cfg = DummyConfig()
     cfg.LORA_OUTPUT_DIR = str(tmp_path / "out4-runtime-fallback")
     cfg.LORA_USE_4BIT = True
@@ -871,6 +907,7 @@ def test_lora_run_training_4bit_optional_runtime_error_logs_warning_and_falls_ba
 def test_lora_run_training_4bit_non_optional_runtime_error_is_reraised(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Lora run training 4bit non optional runtime error is reraised."""
     cfg = DummyConfig()
     cfg.LORA_OUTPUT_DIR = str(tmp_path / "out4-runtime-raise")
     cfg.LORA_USE_4BIT = True
@@ -887,6 +924,7 @@ def test_lora_run_training_4bit_non_optional_runtime_error_is_reraised(
 
 
 def test_lora_4bit_runtime_error_filter_preserves_model_errors() -> None:
+    """Lora 4bit runtime error filter preserves model errors."""
     trainer = al.LoRATrainer(config=DummyConfig())
 
     assert trainer._is_optional_4bit_dependency_error(
@@ -896,6 +934,7 @@ def test_lora_4bit_runtime_error_filter_preserves_model_errors() -> None:
 
 
 def test_lora_run_training_4bit_quant_and_conversation_branches(monkeypatch, tmp_path):
+    """Lora run training 4bit quant and conversation branches."""
     cfg = DummyConfig()
     cfg.LORA_OUTPUT_DIR = str(tmp_path / "out4-ok")
     cfg.LORA_USE_4BIT = True
@@ -966,6 +1005,7 @@ def test_lora_run_training_4bit_quant_and_conversation_branches(monkeypatch, tmp
 
 
 def test_chunked_and_singletons(monkeypatch):
+    """Chunked and singletons."""
     assert list(al._chunked([1, 2, 3, 4, 5], 2)) == [[1, 2], [3, 4], [5]]
 
     al._feedback_store = None
@@ -989,6 +1029,7 @@ def test_chunked_and_singletons(monkeypatch):
 
 
 def test_get_continuous_learning_pipeline_double_checked_lock_path(monkeypatch):
+    """Get continuous learning pipeline double checked lock path."""
     al._continuous_learning_pipeline = None
 
     sentinel = object()
@@ -1006,6 +1047,7 @@ def test_get_continuous_learning_pipeline_double_checked_lock_path(monkeypatch):
 
 
 def test_active_learning_module_importerror_sets_sa_false(monkeypatch):
+    """Active learning module importerror sets sa false."""
     real_import = builtins.__import__
 
     def fake_import(name, *args, **kwargs):
@@ -1021,6 +1063,7 @@ def test_active_learning_module_importerror_sets_sa_false(monkeypatch):
 
 
 def test_active_learning_module_import_success_sets_sa_true(monkeypatch):
+    """Active learning module import success sets sa true."""
     fake_sa_asyncio = types.ModuleType("sqlalchemy.ext.asyncio")
     fake_sa_asyncio.create_async_engine = lambda *args, **kwargs: object()
     fake_sa = types.ModuleType("sqlalchemy")
@@ -1036,6 +1079,7 @@ def test_active_learning_module_import_success_sets_sa_true(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_feedback_store_close_no_engine_is_noop():
+    """Feedback store close no engine is noop."""
     store = al.FeedbackStore(config=types.SimpleNamespace(ENABLE_ACTIVE_LEARNING=True))
     await store.close()
     assert store._engine is None
@@ -1043,6 +1087,7 @@ async def test_feedback_store_close_no_engine_is_noop():
 
 @pytest.mark.asyncio
 async def test_schedule_and_flag_wrappers(monkeypatch):
+    """Schedule and flag wrappers."""
     fake_pipe = types.SimpleNamespace(schedule_cycle=lambda reason="background": reason == "ok")
     monkeypatch.setattr(al, "get_continuous_learning_pipeline", lambda config=None: fake_pipe)
     assert al.schedule_continuous_learning_cycle(reason="ok") is True

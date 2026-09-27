@@ -1,3 +1,5 @@
+"""``core.router.CostAwareRouter`` maliyet yönlendirmesi için unit testler."""
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -22,6 +24,7 @@ def _cfg(**overrides: object) -> SimpleNamespace:
 
 
 def test_cost_routing_threshold_prefers_local_for_simple_query() -> None:
+    """Cost routing threshold prefers local for simple query."""
     router = CostAwareRouter(_cfg(COST_ROUTING_COMPLEXITY_THRESHOLD=0.90))
 
     provider, model = router.select(
@@ -34,6 +37,7 @@ def test_cost_routing_threshold_prefers_local_for_simple_query() -> None:
 
 
 def test_cost_routing_threshold_prefers_cloud_for_complex_query() -> None:
+    """Cost routing threshold prefers cloud for complex query."""
     router = CostAwareRouter(_cfg(COST_ROUTING_COMPLEXITY_THRESHOLD=0.20))
 
     provider, model = router.select(
@@ -54,6 +58,7 @@ def test_cost_routing_threshold_prefers_cloud_for_complex_query() -> None:
 
 
 def test_cost_routing_fail_closed_when_cloud_provider_missing() -> None:
+    """Cost routing fail closed when cloud provider missing."""
     router = CostAwareRouter(
         _cfg(COST_ROUTING_COMPLEXITY_THRESHOLD=0.10, COST_ROUTING_CLOUD_PROVIDER="")
     )
@@ -69,6 +74,7 @@ def test_cost_routing_fail_closed_when_cloud_provider_missing() -> None:
 
 
 def test_cost_routing_budget_exceeded_forces_local(monkeypatch) -> None:
+    """Cost routing budget exceeded forces local."""
     from core import router as router_module
 
     router = CostAwareRouter(
@@ -86,6 +92,7 @@ def test_cost_routing_budget_exceeded_forces_local(monkeypatch) -> None:
 
 
 def test_cost_routing_disabled_keeps_defaults() -> None:
+    """Cost routing disabled keeps defaults."""
     router = CostAwareRouter(_cfg(ENABLE_COST_ROUTING=False))
 
     provider, model = router.select(
@@ -101,6 +108,7 @@ def test_cost_routing_disabled_keeps_defaults() -> None:
 def test_cost_routing_simple_query_keeps_defaults_when_local_provider_not_configured(
     local_provider,
 ) -> None:
+    """Cost routing simple query keeps defaults when local provider not configured."""
     router = CostAwareRouter(
         _cfg(
             COST_ROUTING_COMPLEXITY_THRESHOLD=0.95,

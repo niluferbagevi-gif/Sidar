@@ -10,6 +10,7 @@ from core.models import Base, PGVector384, SidarUUID
 
 
 def test_metadata_exposes_expected_tables_for_alembic_autogenerate() -> None:
+    """Metadata exposes expected tables for alembic autogenerate."""
     expected = {
         "users",
         "sessions",
@@ -26,6 +27,7 @@ def test_metadata_exposes_expected_tables_for_alembic_autogenerate() -> None:
 
 
 def test_sidar_uuid_uses_native_postgresql_and_sqlite_fallback() -> None:
+    """Sidar uuid uses native postgresql and sqlite fallback."""
     uuid_type = SidarUUID()
 
     pg_impl = uuid_type.load_dialect_impl(postgresql.dialect())
@@ -36,6 +38,7 @@ def test_sidar_uuid_uses_native_postgresql_and_sqlite_fallback() -> None:
 
 
 def test_sidar_uuid_bind_and_result_values_are_portable() -> None:
+    """Sidar uuid bind and result values are portable."""
     value = "12345678-1234-5678-1234-567812345678"
     uuid_type = SidarUUID()
 
@@ -45,10 +48,12 @@ def test_sidar_uuid_bind_and_result_values_are_portable() -> None:
 
 
 def test_pgvector_metadata_type_has_expected_column_spec() -> None:
+    """Pgvector metadata type has expected column spec."""
     assert PGVector384().get_col_spec() == "vector(384)"
 
 
 def test_sidar_uuid_none_values_remain_none_for_all_dialects() -> None:
+    """Sidar uuid none values remain none for all dialects."""
     uuid_type = SidarUUID()
 
     assert uuid_type.process_bind_param(None, sqlite.dialect()) is None

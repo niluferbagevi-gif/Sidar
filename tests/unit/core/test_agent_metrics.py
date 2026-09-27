@@ -1,3 +1,5 @@
+"""``core.agent_metrics`` modülü için unit testler."""
+
 from __future__ import annotations
 
 import math
@@ -8,6 +10,7 @@ from core.agent_metrics import AgentMetricsCollector, _DelegationHistogram
 
 
 def test_delegation_histogram_observe_accumulates_cumulative_buckets() -> None:
+    """Delegation histogram observe accumulates cumulative buckets."""
     hist = _DelegationHistogram()
 
     hist.observe(0.2)
@@ -25,6 +28,7 @@ def test_delegation_histogram_observe_accumulates_cumulative_buckets() -> None:
 
 
 def test_delegation_histogram_snapshot_returns_copy() -> None:
+    """Delegation histogram snapshot returns copy."""
     hist = _DelegationHistogram()
     hist.observe(0.1)
 
@@ -36,6 +40,7 @@ def test_delegation_histogram_snapshot_returns_copy() -> None:
 
 
 def test_agent_metrics_collector_record_and_step_increment_counters() -> None:
+    """Agent metrics collector record and step increment counters."""
     collector = AgentMetricsCollector()
 
     collector.record("qa", "repair", "ok", 0.4)
@@ -56,6 +61,7 @@ def test_agent_metrics_collector_record_and_step_increment_counters() -> None:
 
 
 def test_render_prometheus_includes_headers_even_without_metrics() -> None:
+    """Render prometheus includes headers even without metrics."""
     collector = AgentMetricsCollector()
 
     text = collector.render_prometheus()
@@ -72,6 +78,7 @@ def test_render_prometheus_includes_headers_even_without_metrics() -> None:
 
 
 def test_render_prometheus_renders_delegation_and_step_metrics() -> None:
+    """Render prometheus renders delegation and step metrics."""
     collector = AgentMetricsCollector()
     collector.record("reviewer", "audit", "ok", 0.1)
     collector.record("reviewer", "audit", "ok", 7.0)
@@ -119,6 +126,7 @@ def test_render_prometheus_renders_delegation_and_step_metrics() -> None:
 
 
 def test_render_prometheus_renders_auth_hash_latency_and_slo_warnings() -> None:
+    """Render prometheus renders auth hash latency and slo warnings."""
     collector = AgentMetricsCollector()
 
     collector.record_auth_hash_latency("verify", "ok", 0.121, slo_ms=120)
@@ -143,6 +151,7 @@ def test_render_prometheus_renders_auth_hash_latency_and_slo_warnings() -> None:
 
 
 def test_get_agent_metrics_collector_returns_singleton_instance() -> None:
+    """Get agent metrics collector returns singleton instance."""
     agent_metrics._COLLECTOR = None
 
     first = agent_metrics.get_agent_metrics_collector()
@@ -152,6 +161,7 @@ def test_get_agent_metrics_collector_returns_singleton_instance() -> None:
 
 
 def test_get_agent_metrics_collector_thread_safe_singleton_creation() -> None:
+    """Get agent metrics collector thread safe singleton creation."""
     agent_metrics._COLLECTOR = None
     created = []
 
@@ -170,6 +180,7 @@ def test_get_agent_metrics_collector_thread_safe_singleton_creation() -> None:
 
 
 def test_get_agent_metrics_collector_double_checked_lock_inner_branch() -> None:
+    """Get agent metrics collector double checked lock inner branch."""
     sentinel = AgentMetricsCollector()
     agent_metrics._COLLECTOR = None
 

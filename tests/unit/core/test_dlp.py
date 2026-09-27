@@ -1,3 +1,5 @@
+"""``core.dlp`` modülü için unit testler."""
+
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -16,6 +18,7 @@ from core.dlp import (
 
 
 def test_is_valid_tckn_for_valid_and_invalid_inputs():
+    """Is valid tckn for valid and invalid inputs."""
     assert _is_valid_tckn("10000000146") is True
     assert _is_valid_tckn("12345678901") is False
     assert _is_valid_tckn("10000000145") is False
@@ -24,6 +27,7 @@ def test_is_valid_tckn_for_valid_and_invalid_inputs():
 
 
 def test_sub_masks_full_match_when_group_zero():
+    """Sub masks full match when group zero."""
     engine = DLPEngine(replacement="[X]")
     pattern = re.compile(r"abc")
 
@@ -37,6 +41,7 @@ def test_sub_masks_full_match_when_group_zero():
 
 
 def test_sub_masks_only_captured_group_and_keeps_prefix_suffix():
+    """Sub masks only captured group and keeps prefix suffix."""
     engine = DLPEngine(replacement="[X]")
     pattern = re.compile(r"(prefix=)(\w+)")
 
@@ -48,11 +53,13 @@ def test_sub_masks_only_captured_group_and_keeps_prefix_suffix():
 
 
 def test_mask_returns_early_for_empty_text():
+    """Mask returns early for empty text."""
     engine = DLPEngine()
     assert engine.mask("") == ("", [])
 
 
 def test_mask_covers_all_enabled_patterns_and_logs(caplog):
+    """Mask covers all enabled patterns and logs."""
     engine = DLPEngine(mask_long_hex=True, replacement="[MASK]", log_detections=True)
 
     text = "\n".join(
@@ -101,6 +108,7 @@ def test_mask_covers_all_enabled_patterns_and_logs(caplog):
 
 
 def test_mask_leaves_invalid_tckn_untouched():
+    """Mask leaves invalid tckn untouched."""
     engine = DLPEngine(mask_tckn=True)
     text = "candidate 12345678901"
 
@@ -111,6 +119,7 @@ def test_mask_leaves_invalid_tckn_untouched():
 
 
 def test_tckn_regex_ignores_currency_adjacent_numbers() -> None:
+    """Tckn regex ignores currency adjacent numbers."""
     engine = DLPEngine(mask_tckn=True)
     text = "fiyat=10000000146₺ ve kur=10000000146,50"
 
@@ -121,6 +130,7 @@ def test_tckn_regex_ignores_currency_adjacent_numbers() -> None:
 
 
 def test_mask_skips_tckn_block_when_disabled_but_continues_other_patterns():
+    """Mask skips tckn block when disabled but continues other patterns."""
     engine = DLPEngine(mask_tckn=False, mask_email=True)
     text = "tckn 10000000146 mail user@example.com"
     masked, detections = engine.mask(text)
@@ -130,6 +140,7 @@ def test_mask_skips_tckn_block_when_disabled_but_continues_other_patterns():
 
 
 def test_mask_long_hex_ignores_sha1_like_40_chars_but_masks_64_plus() -> None:
+    """Mask long hex ignores sha1 like 40 chars but masks 64 plus."""
     engine = DLPEngine(mask_long_hex=True)
     sha1_like = "a" * 40
     sha256_like = "b" * 64
@@ -143,6 +154,7 @@ def test_mask_long_hex_ignores_sha1_like_40_chars_but_masks_64_plus() -> None:
 
 
 def test_mask_messages_masks_only_string_contents_and_preserves_original_list():
+    """Mask messages masks only string contents and preserves original list."""
     engine = DLPEngine(mask_email=True)
     original = [
         {"role": "user", "content": "hello alice@example.com"},
@@ -164,6 +176,7 @@ def test_mask_messages_masks_only_string_contents_and_preserves_original_list():
 
 
 def test_mask_sk_key_supports_proj_and_ant_prefixes() -> None:
+    """Mask sk key supports proj and ant prefixes."""
     engine = DLPEngine(mask_sk_keys=True)
     text = (
         "openai=sk-proj-abcdefghijklmnopqrstuvwxyz1234 "
@@ -178,6 +191,7 @@ def test_mask_sk_key_supports_proj_and_ant_prefixes() -> None:
 
 
 def test_build_engine_from_env_disabled(monkeypatch):
+    """Build engine from env disabled."""
     monkeypatch.setenv("DLP_ENABLED", "false")
     monkeypatch.setenv("DLP_LOG_DETECTIONS", "true")
 
@@ -189,6 +203,7 @@ def test_build_engine_from_env_disabled(monkeypatch):
 
 
 def test_build_engine_from_env_enabled_and_logging(monkeypatch):
+    """Build engine from env enabled and logging."""
     monkeypatch.setenv("DLP_ENABLED", "true")
     monkeypatch.setenv("DLP_LOG_DETECTIONS", "yes")
 
@@ -200,12 +215,14 @@ def test_build_engine_from_env_enabled_and_logging(monkeypatch):
 
 @pytest.mark.parametrize("enabled", ["1", "true", "yes"])
 def test_enabled_env_variants(monkeypatch, enabled):
+    """Enabled env variants."""
     monkeypatch.setenv("DLP_ENABLED", enabled)
     engine = dlp._build_engine_from_env()
     assert engine.mask_bearer is True
 
 
 def test_get_dlp_engine_is_singleton(monkeypatch):
+    """Get dlp engine is singleton."""
     monkeypatch.setenv("DLP_ENABLED", "true")
     dlp._ENGINE = None
 
@@ -216,6 +233,7 @@ def test_get_dlp_engine_is_singleton(monkeypatch):
 
 
 def test_convenience_functions_use_singleton(monkeypatch):
+    """Convenience functions use singleton."""
     dlp._ENGINE = DLPEngine(mask_email=True)
 
     assert mask_pii("mail me: a@b.com") == "mail me: [MASKED]"
@@ -226,6 +244,7 @@ def test_convenience_functions_use_singleton(monkeypatch):
 
 
 def test_get_dlp_engine_initialization_is_thread_safe(monkeypatch):
+    """Get dlp engine initialization is thread safe."""
     dlp._ENGINE = None
     build_calls = 0
     build_calls_lock = threading.Lock()
@@ -251,6 +270,7 @@ def test_get_dlp_engine_initialization_is_thread_safe(monkeypatch):
 
 
 def test_get_dlp_engine_double_checked_lock_inner_branch_when_engine_prebuilt(monkeypatch):
+    """Get dlp engine double checked lock inner branch when engine prebuilt."""
     dlp._ENGINE = None
     expected = DLPEngine(mask_email=True)
     build_calls = {"count": 0}

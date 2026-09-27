@@ -1,3 +1,5 @@
+"""``core.embeddings`` modülü için unit testler."""
+
 import os
 from pathlib import Path
 from types import SimpleNamespace
@@ -13,6 +15,7 @@ class _FakeSentenceTransformer:
 
 
 def test_clear_model_cache_resets_cached_models(mock_sentence_transformer_class) -> None:
+    """Clear model cache resets cached models."""
     embeddings.clear_model_cache()
     _FakeSentenceTransformer.init_calls = 0
     mock_sentence_transformer_class(_FakeSentenceTransformer)
@@ -28,6 +31,7 @@ def test_clear_model_cache_resets_cached_models(mock_sentence_transformer_class)
 
 
 def test_model_cache_evicts_old_entries(mock_sentence_transformer_class) -> None:
+    """Model cache evicts old entries."""
     embeddings.clear_model_cache()
     _FakeSentenceTransformer.init_calls = 0
     mock_sentence_transformer_class(_FakeSentenceTransformer)
@@ -53,6 +57,7 @@ def _clear_hf_cache_env(monkeypatch) -> None:
 
 
 def test_hf_hub_cache_roots_adds_hf_home_hub(monkeypatch, tmp_path) -> None:
+    """Hf hub cache roots adds hf home hub."""
     _clear_hf_cache_env(monkeypatch)
     hf_home = tmp_path / "hf-home"
     monkeypatch.setenv("HF_HOME", str(hf_home))
@@ -61,17 +66,20 @@ def test_hf_hub_cache_roots_adds_hf_home_hub(monkeypatch, tmp_path) -> None:
 
 
 def test_hf_hub_cache_roots_defaults_to_unique_standard_hub(monkeypatch) -> None:
+    """Hf hub cache roots defaults to unique standard hub."""
     _clear_hf_cache_env(monkeypatch)
 
     assert embeddings._hf_hub_cache_roots() == [Path("~/.cache/huggingface/hub").expanduser()]
 
 
 def test_hf_model_cache_exists_rejects_empty_name() -> None:
+    """Hf model cache exists rejects empty name."""
     assert embeddings.hf_model_cache_exists("") is False
     assert embeddings.hf_model_cache_exists("   ") is False
 
 
 def test_hf_model_cache_exists_accepts_local_path(tmp_path) -> None:
+    """Hf model cache exists accepts local path."""
     model_path = tmp_path / "local-model"
     model_path.mkdir()
 
@@ -79,6 +87,7 @@ def test_hf_model_cache_exists_accepts_local_path(tmp_path) -> None:
 
 
 def test_scoped_hf_runtime_env_restores_unset_and_existing_values(monkeypatch) -> None:
+    """Scoped hf runtime env restores unset and existing values."""
     monkeypatch.delenv("HF_HUB_DISABLE_PROGRESS_BARS", raising=False)
     monkeypatch.delenv("TRANSFORMERS_NO_ADVISORY_WARNINGS", raising=False)
     monkeypatch.setenv("TRANSFORMERS_VERBOSITY", "warning")
@@ -94,6 +103,7 @@ def test_scoped_hf_runtime_env_restores_unset_and_existing_values(monkeypatch) -
 
 
 def test_embedding_load_timeout_ignores_malformed_values() -> None:
+    """Embedding load timeout ignores malformed values."""
     assert (
         embeddings._embedding_load_timeout_seconds(
             SimpleNamespace(RAG_EMBEDDING_LOAD_TIMEOUT_SECONDS="not-a-float")

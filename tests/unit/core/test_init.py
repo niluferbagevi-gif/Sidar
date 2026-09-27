@@ -1,3 +1,5 @@
+"""``core`` paketinin lazy sembol dışa aktarımları için unit testler."""
+
 from types import SimpleNamespace
 
 import pytest
@@ -13,6 +15,7 @@ def _clear_core_cache(*names: str) -> None:
 def test_load_symbol_returns_requested_attribute_and_caches_global(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Load symbol returns requested attribute and caches global."""
     sentinel = object()
     export_name = "TestTargetClass"
     module_name = "core.fake_module"
@@ -35,6 +38,7 @@ def test_load_symbol_returns_requested_attribute_and_caches_global(
 def test_load_symbol_returns_missing_dependency_proxy_for_missing_requested_module(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Load symbol returns missing dependency proxy for missing requested module."""
     export_name = "MissingTargetClass"
     module_name = "core.fake_missing_module"
     _clear_core_cache(export_name)
@@ -60,6 +64,7 @@ def test_load_symbol_returns_missing_dependency_proxy_for_missing_requested_modu
 def test_load_symbol_reraises_transitive_module_not_found(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Load symbol reraises transitive module not found."""
     export_name = "BrokenTargetClass"
     module_name = "core.fake_broken_module"
     _clear_core_cache(export_name)
@@ -80,11 +85,13 @@ def test_load_symbol_reraises_transitive_module_not_found(
 
 
 def test_getattr_unknown_name_raises_attribute_error() -> None:
+    """Getattr unknown name raises attribute error."""
     with pytest.raises(AttributeError, match="UnknownCoreExport"):
         core_init.__getattr__("UnknownCoreExport")
 
 
 def test_getattr_alias_export_caches_global(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Getattr alias export caches global."""
     sentinel = object()
     symbol_name = "AliasTargetSymbol"
     alias_name = "AliasTargetManager"
@@ -108,6 +115,7 @@ def test_getattr_alias_export_caches_global(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_init_aliases_and_public_exports_are_wired() -> None:
+    """Init aliases and public exports are wired."""
     assert core_init.MemoryManager is core_init.ConversationMemory
     assert core_init.RAGManager is core_init.DocumentStore
     assert core_init.DatabaseManager is core_init.Database

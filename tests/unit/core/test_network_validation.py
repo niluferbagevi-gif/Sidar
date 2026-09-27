@@ -23,6 +23,7 @@ from core.utils import network_validation as nv
     ],
 )
 def test_is_unspecified_bind_detects_wildcard(host: str | None) -> None:
+    """Is unspecified bind detects wildcard."""
     assert nv.is_unspecified_bind(host) is True
 
 
@@ -37,6 +38,7 @@ def test_is_unspecified_bind_detects_wildcard(host: str | None) -> None:
     ],
 )
 def test_is_unspecified_bind_rejects_normal_hosts(host: str) -> None:
+    """Is unspecified bind rejects normal hosts."""
     assert nv.is_unspecified_bind(host) is False
 
 
@@ -53,6 +55,7 @@ def test_is_unspecified_bind_rejects_normal_hosts(host: str) -> None:
     ],
 )
 def test_is_loopback_host_recognises_loopback(host: str) -> None:
+    """Is loopback host recognises loopback."""
     assert nv.is_loopback_host(host) is True
 
 
@@ -66,6 +69,7 @@ def test_is_loopback_host_recognises_loopback(host: str) -> None:
     ],
 )
 def test_is_loopback_host_rejects_non_loopback(host: str) -> None:
+    """Is loopback host rejects non loopback."""
     assert nv.is_loopback_host(host) is False
 
 
@@ -82,6 +86,7 @@ def test_is_loopback_host_rejects_non_loopback(host: str) -> None:
     ],
 )
 def test_is_local_only_host(host: str, expected: bool) -> None:
+    """Is local only host."""
     assert nv.is_local_only_host(host) is expected
 
 
@@ -95,6 +100,7 @@ def test_is_local_only_host(host: str, expected: bool) -> None:
     ],
 )
 def test_is_valid_hostname_accepts_valid(hostname: str) -> None:
+    """Is valid hostname accepts valid."""
     assert nv.is_valid_hostname(hostname) is True
 
 
@@ -111,21 +117,25 @@ def test_is_valid_hostname_accepts_valid(hostname: str) -> None:
     ],
 )
 def test_is_valid_hostname_rejects_invalid(hostname: str) -> None:
+    """Is valid hostname rejects invalid."""
     assert nv.is_valid_hostname(hostname) is False
 
 
 def test_validate_bind_host_allows_loopback() -> None:
+    """Validate bind host allows loopback."""
     assert nv.validate_bind_host("127.0.0.1") == "127.0.0.1"
     assert nv.validate_bind_host("localhost") == "localhost"
     assert nv.validate_bind_host("::1") == "::1"
 
 
 def test_validate_bind_host_allows_public_outside_production() -> None:
+    """Validate bind host allows public outside production."""
     assert nv.validate_bind_host("0.0.0.0", env="development") == "0.0.0.0"
     assert nv.validate_bind_host("::", env="") == "::"
 
 
 def test_validate_bind_host_blocks_wildcard_in_production() -> None:
+    """Validate bind host blocks wildcard in production."""
     with pytest.raises(ValueError, match="production"):
         nv.validate_bind_host("0.0.0.0", env="production", allow_public=False)
     with pytest.raises(ValueError, match="production"):
@@ -133,10 +143,12 @@ def test_validate_bind_host_blocks_wildcard_in_production() -> None:
 
 
 def test_validate_bind_host_allows_wildcard_in_production_with_flag() -> None:
+    """Validate bind host allows wildcard in production with flag."""
     assert nv.validate_bind_host("0.0.0.0", env="production", allow_public=True) == "0.0.0.0"
 
 
 def test_validate_bind_host_uses_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Validate bind host uses env vars."""
     monkeypatch.setenv("SIDAR_ENV", "production")
     monkeypatch.delenv("SIDAR_ALLOW_PUBLIC_BIND", raising=False)
     with pytest.raises(ValueError):
@@ -147,6 +159,7 @@ def test_validate_bind_host_uses_env_vars(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_validate_bind_host_rejects_empty() -> None:
+    """Validate bind host rejects empty."""
     with pytest.raises(ValueError):
         nv.validate_bind_host("")
     with pytest.raises(ValueError):
@@ -154,15 +167,18 @@ def test_validate_bind_host_rejects_empty() -> None:
 
 
 def test_validate_bind_host_rejects_invalid_hostname() -> None:
+    """Validate bind host rejects invalid hostname."""
     with pytest.raises(ValueError, match="geçersiz"):
         nv.validate_bind_host("bad host name!")
 
 
 def test_validate_bind_host_accepts_hostname() -> None:
+    """Validate bind host accepts hostname."""
     assert nv.validate_bind_host("api.internal.example") == "api.internal.example"
 
 
 def test_is_production_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Is production env."""
     monkeypatch.setenv("SIDAR_ENV", "production")
     assert nv.is_production_env() is True
     monkeypatch.setenv("SIDAR_ENV", "development")
@@ -171,6 +187,7 @@ def test_is_production_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_is_public_bind_allowed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Is public bind allowed."""
     monkeypatch.delenv("SIDAR_ALLOW_PUBLIC_BIND", raising=False)
     assert nv.is_public_bind_allowed() is False
     for truthy in ("1", "true", "TRUE", "yes", "on"):

@@ -1,7 +1,10 @@
+"""``core.doctor.checks`` alt modülleri için unit testler."""
+
 from __future__ import annotations
 
 
 def test_check_redis_passes_when_url_is_configured(monkeypatch):
+    """Check redis passes when url is configured."""
     from core.doctor.checks import redis as redis_checks
 
     monkeypatch.setenv("SIDAR_REDIS_URL", "")
@@ -20,6 +23,7 @@ def test_check_redis_passes_when_url_is_configured(monkeypatch):
 
 
 def test_check_redis_warns_when_redis_backend_has_no_url(monkeypatch):
+    """Check redis warns when redis backend has no url."""
     from core.doctor.checks import redis as redis_checks
 
     monkeypatch.setenv("REDIS_URL", "")
@@ -62,6 +66,7 @@ def test_check_redis_passes_when_only_sidar_redis_url_is_configured(monkeypatch)
 
 
 def test_check_redis_passes_when_non_redis_backend_has_no_url(monkeypatch):
+    """Check redis passes when non redis backend has no url."""
     from core.doctor.checks import redis as redis_checks
 
     monkeypatch.setenv("REDIS_URL", "")
@@ -87,6 +92,7 @@ def _stub_which(present: set[str]):
 
 
 def test_check_media_tools_warns_when_ffmpeg_is_missing(monkeypatch):
+    """Check media tools warns when ffmpeg is missing."""
     from core.doctor.checks import media as media_checks
 
     monkeypatch.setattr(media_checks.shutil, "which", _stub_which({"yt-dlp", "whisper"}))
@@ -105,6 +111,7 @@ def test_check_media_tools_warns_when_ffmpeg_is_missing(monkeypatch):
 
 
 def test_check_media_tools_warns_when_only_optional_tools_are_missing(monkeypatch):
+    """Check media tools warns when only optional tools are missing."""
     from core.doctor.checks import media as media_checks
 
     monkeypatch.setattr(media_checks.shutil, "which", _stub_which({"ffmpeg"}))
@@ -121,6 +128,7 @@ def test_check_media_tools_warns_when_only_optional_tools_are_missing(monkeypatc
 
 
 def test_check_media_tools_passes_when_all_tools_are_found(monkeypatch):
+    """Check media tools passes when all tools are found."""
     from core.doctor.checks import media as media_checks
 
     monkeypatch.setattr(media_checks.shutil, "which", _stub_which({"ffmpeg", "yt-dlp", "whisper"}))

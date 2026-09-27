@@ -1,3 +1,5 @@
+"""``core.llm`` sağlayıcı facade modüllerinin delegasyonu için unit testler."""
+
 from __future__ import annotations
 
 import importlib
@@ -53,6 +55,7 @@ def test_wrapper_delegates_to_facade(
     kwargs: dict[str, Any],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Wrapper delegates to facade."""
     module = importlib.import_module(module_name)
     sentinel = object()
     calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
@@ -72,6 +75,7 @@ def test_wrapper_delegates_to_facade(
 async def test_ensure_json_text_async_wrapper_delegates_to_facade(
     module_name: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Ensure json text async wrapper delegates to facade."""
     module = importlib.import_module(module_name)
     calls: list[tuple[str, str]] = []
 
@@ -87,6 +91,7 @@ async def test_ensure_json_text_async_wrapper_delegates_to_facade(
 
 @pytest.mark.asyncio
 async def test_anthropic_close_client_accepts_sync_close() -> None:
+    """Anthropic close client accepts sync close."""
     module = importlib.import_module("core.llm.anthropic")
 
     class _Client:

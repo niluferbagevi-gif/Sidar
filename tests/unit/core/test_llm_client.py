@@ -1,3 +1,5 @@
+"""``core.llm_client`` modülü için unit testler."""
+
 from __future__ import annotations
 
 import ast
@@ -34,6 +36,7 @@ def _set_dummy_gemini_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_semantic_cache_sets_redis_none_when_redis_asyncio_import_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Semantic cache sets redis none when redis asyncio import fails."""
     module_path = pathlib.Path(semantic_cache_module.__file__)
     module_name = "core.cache.semantic_cache_no_redis"
     original_import = builtins.__import__
@@ -109,19 +112,28 @@ def _mock_httpx_stream_client(
 
 
 class DummyGeminiResponse:
+    """Gemini response double exposing only ``text``."""
+
     def __init__(self, text: str = "ok") -> None:
+        """Store the response text."""
         self.text = text
 
 
 class DummyGeminiModels:
+    """Gemini ``aio.models`` double returning fixed text and streamed chunks."""
+
     def __init__(self, text: str = "ok", stream_texts: tuple[str, ...] = ("A",)) -> None:
+        """Store the full-response text and the chunks to stream."""
         self._text = text
         self._stream_texts = stream_texts
 
     async def generate_content(self, **_kw):
+        """Return a response wrapping the configured text."""
         return DummyGeminiResponse(self._text)
 
     async def generate_content_stream(self, **_kw):
+        """Return an async generator yielding the configured stream chunks."""
+
         async def gen():
             for text in self._stream_texts:
                 yield SimpleNamespace(text=text)
@@ -130,9 +142,12 @@ class DummyGeminiModels:
 
 
 class DummyGeminiClient:
+    """Gemini client double exposing ``aio.models`` like the real SDK."""
+
     def __init__(
         self, api_key: str, text: str = "ok", stream_texts: tuple[str, ...] = ("A",)
     ) -> None:
+        """Store the API key and build the models double."""
         self.api_key = api_key
         self.aio = SimpleNamespace(models=DummyGeminiModels(text=text, stream_texts=stream_texts))
 
@@ -182,6 +197,7 @@ async def _cache_put(
 )
 @pytest.mark.asyncio
 async def test_build_provider_json_mode_config(provider: str, key: str | None) -> None:
+    """Build provider json mode config."""
     data = llm_client.build_provider_json_mode_config(provider)
     if key is None:
         assert data == {}
@@ -191,12 +207,14 @@ async def test_build_provider_json_mode_config(provider: str, key: str | None) -
 
 @pytest.mark.asyncio
 async def test_ensure_json_text_returns_original_for_valid_json() -> None:
+    """Ensure json text returns original for valid json."""
     text = '{"tool": "final_answer", "argument": "ok", "thought": "t"}'
     assert llm_client._ensure_json_text(text, "OpenAI") == text
 
 
 @pytest.mark.asyncio
 async def test_ensure_json_text_wraps_invalid_payload() -> None:
+    """Ensure json text wraps invalid payload."""
     wrapped = llm_client._ensure_json_text("plain-text", "Gemini")
     data = json.loads(wrapped)
     assert data["tool"] == "final_answer"
@@ -205,6 +223,7 @@ async def test_ensure_json_text_wraps_invalid_payload() -> None:
 
 @pytest.mark.asyncio
 async def test_ensure_json_text_repairs_fenced_json_payload() -> None:
+    """Ensure json text repairs fenced json payload."""
     wrapped = llm_client._ensure_json_text(
         '```json\n{"tool":"final_answer","argument":"ok","thought":"t"}\n```', "Gemini"
     )
@@ -215,6 +234,7 @@ async def test_ensure_json_text_repairs_fenced_json_payload() -> None:
 
 @pytest.mark.asyncio
 async def test_ensure_json_text_prefers_first_json_fence_when_multiple_fences_present() -> None:
+    """Ensure json text prefers first json fence when multiple fences present."""
     wrapped = llm_client._ensure_json_text(
         """```json
 {"tool":"final_answer","argument":"ilk","thought":"t"}
@@ -231,6 +251,7 @@ async def test_ensure_json_text_prefers_first_json_fence_when_multiple_fences_pr
 
 @pytest.mark.asyncio
 async def test_ensure_json_text_repairs_fenced_json_with_braces_in_string() -> None:
+    """Ensure json text repairs fenced json with braces in string."""
     wrapped = llm_client._ensure_json_text(
         """```json
 {"tool":"final_answer","argument":"değer {nested} içeriyor","thought":"t"}
@@ -243,15 +264,18 @@ async def test_ensure_json_text_repairs_fenced_json_with_braces_in_string() -> N
 
 @pytest.mark.parametrize("raw_text", ["", "   \n\t  "])
 def test_repair_json_text_returns_none_for_empty_input(raw_text: str) -> None:
+    """Repair json text returns none for empty input."""
     assert llm_client._repair_json_text(raw_text) is None
 
 
 def test_repair_json_text_returns_normalized_json_for_direct_parse() -> None:
+    """Repair json text returns normalized json for direct parse."""
     repaired = llm_client._repair_json_text('{"k":"v","n":1}')
     assert repaired == '{"k": "v", "n": 1}'
 
 
 def test_repair_json_text_decoder_fallback_with_prefix_garbage() -> None:
+    """Repair json text decoder fallback with prefix garbage."""
     repaired = llm_client._repair_json_text(
         'prefix >>> {"tool":"final_answer","argument":"ok","thought":"t"} trailing'
     )
@@ -259,6 +283,7 @@ def test_repair_json_text_decoder_fallback_with_prefix_garbage() -> None:
 
 
 def test_repair_json_text_strict_fenced_returns_first_valid_block() -> None:
+    """Repair json text strict fenced returns first valid block."""
     repaired = llm_client._repair_json_text(
         '```json\nnope\n```\n```json\n{"tool":"final_answer","argument":"strict","thought":"t"}\n```'
     )
@@ -266,6 +291,7 @@ def test_repair_json_text_strict_fenced_returns_first_valid_block() -> None:
 
 
 def test_repair_json_text_loose_fenced_without_newline_before_closing_ticks() -> None:
+    """Repair json text loose fenced without newline before closing ticks."""
     repaired = llm_client._repair_json_text(
         '```json {"tool":"final_answer","argument":"loose","thought":"t"}```'
     )
@@ -273,6 +299,7 @@ def test_repair_json_text_loose_fenced_without_newline_before_closing_ticks() ->
 
 
 def test_repair_json_text_skips_empty_fence_then_parses_next_valid_fence() -> None:
+    """Repair json text skips empty fence then parses next valid fence."""
     repaired = llm_client._repair_json_text(
         '```json\n\n```\n```json {"tool":"final_answer","argument":"ok","thought":"t"}```'
     )
@@ -280,15 +307,18 @@ def test_repair_json_text_skips_empty_fence_then_parses_next_valid_fence() -> No
 
 
 def test_repair_json_text_literal_eval_dict_fallback() -> None:
+    """Repair json text literal eval dict fallback."""
     repaired = llm_client._repair_json_text("{'single': 'quotes'}")
     assert repaired == '{"single": "quotes"}'
 
 
 def test_repair_json_text_returns_none_when_all_parse_paths_fail() -> None:
+    """Repair json text returns none when all parse paths fail."""
     assert llm_client._repair_json_text("plain-text-without-json") is None
 
 
 def test_repair_json_text_skips_literal_eval_for_excessive_nesting() -> None:
+    """Repair json text skips literal eval for excessive nesting."""
     deeply_nested_list = "[" * 120 + "0" + "]" * 120
     assert llm_client._repair_json_text(deeply_nested_list) is None
 
@@ -296,6 +326,7 @@ def test_repair_json_text_skips_literal_eval_for_excessive_nesting() -> None:
 def test_repair_json_text_returns_none_when_literal_eval_raises(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Repair json text returns none when literal eval raises."""
     monkeypatch.setattr(
         ast, "literal_eval", lambda _text: (_ for _ in ()).throw(ValueError("boom"))
     )
@@ -303,6 +334,7 @@ def test_repair_json_text_returns_none_when_literal_eval_raises(
 
 
 def test_is_safe_literal_eval_candidate_limits_depth_and_size() -> None:
+    """Is safe literal eval candidate limits depth and size."""
     assert llm_client._is_safe_literal_eval_candidate("{'k': 'v'}") is True
     assert (
         llm_client._is_safe_literal_eval_candidate("[" * 81 + "0" + "]" * 81, max_depth=80) is False
@@ -314,6 +346,7 @@ def test_is_safe_literal_eval_candidate_limits_depth_and_size() -> None:
 async def test_ensure_json_text_logs_warning_for_invalid_payload(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    """Ensure json text logs warning for invalid payload."""
     with caplog.at_level("WARNING"):
         llm_client._ensure_json_text("plain-text", "Gemini")
     assert any("JSON dışı yanıt alındı" in rec.message for rec in caplog.records)
@@ -321,6 +354,7 @@ async def test_ensure_json_text_logs_warning_for_invalid_payload(
 
 @pytest.mark.asyncio
 async def test_extract_usage_tokens_supports_prompt_and_output_tokens() -> None:
+    """Extract usage tokens supports prompt and output tokens."""
     assert llm_client._extract_usage_tokens(
         {"usage": {"prompt_tokens": 12, "completion_tokens": 34}}
     ) == (12, 34)
@@ -336,6 +370,7 @@ async def test_extract_usage_tokens_supports_prompt_and_output_tokens() -> None:
 
 @pytest.mark.asyncio
 async def test_extract_usage_tokens_handles_unparseable_string_values() -> None:
+    """Extract usage tokens handles unparseable string values."""
     payload = {"usage": {"prompt_tokens": "broken_string", "completion_tokens": "nan?"}}
 
     assert llm_client._extract_usage_tokens(payload) == (0, 0)
@@ -343,6 +378,7 @@ async def test_extract_usage_tokens_handles_unparseable_string_values() -> None:
 
 @pytest.mark.asyncio
 async def test_extract_usage_tokens_handles_unexpected_usage_type_int() -> None:
+    """Extract usage tokens handles unexpected usage type int."""
     assert llm_client._extract_usage_tokens({"usage": 7}) == (0, 0)
 
 
@@ -350,6 +386,8 @@ async def test_extract_usage_tokens_handles_unexpected_usage_type_int() -> None:
 async def test_ensure_json_text_async_wraps_invalid_payload_when_repair_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Ensure json text async wraps invalid payload when repair fails."""
+
     async def _no_repair(_text: str) -> None:
         return None
 
@@ -365,6 +403,8 @@ async def test_ensure_json_text_async_wraps_invalid_payload_when_repair_fails(
 async def test_ensure_json_text_async_returns_repaired_payload_when_available(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Ensure json text async returns repaired payload when available."""
+
     async def _repair(_text: str) -> str:
         return '{"tool":"final_answer","argument":"ok"}'
 
@@ -374,6 +414,7 @@ async def test_ensure_json_text_async_returns_repaired_payload_when_available(
 
 
 def test_extract_gemini_usage_tokens_supports_object_and_dict_shapes() -> None:
+    """Extract gemini usage tokens supports object and dict shapes."""
     usage_obj = SimpleNamespace(prompt_token_count=7, candidates_token_count=11)
     assert llm_client._extract_gemini_usage_tokens(SimpleNamespace(usage_metadata=usage_obj)) == (
         7,
@@ -390,6 +431,7 @@ def test_extract_gemini_usage_tokens_supports_object_and_dict_shapes() -> None:
 
 @pytest.mark.asyncio
 async def test_is_retryable_exception_for_timeout_and_status() -> None:
+    """Is retryable exception for timeout and status."""
     retryable, status = llm_client._is_retryable_exception(httpx.TimeoutException("x"))
     assert retryable is True
     assert status is None
@@ -403,6 +445,7 @@ async def test_is_retryable_exception_for_timeout_and_status() -> None:
 
 @pytest.mark.asyncio
 async def test_is_retryable_exception_for_network_errors() -> None:
+    """Is retryable exception for network errors."""
     retryable, status = llm_client._is_retryable_exception(httpx.ConnectError("Connection refused"))
     assert retryable is True
     assert status is None
@@ -414,6 +457,7 @@ async def test_is_retryable_exception_for_network_errors() -> None:
 
 @pytest.mark.asyncio
 async def test_is_retryable_exception_for_non_retryable_status() -> None:
+    """Is retryable exception for non retryable status."""
     exc = Exception("bad request")
     exc.status_code = 400
     retryable, status = llm_client._is_retryable_exception(exc)
@@ -422,6 +466,7 @@ async def test_is_retryable_exception_for_non_retryable_status() -> None:
 
 
 def test_provider_specific_retry_mapping_and_context_limit() -> None:
+    """Provider specific retry mapping and context limit."""
     anthropic_529 = llm_client.LLMAPIError(
         "anthropic", "overloaded", status_code=529, retryable=False
     )
@@ -436,6 +481,7 @@ def test_provider_specific_retry_mapping_and_context_limit() -> None:
 
 
 def test_retry_mapping_handles_response_status_retryable_and_missing_status() -> None:
+    """Retry mapping handles response status retryable and missing status."""
     response_error = RuntimeError("upstream busy")
     response_error.response = SimpleNamespace(status_code="503")  # type: ignore[attr-defined]
     retryable, status = llm_client._is_retryable_exception(response_error, provider="openai")
@@ -451,6 +497,7 @@ def test_retry_mapping_handles_response_status_retryable_and_missing_status() ->
 
 
 def test_context_limit_error_without_status_is_non_retryable() -> None:
+    """Context limit error without status is non retryable."""
     context_error = llm_client.LLMAPIError(
         "openai", "input is too long for this model", retryable=True
     )
@@ -489,11 +536,13 @@ def test_oom_error_is_non_retryable_even_with_a_retryable_status_code() -> None:
     ],
 )
 def test_oom_marker_variants_are_all_detected(message: str) -> None:
+    """Oom marker variants are all detected."""
     assert llm_client._is_oom_error(RuntimeError(message)) is True
     assert llm_client._is_oom_error(RuntimeError("connection refused")) is False
 
 
 def test_extract_status_code_returns_none_for_invalid_status_value() -> None:
+    """Extract status code returns none for invalid status value."""
     exc = Exception("bad status")
     exc.status_code = "not-a-status"
 
@@ -503,6 +552,7 @@ def test_extract_status_code_returns_none_for_invalid_status_value() -> None:
 def test_token_estimate_and_prompt_limit_fallback_branches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Token estimate and prompt limit fallback branches."""
     monkeypatch.setattr(
         token_counter,
         "estimate_tokens",
@@ -515,6 +565,7 @@ def test_token_estimate_and_prompt_limit_fallback_branches(
 
 
 def test_usage_token_counts_are_bounded_on_overflow() -> None:
+    """Usage token counts are bounded on overflow."""
     huge = str(llm_client.MAX_SAFE_TOKEN_COUNT + 999_999)
 
     assert llm_client._extract_usage_tokens(
@@ -532,6 +583,8 @@ def test_usage_token_counts_are_bounded_on_overflow() -> None:
 async def test_prompt_token_budget_rejects_over_limit_before_provider_call(
     monkeypatch: pytest.MonkeyPatch, mock_config
 ) -> None:
+    """Prompt token budget rejects over limit before provider call."""
+
     class BudgetClient(llm_client.BaseLLMClient):
         def __init__(self, config: Any) -> None:
             super().__init__(config)
@@ -558,6 +611,8 @@ async def test_prompt_token_budget_rejects_over_limit_before_provider_call(
 
 @pytest.mark.asyncio
 async def test_retry_with_backoff_wraps_litellm_api_connection_error(mock_config) -> None:
+    """Retry with backoff wraps litellm api connection error."""
+
     class APIConnectionError(Exception):
         pass
 
@@ -580,6 +635,8 @@ async def test_retry_with_backoff_wraps_litellm_api_connection_error(mock_config
 async def test_retry_with_backoff_wraps_anthropic_api_connection_error_with_status(
     mock_config,
 ) -> None:
+    """Retry with backoff wraps anthropic api connection error with status."""
+
     class APIConnectionError(Exception):
         def __init__(self, message: str, status_code: int | None = None) -> None:
             super().__init__(message)
@@ -611,6 +668,7 @@ class _DummyClient(llm_client.BaseLLMClient):
 
 @pytest.mark.asyncio
 async def test_dummy_client_methods_are_callable() -> None:
+    """Dummy client methods are callable."""
     client = _DummyClient(_make_config())
     assert client.json_mode_config() == {}
     assert await client.chat([{"role": "user", "content": "u"}]) == "ok"
@@ -618,6 +676,7 @@ async def test_dummy_client_methods_are_callable() -> None:
 
 @pytest.mark.asyncio
 async def test_inject_json_instruction_handles_existing_and_missing_system() -> None:
+    """Inject json instruction handles existing and missing system."""
     with_system = [{"role": "system", "content": "base"}, {"role": "user", "content": "u"}]
     out = _DummyClient._inject_json_instruction(with_system)
     assert out[0]["content"].startswith("base")
@@ -633,6 +692,7 @@ async def test_inject_json_instruction_handles_existing_and_missing_system() -> 
 async def test_retry_with_backoff_succeeds_after_retry(
     monkeypatch: pytest.MonkeyPatch, mock_config
 ) -> None:
+    """Retry with backoff succeeds after retry."""
     monkeypatch.setattr(llm_client.asyncio, "sleep", AsyncMock(return_value=None))
     monkeypatch.setattr(llm_client._JITTER_RANDOM, "uniform", lambda *_args, **_kwargs: 0.0)
     state = {"n": 0}
@@ -657,6 +717,7 @@ async def test_retry_with_backoff_recovers_from_transient_external_api_outage(
     monkeypatch: pytest.MonkeyPatch,
     mock_config,
 ) -> None:
+    """Retry with backoff recovers from transient external api outage."""
     sleep_calls: list[float] = []
 
     async def _fake_sleep(delay: float) -> None:
@@ -686,6 +747,7 @@ async def test_retry_with_backoff_recovers_from_transient_external_api_outage(
 async def test_retry_with_backoff_uses_base_delay_scaled_jitter(
     monkeypatch: pytest.MonkeyPatch, mock_config
 ) -> None:
+    """Retry with backoff uses base delay scaled jitter."""
     jitter_args: list[tuple[float, float]] = []
 
     async def _fake_sleep(_delay: float) -> None:
@@ -714,6 +776,8 @@ async def test_retry_with_backoff_uses_base_delay_scaled_jitter(
 
 @pytest.mark.asyncio
 async def test_retry_with_backoff_raises_llm_api_error(mock_config) -> None:
+    """Retry with backoff raises llm api error."""
+
     async def op():
         raise ValueError("fatal")
 
@@ -726,6 +790,7 @@ async def test_retry_with_backoff_raises_llm_api_error(mock_config) -> None:
 
 
 def test_format_exception_message_falls_back_to_exception_type_for_blank_messages() -> None:
+    """Format exception message falls back to exception type for blank messages."""
     assert llm_client._format_exception_message(TimeoutError()) == "TimeoutError"
 
 
@@ -733,6 +798,8 @@ def test_format_exception_message_falls_back_to_exception_type_for_blank_message
 async def test_retry_with_backoff_uses_exception_type_when_error_message_is_blank(
     mock_config,
 ) -> None:
+    """Retry with backoff uses exception type when error message is blank."""
+
     async def op():
         raise TimeoutError()
 
@@ -746,6 +813,7 @@ async def test_retry_with_backoff_uses_exception_type_when_error_message_is_blan
 
 @pytest.mark.asyncio
 async def test_get_tracer_uses_trace_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Get tracer uses trace when enabled."""
     token = object()
     fake_trace = SimpleNamespace(get_tracer=lambda _name: token)
     monkeypatch.setattr(llm_client, "trace", fake_trace)
@@ -754,6 +822,8 @@ async def test_get_tracer_uses_trace_when_enabled(monkeypatch: pytest.MonkeyPatc
 
 @pytest.mark.asyncio
 async def test_fallback_stream_single_chunk() -> None:
+    """Fallback stream single chunk."""
+
     async def consume():
         return [c async for c in llm_client._fallback_stream("err")]
 
@@ -762,6 +832,7 @@ async def test_fallback_stream_single_chunk() -> None:
 
 @pytest.mark.asyncio
 async def test_record_llm_metric_forwards_metrics_user(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Record llm metric forwards metrics user."""
     events = []
 
     class Collector:
@@ -780,6 +851,7 @@ async def test_record_llm_metric_forwards_metrics_user(monkeypatch: pytest.Monke
 
 @pytest.mark.asyncio
 async def test_semantic_cache_cosine_similarity(mock_config) -> None:
+    """Semantic cache cosine similarity."""
     manager = SemanticCacheManager(mock_config())
     assert manager._cosine_similarity([1.0, 0.0], [1.0, 0.0]) == pytest.approx(1.0)
     assert manager._cosine_similarity([1.0], [1.0, 2.0]) == 0.0
@@ -790,6 +862,7 @@ async def test_semantic_cache_cosine_similarity(mock_config) -> None:
 async def test_estimate_tokens_uses_heuristic_when_tiktoken_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Estimate tokens uses heuristic when tiktoken missing."""
     token_counter.get_tiktoken_encoding.cache_clear()
     real_import = builtins.__import__
 
@@ -805,6 +878,7 @@ async def test_estimate_tokens_uses_heuristic_when_tiktoken_missing(
 def test_estimate_tokens_falls_back_to_cl100k_when_model_unknown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Estimate tokens falls back to cl100k when model unknown."""
     token_counter.get_tiktoken_encoding.cache_clear()
     tiktoken_stub = types.ModuleType("tiktoken")
     calls: list[str] = []
@@ -829,6 +903,7 @@ def test_estimate_tokens_falls_back_to_cl100k_when_model_unknown(
 
 
 def test_estimate_tokens_reuses_cached_encoding(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Estimate tokens reuses cached encoding."""
     token_counter.get_tiktoken_encoding.cache_clear()
     tiktoken_stub = types.ModuleType("tiktoken")
     calls = {"encoding_for_model": 0}
@@ -852,6 +927,7 @@ def test_estimate_tokens_reuses_cached_encoding(monkeypatch: pytest.MonkeyPatch)
 
 @pytest.mark.asyncio
 async def test_semantic_cache_default_threshold_is_less_strict(mock_config) -> None:
+    """Semantic cache default threshold is less strict."""
     manager = SemanticCacheManager(mock_config())
     assert manager.threshold == pytest.approx(0.90)
 
@@ -860,6 +936,7 @@ async def test_semantic_cache_default_threshold_is_less_strict(mock_config) -> N
 async def test_semantic_cache_get_hit(
     monkeypatch: pytest.MonkeyPatch, mock_config, fake_redis
 ) -> None:
+    """Semantic cache get hit."""
     manager = SemanticCacheManager(mock_config())
     await _cache_put(fake_redis, manager, "k1", [1.0, 0.0], "cached")
 
@@ -874,6 +951,7 @@ async def test_semantic_cache_get_hit(
 
 @pytest.mark.asyncio
 async def test_semantic_cache_get_returns_none_without_prompt(mock_config) -> None:
+    """Semantic cache get returns none without prompt."""
     manager = SemanticCacheManager(mock_config())
     assert await manager.get("") is None
 
@@ -882,6 +960,7 @@ async def test_semantic_cache_get_returns_none_without_prompt(mock_config) -> No
 async def test_semantic_cache_get_records_miss(
     monkeypatch: pytest.MonkeyPatch, mock_config, fake_redis
 ) -> None:
+    """Semantic cache get records miss."""
     manager = SemanticCacheManager(mock_config(SEMANTIC_CACHE_THRESHOLD=0.99))
     await _cache_put(fake_redis, manager, "k1", [1.0, 0.0], "cached")
     misses = {"n": 0}
@@ -902,6 +981,7 @@ async def test_semantic_cache_get_records_miss(
 async def test_semantic_cache_set_records_item(
     monkeypatch: pytest.MonkeyPatch, mock_config, fake_redis
 ) -> None:
+    """Semantic cache set records item."""
     manager = SemanticCacheManager(mock_config())
     await fake_redis.lpush(manager.index_key, "old2")
     await fake_redis.lpush(manager.index_key, "old1")
@@ -953,6 +1033,7 @@ async def test_semantic_cache_set_records_item(
 async def test_semantic_cache_ttl_zero_skips_expire(
     monkeypatch: pytest.MonkeyPatch, mock_config, fake_redis
 ) -> None:
+    """Semantic cache ttl zero skips expire."""
     manager = SemanticCacheManager(mock_config(SEMANTIC_CACHE_TTL=0))
 
     async def _get_redis():
@@ -975,12 +1056,14 @@ async def test_semantic_cache_ttl_zero_skips_expire(
 
 @pytest.mark.asyncio
 async def test_semantic_cache_set_skips_without_response(mock_config) -> None:
+    """Semantic cache set skips without response."""
     manager = SemanticCacheManager(mock_config())
     assert await manager.set("prompt", "") is None
 
 
 @pytest.mark.asyncio
 async def test_track_stream_completion_records_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Track stream completion records error."""
     events = []
     logs = []
 
@@ -1014,6 +1097,7 @@ async def test_track_stream_completion_records_error(monkeypatch: pytest.MonkeyP
 async def test_track_stream_completion_records_success_with_empty_chunks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Track stream completion records success with empty chunks."""
     events = []
 
     def recorder(**kwargs):
@@ -1040,6 +1124,7 @@ async def test_track_stream_completion_records_success_with_empty_chunks(
 async def test_track_stream_completion_reraises_stream_error_when_metric_recording_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Track stream completion reraises stream error when metric recording fails."""
     logs = []
 
     def failing_recorder(**_kwargs):
@@ -1064,6 +1149,8 @@ async def test_track_stream_completion_reraises_stream_error_when_metric_recordi
 
 @pytest.mark.asyncio
 async def test_register_provider_strategy_and_generate_alias(monkeypatch, mock_config) -> None:
+    """Register provider strategy and generate alias."""
+
     class StrategyClient(llm_client.BaseLLMClient):
         def __init__(self, config):
             super().__init__(config)
@@ -1101,6 +1188,8 @@ async def test_register_provider_strategy_and_generate_alias(monkeypatch, mock_c
 
 @pytest.mark.asyncio
 async def test_base_llm_client_generate_yields_string_chat_response(mock_config) -> None:
+    """Base llm client generate yields string chat response."""
+
     class StringClient(llm_client.BaseLLMClient):
         async def chat(self, *_args, **_kwargs):
             return "single-response"
@@ -1116,6 +1205,7 @@ async def test_base_llm_client_generate_yields_string_chat_response(mock_config)
 
 
 def test_register_provider_rejects_invalid_names_and_non_strategy_classes() -> None:
+    """Register provider rejects invalid names and non strategy classes."""
     with pytest.raises(ValueError, match="Provider adı boş"):
         llm_client.LLMClient.register_provider("  ", llm_client.OllamaClient)
 
@@ -1128,6 +1218,8 @@ def test_register_provider_rejects_invalid_names_and_non_strategy_classes() -> N
 
 @pytest.mark.asyncio
 async def test_trace_stream_metrics_sets_ttft_and_total() -> None:
+    """Trace stream metrics sets ttft and total."""
+
     class Span:
         def __init__(self):
             self.attrs = {}
@@ -1157,6 +1249,8 @@ async def test_trace_stream_metrics_sets_ttft_and_total() -> None:
 
 @pytest.mark.asyncio
 async def test_trace_stream_metrics_without_nonempty_chunk_skips_ttft() -> None:
+    """Trace stream metrics without nonempty chunk skips ttft."""
+
     class Span:
         def __init__(self):
             self.attrs = {}
@@ -1187,6 +1281,7 @@ async def test_trace_stream_metrics_without_nonempty_chunk_skips_ttft() -> None:
 async def test_track_stream_routing_cost_records_on_stream_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Track stream routing cost records on stream error."""
     recorded: list[float] = []
     monkeypatch.setattr(llm_client, "record_routing_cost", lambda cost: recorded.append(cost))
     monkeypatch.setattr(token_counter, "estimate_tokens", lambda text, model="": len(text))
@@ -1210,6 +1305,7 @@ async def test_track_stream_routing_cost_records_on_stream_error(
 async def test_track_stream_routing_cost_records_when_stream_is_closed_early(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Track stream routing cost records when stream is closed early."""
     recorded: list[float] = []
     monkeypatch.setattr(llm_client, "record_routing_cost", lambda cost: recorded.append(cost))
     monkeypatch.setattr(token_counter, "estimate_tokens", lambda text, model="": len(text))
@@ -1233,6 +1329,8 @@ async def test_track_stream_routing_cost_records_when_stream_is_closed_early(
 
 @pytest.mark.asyncio
 async def test_trace_stream_metrics_ends_span_on_stream_error() -> None:
+    """Trace stream metrics ends span on stream error."""
+
     class Span:
         def __init__(self):
             self.attrs = {}
@@ -1262,6 +1360,7 @@ async def test_trace_stream_metrics_ends_span_on_stream_error() -> None:
 async def test_ollama_client_chat_non_stream_and_stream(
     monkeypatch: pytest.MonkeyPatch, mock_config, respx_mock_router
 ) -> None:
+    """Ollama client chat non stream and stream."""
     cfg = mock_config(
         CODING_MODEL="m1",
         OLLAMA_URL="http://x/api",
@@ -1291,6 +1390,7 @@ async def test_ollama_client_chat_non_stream_and_stream(
 async def test_ollama_client_chat_sends_num_gpu_when_use_gpu_enabled(
     mock_config, respx_mock_router
 ) -> None:
+    """Ollama client chat sends num gpu when use gpu enabled."""
     cfg = mock_config(
         CODING_MODEL="m1",
         OLLAMA_URL="http://x/api",
@@ -1314,6 +1414,7 @@ async def test_ollama_client_chat_sends_num_gpu_when_use_gpu_enabled(
 async def test_ollama_client_gpu_limiter_serializes_concurrent_requests(
     mock_config, respx_mock_router
 ) -> None:
+    """Ollama client gpu limiter serializes concurrent requests."""
     llm_client._OLLAMA_GPU_LIMITERS.clear()
     cfg = mock_config(
         CODING_MODEL="m1",
@@ -1350,6 +1451,7 @@ async def test_ollama_client_gpu_limiter_serializes_concurrent_requests(
 async def test_ollama_client_chat_sends_bounded_num_batch_when_configured(
     mock_config, respx_mock_router
 ) -> None:
+    """Ollama client chat sends bounded num batch when configured."""
     cfg = mock_config(
         CODING_MODEL="m1",
         OLLAMA_URL="http://x/api",
@@ -1372,6 +1474,7 @@ async def test_ollama_client_chat_sends_bounded_num_batch_when_configured(
 async def test_ollama_client_chat_auto_raises_num_batch_for_large_context(
     mock_config, respx_mock_router
 ) -> None:
+    """Ollama client chat auto raises num batch for large context."""
     cfg = mock_config(
         CODING_MODEL="m1",
         OLLAMA_URL="http://x/api",
@@ -1396,6 +1499,7 @@ async def test_ollama_client_chat_auto_raises_num_batch_for_large_context(
 async def test_ollama_client_chat_omits_num_batch_when_disabled_for_small_context(
     mock_config, respx_mock_router
 ) -> None:
+    """Ollama client chat omits num batch when disabled for small context."""
     cfg = mock_config(
         CODING_MODEL="m1",
         OLLAMA_URL="http://x/api",
@@ -1419,6 +1523,7 @@ async def test_ollama_client_chat_omits_num_batch_when_disabled_for_small_contex
 async def test_ollama_client_chat_sends_keep_alive_to_reduce_cold_start_outliers(
     mock_config, respx_mock_router
 ) -> None:
+    """Ollama client chat sends keep alive to reduce cold start outliers."""
     cfg = mock_config(
         CODING_MODEL="m1",
         OLLAMA_URL="http://x/api",
@@ -1439,6 +1544,7 @@ async def test_ollama_client_chat_sends_keep_alive_to_reduce_cold_start_outliers
 
 @pytest.mark.asyncio
 async def test_ollama_client_chat_omits_blank_keep_alive(mock_config, respx_mock_router) -> None:
+    """Ollama client chat omits blank keep alive."""
     cfg = mock_config(
         CODING_MODEL="m1",
         OLLAMA_URL="http://x/api",
@@ -1461,6 +1567,7 @@ async def test_ollama_client_chat_omits_blank_keep_alive(mock_config, respx_mock
 async def test_ollama_client_chat_does_not_send_num_gpu_when_use_gpu_disabled(
     mock_config, respx_mock_router
 ) -> None:
+    """Ollama client chat does not send num gpu when use gpu disabled."""
     cfg = mock_config(
         CODING_MODEL="m1",
         OLLAMA_URL="http://x/api",
@@ -1484,6 +1591,7 @@ async def test_ollama_client_chat_does_not_send_num_gpu_when_use_gpu_disabled(
 async def test_ollama_stream_response_parses_and_handles_error(
     mock_config, respx_mock_router
 ) -> None:
+    """Ollama stream response parses and handles error."""
     cfg = mock_config()
     client = llm_client.OllamaClient(cfg)
     stream_payload = '{"message":{"content":"A"}}\ninvalid\n{"message":{"content":"B"}}'
@@ -1507,6 +1615,7 @@ async def test_ollama_stream_response_parses_and_handles_error(
 
 @pytest.mark.asyncio
 async def test_ollama_list_models_and_availability(mock_config, respx_mock_router) -> None:
+    """Ollama list models and availability."""
     client = llm_client.OllamaClient(mock_config())
     respx_mock_router.get("http://localhost:11434/api/tags").mock(
         return_value=httpx.Response(200, json={"models": [{"name": "m1"}]})
@@ -1517,6 +1626,7 @@ async def test_ollama_list_models_and_availability(mock_config, respx_mock_route
 
 @pytest.mark.asyncio
 async def test_openai_client_paths(monkeypatch: pytest.MonkeyPatch, respx_mock_router) -> None:
+    """Openai client paths."""
     no_key_cfg = _make_config(OPENAI_API_KEY="")
     c1 = llm_client.OpenAIClient(no_key_cfg)
     assert "OPENAI_API_KEY" in await c1.chat([{"role": "user", "content": "x"}], stream=False)
@@ -1545,6 +1655,7 @@ async def test_openai_client_paths(monkeypatch: pytest.MonkeyPatch, respx_mock_r
 async def test_openai_client_sk_test_key_is_blocked_in_test_profile(
     respx_mock_router,
 ) -> None:
+    """Openai client sk test key is blocked in test profile."""
     cfg = _make_config(
         OPENAI_API_KEY="sk-test",
         OPENAI_MODEL="gpt-x",
@@ -1562,6 +1673,7 @@ async def test_openai_client_sk_test_key_is_blocked_in_test_profile(
 
 @pytest.mark.asyncio
 async def test_openai_context_limit_error_is_non_retryable(respx_mock_router) -> None:
+    """Openai context limit error is non retryable."""
     cfg = _make_config(OPENAI_API_KEY="k", OPENAI_MODEL="gpt-x", ENABLE_TRACING=False)
     client = llm_client.OpenAIClient(cfg)
     respx_mock_router.post("https://api.openai.com/v1/chat/completions").mock(
@@ -1587,6 +1699,7 @@ async def test_openai_context_limit_error_is_non_retryable(respx_mock_router) ->
 
 @pytest.mark.asyncio
 async def test_ollama_context_limit_error_is_non_retryable(respx_mock_router) -> None:
+    """Ollama context limit error is non retryable."""
     client = llm_client.OllamaClient(_make_config(OLLAMA_URL="http://localhost:11434"))
     respx_mock_router.post("http://localhost:11434/api/chat").mock(
         return_value=httpx.Response(400, json={"error": "context length exceeded"})
@@ -1631,6 +1744,7 @@ async def test_ollama_oom_error_is_non_retryable_and_gets_actionable_guidance(
 
 @pytest.mark.asyncio
 async def test_ollama_missing_model_error_suggests_pull_command(respx_mock_router) -> None:
+    """Ollama missing model error suggests pull command."""
     client = llm_client.OllamaClient(
         _make_config(OLLAMA_URL="http://localhost:11434", CODING_MODEL="qwen2.5-coder:7b")
     )
@@ -1649,6 +1763,7 @@ async def test_ollama_missing_model_error_suggests_pull_command(respx_mock_route
 async def test_ollama_stream_missing_model_emits_runtime_guidance(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Ollama stream missing model emits runtime guidance."""
     client = llm_client.OllamaClient(
         _make_config(OLLAMA_URL="http://localhost:11434", CODING_MODEL="qwen2.5-coder:7b")
     )
@@ -1674,6 +1789,7 @@ async def test_ollama_stream_missing_model_emits_runtime_guidance(
 
 @pytest.mark.asyncio
 async def test_openai_stream_parser(respx_mock_router) -> None:
+    """Openai stream parser."""
     cfg = _make_config(OPENAI_API_KEY="k")
     c = llm_client.OpenAIClient(cfg)
     stream_text = "\n".join(
@@ -1696,6 +1812,7 @@ async def test_openai_stream_parser(respx_mock_router) -> None:
 async def test_openai_stream_error_formats_output_by_json_mode(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Openai stream error formats output by json mode."""
     c = llm_client.OpenAIClient(_make_config(OPENAI_API_KEY="k"))
 
     async def _raise_retry(*_a, **_kw):
@@ -1719,6 +1836,7 @@ async def test_openai_stream_error_formats_output_by_json_mode(
 
 @pytest.mark.asyncio
 async def test_litellm_candidate_and_chat(mock_config, respx_mock_router) -> None:
+    """Litellm candidate and chat."""
     cfg = mock_config(LITELLM_GATEWAY_URL="", LITELLM_MODEL="m", OPENAI_MODEL="o")
     c = llm_client.LiteLLMClient(cfg)
     assert c._candidate_models(None) == ["m"]
@@ -1744,6 +1862,7 @@ async def test_litellm_candidate_and_chat(mock_config, respx_mock_router) -> Non
 async def test_litellm_stream_and_fail(
     monkeypatch: pytest.MonkeyPatch, mock_config, respx_mock_router
 ) -> None:
+    """Litellm stream and fail."""
     cfg = mock_config(
         LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m1", LITELLM_FALLBACK_MODELS=["m2"]
     )
@@ -1774,6 +1893,7 @@ async def test_litellm_stream_and_fail(
 async def test_gemini_client_missing_and_success(
     monkeypatch: pytest.MonkeyPatch, mock_config
 ) -> None:
+    """Gemini client missing and success."""
     original_import_module = llm_client.importlib.import_module
 
     def _missing_google_genai(name: str):
@@ -1813,6 +1933,7 @@ async def test_gemini_client_missing_and_success(
 async def test_gemini_non_stream_records_usage_metrics(
     monkeypatch: pytest.MonkeyPatch, mock_config
 ) -> None:
+    """Gemini non stream records usage metrics."""
     events: list[dict[str, object]] = []
 
     class _Models(DummyGeminiModels):
@@ -1842,6 +1963,7 @@ async def test_gemini_non_stream_records_usage_metrics(
 
 @pytest.mark.asyncio
 async def test_anthropic_helpers_and_chat(monkeypatch: pytest.MonkeyPatch, mock_config) -> None:
+    """Anthropic helpers and chat."""
     c = llm_client.AnthropicClient(mock_config(ANTHROPIC_API_KEY=""))
     assert "ANTHROPIC_API_KEY" in await c.chat([{"role": "user", "content": "x"}], stream=False)
     system, convo = c._split_system_and_messages(
@@ -1894,6 +2016,8 @@ async def test_anthropic_helpers_and_chat(monkeypatch: pytest.MonkeyPatch, mock_
 async def test_anthropic_context_limit_error_is_non_retryable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Anthropic context limit error is non retryable."""
+
     class _ContextLimitError(Exception):
         def __init__(self):
             super().__init__("context length exceeded")
@@ -1922,6 +2046,8 @@ async def test_anthropic_context_limit_error_is_non_retryable(
 
 @pytest.mark.asyncio
 async def test_gemini_context_limit_error_is_non_retryable(mock_config) -> None:
+    """Gemini context limit error is non retryable."""
+
     class _GeminiContextError(Exception):
         def __init__(self):
             super().__init__("context length exceeded")
@@ -1945,6 +2071,7 @@ async def test_gemini_context_limit_error_is_non_retryable(mock_config) -> None:
 
 @pytest.mark.asyncio
 async def test_llmclient_wrapper_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Llmclient wrapper paths."""
     cfg = _make_config(OLLAMA_URL="http://localhost:11434/api")
     client = llm_client.LLMClient("ollama", cfg)
     assert "11434" in client._ollama_base_url
@@ -2001,6 +2128,7 @@ async def test_llmclient_wrapper_paths(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.asyncio
 async def test_semantic_cache_manager_edge_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Semantic cache manager edge paths."""
     cfg = _make_config(ENABLE_SEMANTIC_CACHE=False)
     manager = SemanticCacheManager(cfg)
     assert await manager._get_redis() is None
@@ -2044,6 +2172,7 @@ async def test_semantic_cache_manager_edge_paths(monkeypatch: pytest.MonkeyPatch
 async def test_semantic_cache_circuit_breaker_opens_after_threshold(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Semantic cache circuit breaker opens after threshold."""
     cfg = _make_config(
         ENABLE_SEMANTIC_CACHE=True,
         SEMANTIC_CACHE_REDIS_CB_FAIL_THRESHOLD=2,
@@ -2086,6 +2215,7 @@ async def test_semantic_cache_circuit_breaker_opens_after_threshold(
 async def test_semantic_cache_get_set_error_paths(
     monkeypatch: pytest.MonkeyPatch, fake_redis
 ) -> None:
+    """Semantic cache get set error paths."""
     manager = SemanticCacheManager(_make_config())
 
     async def _redis():
@@ -2113,6 +2243,7 @@ async def test_semantic_cache_get_set_error_paths(
 async def test_ollama_and_openai_error_paths(
     monkeypatch: pytest.MonkeyPatch, respx_mock_router
 ) -> None:
+    """Ollama and openai error paths."""
     cfg = _make_config(CODING_MODEL="m1", OLLAMA_URL="http://x")
     oc = llm_client.OllamaClient(cfg)
 
@@ -2142,6 +2273,7 @@ async def test_ollama_and_openai_error_paths(
 async def test_litellm_fallback_raise_and_successive_model(
     monkeypatch: pytest.MonkeyPatch, respx_mock_router
 ) -> None:
+    """Litellm fallback raise and successive model."""
     cfg = _make_config(
         LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m1", LITELLM_FALLBACK_MODELS=["m2"]
     )
@@ -2164,6 +2296,8 @@ async def test_litellm_fallback_raise_and_successive_model(
 
 @pytest.mark.asyncio
 async def test_gemini_stream_generator_error_and_key_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Gemini stream generator error and key path."""
+
     class _Client(DummyGeminiClient):
         def __init__(self, api_key):
             super().__init__(api_key, text="ok", stream_texts=())
@@ -2184,6 +2318,7 @@ async def test_gemini_stream_generator_error_and_key_path(monkeypatch: pytest.Mo
 
 @pytest.mark.asyncio
 async def test_anthropic_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Anthropic import error."""
     c = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k"))
     monkeypatch.setattr(
         llm_client, "anthropic", ImportError("anthropic not installed"), raising=False
@@ -2197,6 +2332,7 @@ async def test_anthropic_import_error(monkeypatch: pytest.MonkeyPatch) -> None:
 async def test_anthropic_import_error_when_sys_modules_entry_is_none(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Anthropic import error when sys modules entry is none."""
     c = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k"))
     monkeypatch.setitem(sys.modules, "anthropic", None)
 
@@ -2207,6 +2343,8 @@ async def test_anthropic_import_error_when_sys_modules_entry_is_none(
 
 @pytest.mark.asyncio
 async def test_anthropic_stream_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Anthropic stream error."""
+
     class _Messages:
         def stream(self, **_kw):
             class _CM:
@@ -2234,6 +2372,7 @@ async def test_anthropic_stream_error(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.asyncio
 async def test_llmclient_routing_and_compat_helpers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Llmclient routing and compat helpers."""
     cfg = _make_config(OPENAI_API_KEY="k")
     c = llm_client.LLMClient("openai", cfg)
 
@@ -2281,6 +2420,7 @@ async def test_llmclient_routing_and_compat_helpers(monkeypatch: pytest.MonkeyPa
 
 @pytest.mark.asyncio
 async def test_retryable_exception_http_status_error_branch() -> None:
+    """Retryable exception http status error branch."""
     req = httpx.Request("GET", "https://example.test")
     resp = httpx.Response(502, request=req)
     exc = httpx.HTTPStatusError("bad gateway", request=req, response=resp)
@@ -2291,12 +2431,14 @@ async def test_retryable_exception_http_status_error_branch() -> None:
 
 @pytest.mark.asyncio
 async def test_semantic_cache_cosine_similarity_zero_norm() -> None:
+    """Semantic cache cosine similarity zero norm."""
     manager = SemanticCacheManager(_make_config())
     assert manager._cosine_similarity([0.0, 0.0], [1.0, 0.0]) == 0.0
 
 
 @pytest.mark.asyncio
 async def test_semantic_cache_embed_prompt_success_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Semantic cache embed prompt success path."""
     manager = SemanticCacheManager(_make_config())
     fake_mod = types.SimpleNamespace(
         embed_texts_for_semantic_cache=lambda _texts, cfg=None: [[1, 2, 3]]
@@ -2307,6 +2449,7 @@ async def test_semantic_cache_embed_prompt_success_path(monkeypatch: pytest.Monk
 
 @pytest.mark.asyncio
 async def test_semantic_cache_embed_prompt_uses_injected_embedding_fn() -> None:
+    """Semantic cache embed prompt uses injected embedding fn."""
     calls: list[list[str]] = []
 
     def _embedding_fn(texts, *, cfg=None):
@@ -2322,6 +2465,7 @@ async def test_semantic_cache_embed_prompt_uses_injected_embedding_fn() -> None:
 async def test_semantic_cache_get_handles_invalid_records(
     monkeypatch: pytest.MonkeyPatch, fake_redis
 ) -> None:
+    """Semantic cache get handles invalid records."""
     manager = SemanticCacheManager(_make_config(SEMANTIC_CACHE_THRESHOLD=0.99))
     await fake_redis.lpush(manager.index_key, "k3")
     await fake_redis.lpush(manager.index_key, "k2")
@@ -2346,6 +2490,7 @@ async def test_semantic_cache_get_handles_invalid_records(
 async def test_semantic_cache_get_handles_redis_exception(
     monkeypatch: pytest.MonkeyPatch, fake_redis
 ) -> None:
+    """Semantic cache get handles redis exception."""
     manager = SemanticCacheManager(_make_config())
     errors = {"n": 0}
 
@@ -2371,6 +2516,7 @@ async def test_semantic_cache_get_handles_redis_exception(
 async def test_semantic_cache_set_handles_write_exception(
     monkeypatch: pytest.MonkeyPatch, fake_redis
 ) -> None:
+    """Semantic cache set handles write exception."""
     manager = SemanticCacheManager(_make_config())
     errors = {"n": 0}
 
@@ -2428,6 +2574,7 @@ class _SpanCM:
 async def test_ollama_chat_with_tracing_sets_span_attrs(
     monkeypatch: pytest.MonkeyPatch, respx_mock_router
 ) -> None:
+    """Ollama chat with tracing sets span attrs."""
     cfg = _make_config(CODING_MODEL="m1", OLLAMA_URL="http://x/api", ENABLE_TRACING=True)
     client = llm_client.OllamaClient(cfg)
     span = _Span()
@@ -2450,6 +2597,7 @@ async def test_ollama_chat_with_tracing_sets_span_attrs(
 
 @pytest.mark.asyncio
 async def test_openai_chat_stream_with_tracing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Openai chat stream with tracing."""
     c = llm_client.OpenAIClient(_make_config(OPENAI_API_KEY="k", ENABLE_TRACING=True))
     span = _Span()
     tracer = SimpleNamespace(start_span=lambda _n: span)
@@ -2471,6 +2619,7 @@ async def test_openai_chat_stream_with_tracing(monkeypatch: pytest.MonkeyPatch) 
 async def test_litellm_stream_and_nonstream_tracing_attrs(
     monkeypatch: pytest.MonkeyPatch, respx_mock_router
 ) -> None:
+    """Litellm stream and nonstream tracing attrs."""
     cfg = _make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m1", ENABLE_TRACING=True)
     c = llm_client.LiteLLMClient(cfg)
     span = _Span()
@@ -2500,6 +2649,7 @@ async def test_litellm_stream_and_nonstream_tracing_attrs(
 
 @pytest.mark.asyncio
 async def test_gemini_chat_json_injection_and_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Gemini chat json injection and defaults."""
     captured = {}
 
     class _Models(DummyGeminiModels):
@@ -2522,6 +2672,7 @@ async def test_gemini_chat_json_injection_and_defaults(monkeypatch: pytest.Monke
 
 @pytest.mark.asyncio
 async def test_openai_and_litellm_stream_skip_non_data_lines(respx_mock_router) -> None:
+    """Openai and litellm stream skip non data lines."""
     oa = llm_client.OpenAIClient(_make_config(OPENAI_API_KEY="k"))
     llm = llm_client.LiteLLMClient(
         _make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m1")
@@ -2550,6 +2701,7 @@ async def test_openai_and_litellm_stream_skip_non_data_lines(respx_mock_router) 
 async def test_anthropic_json_mode_and_fallback_conversation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Anthropic json mode and fallback conversation."""
     captured = {}
 
     class _Usage:
@@ -2579,6 +2731,7 @@ async def test_anthropic_json_mode_and_fallback_conversation(
 
 @pytest.mark.asyncio
 async def test_llmclient_provider_helpers_and_cache_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Llmclient provider helpers and cache paths."""
     cfg = _make_config(OPENAI_API_KEY="k")
     c = llm_client.LLMClient("openai", cfg)
     assert c._build_ollama_timeout().connect == 10.0
@@ -2603,6 +2756,7 @@ async def test_llmclient_provider_helpers_and_cache_paths(monkeypatch: pytest.Mo
 
 @pytest.mark.asyncio
 async def test_openai_json_mode_config_and_error_branches(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Openai json mode config and error branches."""
     c = llm_client.OpenAIClient(
         _make_config(OPENAI_API_KEY="k", OPENAI_MODEL="gpt", ENABLE_TRACING=True)
     )
@@ -2633,6 +2787,7 @@ async def test_openai_json_mode_config_and_error_branches(monkeypatch: pytest.Mo
 
 @pytest.mark.asyncio
 async def test_ollama_generic_error_wrap(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ollama generic error wrap."""
     c = llm_client.OllamaClient(_make_config(CODING_MODEL="m"))
 
     async def broken(*_a, **_kw):
@@ -2648,6 +2803,7 @@ async def test_ollama_generic_error_wrap(monkeypatch: pytest.MonkeyPatch) -> Non
 async def test_ollama_stream_errors_end_span_for_both_error_branches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Ollama stream errors end span for both error branches."""
     c = llm_client.OllamaClient(_make_config(CODING_MODEL="m", ENABLE_TRACING=True))
     span = _Span()
     monkeypatch.setattr(
@@ -2680,6 +2836,7 @@ async def test_ollama_stream_errors_end_span_for_both_error_branches(
 async def test_openai_stream_errors_end_span_for_both_error_branches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Openai stream errors end span for both error branches."""
     c = llm_client.OpenAIClient(_make_config(OPENAI_API_KEY="k", ENABLE_TRACING=True))
 
     span = _Span()
@@ -2711,6 +2868,8 @@ async def test_openai_stream_errors_end_span_for_both_error_branches(
 
 @pytest.mark.asyncio
 async def test_gemini_stream_error_fallback_and_tracing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Gemini stream error fallback and tracing."""
+
     class _Models:
         async def generate_content_stream(self, **_kw):
             raise RuntimeError("stream-open-fail")
@@ -2741,6 +2900,7 @@ async def test_gemini_stream_error_fallback_and_tracing(monkeypatch: pytest.Monk
 async def test_litellm_failure_with_tracing(
     monkeypatch: pytest.MonkeyPatch, respx_mock_router
 ) -> None:
+    """Litellm failure with tracing."""
     c = llm_client.LiteLLMClient(
         _make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m1", ENABLE_TRACING=True)
     )
@@ -2759,6 +2919,7 @@ async def test_litellm_failure_with_tracing(
 async def test_litellm_stream_failure_ends_span_and_reraises(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Litellm stream failure ends span and reraises."""
     c = llm_client.LiteLLMClient(
         _make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m1", ENABLE_TRACING=True)
     )
@@ -2781,6 +2942,7 @@ async def test_litellm_stream_failure_ends_span_and_reraises(
 async def test_litellm_chat_breaks_on_last_failed_model_and_raises_wrapped_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Litellm chat breaks on last failed model and raises wrapped error."""
     c = llm_client.LiteLLMClient(
         _make_config(
             LITELLM_GATEWAY_URL="http://gw",
@@ -2802,6 +2964,7 @@ async def test_litellm_chat_breaks_on_last_failed_model_and_raises_wrapped_error
 
 @pytest.mark.asyncio
 async def test_anthropic_error_branches_and_split_system() -> None:
+    """Anthropic error branches and split system."""
     c = llm_client.AnthropicClient(
         _make_config(ANTHROPIC_API_KEY="k", ANTHROPIC_MODEL="claude", ENABLE_TRACING=True)
     )
@@ -2816,6 +2979,8 @@ async def test_anthropic_error_branches_and_split_system() -> None:
 async def test_anthropic_nonstream_records_usage_metrics_on_success(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Anthropic nonstream records usage metrics on success."""
+
     class _Usage:
         input_tokens = 4
         output_tokens = 6
@@ -2860,6 +3025,8 @@ async def test_anthropic_nonstream_records_usage_metrics_on_success(
 async def test_anthropic_nonstream_error_paths(
     monkeypatch: pytest.MonkeyPatch, enable_tracing: bool, json_mode: bool
 ) -> None:
+    """Anthropic nonstream error paths."""
+
     class _Messages:
         async def create(self, **_kw):
             return SimpleNamespace(usage=None, content=[])
@@ -2899,6 +3066,8 @@ async def test_anthropic_nonstream_error_paths(
 
 @pytest.mark.asyncio
 async def test_anthropic_stream_error_branches_end_span(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Anthropic stream error branches end span."""
+
     class _Messages:
         async def create(self, **_kwargs):
             return SimpleNamespace(usage=None, content=[])
@@ -2949,6 +3118,7 @@ async def test_anthropic_stream_error_branches_end_span(monkeypatch: pytest.Monk
 async def test_llmclient_init_branches_and_truncation_and_routing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Llmclient init branches and truncation and routing."""
     assert isinstance(
         llm_client.LLMClient("gemini", _make_config())._client, llm_client.GeminiClient
     )
@@ -2993,6 +3163,7 @@ async def test_llmclient_init_branches_and_truncation_and_routing(
 async def test_llmclient_routing_failure_falls_back_to_default_provider(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Llmclient routing failure falls back to default provider."""
     c = llm_client.LLMClient("ollama", _make_config())
 
     seen: dict[str, Any] = {"truncated": False}
@@ -3020,6 +3191,7 @@ async def test_llmclient_routing_failure_falls_back_to_default_provider(
 
 @pytest.mark.asyncio
 async def test_llmclient_stream_gemini_generator_client_branch() -> None:
+    """Llmclient stream gemini generator client branch."""
     c = llm_client.LLMClient("gemini", _make_config())
 
     async def _gen():
@@ -3032,6 +3204,7 @@ async def test_llmclient_stream_gemini_generator_client_branch() -> None:
 async def test_llmclient_stream_gemini_generator_fallback_branch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Llmclient stream gemini generator fallback branch."""
     c = llm_client.LLMClient("openai", _make_config())
 
     async def _fallback(_self, _response_stream):
@@ -3046,6 +3219,7 @@ async def test_llmclient_stream_gemini_generator_fallback_branch(
 async def test_semantic_cache_additional_branches(
     monkeypatch: pytest.MonkeyPatch, fake_redis
 ) -> None:
+    """Semantic cache additional branches."""
     manager = SemanticCacheManager(_make_config())
     await _cache_put(fake_redis, manager, "k2", [1.0, 0.0], "r2")
     await _cache_put(fake_redis, manager, "k1", [1.0, 0.0], "r1")
@@ -3086,6 +3260,7 @@ async def test_semantic_cache_additional_branches(
 async def test_ollama_stream_trailing_decoder_branch(
     monkeypatch: pytest.MonkeyPatch, respx_mock_router
 ) -> None:
+    """Ollama stream trailing decoder branch."""
     c = llm_client.OllamaClient(_make_config())
 
     class _Decoder:
@@ -3107,6 +3282,7 @@ async def test_ollama_stream_trailing_decoder_branch(
 
 @pytest.mark.asyncio
 async def test_openai_and_litellm_stream_empty_delta_and_cleanup(respx_mock_router) -> None:
+    """Openai and litellm stream empty delta and cleanup."""
     oa = llm_client.OpenAIClient(_make_config(OPENAI_API_KEY="k"))
     llm = llm_client.LiteLLMClient(
         _make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m1")
@@ -3142,6 +3318,7 @@ async def test_openai_and_litellm_stream_empty_delta_and_cleanup(respx_mock_rout
 
 @pytest.mark.asyncio
 async def test_litellm_empty_models_and_candidate_dedup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Litellm empty models and candidate dedup."""
     c = llm_client.LiteLLMClient(
         _make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="", OPENAI_MODEL="")
     )
@@ -3156,6 +3333,7 @@ async def test_litellm_empty_models_and_candidate_dedup(monkeypatch: pytest.Monk
 
 @pytest.mark.asyncio
 async def test_anthropic_remaining_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Anthropic remaining paths."""
     assert llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k")).json_mode_config() == {}
 
     class _Messages:
@@ -3215,6 +3393,7 @@ async def test_anthropic_remaining_paths(monkeypatch: pytest.MonkeyPatch) -> Non
 async def test_anthropic_stream_handles_open_failure_without_context_manager_exit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Anthropic stream handles open failure without context manager exit."""
     c = llm_client.AnthropicClient(_make_config(ANTHROPIC_API_KEY="k", ANTHROPIC_MODEL="m"))
 
     async def _raise_open_error(*_args, **_kwargs):
@@ -3242,6 +3421,7 @@ async def test_anthropic_stream_handles_open_failure_without_context_manager_exi
 async def test_openai_tracing_nonstream_success_and_error(
     monkeypatch: pytest.MonkeyPatch, respx_mock_router
 ) -> None:
+    """Openai tracing nonstream success and error."""
     c = llm_client.OpenAIClient(
         _make_config(OPENAI_API_KEY="k", OPENAI_MODEL="gpt-4o-mini", ENABLE_TRACING=True)
     )
@@ -3264,6 +3444,7 @@ async def test_openai_tracing_nonstream_success_and_error(
 
 @pytest.mark.asyncio
 async def test_openai_invalid_model_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Openai invalid model mapping."""
     c = llm_client.OpenAIClient(_make_config(OPENAI_API_KEY="k", OPENAI_MODEL="invalid-model"))
 
     async def _raise_invalid_model(_provider, _operation, **_kw):
@@ -3279,6 +3460,7 @@ async def test_openai_invalid_model_mapping(monkeypatch: pytest.MonkeyPatch) -> 
 
 @pytest.mark.asyncio
 async def test_llmclient_truncation_remaining_branches() -> None:
+    """Llmclient truncation remaining branches."""
     c = llm_client.LLMClient("ollama", _make_config(OLLAMA_CONTEXT_MAX_CHARS=1200))
     msgs = [
         {"role": "user", "content": "u" * 500},
@@ -3291,6 +3473,7 @@ async def test_llmclient_truncation_remaining_branches() -> None:
 
 @pytest.mark.asyncio
 async def test_semantic_embed_empty_vectors_branch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Semantic embed empty vectors branch."""
     manager = SemanticCacheManager(_make_config())
     _patch_imports(
         monkeypatch,
@@ -3307,6 +3490,7 @@ async def test_semantic_embed_empty_vectors_branch(monkeypatch: pytest.MonkeyPat
 async def test_ollama_stream_additional_json_branches(
     monkeypatch: pytest.MonkeyPatch, respx_mock_router
 ) -> None:
+    """Ollama stream additional json branches."""
     c = llm_client.OllamaClient(_make_config())
 
     class _Decoder:
@@ -3329,6 +3513,8 @@ async def test_ollama_stream_additional_json_branches(
 async def test_gemini_tracing_nonstream_and_empty_stream_chunk(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Gemini tracing nonstream and empty stream chunk."""
+
     class _Client(DummyGeminiClient):
         def __init__(self, api_key):
             super().__init__(api_key, text="ok", stream_texts=())
@@ -3404,6 +3590,7 @@ async def test_gemini_non_stream_error_returns_fallback_message_without_ending_s
 async def test_openai_stream_empty_and_error_branches(
     monkeypatch: pytest.MonkeyPatch, respx_mock_router, enable_tracing: bool
 ) -> None:
+    """Openai stream empty and error branches."""
     c = llm_client.OpenAIClient(_make_config(OPENAI_API_KEY="k", ENABLE_TRACING=enable_tracing))
     if enable_tracing:
         span = _Span()
@@ -3448,6 +3635,7 @@ async def test_openai_stream_empty_and_error_branches(
 
 @pytest.mark.asyncio
 async def test_litellm_stream_empty_and_invalid_line(respx_mock_router) -> None:
+    """Litellm stream empty and invalid line."""
     c = llm_client.LiteLLMClient(_make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m"))
     respx_mock_router.post("http://gw/chat/completions").mock(
         return_value=httpx.Response(200, text="data: invalid\ndata: [DONE]")
@@ -3464,6 +3652,8 @@ async def test_litellm_stream_empty_and_invalid_line(respx_mock_router) -> None:
 
 @pytest.mark.asyncio
 async def test_anthropic_success_and_error_span_branches(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Anthropic success and error span branches."""
+
     class _Usage:
         input_tokens = 1
         output_tokens = 1
@@ -3514,6 +3704,7 @@ async def test_anthropic_success_and_error_span_branches(monkeypatch: pytest.Mon
 
 @pytest.mark.asyncio
 async def test_anthropic_empty_prompt_handling(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Anthropic empty prompt handling."""
     captured = {"messages": None}
 
     class _Messages:
@@ -3546,6 +3737,7 @@ async def test_anthropic_empty_prompt_handling(monkeypatch: pytest.MonkeyPatch) 
 
 @pytest.mark.asyncio
 async def test_truncation_branch_without_system_insert_and_small_message() -> None:
+    """Truncation branch without system insert and small message."""
     c = llm_client.LLMClient("ollama", _make_config(OLLAMA_CONTEXT_MAX_CHARS=1200))
     msgs = [
         {"role": "system", "content": "s" * 1500},
@@ -3560,6 +3752,7 @@ async def test_truncation_branch_without_system_insert_and_small_message() -> No
 async def test_ollama_stream_buffer_tail_invalid_and_empty_content(
     monkeypatch: pytest.MonkeyPatch, respx_mock_router
 ) -> None:
+    """Ollama stream buffer tail invalid and empty content."""
     c = llm_client.OllamaClient(_make_config())
 
     class _DecoderA:
@@ -3593,6 +3786,7 @@ async def test_ollama_stream_buffer_tail_invalid_and_empty_content(
 async def test_litellm_stream_no_lines_branch(
     monkeypatch: pytest.MonkeyPatch, respx_mock_router
 ) -> None:
+    """Litellm stream no lines branch."""
     c = llm_client.LiteLLMClient(_make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m"))
 
     async def _retry_ok(_provider, operation, **_kw):
@@ -3615,6 +3809,7 @@ async def test_litellm_stream_no_lines_branch(
 
 @pytest.mark.asyncio
 async def test_truncation_no_system_and_empty_message_branch() -> None:
+    """Truncation no system and empty message branch."""
     c = llm_client.LLMClient("ollama", _make_config(OLLAMA_CONTEXT_MAX_CHARS=1200))
     msgs = [
         {"role": "assistant", "content": ""},
@@ -3627,6 +3822,7 @@ async def test_truncation_no_system_and_empty_message_branch() -> None:
 
 @pytest.mark.asyncio
 async def test_truncation_system_empty_and_empty_history_content() -> None:
+    """Truncation system empty and empty history content."""
     c = llm_client.LLMClient("ollama", _make_config(OLLAMA_CONTEXT_MAX_CHARS=1200))
     msgs = [
         {"role": "system", "content": ""},
@@ -3642,6 +3838,7 @@ async def test_truncation_system_empty_and_empty_history_content() -> None:
 async def test_semantic_cache_get_set_return_none_when_redis_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Semantic cache get set return none when redis unavailable."""
     manager = SemanticCacheManager(_make_config())
 
     async def no_redis():
@@ -3658,6 +3855,7 @@ async def test_llmclient_openai_handles_empty_and_long_prompt_with_fake_fixture(
     fake_llm_response,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Llmclient openai handles empty and long prompt with fake fixture."""
     cfg = mock_config(AI_PROVIDER="openai")
     client = llm_client.LLMClient("openai", cfg)
 
@@ -3687,6 +3885,7 @@ async def test_llmclient_openai_surfaces_rate_limit_error_with_fake_fixture(
     fake_llm_error,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Llmclient openai surfaces rate limit error with fake fixture."""
     cfg = mock_config(AI_PROVIDER="openai")
     client = llm_client.LLMClient("openai", cfg)
 
@@ -3701,6 +3900,7 @@ async def test_llmclient_openai_surfaces_rate_limit_error_with_fake_fixture(
 
 
 def test_setting_helper_returns_config_value_or_default() -> None:
+    """Setting helper returns config value or default."""
     cfg = SimpleNamespace(
         STR_NONE=None,
         INT_BOOL=True,
@@ -3722,6 +3922,8 @@ def test_setting_helper_returns_config_value_or_default() -> None:
 async def test_gemini_nonstream_without_tracing_hits_no_span_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Gemini nonstream without tracing hits no span path."""
+
     class _Client(DummyGeminiClient):
         def __init__(self, api_key):
             super().__init__(api_key, text="ok")
@@ -3740,6 +3942,7 @@ async def test_gemini_nonstream_without_tracing_hits_no_span_path(
 async def test_litellm_nonstream_without_tracing_success(
     monkeypatch: pytest.MonkeyPatch, respx_mock_router
 ) -> None:
+    """Litellm nonstream without tracing success."""
     c = llm_client.LiteLLMClient(
         _make_config(LITELLM_GATEWAY_URL="http://gw", LITELLM_MODEL="m1", ENABLE_TRACING=False)
     )
@@ -3754,6 +3957,8 @@ async def test_litellm_nonstream_without_tracing_success(
 
 @pytest.mark.asyncio
 async def test_openai_chat_error_detail_fallback_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Openai chat error detail fallback path."""
+
     class _Resp:
         is_error = True
         status_code = 500
@@ -3790,6 +3995,8 @@ async def test_openai_chat_error_detail_fallback_path(monkeypatch: pytest.Monkey
 async def test_litellm_failure_without_tracing_hits_final_error_branch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Litellm failure without tracing hits final error branch."""
+
     class _Client:
         def __init__(self, *args, **kwargs):
             pass
@@ -3817,6 +4024,8 @@ async def test_litellm_failure_without_tracing_hits_final_error_branch(
 
 @pytest.mark.asyncio
 async def test_anthropic_success_without_tracing_span(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Anthropic success without tracing span."""
+
     class _Messages:
         async def create(self, **kwargs):
             _ = kwargs
@@ -4044,6 +4253,7 @@ async def test_ollama_stream_remaining_buffer_error_no_guidance_branch(
 async def test_track_stream_routing_cost_skips_record_when_no_tokens(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Track stream routing cost skips record when no tokens."""
     recorded: list[float] = []
     monkeypatch.setattr(llm_client, "record_routing_cost", lambda cost: recorded.append(cost))
 
@@ -4065,6 +4275,7 @@ async def test_track_stream_routing_cost_skips_record_when_no_tokens(
 async def test_track_stream_routing_cost_yields_empty_chunks_and_records_non_empty(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Track stream routing cost yields empty chunks and records non empty."""
     recorded: list[float] = []
     monkeypatch.setattr(llm_client, "record_routing_cost", lambda cost: recorded.append(cost))
     monkeypatch.setattr(token_counter, "estimate_tokens", lambda text, model="": len(text))
@@ -4084,6 +4295,7 @@ async def test_track_stream_routing_cost_yields_empty_chunks_and_records_non_emp
 
 
 def test_resolve_cost_per_token_usd_prefers_model_map_and_known_defaults() -> None:
+    """Resolve cost per token usd prefers model map and known defaults."""
     cfg = _make_config(
         COST_ROUTING_TOKEN_COST_USD=9e-6,
         COST_ROUTING_MODEL_COSTS_USD={"claude-3-5-sonnet-latest": 4e-6},
@@ -4096,6 +4308,7 @@ def test_resolve_cost_per_token_usd_prefers_model_map_and_known_defaults() -> No
 
 
 def test_resolve_cost_per_token_usd_falls_back_on_invalid_numeric_values() -> None:
+    """Resolve cost per token usd falls back on invalid numeric values."""
     cfg = _make_config(
         COST_ROUTING_TOKEN_COST_USD="invalid-default",
         COST_ROUTING_MODEL_COSTS_USD={"gemini-2.0-flash": "not-a-float"},
@@ -4107,6 +4320,7 @@ def test_resolve_cost_per_token_usd_falls_back_on_invalid_numeric_values() -> No
 
 @pytest.mark.asyncio
 async def test_llmclient_truncation_preserves_latest_rag_message() -> None:
+    """Llmclient truncation preserves latest rag message."""
     c = llm_client.LLMClient("ollama", _make_config(OLLAMA_CONTEXT_MAX_CHARS=1200))
     msgs = [
         {"role": "system", "content": "S" * 500},
@@ -4121,6 +4335,7 @@ async def test_llmclient_truncation_preserves_latest_rag_message() -> None:
 
 @pytest.mark.asyncio
 async def test_llmclient_truncation_trims_rag_message_and_skips_duplicate_in_history() -> None:
+    """Llmclient truncation trims rag message and skips duplicate in history."""
     c = llm_client.LLMClient("ollama", _make_config(OLLAMA_CONTEXT_MAX_CHARS=1200))
     rag_content = "[RAG] important: " + ("r" * 1400)
     msgs = [
@@ -4143,6 +4358,7 @@ async def test_llmclient_truncation_trims_rag_message_and_skips_duplicate_in_his
 async def test_gemini_chat_returns_fallback_when_google_genai_import_fails(
     monkeypatch: pytest.MonkeyPatch, mock_config
 ) -> None:
+    """Gemini chat returns fallback when google genai import fails."""
     cfg = mock_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm")
     c = llm_client.GeminiClient(cfg)
     original_import_module = llm_client.importlib.import_module
@@ -4161,6 +4377,7 @@ async def test_gemini_chat_returns_fallback_when_google_genai_import_fails(
 async def test_gemini_chat_stream_error_ends_span(
     monkeypatch: pytest.MonkeyPatch, mock_config
 ) -> None:
+    """Gemini chat stream error ends span."""
     ended = {"value": False}
     events: list[dict[str, object]] = []
 
@@ -4207,6 +4424,7 @@ async def test_gemini_chat_stream_error_ends_span(
 async def test_anthropic_chat_stream_errors_end_span(
     monkeypatch: pytest.MonkeyPatch, mock_config
 ) -> None:
+    """Anthropic chat stream errors end span."""
     ended = {"value": 0}
 
     class _Span:
@@ -4276,6 +4494,7 @@ async def test_anthropic_chat_stream_errors_end_span(
 
 
 def test_semantic_cache_redis_circuit_resets_after_cooldown() -> None:
+    """Semantic cache redis circuit resets after cooldown."""
     manager = SemanticCacheManager(_make_config(ENABLE_SEMANTIC_CACHE=True))
     manager._redis_failures = 3
     manager._redis_circuit_open_until = time.monotonic() - 1
@@ -4286,6 +4505,8 @@ def test_semantic_cache_redis_circuit_resets_after_cooldown() -> None:
 
 @pytest.mark.asyncio
 async def test_iter_openai_compatible_stream_lines_stops_on_done() -> None:
+    """Iter openai compatible stream lines stops on done."""
+
     class _Resp:
         async def aiter_lines(self):
             yield "event: ping"
@@ -4300,6 +4521,8 @@ async def test_iter_openai_compatible_stream_lines_stops_on_done() -> None:
 
 @pytest.mark.asyncio
 async def test_iter_openai_compatible_stream_lines_skips_non_dict_json_bodies() -> None:
+    """Iter openai compatible stream lines skips non dict json bodies."""
+
     class _Resp:
         async def aiter_lines(self):
             yield "data: [1,2,3]"
@@ -4312,6 +4535,7 @@ async def test_iter_openai_compatible_stream_lines_skips_non_dict_json_bodies() 
 
 @pytest.mark.asyncio
 async def test_iter_ollama_json_lines_handles_trim_and_non_dict_payloads() -> None:
+    """Iter ollama json lines handles trim and non dict payloads."""
     client = llm_client.OllamaClient(_make_config())
 
     class _Resp:
@@ -4329,6 +4553,7 @@ async def test_iter_ollama_json_lines_handles_trim_and_non_dict_payloads() -> No
 async def test_gemini_chat_returns_missing_package_error_when_import_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Gemini chat returns missing package error when import fails."""
     original_import_module = importlib.import_module
 
     def _failing_import_module(name: str, package: str | None = None):
@@ -4348,6 +4573,7 @@ async def test_gemini_chat_returns_missing_package_error_when_import_fails(
 async def test_gemini_chat_returns_missing_package_error_when_google_genai_is_none(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Gemini chat returns missing package error when google genai is none."""
     monkeypatch.setitem(sys.modules, "google.genai", None)
 
     client = llm_client.GeminiClient(_make_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm"))
@@ -4359,6 +4585,7 @@ async def test_gemini_chat_returns_missing_package_error_when_google_genai_is_no
 
 @pytest.mark.asyncio
 async def test_stream_gemini_generator_yields_fallback_when_iterator_raises_runtime_error() -> None:
+    """Stream gemini generator yields fallback when iterator raises runtime error."""
     client = llm_client.GeminiClient(_make_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm"))
 
     class _BrokenStream:
@@ -4381,6 +4608,7 @@ async def test_stream_gemini_generator_yields_fallback_when_iterator_raises_runt
 async def test_litellm_chat_without_api_key_sends_request_without_authorization(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Litellm chat without api key sends request without authorization."""
     captured_headers: dict[str, str] = {}
 
     class _Response:
@@ -4442,12 +4670,14 @@ def _list_duplicate_test_function_names_in_file(file_path: pathlib.Path) -> list
 
 
 def test_test_module_has_no_duplicate_test_function_names() -> None:
+    """Test module has no duplicate test function names."""
     duplicates = _list_duplicate_test_function_names_in_file(pathlib.Path(__file__))
     assert duplicates == []
 
 
 @pytest.mark.asyncio
 async def test_anthropic_stream_includes_system_prompt_only_when_nonempty(monkeypatch) -> None:
+    """Anthropic stream includes system prompt only when nonempty."""
     captured: dict[str, object] = {}
 
     class _CM:
@@ -4489,6 +4719,7 @@ async def test_anthropic_stream_includes_system_prompt_only_when_nonempty(monkey
 
 @pytest.mark.asyncio
 async def test_llm_client_chat_stream_non_ollama_string_uses_fallback_stream(monkeypatch) -> None:
+    """Llm client chat stream non ollama string uses fallback stream."""
     client = llm_client.LLMClient("openai", _make_config(OPENAI_API_KEY="k"))
 
     class _Backend:
@@ -4507,6 +4738,7 @@ async def test_llm_client_chat_stream_non_ollama_string_uses_fallback_stream(mon
 async def test_llm_client_chat_stream_awaits_coroutine_response_before_iterating(
     monkeypatch,
 ) -> None:
+    """Llm client chat stream awaits coroutine response before iterating."""
     client = llm_client.LLMClient("openai", _make_config(OPENAI_API_KEY="k"))
 
     class _Backend:
@@ -4663,6 +4895,7 @@ async def test_llm_client_chat_stream_awaits_inner_coroutine_response(
 async def test_ollama_client_chat_omits_num_ctx_when_disabled(
     mock_config, respx_mock_router
 ) -> None:
+    """Ollama client chat omits num ctx when disabled."""
     cfg = mock_config(
         CODING_MODEL="m1",
         OLLAMA_URL="http://x/api",
@@ -4682,18 +4915,21 @@ async def test_ollama_client_chat_omits_num_ctx_when_disabled(
 
 
 def test_ollama_gpu_pool_size_clamps_explicit_runtime_limit() -> None:
+    """Ollama gpu pool size clamps explicit runtime limit."""
     cfg = _make_config(USE_GPU=True, OLLAMA_GPU_REQUEST_POOL_SIZE=99)
 
     assert llm_client._ollama_gpu_pool_size(cfg) == 16
 
 
 def test_ollama_gpu_pool_size_defaults_to_single_slot_when_gpu_enabled() -> None:
+    """Ollama gpu pool size defaults to single slot when gpu enabled."""
     cfg = _make_config(USE_GPU=True, OLLAMA_GPU_REQUEST_POOL_SIZE=0)
 
     assert llm_client._ollama_gpu_pool_size(cfg) == 1
 
 
 def test_ollama_gpu_backpressure_timeout_and_poll_are_clamped() -> None:
+    """Ollama gpu backpressure timeout and poll are clamped."""
     cfg = _make_config(
         OLLAMA_GPU_BACKPRESSURE_TIMEOUT_MS=50,
         OLLAMA_GPU_BACKPRESSURE_POLL_MS=5000,
@@ -4704,6 +4940,8 @@ def test_ollama_gpu_backpressure_timeout_and_poll_are_clamped() -> None:
 
 
 def test_ollama_gpu_backpressure_int_setting_handles_type_error() -> None:
+    """Ollama gpu backpressure int setting handles type error."""
+
     class TypeErrorInt(int):
         def __int__(self):
             raise TypeError("cannot coerce")
@@ -4722,6 +4960,7 @@ def test_ollama_gpu_backpressure_int_setting_handles_type_error() -> None:
 async def test_acquire_ollama_gpu_limiter_retries_after_poll_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Acquire ollama gpu limiter retries after poll timeout."""
     cfg = _make_config(
         OLLAMA_GPU_BACKPRESSURE_TIMEOUT_MS=100,
         OLLAMA_GPU_BACKPRESSURE_POLL_MS=1,
@@ -4751,6 +4990,7 @@ async def test_acquire_ollama_gpu_limiter_retries_after_poll_timeout(
 async def test_ollama_gpu_limiter_reuses_same_base_url_and_pool_size(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Ollama gpu limiter reuses same base url and pool size."""
     monkeypatch.setattr(llm_client, "_OLLAMA_GPU_LIMITERS", {})
 
     first = await llm_client._ollama_gpu_limiter("http://ollama.local", 2)
@@ -4767,6 +5007,7 @@ async def test_ollama_gpu_limiter_reuses_same_base_url_and_pool_size(
 async def test_ollama_gpu_limiter_reuses_limiter_created_while_waiting_for_lock(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Ollama gpu limiter reuses limiter created while waiting for lock."""
     monkeypatch.setattr(llm_client, "_OLLAMA_GPU_LIMITERS", {})
 
     class _PopulatingLock:
@@ -4786,12 +5027,14 @@ async def test_ollama_gpu_limiter_reuses_limiter_created_while_waiting_for_lock(
 
 @pytest.mark.asyncio
 async def test_llm_provider_protocol_stubs_are_import_coverage_only() -> None:
+    """Llm provider protocol stubs are import coverage only."""
     assert await llm_client.LLMProvider.generate(object(), []) is None  # type: ignore[arg-type]
     assert await llm_client.LLMProvider.chat(object(), []) is None  # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio
 async def test_acquire_ollama_gpu_limiter_times_out_when_saturated() -> None:
+    """Acquire ollama gpu limiter times out when saturated."""
     cfg = _make_config(
         OLLAMA_GPU_BACKPRESSURE_TIMEOUT_MS=1,
         OLLAMA_GPU_BACKPRESSURE_POLL_MS=1,
@@ -4812,6 +5055,7 @@ async def test_acquire_ollama_gpu_limiter_times_out_when_saturated() -> None:
 async def test_ollama_stream_releases_gpu_limiter_after_consumption(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Ollama stream releases gpu limiter after consumption."""
     cfg = _make_config(
         USE_GPU=True,
         OLLAMA_GPU_REQUEST_POOL_SIZE=1,
@@ -4841,6 +5085,7 @@ async def test_ollama_stream_releases_gpu_limiter_after_consumption(
 async def test_ollama_stream_without_gpu_limiter_returns_traced_stream(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Ollama stream without gpu limiter returns traced stream."""
     cfg = _make_config(
         USE_GPU=False,
         OLLAMA_GPU_REQUEST_POOL_SIZE=0,
@@ -4864,6 +5109,8 @@ async def test_ollama_stream_without_gpu_limiter_returns_traced_stream(
 
 @pytest.mark.asyncio
 async def test_anthropic_non_stream_closes_client(monkeypatch) -> None:
+    """Anthropic non stream closes client."""
+
     class _Response:
         usage = SimpleNamespace(input_tokens=1, output_tokens=2)
         content = [SimpleNamespace(text='{"tool":"final_answer","argument":"ok","thought":"done"}')]
@@ -4897,6 +5144,8 @@ async def test_anthropic_non_stream_closes_client(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_anthropic_stream_closes_client_after_iteration(monkeypatch) -> None:
+    """Anthropic stream closes client after iteration."""
+
     class _Event:
         type = "content_block_delta"
         delta = SimpleNamespace(type="text_delta", text="chunk")

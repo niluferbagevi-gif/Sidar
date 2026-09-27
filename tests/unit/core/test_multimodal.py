@@ -1,3 +1,5 @@
+"""``core.multimodal`` modülü için unit testler."""
+
 from __future__ import annotations
 
 import asyncio
@@ -17,14 +19,20 @@ _REAL_TO_THREAD = asyncio.to_thread
 
 
 class DummyLLM:
+    """``chat`` çağrısında sabit analiz metni döndüren LLM taklidi."""
+
     def __init__(self, response: str = "analiz") -> None:
+        """Döndürülecek yanıt metnini saklar."""
         self.response = response
 
     async def chat(self, **_kwargs):
+        """Ayarlanan yanıt metnini döndürür."""
         return self.response
 
 
 class DummyConfig:
+    """Multimodal açık, 1 MB dosya limiti ve Whisper STT kullanan test config'i."""
+
     ENABLE_MULTIMODAL = True
     MULTIMODAL_MAX_FILE_BYTES = 1024 * 1024
     MULTIMODAL_REMOTE_DOWNLOAD_TIMEOUT = 11.0
@@ -35,27 +43,38 @@ class DummyConfig:
 
 
 class TinyLimitConfig(DummyConfig):
+    """Dosya boyutu limitini 2 bayta indirerek limit aşımı yollarını tetikleyen config."""
+
     MULTIMODAL_MAX_FILE_BYTES = 2
 
 
 class AsyncClientStub:
+    """``get`` çağrılarına sıradaki hazır yanıtı döndüren async HTTP istemci taklidi."""
+
     def __init__(self, responses):
+        """Sırayla döndürülecek yanıtları saklar."""
         self._responses = list(responses)
 
     async def __aenter__(self):
+        """Kendini context manager olarak döndürür."""
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
+        """Exception'ları bastırmadan context'ten çıkar."""
         return False
 
     async def get(self, _url):
+        """Sıradaki hazır yanıtı döndürür."""
         return self._responses.pop(0)
 
 
 class ResponseStub:
+    """Durum kodu, JSON, header, içerik ve isteğe bağlı hata taşıyan HTTP yanıt taklidi."""
+
     def __init__(
         self, *, status_code=200, payload=None, headers=None, content=b"", raise_error=None
     ):
+        """Yanıt alanlarını ve ``raise_for_status`` hatasını saklar."""
         self.status_code = status_code
         self._payload = payload or {}
         self.headers = headers or {}
@@ -63,18 +82,22 @@ class ResponseStub:
         self._raise_error = raise_error
 
     def json(self):
+        """Ayarlanan JSON payload'ını döndürür."""
         return self._payload
 
     def raise_for_status(self):
+        """Ayarlı bir hata varsa onu fırlatır."""
         if self._raise_error:
             raise self._raise_error
 
 
 def run(coro):
+    """Coroutine'i yeni bir event loop'ta çalıştırıp sonucunu döndürür."""
     return asyncio.run(coro)
 
 
 def test_response_stub_raise_for_status_raises_configured_error():
+    """Response stub raise for status raises configured error."""
     stub = ResponseStub(raise_error=RuntimeError("http failure"))
 
     with pytest.raises(RuntimeError, match="http failure"):
@@ -82,6 +105,7 @@ def test_response_stub_raise_for_status_raises_configured_error():
 
 
 def test_detect_media_kind_and_sources():
+    """Detect media kind and sources."""
     assert multimodal.detect_media_kind(mime_type="video/mp4") == "video"
     assert multimodal.detect_media_kind(path="sound.mp3") == "audio"
     assert multimodal.detect_media_kind(path="photo.png") == "image"
@@ -91,6 +115,7 @@ def test_detect_media_kind_and_sources():
 
 
 def test_detect_platform_and_youtube_id_extractors():
+    """Detect platform and youtube id extractors."""
     assert multimodal.detect_video_platform("https://youtu.be/abcdefghijk") == "youtube"
     assert multimodal.detect_video_platform("https://vimeo.com/123") == "vimeo"
     assert multimodal.detect_video_platform("https://loom.com/share/1") == "loom"
@@ -111,6 +136,7 @@ def test_detect_platform_and_youtube_id_extractors():
 
 
 def test_normalize_youtube_events_skips_invalid_items():
+    """Normalize youtube events skips invalid items."""
     payload = [
         {"segs": [{"utf8": "Merhaba"}], "tStartMs": 1000, "dDurationMs": 500},
         {"segs": "invalid"},
@@ -124,6 +150,7 @@ def test_normalize_youtube_events_skips_invalid_items():
 
 
 def test_fetch_youtube_transcript_success_after_language_fallback():
+    """Fetch youtube transcript success after language fallback."""
     responses = [
         ResponseStub(status_code=404),
         ResponseStub(
@@ -147,11 +174,13 @@ def test_fetch_youtube_transcript_success_after_language_fallback():
 
 
 def test_fetch_youtube_transcript_invalid_id_returns_failure():
+    """Fetch youtube transcript invalid id returns failure."""
     result = run(multimodal.fetch_youtube_transcript("https://example.com/video"))
     assert result["success"] is False
 
 
 def test_fetch_youtube_transcript_not_found_when_empty_payload():
+    """Fetch youtube transcript not found when empty payload."""
     responses = [ResponseStub(payload={"events": [{"segs": []}]})]
 
     def factory(**_kwargs):
@@ -169,6 +198,8 @@ def test_fetch_youtube_transcript_not_found_when_empty_payload():
 
 
 def test_download_remote_media_http_flow(tmp_path):
+    """Download remote media http flow."""
+
     def factory(**_kwargs):
         return AsyncClientStub(
             [
@@ -188,11 +219,13 @@ def test_download_remote_media_http_flow(tmp_path):
 
 
 def test_download_remote_media_requires_remote_source(tmp_path):
+    """Download remote media requires remote source."""
     with pytest.raises(ValueError):
         run(multimodal.download_remote_media("/tmp/local.mp4", output_dir=tmp_path))
 
 
 def test_download_remote_media_ytdlp_without_output_raises(monkeypatch, tmp_path):
+    """Download remote media ytdlp without output raises."""
     monkeypatch.setattr(multimodal, "_command_exists", lambda name: name == "yt-dlp")
 
     async def fake_to_thread(fn, *args, **kwargs):
@@ -210,6 +243,7 @@ def test_download_remote_media_ytdlp_without_output_raises(monkeypatch, tmp_path
 
 
 def test_resolve_remote_media_stream_ytdlp_path(monkeypatch):
+    """Resolve remote media stream ytdlp path."""
     monkeypatch.setattr(multimodal, "_command_exists", lambda name: name == "yt-dlp")
 
     async def fake_to_thread(_fn, command):
@@ -223,6 +257,7 @@ def test_resolve_remote_media_stream_ytdlp_path(monkeypatch):
 
 
 def test_resolve_remote_media_stream_validates_url_and_generic_fallback():
+    """Resolve remote media stream validates url and generic fallback."""
     with pytest.raises(ValueError):
         run(multimodal.resolve_remote_media_stream("/tmp/local.mp4"))
 
@@ -233,6 +268,7 @@ def test_resolve_remote_media_stream_validates_url_and_generic_fallback():
 
 
 def test_materialize_remote_media_for_ffmpeg_fallbacks_to_download(monkeypatch, tmp_path):
+    """Materialize remote media for ffmpeg fallbacks to download."""
     monkeypatch.setattr(multimodal, "_command_exists", lambda _name: False)
 
     async def fake_download(source_url, *, output_dir, **_kwargs):
@@ -253,6 +289,7 @@ def test_materialize_remote_media_for_ffmpeg_fallbacks_to_download(monkeypatch, 
 
 
 def test_materialize_remote_media_for_ffmpeg_happy_path(monkeypatch, tmp_path):
+    """Materialize remote media for ffmpeg happy path."""
     monkeypatch.setattr(multimodal, "_command_exists", lambda _name: True)
 
     async def fake_resolve(_src, **_kwargs):
@@ -281,6 +318,7 @@ def test_materialize_remote_media_for_ffmpeg_happy_path(monkeypatch, tmp_path):
 
 
 def test_extract_video_frames_generates_frame_metadata(monkeypatch, tmp_path):
+    """Extract video frames generates frame metadata."""
     video = tmp_path / "sample.mp4"
     video.write_bytes(b"x")
     frames_dir = tmp_path / "frames"
@@ -304,6 +342,7 @@ def test_extract_video_frames_generates_frame_metadata(monkeypatch, tmp_path):
 
 
 def test_extract_video_frames_validation_and_edge_cases(monkeypatch, tmp_path):
+    """Extract video frames validation and edge cases."""
     with pytest.raises(ValueError):
         run(multimodal.extract_video_frames(tmp_path / "x.mp4", strategy="keyframes"))
     assert run(multimodal.extract_video_frames(tmp_path / "x.mp4", max_frames=0)) == []
@@ -313,6 +352,7 @@ def test_extract_video_frames_validation_and_edge_cases(monkeypatch, tmp_path):
 
 
 def test_extract_audio_track_and_transcribe_audio_paths(monkeypatch, tmp_path):
+    """Extract audio track and transcribe audio paths."""
     source = tmp_path / "input.mp4"
     source.write_bytes(b"x")
     output = tmp_path / "audio.wav"
@@ -345,12 +385,14 @@ def test_extract_audio_track_and_transcribe_audio_paths(monkeypatch, tmp_path):
 
 
 def test_extract_audio_track_validation(monkeypatch, tmp_path):
+    """Extract audio track validation."""
     monkeypatch.setattr(multimodal, "_command_exists", lambda _name: False)
     with pytest.raises(RuntimeError):
         run(multimodal.extract_audio_track(tmp_path / "none.mp4"))
 
 
 def test_transcribe_audio_failure_modes(monkeypatch, tmp_path):
+    """Transcribe audio failure modes."""
     audio = tmp_path / "input.wav"
     audio.write_bytes(b"a")
     with pytest.raises(ValueError):
@@ -381,6 +423,7 @@ def test_transcribe_audio_failure_modes(monkeypatch, tmp_path):
 
 
 def test_build_context_scene_summary_and_render_document():
+    """Build context scene summary and render document."""
     transcript = {"text": "metin", "language": "tr"}
     frames = [{"timestamp_seconds": 1.2, "analysis": "sahne-1"}]
     context = multimodal.build_multimodal_context(
@@ -402,6 +445,7 @@ def test_build_context_scene_summary_and_render_document():
 
 
 def test_build_context_reason_path_and_render_download_details():
+    """Build context reason path and render download details."""
     context = multimodal.build_multimodal_context(
         media_kind="audio",
         transcript={"reason": "yok", "language": "tr"},
@@ -432,6 +476,8 @@ def test_build_context_reason_path_and_render_download_details():
 
 
 def test_ingest_multimodal_analysis_success_and_failure():
+    """Ingest multimodal analysis success and failure."""
+
     class Store:
         async def add_document(self, **kwargs):
             self.last = kwargs
@@ -456,6 +502,7 @@ def test_ingest_multimodal_analysis_success_and_failure():
 
 
 def test_pipeline_transcribe_bytes_and_analyze_media_shortcuts(monkeypatch, tmp_path):
+    """Pipeline transcribe bytes and analyze media shortcuts."""
     pipeline = multimodal.MultimodalPipeline(DummyLLM(), DummyConfig())
 
     async def fake_transcribe(path, **_kwargs):
@@ -473,6 +520,7 @@ def test_pipeline_transcribe_bytes_and_analyze_media_shortcuts(monkeypatch, tmp_
 
 
 def test_pipeline_disabled_short_circuits_media_io(monkeypatch, tmp_path):
+    """Pipeline disabled short circuits media io."""
     pipeline = multimodal.MultimodalPipeline(DummyLLM(), DummyConfig())
     pipeline.enabled = False
 
@@ -498,12 +546,14 @@ def test_pipeline_disabled_short_circuits_media_io(monkeypatch, tmp_path):
 
 
 def test_pipeline_transcribe_bytes_limits():
+    """Pipeline transcribe bytes limits."""
     pipeline = multimodal.MultimodalPipeline(DummyLLM(), TinyLimitConfig())
     assert run(pipeline.transcribe_bytes(b""))["success"] is False
     assert run(pipeline.transcribe_bytes(b"123"))["success"] is False
 
 
 def test_pipeline_analyze_local_media_video_happy_path(monkeypatch, tmp_path):
+    """Pipeline analyze local media video happy path."""
     media = tmp_path / "v.mp4"
     media.write_bytes(b"abc")
     pipeline = multimodal.MultimodalPipeline(DummyLLM("sonuc"), DummyConfig())
@@ -539,6 +589,7 @@ def test_pipeline_analyze_local_media_video_happy_path(monkeypatch, tmp_path):
 
 
 def test_pipeline_analyze_local_media_guards_and_image(monkeypatch, tmp_path):
+    """Pipeline analyze local media guards and image."""
     pipeline = multimodal.MultimodalPipeline(DummyLLM("x"), TinyLimitConfig())
     assert run(pipeline._analyze_local_media(media_path=tmp_path / "none"))["success"] is False
 
@@ -569,6 +620,7 @@ def test_pipeline_analyze_local_media_guards_and_image(monkeypatch, tmp_path):
 
 
 def test_pipeline_analyze_local_media_unsupported_kind(tmp_path):
+    """Pipeline analyze local media unsupported kind."""
     file = tmp_path / "file.bin"
     file.write_bytes(b"x")
     pipeline = multimodal.MultimodalPipeline(DummyLLM(), DummyConfig())
@@ -579,6 +631,7 @@ def test_pipeline_analyze_local_media_unsupported_kind(tmp_path):
 
 
 def test_pipeline_analyze_media_source_remote_with_ingest(monkeypatch):
+    """Pipeline analyze media source remote with ingest."""
     pipeline = multimodal.MultimodalPipeline(DummyLLM("A"), DummyConfig())
     monkeypatch.setattr(multimodal, "_command_exists", lambda _name: False)
 
@@ -624,6 +677,7 @@ def test_pipeline_analyze_media_source_remote_with_ingest(monkeypatch):
 
 
 def test_pipeline_analyze_media_source_validations_and_non_remote(monkeypatch, tmp_path):
+    """Pipeline analyze media source validations and non remote."""
     pipeline = multimodal.MultimodalPipeline(DummyLLM("A"), DummyConfig())
     pipeline.enabled = False
     assert run(pipeline.analyze_media_source(media_source="x"))["success"] is False
@@ -643,6 +697,7 @@ def test_pipeline_analyze_media_source_validations_and_non_remote(monkeypatch, t
 
 
 def test_low_level_helpers_and_youtube_id_empty(monkeypatch):
+    """Low level helpers and youtube id empty."""
     monkeypatch.setattr(
         multimodal.shutil, "which", lambda name: "/usr/bin/x" if name == "ffmpeg" else None
     )
@@ -665,6 +720,7 @@ def test_low_level_helpers_and_youtube_id_empty(monkeypatch):
 
 
 def test_download_remote_media_ytdlp_success_returns_downloaded_media(monkeypatch, tmp_path):
+    """Download remote media ytdlp success returns downloaded media."""
     target = tmp_path / "video.mp4"
     target.write_bytes(b"x")
     monkeypatch.setattr(multimodal, "_command_exists", lambda name: name == "yt-dlp")
@@ -686,6 +742,7 @@ def test_download_remote_media_ytdlp_success_returns_downloaded_media(monkeypatc
 
 
 def test_resolve_remote_media_stream_ignores_non_dict_metadata(monkeypatch):
+    """Resolve remote media stream ignores non dict metadata."""
     monkeypatch.setattr(multimodal, "_command_exists", lambda name: name == "yt-dlp")
 
     async def fake_to_thread(_fn, command):
@@ -704,6 +761,7 @@ def test_resolve_remote_media_stream_ignores_non_dict_metadata(monkeypatch):
 
 
 def test_extract_video_frames_and_audio_track_not_found(monkeypatch, tmp_path):
+    """Extract video frames and audio track not found."""
     monkeypatch.setattr(multimodal, "_command_exists", lambda _name: True)
     with pytest.raises(FileNotFoundError):
         run(multimodal.extract_video_frames(tmp_path / "missing.mp4"))
@@ -712,6 +770,7 @@ def test_extract_video_frames_and_audio_track_not_found(monkeypatch, tmp_path):
 
 
 def test_transcribe_audio_prompt_and_missing_output_json(monkeypatch, tmp_path):
+    """Transcribe audio prompt and missing output json."""
     audio = tmp_path / "input.wav"
     audio.write_bytes(b"a")
     captured = {}
@@ -732,6 +791,7 @@ def test_transcribe_audio_prompt_and_missing_output_json(monkeypatch, tmp_path):
 
 
 def test_build_context_scene_summary_and_render_additional_branches():
+    """Build context scene summary and render additional branches."""
     context = multimodal.build_multimodal_context(
         media_kind="video",
         transcript=None,
@@ -760,6 +820,7 @@ def test_build_context_scene_summary_and_render_additional_branches():
 
 
 def test_pipeline_additional_branches_audio_and_remote_fallback(monkeypatch, tmp_path):
+    """Pipeline additional branches audio and remote fallback."""
     pipeline = multimodal.MultimodalPipeline(DummyLLM("ok"), DummyConfig())
     audio = tmp_path / "a.mp3"
     audio.write_bytes(b"abc")
@@ -804,6 +865,7 @@ def test_pipeline_additional_branches_audio_and_remote_fallback(monkeypatch, tmp
 
 
 def test_pipeline_video_transcript_override_skips_audio_extraction(monkeypatch, tmp_path):
+    """Pipeline video transcript override skips audio extraction."""
     media = tmp_path / "v.mp4"
     media.write_bytes(b"abc")
     pipeline = multimodal.MultimodalPipeline(DummyLLM("ok"), DummyConfig())
@@ -840,6 +902,7 @@ def test_pipeline_video_transcript_override_skips_audio_extraction(monkeypatch, 
 
 
 def test_pipeline_remote_ffmpeg_materialize_success_skips_download_fallback(monkeypatch, tmp_path):
+    """Pipeline remote ffmpeg materialize success skips download fallback."""
     pipeline = multimodal.MultimodalPipeline(DummyLLM("ok"), DummyConfig())
     monkeypatch.setattr(multimodal, "_command_exists", lambda _name: True)
 
@@ -875,12 +938,14 @@ def test_pipeline_remote_ffmpeg_materialize_success_skips_download_fallback(monk
 
 
 def test_transcribe_webrtc_audio_chunk_empty_bytes_returns_failure():
+    """Transcribe webrtc audio chunk empty bytes returns failure."""
     result = run(multimodal.transcribe_webrtc_audio_chunk(b"", mime_type="audio/webm"))
     assert result["success"] is False
     assert "Boş WebRTC ses paketi" in result["reason"]
 
 
 def test_transcribe_webrtc_audio_chunk_uses_temp_file_and_adds_transport(monkeypatch):
+    """Transcribe webrtc audio chunk uses temp file and adds transport."""
     captured = {}
 
     async def fake_transcribe(path, **kwargs):

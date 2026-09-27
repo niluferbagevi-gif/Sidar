@@ -1,3 +1,5 @@
+"""``core.config_runtime_paths`` ve ``core.config_secret_hardening`` için unit testler."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -28,6 +30,7 @@ class _FakeConfig:
 
 
 def test_runtime_path_settings_resolve_repo_relative_rag_dir(tmp_path: Path) -> None:
+    """Runtime path settings resolve repo relative rag dir."""
     paths = load_runtime_path_settings(
         base_dir=tmp_path,
         environ={"RAG_DIR": "custom/rag"},
@@ -43,6 +46,7 @@ def test_runtime_path_settings_resolve_repo_relative_rag_dir(tmp_path: Path) -> 
 
 
 def test_runtime_path_settings_preserve_absolute_rag_dir(tmp_path: Path) -> None:
+    """Runtime path settings preserve absolute rag dir."""
     absolute_rag_dir = tmp_path / "absolute-rag"
 
     paths = load_runtime_path_settings(
@@ -54,6 +58,7 @@ def test_runtime_path_settings_preserve_absolute_rag_dir(tmp_path: Path) -> None
 
 
 def test_secret_hardening_boundary_collects_security_and_provider_keys(monkeypatch) -> None:
+    """Secret hardening boundary collects security and provider keys."""
     monkeypatch.setenv("SIDAR_ENV", "production")
     monkeypatch.setenv("POSTGRES_PASSWORD", "sidar")
 
@@ -78,6 +83,7 @@ def test_secret_hardening_boundary_collects_security_and_provider_keys(monkeypat
 def test_production_secret_hardening_rejects_weak_and_nonproduction_shared_values(
     monkeypatch, tmp_path: Path
 ) -> None:
+    """Production secret hardening rejects weak and nonproduction shared values."""
     strong_values = {
         key: f"{index:02d}-N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh-{index:02d}"
         for index, key in enumerate(

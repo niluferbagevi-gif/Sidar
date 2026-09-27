@@ -1,3 +1,5 @@
+"""``core.cache.semantic_cache`` modülü için unit testler."""
+
 from __future__ import annotations
 
 import threading
@@ -32,6 +34,7 @@ def _cfg(**overrides: object) -> SimpleNamespace:
 async def test_semantic_chat_cache_skips_empty_prompt_and_preserves_miss(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Semantic chat cache skips empty prompt and preserves miss."""
     cache_get = AsyncMock(return_value=None)
     cache_set = AsyncMock()
 
@@ -52,6 +55,7 @@ async def test_semantic_chat_cache_skips_empty_prompt_and_preserves_miss(
 async def test_semantic_chat_cache_stringifies_cached_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Semantic chat cache stringifies cached response."""
     cache_get = AsyncMock(return_value=123)
 
     monkeypatch.setattr(SemanticCacheManager, "get", cache_get)
@@ -63,6 +67,7 @@ async def test_semantic_chat_cache_stringifies_cached_response(
 
 
 def test_semantic_chat_cache_records_stream_skip(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Semantic chat cache records stream skip."""
     calls = 0
 
     def fake_record_cache_skip() -> None:
@@ -78,6 +83,7 @@ def test_semantic_chat_cache_records_stream_skip(monkeypatch: pytest.MonkeyPatch
 
 @pytest.mark.asyncio
 async def test_semantic_cache_hit_skips_llm_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Semantic cache hit skips llm call."""
     cache_get = AsyncMock(return_value="cached-response")
     cache_set = AsyncMock()
     llm_chat = AsyncMock(return_value="llm-response")
@@ -99,6 +105,7 @@ async def test_semantic_cache_hit_skips_llm_call(monkeypatch: pytest.MonkeyPatch
 async def test_semantic_cache_miss_calls_llm_and_populates_cache(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Semantic cache miss calls llm and populates cache."""
     cache_get = AsyncMock(return_value=None)
     cache_set = AsyncMock()
     llm_chat = AsyncMock(return_value="llm-response")
@@ -122,6 +129,7 @@ async def test_semantic_cache_manager_hit_and_miss_with_fake_redis(
     frozen_time,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Semantic cache manager hit and miss with fake redis."""
     manager = SemanticCacheManager(_cfg())
     manager._get_redis = AsyncMock(return_value=fake_redis)
 
@@ -325,6 +333,7 @@ async def test_semantic_cache_get_and_set_offload_embed_prompt_to_a_thread(
 async def test_get_redis_records_error_and_opens_circuit_on_ping_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Get redis records error and opens circuit on ping failure."""
     cfg = _cfg(SEMANTIC_CACHE_REDIS_CB_FAIL_THRESHOLD=1)
     manager = SemanticCacheManager(cfg)
 
@@ -355,6 +364,7 @@ async def test_get_redis_records_error_and_opens_circuit_on_ping_failure(
 async def test_get_redis_records_error_and_opens_circuit_on_from_url_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Get redis records error and opens circuit on from url failure."""
     cfg = _cfg(SEMANTIC_CACHE_REDIS_CB_FAIL_THRESHOLD=1)
     manager = SemanticCacheManager(cfg)
 
@@ -380,6 +390,8 @@ async def test_get_redis_records_error_and_opens_circuit_on_from_url_failure(
 
 
 def test_embed_prompt_returns_empty_vector_when_embedding_fn_raises() -> None:
+    """Embed prompt returns empty vector when embedding fn raises."""
+
     def _failing_embedding(*_args, **_kwargs):
         raise ValueError("Embedding model down")
 
@@ -392,6 +404,7 @@ def test_embed_prompt_returns_empty_vector_when_embedding_fn_raises() -> None:
 async def test_get_redis_returns_none_when_circuit_opens_after_waiting_for_init_lock(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Get redis returns none when circuit opens after waiting for init lock."""
     manager = SemanticCacheManager(_cfg())
     manager._redis_circuit_open_until = 0.0
 
@@ -436,6 +449,7 @@ async def test_get_redis_returns_none_when_circuit_opens_after_waiting_for_init_
 async def test_get_redis_returns_existing_client_initialized_inside_lock(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Get redis returns existing client initialized inside lock."""
     manager = SemanticCacheManager(_cfg())
     redis_client = object()
 
@@ -464,6 +478,7 @@ async def test_get_redis_returns_existing_client_initialized_inside_lock(
 
 @pytest.mark.asyncio
 async def test_get_redis_handles_connection_refused_with_invalid_redis_url() -> None:
+    """Get redis handles connection refused with invalid redis url."""
     if semantic_cache_module.Redis is None:
         pytest.skip("redis.asyncio mevcut değil")
 

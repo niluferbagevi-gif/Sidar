@@ -1,9 +1,12 @@
+"""``core.config_postgres`` modülü için unit testler."""
+
 import pytest
 
 from core import config_postgres
 
 
 def test_load_database_settings_groups_database_domain_with_production_defaults():
+    """Load database settings groups database domain with production defaults."""
     values = {
         "SIDAR_ENV": "production",
         "DATABASE_URL": "postgresql+asyncpg://user:secret@db:5432/sidar",
@@ -29,6 +32,7 @@ def test_load_database_settings_groups_database_domain_with_production_defaults(
 
 
 def test_load_database_settings_preserves_explicit_typed_overrides():
+    """Load database settings preserves explicit typed overrides."""
     bool_values = {
         "SIDAR_ALLOW_INSECURE_LOCAL_DB_DEFAULT": True,
         "DB_DEGRADED_MODE_ON_POSTGRES_FAILURE": False,
@@ -66,6 +70,7 @@ def _getenv(values):
 
 
 def test_read_env_returns_default_when_getter_returns_none():
+    """Read env returns default when getter returns none."""
     assert (
         config_postgres._read_env(lambda _key, _default: None, "POSTGRES_USER", "sidar") == "sidar"
     )
@@ -86,10 +91,12 @@ def test_read_env_returns_default_when_getter_returns_none():
     ],
 )
 def test_normalize_postgres_port_handles_valid_and_invalid_values(value, expected):
+    """Normalize postgres port handles valid and invalid values."""
     assert config_postgres._normalize_postgres_port(value) == expected
 
 
 def test_build_postgres_dsn_falls_back_for_invalid_port_and_quotes_components():
+    """Build postgres dsn falls back for invalid port and quotes components."""
     values = {
         "POSTGRES_USER": "sidar user",
         "POSTGRES_PASSWORD": "p@ ss/word",
@@ -105,6 +112,7 @@ def test_build_postgres_dsn_falls_back_for_invalid_port_and_quotes_components():
 
 
 def test_database_url_helpers_return_explicit_urls():
+    """Database url helpers return explicit urls."""
     values = {
         "DATABASE_URL": "postgresql+asyncpg://u:p@db:5432/app",
         "SIDAR_CONTAINER_DATABASE_URL": "postgresql+asyncpg://u:p@postgres:5432/app",
@@ -121,6 +129,7 @@ def test_database_url_helpers_return_explicit_urls():
 
 
 def test_container_database_url_prefers_explicit_sidar_container_url_and_trims_it():
+    """Container database url prefers explicit sidar container url and trims it."""
     values = {
         "SIDAR_CONTAINER_DATABASE_URL": "  postgresql+asyncpg://u:p@container:5432/app  ",
         "POSTGRES_CONTAINER_HOST": "should-not-be-used",
@@ -133,6 +142,7 @@ def test_container_database_url_prefers_explicit_sidar_container_url_and_trims_i
 
 
 def test_container_database_url_uses_container_host_when_explicit_url_is_missing():
+    """Container database url uses container host when explicit url is missing."""
     values = {
         "POSTGRES_USER": "sidar",
         "POSTGRES_PASSWORD": "secret",
@@ -148,6 +158,7 @@ def test_container_database_url_uses_container_host_when_explicit_url_is_missing
 
 
 def test_postgres_password_drift_messages_detects_url_password_mismatch():
+    """Postgres password drift messages detects url password mismatch."""
     values = {
         "POSTGRES_PASSWORD": "strong-password-1234567890!Aa",
         "DATABASE_URL": "postgresql+asyncpg://sidar:old@127.0.0.1:5432/sidar",
@@ -163,6 +174,7 @@ def test_postgres_password_drift_messages_detects_url_password_mismatch():
 def test_postgres_password_drift_messages_skip_when_postgres_password_is_missing_or_empty(
     password_value,
 ):
+    """Postgres password drift messages skip when postgres password is missing or empty."""
     values = {
         "POSTGRES_PASSWORD": password_value,
         "DATABASE_URL": "postgresql+asyncpg://sidar:old@127.0.0.1:5432/sidar",
@@ -173,6 +185,7 @@ def test_postgres_password_drift_messages_skip_when_postgres_password_is_missing
 
 
 def test_postgres_password_drift_messages_skip_empty_url_entries():
+    """Postgres password drift messages skip empty url entries."""
     values = {
         "POSTGRES_PASSWORD": "secret",
         "DATABASE_URL": "   ",
@@ -185,6 +198,7 @@ def test_postgres_password_drift_messages_skip_empty_url_entries():
 
 
 def test_postgres_password_drift_messages_ignore_non_postgresql_urls():
+    """Postgres password drift messages ignore non postgresql urls."""
     values = {
         "POSTGRES_PASSWORD": "secret",
         "DATABASE_URL": "sqlite:///sidar.db",
@@ -195,6 +209,7 @@ def test_postgres_password_drift_messages_ignore_non_postgresql_urls():
 
 
 def test_postgres_password_drift_messages_reports_passwordless_postgresql_urls():
+    """Postgres password drift messages reports passwordless postgresql urls."""
     values = {
         "POSTGRES_PASSWORD": "secret",
         "DATABASE_URL": "postgresql+asyncpg://sidar@127.0.0.1:5432/sidar",

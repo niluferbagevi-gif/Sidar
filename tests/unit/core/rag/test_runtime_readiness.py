@@ -20,6 +20,7 @@ def _store(*, vector_ready: bool, bm25_ready: bool, seeded: bool = True) -> Docu
 
 
 def test_metadata_seed_does_not_claim_vector_runtime_readiness() -> None:
+    """Metadata seed does not claim vector runtime readiness."""
     report = _store(vector_ready=False, bm25_ready=True).runtime_readiness_report()
 
     assert report["metadata_seeded"] is True
@@ -29,6 +30,7 @@ def test_metadata_seed_does_not_claim_vector_runtime_readiness() -> None:
 
 
 def test_runtime_readiness_requires_vector_and_bm25() -> None:
+    """Runtime readiness requires vector and bm25."""
     report = _store(vector_ready=True, bm25_ready=True).runtime_readiness_report()
 
     assert report["ready"] is True
@@ -37,6 +39,7 @@ def test_runtime_readiness_requires_vector_and_bm25() -> None:
 
 
 def test_runtime_readiness_chroma_ready_with_collection() -> None:
+    """Runtime readiness chroma ready with collection."""
     store = _store(vector_ready=False, bm25_ready=True)
     store._vector_backend = "chroma"
     store._chroma_available = True
@@ -53,6 +56,7 @@ def test_runtime_readiness_chroma_ready_with_collection() -> None:
 
 
 def test_runtime_readiness_chroma_unavailable_without_collection() -> None:
+    """Runtime readiness chroma unavailable without collection."""
     store = _store(vector_ready=False, bm25_ready=True)
     store._vector_backend = "chroma"
     store._chroma_available = True

@@ -1,9 +1,12 @@
+"""``core.rag.formatting`` modülü için unit testler."""
+
 from __future__ import annotations
 
 from core.rag.formatting import extract_snippet, format_results_from_struct
 
 
 def test_format_results_from_struct_matches_legacy_markdown_shape() -> None:
+    """Format results from struct matches legacy markdown shape."""
     ok, rendered = format_results_from_struct(
         [
             {
@@ -25,6 +28,7 @@ def test_format_results_from_struct_matches_legacy_markdown_shape() -> None:
 
 
 def test_format_results_from_struct_handles_empty_results() -> None:
+    """Format results from struct handles empty results."""
     ok, rendered = format_results_from_struct([], "missing", "Keyword")
 
     assert ok is False
@@ -32,6 +36,7 @@ def test_format_results_from_struct_handles_empty_results() -> None:
 
 
 def test_extract_snippet_prefers_query_window_and_falls_back_to_prefix() -> None:
+    """Extract snippet prefers query window and falls back to prefix."""
     content = "a" * 120 + "needle and surrounding context"
 
     assert extract_snippet(content, "needle", window=20).startswith("...")

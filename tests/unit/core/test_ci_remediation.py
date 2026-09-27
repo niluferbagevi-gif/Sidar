@@ -1,3 +1,5 @@
+"""``core.ci_remediation`` modülü için unit testler."""
+
 from __future__ import annotations
 
 import json
@@ -23,10 +25,12 @@ import core.ci_remediation as ci
     ],
 )
 def test_is_allowed_validation_command(command: str, expected: bool) -> None:
+    """Is allowed validation command."""
     assert ci._is_allowed_validation_command(command) is expected
 
 
 def test_build_ruff_autofix_command_defaults_to_safe_fix_only() -> None:
+    """Build ruff autofix command defaults to safe fix only."""
     command = ci.build_ruff_autofix_command()
 
     assert command == "uv run ruff check --fix ."
@@ -34,6 +38,7 @@ def test_build_ruff_autofix_command_defaults_to_safe_fix_only() -> None:
 
 
 def test_build_ruff_autofix_command_limits_unsafe_fixes_to_selectors() -> None:
+    """Build ruff autofix command limits unsafe fixes to selectors."""
     command = ci.build_ruff_autofix_command(unsafe_fixes=True, unsafe_selectors="I,UP034 bad;rm")
 
     assert command == "uv run ruff check --fix --unsafe-fixes --select I,UP034 ."
@@ -54,10 +59,12 @@ def test_build_ruff_autofix_command_limits_unsafe_fixes_to_selectors() -> None:
     ],
 )
 def test_build_scoped_ruff_autofix_command(paths: list[str], expected: str) -> None:
+    """Build scoped ruff autofix command."""
     assert ci.build_scoped_ruff_autofix_command(paths) == expected
 
 
 def test_is_allowed_validation_command_rejects_unbounded_ruff_unsafe_fixes() -> None:
+    """Is allowed validation command rejects unbounded ruff unsafe fixes."""
     assert ci._is_allowed_validation_command("uv run ruff check --fix .") is True
     assert ci._is_allowed_validation_command("uv run ruff check --fix --unsafe-fixes .") is False
     assert (
@@ -79,6 +86,7 @@ def test_is_allowed_validation_command_rejects_unbounded_ruff_unsafe_fixes() -> 
 def test_is_allowed_validation_command_uses_default_when_ruff_unsafe_allowlist_empty(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Is allowed validation command uses default when ruff unsafe allowlist empty."""
     monkeypatch.setattr(ci.Config, "RUFF_AUTOFIX_UNSAFE_RULES", "")
 
     assert (
@@ -93,6 +101,7 @@ def test_is_allowed_validation_command_uses_default_when_ruff_unsafe_allowlist_e
 def test_is_allowed_validation_command_supports_explicit_ruff_unsafe_allowlist_disable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Is allowed validation command supports explicit ruff unsafe allowlist disable."""
     monkeypatch.setattr(ci.Config, "RUFF_AUTOFIX_UNSAFE_RULES", "")
     monkeypatch.setattr(ci.Config, "RUFF_AUTOFIX_UNSAFE_RULES_DISABLE", True, raising=False)
 
@@ -108,6 +117,7 @@ def test_is_allowed_validation_command_supports_explicit_ruff_unsafe_allowlist_d
 def test_is_allowed_validation_command_handles_split_errors_and_empty_parts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Is allowed validation command handles split errors and empty parts."""
     monkeypatch.setattr(
         ci.shlex, "split", lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("boom"))
     )
@@ -117,6 +127,7 @@ def test_is_allowed_validation_command_handles_split_errors_and_empty_parts(
 
 
 def test_trim_text_with_and_without_truncation() -> None:
+    """Trim text with and without truncation."""
     assert ci._trim_text("  ok  ", 10) == "ok"
     assert ci._trim_text("x" * 10, 10) == "x" * 10
     truncated = ci._trim_text("x" * 20, 10)
@@ -125,6 +136,7 @@ def test_trim_text_with_and_without_truncation() -> None:
 
 
 def test_extract_suspected_targets_deduplicates_and_limits() -> None:
+    """Extract suspected targets deduplicates and limits."""
     text = "\n".join(
         [
             "tests/unit/a.py failed",
@@ -147,6 +159,7 @@ def test_extract_suspected_targets_deduplicates_and_limits() -> None:
 
 
 def test_extract_root_cause_line_finds_first_matching_line() -> None:
+    """Extract root cause line finds first matching line."""
     line = ci._extract_root_cause_line(
         "noise\nAssertionError: boom\nTypeError: second",
         "ValueError: other",
@@ -156,11 +169,13 @@ def test_extract_root_cause_line_finds_first_matching_line() -> None:
 
 
 def test_extract_root_cause_line_skips_empty_lines() -> None:
+    """Extract root cause line skips empty lines."""
     line = ci._extract_root_cause_line("\n   \nValueError: invalid payload")
     assert line == "ValueError: invalid payload"
 
 
 def test_extract_failed_job_names_handles_dicts_and_strings() -> None:
+    """Extract failed job names handles dicts and strings."""
     data = {
         "failed_jobs": [
             {"name": "lint"},
@@ -174,6 +189,7 @@ def test_extract_failed_job_names_handles_dicts_and_strings() -> None:
 
 
 def test_build_diagnostic_hints_applies_all_rules_and_limit() -> None:
+    """Build diagnostic hints applies all rules and limit."""
     hints = ci._build_diagnostic_hints(
         "pytest timeout",
         "assert failed import module error",
@@ -187,6 +203,7 @@ def test_build_diagnostic_hints_applies_all_rules_and_limit() -> None:
 
 
 def test_generic_ci_context_requires_flag_or_ci_event() -> None:
+    """Generic ci context requires flag or ci event."""
     assert ci._generic_ci_context("push", {"message": "x"}) is None
 
     ctx = ci._generic_ci_context(
@@ -232,14 +249,17 @@ def test_generic_ci_context_requires_flag_or_ci_event() -> None:
     ],
 )
 def test_is_ci_failure_event(event_name, payload, expected) -> None:
+    """Is ci failure event."""
     assert ci.is_ci_failure_event(event_name, payload) is expected
 
 
 def test_build_ci_failure_context_returns_none_when_not_failure() -> None:
+    """Build ci failure context returns none when not failure."""
     assert ci.build_ci_failure_context("push", {}) is None
 
 
 def test_build_ci_failure_context_prefers_generic() -> None:
+    """Build ci failure context prefers generic."""
     ctx = ci.build_ci_failure_context("ci_pipeline_failed", {"ci_failure": True, "repo": "x/y"})
     assert ctx is not None
     assert ctx["kind"] == "generic_ci_failure"
@@ -248,6 +268,7 @@ def test_build_ci_failure_context_prefers_generic() -> None:
 
 
 def test_build_ci_failure_context_workflow_run() -> None:
+    """Build ci failure context workflow run."""
     payload = {
         "repository": {"full_name": "org/repo", "default_branch": "main"},
         "workflow_run": {
@@ -275,6 +296,7 @@ def test_build_ci_failure_context_workflow_run() -> None:
 
 
 def test_build_ci_failure_context_check_run() -> None:
+    """Build ci failure context check run."""
     payload = {
         "repository": {"name": "repo", "default_branch": "main"},
         "check_run": {
@@ -301,6 +323,7 @@ def test_build_ci_failure_context_check_run() -> None:
 
 
 def test_build_ci_failure_context_check_suite() -> None:
+    """Build ci failure context check suite."""
     payload = {
         "repository": {"full_name": "org/repo", "default_branch": "main"},
         "check_suite": {
@@ -345,6 +368,7 @@ def _sample_context() -> dict:
 
 
 def test_build_ci_failure_prompt_contains_fields() -> None:
+    """Build ci failure prompt contains fields."""
     prompt = ci.build_ci_failure_prompt(_sample_context())
     assert "[CI_REMEDIATION]" in prompt
     assert "workflow_name=backend-ci" in prompt
@@ -352,6 +376,7 @@ def test_build_ci_failure_prompt_contains_fields() -> None:
 
 
 def test_build_self_heal_patch_prompt_limits_snapshots_and_embeds_data() -> None:
+    """Build self heal patch prompt limits snapshots and embeds data."""
     snapshots = [{"path": f"tests/t{i}.py", "content": "x" * 20} for i in range(8)]
     prompt = ci.build_self_heal_patch_prompt(
         _sample_context(),
@@ -370,6 +395,7 @@ def test_build_self_heal_patch_prompt_limits_snapshots_and_embeds_data() -> None
 
 
 def test_normalize_self_heal_plan_from_markdown_json_and_filters() -> None:
+    """Normalize self heal plan from markdown json and filters."""
     raw = """```json
     {
       "summary": "ok",
@@ -404,6 +430,7 @@ def test_normalize_self_heal_plan_from_markdown_json_and_filters() -> None:
 
 
 def test_normalize_self_heal_plan_with_invalid_input_uses_defaults() -> None:
+    """Normalize self heal plan with invalid input uses defaults."""
     normalized = ci.normalize_self_heal_plan(None, scope_paths=[], fallback_validation_commands=[])
     assert normalized["operations"] == []
     assert normalized["validation_commands"] == []
@@ -430,6 +457,7 @@ def test_normalize_self_heal_plan_drops_patches_when_scope_paths_is_empty() -> N
 
 
 def test_normalize_self_heal_plan_handles_non_json_fence_and_bad_json() -> None:
+    """Normalize self heal plan handles non json fence and bad json."""
     raw_non_json_fence = """```text
     not-json-body
     ```"""
@@ -450,6 +478,7 @@ def test_normalize_self_heal_plan_handles_non_json_fence_and_bad_json() -> None:
 
 
 def test_normalize_self_heal_plan_deduplicates_validation_commands() -> None:
+    """Normalize self heal plan deduplicates validation commands."""
     raw = {
         "validation_commands": [
             "pytest -q tests/unit/core/test_ci_remediation.py",
@@ -465,6 +494,7 @@ def test_normalize_self_heal_plan_deduplicates_validation_commands() -> None:
 
 
 def test_normalize_self_heal_plan_accepts_operation_aliases() -> None:
+    """Normalize self heal plan accepts operation aliases."""
     normalized = ci.normalize_self_heal_plan(
         {
             "patches": [
@@ -490,6 +520,7 @@ def test_normalize_self_heal_plan_accepts_operation_aliases() -> None:
 
 
 def test_normalize_self_heal_plan_parses_python_list_like_response() -> None:
+    """Normalize self heal plan parses python list like response."""
     raw = (
         "PLAN:\\n"
         "[{'op': 'patch', 'file': 'tests/unit/core/test_ci_remediation.py', "
@@ -513,6 +544,7 @@ def test_normalize_self_heal_plan_parses_python_list_like_response() -> None:
 def test_normalize_self_heal_plan_handles_literal_eval_syntax_error_gracefully(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Normalize self heal plan handles literal eval syntax error gracefully."""
     monkeypatch.setattr(ci.ast, "literal_eval", lambda _value: (_ for _ in ()).throw(SyntaxError()))
     raw = (
         "PLAN:\\n"
@@ -529,6 +561,7 @@ def test_normalize_self_heal_plan_handles_literal_eval_syntax_error_gracefully(
 
 
 def test_normalize_self_heal_plan_accepts_uv_pip_install_for_bootstrap() -> None:
+    """Normalize self heal plan accepts uv pip install for bootstrap."""
     normalized = ci.normalize_self_heal_plan(
         {"operations": [], "validation_commands": ["uv pip install psycopg2-binary"]},
         scope_paths=[],
@@ -538,6 +571,7 @@ def test_normalize_self_heal_plan_accepts_uv_pip_install_for_bootstrap() -> None
 
 
 def test_normalize_self_heal_plan_accepts_single_operation_shapes() -> None:
+    """Normalize self heal plan accepts single operation shapes."""
     dict_operations = ci.normalize_self_heal_plan(
         {
             "operations": {
@@ -570,6 +604,7 @@ def test_normalize_self_heal_plan_accepts_single_operation_shapes() -> None:
 
 
 def test_normalize_self_heal_plan_treats_patch_like_payload_as_operation() -> None:
+    """Normalize self heal plan treats patch like payload as operation."""
     normalized = ci.normalize_self_heal_plan(
         {
             "path": "core/c.py",
@@ -586,6 +621,7 @@ def test_normalize_self_heal_plan_treats_patch_like_payload_as_operation() -> No
 
 
 def test_build_root_cause_summary_prefers_diagnosis_first_line() -> None:
+    """Build root cause summary prefers diagnosis first line."""
     summary = ci.build_root_cause_summary(
         _sample_context(), "Root cause: flaky assertion\nsecond line"
     )
@@ -593,6 +629,7 @@ def test_build_root_cause_summary_prefers_diagnosis_first_line() -> None:
 
 
 def test_build_root_cause_summary_fallback_order() -> None:
+    """Build root cause summary fallback order."""
     info = _sample_context()
     info["root_cause_hint"] = "hint cause"
     info["failure_summary"] = "fallback summary"
@@ -611,6 +648,7 @@ def test_build_root_cause_summary_fallback_order() -> None:
 
 
 def test_build_pr_proposal_shapes_content() -> None:
+    """Build pr proposal shapes content."""
     proposal = ci.build_pr_proposal(_sample_context(), "Diagnosis body")
     assert proposal["title"].startswith("CI remediation")
     assert proposal["base_branch"] == "main"
@@ -620,6 +658,7 @@ def test_build_pr_proposal_shapes_content() -> None:
 
 
 def test_extract_validation_commands_discovers_and_deduplicates() -> None:
+    """Extract validation commands discovers and deduplicates."""
     context = _sample_context()
     context["failure_summary"] = "pytest -q tests/unit/core/test_ci_remediation.py"
     context["log_excerpt"] = "python -m pytest\npython -m pytest"
@@ -630,6 +669,7 @@ def test_extract_validation_commands_discovers_and_deduplicates() -> None:
 
 
 def test_build_remediation_loop_high_risk_and_normal_modes() -> None:
+    """Build remediation loop high risk and normal modes."""
     risky = ci.build_remediation_loop(_sample_context(), "SyntaxError: bad")
     assert risky["needs_human_approval"] is True
     assert risky["mode"] == "self_heal_with_hitl"
@@ -650,6 +690,7 @@ def test_build_remediation_loop_high_risk_and_normal_modes() -> None:
 
 
 def test_external_ci_payload_cannot_avoid_hitl_by_choosing_benign_text() -> None:
+    """External ci payload cannot avoid hitl by choosing benign text."""
     context = ci.build_ci_failure_context(
         "workflow_run",
         {
@@ -674,6 +715,7 @@ def test_external_ci_payload_cannot_avoid_hitl_by_choosing_benign_text() -> None
 
 
 def test_build_ci_remediation_payload_assembles_all_parts() -> None:
+    """Build ci remediation payload assembles all parts."""
     context = _sample_context()
     payload = ci.build_ci_remediation_payload(context, "Diagnosis")
     assert payload["context"] == context
@@ -683,6 +725,7 @@ def test_build_ci_remediation_payload_assembles_all_parts() -> None:
 
 
 def test_normalize_self_heal_plan_accepts_dict_and_max_operations() -> None:
+    """Normalize self heal plan accepts dict and max operations."""
     raw = {
         "operations": [
             {"action": "patch", "path": "a.py", "target": "x", "replacement": "y"},
@@ -702,6 +745,7 @@ def test_normalize_self_heal_plan_accepts_dict_and_max_operations() -> None:
 
 
 def test_extract_failed_job_names_uses_jobs_fallback_and_limit() -> None:
+    """Extract failed job names uses jobs fallback and limit."""
     data = {"jobs": [{"name": f"job{i}"} for i in range(8)]}
     names = ci._extract_failed_job_names(data)
     assert len(names) == 6
@@ -709,6 +753,7 @@ def test_extract_failed_job_names_uses_jobs_fallback_and_limit() -> None:
 
 
 def test_generic_ci_context_uses_defaults_and_truncates_logs() -> None:
+    """Generic ci context uses defaults and truncates logs."""
     ctx = ci._generic_ci_context(
         "custom",
         {
@@ -725,6 +770,7 @@ def test_generic_ci_context_uses_defaults_and_truncates_logs() -> None:
 
 
 def test_build_ci_failure_context_workflow_default_base_branch() -> None:
+    """Build ci failure context workflow default base branch."""
     payload = {
         "repository": {"name": "repo", "default_branch": "trunk"},
         "workflow_run": {
@@ -742,6 +788,7 @@ def test_build_ci_failure_context_workflow_default_base_branch() -> None:
 def test_build_ci_remediation_payload_uses_pr_root_cause_when_available(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Build ci remediation payload uses pr root cause when available."""
     context = _sample_context()
 
     def fake_pr(_ctx, _diag):
@@ -760,12 +807,14 @@ def test_build_ci_remediation_payload_uses_pr_root_cause_when_available(
 
 
 def test_build_pr_proposal_uses_defaults_when_missing_fields() -> None:
+    """Build pr proposal uses defaults when missing fields."""
     proposal = ci.build_pr_proposal({}, "")
     assert proposal["head_branch_suggestion"] == "ci-remediation/manual"
     assert proposal["base_branch"] == "main"
 
 
 def test_extract_validation_commands_limits_to_five() -> None:
+    """Extract validation commands limits to five."""
     context = {
         "failure_summary": "\n".join(
             ["pytest -q tests/a.py", "pytest -q tests/b.py", "pytest -q tests/c.py"]
@@ -778,6 +827,7 @@ def test_extract_validation_commands_limits_to_five() -> None:
 
 
 def test_build_self_heal_patch_prompt_skips_empty_snapshot_entries() -> None:
+    """Build self heal patch prompt skips empty snapshot entries."""
     snapshots = [
         {"path": "", "content": "x"},
         {"path": "tests/a.py", "content": ""},
@@ -790,6 +840,7 @@ def test_build_self_heal_patch_prompt_skips_empty_snapshot_entries() -> None:
 
 
 def test_normalize_self_heal_plan_strips_wrapping_and_handles_non_dict_operations() -> None:
+    """Normalize self heal plan strips wrapping and handles non dict operations."""
     raw = (
         '{"operations":["bad",{"action":"patch","path":"./tests/a.py","target":"x",'
         '"replacement":"y"}]}'
@@ -801,11 +852,13 @@ def test_normalize_self_heal_plan_strips_wrapping_and_handles_non_dict_operation
 
 
 def test_build_root_cause_summary_with_turkish_prefix() -> None:
+    """Build root cause summary with turkish prefix."""
     summary = ci.build_root_cause_summary({}, "Kök neden: import hatası")
     assert summary.startswith("Kök neden")
 
 
 def test_build_root_cause_summary_ignores_empty_first_line_and_falls_back() -> None:
+    """Build root cause summary ignores empty first line and falls back."""
     info = {"log_excerpt": "AssertionError: boom", "failure_summary": "failed"}
 
     class WeirdDiagnosis:
@@ -824,6 +877,7 @@ def test_build_root_cause_summary_ignores_empty_first_line_and_falls_back() -> N
 
 
 def test_build_remediation_loop_large_scope_triggers_hitl() -> None:
+    """Build remediation loop large scope triggers hitl."""
     context = {
         "suspected_targets": [f"tests/t{i}.py" for i in range(5)],
         "failed_jobs": ["j1", "j2", "j3", "j4", "j5", "j6", "j7"],
@@ -844,6 +898,7 @@ def test_build_remediation_loop_large_scope_triggers_hitl() -> None:
 
 
 def test_build_remediation_loop_syntax_error_requires_hitl() -> None:
+    """Build remediation loop syntax error requires hitl."""
     context = {
         "suspected_targets": ["core/broken.py"],
         "failed_jobs": ["tests"],
@@ -861,6 +916,7 @@ def test_build_remediation_loop_syntax_error_requires_hitl() -> None:
 def test_build_remediation_loop_large_scope_respects_env_threshold(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Build remediation loop large scope respects env threshold."""
     monkeypatch.setattr(ci.Config, "SELF_HEAL_HITL_SCOPE_THRESHOLD", 3)
     context = {
         "suspected_targets": [f"tests/t{i}.py" for i in range(4)],
@@ -873,6 +929,7 @@ def test_build_remediation_loop_large_scope_respects_env_threshold(
 
 
 def test_build_remediation_loop_reports_safe_ruff_autofix_policy() -> None:
+    """Build remediation loop reports safe ruff autofix policy."""
     context = {
         "suspected_targets": ["core/ci_remediation.py"],
         "failed_jobs": ["lint"],
@@ -889,6 +946,7 @@ def test_build_remediation_loop_reports_safe_ruff_autofix_policy() -> None:
 
 
 def test_build_remediation_loop_ignores_unknown_auto_install_modules() -> None:
+    """Build remediation loop ignores unknown auto install modules."""
     context = {
         "suspected_targets": ["core/unknown.py"],
         "failed_jobs": [],
@@ -907,6 +965,7 @@ def test_build_remediation_loop_ignores_unknown_auto_install_modules() -> None:
 
 
 def test_build_remediation_loop_adds_bootstrap_commands_for_missing_modules() -> None:
+    """Build remediation loop adds bootstrap commands for missing modules."""
     context = {
         "suspected_targets": ["core/rag.py"],
         "failed_jobs": [],
@@ -919,6 +978,7 @@ def test_build_remediation_loop_adds_bootstrap_commands_for_missing_modules() ->
 
 
 def test_build_remediation_loop_adds_stub_install_for_import_untyped() -> None:
+    """Build remediation loop adds stub install for import untyped."""
     context = {
         "suspected_targets": ["core/system_health.py"],
         "failed_jobs": [],
@@ -931,6 +991,7 @@ def test_build_remediation_loop_adds_stub_install_for_import_untyped() -> None:
 
 
 def test_build_remediation_loop_adds_stub_install_from_hint_only() -> None:
+    """Build remediation loop adds stub install from hint only."""
     context = {
         "suspected_targets": ["core/a.py"],
         "failed_jobs": [],
@@ -944,6 +1005,7 @@ def test_build_remediation_loop_adds_stub_install_from_hint_only() -> None:
 def test_build_remediation_loop_batches_follow_configured_size(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Build remediation loop batches follow configured size."""
     monkeypatch.setattr(ci.Config, "SELF_HEAL_AUTONOMOUS_BATCH_SIZE", 2)
     context = {
         "suspected_targets": [f"core/t{i}.py" for i in range(5)],
@@ -957,12 +1019,14 @@ def test_build_remediation_loop_batches_follow_configured_size(
 
 
 def test_ci_failure_prompt_handles_missing_optional_fields() -> None:
+    """Ci failure prompt handles missing optional fields."""
     prompt = ci.build_ci_failure_prompt({"repo": "org/repo"})
     assert "repo=org/repo" in prompt
     assert "failed_jobs=" in prompt
 
 
 def test_json_roundtrip_smoke_for_plan_payload() -> None:
+    """Json roundtrip smoke for plan payload."""
     plan = ci.normalize_self_heal_plan(
         {"summary": "s", "confidence": "low", "operations": [], "validation_commands": []},
         scope_paths=[],
@@ -972,6 +1036,7 @@ def test_json_roundtrip_smoke_for_plan_payload() -> None:
 
 
 def test_extract_validation_commands_skips_blank_lines() -> None:
+    """Extract validation commands skips blank lines."""
     context = {
         "failure_summary": "\n\npytest -q tests/a.py",
         "log_excerpt": "   \npython -m pytest",
@@ -982,6 +1047,7 @@ def test_extract_validation_commands_skips_blank_lines() -> None:
 
 
 def test_build_local_failure_context_parses_mypy_log() -> None:
+    """Build local failure context parses mypy log."""
     log_text = "\n".join(
         [
             "core/service.py:10: error: Incompatible types in assignment [assignment]",
@@ -999,6 +1065,7 @@ def test_build_local_failure_context_parses_mypy_log() -> None:
 
 
 def test_build_local_failure_context_fallbacks_when_log_has_no_structured_error() -> None:
+    """Build local failure context fallbacks when log has no structured error."""
     ctx = ci.build_local_failure_context("mypy: failed with unknown issue", source="mypy")
     assert ctx["root_cause_hint"]
     assert ctx["failure_summary"].startswith("mypy yerel kalite kapısında hata bulundu")
@@ -1007,6 +1074,7 @@ def test_build_local_failure_context_fallbacks_when_log_has_no_structured_error(
 def test_build_local_failure_context_respects_local_scope_limit_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Build local failure context respects local scope limit env."""
     monkeypatch.setattr(ci.Config, "SELF_HEAL_LOCAL_SCOPE_LIMIT", 3)
     log_text = "\n".join(
         [
@@ -1021,6 +1089,7 @@ def test_build_local_failure_context_respects_local_scope_limit_env(
 
 
 def test_build_local_failure_context_parses_pytest_assertion_and_attribute_targets() -> None:
+    """Build local failure context parses pytest assertion and attribute targets."""
     log_text = """
     FAILED tests/unit/core/test_doctor.py::test_doctor_status - AssertionError: expected healthy
     tests/unit/root/test_cli.py:42: AttributeError: 'Namespace' object has no attribute 'doctor'
@@ -1040,6 +1109,7 @@ def test_build_local_failure_context_parses_pytest_assertion_and_attribute_targe
 
 
 def test_extract_validation_commands_targets_pytest_failure_files() -> None:
+    """Extract validation commands targets pytest failure files."""
     context = ci.build_local_failure_context(
         "FAILED tests/unit/core/test_doctor.py::test_x - AssertionError: drift",
         source="pytest",
@@ -1051,6 +1121,7 @@ def test_extract_validation_commands_targets_pytest_failure_files() -> None:
 
 
 def test_summarize_mypy_log_returns_structured_signal() -> None:
+    """Summarize mypy log returns structured signal."""
     log_text = "\n".join(
         [
             "core/service.py:10: error: Incompatible types in assignment [assignment]",
@@ -1068,6 +1139,7 @@ def test_summarize_mypy_log_returns_structured_signal() -> None:
 
 
 def test_summarize_mypy_log_skips_noise_and_honors_max_lines() -> None:
+    """Summarize mypy log skips noise and honors max lines."""
     log_text = "\n".join(
         [
             "",
@@ -1085,6 +1157,7 @@ def test_summarize_mypy_log_skips_noise_and_honors_max_lines() -> None:
 
 
 def test_summarize_mypy_log_caps_per_file_samples_after_three_entries() -> None:
+    """Summarize mypy log caps per file samples after three entries."""
     log_text = "\n".join(
         f"core/repeated.py:{line}: error: issue {line} [assignment]" for line in range(1, 5)
     )
@@ -1107,6 +1180,7 @@ def test_summarize_mypy_log_handles_optional_error_code(
     log_line: str,
     expected_codes: list[str],
 ) -> None:
+    """Summarize mypy log handles optional error code."""
     summary = ci._summarize_mypy_log(log_line, max_lines=5)
 
     assert summary["total_errors"] == 1
@@ -1114,6 +1188,7 @@ def test_summarize_mypy_log_handles_optional_error_code(
 
 
 def test_build_local_failure_context_ignores_blank_lines_and_collects_root_cause() -> None:
+    """Build local failure context ignores blank lines and collects root cause."""
     log_text = "\n".join(
         [
             "",
@@ -1131,6 +1206,7 @@ def test_build_local_failure_context_ignores_blank_lines_and_collects_root_cause
 
 
 def test_build_local_failure_context_keeps_first_root_cause_hint() -> None:
+    """Build local failure context keeps first root cause hint."""
     log_text = "\n".join(
         [
             "ValueError: first actionable failure",
@@ -1146,6 +1222,7 @@ def test_build_local_failure_context_keeps_first_root_cause_hint() -> None:
 
 
 def test_build_local_failure_context_deduplicates_suspected_targets() -> None:
+    """Build local failure context deduplicates suspected targets."""
     log_text = "\n".join(
         [
             "core/dup.py:9: error: first issue [assignment]",
@@ -1160,6 +1237,7 @@ def test_build_local_failure_context_deduplicates_suspected_targets() -> None:
 
 
 def test_build_self_heal_patch_prompt_includes_mypy_summary() -> None:
+    """Build self heal patch prompt includes mypy summary."""
     context = {
         "workflow_name": "local_mypy",
         "failure_summary": "mypy failures",
@@ -1177,18 +1255,21 @@ def test_build_self_heal_patch_prompt_includes_mypy_summary() -> None:
 
 
 def test_normalize_ruff_rule_selectors_none_is_empty() -> None:
+    """Normalize ruff rule selectors none is empty."""
     assert ci._normalize_ruff_rule_selectors(None) == []
 
 
 def test_configured_ruff_unsafe_selectors_normalizes_explicit_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Configured ruff unsafe selectors normalizes explicit config."""
     monkeypatch.setattr(ci.Config, "RUFF_AUTOFIX_UNSAFE_RULES", " i, up034 ")
 
     assert ci._configured_ruff_unsafe_selectors() == ["I", "UP034"]
 
 
 def test_build_ruff_autofix_command_replaces_unsafe_target() -> None:
+    """Build ruff autofix command replaces unsafe target."""
     assert ci.build_ruff_autofix_command(target="../outside") == "uv run ruff check --fix ."
 
 
@@ -1204,6 +1285,7 @@ def test_build_ruff_autofix_command_replaces_unsafe_target() -> None:
     ],
 )
 def test_is_allowed_ruff_command_edge_cases(parts: list[str], expected: bool) -> None:
+    """Is allowed ruff command edge cases."""
     assert ci._is_allowed_ruff_command(parts) is expected
 
 
@@ -1217,6 +1299,7 @@ def test_is_allowed_ruff_command_edge_cases(parts: list[str], expected: bool) ->
     ],
 )
 def test_resolve_module_to_repo_path(module_name: str, expected: str | None) -> None:
+    """Resolve module to repo path."""
     assert ci._resolve_module_to_repo_path(module_name) == expected
 
 
@@ -1224,6 +1307,7 @@ def test_collect_cross_file_context_paths_handles_non_python_missing_and_syntax_
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
+    """Collect cross file context paths handles non python missing and syntax error."""
     monkeypatch.chdir(tmp_path)
     (tmp_path / "core").mkdir()
     (tmp_path / "core" / "broken.py").write_text("def broken(:\n", encoding="utf-8")
@@ -1237,6 +1321,7 @@ def test_collect_cross_file_context_paths_discovers_imports_and_skips_empty_rela
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
+    """Collect cross file context paths discovers imports and skips empty relative import."""
     monkeypatch.chdir(tmp_path)
     (tmp_path / "core").mkdir()
     (tmp_path / "core" / "sample.py").write_text(
@@ -1248,6 +1333,7 @@ def test_collect_cross_file_context_paths_discovers_imports_and_skips_empty_rela
 
 
 def test_build_local_failure_context_adds_mypy_path_outside_target_pattern() -> None:
+    """Build local failure context adds mypy path outside target pattern."""
     context = ci.build_local_failure_context(
         "pkg/service.py:7: error: Incompatible types in assignment [assignment]",
         source="mypy",
@@ -1267,6 +1353,7 @@ def test_build_remediation_loop_classifies_additional_hitl_signals(
     diagnosis: str,
     expected_reason: str,
 ) -> None:
+    """Build remediation loop classifies additional hitl signals."""
     context = {"suspected_targets": [], "failed_jobs": [], "failure_summary": "", "log_excerpt": ""}
 
     result = ci.build_remediation_loop(context, diagnosis)
@@ -1277,6 +1364,7 @@ def test_build_remediation_loop_classifies_additional_hitl_signals(
 def test_build_remediation_loop_uses_high_risk_fallback_when_specific_timeout_probe_misses(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Build remediation loop uses high risk fallback when specific timeout probe misses."""
     monkeypatch.setattr(ci, "_TIMEOUT_RUNTIME_PATTERN", SimpleNamespace(search=lambda _text: None))
     context = {"suspected_targets": [], "failed_jobs": [], "failure_summary": "", "log_excerpt": ""}
 
@@ -1286,16 +1374,19 @@ def test_build_remediation_loop_uses_high_risk_fallback_when_specific_timeout_pr
 
 
 def test_normalize_ruff_rule_selectors_deduplicates_values() -> None:
+    """Normalize ruff rule selectors deduplicates values."""
     assert ci._normalize_ruff_rule_selectors("I, i, UP") == ["I", "UP"]
 
 
 def test_build_ruff_autofix_command_ignores_invalid_unsafe_selectors() -> None:
+    """Build ruff autofix command ignores invalid unsafe selectors."""
     assert ci.build_ruff_autofix_command(unsafe_fixes=True, unsafe_selectors="bad;rm") == (
         "uv run ruff check --fix ."
     )
 
 
 def test_build_local_failure_context_uses_root_cause_hint_as_actionable_signal() -> None:
+    """Build local failure context uses root cause hint as actionable signal."""
     context = ci.build_local_failure_context("mypy error summary", source="mypy")
 
     assert context["conclusion"] == "failure"
@@ -1305,6 +1396,7 @@ def test_build_local_failure_context_uses_root_cause_hint_as_actionable_signal()
 def test_build_local_failure_context_deduplicates_cross_file_targets(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Build local failure context deduplicates cross file targets."""
     monkeypatch.setattr(ci, "_collect_cross_file_context_paths", lambda _path: ["core/shared.py"])
     context = ci.build_local_failure_context(
         "core/a.py:1: error: first [assignment]\ncore/b.py:2: error: second [assignment]",

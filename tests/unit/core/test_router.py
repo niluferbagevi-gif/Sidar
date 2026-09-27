@@ -1,3 +1,5 @@
+"""``core.router`` modülü için unit testler."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -29,6 +31,10 @@ def _make_config(**overrides: object) -> SimpleNamespace:
 
 @pytest.fixture(autouse=True)
 def reset_budget_tracker() -> None:
+    """Paylaşılan bütçe takipçisinin günlük maliyetini her test için sıfırlar.
+
+    Bellek içi, SQLite ve fallback takipçi varyantlarını destekler.
+    """
     tracker = router._budget_tracker
     if hasattr(tracker, "_lock"):
         with tracker._lock:
@@ -48,6 +54,7 @@ def reset_budget_tracker() -> None:
 
 
 def test_query_complexity_score_returns_zero_without_user_messages() -> None:
+    """Query complexity score returns zero without user messages."""
     analyzer = QueryComplexityAnalyzer()
 
     assert analyzer.score([]) == 0.0
@@ -55,6 +62,7 @@ def test_query_complexity_score_returns_zero_without_user_messages() -> None:
 
 
 def test_query_complexity_score_increases_with_code_and_reasoning_keywords() -> None:
+    """Query complexity score increases with code and reasoning keywords."""
     analyzer = QueryComplexityAnalyzer()
     messages = [
         {
@@ -72,6 +80,7 @@ def test_query_complexity_score_increases_with_code_and_reasoning_keywords() -> 
 
 
 def test_query_complexity_score_applies_simple_keyword_penalty() -> None:
+    """Query complexity score applies simple keyword penalty."""
     analyzer = QueryComplexityAnalyzer()
     complex_text = "analyze this algorithm and compare tradeoff?"
     simple_text = "what is analyze this algorithm and compare tradeoff?"
@@ -83,6 +92,7 @@ def test_query_complexity_score_applies_simple_keyword_penalty() -> None:
 
 
 def test_query_complexity_score_respects_upper_bound() -> None:
+    """Query complexity score respects upper bound."""
     analyzer = QueryComplexityAnalyzer()
     huge_payload = " ".join(
         [
@@ -110,6 +120,7 @@ def test_query_complexity_score_respects_upper_bound() -> None:
 
 
 def test_query_complexity_char_budget_reads_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Query complexity char budget reads from env."""
     analyzer = QueryComplexityAnalyzer()
     payload = "analyze tradeoff " * 40
 
@@ -125,6 +136,7 @@ def test_query_complexity_char_budget_reads_from_env(monkeypatch: pytest.MonkeyP
 def test_query_complexity_char_budget_env_falls_back_on_invalid_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Query complexity char budget env falls back on invalid values."""
     analyzer = QueryComplexityAnalyzer()
     payload = "analyze tradeoff " * 20
 
@@ -139,6 +151,7 @@ def test_query_complexity_char_budget_env_falls_back_on_invalid_values(
 
 
 def test_daily_budget_tracker_add_daily_usage_and_exceeded() -> None:
+    """Daily budget tracker add daily usage and exceeded."""
     tracker = router._DailyBudgetTracker()
 
     tracker.add(-2.0)
@@ -151,6 +164,7 @@ def test_daily_budget_tracker_add_daily_usage_and_exceeded() -> None:
 
 
 def test_daily_budget_tracker_resets_when_new_day(frozen_time) -> None:
+    """Daily budget tracker resets when new day."""
     tracker = router._DailyBudgetTracker()
     tracker.add(0.5)
 
@@ -160,12 +174,14 @@ def test_daily_budget_tracker_resets_when_new_day(frozen_time) -> None:
 
 
 def test_record_routing_cost_uses_global_tracker() -> None:
+    """Record routing cost uses global tracker."""
     record_routing_cost(0.33)
 
     assert router._budget_tracker.daily_usage() == pytest.approx(0.33)
 
 
 def test_router_returns_defaults_when_disabled() -> None:
+    """Router returns defaults when disabled."""
     cfg = _make_config(ENABLE_COST_ROUTING=False)
     cost_router = CostAwareRouter(cfg)
 
@@ -175,6 +191,7 @@ def test_router_returns_defaults_when_disabled() -> None:
 
 
 def test_router_routes_to_local_when_budget_exceeded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Router routes to local when budget exceeded."""
     cfg = _make_config(COST_ROUTING_DAILY_BUDGET_USD=0.5)
     cost_router = CostAwareRouter(cfg)
     record_routing_cost(0.6)
@@ -189,6 +206,7 @@ def test_router_routes_to_local_when_budget_exceeded(monkeypatch: pytest.MonkeyP
 
 
 def test_router_routes_to_local_when_daily_budget_exactly_reaches_limit() -> None:
+    """Router routes to local when daily budget exactly reaches limit."""
     cfg = _make_config(COST_ROUTING_DAILY_BUDGET_USD=0.5, COST_ROUTING_COMPLEXITY_THRESHOLD=0.2)
     cost_router = CostAwareRouter(cfg)
     record_routing_cost(0.5)
@@ -203,6 +221,7 @@ def test_router_routes_to_local_when_daily_budget_exactly_reaches_limit() -> Non
 
 
 def test_router_does_not_reset_in_memory_budget_on_reinit() -> None:
+    """Router does not reset in memory budget on reinit."""
     cfg = _make_config(COST_ROUTING_DAILY_BUDGET_USD=0.5)
     CostAwareRouter(cfg)
     record_routing_cost(0.6)
@@ -218,6 +237,7 @@ def test_router_does_not_reset_in_memory_budget_on_reinit() -> None:
 
 
 def test_router_routes_to_local_for_low_complexity() -> None:
+    """Router routes to local for low complexity."""
     cfg = _make_config(COST_ROUTING_COMPLEXITY_THRESHOLD=0.8)
     cost_router = CostAwareRouter(cfg)
 
@@ -231,6 +251,7 @@ def test_router_routes_to_local_for_low_complexity() -> None:
 
 
 def test_router_returns_default_when_cloud_provider_missing() -> None:
+    """Router returns default when cloud provider missing."""
     cfg = _make_config(COST_ROUTING_COMPLEXITY_THRESHOLD=0.2)
     cost_router = CostAwareRouter(cfg)
     cost_router.cloud_provider = ""
@@ -245,6 +266,7 @@ def test_router_returns_default_when_cloud_provider_missing() -> None:
 
 
 def test_router_routes_to_cloud_for_complex_queries() -> None:
+    """Router routes to cloud for complex queries."""
     cfg = _make_config(COST_ROUTING_CLOUD_MODEL="", COST_ROUTING_COMPLEXITY_THRESHOLD=0.2)
     cost_router = CostAwareRouter(cfg)
 
@@ -265,6 +287,7 @@ def test_router_routes_to_cloud_for_complex_queries() -> None:
 
 
 def test_local_result_returns_defaults_if_local_provider_missing() -> None:
+    """Local result returns defaults if local provider missing."""
     cfg = _make_config()
     cost_router = CostAwareRouter(cfg)
     cost_router.local_provider = ""
@@ -275,6 +298,7 @@ def test_local_result_returns_defaults_if_local_provider_missing() -> None:
 
 
 def test_local_result_prefers_none_when_local_model_missing() -> None:
+    """Local result prefers none when local model missing."""
     cfg = _make_config(COST_ROUTING_LOCAL_MODEL="")
     cost_router = CostAwareRouter(cfg)
 
@@ -284,6 +308,7 @@ def test_local_result_prefers_none_when_local_model_missing() -> None:
 
 
 def test_router_complexity_score_exposes_analyzer() -> None:
+    """Router complexity score exposes analyzer."""
     cfg = _make_config()
     cost_router = CostAwareRouter(cfg)
 
@@ -293,6 +318,7 @@ def test_router_complexity_score_exposes_analyzer() -> None:
 
 
 def test_router_stress_budget_threshold_always_falls_back_to_local() -> None:
+    """Router stress budget threshold always falls back to local."""
     cfg = _make_config(COST_ROUTING_DAILY_BUDGET_USD=0.3, COST_ROUTING_COMPLEXITY_THRESHOLD=0.1)
     cost_router = CostAwareRouter(cfg)
 
@@ -309,6 +335,7 @@ def test_router_stress_budget_threshold_always_falls_back_to_local() -> None:
 
 
 def test_router_stress_token_threshold_always_falls_back_to_local() -> None:
+    """Router stress token threshold always falls back to local."""
     cfg = _make_config(COST_ROUTING_TOKEN_THRESHOLD=40, COST_ROUTING_COMPLEXITY_THRESHOLD=0.1)
     cost_router = CostAwareRouter(cfg)
 
@@ -331,6 +358,7 @@ def test_router_stress_token_threshold_always_falls_back_to_local() -> None:
 
 
 def test_sqlite_tracker_uses_literal_query_constants_without_dynamic_table_sql() -> None:
+    """Sqlite tracker uses literal query constants without dynamic table sql."""
     tracker = router._SqliteDailyBudgetTracker
 
     assert tracker._TABLE_NAME == "cost_routing_daily_budget"
@@ -345,6 +373,7 @@ def test_sqlite_tracker_uses_literal_query_constants_without_dynamic_table_sql()
 
 
 def test_router_uses_sqlite_shared_budget_tracker_when_configured(tmp_path) -> None:
+    """Router uses sqlite shared budget tracker when configured."""
     db_path = str(tmp_path / "shared_budget.db")
     cfg = _make_config(
         COST_ROUTING_DAILY_BUDGET_USD=0.5, COST_ROUTING_SHARED_BUDGET_DB_PATH=db_path
@@ -364,6 +393,7 @@ def test_router_uses_sqlite_shared_budget_tracker_when_configured(tmp_path) -> N
 def test_configure_budget_tracker_resets_to_in_memory_when_shared_targets_cleared(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Configure budget tracker resets to in memory when shared targets cleared."""
     monkeypatch.setattr(router, "_budget_tracker", router._SqliteDailyBudgetTracker(":memory:"))
 
     router._configure_budget_tracker(_make_config())
@@ -374,6 +404,8 @@ def test_configure_budget_tracker_resets_to_in_memory_when_shared_targets_cleare
 def test_router_uses_redis_shared_budget_tracker_when_configured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Router uses redis shared budget tracker when configured."""
+
     class _FakePipe:
         def __init__(self, redis_obj):
             self.redis_obj = redis_obj
@@ -434,6 +466,8 @@ def test_router_uses_redis_shared_budget_tracker_when_configured(
 def test_redis_daily_budget_tracker_uses_sanitized_namespace(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Redis daily budget tracker uses sanitized namespace."""
+
     class _FakeRedis:
         @classmethod
         def from_url(cls, *_args, **_kwargs):
@@ -448,6 +482,7 @@ def test_redis_daily_budget_tracker_uses_sanitized_namespace(
 
 
 def test_configure_budget_tracker_passes_redis_namespace(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Configure budget tracker passes redis namespace."""
     created: dict[str, str] = {}
 
     class _FakeRedisTracker:
@@ -468,6 +503,7 @@ def test_configure_budget_tracker_passes_redis_namespace(monkeypatch: pytest.Mon
 
 
 def test_router_ignores_mock_values_for_shared_budget_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Router ignores mock values for shared budget url."""
     calls: list[str] = []
 
     class _FakeRedis:
@@ -489,6 +525,8 @@ def test_router_ignores_mock_values_for_shared_budget_url(monkeypatch: pytest.Mo
 def test_redis_budget_tracker_falls_back_to_in_memory_on_pipeline_redis_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Redis budget tracker falls back to in memory on pipeline redis error."""
+
     class _RedisError(Exception):
         pass
 
@@ -529,11 +567,14 @@ def test_redis_budget_tracker_falls_back_to_in_memory_on_pipeline_redis_error(
 
 
 def test_estimate_tokens_returns_zero_for_empty_content() -> None:
+    """Estimate tokens returns zero for empty content."""
     assert CostAwareRouter._estimate_tokens([]) == 0
     assert CostAwareRouter._estimate_tokens([{"role": "user", "content": ""}]) == 0
 
 
 def test_estimate_tokens_uses_tiktoken_when_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Estimate tokens uses tiktoken when available."""
+
     class _FakeEncoder:
         @staticmethod
         def encode(_text: str) -> list[int]:
@@ -556,6 +597,7 @@ def test_estimate_tokens_uses_tiktoken_when_available(monkeypatch: pytest.Monkey
 
 
 def test_estimate_tokens_reuses_cached_tiktoken_encoder(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Estimate tokens reuses cached tiktoken encoder."""
     import_calls: list[str] = []
 
     class _FakeEncoder:
@@ -590,6 +632,8 @@ def test_estimate_tokens_reuses_cached_tiktoken_encoder(monkeypatch: pytest.Monk
 def test_estimate_tokens_falls_back_when_tiktoken_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Estimate tokens falls back when tiktoken unavailable."""
+
     def _raise_import_error(_name: str):
         raise ModuleNotFoundError("tiktoken not installed")
 
@@ -601,16 +645,19 @@ def test_estimate_tokens_falls_back_when_tiktoken_unavailable(
 
 
 def test_read_optional_string_returns_empty_for_none() -> None:
+    """Read optional string returns empty for none."""
     cfg = SimpleNamespace(COST_ROUTING_REDIS_BUDGET_URL=None)
     assert router._read_optional_string(cfg, "COST_ROUTING_REDIS_BUDGET_URL") == ""
 
 
 def test_sqlite_daily_budget_tracker_rejects_empty_path() -> None:
+    """Sqlite daily budget tracker rejects empty path."""
     with pytest.raises(ValueError, match="db_path cannot be empty"):
         router._SqliteDailyBudgetTracker("   ")
 
 
 def test_sqlite_daily_budget_tracker_add_twice_uses_update_path(tmp_path) -> None:
+    """Sqlite daily budget tracker add twice uses update path."""
     tracker = router._SqliteDailyBudgetTracker(str(tmp_path / "budget.db"))
     tracker.add(0.2)
     tracker.add(0.3)
@@ -618,6 +665,7 @@ def test_sqlite_daily_budget_tracker_add_twice_uses_update_path(tmp_path) -> Non
 
 
 def test_redis_daily_budget_tracker_init_guards(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Redis daily budget tracker init guards."""
     monkeypatch.setattr(router, "SyncRedis", None)
     with pytest.raises(RuntimeError, match="redis bağımlılığı gerekli"):
         router._RedisDailyBudgetTracker("redis://fake:6379/0")
@@ -635,6 +683,8 @@ def test_redis_daily_budget_tracker_init_guards(monkeypatch: pytest.MonkeyPatch)
 def test_redis_daily_budget_tracker_zero_add_and_none_read_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Redis daily budget tracker zero add and none read paths."""
+
     class _Pipe:
         def __init__(self) -> None:
             self.execute_called = 0
@@ -682,6 +732,7 @@ def test_redis_daily_budget_tracker_zero_add_and_none_read_paths(
 
 
 def test_llm_routing_service_delegates_selection(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Llm routing service delegates selection."""
     from core.llm.router import LLMRoutingService
 
     class FakeCostAwareRouter:
@@ -707,6 +758,7 @@ def test_llm_routing_service_delegates_selection(monkeypatch: pytest.MonkeyPatch
 
 
 def test_llm_routing_service_records_cost(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Llm routing service records cost."""
     from core.llm.router import LLMRoutingService
 
     recorded: list[float] = []

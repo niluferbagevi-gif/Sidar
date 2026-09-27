@@ -25,6 +25,7 @@ from core.voice import (
 
 @pytest.mark.asyncio
 async def test_mock_adapter_synthesize_success():
+    """Mock adapter synthesize success."""
     adapter = _MockTTSAdapter()
     result = await adapter.synthesize("Merhaba")
     assert result["success"] is True
@@ -35,6 +36,7 @@ async def test_mock_adapter_synthesize_success():
 
 @pytest.mark.asyncio
 async def test_mock_adapter_synthesize_empty_text():
+    """Mock adapter synthesize empty text."""
     adapter = _MockTTSAdapter()
     result = await adapter.synthesize("")
     assert result["success"] is False
@@ -44,12 +46,14 @@ async def test_mock_adapter_synthesize_empty_text():
 
 @pytest.mark.asyncio
 async def test_mock_adapter_synthesize_with_voice():
+    """Mock adapter synthesize with voice."""
     adapter = _MockTTSAdapter()
     result = await adapter.synthesize("test", voice="tr-TR")
     assert result["voice"] == "tr-TR"
 
 
 def test_mock_adapter_available():
+    """Mock adapter available."""
     assert _MockTTSAdapter().available is True
 
 
@@ -59,11 +63,14 @@ def test_mock_adapter_available():
 
 
 def test_pyttsx3_adapter_available():
+    """Pyttsx3 adapter available."""
     adapter = _Pyttsx3Adapter()
     assert adapter.available is True
 
 
 def test_pyttsx3_adapter_synthesize_sync_selects_voice_and_reads_audio(monkeypatch, tmp_path):
+    """Pyttsx3 adapter synthesize sync selects voice and reads audio."""
+
     class FakeVoice:
         def __init__(self, voice_id, name):
             self.id = voice_id
@@ -118,6 +125,8 @@ def test_pyttsx3_adapter_synthesize_sync_selects_voice_and_reads_audio(monkeypat
 
 
 def test_pyttsx3_adapter_synthesize_sync_handles_stop_exception(monkeypatch, tmp_path):
+    """Pyttsx3 adapter synthesize sync handles stop exception."""
+
     class FakeEngine:
         def getProperty(self, _key):
             return []
@@ -157,6 +166,8 @@ def test_pyttsx3_adapter_synthesize_sync_handles_stop_exception(monkeypatch, tmp
 
 
 def test_pyttsx3_adapter_synthesize_sync_without_voice_skips_voice_selection(monkeypatch, tmp_path):
+    """Pyttsx3 adapter synthesize sync without voice skips voice selection."""
+
     class FakeEngine:
         def __init__(self):
             self.get_property_called = False
@@ -203,6 +214,8 @@ def test_pyttsx3_adapter_synthesize_sync_without_voice_skips_voice_selection(mon
 
 @pytest.mark.asyncio
 async def test_pyttsx3_adapter_synthesize_available_path_uses_to_thread(monkeypatch):
+    """Pyttsx3 adapter synthesize available path uses to thread."""
+
     class FakeModule:
         @staticmethod
         def init():
@@ -232,27 +245,32 @@ async def test_pyttsx3_adapter_synthesize_available_path_uses_to_thread(monkeypa
 
 
 def test_build_tts_adapter_mock():
+    """Build tts adapter mock."""
     adapter = _build_tts_adapter("mock")
     assert isinstance(adapter, _MockTTSAdapter)
 
 
 def test_build_tts_adapter_pyttsx3():
+    """Build tts adapter pyttsx3."""
     adapter = _build_tts_adapter("pyttsx3")
     assert isinstance(adapter, _Pyttsx3Adapter)
 
 
 def test_build_tts_adapter_auto_returns_pyttsx3():
+    """Build tts adapter auto returns pyttsx3."""
     adapter = _build_tts_adapter("auto")
     assert isinstance(adapter, _Pyttsx3Adapter)
 
 
 def test_build_tts_adapter_auto_prefers_available_pyttsx3(monkeypatch):
+    """Build tts adapter auto prefers available pyttsx3."""
     monkeypatch.setattr(_Pyttsx3Adapter, "available", property(lambda self: True))
     adapter = _build_tts_adapter("auto")
     assert isinstance(adapter, _Pyttsx3Adapter)
 
 
 def test_build_tts_adapter_empty_string_treated_as_auto():
+    """Build tts adapter empty string treated as auto."""
     adapter = _build_tts_adapter("")
     assert isinstance(adapter, _Pyttsx3Adapter)
 
@@ -278,23 +296,27 @@ def _make_pipeline(**cfg_attrs):
 
 
 def test_pipeline_init_mock_provider():
+    """Pipeline init mock provider."""
     p = _make_pipeline(provider="mock")
     assert p.provider == "mock"
     assert p.enabled is True
 
 
 def test_pipeline_init_no_config():
+    """Pipeline init no config."""
     p = VoicePipeline(None)
     assert p.provider == "pyttsx3"
 
 
 def test_pipeline_init_respects_disable_flags():
+    """Pipeline init respects disable flags."""
     p = _make_pipeline(enable_multimodal=False)
     assert p.enabled is False
     assert "ENABLE_MULTIMODAL" in p.voice_disabled_reason
 
 
 def test_pipeline_init_respects_voice_enabled_flag():
+    """Pipeline init respects voice enabled flag."""
     p = _make_pipeline(voice_enabled=False)
     assert p.enabled is False
     assert p.voice_disabled_reason == "VOICE_ENABLED devre dışı."
@@ -302,6 +324,7 @@ def test_pipeline_init_respects_voice_enabled_flag():
 
 @pytest.mark.asyncio
 async def test_synthesize_text_disabled_by_feature_flag_skips_adapter_call():
+    """Synthesize text disabled by feature flag skips adapter call."""
     p = _make_pipeline(voice_enabled=False)
     calls: list[str] = []
 
@@ -324,6 +347,7 @@ async def test_synthesize_text_disabled_by_feature_flag_skips_adapter_call():
 
 
 def test_extract_ready_segments_empty():
+    """Extract ready segments empty."""
     p = _make_pipeline()
     segs, remainder = p.extract_ready_segments("")
     assert segs == []
@@ -331,6 +355,7 @@ def test_extract_ready_segments_empty():
 
 
 def test_extract_ready_segments_flush():
+    """Extract ready segments flush."""
     p = _make_pipeline()
     segs, remainder = p.extract_ready_segments("Merhaba dünya", flush=True)
     assert segs == ["Merhaba dünya"]
@@ -338,6 +363,7 @@ def test_extract_ready_segments_flush():
 
 
 def test_extract_ready_segments_sentence_boundary():
+    """Extract ready segments sentence boundary."""
     p = _make_pipeline(segment_chars=5)
     text = "Birinci cümle. İkinci kısım"
     segs, remainder = p.extract_ready_segments(text)
@@ -345,6 +371,7 @@ def test_extract_ready_segments_sentence_boundary():
 
 
 def test_extract_ready_segments_skips_empty_parts_from_split(monkeypatch):
+    """Extract ready segments skips empty parts from split."""
     p = _make_pipeline(segment_chars=500)
 
     class _FakeBoundary:
@@ -359,6 +386,7 @@ def test_extract_ready_segments_skips_empty_parts_from_split(monkeypatch):
 
 
 def test_extract_ready_segments_long_remainder():
+    """Extract ready segments long remainder."""
     p = _make_pipeline(segment_chars=5)
     # Noktalama olmadan ama yeterince uzun
     text = "Bu bir uzun metin parçasıdır"
@@ -367,6 +395,7 @@ def test_extract_ready_segments_long_remainder():
 
 
 def test_extract_ready_segments_whitespace_only():
+    """Extract ready segments whitespace only."""
     p = _make_pipeline()
     segs, remainder = p.extract_ready_segments("   ")
     assert segs == []
@@ -378,6 +407,7 @@ def test_extract_ready_segments_whitespace_only():
 
 
 def test_create_duplex_state():
+    """Create duplex state."""
     p = _make_pipeline()
     state = p.create_duplex_state()
     assert state.assistant_turn_id == 0
@@ -387,6 +417,7 @@ def test_create_duplex_state():
 
 
 def test_begin_assistant_turn_increments_id():
+    """Begin assistant turn increments id."""
     p = _make_pipeline()
     state = p.create_duplex_state()
     turn_id = p.begin_assistant_turn(state)
@@ -397,12 +428,14 @@ def test_begin_assistant_turn_increments_id():
 
 
 def test_begin_assistant_turn_none_state():
+    """Begin assistant turn none state."""
     p = _make_pipeline()
     result = p.begin_assistant_turn(None)
     assert result == 0
 
 
 def test_begin_assistant_turn_clears_buffer():
+    """Begin assistant turn clears buffer."""
     p = _make_pipeline()
     state = p.create_duplex_state()
     state.output_text_buffer = "eski metin"
@@ -418,6 +451,7 @@ def test_begin_assistant_turn_clears_buffer():
 
 
 def test_buffer_assistant_text_no_state():
+    """Buffer assistant text no state."""
     p = _make_pipeline(segment_chars=5)
     turn_id, packets = p.buffer_assistant_text(None, "Merhaba. Test.", flush=True)
     assert turn_id == 0
@@ -425,6 +459,7 @@ def test_buffer_assistant_text_no_state():
 
 
 def test_buffer_assistant_text_flush_emits_all():
+    """Buffer assistant text flush emits all."""
     p = _make_pipeline(segment_chars=5)
     state = p.create_duplex_state()
     p.begin_assistant_turn(state)
@@ -434,6 +469,7 @@ def test_buffer_assistant_text_flush_emits_all():
 
 
 def test_buffer_assistant_text_short_stays_buffered():
+    """Buffer assistant text short stays buffered."""
     p = _make_pipeline(segment_chars=200, buffer_chars=400)
     state = p.create_duplex_state()
     p.begin_assistant_turn(state)
@@ -443,6 +479,7 @@ def test_buffer_assistant_text_short_stays_buffered():
 
 
 def test_buffer_assistant_text_empty_delta_keeps_buffer_and_emits_when_probe_ready():
+    """Buffer assistant text empty delta keeps buffer and emits when probe ready."""
     p = _make_pipeline(segment_chars=5, buffer_chars=500)
     state = p.create_duplex_state()
     p.begin_assistant_turn(state)
@@ -461,6 +498,7 @@ def test_buffer_assistant_text_empty_delta_keeps_buffer_and_emits_when_probe_rea
 
 
 def test_interrupt_assistant_turn_with_state():
+    """Interrupt assistant turn with state."""
     p = _make_pipeline()
     state = p.create_duplex_state()
     p.begin_assistant_turn(state)
@@ -474,6 +512,7 @@ def test_interrupt_assistant_turn_with_state():
 
 
 def test_interrupt_assistant_turn_none_state():
+    """Interrupt assistant turn none state."""
     p = _make_pipeline()
     result = p.interrupt_assistant_turn(None, reason="interrupt")
     assert result["assistant_turn_id"] == 0
@@ -481,6 +520,7 @@ def test_interrupt_assistant_turn_none_state():
 
 
 def test_interrupt_assistant_turn_empty_reason():
+    """Interrupt assistant turn empty reason."""
     p = _make_pipeline()
     state = p.create_duplex_state()
     p.begin_assistant_turn(state)
@@ -489,6 +529,7 @@ def test_interrupt_assistant_turn_empty_reason():
 
 
 def test_interrupt_assistant_turn_does_not_track_zero_turn_id():
+    """Interrupt assistant turn does not track zero turn id."""
     p = _make_pipeline()
     state = p.create_duplex_state()
     state.output_text_buffer = "abc"
@@ -499,6 +540,7 @@ def test_interrupt_assistant_turn_does_not_track_zero_turn_id():
 
 
 def test_should_interrupt_response_voice_event_below_threshold():
+    """Should interrupt response voice event below threshold."""
     p = _make_pipeline(vad_enabled=True, duplex_enabled=True, vad_interrupt_min_bytes=300)
     assert p.should_interrupt_response(100, event="speech") is False
 
@@ -509,26 +551,31 @@ def test_should_interrupt_response_voice_event_below_threshold():
 
 
 def test_should_commit_audio_true():
+    """Should commit audio true."""
     p = _make_pipeline(vad_enabled=True, vad_min_speech_bytes=512)
     assert p.should_commit_audio(1024, event="speech_end") is True
 
 
 def test_should_commit_audio_too_small():
+    """Should commit audio too small."""
     p = _make_pipeline(vad_enabled=True, vad_min_speech_bytes=1024)
     assert p.should_commit_audio(100, event="speech_end") is False
 
 
 def test_should_commit_audio_wrong_event():
+    """Should commit audio wrong event."""
     p = _make_pipeline(vad_enabled=True)
     assert p.should_commit_audio(2048, event="speech_start") is False
 
 
 def test_should_commit_audio_vad_disabled():
+    """Should commit audio vad disabled."""
     p = _make_pipeline(vad_enabled=False)
     assert p.should_commit_audio(4096, event="speech_end") is False
 
 
 def test_should_commit_audio_all_commit_events():
+    """Should commit audio all commit events."""
     # vad_min_speech_bytes kaynak kodda max(256, ...) ile en az 256 olarak zorlanır
     p = _make_pipeline(vad_enabled=True, vad_min_speech_bytes=256)
     for event in ("speech_end", "speech_ended", "end_of_turn", "silence", "vad_commit"):
@@ -541,21 +588,25 @@ def test_should_commit_audio_all_commit_events():
 
 
 def test_should_interrupt_response_true():
+    """Should interrupt response true."""
     p = _make_pipeline(vad_enabled=True, duplex_enabled=True, vad_interrupt_min_bytes=256)
     assert p.should_interrupt_response(512, event="speech_start") is True
 
 
 def test_should_interrupt_response_duplex_disabled():
+    """Should interrupt response duplex disabled."""
     p = _make_pipeline(vad_enabled=True, duplex_enabled=False)
     assert p.should_interrupt_response(1024, event="speech_start") is False
 
 
 def test_should_interrupt_response_not_interrupt_event():
+    """Should interrupt response not interrupt event."""
     p = _make_pipeline(vad_enabled=True, duplex_enabled=True)
     assert p.should_interrupt_response(1024, event="silence") is False
 
 
 def test_should_interrupt_response_all_interrupt_events():
+    """Should interrupt response all interrupt events."""
     p = _make_pipeline(vad_enabled=True, duplex_enabled=True, vad_interrupt_min_bytes=100)
     for event in ("speech_start", "speech", "user_speaking", "barge_in", "interrupt"):
         assert p.should_interrupt_response(200, event=event) is True
@@ -567,6 +618,7 @@ def test_should_interrupt_response_all_interrupt_events():
 
 
 def test_build_voice_state_payload_with_state():
+    """Build voice state payload with state."""
     p = _make_pipeline(vad_enabled=True, duplex_enabled=True)
     state = p.create_duplex_state()
     payload = p.build_voice_state_payload(
@@ -583,6 +635,7 @@ def test_build_voice_state_payload_with_state():
 
 
 def test_build_voice_state_payload_without_state():
+    """Build voice state payload without state."""
     p = _make_pipeline()
     payload = p.build_voice_state_payload(event="silence", buffered_bytes=0, sequence=0)
     assert payload["voice_state"] == "silence"
@@ -591,12 +644,14 @@ def test_build_voice_state_payload_without_state():
 
 
 def test_build_voice_state_payload_empty_event():
+    """Build voice state payload empty event."""
     p = _make_pipeline()
     payload = p.build_voice_state_payload(event="", buffered_bytes=0, sequence=0)
     assert payload["voice_state"] == "unknown"
 
 
 def test_build_voice_state_payload_negative_values():
+    """Build voice state payload negative values."""
     p = _make_pipeline()
     payload = p.build_voice_state_payload(event="test", buffered_bytes=-5, sequence=-1)
     assert payload["buffered_bytes"] == 0
@@ -610,6 +665,7 @@ def test_build_voice_state_payload_negative_values():
 
 @pytest.mark.asyncio
 async def test_synthesize_text_success():
+    """Synthesize text success."""
     p = _make_pipeline(provider="mock")
     result = await p.synthesize_text("Merhaba dünya")
     assert result["success"] is True
@@ -618,6 +674,7 @@ async def test_synthesize_text_success():
 
 @pytest.mark.asyncio
 async def test_synthesize_text_empty():
+    """Synthesize text empty."""
     p = _make_pipeline(provider="mock")
     result = await p.synthesize_text("")
     assert result["success"] is False
@@ -626,6 +683,7 @@ async def test_synthesize_text_empty():
 
 @pytest.mark.asyncio
 async def test_synthesize_text_whitespace_only():
+    """Synthesize text whitespace only."""
     p = _make_pipeline(provider="mock")
     result = await p.synthesize_text("   ")
     assert result["success"] is False
@@ -633,6 +691,7 @@ async def test_synthesize_text_whitespace_only():
 
 @pytest.mark.asyncio
 async def test_synthesize_text_degrades_gracefully_on_adapter_error():
+    """Synthesize text degrades gracefully on adapter error."""
     p = _make_pipeline(provider="mock")
 
     async def _boom(_text: str, *, voice: str = "") -> dict:
@@ -651,6 +710,7 @@ async def test_synthesize_text_degrades_gracefully_on_adapter_error():
 
 
 def test_webrtc_audio_ingress_decode_packet_success():
+    """Webrtc audio ingress decode packet success."""
     ingress = WebRTCAudioIngress()
     packet = ingress.decode_packet(
         {
@@ -671,12 +731,14 @@ def test_webrtc_audio_ingress_decode_packet_success():
 
 
 def test_webrtc_audio_ingress_decode_packet_rejects_invalid_base64():
+    """Webrtc audio ingress decode packet rejects invalid base64."""
     ingress = WebRTCAudioIngress()
     with pytest.raises(ValueError, match="base64"):
         ingress.decode_packet({"audio_chunk": "***not-base64***", "mime_type": "audio/webm"})
 
 
 def test_webrtc_audio_ingress_decode_packet_rejects_unsupported_mime():
+    """Webrtc audio ingress decode packet rejects unsupported mime."""
     ingress = WebRTCAudioIngress()
     payload = {
         "audio_chunk": base64.b64encode(b"raw").decode("ascii"),

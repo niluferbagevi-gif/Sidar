@@ -33,6 +33,7 @@ def _log_status(
 
 
 def test_changed_chain_is_logged_via_first_load_info_and_returned() -> None:
+    """Changed chain is logged via first load info and returned."""
     first_calls: list[tuple[Any, ...]] = []
     events = [
         {"label": "base", "path": "/repo/.env", "loaded": True},
@@ -46,6 +47,7 @@ def test_changed_chain_is_logged_via_first_load_info_and_returned() -> None:
 
 
 def test_unchanged_chain_is_logged_at_debug_only(caplog) -> None:
+    """Unchanged chain is logged at debug only."""
     first_calls: list[tuple[Any, ...]] = []
     events = [{"label": "base", "path": "/repo/.env", "loaded": True}]
 
@@ -60,6 +62,7 @@ def test_unchanged_chain_is_logged_at_debug_only(caplog) -> None:
 
 
 def test_no_loaded_files_warns_and_keeps_previous_signature(caplog) -> None:
+    """No loaded files warns and keeps previous signature."""
     previous = (("base", "/old/.env"),)
 
     with caplog.at_level(logging.WARNING, logger=_LOGGER.name):
@@ -70,6 +73,7 @@ def test_no_loaded_files_warns_and_keeps_previous_signature(caplog) -> None:
 
 
 def test_missing_files_and_notices_are_merged_once_and_notices_cleared(caplog) -> None:
+    """Missing files and notices are merged once and notices cleared."""
     events = [
         {"label": "base", "path": "/repo/.env", "loaded": True},
         {"label": "advanced", "path": "/repo/.env.advanced", "loaded": False, "reason": "missing"},
@@ -88,6 +92,7 @@ def test_missing_files_and_notices_are_merged_once_and_notices_cleared(caplog) -
 
 
 def test_key_sources_and_missing_keys_are_reported(caplog) -> None:
+    """Key sources and missing keys are reported."""
     key_sources = {
         "B_KEY": {"label": "advanced", "path": "/repo/.env.advanced"},
         "A_KEY": {"label": "base", "path": "/repo/.env"},
@@ -167,6 +172,7 @@ def _reload(
 
 
 def test_reload_applies_full_chain_with_profile_and_drops_removed_keys(tmp_path) -> None:
+    """Reload applies full chain with profile and drops removed keys."""
     environ = {"KEEP": "process", "REMOVED": "old-dotenv", "SIDAR_ENV": ""}
     managed_keys = {"REMOVED"}
     loaded_labels: list[str] = []
@@ -208,6 +214,7 @@ def test_reload_applies_full_chain_with_profile_and_drops_removed_keys(tmp_path)
 
 
 def test_reload_without_profile_skips_environment_layer(tmp_path) -> None:
+    """Reload without profile skips environment layer."""
     environ = {"SIDAR_ENV": ""}
     loaded_labels: list[str] = []
 
@@ -230,6 +237,7 @@ def test_reload_without_profile_skips_environment_layer(tmp_path) -> None:
 
 
 def test_reload_with_skipped_default_layers_only_loads_explicit_and_secret(tmp_path) -> None:
+    """Reload with skipped default layers only loads explicit and secret."""
     environ = {"SIDAR_ENV": "production"}
     loaded_labels: list[str] = []
 

@@ -22,6 +22,7 @@ from core.utils.trusted_urlopen import UntrustedRequestError, urlopen_trusted_re
 def test_urlopen_trusted_request_forwards_to_urlopen_and_returns_its_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Urlopen trusted request forwards to urlopen and returns its response."""
     # Unit tests must not open real sockets (see tests/unit/conftest.py's
     # network guard); mock the real urllib.request.urlopen call directly
     # rather than standing up a live HTTP server.
@@ -42,12 +43,14 @@ def test_urlopen_trusted_request_forwards_to_urlopen_and_returns_its_response(
 
 
 def test_urlopen_trusted_request_rejects_file_scheme() -> None:
+    """Urlopen trusted request rejects file scheme."""
     request = urllib.request.Request("file:///etc/passwd")
     with pytest.raises(UntrustedRequestError, match="scheme"):
         urlopen_trusted_request(request, timeout=5)
 
 
 def test_urlopen_trusted_request_rejects_ftp_scheme() -> None:
+    """Urlopen trusted request rejects ftp scheme."""
     request = urllib.request.Request("ftp://example.test/")
     with pytest.raises(UntrustedRequestError, match="scheme"):
         urlopen_trusted_request(request, timeout=5)

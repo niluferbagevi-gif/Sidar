@@ -30,6 +30,7 @@ from managers.code.runner import build_sanitized_shell_args
 
 
 def test_rag_graph_and_query_facades_keep_stable_imports(tmp_path: Path) -> None:
+    """Rag graph and query facades keep stable imports."""
     assert rag.GraphIndex is GraphIndex is IndexedGraphIndex
     assert GraphIndex(tmp_path).root_dir == tmp_path.resolve()
     assert GraphRAGSearchPlan(query="q", vector_backend="bm25").query == "q"
@@ -39,6 +40,7 @@ def test_rag_graph_and_query_facades_keep_stable_imports(tmp_path: Path) -> None
 
 
 def test_rag_query_expansion_keeps_original_fallback(caplog) -> None:
+    """Rag query expansion keeps original fallback."""
     assert build_query_candidates("kampanya", expander=lambda _q: ["campaign", "marketing"]) == [
         "campaign",
         "marketing",
@@ -54,6 +56,7 @@ def test_rag_query_expansion_keeps_original_fallback(caplog) -> None:
 
 
 def test_rag_query_candidates_handle_empty_and_single_candidate_limits() -> None:
+    """Rag query candidates handle empty and single candidate limits."""
     assert build_query_candidates("   ") == []
     assert build_query_candidates("orijinal", expander=lambda _q: "expanded", max_candidates=0) == [
         "orijinal"
@@ -64,6 +67,7 @@ def test_rag_query_candidates_handle_empty_and_single_candidate_limits() -> None
 
 
 def test_rag_query_candidates_accept_string_expansion() -> None:
+    """Rag query candidates accept string expansion."""
     assert build_query_candidates("orijinal", expander=lambda _q: "expanded", max_candidates=2) == [
         "expanded",
         "orijinal",
@@ -71,12 +75,15 @@ def test_rag_query_candidates_accept_string_expansion() -> None:
 
 
 def test_rag_query_candidates_empty_expansion_iterable_keeps_original() -> None:
+    """Rag query candidates empty expansion iterable keeps original."""
     assert build_query_candidates("orijinal", expander=lambda _q: [], max_candidates=3) == [
         "orijinal"
     ]
 
 
 def test_rag_query_candidates_dedupe_normalize_and_limit_expansions() -> None:
+    """Rag query candidates dedupe normalize and limit expansions."""
+
     def _expander(_query: str):
         yield "  semantic campaign  "
         yield ""
@@ -93,6 +100,7 @@ def test_rag_query_candidates_dedupe_normalize_and_limit_expansions() -> None:
 
 
 def test_rag_query_candidates_fall_back_for_invalid_expander_payload(caplog) -> None:
+    """Rag query candidates fall back for invalid expander payload."""
     with caplog.at_level("WARNING", logger="core.rag.query"):
         assert build_query_candidates("orijinal", expander=lambda _q: 42) == ["orijinal"]
 
@@ -100,6 +108,7 @@ def test_rag_query_candidates_fall_back_for_invalid_expander_payload(caplog) -> 
 
 
 def test_rag_embedding_wrappers_delegate_lazily(monkeypatch) -> None:
+    """Rag embedding wrappers delegate lazily."""
     monkeypatch.setattr(rag, "build_embedding_function", lambda **kwargs: kwargs)
     monkeypatch.setattr(rag, "embed_texts_for_semantic_cache", lambda texts, cfg=None: [texts, cfg])
 
@@ -113,6 +122,7 @@ def test_rag_embedding_wrappers_delegate_lazily(monkeypatch) -> None:
 
 
 def test_db_init_is_short_backward_compatible_facade() -> None:
+    """Db init is short backward compatible facade."""
     init_lines = Path("core/db/__init__.py").read_text(encoding="utf-8").splitlines()
 
     assert len(init_lines) <= 200
@@ -122,11 +132,13 @@ def test_db_init_is_short_backward_compatible_facade() -> None:
 
 
 def test_db_dialect_facade_matches_extracted_helpers() -> None:
+    """Db dialect facade matches extracted helpers."""
     assert _quote_sql_identifier("events") == quote_sql_identifier("events") == '"events"'
     assert _parse_asyncpg_affected_rows("UPDATE 7") == parse_asyncpg_affected_rows("UPDATE 7") == 7
 
 
 def test_code_helper_modules_are_usable_without_code_manager(tmp_path: Path) -> None:
+    """Code helper modules are usable without code manager."""
     assert extract_pytest_args("uv run pytest tests/unit -q") == ["tests/unit", "-q"]
     assert command_requires_uv_tooling("./run_tests.sh") is True
     assert command_invokes_pytest("python -m pytest -q") is True
@@ -149,6 +161,7 @@ def test_code_helper_modules_are_usable_without_code_manager(tmp_path: Path) -> 
 
 
 def test_rag_session_document_helpers_select_and_format_documents() -> None:
+    """Rag session document helpers select and format documents."""
     from core.rag.session_documents import (
         build_session_summary_lines,
         documents_for_session,
@@ -192,6 +205,7 @@ def test_rag_session_document_helpers_select_and_format_documents() -> None:
 
 
 def test_rag_graph_formatting_helpers_preserve_legacy_text_shape() -> None:
+    """Rag graph formatting helpers preserve legacy text shape."""
     from core.rag.graph_formatting import format_graph_impact_analysis, format_graph_search_results
 
     graph_text = format_graph_search_results(
@@ -227,6 +241,7 @@ def test_rag_graph_formatting_helpers_preserve_legacy_text_shape() -> None:
 
 
 def test_rag_projection_helper_builds_document_entity_and_code_nodes() -> None:
+    """Rag projection helper builds document entity and code nodes."""
     from types import SimpleNamespace
 
     from core.rag.projection import build_knowledge_graph_projection_payload

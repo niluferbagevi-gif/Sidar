@@ -1,3 +1,5 @@
+"""``core.rag.backends.pgvector`` modülü için unit testler."""
+
 import importlib
 from types import SimpleNamespace
 
@@ -7,6 +9,7 @@ from core.rag.backends import pgvector as pgvector_module
 
 
 def test_pgvector_failure_action_message_includes_auth_configuration_guidance(monkeypatch):
+    """Pgvector failure action message includes auth configuration guidance."""
     pgvector = importlib.reload(pgvector_module)
     monkeypatch.setattr(
         pgvector,
@@ -24,6 +27,7 @@ def test_pgvector_failure_action_message_includes_auth_configuration_guidance(mo
 
 
 def test_pgvector_failure_action_message_non_auth_path(monkeypatch):
+    """Pgvector failure action message non auth path."""
     pgvector = importlib.reload(pgvector_module)
     monkeypatch.setattr(
         pgvector,
@@ -132,6 +136,7 @@ def test_init_pgvector_success_clears_previous_degraded_detail(monkeypatch):
 
 
 def test_pgvector_sql_builder_centralizes_validated_identifier_interpolation():
+    """Pgvector sql builder centralizes validated identifier interpolation."""
     pgvector = importlib.reload(pgvector_module)
 
     queries = pgvector._pgvector_sql("rag_embeddings")
@@ -141,6 +146,7 @@ def test_pgvector_sql_builder_centralizes_validated_identifier_interpolation():
 
 
 def test_pgvector_sql_builder_rejects_malicious_identifier() -> None:
+    """Pgvector sql builder rejects malicious identifier."""
     pgvector = importlib.reload(pgvector_module)
 
     with pytest.raises(ValueError, match="invalid PGVECTOR_TABLE identifier"):
@@ -148,6 +154,7 @@ def test_pgvector_sql_builder_rejects_malicious_identifier() -> None:
 
 
 def test_pgvector_ddl_builder_validates_table_indexes_and_dimension() -> None:
+    """Pgvector ddl builder validates table indexes and dimension."""
     pgvector = importlib.reload(pgvector_module)
     statements = pgvector._pgvector_ddl("rag_embeddings", 384)
 
@@ -161,6 +168,7 @@ def test_pgvector_ddl_builder_validates_table_indexes_and_dimension() -> None:
 
 
 def test_describe_unclassified_pgvector_failure_uses_redacted_exception_summary():
+    """Describe unclassified pgvector failure uses redacted exception summary."""
     pgvector = importlib.reload(pgvector_module)
     unclassified = pgvector.UNCLASSIFIED_POSTGRES_DIAGNOSIS
 

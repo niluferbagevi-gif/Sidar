@@ -1,3 +1,5 @@
+"""``core.db`` facade'inin opsiyonel alt modül importları için unit testler."""
+
 from __future__ import annotations
 
 import importlib
@@ -5,6 +7,7 @@ import sys
 
 
 def test_db_facade_skips_optional_submodule_import_errors(monkeypatch):
+    """Db facade skips optional submodule import errors."""
     original_import_module = importlib.import_module
 
     optional_error_seen = {"value": False}

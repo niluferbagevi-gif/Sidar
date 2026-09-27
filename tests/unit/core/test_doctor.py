@@ -1,3 +1,5 @@
+"""``core.doctor`` paketi için unit testler."""
+
 from __future__ import annotations
 
 import json
@@ -36,6 +38,7 @@ def _isolate_database_env(monkeypatch):
 
 
 def test_run_doctor_report_writes_json_and_aggregates_warn(monkeypatch, tmp_path):
+    """Run doctor report writes json and aggregates warn."""
     checks = [
         DoctorCheck("uv", "pass", "ok"),
         DoctorCheck("gpu", "warn", "no gpu", {"run_gpu_stress": False}),
@@ -75,6 +78,7 @@ def test_run_doctor_report_writes_json_and_aggregates_warn(monkeypatch, tmp_path
 
 
 def test_gpu_check_requests_stress_when_nvidia_smi_detected(monkeypatch):
+    """Gpu check requests stress when nvidia smi detected."""
     monkeypatch.setattr(
         doctor.shutil, "which", lambda name: "/usr/bin/nvidia-smi" if name == "nvidia-smi" else None
     )
@@ -88,6 +92,7 @@ def test_gpu_check_requests_stress_when_nvidia_smi_detected(monkeypatch):
 
 
 def test_websocket_check_falls_back_to_static_routes(monkeypatch, tmp_path):
+    """Websocket check falls back to static routes."""
     routes_dir = tmp_path / "web" / "routes"
     routes_dir.mkdir(parents=True)
     (routes_dir / "ws_chat.py").write_text('@router.websocket("/ws/chat")\n', encoding="utf-8")
@@ -112,6 +117,7 @@ def test_websocket_check_falls_back_to_static_routes(monkeypatch, tmp_path):
 
 
 def test_migration_parser_identifies_head(tmp_path, monkeypatch):
+    """Migration parser identifies head."""
     versions = tmp_path / "migrations" / "versions"
     versions.mkdir(parents=True)
     (versions / "0001_first.py").write_text(
@@ -129,6 +135,8 @@ def test_migration_parser_identifies_head(tmp_path, monkeypatch):
 
 
 def test_run_command_success_file_not_found_and_timeout(monkeypatch):
+    """Run command success file not found and timeout."""
+
     class Completed:
         returncode = 0
         stdout = " done \n"
@@ -152,6 +160,7 @@ def test_run_command_success_file_not_found_and_timeout(monkeypatch):
 
 
 def test_status_and_secret_helpers_cover_pass_warn_fail():
+    """Status and secret helpers cover pass warn fail."""
     assert doctor._status_from_bool(True) == "pass"
     assert doctor._status_from_bool(False, warn=True) == "warn"
     assert doctor._status_from_bool(False) == "fail"
@@ -161,6 +170,7 @@ def test_status_and_secret_helpers_cover_pass_warn_fail():
 
 
 def test_runtime_and_redaction_helpers_cover_edge_cases(monkeypatch, tmp_path):
+    """Runtime and redaction helpers cover edge cases."""
     monkeypatch.setattr(doctor.importlib.util, "find_spec", lambda name: object())
     assert doctor.check_prometheus_runtime().status == "pass"
 
@@ -191,6 +201,7 @@ def test_runtime_and_redaction_helpers_cover_edge_cases(monkeypatch, tmp_path):
     ],
 )
 def test_postgres_connectivity_failure_guidance_classifies_errors(error, category):
+    """Postgres connectivity failure guidance classifies errors."""
     message, details = database_checks._postgres_connectivity_failure_guidance(error)
 
     assert message
@@ -221,6 +232,7 @@ def test_postgres_connectivity_guidance_distinguishes_invalid_ssl_query_param_fr
 
 
 def test_dotenv_helpers_parse_assignments_and_report_effective_sources(monkeypatch, tmp_path):
+    """Dotenv helpers parse assignments and report effective sources."""
     env_file = tmp_path / ".env.test"
     env_file.write_text(
         "\n# comment\nexport DATABASE_URL='postgresql://sidar:test@localhost/sidar'\n"
@@ -255,6 +267,7 @@ def test_dotenv_helpers_parse_assignments_and_report_effective_sources(monkeypat
 
 
 def test_dotenv_source_report_ignores_non_effective_definition(monkeypatch, tmp_path):
+    """Dotenv source report ignores non effective definition."""
     env_file = tmp_path / ".env"
     env_file.write_text("POSTGRES_DB=sidar_file\nDATABASE_URL=postgresql://file/db\n")
     monkeypatch.setenv("POSTGRES_DB", "sidar_process")
@@ -275,6 +288,7 @@ def test_dotenv_source_report_ignores_non_effective_definition(monkeypatch, tmp_
 
 
 def test_uv_check_reports_missing_and_lock_failure(monkeypatch):
+    """Uv check reports missing and lock failure."""
     monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
     missing = doctor.check_uv()
     assert missing.status == "fail"
@@ -292,6 +306,7 @@ def test_uv_check_reports_missing_and_lock_failure(monkeypatch):
 
 
 def test_uv_check_passes_when_binary_and_lock_are_ready(monkeypatch):
+    """Uv check passes when binary and lock are ready."""
     monkeypatch.setattr(doctor.shutil, "which", lambda name: "/bin/uv")
     monkeypatch.setattr(doctor, "_run_command", lambda cmd, timeout=20: (0, "ok"))
 
@@ -302,6 +317,7 @@ def test_uv_check_passes_when_binary_and_lock_are_ready(monkeypatch):
 
 
 def test_database_env_warns_without_url(monkeypatch):
+    """Database env warns without url."""
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("SIDAR_CONTAINER_DATABASE_URL", raising=False)
     monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
@@ -317,6 +333,7 @@ def test_database_env_warns_without_url(monkeypatch):
 
 
 def test_database_env_derives_urls_when_missing_but_postgres_password_present(monkeypatch):
+    """Database env derives urls when missing but postgres password present."""
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("SIDAR_CONTAINER_DATABASE_URL", raising=False)
     monkeypatch.setenv("POSTGRES_USER", "sidar")
@@ -335,6 +352,7 @@ def test_database_env_derives_urls_when_missing_but_postgres_password_present(mo
 
 
 def test_database_env_fails_for_weak_passwords_and_legacy_container_url(monkeypatch):
+    """Database env fails for weak passwords and legacy container url."""
     monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:short@localhost:5432/sidar")
     monkeypatch.setenv("POSTGRES_PASSWORD", "postgres")
     monkeypatch.setenv("SIDAR_CONTAINER_DATABASE_URL", "postgresql://sidar:sidar@db/sidar")
@@ -352,6 +370,7 @@ def test_database_env_fails_for_weak_passwords_and_legacy_container_url(monkeypa
 def test_database_env_fails_when_database_url_password_differs_from_postgres_password(
     monkeypatch,
 ):
+    """Database env fails when database url password differs from postgres password."""
     monkeypatch.setenv("POSTGRES_USER", "sidar")
     monkeypatch.setenv("POSTGRES_PASSWORD", "a" * 24)
     monkeypatch.setenv("POSTGRES_DB", "sidar")
@@ -381,6 +400,7 @@ def test_database_env_fails_when_database_url_password_differs_from_postgres_pas
 def test_database_env_fails_when_local_and_container_passwords_drift_without_postgres_password(
     monkeypatch,
 ):
+    """Database env fails when local and container passwords drift without postgres password."""
     monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
     monkeypatch.delenv("POSTGRES_USER", raising=False)
     monkeypatch.delenv("POSTGRES_DB", raising=False)
@@ -399,6 +419,7 @@ def test_database_env_fails_when_local_and_container_passwords_drift_without_pos
 
 
 def test_database_env_warns_when_local_and_container_database_names_drift(monkeypatch):
+    """Database env warns when local and container database names drift."""
     password = _STRONG_TEST_PASSWORD
     monkeypatch.delenv("POSTGRES_DB", raising=False)
     monkeypatch.setenv("POSTGRES_PASSWORD", password)
@@ -414,6 +435,7 @@ def test_database_env_warns_when_local_and_container_database_names_drift(monkey
 
 
 def test_database_env_warns_when_database_name_differs_from_postgres_db(monkeypatch):
+    """Database env warns when database name differs from postgres db."""
     monkeypatch.setenv("POSTGRES_USER", "sidar")
     monkeypatch.setenv("POSTGRES_PASSWORD", _STRONG_TEST_PASSWORD)
     monkeypatch.setenv("POSTGRES_DB", "sidar")
@@ -428,6 +450,7 @@ def test_database_env_warns_when_database_name_differs_from_postgres_db(monkeypa
 
 
 def test_database_env_flags_unattributed_database_url_as_parent_shell_drift(monkeypatch):
+    """Database env flags unattributed database url as parent shell drift."""
     # Reproduces the "stock install, every startup" false-alarm loop: DATABASE_URL is
     # set in the process environment (e.g. an old `export`, or a Docker Compose
     # `environment:`/`env_file` injection using the host .env's POSTGRES_DB) but is not
@@ -487,6 +510,7 @@ def test_database_env_rejects_unattributed_asyncpg_ssl_query_with_shell_fix(monk
 
 
 def test_database_connectivity_adds_parent_shell_fix_for_unattributed_ssl_url(monkeypatch):
+    """Database connectivity adds parent shell fix for unattributed ssl url."""
     password = _STRONG_TEST_PASSWORD
     monkeypatch.setenv(
         "DATABASE_URL",
@@ -552,6 +576,7 @@ def test_database_env_allows_valid_unattributed_database_url(
 
 
 def test_database_env_allows_non_postgres_url_without_postgres_sync_failures(monkeypatch):
+    """Database env allows non postgres url without postgres sync failures."""
     monkeypatch.setenv("DATABASE_URL", "sqlite:///tmp/sidar.db")
     monkeypatch.setenv("POSTGRES_USER", "sidar")
     monkeypatch.setenv("POSTGRES_PASSWORD", _STRONG_TEST_PASSWORD)
@@ -564,6 +589,7 @@ def test_database_env_allows_non_postgres_url_without_postgres_sync_failures(mon
 
 
 def test_database_env_fails_when_database_url_user_differs_from_postgres_user(monkeypatch):
+    """Database env fails when database url user differs from postgres user."""
     password = "a" * 24
     monkeypatch.setenv("POSTGRES_USER", "sidar")
     monkeypatch.setenv("POSTGRES_PASSWORD", password)
@@ -577,6 +603,7 @@ def test_database_env_fails_when_database_url_user_differs_from_postgres_user(mo
 
 
 def test_database_env_passes_for_strong_postgres_settings(monkeypatch):
+    """Database env passes for strong postgres settings."""
     password = _STRONG_TEST_PASSWORD
     monkeypatch.setenv("POSTGRES_USER", "sidar")
     monkeypatch.setenv("POSTGRES_PASSWORD", password)
@@ -591,6 +618,8 @@ def test_database_env_passes_for_strong_postgres_settings(monkeypatch):
 
 
 def test_database_connectivity_passes_and_redacts_password(monkeypatch):
+    """Database connectivity passes and redacts password."""
+
     class _Conn:
         async def fetchval(self, query):
             if "pg_extension" in query:
@@ -620,6 +649,7 @@ def test_database_connectivity_passes_and_redacts_password(monkeypatch):
 
 
 def test_database_connectivity_uses_derived_database_url(monkeypatch):
+    """Database connectivity uses derived database url."""
     captured = {}
 
     class _Conn:
@@ -649,6 +679,8 @@ def test_database_connectivity_uses_derived_database_url(monkeypatch):
 
 
 def test_database_connectivity_warns_when_postgres_unreachable(monkeypatch):
+    """Database connectivity warns when postgres unreachable."""
+
     async def _connect(dsn):
         raise ConnectionRefusedError("db down")
 
@@ -665,6 +697,8 @@ def test_database_connectivity_warns_when_postgres_unreachable(monkeypatch):
 
 
 def test_database_connectivity_warns_when_postgres_times_out(monkeypatch):
+    """Database connectivity warns when postgres times out."""
+
     async def _connect(dsn):
         raise TimeoutError("connection timed out")
 
@@ -679,6 +713,7 @@ def test_database_connectivity_warns_when_postgres_times_out(monkeypatch):
 
 
 def test_database_checks_fail_fast_for_malformed_dsn(monkeypatch, tmp_path):
+    """Database checks fail fast for malformed dsn."""
     monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:secret@[invalid/sidar")
     monkeypatch.setenv("SIDAR_CONTAINER_DATABASE_URL", "postgresql://sidar:secret@[invalid/sidar")
     monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
@@ -704,6 +739,7 @@ def test_database_checks_fail_fast_for_malformed_dsn(monkeypatch, tmp_path):
 def test_database_connectivity_auth_failure_reports_volume_remediation_and_redacts(
     monkeypatch,
 ):
+    """Database connectivity auth failure reports volume remediation and redacts."""
     password = "secretpasswordsecretpassword"
 
     async def _connect(dsn):
@@ -731,6 +767,8 @@ def test_database_connectivity_auth_failure_reports_volume_remediation_and_redac
 
 
 async def test_run_coro_sync_works_inside_running_event_loop() -> None:
+    """Run coro sync works inside running event loop."""
+
     async def _value() -> int:
         return 7
 
@@ -738,6 +776,8 @@ async def test_run_coro_sync_works_inside_running_event_loop() -> None:
 
 
 def test_database_connectivity_warns_when_pgvector_extension_missing(monkeypatch):
+    """Database connectivity warns when pgvector extension missing."""
+
     class _Conn:
         async def fetchval(self, query):
             if "pg_extension" in query:
@@ -761,6 +801,7 @@ def test_database_connectivity_warns_when_pgvector_extension_missing(monkeypatch
 
 
 def test_pgvector_ready_warns_when_database_url_is_missing(monkeypatch):
+    """Pgvector ready warns when database url is missing."""
     monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
     monkeypatch.setattr(doctor, "_resolved_database_urls", lambda: ("", "", False, False))
 
@@ -771,6 +812,7 @@ def test_pgvector_ready_warns_when_database_url_is_missing(monkeypatch):
 
 
 def test_pgvector_ready_warns_for_non_postgres_url(monkeypatch):
+    """Pgvector ready warns for non postgres url."""
     monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
     monkeypatch.setattr(
         doctor, "_resolved_database_urls", lambda: ("sqlite:///sidar.db", "", True, False)
@@ -783,6 +825,7 @@ def test_pgvector_ready_warns_for_non_postgres_url(monkeypatch):
 
 
 def test_pgvector_ready_reports_probe_errors_without_leaking_credentials(monkeypatch):
+    """Pgvector ready reports probe errors without leaking credentials."""
     database_url = "postgresql://sidar:secret-value@localhost:5432/sidar"
     monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
     monkeypatch.setattr(doctor, "_resolved_database_urls", lambda: (database_url, "", True, False))
@@ -801,6 +844,7 @@ def test_pgvector_ready_reports_probe_errors_without_leaking_credentials(monkeyp
 
 
 def test_pgvector_ready_is_blocked_by_failed_connectivity_without_reprobing(monkeypatch):
+    """Pgvector ready is blocked by failed connectivity without reprobing."""
     database_url = "postgresql://sidar:secret-value@localhost:5432/sidar"
     monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
     monkeypatch.setattr(doctor, "_resolved_database_urls", lambda: (database_url, "", True, False))
@@ -828,6 +872,7 @@ def test_pgvector_ready_is_blocked_by_failed_connectivity_without_reprobing(monk
 
 
 def test_pgvector_ready_probes_when_passed_connectivity_has_no_evidence(monkeypatch):
+    """Pgvector ready probes when passed connectivity has no evidence."""
     database_url = "postgresql://sidar:secret-value@localhost:5432/sidar"
     monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
     monkeypatch.setattr(doctor, "_resolved_database_urls", lambda: (database_url, "", True, False))
@@ -848,6 +893,7 @@ def test_pgvector_ready_probes_when_passed_connectivity_has_no_evidence(monkeypa
 
 
 def test_pgvector_ready_reuses_successful_connectivity_probe(monkeypatch):
+    """Pgvector ready reuses successful connectivity probe."""
     database_url = "postgresql://sidar:secret-value@localhost:5432/sidar"
     monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
     monkeypatch.setattr(doctor, "_resolved_database_urls", lambda: (database_url, "", True, False))
@@ -871,6 +917,7 @@ def test_pgvector_ready_reuses_successful_connectivity_probe(monkeypatch):
 
 
 def test_pgvector_ready_passes_when_extension_probe_succeeds(monkeypatch):
+    """Pgvector ready passes when extension probe succeeds."""
     database_url = "postgresql://sidar:secret-value@localhost:5432/sidar"
     monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
     monkeypatch.setattr(doctor, "_resolved_database_urls", lambda: (database_url, "", True, False))
@@ -890,6 +937,7 @@ def test_pgvector_ready_passes_when_extension_probe_succeeds(monkeypatch):
 
 
 def test_rag_readiness_warns_for_missing_index_with_auto_fix(monkeypatch, tmp_path):
+    """Rag readiness warns for missing index with auto fix."""
     rag_dir = tmp_path / "rag"
     rag_dir.mkdir()
     monkeypatch.setenv("RAG_DIR", str(rag_dir))
@@ -909,6 +957,7 @@ def test_rag_readiness_warns_for_missing_index_with_auto_fix(monkeypatch, tmp_pa
 
 
 def test_rag_readiness_warns_for_existing_empty_index(monkeypatch, tmp_path):
+    """Rag readiness warns for existing empty index."""
     rag_dir = tmp_path / "rag"
     rag_dir.mkdir()
     (rag_dir / "index.json").write_text("{}", encoding="utf-8")
@@ -924,6 +973,7 @@ def test_rag_readiness_warns_for_existing_empty_index(monkeypatch, tmp_path):
 
 
 def test_rag_readiness_is_blocked_when_pgvector_env_parity_fails(monkeypatch, tmp_path):
+    """Rag readiness is blocked when pgvector env parity fails."""
     rag_dir = tmp_path / "rag"
     rag_dir.mkdir()
     (rag_dir / "index.json").write_text('{"doc": {"title": "ok"}}', encoding="utf-8")
@@ -959,6 +1009,7 @@ def test_rag_readiness_is_blocked_when_pgvector_env_parity_fails(monkeypatch, tm
 
 
 def test_rag_readiness_accepts_matching_pgvector_database_environment(monkeypatch, tmp_path):
+    """Rag readiness accepts matching pgvector database environment."""
     password = _STRONG_TEST_PASSWORD
     monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
     monkeypatch.setenv("RAG_DIR", str(tmp_path / "rag"))
@@ -1004,6 +1055,7 @@ def test_rag_readiness_accepts_pgvector_database_url_derived_from_components(mon
 
 
 def test_rag_readiness_pgvector_env_snapshot_does_not_reenter_database_check(monkeypatch, tmp_path):
+    """Rag readiness pgvector env snapshot does not reenter database check."""
     rag_dir = tmp_path / "rag"
     rag_dir.mkdir()
     (rag_dir / "index.json").write_text('{"doc": {"title": "ok"}}', encoding="utf-8")
@@ -1036,6 +1088,7 @@ def test_rag_readiness_pgvector_env_snapshot_does_not_reenter_database_check(mon
 def test_rag_readiness_prefers_database_sync_auto_fix_when_blocked_and_unseeded(
     monkeypatch, tmp_path
 ):
+    """Rag readiness prefers database sync auto fix when blocked and unseeded."""
     rag_dir = tmp_path / "rag"
     rag_dir.mkdir()
     monkeypatch.setenv("RAG_DIR", str(rag_dir))
@@ -1063,6 +1116,7 @@ def test_rag_readiness_prefers_database_sync_auto_fix_when_blocked_and_unseeded(
 
 
 def test_rag_index_ready_passes_with_documents_and_marks_empty_entity_memory(monkeypatch, tmp_path):
+    """Rag index ready passes with documents and marks empty entity memory."""
     rag_dir = tmp_path / "rag"
     rag_dir.mkdir()
     (rag_dir / "index.json").write_text('{"doc": {"title": "ok"}}', encoding="utf-8")
@@ -1089,6 +1143,7 @@ def test_rag_index_ready_passes_with_documents_and_marks_empty_entity_memory(mon
 def test_graphrag_entity_memory_ready_reports_disabled_graph_and_store_mismatch(
     monkeypatch, tmp_path
 ):
+    """Graphrag entity memory ready reports disabled graph and store mismatch."""
     monkeypatch.setattr(doctor, "BASE_DIR", tmp_path)
     monkeypatch.setattr(
         doctor,
@@ -1118,6 +1173,7 @@ def test_graphrag_entity_memory_ready_reports_disabled_graph_and_store_mismatch(
 
 
 def test_graphrag_entity_memory_ready_warns_when_store_probe_is_empty(monkeypatch, tmp_path):
+    """Graphrag entity memory ready warns when store probe is empty."""
     monkeypatch.setattr(
         doctor,
         "_rag_readiness_state",
@@ -1146,6 +1202,7 @@ def test_graphrag_entity_memory_ready_warns_when_store_probe_is_empty(monkeypatc
 
 
 def test_rag_readiness_aggregate_reports_fail_and_healthy_states(monkeypatch):
+    """Rag readiness aggregate reports fail and healthy states."""
     monkeypatch.setattr(
         doctor,
         "_rag_readiness_state",
@@ -1171,6 +1228,7 @@ def test_rag_readiness_aggregate_reports_fail_and_healthy_states(monkeypatch):
 
 
 def test_environment_profile_passes_without_explicit_profile(monkeypatch):
+    """Environment profile passes without explicit profile."""
     monkeypatch.delenv("SIDAR_ENV", raising=False)
 
     check = doctor.check_environment_profile()
@@ -1180,6 +1238,7 @@ def test_environment_profile_passes_without_explicit_profile(monkeypatch):
 
 
 def test_environment_profile_warns_without_profile_or_template(monkeypatch, tmp_path):
+    """Environment profile warns without profile or template."""
     monkeypatch.setattr(doctor, "BASE_DIR", tmp_path)
     monkeypatch.setenv("SIDAR_ENV", "staging")
 
@@ -1190,6 +1249,7 @@ def test_environment_profile_warns_without_profile_or_template(monkeypatch, tmp_
 
 
 def test_environment_profile_warns_when_development_file_is_missing(monkeypatch, tmp_path):
+    """Environment profile warns when development file is missing."""
     monkeypatch.setenv("SIDAR_ENV", "development")
     monkeypatch.setattr(doctor, "BASE_DIR", tmp_path)
     (tmp_path / ".env.development.example").write_text("SIDAR_ENV=development\n", encoding="utf-8")
@@ -1205,6 +1265,7 @@ def test_environment_profile_warns_when_development_file_is_missing(monkeypatch,
 
 
 def test_environment_profile_passes_when_profile_file_exists_or_test_profile(monkeypatch, tmp_path):
+    """Environment profile passes when profile file exists or test profile."""
     monkeypatch.setattr(doctor, "BASE_DIR", tmp_path)
     monkeypatch.setenv("SIDAR_ENV", "development")
     (tmp_path / ".env.development").write_text(
@@ -1224,6 +1285,7 @@ def test_environment_profile_passes_when_profile_file_exists_or_test_profile(mon
 
 
 def test_environment_profile_warns_when_development_database_is_not_isolated(monkeypatch, tmp_path):
+    """Environment profile warns when development database is not isolated."""
     monkeypatch.setattr(doctor, "BASE_DIR", tmp_path)
     monkeypatch.setenv("SIDAR_ENV", "development")
     (tmp_path / ".env.development").write_text(
@@ -1239,12 +1301,14 @@ def test_environment_profile_warns_when_development_database_is_not_isolated(mon
 
 
 def test_docker_image_exists_local_returns_false_without_docker(monkeypatch):
+    """Docker image exists local returns false without docker."""
     monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
 
     assert doctor._docker_image_exists_local("sidar:latest") is False
 
 
 def test_docker_image_exists_local_uses_resolved_binary(monkeypatch):
+    """Docker image exists local uses resolved binary."""
     captured = {}
 
     def _run(command, **kwargs):
@@ -1261,6 +1325,7 @@ def test_docker_image_exists_local_uses_resolved_binary(monkeypatch):
 
 
 def test_docker_image_exists_local_handles_empty_image_and_runtime_error(monkeypatch):
+    """Docker image exists local handles empty image and runtime error."""
     assert doctor._docker_image_exists_local("") is False
 
     monkeypatch.setattr(doctor.shutil, "which", lambda name: "/usr/bin/docker")
@@ -1272,6 +1337,7 @@ def test_docker_image_exists_local_handles_empty_image_and_runtime_error(monkeyp
 
 
 def test_gpu_memory_config_warns_only_for_gpu_and_runtime_profile_drift(monkeypatch):
+    """Gpu memory config warns only for gpu and runtime profile drift."""
     from config import Config
 
     monkeypatch.setattr(Config, "AI_PROVIDER", "ollama")
@@ -1294,6 +1360,7 @@ def test_gpu_memory_config_warns_only_for_gpu_and_runtime_profile_drift(monkeypa
 
 
 def test_docker_test_image_reports_missing_image_as_ready_when_auto_build_enabled(monkeypatch):
+    """Docker test image reports missing image as ready when auto build enabled."""
     from config import Config
 
     monkeypatch.setenv("AUTO_BUILD_DOCKER_TEST_IMAGE", "1")
@@ -1334,6 +1401,7 @@ def test_docker_test_image_reports_existing_image_as_available(monkeypatch):
 
 
 def test_docker_test_image_is_info_in_development_when_auto_build_is_deferred(monkeypatch):
+    """Docker test image is info in development when auto build is deferred."""
     from config import Config
 
     monkeypatch.delenv("AUTO_BUILD_DOCKER_TEST_IMAGE", raising=False)
@@ -1357,6 +1425,7 @@ def test_docker_test_image_is_info_in_development_when_auto_build_is_deferred(mo
 
 
 def test_docker_test_image_fails_production_readiness_when_missing(monkeypatch):
+    """Docker test image fails production readiness when missing."""
     from config import Config
 
     monkeypatch.setenv("SIDAR_PRODUCTION_READINESS", "1")
@@ -1371,6 +1440,7 @@ def test_docker_test_image_fails_production_readiness_when_missing(monkeypatch):
 
 
 def test_gpu_memory_config_warns_when_budget_is_normalized(monkeypatch):
+    """Gpu memory config warns when budget is normalized."""
     from config import Config
 
     monkeypatch.setattr(Config, "AI_PROVIDER", "ollama")
@@ -1389,6 +1459,7 @@ def test_gpu_memory_config_warns_when_budget_is_normalized(monkeypatch):
 
 
 def test_gpu_memory_config_confirms_standard_local_model(monkeypatch):
+    """Gpu memory config confirms standard local model."""
     from config import Config
 
     monkeypatch.setattr(Config, "AI_PROVIDER", "ollama")
@@ -1410,6 +1481,7 @@ def test_gpu_memory_config_confirms_standard_local_model(monkeypatch):
 
 
 def test_docker_test_image_warns_for_default_slim_test_image(monkeypatch):
+    """Docker test image warns for default slim test image."""
     from config import Config
 
     monkeypatch.setattr(Config, "AI_PROVIDER", "ollama")
@@ -1475,6 +1547,7 @@ def test_gpu_memory_config_probe_failure_is_swallowed(monkeypatch):
 
 
 def test_migrations_fail_when_no_revisions(monkeypatch, tmp_path):
+    """Migrations fail when no revisions."""
     versions = tmp_path / "migrations" / "versions"
     versions.mkdir(parents=True)
     monkeypatch.setattr(doctor, "migrations_path", lambda: tmp_path / "migrations")
@@ -1486,6 +1559,7 @@ def test_migrations_fail_when_no_revisions(monkeypatch, tmp_path):
 
 
 def test_parse_migration_revisions_ignores_files_without_revision(monkeypatch, tmp_path):
+    """Parse migration revisions ignores files without revision."""
     versions = tmp_path / "migrations" / "versions"
     versions.mkdir(parents=True)
     (versions / "README.py").write_text("# helper without alembic metadata\n", encoding="utf-8")
@@ -1499,6 +1573,7 @@ def test_parse_migration_revisions_ignores_files_without_revision(monkeypatch, t
 
 
 def test_migrations_pass_and_warn_based_on_alembic_head(monkeypatch, tmp_path):
+    """Migrations pass and warn based on alembic head."""
     versions = tmp_path / "migrations" / "versions"
     versions.mkdir(parents=True)
     (versions / "0001.py").write_text("revision = 'base'\ndown_revision = None\n", encoding="utf-8")
@@ -1519,6 +1594,8 @@ def test_migrations_pass_and_warn_based_on_alembic_head(monkeypatch, tmp_path):
 
 
 def test_agent_catalog_reports_registered_missing_and_import_failure(monkeypatch):
+    """Agent catalog reports registered missing and import failure."""
+
     class Spec:
         def __init__(self, role_name):
             self.role_name = role_name
@@ -1568,6 +1645,8 @@ def test_agent_catalog_reports_registered_missing_and_import_failure(monkeypatch
 
 
 def test_supervisor_routing_reports_success_mismatch_and_import_failure(monkeypatch):
+    """Supervisor routing reports success mismatch and import failure."""
+
     class SupervisorAgent:
         @staticmethod
         def _intent(prompt):
@@ -1617,6 +1696,8 @@ def test_supervisor_routing_reports_success_mismatch_and_import_failure(monkeypa
 
 
 def test_websocket_check_reports_imported_routes_and_missing_static(monkeypatch, tmp_path):
+    """Websocket check reports imported routes and missing static."""
+
     class WebSocketRoute:
         def __init__(self, path):
             self.path = path
@@ -1724,6 +1805,7 @@ def test_websocket_check_recurses_into_wrapped_included_routers(monkeypatch):
 
 
 def test_gpu_check_uses_torch_fallback_and_records_torch_errors(monkeypatch):
+    """Gpu check uses torch fallback and records torch errors."""
     monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
     original_import = __import__
 
@@ -1763,6 +1845,7 @@ def test_gpu_check_uses_torch_fallback_and_records_torch_errors(monkeypatch):
 
 
 def test_gpu_check_falls_back_to_torch_when_nvidia_smi_is_unhealthy(monkeypatch):
+    """Gpu check falls back to torch when nvidia smi is unhealthy."""
     monkeypatch.setattr(
         doctor.shutil,
         "which",
@@ -1800,6 +1883,7 @@ def test_gpu_check_falls_back_to_torch_when_nvidia_smi_is_unhealthy(monkeypatch)
 
 
 def test_gpu_check_reports_warn_when_torch_cuda_is_unavailable(monkeypatch):
+    """Gpu check reports warn when torch cuda is unavailable."""
     monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
     original_import = __import__
 
@@ -1822,6 +1906,7 @@ def test_gpu_check_reports_warn_when_torch_cuda_is_unavailable(monkeypatch):
 
 
 def test_ollama_base_url_normalizes_api_suffix(monkeypatch):
+    """Ollama base url normalizes api suffix."""
     monkeypatch.setenv("OLLAMA_URL", "http://ollama:11434")
     assert doctor._ollama_base_url() == "http://ollama:11434/api"
     monkeypatch.setenv("OLLAMA_URL", "http://ollama:11434/api/")
@@ -1829,6 +1914,8 @@ def test_ollama_base_url_normalizes_api_suffix(monkeypatch):
 
 
 def test_model_check_handles_present_missing_smoke_failure_and_http_errors(monkeypatch):
+    """Model check handles present missing smoke failure and http errors."""
+
     class Response:
         def __init__(self, payload, *, raise_error=False):
             self.payload = payload
@@ -1912,6 +1999,7 @@ def test_model_check_handles_present_missing_smoke_failure_and_http_errors(monke
 
 
 def test_run_doctor_report_aggregates_failures_and_skips_model_smoke(monkeypatch, tmp_path):
+    """Run doctor report aggregates failures and skips model smoke."""
     monkeypatch.setattr(doctor, "check_uv", lambda: DoctorCheck("uv", "pass", "ok"))
     monkeypatch.setattr(doctor, "check_database_env", lambda: DoctorCheck("db", "fail", "bad"))
     monkeypatch.setattr(doctor, "check_migrations", lambda: DoctorCheck("migrations", "pass", "ok"))
@@ -1941,6 +2029,7 @@ def test_run_doctor_report_aggregates_failures_and_skips_model_smoke(monkeypatch
 
 
 def test_main_returns_zero_for_warn_and_one_for_fail(monkeypatch, tmp_path, capsys):
+    """Main returns zero for warn and one for fail."""
     output = tmp_path / "doctor.json"
     monkeypatch.setattr(doctor.sys, "argv", ["sidar-doctor", str(output)])
     monkeypatch.setattr(
@@ -1969,6 +2058,7 @@ def test_main_returns_zero_for_warn_and_one_for_fail(monkeypatch, tmp_path, caps
 
 
 def test_database_env_reports_database_url_override_source(monkeypatch, tmp_path):
+    """Database env reports database url override source."""
     password = "a" * 24
     database_env = tmp_path / ".env.development"
     database_env.write_text(
@@ -2030,6 +2120,7 @@ def test_database_env_reports_database_url_override_source(monkeypatch, tmp_path
 
 
 def test_check_pgvector_ready_fails_when_extension_missing(monkeypatch):
+    """Check pgvector ready fails when extension missing."""
     monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
     monkeypatch.setenv("DATABASE_URL", "postgresql://sidar:" + "a" * 24 + "@localhost:5432/sidar")
 
@@ -2049,6 +2140,7 @@ def test_check_pgvector_ready_fails_when_extension_missing(monkeypatch):
 
 
 def test_prometheus_runtime_warns_when_optional_dependency_is_missing(monkeypatch) -> None:
+    """Prometheus runtime warns when optional dependency is missing."""
     monkeypatch.setattr(doctor.importlib.util, "find_spec", lambda _name: None)
 
     check = doctor.check_prometheus_runtime()
@@ -2060,6 +2152,7 @@ def test_prometheus_runtime_warns_when_optional_dependency_is_missing(monkeypatc
 def test_dotenv_helpers_tolerate_unreadable_file_and_config_import_failure(
     monkeypatch, tmp_path
 ) -> None:
+    """Dotenv helpers tolerate unreadable file and config import failure."""
     import builtins
 
     unreadable = tmp_path / "missing.env"
@@ -2082,6 +2175,7 @@ def test_dotenv_helpers_tolerate_unreadable_file_and_config_import_failure(
 def test_database_connectivity_skips_non_postgres_and_warns_when_asyncpg_is_missing(
     monkeypatch,
 ) -> None:
+    """Database connectivity skips non postgres and warns when asyncpg is missing."""
     monkeypatch.setenv("DATABASE_URL", "sqlite:///sidar.db")
     assert doctor.check_database_connectivity().status == "pass"
 
@@ -2100,6 +2194,8 @@ def test_database_connectivity_skips_non_postgres_and_warns_when_asyncpg_is_miss
 
 @pytest.mark.asyncio
 async def test_run_coro_sync_reraises_background_probe_failure() -> None:
+    """Run coro sync reraises background probe failure."""
+
     async def _failure() -> None:
         raise RuntimeError("probe failed")
 
@@ -2110,6 +2206,7 @@ async def test_run_coro_sync_reraises_background_probe_failure() -> None:
 def test_rag_readiness_warns_when_graph_disabled_and_resolves_relative_path(
     monkeypatch, tmp_path
 ) -> None:
+    """Rag readiness warns when graph disabled and resolves relative path."""
     monkeypatch.setattr(doctor, "BASE_DIR", tmp_path)
     monkeypatch.setenv("RAG_DIR", str(tmp_path / "rag"))
     monkeypatch.setenv("ENABLE_GRAPH_RAG", "false")
@@ -2134,6 +2231,7 @@ def test_rag_readiness_warns_when_graph_disabled_and_resolves_relative_path(
 
 
 def test_read_env_file_assignments_handles_missing_comments_and_empty_export_key(tmp_path) -> None:
+    """Read env file assignments handles missing comments and empty export key."""
     missing = tmp_path / "missing.env"
     assert security_checks._read_env_file_assignments(missing) == {}
 
@@ -2144,6 +2242,7 @@ def test_read_env_file_assignments_handles_missing_comments_and_empty_export_key
 
 
 def test_redact_exception_text_without_database_password_keeps_safe_text() -> None:
+    """Redact exception text without database password keeps safe text."""
     assert (
         database_checks._redact_exception_text(
             RuntimeError("connection refused"), database_url="postgresql://localhost/sidar"
@@ -2153,6 +2252,7 @@ def test_redact_exception_text_without_database_password_keeps_safe_text() -> No
 
 
 def test_rag_readiness_state_handles_pgvector_without_database_url(monkeypatch, tmp_path) -> None:
+    """Rag readiness state handles pgvector without database url."""
     monkeypatch.setenv("RAG_VECTOR_BACKEND", "pgvector")
     monkeypatch.setenv("RAG_DIR", str(tmp_path / "rag"))
 
@@ -2165,6 +2265,7 @@ def test_rag_readiness_state_handles_pgvector_without_database_url(monkeypatch, 
 
 
 def test_rag_readiness_state_records_backend_probe_paths(monkeypatch, tmp_path) -> None:
+    """Rag readiness state records backend probe paths."""
     monkeypatch.setenv("RAG_DIR", str(tmp_path / "rag"))
 
     monkeypatch.setenv("RAG_VECTOR_BACKEND", "chroma")
@@ -2179,6 +2280,7 @@ def test_rag_readiness_state_records_backend_probe_paths(monkeypatch, tmp_path) 
 
 
 def test_ensure_rag_index_placeholder_preserves_existing_index(tmp_path) -> None:
+    """Ensure rag index placeholder preserves existing index."""
     rag_dir = tmp_path / "rag"
     rag_dir.mkdir()
     index_path = rag_dir / "index.json"
@@ -2189,6 +2291,7 @@ def test_ensure_rag_index_placeholder_preserves_existing_index(tmp_path) -> None
 
 
 def test_rag_index_ready_healthy_without_entity_warning(monkeypatch, tmp_path) -> None:
+    """Rag index ready healthy without entity warning."""
     monkeypatch.setattr(
         doctor,
         "_rag_readiness_state",
@@ -2208,6 +2311,7 @@ def test_rag_index_ready_healthy_without_entity_warning(monkeypatch, tmp_path) -
 
 
 def test_graphrag_ready_handles_failed_store_probe(monkeypatch, tmp_path) -> None:
+    """Graphrag ready handles failed store probe."""
     monkeypatch.setattr(
         doctor,
         "_rag_readiness_state",
@@ -2232,6 +2336,7 @@ def test_graphrag_ready_handles_failed_store_probe(monkeypatch, tmp_path) -> Non
 
 
 def test_rag_readiness_aggregate_reports_warn_and_keeps_scalar_auto_fix(monkeypatch) -> None:
+    """Rag readiness aggregate reports warn and keeps scalar auto fix."""
     monkeypatch.setattr(
         doctor,
         "_rag_readiness_state",
@@ -2259,6 +2364,7 @@ def test_rag_readiness_aggregate_reports_warn_and_keeps_scalar_auto_fix(monkeypa
 def test_gpu_memory_config_accepts_custom_test_image_without_missing_sidar_hint(
     monkeypatch,
 ) -> None:
+    """Gpu memory config accepts custom test image without missing sidar hint."""
     from config import Config
 
     monkeypatch.setattr(Config, "AI_PROVIDER", "ollama")
@@ -2280,6 +2386,7 @@ def test_gpu_memory_config_accepts_custom_test_image_without_missing_sidar_hint(
 
 
 def test_rag_readiness_aggregate_reports_pass_when_split_checks_pass(monkeypatch) -> None:
+    """Rag readiness aggregate reports pass when split checks pass."""
     monkeypatch.setattr(
         doctor,
         "_rag_readiness_state",
@@ -2303,12 +2410,15 @@ def test_rag_readiness_aggregate_reports_pass_when_split_checks_pass(monkeypatch
 
 
 def test_doctor_check_contract_rejects_invalid_status() -> None:
+    """Doctor check contract rejects invalid status."""
     bad = DoctorCheck("bad", "unknown", "message")
     with pytest.raises(ValueError, match="status must be one of"):
         doctor.validate_doctor_check_contract(bad)
 
 
 def test_doctor_check_contract_rejects_missing_required_fields() -> None:
+    """Doctor check contract rejects missing required fields."""
+
     def valid_as_dict() -> dict[str, object]:
         return {}
 
@@ -2337,6 +2447,7 @@ def test_doctor_check_contract_rejects_missing_required_fields() -> None:
 
 
 def test_validate_auto_fix_command_allows_known_commands_and_rejects_injection() -> None:
+    """Validate auto fix command allows known commands and rejects injection."""
     assert doctor.validate_auto_fix_command(
         "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
     ) == ["uv", "run", "python", "-m", "scripts.sync_database_passwords", "--remove-explicit-urls"]
@@ -2358,6 +2469,7 @@ def test_validate_auto_fix_command_allows_known_commands_and_rejects_injection()
 
 
 def test_database_env_fix_skips_check_without_published_auto_fix(monkeypatch) -> None:
+    """Database env fix skips check without published auto fix."""
     monkeypatch.setattr(
         doctor,
         "check_database_env",
@@ -2376,6 +2488,7 @@ def test_database_env_fix_skips_check_without_published_auto_fix(monkeypatch) ->
 
 
 def test_database_env_fix_skips_already_healthy_environment(monkeypatch) -> None:
+    """Database env fix skips already healthy environment."""
     monkeypatch.setattr(
         doctor,
         "check_database_env",
@@ -2390,6 +2503,7 @@ def test_database_env_fix_skips_already_healthy_environment(monkeypatch) -> None
 
 
 def test_database_env_fix_reports_rejected_auto_fix(monkeypatch) -> None:
+    """Database env fix reports rejected auto fix."""
     monkeypatch.setattr(
         doctor,
         "check_database_env",
@@ -2436,6 +2550,7 @@ def test_database_env_fix_reports_rejected_auto_fix(monkeypatch) -> None:
 def test_database_env_fix_clears_only_urls_owned_by_editable_sources(
     monkeypatch, source_details, expected_database_url, expected_container_url
 ) -> None:
+    """Database env fix clears only urls owned by editable sources."""
     command = "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
     monkeypatch.setenv("DATABASE_URL", "shell-db")
     monkeypatch.setenv("SIDAR_CONTAINER_DATABASE_URL", "shell-container")
@@ -2459,6 +2574,7 @@ def test_database_env_fix_clears_only_urls_owned_by_editable_sources(
 
 
 def test_database_env_fix_preserves_urls_when_repair_command_fails(monkeypatch) -> None:
+    """Database env fix preserves urls when repair command fails."""
     command = "uv run python -m scripts.sync_database_passwords --remove-explicit-urls"
     monkeypatch.setenv("DATABASE_URL", "shell-db")
     monkeypatch.setattr(
@@ -2483,6 +2599,7 @@ def test_database_env_fix_preserves_urls_when_repair_command_fails(monkeypatch) 
 
 
 def test_doctor_main_fix_persists_repair_in_report(monkeypatch, tmp_path, capsys) -> None:
+    """Doctor main fix persists repair in report."""
     repair = {"check": "database_env", "attempted": True, "success": True}
     report = {"overall_status": "pass", "checks": []}
     writes = []
@@ -2504,6 +2621,7 @@ def test_doctor_main_fix_persists_repair_in_report(monkeypatch, tmp_path, capsys
 
 
 def test_doctor_as_dict_masks_passwords_in_nested_details() -> None:
+    """Doctor as dict masks passwords in nested details."""
     check = DoctorCheck(
         "db",
         "warn",
