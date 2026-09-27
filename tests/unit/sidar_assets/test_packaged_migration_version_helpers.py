@@ -78,18 +78,21 @@ def _assert_sidar_uuid_handles_sqlite_and_postgresql(module) -> None:
 
 
 def test_packaged_baseline_uuid_type_handles_backend_specific_values(monkeypatch) -> None:
+    """Packaged baseline uuid type handles backend specific values."""
     module, _ = _load_packaged_migration(monkeypatch, "0001_baseline_schema.py")
 
     _assert_sidar_uuid_handles_sqlite_and_postgresql(module)
 
 
 def test_packaged_access_control_uuid_type_handles_backend_specific_values(monkeypatch) -> None:
+    """Packaged access control uuid type handles backend specific values."""
     module, _ = _load_packaged_migration(monkeypatch, "0006_access_control_schema.py")
 
     _assert_sidar_uuid_handles_sqlite_and_postgresql(module)
 
 
 def test_packaged_pgvector_upgrade_skips_non_postgresql(monkeypatch) -> None:
+    """Packaged pgvector upgrade skips non postgresql."""
     op_mock = MagicMock()
     op_mock.get_bind.return_value = SimpleNamespace(engine=SimpleNamespace(name="sqlite"))
     module, op_mock = _load_packaged_migration(
@@ -102,6 +105,7 @@ def test_packaged_pgvector_upgrade_skips_non_postgresql(monkeypatch) -> None:
 
 
 def test_packaged_pgvector_upgrade_emits_postgresql_vector_schema(monkeypatch) -> None:
+    """Packaged pgvector upgrade emits postgresql vector schema."""
     op_mock = MagicMock()
     op_mock.get_bind.return_value = SimpleNamespace(engine=SimpleNamespace(name="postgresql"))
     module, op_mock = _load_packaged_migration(
@@ -122,6 +126,7 @@ def test_packaged_pgvector_upgrade_emits_postgresql_vector_schema(monkeypatch) -
 
 
 def test_packaged_pgvector_downgrade_skips_non_postgresql(monkeypatch) -> None:
+    """Packaged pgvector downgrade skips non postgresql."""
     op_mock = MagicMock()
     op_mock.get_bind.return_value = SimpleNamespace(engine=SimpleNamespace(name="sqlite"))
     module, op_mock = _load_packaged_migration(
@@ -134,6 +139,7 @@ def test_packaged_pgvector_downgrade_skips_non_postgresql(monkeypatch) -> None:
 
 
 def test_packaged_pgvector_downgrade_drops_postgresql_vector_objects(monkeypatch) -> None:
+    """Packaged pgvector downgrade drops postgresql vector objects."""
     op_mock = MagicMock()
     op_mock.get_bind.return_value = SimpleNamespace(engine=SimpleNamespace(name="postgresql"))
     module, op_mock = _load_packaged_migration(
@@ -154,6 +160,7 @@ def test_packaged_pgvector_downgrade_drops_postgresql_vector_objects(monkeypatch
 def test_packaged_access_control_upgrade_reuses_existing_table_and_adds_missing_index(
     monkeypatch,
 ) -> None:
+    """Packaged access control upgrade reuses existing table and adds missing index."""
     monkeypatch.setattr(
         sa,
         "inspect",
@@ -175,6 +182,7 @@ def test_packaged_access_control_upgrade_reuses_existing_table_and_adds_missing_
 def test_packaged_access_control_upgrade_skips_existing_column_table_and_index(
     monkeypatch,
 ) -> None:
+    """Packaged access control upgrade skips existing column table and index."""
     monkeypatch.setattr(
         sa,
         "inspect",

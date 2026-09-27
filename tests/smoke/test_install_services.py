@@ -1,3 +1,5 @@
+"""Smoke tests for installer service startup and health waits."""
+
 import shlex
 from pathlib import Path
 
@@ -5,6 +7,7 @@ from tests.smoke.test_install_verification import _run_bash_smoke
 
 
 def test_docker_compose_start_checks_daemon_access_before_up() -> None:
+    """Docker compose start checks daemon access before up."""
     services_docker = Path("scripts/install_modules/utils/services_docker.sh").read_text(
         encoding="utf-8"
     )
@@ -26,6 +29,7 @@ def test_docker_compose_start_checks_daemon_access_before_up() -> None:
 
 
 def test_compose_health_wait_timeout_honors_env(tmp_path: Path) -> None:
+    """Compose health wait timeout honors env."""
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     compose = fake_bin / "compose"

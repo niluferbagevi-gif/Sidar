@@ -1,3 +1,5 @@
+"""Integration tests that run the CLI as a subprocess."""
+
 import subprocess
 import sys
 
@@ -57,6 +59,7 @@ cli.main()
 
 
 def test_cli_status_mode_runs_end_to_end() -> None:
+    """Cli status mode runs end to end."""
     result = _run_cli_with_stubbed_agent("--status")
 
     assert result.returncode == 0
@@ -65,6 +68,7 @@ def test_cli_status_mode_runs_end_to_end() -> None:
 
 
 def test_cli_help_output_is_printed_by_real_argument_parser() -> None:
+    """Cli help output is printed by real argument parser."""
     result = _run_cli_with_stubbed_agent("--help")
 
     assert result.returncode == 0

@@ -11,6 +11,7 @@ from core.rag import DocumentStore
 
 @pytest.mark.asyncio
 async def test_rag_auto_search_switches_pgvector_chroma_bm25_consistently(tmp_path) -> None:
+    """Rag auto search switches pgvector chroma bm25 consistently."""
     cfg = SimpleNamespace(
         RAG_TOP_K=2,
         RAG_CHUNK_SIZE=64,
@@ -59,6 +60,7 @@ async def test_rag_auto_search_switches_pgvector_chroma_bm25_consistently(tmp_pa
 
 @pytest.mark.asyncio
 async def test_rag_auto_search_falls_through_failed_vectors_to_bm25(tmp_path) -> None:
+    """Rag auto search falls through failed vectors to bm25."""
     cfg = SimpleNamespace(
         RAG_TOP_K=2,
         RAG_CHUNK_SIZE=64,

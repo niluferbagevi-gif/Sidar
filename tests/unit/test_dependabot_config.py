@@ -1,3 +1,5 @@
+"""Tests for the Dependabot configuration."""
+
 from pathlib import Path
 
 import yaml
@@ -11,6 +13,7 @@ def _dependabot_config() -> dict:
 
 
 def test_dependabot_config_covers_repo_dependency_surfaces() -> None:
+    """Dependabot config covers repo dependency surfaces."""
     config = _dependabot_config()
 
     assert config["version"] == 2
@@ -25,6 +28,7 @@ def test_dependabot_config_covers_repo_dependency_surfaces() -> None:
 
 
 def test_dependabot_config_uses_weekly_grouped_prs_with_labels() -> None:
+    """Dependabot config uses weekly grouped prs with labels."""
     updates = _dependabot_config()["updates"]
 
     for entry in updates:

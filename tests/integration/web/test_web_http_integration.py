@@ -1,3 +1,5 @@
+"""HTTP-level integration tests for the web server."""
+
 from pathlib import Path
 from time import time
 
@@ -11,6 +13,7 @@ from web_server import app
 
 
 def test_autonomy_wake_rejects_authenticated_non_admin(monkeypatch) -> None:
+    """Autonomy wake rejects authenticated non admin."""
     secret = "integration-jwt-secret-at-least-32-bytes"
     monkeypatch.setattr(web_server.cfg, "JWT_SECRET_KEY", secret)
     token = jwt.encode(
@@ -37,6 +40,7 @@ def test_autonomy_wake_rejects_authenticated_non_admin(monkeypatch) -> None:
 
 
 def test_healthz_endpoint_returns_http_response() -> None:
+    """Healthz endpoint returns http response."""
     client = TestClient(app)
     response = client.get("/healthz")
 
@@ -47,6 +51,7 @@ def test_healthz_endpoint_returns_http_response() -> None:
 
 
 def test_metrics_token_authenticates_through_full_middleware_chain(monkeypatch) -> None:
+    """Metrics token authenticates through full middleware chain."""
     monkeypatch.setattr(web_server.cfg, "METRICS_TOKEN", "integration-metrics-token")
     client = TestClient(app)
 
@@ -64,6 +69,7 @@ def test_metrics_token_authenticates_through_full_middleware_chain(monkeypatch) 
 
 
 def test_root_endpoint_serves_html(monkeypatch, tmp_path: Path) -> None:
+    """Root endpoint serves html."""
     index_file = tmp_path / "index.html"
     index_file.write_text("<html><head></head><body>ok</body></html>", encoding="utf-8")
     monkeypatch.setattr(web_server, "WEB_DIR", tmp_path)
@@ -77,6 +83,7 @@ def test_root_endpoint_serves_html(monkeypatch, tmp_path: Path) -> None:
 
 
 def test_root_endpoint_returns_500_when_react_dist_missing(monkeypatch, tmp_path: Path) -> None:
+    """Root endpoint returns 500 when react dist missing."""
     missing_dist = tmp_path / "missing-dist"
     monkeypatch.setattr(web_server, "WEB_DIR", missing_dist)
 

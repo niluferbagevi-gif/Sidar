@@ -1,3 +1,5 @@
+"""Guards that kill known mutations in critical checks."""
+
 from __future__ import annotations
 
 import pytest
@@ -41,6 +43,8 @@ def _assert_reject_feedback_contract() -> None:
 def test_mutation_guard_kills_validate_p2p_inverted_missing_check(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Mutation guard kills validate p2p inverted missing check."""
+
     def _mutant_validate(request: DelegationRequest):
         # Mutant: eksik alanları raporlamak yerine yanlışlıkla ters koşul kullanır.
         missing_fields: list[str] = []
@@ -61,6 +65,8 @@ def test_mutation_guard_kills_validate_p2p_inverted_missing_check(
 def test_mutation_guard_kills_reject_feedback_decision_flip(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Mutation guard kills reject feedback decision flip."""
+
     def _mutant_is_reject(payload: object) -> bool:
         text = str(payload or "")
         if not text.startswith("qa_feedback|"):

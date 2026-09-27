@@ -1,3 +1,5 @@
+"""Smoke tests for GPU inference skip and failure paths."""
+
 from __future__ import annotations
 
 import subprocess
@@ -10,6 +12,7 @@ import tests.smoke.test_gpu_inference as gpu_smoke
 
 @pytest.mark.asyncio
 async def test_gpu_smoke_skips_when_ollama_binary_missing(monkeypatch):
+    """Gpu smoke skips when ollama binary missing."""
     monkeypatch.setattr(
         gpu_smoke.shutil,
         "which",
@@ -22,6 +25,8 @@ async def test_gpu_smoke_skips_when_ollama_binary_missing(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_gpu_smoke_skips_when_ollama_service_unreachable(monkeypatch):
+    """Gpu smoke skips when ollama service unreachable."""
+
     class _FakeClient:
         def __init__(self, _cfg):
             pass
@@ -39,6 +44,8 @@ async def test_gpu_smoke_skips_when_ollama_service_unreachable(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_gpu_smoke_success_path_returns_non_empty_response(monkeypatch):
+    """Gpu smoke success path returns non empty response."""
+
     class _FakeClient:
         def __init__(self, _cfg):
             pass
@@ -61,16 +68,19 @@ async def test_gpu_smoke_success_path_returns_non_empty_response(monkeypatch):
 
 
 def test_env_int_falls_back_to_default_for_invalid_value(monkeypatch):
+    """Env int falls back to default for invalid value."""
     monkeypatch.setenv("GPU_STRESS_CONCURRENCY", "invalid")
     assert gpu_smoke._env_int("GPU_STRESS_CONCURRENCY", 4, min_value=1, max_value=16) == 4
 
 
 def test_env_int_clamps_value_to_bounds(monkeypatch):
+    """Env int clamps value to bounds."""
     monkeypatch.setenv("GPU_STRESS_CONCURRENCY", "99")
     assert gpu_smoke._env_int("GPU_STRESS_CONCURRENCY", 4, min_value=1, max_value=16) == 16
 
 
 def test_read_gpu_memory_used_mib_parses_all_devices(monkeypatch):
+    """Read gpu memory used mib parses all devices."""
     monkeypatch.setattr(gpu_smoke, "_nvidia_smi_cmd", lambda: "/usr/bin/nvidia-smi")
     monkeypatch.setattr(
         gpu_smoke.subprocess,
@@ -81,6 +91,7 @@ def test_read_gpu_memory_used_mib_parses_all_devices(monkeypatch):
 
 
 def test_read_gpu_memory_used_mib_returns_none_when_command_fails(monkeypatch):
+    """Read gpu memory used mib returns none when command fails."""
     monkeypatch.setattr(gpu_smoke, "_nvidia_smi_cmd", lambda: "/usr/bin/nvidia-smi")
 
     def _raise(*_args, **_kwargs):
@@ -91,6 +102,7 @@ def test_read_gpu_memory_used_mib_returns_none_when_command_fails(monkeypatch):
 
 
 def test_torch_cuda_major_parses_supported_wheel_versions():
+    """Torch cuda major parses supported wheel versions."""
     assert (
         gpu_smoke._torch_cuda_major(SimpleNamespace(version=SimpleNamespace(cuda="12.8"))) == "12"
     )
@@ -100,11 +112,13 @@ def test_torch_cuda_major_parses_supported_wheel_versions():
 
 
 def test_torch_cuda_major_returns_none_for_cpu_wheel():
+    """Torch cuda major returns none for cpu wheel."""
     assert gpu_smoke._torch_cuda_major(SimpleNamespace(version=SimpleNamespace(cuda=None))) is None
 
 
 @pytest.mark.asyncio
 async def test_gpu_stress_skips_when_env_var_not_enabled(monkeypatch):
+    """Gpu stress skips when env var not enabled."""
     monkeypatch.delenv("RUN_GPU_STRESS", raising=False)
     with pytest.raises(pytest.skip.Exception, match="RUN_GPU_STRESS=1"):
         await gpu_smoke.test_real_gpu_inference_stress_vram_and_concurrency()
@@ -112,6 +126,7 @@ async def test_gpu_stress_skips_when_env_var_not_enabled(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_gpu_stress_skips_when_ollama_binary_missing(monkeypatch):
+    """Gpu stress skips when ollama binary missing."""
     monkeypatch.setenv("RUN_GPU_STRESS", "1")
     monkeypatch.setattr(
         gpu_smoke.shutil,
@@ -125,6 +140,8 @@ async def test_gpu_stress_skips_when_ollama_binary_missing(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_gpu_stress_skips_when_ollama_service_unreachable(monkeypatch):
+    """Gpu stress skips when ollama service unreachable."""
+
     class _FakeClient:
         def __init__(self, cfg):
             assert cfg.OLLAMA_NUM_BATCH == 2048
@@ -144,6 +161,8 @@ async def test_gpu_stress_skips_when_ollama_service_unreachable(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_gpu_stress_skips_when_model_is_not_installed(monkeypatch):
+    """Gpu stress skips when model is not installed."""
+
     class _FakeClient:
         def __init__(self, cfg):
             assert cfg.OLLAMA_NUM_BATCH == 2048
@@ -234,6 +253,8 @@ async def test_gpu_stress_threads_the_real_adaptive_pool_size_into_the_client_co
 
 @pytest.mark.asyncio
 async def test_gpu_stress_success_path_without_real_gpu(monkeypatch):
+    """Gpu stress success path without real gpu."""
+
     class _FakeClient:
         def __init__(self, cfg):
             assert cfg.OLLAMA_NUM_BATCH == 2048

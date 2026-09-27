@@ -72,6 +72,7 @@ class _FakeRepo:
 
 
 def test_github_pr_create_comment_merge_and_branch_protection_flow() -> None:
+    """Github pr create comment merge and branch protection flow."""
     repo = _FakeRepo()
     manager = GitHubManager(token="", repo_name="")
     manager._repo = repo

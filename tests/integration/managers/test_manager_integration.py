@@ -1,3 +1,5 @@
+"""Integration tests across manager modules."""
+
 import pytest
 
 from core.llm_metrics import LLMMetricsCollector
@@ -6,6 +8,7 @@ from managers.system_health import render_llm_metrics_prometheus
 
 @pytest.mark.integration
 def test_llm_metrics_snapshot_is_exported_to_prometheus_text() -> None:
+    """Llm metrics snapshot is exported to prometheus text."""
     collector = LLMMetricsCollector(max_events=10)
     collector.record(
         provider="openai",

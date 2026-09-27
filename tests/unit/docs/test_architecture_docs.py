@@ -1,3 +1,5 @@
+"""Tests that keep architecture documentation consistent with the repository."""
+
 from __future__ import annotations
 
 import json
@@ -5,6 +7,7 @@ from pathlib import Path
 
 
 def test_project_report_is_a_small_index_over_topic_sections() -> None:
+    """Project report is a small index over topic sections."""
     index_path = Path("docs/PROJE_RAPORU.md")
     index = index_path.read_text(encoding="utf-8")
     sections = sorted(Path("docs/project-report").glob("*.md"))
@@ -18,6 +21,7 @@ def test_project_report_is_a_small_index_over_topic_sections() -> None:
 
 
 def test_v52_architecture_is_canonical_and_versioned_reports_are_historical() -> None:
+    """V52 architecture is canonical and versioned reports are historical."""
     architecture = Path("docs/ARCHITECTURE.md").read_text(encoding="utf-8")
     report_index = Path("docs/PROJE_RAPORU.md").read_text(encoding="utf-8")
     v50 = Path("docs/SIDAR_v5_0_MIMARI_RAPORU.md").read_text(encoding="utf-8")

@@ -1,3 +1,5 @@
+"""Tests for the release version consistency check and its CI wiring."""
+
 from __future__ import annotations
 
 import subprocess
@@ -14,6 +16,7 @@ def _pyproject_version() -> str:
 
 
 def test_release_version_consistency_smoke_script_passes() -> None:
+    """Release version consistency smoke script passes."""
     result = subprocess.run(
         [sys.executable, "scripts/check_release_version_consistency.py"],
         cwd=ROOT,
@@ -26,6 +29,7 @@ def test_release_version_consistency_smoke_script_passes() -> None:
 
 
 def test_ci_runs_release_version_consistency_smoke() -> None:
+    """Ci runs release version consistency smoke."""
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
     assert "Check release version consistency" in workflow

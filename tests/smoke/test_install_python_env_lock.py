@@ -1,3 +1,5 @@
+"""Smoke tests for the installer's Python virtualenv pinning."""
+
 import os
 import shutil
 import subprocess
@@ -26,6 +28,7 @@ def _clean_subprocess_env(**overrides: str) -> dict[str, str]:
 
 
 def test_create_uv_venv_pins_python_311_and_warns_on_override(tmp_path):
+    """Create uv venv pins python 311 and warns on override."""
     script_dir = tmp_path / "sidar"
     script_dir.mkdir(parents=True)
 
@@ -121,6 +124,7 @@ EOS
 
 
 def test_create_uv_venv_preserves_full_patch_version_from_pyvenv_fallback(tmp_path):
+    """Create uv venv preserves full patch version from pyvenv fallback."""
     script_dir = tmp_path / "sidar"
     venv_dir = script_dir / ".venv"
     (venv_dir / "bin").mkdir(parents=True)
@@ -202,6 +206,7 @@ def test_create_uv_venv_preserves_full_patch_version_from_pyvenv_fallback(tmp_pa
 def test_install_python_deps_profile_matrix_uses_expected_uv_sync(
     tmp_path, profile_exports, expected_sync_call
 ):
+    """Install python deps profile matrix uses expected uv sync."""
     script_dir = tmp_path / "sidar"
     script_dir.mkdir(parents=True)
     (script_dir / "uv.lock").touch()
@@ -289,6 +294,7 @@ def test_install_python_deps_profile_matrix_uses_expected_uv_sync(
 
 
 def test_runtime_import_failure_guidance_uses_selected_profile_command(tmp_path):
+    """Runtime import failure guidance uses selected profile command."""
     script_dir = tmp_path / "sidar"
     script_dir.mkdir(parents=True)
     (script_dir / "uv.lock").touch()
@@ -722,6 +728,7 @@ def test_select_dependency_profile_interactive_recommends_dev_light_after_networ
 
 
 def test_pytorch_cuda_sync_uses_gpu_profile_without_all_extras(tmp_path):
+    """Pytorch cuda sync uses gpu profile without all extras."""
     fake_bin = tmp_path / "fakebin"
     fake_bin.mkdir(parents=True)
     (fake_bin / "uv").write_text(
@@ -769,6 +776,7 @@ def test_pytorch_cuda_sync_uses_gpu_profile_without_all_extras(tmp_path):
 
 
 def test_install_python_deps_dev_full_uses_all_extras_without_conflicting_extra(tmp_path):
+    """Install python deps dev full uses all extras without conflicting extra."""
     script_dir = tmp_path / "sidar"
     script_dir.mkdir(parents=True)
     (script_dir / "uv.lock").touch()

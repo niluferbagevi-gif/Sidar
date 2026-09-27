@@ -30,10 +30,12 @@ import subprocess  # nosec B404
 
 
 def docker_bin() -> str | None:
+    """Return the ``docker`` executable path, or None when it is not installed."""
     return shutil.which("docker")
 
 
 def docker_daemon_available() -> bool:
+    """Return whether ``docker info`` reaches a running daemon within 5 seconds."""
     docker = docker_bin()
     if not docker:
         return False
@@ -51,6 +53,7 @@ def docker_daemon_available() -> bool:
 
 
 def image_available(image: str) -> bool:
+    """Return whether the Docker image exists locally."""
     docker = docker_bin()
     if not docker:
         return False
@@ -96,6 +99,7 @@ def orphan_cleanup_timeout_seconds() -> float:
 
 
 def container_tests_required() -> bool:
+    """Return whether the env flag makes plugin sandbox container tests mandatory."""
     return os.getenv("SIDAR_REQUIRE_PLUGIN_SANDBOX_CONTAINER_TESTS", "0").strip().lower() in {
         "1",
         "true",

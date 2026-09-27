@@ -1,3 +1,5 @@
+"""Integration tests for Alembic migrations and schema versioning."""
+
 import asyncio
 from pathlib import Path
 from types import SimpleNamespace

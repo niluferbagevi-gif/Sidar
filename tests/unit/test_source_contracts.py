@@ -1,3 +1,5 @@
+"""Unit tests for shell source contract helpers."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -6,6 +8,7 @@ from tests._helpers.source_contracts import expanded_bash_source, shell_function
 
 
 def test_expanded_bash_source_inlines_script_dir_sources(tmp_path: Path) -> None:
+    """Expanded bash source inlines script dir sources."""
     source = tmp_path / "entry.sh"
     module = tmp_path / "helpers.sh"
     source.write_text(
@@ -25,6 +28,7 @@ def test_expanded_bash_source_inlines_script_dir_sources(tmp_path: Path) -> None
 
 
 def test_shell_function_body_extracts_only_requested_function() -> None:
+    """Shell function body extracts only requested function."""
     script = "first() {\n  echo one\n}\n\nsecond() {\n  echo two\n}\n"
 
     assert shell_function_body(script, "first") == "first() {\n  echo one\n}\n"

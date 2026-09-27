@@ -51,6 +51,7 @@ def _attach_password_contract(benchmark, *, contract: str, algorithm: str) -> No
 
 @pytest.fixture(scope="module")
 def large_dataset_rows() -> list[FileCoverage]:
+    """Return 10,000 synthetic coverage rows for hotspot benchmarks."""
     return [
         FileCoverage(
             path=f"module_{index // 100}/file_{index:05d}.py",
@@ -62,6 +63,7 @@ def large_dataset_rows() -> list[FileCoverage]:
 
 
 def test_format_table_handles_large_dataset_quickly(benchmark, large_dataset_rows) -> None:
+    """Format table handles large dataset quickly."""
     output = benchmark(format_table, large_dataset_rows)
     mean_ms = float(benchmark.stats.get("mean", 0.0) or 0.0) * 1000
     benchmark.extra_info["format_table_mean_ms"] = round(mean_ms, 3)
@@ -185,6 +187,7 @@ def benchmark_multi_user_db(
     tmp_path: Path,
     request: pytest.FixtureRequest,
 ) -> tuple[Database, asyncio.AbstractEventLoop]:
+    """Return a connected SQLite or PostgreSQL benchmark database and its event loop."""
     backend = request.param
     if backend == "postgresql":
         pg_url = _postgresql_benchmark_url()

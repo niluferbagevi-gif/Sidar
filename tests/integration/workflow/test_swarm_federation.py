@@ -17,6 +17,7 @@ from agent.swarm import SwarmOrchestrator, SwarmTask
 async def test_swarm_federation_protocol_handoff_fails_closed_on_cascade_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Swarm federation protocol handoff fails closed on cascade timeout."""
     cfg = SimpleNamespace(
         SWARM_TASK_MAX_RETRIES=0,
         SWARM_TASK_TIMEOUT_SECONDS=0.01,

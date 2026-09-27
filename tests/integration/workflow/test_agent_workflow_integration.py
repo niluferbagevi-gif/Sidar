@@ -1,3 +1,5 @@
+"""Integration tests for SidarAgent workflows with the real supervisor."""
+
 import types
 from types import SimpleNamespace
 from unittest.mock import AsyncMock

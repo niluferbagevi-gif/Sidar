@@ -1,3 +1,5 @@
+"""Integration tests for the RAG graph index pipeline."""
+
 from pathlib import Path
 
 import pytest
@@ -9,6 +11,7 @@ from core.rag import GraphIndex
 def test_graph_index_links_frontend_calls_to_backend_endpoint_and_dependency_chain(
     tmp_path: Path,
 ) -> None:
+    """Graph index links frontend calls to backend endpoint and dependency chain."""
     (tmp_path / "helper.py").write_text("def build_message():\n    return 'ok'\n", encoding="utf-8")
 
     (tmp_path / "backend.py").write_text(

@@ -10,6 +10,7 @@
 > Bu bölümdeki maddelerin tam kök-neden analizi, araştırma süreci ve test referansları için bkz. [`docs/archive/unreleased_root_cause_detail.md`](docs/archive/unreleased_root_cause_detail.md) (2026-09-10 tarihli P3 bulgusu sonrası arşivlendi).
 
 ### Düzeltmeler
+- **Küçük test dizinlerinde (smoke, integration, e2e, quality, fixtures, `tests/unit` kökü) 310 docstring eksikti:** 231 test fonksiyonu test adından, GitHub mock'ları, Docker sandbox yardımcıları ve fixture'lar ile 38 test modülü koddan okunarak belgelendi. Test docstring kampanyasının dördüncü dilimi; ratchet toplamı 3.212→2.902.
 - **`tests/unit/scripts`'te 516 docstring eksikti:** 479 test fonksiyonu test adının anlattığı davranıştan, `test_seed_rag.py`'deki sahte store ve 31 test modülü koddan okunarak belgelendi. Test docstring kampanyasının üçüncü dilimi; ratchet toplamı 3.728→3.212.
 - **`tests/unit/managers`, `tests/unit/plugins` ve `tests/unit/launcher`'da 531 docstring eksikti:** 472 test fonksiyonu test adının anlattığı davranıştan, 37 fixture/stub ve 22 test modülü/paketi koddan okunarak belgelendi. Test docstring kampanyasının ikinci dilimi; ratchet toplamı 4.259→3.728.
 - **`tests/unit/web` ve `tests/unit/cli`'de 412 test fonksiyonu ve 31 test modülü docstring'siz kalmıştı:** test docstring'leri test adının anlattığı davranıştan, modül docstring'leri test edilen modülden türetildi. Test dosyalarındaki docstring borcunun ilk dilimi; ratchet toplamı 4.702→4.259.
