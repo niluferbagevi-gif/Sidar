@@ -1,3 +1,5 @@
+"""Unit tests for the ``agent.core`` package exports."""
+
 import sys
 from types import ModuleType
 
@@ -15,6 +17,7 @@ def _install_fake_module(monkeypatch: pytest.MonkeyPatch, module_name: str, symb
 
 
 def test_dunder_all_contains_public_api_symbols():
+    """Dunder all contains public api symbols."""
     assert core.__all__ == [
         "TaskEnvelope",
         "TaskResult",
@@ -25,23 +28,27 @@ def test_dunder_all_contains_public_api_symbols():
 
 
 def test_getattr_resolves_memory_hub_lazily(monkeypatch: pytest.MonkeyPatch):
+    """Getattr resolves memory hub lazily."""
     expected = _install_fake_module(monkeypatch, "agent.core.memory_hub", "MemoryHub")
 
     assert core.MemoryHub is expected
 
 
 def test_getattr_resolves_agent_registry_lazily(monkeypatch: pytest.MonkeyPatch):
+    """Getattr resolves agent registry lazily."""
     expected = _install_fake_module(monkeypatch, "agent.core.registry", "AgentRegistry")
 
     assert core.AgentRegistry is expected
 
 
 def test_getattr_resolves_supervisor_agent_lazily(monkeypatch: pytest.MonkeyPatch):
+    """Getattr resolves supervisor agent lazily."""
     expected = _install_fake_module(monkeypatch, "agent.core.supervisor", "SupervisorAgent")
 
     assert core.SupervisorAgent is expected
 
 
 def test_getattr_raises_attribute_error_for_unknown_symbol():
+    """Getattr raises attribute error for unknown symbol."""
     with pytest.raises(AttributeError):
         core.__getattr__("UnknownSymbol")

@@ -1,3 +1,5 @@
+"""Unit tests for the agent event bus and its Redis/RabbitMQ/Kafka backends."""
+
 from __future__ import annotations
 
 import asyncio
@@ -43,7 +45,10 @@ from agent.core.event_stream import (
 
 
 class DummyRedis:
+    """In-memory Redis Streams client that records calls and replays queued responses."""
+
     def __init__(self) -> None:
+        """Start with no calls, no queued responses and no failing acks."""
         self.ping_called = False
         self.group_created = False
         self.xadd_calls: list[tuple] = []
@@ -53,16 +58,20 @@ class DummyRedis:
         self.raise_on_ack: set[str] = set()
 
     async def ping(self) -> None:
+        """Record that ping was called."""
         self.ping_called = True
 
     async def xgroup_create(self, **_kwargs) -> None:
+        """Record that the consumer group was created."""
         self.group_created = True
 
     async def xadd(self, *args, **kwargs):
+        """Record the XADD call and return a fixed message id."""
         self.xadd_calls.append((args, kwargs))
         return "1-0"
 
     async def xreadgroup(self, **_kwargs):
+        """Return the next queued response (raising queued exceptions), or an empty batch."""
         if not self.responses:
             await asyncio.sleep(0)
             return []
@@ -72,28 +81,39 @@ class DummyRedis:
         return item
 
     async def xack(self, _channel: str, _group: str, msg_id: str) -> int:
+        """Record the ack; ids in ``raise_on_ack`` raise instead."""
         if msg_id in self.raise_on_ack:
             raise RuntimeError("ack boom")
         self.acks.append(msg_id)
         return 1
 
     async def aclose(self) -> None:
+        """Mark the client closed."""
         self.closed = True
 
 
 class FailingCloseRedis:
+    """Redis client stand-in that only exposes an async ``close``."""
+
     def __init__(self) -> None:
+        """Start as not closed."""
         self.closed = False
 
     async def close(self) -> None:
+        """Mark the client closed."""
         self.closed = True
 
 
 class AwaitableCloseRedis:
+    """Redis client stand-in whose ``close`` returns an awaitable."""
+
     def __init__(self) -> None:
+        """Start as not closed."""
         self.closed = False
 
     def close(self):
+        """Return a coroutine that marks the client closed when awaited."""
+
         async def _close() -> None:
             self.closed = True
 
@@ -101,15 +121,22 @@ class AwaitableCloseRedis:
 
 
 class NonCallableCloseRedis:
+    """Redis client stand-in whose ``close`` attribute is not callable."""
+
     def __init__(self) -> None:
+        """Set ``close`` to a plain string."""
         self.close = "not-callable"
 
 
 class NonAwaitableCloseRedis:
+    """Redis client stand-in with a synchronous ``close``."""
+
     def __init__(self) -> None:
+        """Start as not closed."""
         self.closed = False
 
     def close(self) -> None:
+        """Mark the client closed synchronously."""
         self.closed = True
 
 
@@ -130,91 +157,126 @@ class _SyncDisconnectConnectionPool:
 
 
 class RedisWithAsyncPoolDisconnect:
+    """Redis client stand-in with an async ``aclose`` and a connection pool."""
+
     def __init__(self) -> None:
+        """Start as not closed with a dummy connection pool."""
         self.closed = False
         self.connection_pool = _DummyConnectionPool()
 
     async def aclose(self) -> None:
+        """Mark the client closed."""
         self.closed = True
 
 
 class DummyRabbitIncoming:
+    """RabbitMQ incoming message stand-in with an optional failing ack."""
+
     def __init__(self, body: bytes, *, ack_raises: bool = False) -> None:
+        """Store the message body and ack failure mode."""
         self.body = body
         self.acked = False
         self._ack_raises = ack_raises
 
     async def ack(self) -> None:
+        """Mark the message acked; raise when configured to fail."""
         self.acked = True
         if self._ack_raises:
             raise RuntimeError("rabbit ack failed")
 
 
 class DummyRabbitIterator:
+    """Async iterator over queued RabbitMQ messages."""
+
     def __init__(self, items: list[DummyRabbitIncoming]) -> None:
+        """Store the messages to yield."""
         self._items = list(items)
 
     async def __aenter__(self):
+        """Return the iterator."""
         return self
 
     async def __aexit__(self, _exc_type, _exc, _tb) -> bool:
+        """Do not suppress exceptions."""
         return False
 
     def __aiter__(self):
+        """Return the iterator."""
         return self
 
     async def __anext__(self) -> DummyRabbitIncoming:
+        """Return the next message or stop iteration."""
         if not self._items:
             raise StopAsyncIteration
         return self._items.pop(0)
 
 
 class DummyRabbitQueue:
+    """RabbitMQ queue stand-in that iterates over preset messages."""
+
     def __init__(self, items: list[DummyRabbitIncoming] | None = None) -> None:
+        """Store the messages the queue will deliver."""
         self._items = items or []
 
     def iterator(self) -> DummyRabbitIterator:
+        """Return an iterator over the stored messages."""
         return DummyRabbitIterator(self._items)
 
 
 class DummyRabbitExchange:
+    """RabbitMQ exchange stand-in that records published messages."""
+
     def __init__(self) -> None:
+        """Start with no published messages and publishing enabled."""
         self.published: list[tuple[object, str]] = []
         self.raise_on_publish = False
 
     async def publish(self, message, routing_key: str) -> None:
+        """Record the message, or raise when ``raise_on_publish`` is set."""
         if self.raise_on_publish:
             raise RuntimeError("rabbit publish failed")
         self.published.append((message, routing_key))
 
 
 class DummyRabbitChannel:
+    """RabbitMQ channel stand-in with a default exchange and one queue."""
+
     def __init__(self, queue: DummyRabbitQueue | None = None) -> None:
+        """Create the default exchange and use the given or an empty queue."""
         self.default_exchange = DummyRabbitExchange()
         self.queue = queue or DummyRabbitQueue()
         self.closed = False
 
     async def declare_queue(self, _name: str, durable: bool = True) -> DummyRabbitQueue:
+        """Return the channel's queue; the queue must be declared durable."""
         assert durable is True
         return self.queue
 
     async def close(self) -> None:
+        """Mark the channel closed."""
         self.closed = True
 
 
 class DummyRabbitConnection:
+    """RabbitMQ connection stand-in that returns one channel."""
+
     def __init__(self, channel: DummyRabbitChannel | None = None) -> None:
+        """Use the given or a new channel."""
         self._channel = channel or DummyRabbitChannel()
         self.closed = False
 
     async def channel(self) -> DummyRabbitChannel:
+        """Return the connection's channel."""
         return self._channel
 
     async def close(self) -> None:
+        """Mark the connection closed."""
         self.closed = True
 
 
 class DummyKafkaMessage:
+    """Kafka consumer record stand-in."""
+
     def __init__(
         self,
         value: bytes,
@@ -223,6 +285,7 @@ class DummyKafkaMessage:
         partition: int = 0,
         offset: int | None = None,
     ) -> None:
+        """Store the value, topic, partition and optional offset."""
         self.value = value
         self.topic = topic
         self.partition = partition
@@ -230,7 +293,10 @@ class DummyKafkaMessage:
 
 
 class DummyKafkaProducer:
+    """Kafka producer stand-in that records sent payloads."""
+
     def __init__(self, *args, **kwargs) -> None:
+        """Store constructor arguments and start with no sent payloads."""
         self.args = args
         self.kwargs = kwargs
         self.started = False
@@ -239,19 +305,25 @@ class DummyKafkaProducer:
         self.raise_on_send = False
 
     async def start(self) -> None:
+        """Mark the producer started."""
         self.started = True
 
     async def stop(self) -> None:
+        """Mark the producer stopped."""
         self.stopped = True
 
     async def send_and_wait(self, topic: str, payload: bytes) -> None:
+        """Record the payload, or raise when ``raise_on_send`` is set."""
         if self.raise_on_send:
             raise RuntimeError("kafka publish failed")
         self.sent.append((topic, payload))
 
 
 class DummyKafkaConsumer:
+    """Kafka consumer stand-in that returns queued messages."""
+
     def __init__(self, *args, **kwargs) -> None:
+        """Store constructor arguments and start with no queued messages."""
         self.args = args
         self.kwargs = kwargs
         self.started = False
@@ -259,12 +331,15 @@ class DummyKafkaConsumer:
         self.messages: list[object] = []
 
     async def start(self) -> None:
+        """Mark the consumer started."""
         self.started = True
 
     async def stop(self) -> None:
+        """Mark the consumer stopped."""
         self.stopped = True
 
     async def getone(self):
+        """Return the next queued message (raising queued exceptions), or an empty event."""
         if not self.messages:
             await asyncio.sleep(0)
             return DummyKafkaMessage(b"{}")
@@ -276,10 +351,12 @@ class DummyKafkaConsumer:
 
 @pytest.fixture
 def bus() -> AgentEventBus:
+    """Return a fresh AgentEventBus."""
     return AgentEventBus()
 
 
 def test_subscribe_and_unsubscribe(bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Subscribe and unsubscribe."""
     called = {"ok": False}
 
     def _schedule() -> None:
@@ -302,6 +379,7 @@ def test_subscribe_and_unsubscribe(bus: AgentEventBus, monkeypatch: pytest.Monke
 def test_schedule_bootstrap_without_loop(
     bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Schedule bootstrap without loop."""
     bus._redis_available = False
     bus._schedule_redis_bootstrap()
     assert bus._redis_bootstrap_task is None
@@ -317,6 +395,8 @@ def test_schedule_bootstrap_without_loop(
 
 
 def test_schedule_bootstrap_skips_when_task_already_running(bus: AgentEventBus) -> None:
+    """Schedule bootstrap skips when task already running."""
+
     class _RunningTask:
         def done(self) -> bool:
             return False
@@ -329,6 +409,7 @@ def test_schedule_bootstrap_skips_when_task_already_running(bus: AgentEventBus) 
 def test_schedule_bootstrap_creates_task(
     monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
 ) -> None:
+    """Schedule bootstrap creates task."""
     created = {"task": None}
 
     class _Loop:
@@ -343,6 +424,7 @@ def test_schedule_bootstrap_creates_task(
 
 
 def test_publish_fanout_and_redis_call(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
+    """Publish fanout and redis call."""
     fanout_events: list[AgentEvent] = []
 
     def _fanout(evt: AgentEvent) -> None:
@@ -372,6 +454,7 @@ def test_publish_fanout_and_redis_call(monkeypatch: pytest.MonkeyPatch, bus: Age
 def test_ensure_listener_success_and_busygroup(
     monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
 ) -> None:
+    """Ensure listener success and busygroup."""
     redis = DummyRedis()
 
     class _RedisFactory:
@@ -401,6 +484,7 @@ def test_ensure_listener_success_and_busygroup(
 def test_ensure_listener_early_return_and_non_busygroup_error(
     monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
 ) -> None:
+    """Ensure listener early return and non busygroup error."""
     bus._redis_available = False
     asyncio.run(bus._ensure_redis_listener())
 
@@ -435,6 +519,8 @@ def test_ensure_listener_early_return_and_non_busygroup_error(
 
 @pytest.mark.asyncio
 async def test_ensure_listener_returns_when_listener_task_running(bus: AgentEventBus) -> None:
+    """Ensure listener returns when listener task running."""
+
     class _RunningTask:
         def done(self) -> bool:
             return False
@@ -448,6 +534,8 @@ async def test_ensure_listener_returns_when_listener_task_running(bus: AgentEven
 def test_ensure_listener_failure_triggers_cleanup(
     monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
 ) -> None:
+    """Ensure listener failure triggers cleanup."""
+
     class _BadRedis(DummyRedis):
         async def ping(self) -> None:
             raise RuntimeError("cannot connect")
@@ -472,6 +560,7 @@ def test_ensure_listener_failure_triggers_cleanup(
 
 
 def test_publish_via_redis_paths(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
+    """Publish via redis paths."""
     evt = AgentEvent(ts=1.2, source="qa", message="msg")
 
     bus._redis_available = False
@@ -525,6 +614,7 @@ def test_publish_via_redis_paths(monkeypatch: pytest.MonkeyPatch, bus: AgentEven
 async def test_publish_preserves_local_order_when_remote_write_falls_back_to_dlq(
     bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Publish preserves local order when remote write falls back to dlq."""
     redis = DummyRedis()
 
     async def _xadd_fail(*_args, **_kwargs):
@@ -555,6 +645,7 @@ async def test_publish_preserves_local_order_when_remote_write_falls_back_to_dlq
 def test_redis_listener_loop_handles_payload_ack_and_errors(
     bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Redis listener loop handles payload ack and errors."""
     redis = DummyRedis()
     bus._redis_client = redis
     bus._redis_available = True
@@ -596,6 +687,7 @@ def test_redis_listener_loop_handles_payload_ack_and_errors(
 def test_redis_listener_tracks_consumer_group_offsets_in_ack_order(
     bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Redis listener tracks consumer group offsets in ack order."""
     redis = DummyRedis()
     bus._redis_client = redis
     bus._redis_available = True
@@ -655,6 +747,7 @@ def test_redis_listener_tracks_consumer_group_offsets_in_ack_order(
 async def test_kafka_listener_tracks_processed_offsets_and_order(
     bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Kafka listener tracks processed offsets and order."""
     bus._kafka_consumer = DummyKafkaConsumer()
     bus._kafka_topic = "sidar.agent_events"
     bus._kafka_consumer.messages = [
@@ -688,6 +781,7 @@ async def test_kafka_listener_tracks_processed_offsets_and_order(
 
 
 def test_redis_listener_loop_empty_response_continue(bus: AgentEventBus) -> None:
+    """Redis listener loop empty response continue."""
     redis = DummyRedis()
     bus._redis_client = redis
     bus._redis_available = True
@@ -703,6 +797,8 @@ def test_redis_listener_loop_empty_response_continue(bus: AgentEventBus) -> None
 def test_redis_listener_loop_read_error_cleanup(
     monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
 ) -> None:
+    """Redis listener loop read error cleanup."""
+
     class _BrokenRedis(DummyRedis):
         async def xreadgroup(self, **_kwargs):
             raise RuntimeError("read failed")
@@ -722,6 +818,7 @@ def test_redis_listener_loop_read_error_cleanup(
 
 
 def test_drain_buffered_events_and_fanout(bus: AgentEventBus) -> None:
+    """Drain buffered events and fanout."""
     sid1 = 1
     sid2 = 2
     q1: asyncio.Queue[AgentEvent] = asyncio.Queue(maxsize=1)
@@ -750,6 +847,7 @@ def test_drain_buffered_events_and_fanout(bus: AgentEventBus) -> None:
 
 
 def test_drain_buffered_events_skips_missing_buffers(bus: AgentEventBus) -> None:
+    """Drain buffered events skips missing buffers."""
     sid = 100
     bus._subscribers = {sid: asyncio.Queue(maxsize=1)}
     progressed = asyncio.run(bus._drain_buffered_events_once())
@@ -757,6 +855,7 @@ def test_drain_buffered_events_skips_missing_buffers(bus: AgentEventBus) -> None
 
 
 def test_cleanup_redis_handles_cancel_and_close() -> None:
+    """Cleanup redis handles cancel and close."""
     bus = AgentEventBus()
 
     class _ListenerTask:
@@ -794,6 +893,7 @@ def test_cleanup_redis_handles_cancel_and_close() -> None:
 
 
 def test_reset_runtime_state_closes_global_resources_and_clears_state() -> None:
+    """Reset runtime state closes global resources and clears state."""
     bus = AgentEventBus()
 
     class _AwaitableTask:
@@ -853,6 +953,7 @@ def test_reset_runtime_state_closes_global_resources_and_clears_state() -> None:
 
 
 def test_cleanup_redis_without_client_or_listener() -> None:
+    """Cleanup redis without client or listener."""
     bus = AgentEventBus()
     asyncio.run(bus._cleanup_redis())
     assert bus._redis_listener_task is None
@@ -861,6 +962,7 @@ def test_cleanup_redis_without_client_or_listener() -> None:
 
 
 def test_cleanup_redis_handles_non_callable_and_non_awaitable_close() -> None:
+    """Cleanup redis handles non callable and non awaitable close."""
     bus = AgentEventBus()
 
     bus._redis_client = NonCallableCloseRedis()
@@ -875,6 +977,7 @@ def test_cleanup_redis_handles_non_callable_and_non_awaitable_close() -> None:
 
 
 def test_cleanup_redis_awaits_connection_pool_disconnect() -> None:
+    """Cleanup redis awaits connection pool disconnect."""
     bus = AgentEventBus()
     redis_client = RedisWithAsyncPoolDisconnect()
     bus._redis_client = redis_client
@@ -887,6 +990,8 @@ def test_cleanup_redis_awaits_connection_pool_disconnect() -> None:
 
 
 def test_cleanup_redis_calls_non_awaitable_pool_disconnect() -> None:
+    """Cleanup redis calls non awaitable pool disconnect."""
+
     class RedisWithSyncPoolDisconnect:
         def __init__(self) -> None:
             self.connection_pool = _SyncDisconnectConnectionPool()
@@ -905,6 +1010,8 @@ def test_cleanup_redis_calls_non_awaitable_pool_disconnect() -> None:
 
 
 def test_cleanup_redis_awaits_cancelled_close_coroutine_and_still_disconnects_pool() -> None:
+    """Cleanup redis awaits cancelled close coroutine and still disconnects pool."""
+
     class RedisWithCancelledAclose:
         def __init__(self) -> None:
             self.close_awaited = False
@@ -928,6 +1035,7 @@ def test_cleanup_redis_awaits_cancelled_close_coroutine_and_still_disconnects_po
 def test_ensure_redis_loop_compatibility_resets_cross_loop_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Ensure redis loop compatibility resets cross loop state."""
     bus = AgentEventBus()
     bus._redis_client = DummyRedis()
     bus._redis_loop = object()
@@ -950,6 +1058,7 @@ def test_ensure_redis_loop_compatibility_resets_cross_loop_state(
 def test_ensure_redis_loop_compatibility_returns_for_non_redis_backend(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Ensure redis loop compatibility returns for non redis backend."""
     bus = AgentEventBus()
     bus._backend = "kafka"
     bus._redis_client = DummyRedis()
@@ -972,6 +1081,7 @@ def test_ensure_redis_loop_compatibility_returns_for_non_redis_backend(
 def test_ensure_redis_loop_compatibility_returns_without_client_and_listener(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Ensure redis loop compatibility returns without client and listener."""
     bus = AgentEventBus()
     bus._redis_client = None
     bus._redis_listener_task = None
@@ -992,6 +1102,7 @@ def test_ensure_redis_loop_compatibility_returns_without_client_and_listener(
 def test_ensure_redis_loop_compatibility_returns_without_running_loop(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Ensure redis loop compatibility returns without running loop."""
     bus = AgentEventBus()
     bus._redis_client = object()
     monkeypatch.setattr(
@@ -1004,6 +1115,7 @@ def test_ensure_redis_loop_compatibility_returns_without_running_loop(
 def test_ensure_redis_loop_compatibility_cleans_when_listener_exists_on_other_loop(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Ensure redis loop compatibility cleans when listener exists on other loop."""
     bus = AgentEventBus()
     bus._redis_client = None
     bus._redis_loop = object()
@@ -1028,6 +1140,7 @@ def test_ensure_redis_loop_compatibility_cleans_when_listener_exists_on_other_lo
 
 @pytest.mark.asyncio
 async def test_ensure_redis_loop_compatibility_returns_when_same_loop() -> None:
+    """Ensure redis loop compatibility returns when same loop."""
     bus = AgentEventBus()
     current_loop = asyncio.get_running_loop()
     bus._redis_client = object()
@@ -1037,6 +1150,7 @@ async def test_ensure_redis_loop_compatibility_returns_when_same_loop() -> None:
 
 
 def test_write_dead_letter_local_and_redis(bus: AgentEventBus) -> None:
+    """Write dead letter local and redis."""
     asyncio.run(bus._write_dead_letter(reason="r1", payload={"a": 1}, error=RuntimeError("boom")))
     assert len(bus._dlq_buffer) == 1
     assert bus._dlq_buffer[-1]["error"] == "boom"
@@ -1060,6 +1174,7 @@ def test_write_dead_letter_local_and_redis(bus: AgentEventBus) -> None:
 
 @pytest.mark.asyncio
 async def test_write_dead_letter_without_error_keeps_item_minimal(bus: AgentEventBus) -> None:
+    """Write dead letter without error keeps item minimal."""
     await bus._write_dead_letter(reason="no_error", payload={"kind": "minimal"}, error=None)
 
     assert len(bus._dlq_buffer) == 1
@@ -1073,6 +1188,7 @@ async def test_write_dead_letter_without_error_keeps_item_minimal(bus: AgentEven
 async def test_write_dead_letter_skips_redis_write_when_backend_redis_but_unavailable(
     bus: AgentEventBus,
 ) -> None:
+    """Write dead letter skips redis write when backend redis but unavailable."""
     bus._backend = "redis"
     bus._redis_available = False
     bus._redis_client = DummyRedis()
@@ -1088,6 +1204,7 @@ async def test_write_dead_letter_skips_redis_write_when_backend_redis_but_unavai
 async def test_write_dead_letter_persists_to_jsonl_when_path_configured(
     bus: AgentEventBus, tmp_path
 ) -> None:
+    """Write dead letter persists to jsonl when path configured."""
     persist_path = tmp_path / "dlq.jsonl"
     bus._dlq_persist_path = str(persist_path)
     bus._dlq_persist_flush_interval = 0.05
@@ -1107,6 +1224,7 @@ async def test_write_dead_letter_persists_to_jsonl_when_path_configured(
 async def test_write_dead_letter_persistence_runs_via_to_thread(
     bus: AgentEventBus, tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Write dead letter persistence runs via to thread."""
     persist_path = tmp_path / "dlq_to_thread.jsonl"
     bus._dlq_persist_path = str(persist_path)
     calls: list[str] = []
@@ -1129,6 +1247,7 @@ async def test_write_dead_letter_persistence_runs_via_to_thread(
 async def test_write_dead_letter_persists_oldest_item_when_memory_buffer_overflows(
     bus: AgentEventBus, tmp_path
 ) -> None:
+    """Write dead letter persists oldest item when memory buffer overflows."""
     persist_path = tmp_path / "dlq_overflow.jsonl"
     bus._dlq_persist_path = str(persist_path)
     bus._dlq_buffer = deque(maxlen=2)
@@ -1154,6 +1273,7 @@ async def test_write_dead_letter_persists_oldest_item_when_memory_buffer_overflo
 async def test_write_dead_letter_batches_persist_writes(
     bus: AgentEventBus, tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Write dead letter batches persist writes."""
     bus._dlq_persist_path = str(tmp_path / "dlq_batch.jsonl")
     bus._dlq_persist_batch_size = 3
     calls: list[str] = []
@@ -1172,11 +1292,13 @@ async def test_write_dead_letter_batches_persist_writes(
 
 
 def test_get_agent_event_bus_singleton() -> None:
+    """Get agent event bus singleton."""
     assert get_agent_event_bus() is event_stream._BUS
     assert isinstance(get_agent_event_bus(), AgentEventBus)
 
 
 def test_test_doubles_cover_default_stub_paths() -> None:
+    """Test doubles cover default stub paths."""
     with pytest.raises(RuntimeError, match="stub"):
         _StubRedis.from_url("redis://localhost:6379/0")
 
@@ -1190,6 +1312,7 @@ def test_test_doubles_cover_default_stub_paths() -> None:
 def test_schedule_remote_bootstrap_routes_by_backend(
     monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
 ) -> None:
+    """Schedule remote bootstrap routes by backend."""
     calls = {"redis": 0, "rabbitmq": 0, "kafka": 0}
     monkeypatch.setattr(
         bus, "_schedule_redis_bootstrap", lambda: calls.__setitem__("redis", calls["redis"] + 1)
@@ -1214,6 +1337,7 @@ def test_schedule_remote_bootstrap_routes_by_backend(
 
 
 def test_event_bus_uses_backend_strategy_instances(bus: AgentEventBus) -> None:
+    """Event bus uses backend strategy instances."""
     assert isinstance(bus._backends["redis"], BaseEventBusBackend)
     assert isinstance(bus._backends["rabbitmq"], BaseEventBusBackend)
     assert isinstance(bus._backends["kafka"], BaseEventBusBackend)
@@ -1222,6 +1346,7 @@ def test_event_bus_uses_backend_strategy_instances(bus: AgentEventBus) -> None:
 def test_schedule_rabbit_kafka_bootstrap_variants(
     monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
 ) -> None:
+    """Schedule rabbit kafka bootstrap variants."""
     bus._rabbit_available = False
     bus._schedule_rabbit_bootstrap()
     assert bus._rabbit_bootstrap_task is None
@@ -1278,6 +1403,7 @@ def test_schedule_rabbit_kafka_bootstrap_variants(
 def test_ensure_rabbit_listener_success_and_failure(
     monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
 ) -> None:
+    """Ensure rabbit listener success and failure."""
     connection = DummyRabbitConnection()
 
     class _AioPika:
@@ -1323,6 +1449,7 @@ def test_ensure_rabbit_listener_success_and_failure(
 def test_ensure_rabbit_listener_returns_when_unavailable_or_running(
     monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
 ) -> None:
+    """Ensure rabbit listener returns when unavailable or running."""
     bus._rabbit_available = False
     called = {"imported": False}
 
@@ -1347,6 +1474,7 @@ def test_ensure_rabbit_listener_returns_when_unavailable_or_running(
 def test_ensure_rabbit_listener_reuses_existing_connection(
     monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
 ) -> None:
+    """Ensure rabbit listener reuses existing connection."""
     channel = DummyRabbitChannel()
     queue = DummyRabbitQueue()
     channel.queue = queue
@@ -1387,6 +1515,7 @@ def test_ensure_rabbit_listener_reuses_existing_connection(
 def test_ensure_rabbit_listener_handles_missing_optional_dependency(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, bus: AgentEventBus
 ) -> None:
+    """Ensure rabbit listener handles missing optional dependency."""
     cleaned = {"ok": False}
 
     async def _cleanup() -> None:
@@ -1411,6 +1540,7 @@ def test_ensure_rabbit_listener_handles_missing_optional_dependency(
 def test_missing_optional_backend_dependency_warning_is_logged_once(
     caplog: pytest.LogCaptureFixture, bus: AgentEventBus
 ) -> None:
+    """Missing optional backend dependency warning is logged once."""
     with caplog.at_level(logging.WARNING):
         bus._warn_missing_optional_backend_dependency(
             backend="rabbitmq",
@@ -1430,6 +1560,8 @@ def test_missing_optional_backend_dependency_warning_is_logged_once(
 def test_ensure_kafka_listener_success_and_failure(
     monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
 ) -> None:
+    """Ensure kafka listener success and failure."""
+
     class _AioKafka:
         AIOKafkaProducer = DummyKafkaProducer
         AIOKafkaConsumer = DummyKafkaConsumer
@@ -1476,6 +1608,7 @@ def test_ensure_kafka_listener_success_and_failure(
 def test_ensure_kafka_listener_handles_missing_optional_dependency(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, bus: AgentEventBus
 ) -> None:
+    """Ensure kafka listener handles missing optional dependency."""
     cleaned = {"ok": False}
 
     async def _cleanup() -> None:
@@ -1500,6 +1633,7 @@ def test_ensure_kafka_listener_handles_missing_optional_dependency(
 def test_ensure_kafka_listener_short_circuit_and_reuse_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Ensure kafka listener short circuit and reuse paths."""
     bus = AgentEventBus()
 
     bus._kafka_available = False
@@ -1553,6 +1687,7 @@ def test_ensure_kafka_listener_short_circuit_and_reuse_paths(
 def test_rabbit_connection_failure_switches_to_local_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Rabbit connection failure switches to local fallback."""
     bus = AgentEventBus()
     bus._backend = "rabbitmq"
 
@@ -1588,6 +1723,7 @@ def test_rabbit_connection_failure_switches_to_local_fallback(
 def test_kafka_connection_failure_switches_to_local_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Kafka connection failure switches to local fallback."""
     bus = AgentEventBus()
     bus._backend = "kafka"
 
@@ -1625,6 +1761,7 @@ def test_kafka_connection_failure_switches_to_local_fallback(
 def test_publish_via_rabbit_and_kafka_paths(
     monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
 ) -> None:
+    """Publish via rabbit and kafka paths."""
     evt = AgentEvent(ts=1.0, source="qa", message="event")
 
     bus._rabbit_available = False
@@ -1711,6 +1848,7 @@ def test_publish_via_rabbit_and_kafka_paths(
 def test_publish_via_kafka_failure_writes_dlq_and_cleans_up(
     monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
 ) -> None:
+    """Publish via kafka failure writes dlq and cleans up."""
     evt = AgentEvent(ts=7.5, source="coverage", message="kafka fail-safe")
     producer = DummyKafkaProducer()
     producer.raise_on_send = True
@@ -1743,6 +1881,7 @@ def test_publish_via_kafka_failure_writes_dlq_and_cleans_up(
 def test_publish_via_rabbit_missing_dependency_writes_dlq_and_cleans_up(
     monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus
 ) -> None:
+    """Publish via rabbit missing dependency writes dlq and cleans up."""
     evt = AgentEvent(ts=2.5, source="resilience", message="rabbit missing module")
     bus._rabbit_available = True
     bus._rabbit_channel = DummyRabbitChannel(DummyRabbitQueue())
@@ -1773,6 +1912,7 @@ def test_publish_via_rabbit_missing_dependency_writes_dlq_and_cleans_up(
 
 
 def test_publish_via_remote_routes(bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Publish via remote routes."""
     evt = AgentEvent(ts=1.0, source="coder", message="route")
     called = {"redis": 0, "rabbit": 0, "kafka": 0}
 
@@ -1804,6 +1944,7 @@ def test_publish_via_remote_routes(bus: AgentEventBus, monkeypatch: pytest.Monke
 def test_publish_via_remote_opens_circuit_after_threshold_failures(
     bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Publish via remote opens circuit after threshold failures."""
     evt = AgentEvent(ts=1.0, source="qa", message="circuit")
     bus._backend = "redis"
     bus._remote_circuit_failure_threshold = 2
@@ -1832,6 +1973,7 @@ def test_publish_via_remote_opens_circuit_after_threshold_failures(
 def test_publish_via_remote_resets_circuit_after_success(
     bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Publish via remote resets circuit after success."""
     evt = AgentEvent(ts=1.0, source="qa", message="recover")
     bus._backend = "kafka"
     bus._remote_circuit_failure_threshold = 2
@@ -1852,6 +1994,7 @@ def test_publish_via_remote_resets_circuit_after_success(
 def test_publish_skips_remote_bootstrap_when_circuit_open(
     bus: AgentEventBus, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Publish skips remote bootstrap when circuit open."""
     bus._backend = "redis"
     bus._remote_circuit_open_until = time.time() + 60.0
     calls = {"schedule": 0, "publish_remote": 0}
@@ -1876,6 +2019,7 @@ def test_publish_skips_remote_bootstrap_when_circuit_open(
 
 
 def test_rabbit_listener_loop_variants(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
+    """Rabbit listener loop variants."""
     bus._rabbit_queue = None
     assert asyncio.run(bus._rabbit_listener_loop()) is None
 
@@ -1909,6 +2053,7 @@ def test_rabbit_listener_loop_variants(monkeypatch: pytest.MonkeyPatch, bus: Age
 
 
 def test_kafka_listener_loop_variants(monkeypatch: pytest.MonkeyPatch, bus: AgentEventBus) -> None:
+    """Kafka listener loop variants."""
     bus._kafka_consumer = None
     assert asyncio.run(bus._kafka_listener_loop()) is None
 
@@ -1959,6 +2104,7 @@ def test_kafka_listener_loop_variants(monkeypatch: pytest.MonkeyPatch, bus: Agen
 
 
 def test_cleanup_rabbit_and_kafka() -> None:
+    """Cleanup rabbit and kafka."""
     bus = AgentEventBus()
 
     class _AwaitableTask:
@@ -2007,6 +2153,7 @@ def test_cleanup_rabbit_and_kafka() -> None:
 
 
 def test_cleanup_rabbit_and_kafka_suppress_close_errors() -> None:
+    """Cleanup rabbit and kafka suppress close errors."""
     bus = AgentEventBus()
 
     class _FailingRabbitChannel:
@@ -2039,6 +2186,7 @@ def test_cleanup_rabbit_and_kafka_suppress_close_errors() -> None:
 
 
 def test_cleanup_rabbit_and_kafka_cover_non_callable_and_none_paths() -> None:
+    """Cleanup rabbit and kafka cover non callable and none paths."""
     bus = AgentEventBus()
 
     class _RabbitChannelNonCallableClose:
@@ -2077,6 +2225,7 @@ def test_cleanup_rabbit_and_kafka_cover_non_callable_and_none_paths() -> None:
 def test_persist_dead_letter_item_sync_swallows_disk_io_errors(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
+    """Persist dead letter item sync swallows disk io errors."""
     bus = AgentEventBus()
     bus._dlq_persist_path = str(tmp_path / "dlq" / "events.jsonl")
 
@@ -2098,6 +2247,7 @@ def test_persist_dead_letter_item_sync_swallows_disk_io_errors(
 
 
 def test_persist_dead_letter_items_sync_handles_empty_parent_path(tmp_path) -> None:
+    """Persist dead letter items sync handles empty parent path."""
     bus = AgentEventBus()
     path = tmp_path / "events.jsonl"
     bus._dlq_persist_path = str(path)
@@ -2106,6 +2256,7 @@ def test_persist_dead_letter_items_sync_handles_empty_parent_path(tmp_path) -> N
 
 
 def test_persist_dead_letter_items_sync_returns_when_path_missing() -> None:
+    """Persist dead letter items sync returns when path missing."""
     bus = AgentEventBus()
     bus._dlq_persist_path = None
     bus._persist_dead_letter_items_sync([{"reason": "skip"}])
@@ -2114,6 +2265,7 @@ def test_persist_dead_letter_items_sync_returns_when_path_missing() -> None:
 def test_persist_dead_letter_items_sync_writes_when_parent_is_empty(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
+    """Persist dead letter items sync writes when parent is empty."""
     bus = AgentEventBus()
     monkeypatch.chdir(tmp_path)
     bus._dlq_persist_path = "events.jsonl"
@@ -2124,6 +2276,7 @@ def test_persist_dead_letter_items_sync_writes_when_parent_is_empty(
 def test_schedule_dead_letter_flush_returns_without_running_loop(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Schedule dead letter flush returns without running loop."""
     bus = AgentEventBus()
 
     def _raise_runtime_error():
@@ -2138,6 +2291,7 @@ def test_schedule_dead_letter_flush_returns_without_running_loop(
 async def test_delayed_dead_letter_flush_triggers_queue_flush(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Delayed dead letter flush triggers queue flush."""
     bus = AgentEventBus()
     called = {"flush": False}
 
@@ -2158,6 +2312,7 @@ async def test_delayed_dead_letter_flush_triggers_queue_flush(
 async def test_flush_dead_letter_persist_queue_covers_lock_and_empty_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Flush dead letter persist queue covers lock and empty paths."""
     bus = AgentEventBus()
     bus._dlq_persist_path = "events.jsonl"
     bus._dlq_persist_pending = []
@@ -2182,6 +2337,7 @@ async def test_flush_dead_letter_persist_queue_covers_lock_and_empty_paths(
 
 @pytest.mark.asyncio
 async def test_flush_dead_letter_persist_queue_returns_when_pending_drained_under_lock() -> None:
+    """Flush dead letter persist queue returns when pending drained under lock."""
     bus = AgentEventBus()
     bus._dlq_persist_path = "events.jsonl"
     bus._dlq_persist_pending = [{"reason": "race"}]
@@ -2200,6 +2356,7 @@ async def test_flush_dead_letter_persist_queue_returns_when_pending_drained_unde
 
 @pytest.mark.asyncio
 async def test_cancel_background_task_returns_for_current_task(bus: AgentEventBus) -> None:
+    """Cancel background task returns for current task."""
     current = asyncio.current_task()
     assert current is not None
 
@@ -2209,6 +2366,7 @@ async def test_cancel_background_task_returns_for_current_task(bus: AgentEventBu
 
 
 def test_cancel_background_task_handles_foreign_open_and_closed_loops() -> None:
+    """Cancel background task handles foreign open and closed loops."""
     bus = AgentEventBus()
 
     class _ForeignTask:
@@ -2244,6 +2402,7 @@ def test_cancel_background_task_handles_foreign_open_and_closed_loops() -> None:
 
 
 def test_reset_runtime_state_swallows_pending_dlq_flush_failure() -> None:
+    """Reset runtime state swallows pending dlq flush failure."""
     bus = AgentEventBus()
     bus._dlq_persist_pending = [{"event": "pending"}]
 

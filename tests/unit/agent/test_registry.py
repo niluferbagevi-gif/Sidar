@@ -31,6 +31,7 @@ class _DummyAgent:
 
 
 def test_agent_catalog_programmatic_registration_lifecycle() -> None:
+    """Agent catalog programmatic registration lifecycle."""
     role_name = "unit_temp_programmatic"
 
     class UnitTempProgrammaticAgent:
@@ -64,6 +65,7 @@ def test_agent_catalog_programmatic_registration_lifecycle() -> None:
 
 
 def test_agent_catalog_decorator_registration_exposes_metadata() -> None:
+    """Agent catalog decorator registration exposes metadata."""
     role_name = "unit_temp_decorator"
     AgentCatalog.unregister(role_name)
 
@@ -90,6 +92,7 @@ def test_agent_catalog_decorator_registration_exposes_metadata() -> None:
 
 
 def test_registration_apis_documented_is_builtin_defaults() -> None:
+    """Registration apis documented is builtin defaults."""
     decorator_role = "unit_temp_decorator_default"
     programmatic_role = "unit_temp_programmatic_default"
     AgentCatalog.unregister(decorator_role)
@@ -119,6 +122,8 @@ def test_registration_apis_documented_is_builtin_defaults() -> None:
 
 
 def test_register_decorator_populates_catalog_and_capability_index() -> None:
+    """Register decorator populates catalog and capability index."""
+
     @AgentCatalog.register(
         capabilities=["unit_test_capability"],
         description="decorator registration test",
@@ -139,6 +144,7 @@ def test_register_decorator_populates_catalog_and_capability_index() -> None:
 
 
 def test_register_type_create_and_unregister_roundtrip() -> None:
+    """Register type create and unregister roundtrip."""
     AgentCatalog.register_type(
         role_name="tmp_dummy",
         agent_class=_DummyAgent,
@@ -157,6 +163,7 @@ def test_register_type_create_and_unregister_roundtrip() -> None:
 
 
 def test_create_external_side_effect_plugin_requires_full_access() -> None:
+    """Create external side effect plugin requires full access."""
     role_name = "aws_management"
     snapshot = dict(AgentCatalog._registry)
 
@@ -191,11 +198,14 @@ def test_create_external_side_effect_plugin_requires_full_access() -> None:
 
 
 def test_create_unknown_role_raises_keyerror() -> None:
+    """Create unknown role raises keyerror."""
     with pytest.raises(KeyError):
         AgentCatalog.create("definitely_missing_role")
 
 
 def test_create_uses_factory_when_agent_class_is_missing() -> None:
+    """Create uses factory when agent class is missing."""
+
     def _factory(*, value: int) -> dict[str, int]:
         return {"value": value}
 
@@ -216,6 +226,7 @@ def test_create_uses_factory_when_agent_class_is_missing() -> None:
 
 
 def test_create_raises_typeerror_when_no_class_or_factory() -> None:
+    """Create raises typeerror when no class or factory."""
     AgentCatalog._registry["tmp_broken"] = AgentSpec(  # type: ignore[attr-defined]
         role_name="tmp_broken",
         agent_class=None,
@@ -232,10 +243,12 @@ def test_create_raises_typeerror_when_no_class_or_factory() -> None:
 
 
 def test_unregister_returns_false_for_unknown_role() -> None:
+    """Unregister returns false for unknown role."""
     assert AgentCatalog.unregister("definitely_unknown_role") is False
 
 
 def test_builtin_role_contracts_cover_exports_imports_router_and_supervisor() -> None:
+    """Builtin role contracts cover exports imports router and supervisor."""
     import agent.roles as role_exports
     from agent.core.supervisor import SupervisorAgent
     from agent.swarm import TaskRouter
@@ -281,6 +294,7 @@ def test_builtin_role_contracts_cover_exports_imports_router_and_supervisor() ->
 
 
 def test_builtin_registration_prefers_canonical_class_for_temp_module_import() -> None:
+    """Builtin registration prefers canonical class for temp module import."""
     import agent.roles as role_exports
 
     contract = next(item for item in BUILTIN_ROLE_CONTRACTS if item.role_name == "reviewer")
@@ -314,6 +328,7 @@ def test_builtin_registration_prefers_canonical_class_for_temp_module_import() -
 def test_builtin_registration_keeps_temp_class_when_canonical_symbol_is_not_type(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Builtin registration keeps temp class when canonical symbol is not type."""
     contract = next(item for item in BUILTIN_ROLE_CONTRACTS if item.role_name == "reviewer")
     original_spec = AgentCatalog.get(contract.role_name)
     assert original_spec is not None
@@ -348,6 +363,7 @@ def test_builtin_registration_keeps_temp_class_when_canonical_symbol_is_not_type
 
 
 def test_builtin_contract_sync_skips_non_class_symbols() -> None:
+    """Builtin contract sync skips non class symbols."""
     contract = next(item for item in BUILTIN_ROLE_CONTRACTS if item.role_name == "reviewer")
     original_spec = AgentCatalog.get(contract.role_name)
     assert original_spec is not None
@@ -366,6 +382,7 @@ def test_builtin_contract_sync_skips_non_class_symbols() -> None:
 def test_builtin_contract_sync_registers_when_role_exports_module_is_absent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Builtin contract sync registers when role exports module is absent."""
     snapshot = dict(AgentCatalog._registry)
     original_role_exports = sys.modules.get("agent.roles")
     module_cache = {
@@ -401,6 +418,7 @@ def test_builtin_contract_sync_registers_when_role_exports_module_is_absent(
 
 
 def test_agent_catalog_get_preserves_canonical_module_cache_class_identity() -> None:
+    """Agent catalog get preserves canonical module cache class identity."""
     contract = next(item for item in BUILTIN_ROLE_CONTRACTS if item.role_name == "coder")
     snapshot = dict(AgentCatalog._registry)
 
@@ -428,6 +446,7 @@ def test_agent_catalog_get_preserves_canonical_module_cache_class_identity() -> 
 
 
 def test_agent_catalog_health_reports_non_builtin_builtin_role() -> None:
+    """Agent catalog health reports non builtin builtin role."""
     snapshot = dict(AgentCatalog._registry)
     contract = next(item for item in BUILTIN_ROLE_CONTRACTS if item.role_name == "coder")
 
@@ -454,6 +473,7 @@ def test_agent_catalog_health_reports_non_builtin_builtin_role() -> None:
 def test_import_builtin_roles_warns_when_literal_import_list_drifts_from_contract(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
+    """Import builtin roles warns when literal import list drifts from contract."""
     import agent.registry as registry_module
     import agent.roles as role_exports
 
@@ -494,6 +514,7 @@ def test_import_builtin_roles_warns_when_literal_import_list_drifts_from_contrac
 
 
 def test_builtin_role_contract_static_exports_match_import_bootstrap_literal() -> None:
+    """Builtin role contract static exports match import bootstrap literal."""
     registry_tree = ast.parse(Path("agent/registry.py").read_text())
     roles_init_tree = ast.parse(Path("agent/roles/__init__.py").read_text())
 
@@ -539,6 +560,7 @@ def test_builtin_role_contract_static_exports_match_import_bootstrap_literal() -
 
 
 def test_agent_catalog_health_reports_missing_role_and_import_failure() -> None:
+    """Agent catalog health reports missing role and import failure."""
     snapshot = dict(AgentCatalog._registry)
     AgentCatalog._registry.clear()
     try:
@@ -577,6 +599,7 @@ def test_agent_catalog_health_reports_missing_role_and_import_failure() -> None:
 
 
 def test_import_builtin_roles_skips_failed_module_imports(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Import builtin roles skips failed module imports."""
     imported_modules: list[str] = []
 
     def _fake_import_module(module_name: str):
@@ -605,6 +628,7 @@ def test_import_builtin_roles_skips_failed_module_imports(monkeypatch: pytest.Mo
 def test_import_builtin_roles_warns_when_all_builtin_imports_fail(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
+    """Import builtin roles warns when all builtin imports fail."""
     snapshot = dict(AgentCatalog._registry)
     AgentCatalog._registry.clear()
 
@@ -627,6 +651,7 @@ def test_import_builtin_roles_warns_when_all_builtin_imports_fail(
 
 
 def test_format_import_failure_for_module_not_found_error_uses_module_name() -> None:
+    """Format import failure for module not found error uses module name."""
     formatted = _format_import_failure(
         ModuleNotFoundError("No module named 'nonexistent'", name="nonexistent")
     )
@@ -634,11 +659,13 @@ def test_format_import_failure_for_module_not_found_error_uses_module_name() -> 
 
 
 def test_format_import_failure_for_non_module_not_found_error_uses_repr() -> None:
+    """Format import failure for non module not found error uses repr."""
     formatted = _format_import_failure(RuntimeError("simulated boot failure"))
     assert formatted == "RuntimeError: simulated boot failure"
 
 
 def test_format_import_failure_includes_exception_type_for_value_error() -> None:
+    """Format import failure includes exception type for value error."""
     formatted = _format_import_failure(ValueError("bozuk yapı"))
     assert formatted.startswith("ValueError: ")
     assert "bozuk yapı" in formatted
@@ -647,6 +674,7 @@ def test_format_import_failure_includes_exception_type_for_value_error() -> None
 def test_import_builtin_roles_logs_non_module_not_found_failures(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
+    """Import builtin roles logs non module not found failures."""
     snapshot = dict(AgentCatalog._registry)
     AgentCatalog._registry.clear()
 

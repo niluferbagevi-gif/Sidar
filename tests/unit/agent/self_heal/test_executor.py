@@ -45,6 +45,7 @@ class _StubCodeManager:
 
 
 async def test_blocked_when_autofix_commands_but_no_validation_commands() -> None:
+    """Blocked when autofix commands but no validation commands."""
     manager = _StubCodeManager()
     remediation_loop = {
         "autofix_commands": ["uv run ruff check --fix ."],
@@ -62,6 +63,7 @@ async def test_blocked_when_autofix_commands_but_no_validation_commands() -> Non
 
 
 async def test_backup_loop_skips_unreadable_scope_path_and_continues() -> None:
+    """Backup loop skips unreadable scope path and continues."""
     manager = _StubCodeManager(
         read_results={"a.py": (False, "permission denied"), "b.py": (True, "content-b")},
         command_results={"autofix": (True, "fixed"), "validate": (True, "passed")},
@@ -83,6 +85,7 @@ async def test_backup_loop_skips_unreadable_scope_path_and_continues() -> None:
 
 
 async def test_blocked_when_all_scope_path_backups_fail_to_read() -> None:
+    """Blocked when all scope path backups fail to read."""
     manager = _StubCodeManager(
         read_results={
             "a.py": (False, "permission denied"),
@@ -107,6 +110,7 @@ async def test_blocked_when_all_scope_path_backups_fail_to_read() -> None:
 
 
 async def test_reverted_when_validation_fails_after_successful_autofix() -> None:
+    """Reverted when validation fails after successful autofix."""
     manager = _StubCodeManager(
         read_results={"a.py": (True, "original-a")},
         command_results={
@@ -136,6 +140,7 @@ async def test_reverted_when_validation_fails_after_successful_autofix() -> None
 
 
 async def test_reverted_when_autofix_command_itself_fails_mid_loop() -> None:
+    """Reverted when autofix command itself fails mid loop."""
     manager = _StubCodeManager(
         read_results={"a.py": (True, "original-a")},
         command_results={

@@ -1,3 +1,5 @@
+"""Unit tests for ``agent.roles.reviewer_agent``."""
+
 import asyncio
 import importlib.util
 import json
@@ -35,6 +37,7 @@ def _load_reviewer_agent():
 
 
 def test_load_reviewer_agent_returns_cached_module(monkeypatch):
+    """Load reviewer agent returns cached module."""
     sentinel = object()
     cached_module = SimpleNamespace(ReviewerAgent=sentinel)
     monkeypatch.setitem(sys.modules, "reviewer_agent_under_test", cached_module)
@@ -43,6 +46,7 @@ def test_load_reviewer_agent_returns_cached_module(monkeypatch):
 
 
 def test_load_reviewer_agent_injects_httpx_and_redis_when_missing(monkeypatch):
+    """Load reviewer agent injects httpx and redis when missing."""
     sentinel = object()
 
     class _Loader:
@@ -74,15 +78,22 @@ ReviewerAgent = _load_reviewer_agent()
 
 
 class DummyEvents:
+    """Event bus stand-in that records published messages."""
+
     def __init__(self):
+        """Start with no messages."""
         self.messages = []
 
     async def publish(self, role, message):
+        """Record the role and message."""
         self.messages.append((role, message))
 
 
 class DummyCode:
+    """CodeManager stand-in with configurable write, sandbox run and audit results."""
+
     def __init__(self):
+        """Default to successful writes, passing tests and an empty audit."""
         self.write_ok = True
         self.write_msg = "ok"
         self.run_ok = True
@@ -90,48 +101,66 @@ class DummyCode:
         self.audit_payload = {}
 
     def write_file(self, *_args, **_kwargs):
+        """Return the configured write result."""
         return self.write_ok, self.write_msg
 
     def run_shell_in_sandbox(self, *_args, **_kwargs):
+        """Return the configured sandbox run result."""
         return self.run_ok, self.run_out
 
     def lsp_semantic_audit(self, _paths):
+        """Return the configured LSP audit payload."""
         return True, self.audit_payload
 
 
 class DummyGithub:
+    """GitHubManager stand-in with configurable repo, PR, diff and issue results."""
+
     def __init__(self):
+        """Set successful default results."""
         self.repo = (True, "repo")
         self.prs = (True, "prs")
         self.diff = (True, "diff")
         self.issues = (True, ["i1"])
 
     def get_repo_info(self):
+        """Return the configured repository info."""
         return self.repo
 
     def list_pull_requests(self, *_args):
+        """Return the configured pull request list."""
         return self.prs
 
     def get_pull_request_diff(self, *_args):
+        """Return the configured diff."""
         return self.diff
 
     def list_issues(self, *_args):
+        """Return the configured issue list."""
         return self.issues
 
 
 class DummyBrowser:
+    """BrowserManager stand-in with a configurable session signal."""
+
     def __init__(self):
+        """Default to an ``ok`` signal."""
         self.signal = {"status": "ok", "summary": "ok"}
 
     def collect_session_signals(self, *_args, **_kwargs):
+        """Return the configured session signal."""
         return self.signal
 
 
 class DummyDocs:
+    """Document store stand-in for graph impact analysis."""
+
     def __init__(self, ok=True):
+        """Store whether graph impact lookups succeed."""
         self.ok = ok
 
     def graph_impact_details(self, target, _depth):
+        """Return high-risk impact details for the target, or a failure."""
         if self.ok:
             return True, {
                 "risk_level": "high",
@@ -141,11 +170,13 @@ class DummyDocs:
         return False, "err"
 
     def analyze_graph_impact(self, target, _depth):
+        """Return a fixed impact report for the target."""
         return True, f"report:{target}"
 
 
 @pytest.fixture
 def reviewer(tmp_path):
+    """Return a ReviewerAgent built without ``__init__`` and wired to the stubs."""
     r = ReviewerAgent.__new__(ReviewerAgent)
     r.config = SimpleNamespace(
         BASE_DIR=str(tmp_path),
@@ -174,6 +205,7 @@ def reviewer(tmp_path):
 
 
 def test_extract_helpers_and_paths():
+    """Extract helpers and paths."""
     assert ReviewerAgent._extract_python_code_block("```python\nassert 1\n```") == "assert 1"
     fail = ReviewerAgent._fail_closed_test_content("neden")
     assert "def test_reviewer_dynamic_generation_fail_closed" in fail
@@ -186,6 +218,7 @@ def test_extract_helpers_and_paths():
 
 
 def test_graph_followups_and_summary():
+    """Graph followups and summary."""
     payload = {
         "status": "ok",
         "reports": [
@@ -216,6 +249,7 @@ def test_graph_followups_and_summary():
 
 
 def test_lsp_summary_variants_and_normalize_path():
+    """Lsp summary variants and normalize path."""
     parsed = ReviewerAgent._summarize_lsp_diagnostics(
         json.dumps(
             {
@@ -246,6 +280,7 @@ def test_lsp_summary_variants_and_normalize_path():
 
 
 def test_combined_impact_and_recommendations():
+    """Combined impact and recommendations."""
     semantic = {
         "counts": {"1": 1, "2": 0},
         "issues": [{"path": "/workspace/Sidar/pkg/f.py", "message": "m"}],
@@ -284,6 +319,7 @@ def test_combined_impact_and_recommendations():
 
 
 def test_parse_browser_and_remediation_helpers():
+    """Parse browser and remediation helpers."""
     p = ReviewerAgent._parse_review_payload("")
     assert p["review_context"] == ""
     p2 = ReviewerAgent._parse_review_payload('{"review_context":"abc","browser_session_id":"s1"}')
@@ -322,6 +358,8 @@ def test_parse_browser_and_remediation_helpers():
 
 
 def test_dynamic_build_and_run(reviewer, monkeypatch):
+    """Dynamic build and run."""
+
     async def fake_call_llm(messages, system_prompt=None, **_kwargs):
         assert "tests/conftest.py" in messages[0]["content"]
         assert "fake_llm_response" in messages[0]["content"]
@@ -364,6 +402,7 @@ def test_dynamic_build_and_run(reviewer, monkeypatch):
 
 
 def test_tools(reviewer, monkeypatch):
+    """Tools."""
     assert asyncio.run(reviewer._tool_repo_info("")) == "repo"
     reviewer.github.repo = (False, "x")
     assert "[HATA]" in asyncio.run(reviewer._tool_repo_info(""))
@@ -411,6 +450,8 @@ def test_tools(reviewer, monkeypatch):
 
 
 def test_get_graph_store(reviewer, monkeypatch):
+    """Get graph store."""
+
     class FakeStore:
         def __init__(self, *args, **kwargs):
             self.args = args
@@ -422,6 +463,8 @@ def test_get_graph_store(reviewer, monkeypatch):
 
 
 def test_run_task_main_paths(reviewer):
+    """Run task main paths."""
+
     async def fake_call_tool(name, arg):
         mapping = {
             "repo_info": "repo",
@@ -520,6 +563,8 @@ def test_run_task_main_paths(reviewer):
 
 
 def test_run_task_conflicting_signals_prioritizes_fail_closed_decision(reviewer):
+    """Run task conflicting signals prioritizes fail closed decision."""
+
     async def fake_call_tool(name, arg):
         if name == "run_tests":
             return "[TEST:OK]"
@@ -557,6 +602,7 @@ def test_run_task_conflicting_signals_prioritizes_fail_closed_decision(reviewer)
 
 
 def test_init_registers_managers_and_tools(monkeypatch, tmp_path):
+    """Init registers managers and tools."""
     module = sys.modules[ReviewerAgent.__module__]
 
     def fake_base_init(self, cfg=None, role_name="base"):
@@ -612,6 +658,7 @@ def test_init_registers_managers_and_tools(monkeypatch, tmp_path):
 
 
 def test_edge_paths_for_uncovered_branches(reviewer, monkeypatch):
+    """Edge paths for uncovered branches."""
     assert ReviewerAgent._extract_python_code_block("print('x')") == "print('x')"
 
     assert ReviewerAgent._collect_graph_followup_paths({"reports": "x"}) == []
@@ -743,6 +790,7 @@ def test_edge_paths_for_uncovered_branches(reviewer, monkeypatch):
 
 
 def test_run_task_decision_branches(reviewer):
+    """Run task decision branches."""
     reviewer._run_dynamic_tests = lambda _ctx: asyncio.sleep(0, result="[TEST:FAIL-CLOSED]")
 
     async def call_tool_fail(name, _arg):
@@ -914,6 +962,8 @@ def test_run_task_decision_branches(reviewer):
 
 
 def test_reviewer_generate_candidate_with_fake_llm(reviewer, fake_llm_response):
+    """Reviewer generate candidate with fake llm."""
+
     async def _reviewer_llm(*_args, **_kwargs):
         _ = await fake_llm_response("reviewer")
         return "def test_generated_reviewer_case():\n    assert True\n"
@@ -924,6 +974,7 @@ def test_reviewer_generate_candidate_with_fake_llm(reviewer, fake_llm_response):
 
 
 def test_scalar_coercion_helpers_cover_remaining_branches():
+    """Scalar coercion helpers cover remaining branches."""
     assert ReviewerAgent._to_int(True, default=9) == 1
     assert ReviewerAgent._to_int(3.9, default=9) == 3
     assert ReviewerAgent._to_int("7", default=9) == 7
@@ -942,6 +993,8 @@ def test_to_int_returns_default_for_non_string_unsupported_types():
 
 
 def test_run_task_ignores_non_mapping_graph_and_browser_payloads(reviewer):
+    """Run task ignores non mapping graph and browser payloads."""
+
     async def fake_call_tool(name, _arg):
         if name == "run_tests":
             return "[TEST:OK]"
@@ -972,6 +1025,7 @@ def test_run_task_ignores_non_mapping_graph_and_browser_payloads(reviewer):
 
 
 def test_review_test_candidate_retries_when_rejection_reason_is_empty(reviewer, caplog):
+    """Review test candidate retries when rejection reason is empty."""
     calls = []
 
     async def fake_call_llm(messages, **_kwargs):
@@ -1019,6 +1073,8 @@ def test_review_test_candidate_retries_when_rejection_reason_is_empty(reviewer, 
 
 
 def test_review_test_candidate_extracts_tool_json_argument(reviewer):
+    """Review test candidate extracts tool json argument."""
+
     async def fake_call_llm(*_args, **_kwargs):
         return json.dumps(
             {
@@ -1052,6 +1108,8 @@ def test_review_test_candidate_extracts_tool_json_argument(reviewer):
 
 
 def test_review_test_candidate_derives_weakness_from_argument_reason(reviewer):
+    """Review test candidate derives weakness from argument reason."""
+
     async def fake_call_llm(*_args, **_kwargs):
         return json.dumps(
             {
@@ -1084,6 +1142,8 @@ def test_review_test_candidate_derives_weakness_from_argument_reason(reviewer):
 
 
 def test_review_test_candidate_logs_raw_json_and_missing_weaknesses(reviewer, caplog):
+    """Review test candidate logs raw json and missing weaknesses."""
+
     async def fake_call_llm(*_args, **_kwargs):
         return json.dumps({"approved": False, "reason": "", "weaknesses": []})
 
@@ -1113,6 +1173,8 @@ def test_review_test_candidate_logs_raw_json_and_missing_weaknesses(reviewer, ca
 
 
 def test_review_test_candidate_fail_closed_when_retry_still_has_empty_reason(reviewer, caplog):
+    """Review test candidate fail closed when retry still has empty reason."""
+
     async def fake_call_llm(*_args, **_kwargs):
         return json.dumps({"approved": False, "reason": "", "weaknesses": ["tautolojik mock"]})
 

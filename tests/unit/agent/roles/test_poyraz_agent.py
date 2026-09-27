@@ -1,3 +1,5 @@
+"""Unit tests for ``agent.roles.poyraz_agent``."""
+
 import asyncio
 import importlib.util
 import inspect
@@ -49,44 +51,56 @@ class _StubAgentCatalog:
 
 
 class DummyWebSearchManager:
+    """WebSearchManager stand-in that records and echoes search and fetch calls."""
+
     def __init__(self, cfg):
+        """Store the config and start with no recorded calls."""
         self.cfg = cfg
         self.search_calls = []
         self.fetch_calls = []
 
     async def search(self, arg: str):
+        """Record the query and echo it."""
         self.search_calls.append(arg)
         return True, f"web:{arg}"
 
     async def fetch_url(self, arg: str):
+        """Record the URL and echo it."""
         self.fetch_calls.append(arg)
         return True, f"fetch:{arg}"
 
 
 class DummySocialMediaManager:
+    """SocialMediaManager stand-in that records calls; marked inputs fail."""
+
     def __init__(self, **kwargs):
+        """Store constructor kwargs and start with no calls."""
         self.kwargs = kwargs
         self.calls = []
 
     async def publish_content(self, **kwargs):
+        """Record the call; platform ``bad`` fails."""
         self.calls.append(("publish_content", kwargs))
         if kwargs.get("platform") == "bad":
             return False, "nope"
         return True, "ok"
 
     async def publish_instagram_post(self, **kwargs):
+        """Record the call; caption ``fail`` fails."""
         self.calls.append(("publish_instagram_post", kwargs))
         if kwargs.get("caption") == "fail":
             return False, "ig_err"
         return True, "ig_ok"
 
     async def publish_facebook_post(self, **kwargs):
+        """Record the call; message ``fail`` fails."""
         self.calls.append(("publish_facebook_post", kwargs))
         if kwargs.get("message") == "fail":
             return False, "fb_err"
         return True, "fb_ok"
 
     async def send_whatsapp_message(self, **kwargs):
+        """Record the call; recipient ``0`` fails."""
         self.calls.append(("send_whatsapp_message", kwargs))
         if kwargs.get("to") == "0":
             return False, "wa_err"
@@ -94,37 +108,53 @@ class DummySocialMediaManager:
 
 
 class DummySecurityManager:
+    """SecurityManager stand-in whose output check follows ``allowed``."""
+
     def __init__(self, **_kwargs):
+        """Allow agent output by default."""
         self.allowed = True
 
     def validate_agent_output(self, _content):
+        """Return an allowed result, or a rejected one with an ``unsafe`` reason."""
         return SimpleNamespace(allowed=self.allowed, reasons=[] if self.allowed else ["unsafe"])
 
 
 class DummyHITLGate:
+    """HITL gate stand-in that records requests and returns a fixed decision."""
+
     def __init__(self, approved=True):
+        """Store the decision and start with no requests."""
         self.approved = approved
         self.calls = []
 
     async def request_approval(self, **kwargs):
+        """Record the request and return the configured decision."""
         self.calls.append(kwargs)
         return self.approved
 
 
 class SyncDocStore:
+    """Document store stand-in with a synchronous search."""
+
     def __init__(self, *args, **kwargs):
+        """Start with no recorded searches."""
         self.calls = []
 
     def search(self, query, _filters, mode, session):
+        """Record the search and echo its arguments."""
         self.calls.append((query, mode, session))
         return True, f"docs:{query}:{mode}:{session}"
 
 
 class AsyncDocStore:
+    """Document store stand-in whose search returns an awaitable."""
+
     def __init__(self, *args, **kwargs):
+        """Start with no recorded searches."""
         self.calls = []
 
     def search(self, query, _filters, mode, session):
+        """Record the search and return a coroutine that echoes its arguments."""
         self.calls.append((query, mode, session))
 
         async def _inner():
@@ -134,9 +164,12 @@ class AsyncDocStore:
 
 
 class DummyDatabase:
+    """Database stand-in that records marketing writes and counts connections."""
+
     instances = []
 
     def __init__(self, cfg):
+        """Store the config, reset counters and register the instance."""
         self.cfg = cfg
         self.connect_count = 0
         self.init_schema_count = 0
@@ -146,35 +179,45 @@ class DummyDatabase:
         DummyDatabase.instances.append(self)
 
     async def connect(self):
+        """Count the connection."""
         self.connect_count += 1
 
     async def init_schema(self):
+        """Count the schema initialization."""
         self.init_schema_count += 1
 
     async def add_content_asset(self, **kwargs):
+        """Record the asset and return it with id 7."""
         self.add_content_asset_calls.append(kwargs)
         return SimpleNamespace(id=7, **kwargs)
 
     async def upsert_marketing_campaign(self, **kwargs):
+        """Record the campaign and return it with id 11."""
         self.upsert_campaign_calls.append(kwargs)
         return SimpleNamespace(id=11, **kwargs)
 
     async def add_operation_checklist(self, **kwargs):
+        """Record the checklist and return it with id 13 and JSON items."""
         self.add_checklist_calls.append(kwargs)
         return SimpleNamespace(id=13, items_json=json.dumps(kwargs.get("items", [])), **kwargs)
 
     async def get_active_prompt(self, role_name):
+        """Return an empty active prompt for the role."""
         return SimpleNamespace(role_name=role_name, prompt_text="")
 
 
 class DummyMultimodalPipeline:
+    """Multimodal pipeline stand-in that records the last analysis request."""
+
     last_kwargs = None
 
     def __init__(self, llm, cfg):
+        """Store the LLM client and config."""
         self.llm = llm
         self.cfg = cfg
 
     async def analyze_media_source(self, **kwargs):
+        """Record the kwargs; ``bad://video`` fails, other sources return a fixed analysis."""
         DummyMultimodalPipeline.last_kwargs = kwargs
         source = kwargs["media_source"]
         if source == "bad://video":
@@ -187,6 +230,7 @@ class DummyMultimodalPipeline:
 
 
 def test_stub_base_agent_tool_error_and_llm_mode_parsing_paths():
+    """Stub base agent tool error and llm mode parsing paths."""
     agent = _StubBaseAgent()
 
     missing_tool = asyncio.run(agent.call_tool("bilinmeyen", "arg"))
@@ -204,6 +248,7 @@ def test_stub_base_agent_tool_error_and_llm_mode_parsing_paths():
 
 
 def test_dummy_database_get_active_prompt_defaults_to_empty_prompt():
+    """Dummy database get active prompt defaults to empty prompt."""
     db = DummyDatabase(cfg=SimpleNamespace())
     prompt = asyncio.run(db.get_active_prompt("poyraz"))
     assert prompt.role_name == "poyraz"
@@ -212,6 +257,7 @@ def test_dummy_database_get_active_prompt_defaults_to_empty_prompt():
 
 @pytest.fixture
 def poyraz_module(monkeypatch: pytest.MonkeyPatch):
+    """Load the Poyraz agent module from its file with lightweight dependency doubles."""
     # WARNING: This fixture mutates `sys.modules` to inject lightweight doubles
     # for import-time dependencies. This is intentionally local and cleaned up by
     # `monkeypatch`, but remains risky for parallel test execution patterns that
@@ -270,6 +316,7 @@ def poyraz_module(monkeypatch: pytest.MonkeyPatch):
 
 @pytest.fixture
 def fake_cfg(tmp_path):
+    """Return a config namespace with RAG, GPU and Meta Graph settings for Poyraz."""
     return SimpleNamespace(
         RAG_DIR=str(tmp_path / "rag"),
         RAG_TOP_K=5,
@@ -293,6 +340,7 @@ def _agent(poyraz_module, fake_cfg, docstore=SyncDocStore):
 
 
 def test_init_registers_tools(poyraz_module, fake_cfg):
+    """Init registers tools."""
     agent = _agent(poyraz_module, fake_cfg)
     assert agent.role_name == "poyraz"
     assert {
@@ -315,6 +363,7 @@ def test_init_registers_tools(poyraz_module, fake_cfg):
 
 
 def test_search_and_fetch_and_docs_sync_async(poyraz_module, fake_cfg):
+    """Search and fetch and docs sync async."""
     agent = _agent(poyraz_module, fake_cfg, docstore=SyncDocStore)
     assert asyncio.run(agent._tool_web_search("q")) == "web:q"
     assert asyncio.run(agent._tool_fetch_url("u")) == "fetch:u"
@@ -331,6 +380,8 @@ def test_search_and_fetch_and_docs_sync_async(poyraz_module, fake_cfg):
 
 
 def test_search_docs_returns_error_on_invalid_search_response_shape(poyraz_module, fake_cfg):
+    """Search docs returns error on invalid search response shape."""
+
     class BrokenDocStore:
         def __init__(self, *args, **kwargs):
             pass
@@ -348,6 +399,8 @@ def test_search_docs_returns_error_on_invalid_search_response_shape(poyraz_modul
 def test_resolve_multimodal_pipeline_prefers_runtime_when_explicit_pipeline_missing(
     poyraz_module, monkeypatch
 ):
+    """Resolve multimodal pipeline prefers runtime when explicit pipeline missing."""
+
     class RuntimePipeline(DummyMultimodalPipeline):
         pass
 
@@ -358,6 +411,7 @@ def test_resolve_multimodal_pipeline_prefers_runtime_when_explicit_pipeline_miss
 
 
 def test_publish_tools_variants(poyraz_module, fake_cfg):
+    """Publish tools variants."""
     agent = _agent(poyraz_module, fake_cfg)
 
     ok = asyncio.run(agent._tool_publish_social("instagram|||text|||dest|||m|||l"))
@@ -402,6 +456,7 @@ def test_publish_tools_variants(poyraz_module, fake_cfg):
 
 
 def test_external_publication_is_blocked_by_output_validation(poyraz_module, fake_cfg):
+    """External publication is blocked by output validation."""
     agent = _agent(poyraz_module, fake_cfg)
     agent.security.allowed = False
 
@@ -417,6 +472,7 @@ def test_external_publication_is_blocked_by_output_validation(poyraz_module, fak
 
 
 def test_external_publication_is_blocked_when_hitl_rejects(poyraz_module, fake_cfg, monkeypatch):
+    """External publication is blocked when hitl rejects."""
     agent = _agent(poyraz_module, fake_cfg)
     gate = DummyHITLGate(approved=False)
     monkeypatch.setattr(poyraz_module, "get_hitl_gate", lambda: gate)
@@ -435,6 +491,7 @@ def test_external_publication_is_blocked_when_hitl_rejects(poyraz_module, fake_c
 
 
 def test_publish_social_is_blocked_when_hitl_rejects(poyraz_module, fake_cfg, monkeypatch):
+    """Publish social is blocked when hitl rejects."""
     agent = _agent(poyraz_module, fake_cfg)
     gate = DummyHITLGate(approved=False)
     monkeypatch.setattr(poyraz_module, "get_hitl_gate", lambda: gate)
@@ -461,6 +518,7 @@ def test_publish_social_is_blocked_when_hitl_rejects(poyraz_module, fake_cfg, mo
 
 
 def test_publish_instagram_post_is_blocked_when_hitl_rejects(poyraz_module, fake_cfg, monkeypatch):
+    """Publish instagram post is blocked when hitl rejects."""
     agent = _agent(poyraz_module, fake_cfg)
     gate = DummyHITLGate(approved=False)
     monkeypatch.setattr(poyraz_module, "get_hitl_gate", lambda: gate)
@@ -477,6 +535,7 @@ def test_publish_instagram_post_is_blocked_when_hitl_rejects(poyraz_module, fake
 
 
 def test_publish_social_invalid_json(poyraz_module, fake_cfg):
+    """Publish social invalid json."""
     agent = _agent(poyraz_module, fake_cfg)
 
     result = asyncio.run(agent._tool_publish_social("{invalid:json}"))
@@ -484,12 +543,14 @@ def test_publish_social_invalid_json(poyraz_module, fake_cfg):
 
 
 def test_publish_social_text_format_with_missing_segments_uses_unknown(poyraz_module, fake_cfg):
+    """Publish social text format with missing segments uses unknown."""
     agent = _agent(poyraz_module, fake_cfg)
     result = asyncio.run(agent._tool_publish_social("instagram|||only-text"))
     assert "platform=unknown" in result
 
 
 def test_social_media_invalid_text_format(poyraz_module, fake_cfg):
+    """Social media invalid text format."""
     agent = _agent(poyraz_module, fake_cfg)
     result = asyncio.run(agent._tool_publish_social("only-platform|||only-text"))
     assert result.startswith("[SOCIAL:")
@@ -497,6 +558,7 @@ def test_social_media_invalid_text_format(poyraz_module, fake_cfg):
 
 
 def test_publish_social_returns_generic_exception_reason(poyraz_module, fake_cfg):
+    """Publish social returns generic exception reason."""
     agent = _agent(poyraz_module, fake_cfg)
 
     async def _raise_generic(**_kwargs):
@@ -509,6 +571,7 @@ def test_publish_social_returns_generic_exception_reason(poyraz_module, fake_cfg
 
 
 def test_ensure_db_returns_existing_instance_inside_lock(poyraz_module, fake_cfg):
+    """Ensure db returns existing instance inside lock."""
     agent = _agent(poyraz_module, fake_cfg)
     sentinel_db = object()
 
@@ -526,6 +589,7 @@ def test_ensure_db_returns_existing_instance_inside_lock(poyraz_module, fake_cfg
 
 
 def test_ensure_db_timeout_guard(poyraz_module, fake_cfg):
+    """Ensure db timeout guard."""
     agent = _agent(poyraz_module, fake_cfg)
 
     class BlockingLock:
@@ -543,6 +607,7 @@ def test_ensure_db_timeout_guard(poyraz_module, fake_cfg):
 
 
 def test_ensure_db_and_persist_and_store_asset(poyraz_module, fake_cfg, monkeypatch):
+    """Ensure db and persist and store asset."""
     db_mod = types.ModuleType("core.db")
     DummyDatabase.instances.clear()
     db_mod.Database = DummyDatabase
@@ -592,6 +657,7 @@ def test_ensure_db_and_persist_and_store_asset(poyraz_module, fake_cfg, monkeypa
 def test_landing_and_campaign_copy_tools_with_and_without_persist(
     poyraz_module, fake_cfg, monkeypatch
 ):
+    """Landing and campaign copy tools with and without persist."""
     db_mod = types.ModuleType("core.db")
     DummyDatabase.instances.clear()
     db_mod.Database = DummyDatabase
@@ -646,6 +712,7 @@ def test_landing_and_campaign_copy_tools_with_and_without_persist(
 
 
 def test_ingest_video_insights(poyraz_module, fake_cfg, monkeypatch):
+    """Ingest video insights."""
     # Düzeltilen Kısım: Dinamik yüklenen modül üzerindeki referansı doğrudan patch et.
     monkeypatch.setattr(poyraz_module, "MultimodalPipeline", DummyMultimodalPipeline)
 
@@ -682,6 +749,7 @@ def test_ingest_video_insights(poyraz_module, fake_cfg, monkeypatch):
 
 
 def test_ingest_video_insights_clamps_negative_numeric_limits(poyraz_module, fake_cfg, monkeypatch):
+    """Ingest video insights clamps negative numeric limits."""
     # Düzeltilen Kısım
     monkeypatch.setattr(poyraz_module, "MultimodalPipeline", DummyMultimodalPipeline)
 
@@ -712,6 +780,8 @@ def test_ingest_video_insights_clamps_negative_numeric_limits(poyraz_module, fak
 def test_ingest_video_insights_loads_pipeline_via_importlib_fallback(
     poyraz_module, fake_cfg, monkeypatch
 ):
+    """Ingest video insights loads pipeline via importlib fallback."""
+
     class FallbackPipeline(DummyMultimodalPipeline):
         pass
 
@@ -734,6 +804,7 @@ def test_ingest_video_insights_loads_pipeline_via_importlib_fallback(
 def test_ingest_video_insights_returns_error_when_pipeline_unavailable(
     poyraz_module, fake_cfg, monkeypatch
 ):
+    """Ingest video insights returns error when pipeline unavailable."""
     monkeypatch.setattr(poyraz_module, "MultimodalPipeline", None)
     monkeypatch.setattr(poyraz_module, "MultimodalPipelineRuntime", None)
     monkeypatch.setattr(
@@ -751,6 +822,8 @@ def test_ingest_video_insights_returns_error_when_pipeline_unavailable(
 def test_resolve_multimodal_pipeline_uses_core_module_fallback_and_none_path(
     poyraz_module, monkeypatch
 ):
+    """Resolve multimodal pipeline uses core module fallback and none path."""
+
     class CorePipeline(DummyMultimodalPipeline):
         pass
 
@@ -777,6 +850,7 @@ def test_resolve_multimodal_pipeline_uses_core_module_fallback_and_none_path(
 
 
 def test_campaign_and_checklist_and_service_plan(poyraz_module, fake_cfg, monkeypatch):
+    """Campaign and checklist and service plan."""
     db_mod = types.ModuleType("core.db")
     DummyDatabase.instances.clear()
     db_mod.Database = DummyDatabase
@@ -865,6 +939,7 @@ def test_campaign_and_checklist_and_service_plan(poyraz_module, fake_cfg, monkey
 
 
 def test_generate_marketing_output_and_run_task_routes(poyraz_module, fake_cfg, monkeypatch):
+    """Generate marketing output and run task routes."""
     agent = _agent(poyraz_module, fake_cfg)
 
     output = asyncio.run(agent._generate_marketing_output("Task", "modex"))
@@ -972,6 +1047,7 @@ def test_generate_marketing_output_and_run_task_routes(poyraz_module, fake_cfg, 
 
 
 def test_poyraz_output_format(poyraz_module, fake_cfg):
+    """Poyraz output format."""
     agent = _agent(poyraz_module, fake_cfg)
     result = asyncio.run(agent._generate_marketing_output("test", "seo"))
     assert "seo" in result
@@ -984,6 +1060,7 @@ async def test_poyraz_social_and_video_flows_use_shared_fakes(
     monkeypatch,
     agent_factory,
 ) -> None:
+    """Poyraz social and video flows use shared fakes."""
     from agent.roles.poyraz_agent import PoyrazAgent
 
     monkeypatch.setattr("agent.roles.poyraz_agent.get_hitl_gate", lambda: DummyHITLGate())
@@ -1026,6 +1103,7 @@ async def test_poyraz_agent_error_flows(
     fake_video_stream_error,
     monkeypatch,
 ) -> None:
+    """Poyraz agent error flows."""
     from agent.roles.poyraz_agent import PoyrazAgent
 
     monkeypatch.setattr("agent.roles.poyraz_agent.get_hitl_gate", lambda: DummyHITLGate())
@@ -1059,6 +1137,8 @@ async def test_poyraz_agent_error_flows(
 
 
 def test_search_docs_falls_back_when_graph_response_is_not_a_tuple(poyraz_module, fake_cfg):
+    """Search docs falls back when graph response is not a tuple."""
+
     class ScalarGraphDocStore:
         def __init__(self, *args, **kwargs):
             pass
@@ -1093,6 +1173,7 @@ def test_search_docs_falls_back_when_graph_response_is_not_a_tuple(poyraz_module
 def test_social_publish_tools_refuse_without_hitl_when_experimental_flag_is_off(
     poyraz_module, fake_cfg, monkeypatch, tool, arg, prefix
 ):
+    """Social publish tools refuse without hitl when experimental flag is off."""
     fake_cfg.ENABLE_EXPERIMENTAL_SOCIAL_PUBLISHING = False
     gate = DummyHITLGate(approved=True)
     monkeypatch.setattr(poyraz_module, "get_hitl_gate", lambda: gate)

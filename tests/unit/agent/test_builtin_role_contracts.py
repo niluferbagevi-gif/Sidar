@@ -101,6 +101,7 @@ def _extract_is_builtin_from_role_file(role_file: Path) -> bool:
 
 
 def test_builtin_role_import_lists_are_consistent() -> None:
+    """Builtin role import lists are consistent."""
     from_init = _extract_builtin_import_modules()
     from_registry = _extract_registry_builtin_modules()
 
@@ -108,6 +109,7 @@ def test_builtin_role_import_lists_are_consistent() -> None:
 
 
 def test_builtin_role_capabilities_match_expected_contract() -> None:
+    """Builtin role capabilities match expected contract."""
     root = _repo_root()
     expected = {
         "coder_agent.py": {
@@ -139,6 +141,7 @@ def test_builtin_role_capabilities_match_expected_contract() -> None:
 
 
 def test_builtin_role_decorators_explicitly_mark_is_builtin_true() -> None:
+    """Builtin role decorators explicitly mark is builtin true."""
     root = _repo_root()
     role_dir = root / "agent" / "roles"
 
@@ -157,6 +160,7 @@ def _extract_role_class_docstrings(role_file: Path) -> dict[str, str]:
 
 
 def test_builtin_role_classes_keep_documented_agent_contracts() -> None:
+    """Builtin role classes keep documented agent contracts."""
     role_dir = _repo_root() / "agent" / "roles"
     expected_classes = {
         "CoderAgent",
@@ -179,6 +183,7 @@ def test_builtin_role_classes_keep_documented_agent_contracts() -> None:
 
 
 def test_agents_documentation_covers_specialized_roles_and_interactions() -> None:
+    """Agents documentation covers specialized roles and interactions."""
     docs = (_repo_root() / "AGENTS.md").read_text(encoding="utf-8")
 
     expected_fragments = [
@@ -198,6 +203,7 @@ def test_agents_documentation_covers_specialized_roles_and_interactions() -> Non
 
 
 def test_agents_documentation_covers_self_healing_loop_contract() -> None:
+    """Agents documentation covers self healing loop contract."""
     docs = (_repo_root() / "AGENTS.md").read_text(encoding="utf-8")
 
     expected_fragments = [
@@ -219,6 +225,7 @@ def test_agents_documentation_covers_self_healing_loop_contract() -> None:
 
 
 def test_run_tests_mypy_self_heal_is_explicit_opt_in() -> None:
+    """Run tests mypy self heal is explicit opt in."""
     script = expanded_bash_source(
         _repo_root() / "run_tests.sh",
         root=_repo_root(),
@@ -234,6 +241,7 @@ def test_run_tests_mypy_self_heal_is_explicit_opt_in() -> None:
 
 
 def test_autonomous_loop_contains_complete_coverage_agent_gate() -> None:
+    """Autonomous loop contains complete coverage agent gate."""
     script = expanded_bash_source(
         _repo_root() / "autonomous_loop.sh",
         root=_repo_root(),
@@ -266,6 +274,7 @@ def test_autonomous_loop_contains_complete_coverage_agent_gate() -> None:
 
 
 def test_agents_documentation_covers_swarm_supervisor_event_coordination() -> None:
+    """Agents documentation covers swarm supervisor event coordination."""
     docs = (_repo_root() / "AGENTS.md").read_text(encoding="utf-8")
 
     expected_fragments = [
@@ -288,6 +297,7 @@ def test_agents_documentation_covers_swarm_supervisor_event_coordination() -> No
 
 
 def test_agents_documentation_covers_multimodal_voice_vision_contracts() -> None:
+    """Agents documentation covers multimodal voice vision contracts."""
     docs = (_repo_root() / "AGENTS.md").read_text(encoding="utf-8")
 
     expected_fragments = [
@@ -310,6 +320,7 @@ def test_agents_documentation_covers_multimodal_voice_vision_contracts() -> None
 
 
 def test_agents_documentation_codifies_sidar_uv_qwen_terminology() -> None:
+    """Agents documentation codifies sidar uv qwen terminology."""
     docs = (_repo_root() / "AGENTS.md").read_text(encoding="utf-8")
 
     expected_fragments = [
@@ -326,6 +337,7 @@ def test_agents_documentation_codifies_sidar_uv_qwen_terminology() -> None:
 
 
 def test_readme_uses_sidar_uv_qwen_terminology_standards() -> None:
+    """Readme uses sidar uv qwen terminology standards."""
     readme = (_repo_root() / "README.md").read_text(encoding="utf-8")
 
     assert "CODING_MODEL=qwen2.5-coder:7b" in readme
@@ -338,6 +350,7 @@ def test_readme_uses_sidar_uv_qwen_terminology_standards() -> None:
 
 
 def test_install_script_defaults_match_terminology_standards() -> None:
+    """Install script defaults match terminology standards."""
     script = _installer_full_text()
 
     assert 'CODE_MOD="qwen2.5-coder:7b"' in script
@@ -351,6 +364,7 @@ def test_install_script_defaults_match_terminology_standards() -> None:
 
 
 def test_extract_capabilities_skips_non_matching_decorators(tmp_path: Path) -> None:
+    """Extract capabilities skips non matching decorators."""
     role_file = tmp_path / "example_role.py"
     role_file.write_text(
         """
@@ -370,6 +384,7 @@ class ExampleRole:
 
 
 def test_extract_capabilities_raises_when_missing_or_empty(tmp_path: Path) -> None:
+    """Extract capabilities raises when missing or empty."""
     role_file = tmp_path / "empty_caps_role.py"
     role_file.write_text(
         """
@@ -474,6 +489,7 @@ class ExampleRole:
 def test_extract_capabilities_raises_for_non_contract_decorators(
     tmp_path: Path, source: str
 ) -> None:
+    """Extract capabilities raises for non contract decorators."""
     role_file = tmp_path / "non_contract_role.py"
     role_file.write_text(source.strip(), encoding="utf-8")
 

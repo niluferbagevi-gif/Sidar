@@ -1,3 +1,5 @@
+"""Unit tests for ``agent.roles.coder_agent``."""
+
 import importlib
 import json
 import sys
@@ -18,6 +20,7 @@ def _import_coder_module(module_name: str):
 
 @pytest.fixture
 def coder_module(monkeypatch: pytest.MonkeyPatch):
+    """Import ``agent.roles.coder_agent`` with httpx and redis replaced by stub modules."""
     module_name = "agent.roles.coder_agent"
     monkeypatch.setitem(sys.modules, "httpx", ModuleType("httpx"))
 
@@ -36,6 +39,7 @@ def coder_module(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_import_coder_module_reimports_when_required_attrs_are_missing(monkeypatch):
+    """Import coder module reimports when required attrs are missing."""
     module_name = "agent.roles.coder_agent"
     imported = ModuleType(module_name)
     reloaded = ModuleType(module_name)
@@ -60,10 +64,14 @@ def test_import_coder_module_reimports_when_required_attrs_are_missing(monkeypat
 
 
 class DummyEvents:
+    """Event bus stand-in that records published messages."""
+
     def __init__(self):
+        """Start with no messages."""
         self.messages = []
 
     async def publish(self, role, message):
+        """Record the role and message."""
         self.messages.append((role, message))
 
 
@@ -111,6 +119,7 @@ def _build_todo_manager_mock(todo_manager_cls):
 
 
 def test_init_registers_tools(monkeypatch, tmp_path, coder_module):
+    """Init registers tools."""
     CoderAgent = coder_module.CoderAgent
 
     def fake_base_init(self, cfg=None, *, role_name="base"):
@@ -161,6 +170,7 @@ def test_init_registers_tools(monkeypatch, tmp_path, coder_module):
 
 
 def test_parse_qa_feedback_variants(monkeypatch, coder_module):
+    """Parse qa feedback variants."""
     CoderAgent = coder_module.CoderAgent
     assert CoderAgent._parse_qa_feedback("") == {}
     assert CoderAgent._parse_qa_feedback(' {"decision":"approve"} ') == {"decision": "approve"}
@@ -204,6 +214,7 @@ async def _new_runtime_agent(coder_module):
 
 @pytest.mark.asyncio
 async def test_tool_methods_are_routed_correctly(coder_module):
+    """Tool methods are routed correctly."""
     agent = await _new_runtime_agent(coder_module)
 
     assert await agent._tool_read_file("a.py") == "read:a.py"
@@ -231,6 +242,7 @@ async def test_tool_methods_are_routed_correctly(coder_module):
 
 @pytest.mark.asyncio
 async def test_tool_read_test_artifacts_empty_input_returns_empty_payload(coder_module):
+    """Tool read test artifacts empty input returns empty payload."""
     agent = await _new_runtime_agent(coder_module)
 
     assert await agent._tool_read_test_artifacts("  ") == "[TEST_ARTIFACTS] {}"
@@ -239,6 +251,7 @@ async def test_tool_read_test_artifacts_empty_input_returns_empty_payload(coder_
 
 @pytest.mark.asyncio
 async def test_tool_read_test_artifacts_reads_named_and_default_artifacts(coder_module):
+    """Tool read test artifacts reads named and default artifacts."""
     agent = await _new_runtime_agent(coder_module)
 
     result = await agent._tool_read_test_artifacts(
@@ -261,6 +274,7 @@ async def test_tool_read_test_artifacts_reads_named_and_default_artifacts(coder_
 
 @pytest.mark.asyncio
 async def test_run_task_paths(monkeypatch, coder_module):
+    """Run task paths."""
     agent = await _new_runtime_agent(coder_module)
 
     async def fake_call_tool(name, arg):
@@ -324,6 +338,7 @@ async def test_run_task_paths(monkeypatch, coder_module):
 
 @pytest.mark.asyncio
 async def test_run_task_general_prompt_uses_llm_tool_loop(coder_module):
+    """Run task general prompt uses llm tool loop."""
     agent = await _new_runtime_agent(coder_module)
     calls: list[tuple[str, str]] = []
     llm_messages: list[list[dict[str, str]]] = []
@@ -358,6 +373,7 @@ async def test_run_task_general_prompt_uses_llm_tool_loop(coder_module):
 
 @pytest.mark.asyncio
 async def test_run_task_general_prompt_returns_plain_llm_response(coder_module):
+    """Run task general prompt returns plain llm response."""
     agent = await _new_runtime_agent(coder_module)
     agent.tools = {}
 
@@ -376,6 +392,7 @@ async def test_run_task_general_prompt_returns_plain_llm_response(coder_module):
 
 @pytest.mark.asyncio
 async def test_run_task_qa_feedback_conflict_and_long_outputs(coder_module):
+    """Run task qa feedback conflict and long outputs."""
     agent = await _new_runtime_agent(coder_module)
 
     dynamic_fail = "D" * 1200
@@ -400,12 +417,15 @@ async def test_run_task_qa_feedback_conflict_and_long_outputs(coder_module):
 
 @pytest.mark.asyncio
 async def test_call_maybe_async_with_sync_callable(coder_module):
+    """Call maybe async with sync callable."""
     result = await coder_module.CoderAgent._call_maybe_async(lambda x, y: x + y, 2, 3)
     assert result == 5
 
 
 @pytest.mark.asyncio
 async def test_call_maybe_async_with_async_callable(coder_module):
+    """Call maybe async with async callable."""
+
     async def _async_sum(x, y):
         return x + y
 
@@ -414,6 +434,7 @@ async def test_call_maybe_async_with_async_callable(coder_module):
 
 
 def test_parse_llm_tool_plan_handles_fenced_json_lists_malformed_and_scalars(coder_module):
+    """Parse llm tool plan handles fenced json lists malformed and scalars."""
     CoderAgent = coder_module.CoderAgent
 
     assert CoderAgent._parse_llm_tool_plan('```json\n{"final":"ok"}\n```') == {"final": "ok"}
@@ -428,6 +449,7 @@ def test_parse_llm_tool_plan_handles_fenced_json_lists_malformed_and_scalars(cod
 
 @pytest.mark.asyncio
 async def test_llm_tool_loop_handles_unknown_tool_dict_call_then_final(coder_module):
+    """Llm tool loop handles unknown tool dict call then final."""
     agent = await _new_runtime_agent(coder_module)
     agent.tools = {"read_file": agent._tool_read_file}
     llm_messages: list[list[dict[str, str]]] = []
@@ -454,6 +476,7 @@ async def test_llm_tool_loop_handles_unknown_tool_dict_call_then_final(coder_mod
 
 @pytest.mark.asyncio
 async def test_llm_tool_loop_handles_list_tool_calls_and_ignores_non_dict_items(coder_module):
+    """Llm tool loop handles list tool calls and ignores non dict items."""
     agent = await _new_runtime_agent(coder_module)
     agent.tools = {"read_file": agent._tool_read_file}
     calls: list[tuple[str, str]] = []
@@ -483,6 +506,7 @@ async def test_llm_tool_loop_handles_list_tool_calls_and_ignores_non_dict_items(
 async def test_llm_tool_loop_returns_raw_response_when_tool_calls_are_not_valid_dicts(
     coder_module,
 ) -> None:
+    """Llm tool loop returns raw response when tool calls are not valid dicts."""
     agent = await _new_runtime_agent(coder_module)
     agent.tools = {"read_file": agent._tool_read_file}
 
@@ -496,6 +520,7 @@ async def test_llm_tool_loop_returns_raw_response_when_tool_calls_are_not_valid_
 
 @pytest.mark.asyncio
 async def test_llm_tool_loop_returns_limit_message_after_repeated_tool_calls(coder_module):
+    """Llm tool loop returns limit message after repeated tool calls."""
     agent = await _new_runtime_agent(coder_module)
     agent.tools = {"read_file": agent._tool_read_file}
     calls: list[tuple[str, str]] = []
@@ -519,6 +544,7 @@ async def test_llm_tool_loop_returns_limit_message_after_repeated_tool_calls(cod
 
 @pytest.mark.asyncio
 async def test_run_task_qa_feedback_malformed_json_defaults_to_approved_raw_summary(coder_module):
+    """Run task qa feedback malformed json defaults to approved raw summary."""
     agent = await _new_runtime_agent(coder_module)
 
     result = await agent.run_task("qa_feedback|{bad json")

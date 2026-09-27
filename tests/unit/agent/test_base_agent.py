@@ -1,3 +1,5 @@
+"""Unit tests for ``agent.base_agent``."""
+
 import importlib
 import sys
 import types
@@ -11,37 +13,48 @@ from agent.core.contracts import DelegationRequest, TaskEnvelope
 
 
 class DummyConfig:
+    """Config stub with only ``AI_PROVIDER`` set."""
+
     AI_PROVIDER = "dummy-provider"
 
 
 class BrokenSetAttrConfig:
+    """Config stub whose ``EXTRA_FLAG`` cannot be read or set."""
+
     AI_PROVIDER = "broken-provider"
     EXTRA_FLAG = "extra"
 
     def __getattribute__(self, name):
+        """Raise AttributeError for ``EXTRA_FLAG``; resolve other attributes normally."""
         if name == "EXTRA_FLAG":
             raise AttributeError("EXTRA_FLAG unavailable")
         return object.__getattribute__(self, name)
 
     def __setattr__(self, name, value):
+        """Raise RuntimeError when setting ``EXTRA_FLAG``; set other attributes normally."""
         if name == "EXTRA_FLAG":
             raise RuntimeError("cannot set EXTRA_FLAG")
         object.__setattr__(self, name, value)
 
 
 async def test_broken_setattr_config_allows_non_extra_attributes():
+    """Broken setattr config allows non extra attributes."""
     cfg = BrokenSetAttrConfig()
     cfg.dynamic_value = 42
     assert cfg.dynamic_value == 42
 
 
 class DummyLLMClient:
+    """LLM client stand-in that records chat calls."""
+
     def __init__(self, provider, cfg):
+        """Store the provider and config and start with no calls."""
         self.provider = provider
         self.cfg = cfg
         self.calls = []
 
     async def chat(self, **kwargs):
+        """Record the call and return the first message."""
         self.calls.append(kwargs)
         return kwargs.get("messages", ["empty"])[0]
 
@@ -89,6 +102,7 @@ def _make_dummy_agent(base_agent_module, role_name="base", **kwargs):
 
 
 async def test_init_register_and_call_tool(monkeypatch):
+    """Init register and call tool."""
     base_agent = _load_base_agent_module(monkeypatch)
     agent = _make_dummy_agent(base_agent, role_name="qa")
 
@@ -105,6 +119,7 @@ async def test_init_register_and_call_tool(monkeypatch):
 
 
 async def test_init_ignores_config_attr_copy_errors(monkeypatch):
+    """Init ignores config attr copy errors."""
     base_agent = _load_base_agent_module_with_config(monkeypatch, BrokenSetAttrConfig)
     agent = _make_dummy_agent(base_agent, role_name="qa", cfg=BrokenSetAttrConfig())
 
@@ -114,6 +129,7 @@ async def test_init_ignores_config_attr_copy_errors(monkeypatch):
 
 
 async def test_call_llm_uses_default_and_override_prompt(monkeypatch):
+    """Call llm uses default and override prompt."""
     base_agent = _load_base_agent_module(monkeypatch)
     agent = _make_dummy_agent(base_agent, role_name="coder")
 
@@ -141,6 +157,7 @@ async def test_call_llm_uses_default_and_override_prompt(monkeypatch):
 
 
 async def test_delegate_to_and_is_delegation_message(monkeypatch):
+    """Delegate to and is delegation message."""
     base_agent = _load_base_agent_module(monkeypatch)
     agent = _make_dummy_agent(base_agent, role_name="reviewer")
 
@@ -176,6 +193,7 @@ async def test_delegate_to_and_is_delegation_message(monkeypatch):
 
 
 async def test_handle_returns_task_result_for_plain_summary(monkeypatch):
+    """Handle returns task result for plain summary."""
     base_agent = _load_base_agent_module(monkeypatch)
     agent = _make_dummy_agent(base_agent, role_name="researcher")
     agent.next_result = "plain-summary"
@@ -196,6 +214,7 @@ async def test_handle_returns_task_result_for_plain_summary(monkeypatch):
 
 
 async def test_handle_enriches_delegation_defaults_from_envelope(monkeypatch):
+    """Handle enriches delegation defaults from envelope."""
     base_agent = _load_base_agent_module(monkeypatch)
     agent = _make_dummy_agent(base_agent, role_name="coder")
     agent.next_result = DelegationRequest(
@@ -225,6 +244,7 @@ async def test_handle_enriches_delegation_defaults_from_envelope(monkeypatch):
 
 
 async def test_handle_preserves_existing_delegation_ids_and_depth(monkeypatch):
+    """Handle preserves existing delegation ids and depth."""
     base_agent = _load_base_agent_module(monkeypatch)
     agent = _make_dummy_agent(base_agent, role_name="coder")
     agent.next_result = DelegationRequest(
