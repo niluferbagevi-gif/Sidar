@@ -1,3 +1,5 @@
+"""Tests that installer log masking redacts secrets."""
+
 from __future__ import annotations
 
 import subprocess
@@ -20,6 +22,7 @@ def _mask_function_source() -> str:
 
 
 def test_install_log_masking_redacts_common_secret_shapes() -> None:
+    """Install log masking redacts common secret shapes."""
     shell = f"""
 {_mask_function_source()}
 printf '%s\n' \\

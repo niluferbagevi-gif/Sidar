@@ -8,6 +8,7 @@ from scripts.test_gates import env_schema
 
 
 def test_schema_accepts_declared_names_and_ignores_unrelated_environment() -> None:
+    """Schema accepts declared names and ignores unrelated environment."""
     environ = {
         "BENCHMARK_COMPARE_FAIL": "mean:10%",
         "FRONTEND_E2E_NPM_SCRIPT": "test:e2e",
@@ -19,6 +20,7 @@ def test_schema_accepts_declared_names_and_ignores_unrelated_environment() -> No
 
 
 def test_schema_suggests_benchmark_typo_and_unknown_owned_name() -> None:
+    """Schema suggests benchmark typo and unknown owned name."""
     findings = env_schema.unknown_test_gate_env(
         {
             "BENCMARK_COMPARE_FAIL": "mean:10%",
@@ -31,6 +33,7 @@ def test_schema_suggests_benchmark_typo_and_unknown_owned_name() -> None:
 
 
 def test_main_fails_fast_by_default_and_supports_explicit_warning_mode(monkeypatch, capsys) -> None:
+    """Main fails fast by default and supports explicit warning mode."""
     monkeypatch.setenv("BENCMARK_COMPARE_FAIL", "mean:10%")
     monkeypatch.delenv("TEST_ENV_SCHEMA_MODE", raising=False)
 

@@ -1,3 +1,5 @@
+"""Unit tests for ``scripts.seed_rag``."""
+
 from __future__ import annotations
 
 import json
@@ -10,12 +12,16 @@ from scripts import seed_rag
 
 
 class FakeStore:
+    """In-memory document store that records added and deleted documents."""
+
     def __init__(self, existing: list[dict[str, str]] | None = None) -> None:
+        """Start with the given index entries and empty add/delete logs."""
         self.index = list(existing or [])
         self.deleted: list[tuple[str, str]] = []
         self.added: list[dict[str, object]] = []
 
     def get_index_info(self, session_id: str | None = None) -> list[dict[str, str]]:
+        """Return index entries, filtered by session when ``session_id`` is given."""
         return [
             item
             for item in self.index
@@ -23,6 +29,7 @@ class FakeStore:
         ]
 
     def delete_document(self, doc_id: str, session_id: str = "global") -> str:
+        """Record the deletion and drop the document from the index."""
         self.deleted.append((doc_id, session_id))
         self.index = [item for item in self.index if item.get("id") != doc_id]
         return f"deleted {doc_id}"
@@ -34,16 +41,19 @@ class FakeStore:
         tags: list[str] | None = None,
         session_id: str = "global",
     ) -> tuple[bool, str]:
+        """Record the added file and report success."""
         self.added.append(
             {"path": path, "title": title, "tags": tags or [], "session_id": session_id}
         )
         return True, f"added {title}"
 
     def close(self) -> None:
+        """Do nothing; the fake store holds no resources."""
         return None
 
 
 def test_discover_seed_files_filters_to_repo_text_and_code_files(tmp_path: Path) -> None:
+    """Discover seed files filters to repo text and code files."""
     docs = tmp_path / "docs"
     docs.mkdir()
     keep = docs / "keep.md"
@@ -63,6 +73,7 @@ def test_discover_seed_files_filters_to_repo_text_and_code_files(tmp_path: Path)
 
 
 def test_discover_seed_files_rejects_repo_escape(tmp_path: Path) -> None:
+    """Discover seed files rejects repo escape."""
     outside = tmp_path.parent / "outside.md"
     outside.write_text("outside", encoding="utf-8")
 
@@ -71,6 +82,7 @@ def test_discover_seed_files_rejects_repo_escape(tmp_path: Path) -> None:
 
 
 def test_seed_files_replaces_existing_source_and_tags_repo_docs(tmp_path: Path) -> None:
+    """Seed files replaces existing source and tags repo docs."""
     doc = tmp_path / "README.md"
     doc.write_text("Brand: Sidar", encoding="utf-8")
     source = f"file://{doc}"
@@ -91,6 +103,7 @@ def test_seed_files_replaces_existing_source_and_tags_repo_docs(tmp_path: Path) 
 
 
 def test_seed_files_can_skip_existing_source_when_append_mode(tmp_path: Path) -> None:
+    """Seed files can skip existing source when append mode."""
     doc = tmp_path / "README.md"
     doc.write_text("content", encoding="utf-8")
     store = FakeStore(existing=[{"id": "old", "source": f"file://{doc}", "session_id": "s1"}])
@@ -109,6 +122,7 @@ def test_seed_files_can_skip_existing_source_when_append_mode(tmp_path: Path) ->
 
 
 def test_default_seed_patterns_include_curated_code_context() -> None:
+    """Default seed patterns include curated code context."""
     assert "docs/ARCHITECTURE.md" in seed_rag.DEFAULT_INCLUDE_PATTERNS
     assert "docs/project-report/*.md" in seed_rag.DEFAULT_INCLUDE_PATTERNS
     assert "core/rag.py" in seed_rag.DEFAULT_INCLUDE_PATTERNS
@@ -121,6 +135,7 @@ def test_default_seed_patterns_include_curated_code_context() -> None:
 def test_build_store_routes_import_time_notices_to_stderr(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Build store routes import time notices to stderr."""
     import builtins
     from types import SimpleNamespace
 
@@ -159,6 +174,7 @@ def test_build_store_routes_import_time_notices_to_stderr(
 
 
 def test_seed_rag_boolish_normalizes_external_aliases() -> None:
+    """Seed rag boolish normalizes external aliases."""
     assert seed_rag._boolish("1") is True
     assert seed_rag._boolish("yes") is True
     assert seed_rag._boolish("0") is False
@@ -170,6 +186,7 @@ def test_seed_rag_boolish_normalizes_external_aliases() -> None:
 def test_seed_rag_summary_only_outputs_counts_without_verbose_lists(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Seed rag summary only outputs counts without verbose lists."""
     doc = tmp_path / "README.md"
     doc.write_text("Sidar", encoding="utf-8")
     monkeypatch.setattr(seed_rag, "discover_seed_files", lambda *_args, **_kwargs: [doc])
@@ -197,6 +214,7 @@ def test_seed_rag_summary_only_outputs_counts_without_verbose_lists(
 def test_metadata_only_seed_explains_intentional_vector_skip(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Metadata only seed explains intentional vector skip."""
     doc = tmp_path / "README.md"
     doc.write_text("Sidar", encoding="utf-8")
     monkeypatch.setattr(seed_rag, "discover_seed_files", lambda *_args, **_kwargs: [doc])
@@ -213,6 +231,8 @@ def test_metadata_only_seed_explains_intentional_vector_skip(
 def test_wait_for_pgvector_readiness_retries_until_extension_visible(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Wait for pgvector readiness retries until extension visible."""
+
     class _FakeConn:
         def __init__(self, state: dict[str, int]) -> None:
             self._state = state

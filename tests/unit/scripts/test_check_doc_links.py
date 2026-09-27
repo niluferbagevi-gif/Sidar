@@ -26,6 +26,7 @@ def _git_init(root) -> None:
 
 
 def test_tracked_files_lists_git_index(tmp_path) -> None:
+    """Tracked files lists git index."""
     (tmp_path / "a.md").write_text("", encoding="utf-8")
     (tmp_path / "sub").mkdir()
     (tmp_path / "sub" / "b.py").write_text("", encoding="utf-8")
@@ -37,6 +38,7 @@ def test_tracked_files_lists_git_index(tmp_path) -> None:
 
 
 def test_tracked_files_requires_an_absolute_git_binary(tmp_path, monkeypatch) -> None:
+    """Tracked files requires an absolute git binary."""
     monkeypatch.setattr(checker.shutil, "which", lambda name: None)
     with pytest.raises(OSError, match="git"):
         checker.tracked_files(tmp_path)
@@ -47,6 +49,7 @@ def test_tracked_files_requires_an_absolute_git_binary(tmp_path, monkeypatch) ->
 
 
 def test_living_docs_skips_historical_records_and_non_markdown() -> None:
+    """Living docs skips historical records and non markdown."""
     files = [
         "README.md",
         "CHANGELOG.md",
@@ -61,6 +64,7 @@ def test_living_docs_skips_historical_records_and_non_markdown() -> None:
 
 
 def test_top_level_dirs_ignores_root_files() -> None:
+    """Top level dirs ignores root files."""
     assert checker.top_level_dirs(["README.md", "core/llm.py", "docs/a/b.md"]) == {
         "core",
         "docs",
@@ -68,6 +72,7 @@ def test_top_level_dirs_ignores_root_files() -> None:
 
 
 def test_broken_links_resolves_relative_to_document(tmp_path, monkeypatch) -> None:
+    """Broken links resolves relative to document."""
     _make_repo(tmp_path, monkeypatch)
     text = (
         "[ok](guide.md) [anchor](guide.md#bolum) [self](#top) "
@@ -79,6 +84,7 @@ def test_broken_links_resolves_relative_to_document(tmp_path, monkeypatch) -> No
 
 
 def test_missing_paths_checks_only_repo_rooted_backticks(tmp_path, monkeypatch) -> None:
+    """Missing paths checks only repo rooted backticks."""
     _make_repo(tmp_path, monkeypatch)
     used: set[tuple[str, str]] = set()
     text = (
@@ -95,6 +101,7 @@ def test_missing_paths_checks_only_repo_rooted_backticks(tmp_path, monkeypatch) 
 
 
 def test_missing_paths_honours_per_document_exemptions(tmp_path, monkeypatch) -> None:
+    """Missing paths honours per document exemptions."""
     _make_repo(tmp_path, monkeypatch, allowed={"README.md": frozenset({"core/db.py"})})
     used: set[tuple[str, str]] = set()
     top_dirs = frozenset({"core"})
@@ -105,6 +112,7 @@ def test_missing_paths_honours_per_document_exemptions(tmp_path, monkeypatch) ->
 
 
 def test_find_problems_reports_links_paths_and_stale_exemptions(tmp_path, monkeypatch) -> None:
+    """Find problems reports links paths and stale exemptions."""
     _make_repo(
         tmp_path,
         monkeypatch,
@@ -128,6 +136,7 @@ def test_find_problems_reports_links_paths_and_stale_exemptions(tmp_path, monkey
 
 
 def test_main_passes_on_clean_repo(tmp_path, monkeypatch, capsys) -> None:
+    """Main passes on clean repo."""
     _make_repo(tmp_path, monkeypatch)
     (tmp_path / "README.md").write_text("See `core/llm.py` and [guide](docs/guide.md).\n")
     _git_init(tmp_path)
@@ -137,6 +146,7 @@ def test_main_passes_on_clean_repo(tmp_path, monkeypatch, capsys) -> None:
 
 
 def test_main_fails_and_lists_stale_references(tmp_path, monkeypatch, capsys) -> None:
+    """Main fails and lists stale references."""
     _make_repo(tmp_path, monkeypatch)
     (tmp_path / "README.md").write_text("`core/db.py`\n", encoding="utf-8")
     _git_init(tmp_path)
@@ -148,6 +158,7 @@ def test_main_fails_and_lists_stale_references(tmp_path, monkeypatch, capsys) ->
 
 
 def test_main_reports_git_failure(tmp_path, monkeypatch, capsys) -> None:
+    """Main reports git failure."""
     monkeypatch.setattr(checker, "ROOT", tmp_path)
 
     def _boom(root):
@@ -163,4 +174,5 @@ def test_main_reports_git_failure(tmp_path, monkeypatch, capsys) -> None:
     not (checker.ROOT / ".git").exists(), reason="requires a git checkout of the repo"
 )
 def test_committed_docs_have_no_stale_references() -> None:
+    """Committed docs have no stale references."""
     assert checker.find_problems(checker.tracked_files(checker.ROOT)) == []

@@ -1,3 +1,5 @@
+"""Unit tests for ``scripts.pip_audit_failure_artifact``."""
+
 from __future__ import annotations
 
 import json
@@ -9,6 +11,7 @@ from scripts.pip_audit_failure_artifact import build_artifact, classify_failure
 
 
 def test_builds_pip_audit_failure_artifact_with_fix_command(tmp_path: Path) -> None:
+    """Builds pip audit failure artifact with fix command."""
     raw_report = tmp_path / "pip-audit-report.raw.json"
     output = tmp_path / "pip-audit-failure.json"
     raw_report.write_text(
@@ -49,6 +52,7 @@ def test_builds_pip_audit_failure_artifact_with_fix_command(tmp_path: Path) -> N
 
 
 def test_builds_parse_error_artifact_when_raw_report_missing(tmp_path: Path) -> None:
+    """Builds parse error artifact when raw report missing."""
     output = tmp_path / "pip-audit-failure.json"
 
     build_artifact(tmp_path / "missing.json", output, timeout="10")
@@ -60,6 +64,7 @@ def test_builds_parse_error_artifact_when_raw_report_missing(tmp_path: Path) -> 
 
 
 def test_classify_failure_flags_vulnerability_when_findings_present(tmp_path: Path) -> None:
+    """Classify failure flags vulnerability when findings present."""
     raw_report = tmp_path / "pip-audit-report.raw.json"
     output = tmp_path / "pip-audit-failure.json"
     raw_report.write_text(
@@ -87,6 +92,7 @@ def test_classify_failure_flags_vulnerability_when_findings_present(tmp_path: Pa
 
 
 def test_classify_failure_flags_network_when_stderr_matches_tunnel(tmp_path: Path) -> None:
+    """Classify failure flags network when stderr matches tunnel."""
     raw_report = tmp_path / "pip-audit-report.raw.json"
     output = tmp_path / "pip-audit-failure.json"
     # No report on disk — pip-audit exited before producing one.
@@ -107,6 +113,7 @@ def test_classify_failure_flags_network_when_stderr_matches_tunnel(tmp_path: Pat
 
 
 def test_classify_failure_falls_back_to_unknown(tmp_path: Path) -> None:
+    """Classify failure falls back to unknown."""
     raw_report = tmp_path / "pip-audit-report.raw.json"
     output = tmp_path / "pip-audit-failure.json"
     raw_report.write_text(json.dumps({"dependencies": []}), encoding="utf-8")
@@ -120,6 +127,7 @@ def test_classify_failure_falls_back_to_unknown(tmp_path: Path) -> None:
 
 
 def test_classify_failure_handles_missing_stderr_log(tmp_path: Path) -> None:
+    """Classify failure handles missing stderr log."""
     raw_report = tmp_path / "missing-report.json"
     output = tmp_path / "pip-audit-failure.json"
 
@@ -134,6 +142,7 @@ def test_classify_failure_handles_missing_stderr_log(tmp_path: Path) -> None:
 
 
 def test_classify_failure_pure_function_ignores_unrelated_stderr() -> None:
+    """Classify failure pure function ignores unrelated stderr."""
     assert classify_failure([], "") == "unknown"
     assert classify_failure([], "completely unrelated note") == "unknown"
     assert classify_failure([], "Max retries exceeded with url ...") == "network"
@@ -141,6 +150,7 @@ def test_classify_failure_pure_function_ignores_unrelated_stderr() -> None:
 
 
 def test_classify_failure_flags_pypi_server_errors_as_network(tmp_path: Path) -> None:
+    """Classify failure flags pypi server errors as network."""
     raw_report = tmp_path / "pip-audit-report.raw.json"
     output = tmp_path / "pip-audit-failure.json"
     stderr_log = tmp_path / "pip-audit-stderr.log"
@@ -171,6 +181,7 @@ def test_classify_failure_flags_pypi_server_errors_as_network(tmp_path: Path) ->
     ],
 )
 def test_classify_failure_treats_vulnerability_service_errors_as_network(stderr_text: str) -> None:
+    """Classify failure treats vulnerability service errors as network."""
     assert classify_failure([], stderr_text) == "network"
     # A real finding still wins over a transient service error.
     assert classify_failure([{"package": "x"}], stderr_text) == "vulnerability"

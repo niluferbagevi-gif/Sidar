@@ -1,3 +1,5 @@
+"""Unit tests for ``scripts.ci.check_gpu_benchmark_trend``."""
+
 from __future__ import annotations
 
 import json
@@ -49,6 +51,7 @@ def _benchmarks(
 
 
 def test_profile_key_separates_workload_shaping_ollama_options() -> None:
+    """Profile key separates workload shaping ollama options."""
     profile = trend._profile_key(_benchmarks(), "driver-550")
 
     assert profile == (
@@ -57,6 +60,7 @@ def test_profile_key_separates_workload_shaping_ollama_options() -> None:
 
 
 def test_regression_direction_does_not_alarm_on_improvements() -> None:
+    """Regression direction does not alarm on improvements."""
     assert trend._is_regression("ttft_ms", -25.0, 20.0) is False
     assert trend._is_regression("vram_peak_mib", -25.0, 20.0) is False
     assert trend._is_regression("tps", 25.0, 20.0) is False
@@ -69,6 +73,7 @@ def test_regression_direction_does_not_alarm_on_improvements() -> None:
 
 
 def test_current_metrics_records_vram_load_latency_separately_from_peak_memory() -> None:
+    """Current metrics records vram load latency separately from peak memory."""
     metrics = trend._current_metrics(_benchmarks(vram_load_mean=2.28002, vram=4096.0))
 
     assert metrics["vram_load_mean_ms"] == 2280.02
@@ -78,6 +83,7 @@ def test_current_metrics_records_vram_load_latency_separately_from_peak_memory()
 def test_main_reports_small_vram_load_slowdown_without_failing_threshold(
     monkeypatch, tmp_path, capsys
 ) -> None:
+    """Main reports small vram load slowdown without failing threshold."""
     benchmark_path = tmp_path / "benchmark.json"
     history_path = tmp_path / "history.json"
     benchmarks = _benchmarks(vram_load_mean=2.28002)
@@ -118,6 +124,7 @@ def test_main_reports_small_vram_load_slowdown_without_failing_threshold(
 def test_main_records_new_profile_without_comparing_incompatible_history(
     monkeypatch, tmp_path, capsys
 ) -> None:
+    """Main records new profile without comparing incompatible history."""
     benchmark_path = tmp_path / "benchmark.json"
     history_path = tmp_path / "history.json"
     benchmark_path.write_text(json.dumps({"benchmarks": _benchmarks()}), encoding="utf-8")
@@ -146,6 +153,7 @@ def test_main_records_new_profile_without_comparing_incompatible_history(
 
 
 def test_current_metrics_requires_oom_regression_benchmark() -> None:
+    """Current metrics requires oom regression benchmark."""
     benchmarks = [
         item for item in _benchmarks() if item["name"] != "test_gpu_oom_regression_under_load"
     ]
@@ -159,6 +167,7 @@ def test_current_metrics_requires_oom_regression_benchmark() -> None:
 
 
 def test_main_fails_when_current_oom_failures_are_non_zero(monkeypatch, tmp_path, capsys) -> None:
+    """Main fails when current oom failures are non zero."""
     benchmark_path = tmp_path / "benchmark.json"
     history_path = tmp_path / "history.json"
     benchmarks = _benchmarks()

@@ -1,3 +1,5 @@
+"""Unit tests for ``scripts.sync_database_passwords``."""
+
 from __future__ import annotations
 
 import json
@@ -14,6 +16,7 @@ def _password_from(url: str) -> str:
 
 
 def test_sync_env_text_aligns_postgres_url_passwords_and_url_encodes_secret() -> None:
+    """Sync env text aligns postgres url passwords and url encodes secret."""
     env_text = (
         "\n".join(
             [
@@ -38,6 +41,7 @@ def test_sync_env_text_aligns_postgres_url_passwords_and_url_encodes_secret() ->
 
 
 def test_sync_env_text_is_idempotent_for_matching_passwords() -> None:
+    """Sync env text is idempotent for matching passwords."""
     env_text = (
         "\n".join(
             [
@@ -57,6 +61,7 @@ def test_sync_env_text_is_idempotent_for_matching_passwords() -> None:
 
 
 def test_sync_env_text_skips_non_postgres_urls_and_requires_postgres_password() -> None:
+    """Sync env text skips non postgres urls and requires postgres password."""
     updated, summary = sync_database_passwords.sync_env_text(
         "POSTGRES_PASSWORD=aaaaaaaaaaaaaaaaaaaaaaaa\nDATABASE_URL=sqlite:///tmp/sidar.db\n"
     )
@@ -78,6 +83,7 @@ def test_sync_env_text_skips_non_postgres_urls_and_requires_postgres_password() 
 
 
 def test_sync_env_file_writes_updated_content(tmp_path) -> None:
+    """Sync env file writes updated content."""
     env_file = tmp_path / ".env"
     env_file.write_text(
         "POSTGRES_PASSWORD=bbbbbbbbbbbbbbbbbbbbbbbb\n"
@@ -93,6 +99,7 @@ def test_sync_env_file_writes_updated_content(tmp_path) -> None:
 
 
 def test_main_emits_redacted_json_summary(monkeypatch, tmp_path, capsys) -> None:
+    """Main emits redacted json summary."""
     env_file = tmp_path / ".env"
     env_file.write_text(
         "POSTGRES_PASSWORD=cccccccccccccccccccccccc\n"
@@ -112,6 +119,7 @@ def test_main_emits_redacted_json_summary(monkeypatch, tmp_path, capsys) -> None
 def test_sync_env_chain_updates_later_override_files_with_effective_password(
     monkeypatch, tmp_path
 ) -> None:
+    """Sync env chain updates later override files with effective password."""
     monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
     monkeypatch.delenv("SIDAR_ENV", raising=False)
     monkeypatch.delenv("DOTENV_FILE", raising=False)
@@ -158,6 +166,7 @@ def test_sync_env_chain_updates_later_override_files_with_effective_password(
 def test_sync_env_chain_reports_missing_override_url_keys_without_leaking_secret(
     monkeypatch, tmp_path
 ) -> None:
+    """Sync env chain reports missing override url keys without leaking secret."""
     monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
     monkeypatch.delenv("SIDAR_ENV", raising=False)
     monkeypatch.delenv("DOTENV_FILE", raising=False)
@@ -198,6 +207,7 @@ def test_sync_env_chain_reports_missing_override_url_keys_without_leaking_secret
 def test_main_reports_no_change_guidance_for_idempotent_chain(
     monkeypatch, tmp_path, capsys
 ) -> None:
+    """Main reports no change guidance for idempotent chain."""
     monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
     monkeypatch.delenv("SIDAR_ENV", raising=False)
     monkeypatch.delenv("DOTENV_FILE", raising=False)
@@ -222,6 +232,7 @@ def test_main_reports_no_change_guidance_for_idempotent_chain(
 def test_sync_env_chain_marks_effective_password_drift_warnings_critical(
     monkeypatch, tmp_path
 ) -> None:
+    """Sync env chain marks effective password drift warnings critical."""
     monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
     monkeypatch.delenv("SIDAR_ENV", raising=False)
     monkeypatch.delenv("DOTENV_FILE", raising=False)
@@ -252,6 +263,7 @@ def test_sync_env_chain_marks_effective_password_drift_warnings_critical(
 def test_sync_env_chain_all_envs_includes_env_test_and_uses_base_password(
     monkeypatch, tmp_path
 ) -> None:
+    """Sync env chain all envs includes env test and uses base password."""
     monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
     monkeypatch.delenv("SIDAR_ENV", raising=False)
     monkeypatch.delenv("DOTENV_FILE", raising=False)
@@ -301,6 +313,7 @@ def test_sync_env_chain_all_envs_includes_env_test_and_uses_base_password(
 
 
 def test_main_all_envs_emits_redacted_summary(monkeypatch, tmp_path, capsys) -> None:
+    """Main all envs emits redacted summary."""
     monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
     monkeypatch.delenv("SIDAR_ENV", raising=False)
     monkeypatch.delenv("DOTENV_FILE", raising=False)
@@ -331,6 +344,7 @@ def test_main_all_envs_emits_redacted_summary(monkeypatch, tmp_path, capsys) -> 
 
 
 def test_remove_explicit_database_urls_from_text_preserves_non_postgres_url() -> None:
+    """Remove explicit database urls from text preserves non postgres url."""
     updated, summary = sync_database_passwords.remove_explicit_database_urls_from_text(
         "POSTGRES_PASSWORD=cccccccccccccccccccccccc\n"
         "DATABASE_URL=postgresql://sidar:old@localhost:5432/sidar\n"
@@ -348,6 +362,7 @@ def test_remove_explicit_database_urls_from_text_preserves_non_postgres_url() ->
 
 @pytest.mark.xdist_group("env-globals")
 def test_sync_env_chain_can_remove_explicit_postgres_urls(monkeypatch, tmp_path) -> None:
+    """Sync env chain can remove explicit postgres urls."""
     monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
     monkeypatch.delenv("SIDAR_ENV", raising=False)
     monkeypatch.delenv("DOTENV_FILE", raising=False)
@@ -379,6 +394,7 @@ def test_sync_env_chain_can_remove_explicit_postgres_urls(monkeypatch, tmp_path)
 
 
 def test_remove_explicit_urls_suppresses_parent_shell_export_note(monkeypatch, tmp_path) -> None:
+    """Remove explicit urls suppresses parent shell export note."""
     monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
     monkeypatch.delenv("SIDAR_ENV", raising=False)
     monkeypatch.delenv("DOTENV_FILE", raising=False)

@@ -23,6 +23,7 @@ from scripts.tools import update_install_module_hash_manifest as manifest_tool
 def test_sha256sum_git_show_fails_closed_when_git_is_unresolvable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Sha256sum git show fails closed when git is unresolvable."""
     monkeypatch.setattr(manifest_tool.shutil, "which", lambda _name: None)
     assert manifest_tool.sha256sum_git_show("HEAD", "README.md") is None
 
@@ -36,6 +37,7 @@ def test_sha256sum_git_show_fails_closed_on_non_absolute_which_result(
 
 
 def test_sha256sum_git_show_reads_a_known_blob_through_the_guarded_invocation() -> None:
+    """Sha256sum git show reads a known blob through the guarded invocation."""
     digest = manifest_tool.sha256sum_git_show("HEAD", "README.md")
     assert digest is not None
     assert len(digest) == 64
@@ -43,4 +45,5 @@ def test_sha256sum_git_show_reads_a_known_blob_through_the_guarded_invocation() 
 
 
 def test_sha256sum_git_show_returns_none_for_unknown_path() -> None:
+    """Sha256sum git show returns none for unknown path."""
     assert manifest_tool.sha256sum_git_show("HEAD", "definitely/not/a/real/path.txt") is None

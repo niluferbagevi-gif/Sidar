@@ -6,6 +6,7 @@ from scripts.ci import check_toolchain_contract as contract
 
 
 def test_repository_toolchain_surfaces_match_canonical_file() -> None:
+    """Repository toolchain surfaces match canonical file."""
     pins = contract.read_toolchain()
 
     assert pins["PYTHON_VERSION"] == "3.11.15"
@@ -20,6 +21,7 @@ def test_repository_toolchain_surfaces_match_canonical_file() -> None:
 
 
 def test_required_node_uses_nvmrc_and_node_22_is_non_blocking_compatibility() -> None:
+    """Required node uses nvmrc and node 22 is non blocking compatibility."""
     workflow = (contract.ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
     assert "node-version-file: web_ui_react/.nvmrc" in workflow
@@ -35,6 +37,7 @@ def test_required_node_uses_nvmrc_and_node_22_is_non_blocking_compatibility() ->
 
 
 def test_contract_reports_docker_pin_drift(tmp_path: Path) -> None:
+    """Contract reports docker pin drift."""
     (tmp_path / ".python-version").write_text("3.11.15\n", encoding="utf-8")
     (tmp_path / "Dockerfile").write_text("ARG PYTHON_VERSION=3.11.14\n", encoding="utf-8")
     (tmp_path / "Dockerfile.production").write_text(

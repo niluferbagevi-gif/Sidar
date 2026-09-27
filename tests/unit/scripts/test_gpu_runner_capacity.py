@@ -45,6 +45,7 @@ def _runner(name: str, *, status: str = "online", labels: tuple[str, ...] = ()) 
 
 
 def test_eligible_online_runners_requires_all_labels_and_online_state() -> None:
+    """Eligible online runners requires all labels and online state."""
     payload = {
         "runners": [
             _runner("primary", labels=("self-hosted", "Linux", "X64", "GPU", "CUDA")),
@@ -61,6 +62,7 @@ def test_eligible_online_runners_requires_all_labels_and_online_state() -> None:
 
 
 def test_main_fails_closed_with_one_runner_and_passes_with_two(tmp_path, capsys) -> None:
+    """Main fails closed with one runner and passes with two."""
     fixture = tmp_path / "runners.json"
     labels = ("self-hosted", "linux", "x64", "gpu", "cuda")
     fixture.write_text(json.dumps({"runners": [_runner("primary", labels=labels)]}))
@@ -94,6 +96,7 @@ def test_main_permits_single_runner_when_explicitly_configured(tmp_path, capsys)
 
 
 def test_main_reports_busy_capacity_and_missing_labels(tmp_path, capsys) -> None:
+    """Main reports busy capacity and missing labels."""
     fixture = tmp_path / "runners.json"
     labels = ("self-hosted", "linux", "x64", "gpu", "cuda")
     primary = _runner("primary", labels=labels)
@@ -110,5 +113,6 @@ def test_main_reports_busy_capacity_and_missing_labels(tmp_path, capsys) -> None
 
 
 def test_main_requires_authenticated_api_inputs(capsys) -> None:
+    """Main requires authenticated api inputs."""
     assert capacity.main(["--repo", "", "--token", ""]) == 2
     assert "GPU_RUNNER_MONITOR_TOKEN" in capsys.readouterr().err

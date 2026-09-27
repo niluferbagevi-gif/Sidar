@@ -1,3 +1,5 @@
+"""Unit tests for ``scripts.bootstrap_env``."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -10,6 +12,7 @@ from scripts import bootstrap_env
 def test_bootstrap_profile_env_creates_gitignored_development_file_with_generated_secrets(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Bootstrap profile env creates gitignored development file with generated secrets."""
     template = tmp_path / ".env.development.example"
     template.write_text(
         "SIDAR_ENV=development\n"
@@ -40,6 +43,7 @@ def test_bootstrap_profile_env_creates_gitignored_development_file_with_generate
 
 
 def test_bootstrap_profile_env_is_non_destructive_without_force(tmp_path: Path) -> None:
+    """Bootstrap profile env is non destructive without force."""
     (tmp_path / ".env.development.example").write_text("SIDAR_ENV=development\n", encoding="utf-8")
     target = tmp_path / ".env.development"
     target.write_text("SIDAR_ENV=development\nAPI_KEY=keep\n", encoding="utf-8")
@@ -53,11 +57,13 @@ def test_bootstrap_profile_env_is_non_destructive_without_force(tmp_path: Path) 
 
 
 def test_bootstrap_profile_env_rejects_unsafe_profiles(tmp_path: Path) -> None:
+    """Bootstrap profile env rejects unsafe profiles."""
     with pytest.raises(ValueError):
         bootstrap_env.bootstrap_profile_env("../production", project_root=tmp_path)
 
 
 def test_bootstrap_profile_env_pins_sidar_env_to_selected_profile(tmp_path: Path) -> None:
+    """Bootstrap profile env pins sidar env to selected profile."""
     (tmp_path / ".env.qa.example").write_text(
         "API_KEY=local\nSIDAR_ENV=development\n", encoding="utf-8"
     )
@@ -71,6 +77,7 @@ def test_bootstrap_profile_env_pins_sidar_env_to_selected_profile(tmp_path: Path
 
 
 def test_render_env_template_adds_missing_sidar_env_for_isolation() -> None:
+    """Render env template adds missing sidar env for isolation."""
     rendered, generated = bootstrap_env.render_env_template(
         "API_KEY=local\n", profile="development", generate_secrets=False
     )
@@ -82,6 +89,7 @@ def test_render_env_template_adds_missing_sidar_env_for_isolation() -> None:
 def test_render_env_template_generates_postgres_password_for_generate_sentinel(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Render env template generates postgres password for generate sentinel."""
     monkeypatch.setattr(bootstrap_env.secrets, "token_urlsafe", lambda _size: "generated-pg")
 
     rendered, generated = bootstrap_env.render_env_template(
@@ -97,6 +105,7 @@ def test_render_env_template_generates_postgres_password_for_generate_sentinel(
 def test_bootstrap_env_main_prints_feedback_to_stderr_and_json_to_stdout(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Bootstrap env main prints feedback to stderr and json to stdout."""
     target = tmp_path / ".env.development"
 
     def _fake_bootstrap_profile_env(*_args, **_kwargs):

@@ -16,6 +16,7 @@ def _make_repo(tmp_path, monkeypatch):
 
 
 def test_parse_index_extracts_source_note_pairs() -> None:
+    """Parse index extracts source note pairs."""
     text = "\n".join(
         [
             "# Module Notes Index",
@@ -36,11 +37,13 @@ def test_parse_index_extracts_source_note_pairs() -> None:
 
 
 def test_parse_index_rejects_empty_index() -> None:
+    """Parse index rejects empty index."""
     with pytest.raises(checker.InventoryError):
         checker.parse_index("# Module Notes Index\n\nNo bullets here.\n")
 
 
 def test_check_sources_exist_flags_only_missing_paths(tmp_path, monkeypatch) -> None:
+    """Check sources exist flags only missing paths."""
     _make_repo(tmp_path, monkeypatch)
     (tmp_path / "main.py").write_text("", encoding="utf-8")
     (tmp_path / "core").mkdir()
@@ -57,6 +60,7 @@ def test_check_sources_exist_flags_only_missing_paths(tmp_path, monkeypatch) -> 
 
 
 def test_check_notes_exist_flags_only_missing_note_files(tmp_path, monkeypatch) -> None:
+    """Check notes exist flags only missing note files."""
     _make_repo(tmp_path, monkeypatch)
     note_dir = tmp_path / "docs" / "module-notes"
     note_dir.mkdir(parents=True)
@@ -71,6 +75,7 @@ def test_check_notes_exist_flags_only_missing_note_files(tmp_path, monkeypatch) 
 
 
 def test_check_orphan_notes_ignores_index_and_referenced_files(tmp_path, monkeypatch) -> None:
+    """Check orphan notes ignores index and referenced files."""
     _make_repo(tmp_path, monkeypatch)
     note_dir = tmp_path / "docs" / "module-notes"
     note_dir.mkdir(parents=True)
@@ -89,6 +94,7 @@ def test_check_orphan_notes_ignores_index_and_referenced_files(tmp_path, monkeyp
 def test_find_undocumented_production_modules_respects_exact_and_package_entries(
     tmp_path, monkeypatch
 ) -> None:
+    """Find undocumented production modules respects exact and package entries."""
     _make_repo(tmp_path, monkeypatch)
     (tmp_path / "agent").mkdir()
     (tmp_path / "agent" / "__init__.py").write_text("", encoding="utf-8")
@@ -147,6 +153,7 @@ def _write_minimal_repo(tmp_path) -> None:
 
 
 def test_main_passes_when_undocumented_count_matches_baseline(tmp_path, monkeypatch) -> None:
+    """Main passes when undocumented count matches baseline."""
     _make_repo(tmp_path, monkeypatch)
     index_path = _write_minimal_repo(tmp_path)
     baseline_path = tmp_path / "baseline.json"
@@ -156,6 +163,7 @@ def test_main_passes_when_undocumented_count_matches_baseline(tmp_path, monkeypa
 
 
 def test_main_fails_on_missing_source(tmp_path, monkeypatch, capsys) -> None:
+    """Main fails on missing source."""
     _make_repo(tmp_path, monkeypatch)
     index_path = _write_minimal_repo(tmp_path)
     index_path.write_text(
@@ -170,6 +178,7 @@ def test_main_fails_on_missing_source(tmp_path, monkeypatch, capsys) -> None:
 
 
 def test_main_fails_on_orphan_note(tmp_path, monkeypatch, capsys) -> None:
+    """Main fails on orphan note."""
     _make_repo(tmp_path, monkeypatch)
     index_path = _write_minimal_repo(tmp_path)
     (tmp_path / "docs" / "module-notes" / "orphan.md").write_text("", encoding="utf-8")
@@ -181,6 +190,7 @@ def test_main_fails_on_orphan_note(tmp_path, monkeypatch, capsys) -> None:
 
 
 def test_main_fails_when_undocumented_count_regresses(tmp_path, monkeypatch, capsys) -> None:
+    """Main fails when undocumented count regresses."""
     _make_repo(tmp_path, monkeypatch)
     index_path = _write_minimal_repo(tmp_path)
     (tmp_path / "agent" / "new_module.py").write_text("", encoding="utf-8")
@@ -194,6 +204,7 @@ def test_main_fails_when_undocumented_count_regresses(tmp_path, monkeypatch, cap
 
 
 def test_main_fails_on_stale_baseline_unless_allowed(tmp_path, monkeypatch) -> None:
+    """Main fails on stale baseline unless allowed."""
     _make_repo(tmp_path, monkeypatch)
     index_path = _write_minimal_repo(tmp_path)
     baseline_path = tmp_path / "baseline.json"
@@ -215,6 +226,7 @@ def test_main_fails_on_stale_baseline_unless_allowed(tmp_path, monkeypatch) -> N
 
 
 def test_main_update_ratchets_baseline_to_current_count(tmp_path, monkeypatch, capsys) -> None:
+    """Main update ratchets baseline to current count."""
     _make_repo(tmp_path, monkeypatch)
     index_path = _write_minimal_repo(tmp_path)
     (tmp_path / "agent" / "new_module.py").write_text("", encoding="utf-8")
@@ -232,6 +244,7 @@ def test_main_update_ratchets_baseline_to_current_count(tmp_path, monkeypatch, c
 
 
 def test_main_update_refuses_to_raise_baseline(tmp_path, monkeypatch, capsys) -> None:
+    """Main update refuses to raise baseline."""
     _make_repo(tmp_path, monkeypatch)
     index_path = _write_minimal_repo(tmp_path)
     (tmp_path / "agent" / "new_module.py").write_text("", encoding="utf-8")
@@ -246,6 +259,7 @@ def test_main_update_refuses_to_raise_baseline(tmp_path, monkeypatch, capsys) ->
 
 
 def test_reduction_targets_must_strictly_decrease(tmp_path) -> None:
+    """Reduction targets must strictly decrease."""
     baseline_path = tmp_path / "baseline.json"
     baseline_path.write_text(
         json.dumps(
@@ -267,6 +281,7 @@ def test_reduction_targets_must_strictly_decrease(tmp_path) -> None:
 
 
 def test_committed_inventory_roadmap_and_registry_note_are_ratchet_protected() -> None:
+    """Committed inventory roadmap and registry note are ratchet protected."""
     baseline = json.loads(checker.DEFAULT_BASELINE.read_text(encoding="utf-8"))
     index = checker.INDEX_PATH.read_text(encoding="utf-8")
 
@@ -278,6 +293,7 @@ def test_committed_inventory_roadmap_and_registry_note_are_ratchet_protected() -
 
 
 def test_main_rejects_invalid_baseline(tmp_path, monkeypatch, capsys) -> None:
+    """Main rejects invalid baseline."""
     _make_repo(tmp_path, monkeypatch)
     index_path = _write_minimal_repo(tmp_path)
     baseline_path = tmp_path / "baseline.json"

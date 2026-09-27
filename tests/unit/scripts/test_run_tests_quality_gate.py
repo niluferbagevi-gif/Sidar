@@ -1,3 +1,5 @@
+"""Contract tests for ``run_tests.sh`` quality gates and related installer checks."""
+
 from __future__ import annotations
 
 import fnmatch
@@ -171,6 +173,7 @@ def test_run_tests_omits_set_e_but_centralizes_exit_code_checks_via_run_checked(
 
 
 def test_run_checked_propagates_exit_code_and_passes_through_stdio(tmp_path) -> None:
+    """Run checked propagates exit code and passes through stdio."""
     script = _script()
     helper = tmp_path / "run_checked_probe.sh"
     helper.write_text(
@@ -214,6 +217,7 @@ def test_ruff_failure_is_aggregated_without_short_circuiting_independent_phases(
 
 
 def test_frontend_coverage_dark_mode_links_are_injected_without_late_css_imports(tmp_path) -> None:
+    """Frontend coverage dark mode links are injected without late css imports."""
     coverage_dir = tmp_path / "coverage"
     nested_dir = coverage_dir / "components" / "button"
     nested_dir.mkdir(parents=True)
@@ -250,6 +254,7 @@ def test_frontend_coverage_dark_mode_links_are_injected_without_late_css_imports
 
 
 def test_frontend_coverage_dark_mode_failure_sets_frontend_exit_code() -> None:
+    """Frontend coverage dark mode failure sets frontend exit code."""
     script = _script()
     late_import_append = 'printf \'\\n@import url("./sidar_dark_mode.css");\\n\' >> "${base_css}"'
     assert late_import_append not in script
@@ -258,6 +263,7 @@ def test_frontend_coverage_dark_mode_failure_sets_frontend_exit_code() -> None:
 
 
 def test_mypy_is_strict_python_311() -> None:
+    """Mypy is strict python 311."""
     config = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     mypy = config["tool"]["mypy"]
 
@@ -266,6 +272,7 @@ def test_mypy_is_strict_python_311() -> None:
 
 
 def test_coverage_ratchet_state_is_committed_and_guarded() -> None:
+    """Coverage ratchet state is committed and guarded."""
     script = _script()
     pyproject_path = Path("pyproject.toml")
 
@@ -336,6 +343,7 @@ def test_test_optimization_plan_omit_examples_match_pyproject_omit_list() -> Non
 
 
 def test_run_tests_enforces_required_static_security_and_coverage_gates() -> None:
+    """Run tests enforces required static security and coverage gates."""
     script = _script()
 
     assert "uv run mypy --strict core/ agent/ web/ managers/" in script
@@ -346,6 +354,7 @@ def test_run_tests_enforces_required_static_security_and_coverage_gates() -> Non
 
 
 def test_run_tests_ruff_autofix_is_explicit_opt_in() -> None:
+    """Run tests ruff autofix is explicit opt in."""
     script = _script()
     gate_block = _extract_run_tests_function("run_ruff_quality_gate")
     autofix_block = _extract_run_tests_function("run_ruff_autofix")
@@ -367,6 +376,7 @@ def test_run_tests_ruff_autofix_is_explicit_opt_in() -> None:
 
 
 def test_ci_exposes_security_and_mutation_quality_gates() -> None:
+    """Ci exposes security and mutation quality gates."""
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     mutation = Path(".github/workflows/weekly-mutation-and-critical-tests.yml").read_text(
         encoding="utf-8"
@@ -395,6 +405,7 @@ def test_ci_exposes_security_and_mutation_quality_gates() -> None:
 
 
 def test_run_tests_defers_coverage_fail_under_until_combined_report() -> None:
+    """Run tests defers coverage fail under until combined report."""
     script = _script()
 
     assert "--cov-fail-under=0" in script
@@ -406,6 +417,7 @@ def test_run_tests_defers_coverage_fail_under_until_combined_report() -> None:
 
 
 def test_run_tests_verifies_alembic_downgrade_upgrade_chain() -> None:
+    """Run tests verifies alembic downgrade upgrade chain."""
     script = _script()
 
     assert "RUN_ALEMBIC_DOWNGRADE_CHECK:-1" in script
@@ -415,6 +427,7 @@ def test_run_tests_verifies_alembic_downgrade_upgrade_chain() -> None:
 
 
 def test_run_tests_uses_loadgroup_distribution_for_xdist_state_isolation() -> None:
+    """Run tests uses loadgroup distribution for xdist state isolation."""
     script = _script()
     notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
 
@@ -455,6 +468,7 @@ def test_unit_pytest_command_forces_test_runtime_environment() -> None:
 
 
 def test_run_tests_enforces_combined_gate_before_ratchet() -> None:
+    """Run tests enforces combined gate before ratchet."""
     script = _script()
 
     gate_call = script.index("  enforce_combined_coverage_gate\n")
@@ -465,6 +479,7 @@ def test_run_tests_enforces_combined_gate_before_ratchet() -> None:
 
 
 def test_run_tests_regenerates_machine_readable_coverage_before_gate() -> None:
+    """Run tests regenerates machine readable coverage before gate."""
     script = _script()
     gate_function = script[script.index("enforce_combined_coverage_gate()") :]
 
@@ -474,6 +489,7 @@ def test_run_tests_regenerates_machine_readable_coverage_before_gate() -> None:
 
 
 def test_run_tests_coverage_artifact_generation_is_not_gated_by_fail_under() -> None:
+    """Run tests coverage artifact generation is not gated by fail under."""
     # coverage.py'nin html/xml/json alt komutları [tool.coverage.report] fail_under
     # eşiğini miras alır; --fail-under=0 olmadan eşiğin altındaki bir kısmi
     # çalıştırmada rapor başarıyla yazılsa bile komut non-zero döner ve script
@@ -488,6 +504,7 @@ def test_run_tests_coverage_artifact_generation_is_not_gated_by_fail_under() -> 
 
 
 def test_run_tests_skips_global_coverage_gate_for_partial_stage_runs() -> None:
+    """Run tests skips global coverage gate for partial stage runs."""
     # --stage integration (veya smoke/e2e) yalnızca kısmi bir kapsam üretir;
     # repo genelindeki fail_under eşiğini bu kapsamla uygulamak, integration
     # testlerinin kendisi geçmişken sahte bir coverage başarısızlığı üretir.
@@ -515,6 +532,7 @@ def test_run_tests_skips_global_coverage_gate_for_partial_stage_runs() -> None:
 
 
 def test_gpu_defaults_are_cpu_friendly_and_auto_detect_runtime_hardware() -> None:
+    """Gpu defaults are cpu friendly and auto detect runtime hardware."""
     script = _script()
     installer_contract = installer_contract_sources()
     env_example = Path(".env.example").read_text(encoding="utf-8")
@@ -580,6 +598,7 @@ def test_run_tests_previews_auto_gpu_stress_enable_prominently_up_front() -> Non
 
 
 def test_run_tests_syncs_effective_dotenv_postgres_password_without_logging_secret() -> None:
+    """Run tests syncs effective dotenv postgres password without logging secret."""
     script = _script()
 
     assert "sanitize_test_database_url_overrides()" in script
@@ -733,6 +752,7 @@ def test_benchmark_tooling_bootstrap_prepares_system_deps_before_pytest_benchmar
 
 
 def test_run_tests_uses_profile_aware_benchmark_compare_defaults() -> None:
+    """Run tests uses profile aware benchmark compare defaults."""
     script = _script()
 
     assert 'BENCHMARK_ENABLE_COMPARE="${BENCHMARK_ENABLE_COMPARE:-1}"' in script
@@ -830,6 +850,7 @@ def test_run_tests_uses_profile_aware_benchmark_compare_defaults() -> None:
 
 
 def test_benchmark_compare_fails_when_enforced_baseline_is_stale() -> None:
+    """Benchmark compare fails when enforced baseline is stale."""
     script = _script()
 
     assert 'BENCHMARK_BASELINE_MAX_AGE_DAYS="${BENCHMARK_BASELINE_MAX_AGE_DAYS:-14}"' in script
@@ -861,6 +882,7 @@ def test_benchmark_compare_fails_when_enforced_baseline_is_stale() -> None:
 
 
 def test_release_scope_warning_flags_gpu_quality_gate_as_out_of_scope() -> None:
+    """Release scope warning flags gpu quality gate as out of scope."""
     warning_fn = _extract_run_tests_function("print_release_scope_warning_once")
     assert "GPU Inference Quality Gate" in warning_fn
     assert "ENABLE_GPU_BENCH_GATE=true" in warning_fn
@@ -876,6 +898,7 @@ def test_release_scope_warning_flags_gpu_quality_gate_as_out_of_scope() -> None:
 
 
 def test_ci_production_readiness_requires_gpu_inference_evidence_policy() -> None:
+    """Ci production readiness requires gpu inference evidence policy."""
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     production_job = ci[
         ci.index("  production-readiness:") : ci.index("  production-profile-dry-run:")
@@ -893,6 +916,7 @@ def test_ci_production_readiness_requires_gpu_inference_evidence_policy() -> Non
 
 
 def test_ci_parity_precedes_pytest_and_current_commit_evidence_is_attested() -> None:
+    """Ci parity precedes pytest and current commit evidence is attested."""
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     parity = "run: bash scripts/check_env_parity.sh"
     full_pytest = "SIDAR_PRODUCTION_READINESS=0 bash run_tests.sh --stage all"
@@ -903,6 +927,7 @@ def test_ci_parity_precedes_pytest_and_current_commit_evidence_is_attested() -> 
 
 
 def test_postgresql_multi_user_benchmark_warms_pool_and_uses_stable_pedantic_rounds() -> None:
+    """Postgresql multi user benchmark warms pool and uses stable pedantic rounds."""
     benchmark_test = Path("tests/performance/test_benchmark.py").read_text(encoding="utf-8")
     env_test_example = Path(".env.test.example").read_text(encoding="utf-8")
 
@@ -920,6 +945,7 @@ def test_postgresql_multi_user_benchmark_warms_pool_and_uses_stable_pedantic_rou
 
 
 def test_password_benchmarks_use_noise_resistant_pedantic_rounds() -> None:
+    """Password benchmarks use noise resistant pedantic rounds."""
     benchmark_test = Path("tests/performance/test_benchmark.py").read_text(encoding="utf-8")
 
     assert "_PASSWORD_BENCHMARK_WARMUP_ROUNDS = 5" in benchmark_test
@@ -934,6 +960,7 @@ def test_password_benchmarks_use_noise_resistant_pedantic_rounds() -> None:
 
 
 def test_benchmark_docs_require_uv_and_review_before_promoting_latest_baseline() -> None:
+    """Benchmark docs require uv and review before promoting latest baseline."""
     agents = Path("AGENTS.md").read_text(encoding="utf-8")
     notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
     readme = Path("README.md").read_text(encoding="utf-8")
@@ -977,6 +1004,7 @@ def test_benchmark_docs_require_uv_and_review_before_promoting_latest_baseline()
 def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existing_baseline() -> (
     None
 ):
+    """Advanced env examples enable benchmark compare without requiring existing baseline."""
     env_advanced = Path(".env.advanced.example").read_text(encoding="utf-8")
     env_test_example = Path(".env.test.example").read_text(encoding="utf-8")
     install_script = Path("scripts/install_modules/phases/08_env.sh").read_text(encoding="utf-8")
@@ -1020,6 +1048,7 @@ def test_advanced_env_examples_enable_benchmark_compare_without_requiring_existi
 
 
 def test_env_documentation_clarifies_loading_chain_and_api_key_policy() -> None:
+    """Env documentation clarifies loading chain and api key policy."""
     readme = Path("README.md").read_text(encoding="utf-8")
     technical_reference = Path("docs/TEKNIK_REFERANS.md").read_text(encoding="utf-8")
     project_report = project_report_sources()
@@ -1055,6 +1084,7 @@ def test_env_documentation_clarifies_loading_chain_and_api_key_policy() -> None:
 
 
 def test_pytest_conftest_checks_env_test_postgres_password_parity() -> None:
+    """Pytest conftest checks env test postgres password parity."""
     conftest = Path("tests/conftest.py").read_text(encoding="utf-8")
 
     assert "_assert_test_dotenv_postgres_parity()" in conftest
@@ -1067,6 +1097,7 @@ def test_pytest_conftest_checks_env_test_postgres_password_parity() -> None:
 
 
 def test_pytest_conftest_keeps_installer_collection_lightweight() -> None:
+    """Pytest conftest keeps installer collection lightweight."""
     conftest = Path("tests/conftest.py").read_text(encoding="utf-8")
 
     assert 'os.environ["SIDAR_ENV"] = "test"' in conftest
@@ -1083,6 +1114,7 @@ def test_pytest_conftest_keeps_installer_collection_lightweight() -> None:
 def test_pytest_conftest_parity_guard_fails_on_password_mismatch(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Pytest conftest parity guard fails on password mismatch."""
     import tests.conftest as conftest
 
     (tmp_path / ".env").write_text(
@@ -1103,6 +1135,7 @@ def test_pytest_conftest_parity_guard_fails_on_password_mismatch(
 def test_pytest_conftest_parity_guard_accepts_matching_passwords(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Pytest conftest parity guard accepts matching passwords."""
     import tests.conftest as conftest
 
     (tmp_path / ".env").write_text(
@@ -1121,6 +1154,7 @@ def test_pytest_conftest_parity_guard_accepts_matching_passwords(
 
 
 def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
+    """Install sidar production readiness requires full ci gate."""
     install_script = installer_contract_sources()
     validation_phase = Path("scripts/install_modules/phases/10_validation.sh").read_text(
         encoding="utf-8"
@@ -1249,6 +1283,7 @@ def test_install_sidar_production_readiness_requires_full_ci_gate() -> None:
 
 
 def test_install_docs_explain_frontend_gate_is_opt_in() -> None:
+    """Install docs explain frontend gate is opt in."""
     readme = Path("README.md").read_text(encoding="utf-8")
     testing = Path("docs/TESTING.md").read_text(encoding="utf-8")
     install_options = Path("docs/install-script-options.md").read_text(encoding="utf-8")
@@ -1279,6 +1314,7 @@ def test_install_docs_explain_frontend_gate_is_opt_in() -> None:
 
 
 def test_ci_workflow_documents_and_seeds_benchmark_baseline() -> None:
+    """Ci workflow documents and seeds benchmark baseline."""
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     reusable_seed = Path(".github/workflows/benchmark-baseline-reusable.yml").read_text(
         encoding="utf-8"
@@ -1325,6 +1361,7 @@ def test_ci_workflow_documents_and_seeds_benchmark_baseline() -> None:
 
 
 def test_run_tests_summary_uses_phase_specific_backend_statuses(tmp_path: Path) -> None:
+    """Run tests summary uses phase specific backend statuses."""
     summary_json = tmp_path / "test-summary.json"
     summary_block = "\n".join(
         _extract_run_tests_function(name)
@@ -1424,6 +1461,7 @@ write_test_summary_json false
 
 
 def test_run_tests_help_lists_make_and_direct_production_readiness_commands() -> None:
+    """Run tests help lists make and direct production readiness commands."""
     result = subprocess.run(
         ["bash", "run_tests.sh", "--help"],
         check=True,
@@ -1459,6 +1497,7 @@ def test_testing_docs_explain_env_var_typo_safety_limitation() -> None:
 
 
 def test_production_readiness_checks_system_deps_before_quality_gates() -> None:
+    """Production readiness checks system deps before quality gates."""
     script = _script()
     body = _extract_run_tests_function("check_production_readiness_system_dependencies")
     testing_doc = Path("docs/TESTING.md").read_text(encoding="utf-8")
@@ -1519,6 +1558,7 @@ def test_security_tooling_bootstrap_prepares_system_deps_before_full_uv_sync() -
 
 
 def test_linter_docs_route_python_to_ruff_and_shell_to_shellcheck() -> None:
+    """Linter docs route python to ruff and shell to shellcheck."""
     readme = Path("README.md").read_text(encoding="utf-8")
     testing_doc = Path("docs/TESTING.md").read_text(encoding="utf-8")
     makefile = Path("Makefile").read_text(encoding="utf-8")
@@ -1537,6 +1577,7 @@ def test_linter_docs_route_python_to_ruff_and_shell_to_shellcheck() -> None:
 
 
 def test_run_tests_summary_includes_backend_failed_tests_from_junit(tmp_path: Path) -> None:
+    """Run tests summary includes backend failed tests from junit."""
     summary_json = tmp_path / "test-summary.json"
     junit_dir = tmp_path / "pytest"
     junit_dir.mkdir()
@@ -1610,6 +1651,7 @@ write_test_summary_json false
 def test_install_validation_summary_reads_run_tests_json_for_partial_full_failures(
     tmp_path: Path,
 ) -> None:
+    """Install validation summary reads run tests json for partial full failures."""
     validation_phase = Path("scripts/install_modules/phases/10_validation.sh").resolve()
     artifacts_dir = tmp_path / "artifacts"
     artifacts_dir.mkdir()
@@ -1681,6 +1723,7 @@ print_install_validation_coverage""",
 def test_optional_full_validation_syncs_frontend_status_from_run_tests_summary(
     tmp_path: Path,
 ) -> None:
+    """Optional full validation syncs frontend status from run tests summary."""
     validation_phase = Path("scripts/install_modules/phases/10_validation.sh").resolve()
     summary_json = tmp_path / "test-summary.json"
     summary_json.write_text(
@@ -1726,6 +1769,7 @@ printf 'FRONTEND_QUALITY_STATUS=%s\n' ${FRONTEND_QUALITY_STATUS}""",
 
 
 def test_frontend_audit_failure_is_reported_as_failed_not_skipped(tmp_path: Path) -> None:
+    """Frontend audit failure is reported as failed not skipped."""
     validation_phase = Path("scripts/install_modules/phases/10_validation.sh").resolve()
     summary_json = tmp_path / "test-summary.json"
     summary_json.write_text(
@@ -1769,6 +1813,7 @@ printf 'FRONTEND_QUALITY_STATUS=%s\n' "$FRONTEND_QUALITY_STATUS"
 
 
 def test_frontend_quality_is_skipped_only_when_no_gate_ran(tmp_path: Path) -> None:
+    """Frontend quality is skipped only when no gate ran."""
     validation_phase = Path("scripts/install_modules/phases/10_validation.sh").resolve()
     summary_json = tmp_path / "test-summary.json"
     summary_json.write_text(
@@ -1814,6 +1859,7 @@ printf 'FRONTEND_QUALITY_STATUS=%s\n' "$FRONTEND_QUALITY_STATUS"
 
 
 def test_full_validation_failure_syncs_frontend_status_from_summary(tmp_path: Path) -> None:
+    """Full validation failure syncs frontend status from summary."""
     validation_phase = Path("scripts/install_modules/phases/10_validation.sh").resolve()
     summary_json = tmp_path / "test-summary.json"
     summary_json.write_text(
@@ -1872,6 +1918,7 @@ printf 'FRONTEND_QUALITY_STATUS=%s\n' "$FRONTEND_QUALITY_STATUS"
 def test_optional_dev_full_validation_failure_syncs_frontend_status_from_summary(
     tmp_path: Path,
 ) -> None:
+    """Optional dev full validation failure syncs frontend status from summary."""
     validation_phase = Path("scripts/install_modules/phases/10_validation.sh").resolve()
     summary_json = tmp_path / "test-summary.json"
     summary_json.write_text(
@@ -1932,6 +1979,7 @@ printf 'FRONTEND_QUALITY_STATUS=%s\n' "$FRONTEND_QUALITY_STATUS"
 def test_optional_dev_full_validation_does_not_leak_tofu_checksum_state(
     tmp_path: Path,
 ) -> None:
+    """Optional dev full validation does not leak tofu checksum state."""
     validation_phase = Path("scripts/install_modules/phases/10_validation.sh").resolve()
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -1991,6 +2039,7 @@ printf 'status=%s\n' "$CI_FULL_VALIDATION_STATUS"
 
 
 def test_finish_frontend_qa_block_refreshes_summary_before_printing(tmp_path: Path) -> None:
+    """Finish frontend qa block refreshes summary before printing."""
     finish_phase = Path("scripts/install_modules/phases/07_finish.sh").resolve()
 
     result = subprocess.run(
@@ -2031,6 +2080,7 @@ print_react_frontend_qa_status_block""",
 def test_install_validation_summary_separates_development_full_validation_from_production_gate(
     tmp_path: Path,
 ) -> None:
+    """Install validation summary separates development full validation from production gate."""
     validation_phase = Path("scripts/install_modules/phases/10_validation.sh").resolve()
     summary_json = tmp_path / "test-summary.json"
     summary_json.write_text(
@@ -2098,6 +2148,7 @@ print_install_validation_coverage""",
 
 
 def test_install_alembic_logs_revision_and_db_source_observability() -> None:
+    """Install alembic logs revision and db source observability."""
     alembic_phase = Path("scripts/install_modules/phases/12_alembic.sh").read_text(encoding="utf-8")
 
     assert "mask_alembic_db_url()" in alembic_phase
@@ -2116,6 +2167,7 @@ def test_install_alembic_logs_revision_and_db_source_observability() -> None:
 
 
 def test_install_summary_prints_masked_runtime_key_source_report() -> None:
+    """Install summary prints masked runtime key source report."""
     env_phase = Path("scripts/install_modules/phases/08_env.sh").read_text(encoding="utf-8")
     finish_phase = Path("scripts/install_modules/phases/07_finish.sh").read_text(encoding="utf-8")
 
@@ -2142,6 +2194,7 @@ def test_install_summary_prints_masked_runtime_key_source_report() -> None:
 
 
 def test_install_sidar_does_not_sync_real_api_keys_to_test_env_by_default() -> None:
+    """Install sidar does not sync real api keys to test env by default."""
     env_phase = Path("scripts/install_modules/phases/08_env.sh").read_text(encoding="utf-8")
     collect_start = env_phase.index("collect_api_keys_interactive()")
     collect_block = env_phase[
@@ -2161,6 +2214,7 @@ def test_install_sidar_does_not_sync_real_api_keys_to_test_env_by_default() -> N
 
 
 def test_install_sidar_propagates_api_keys_to_env_variants_after_collection() -> None:
+    """Install sidar propagates api keys to env variants after collection."""
     install_script = Path("scripts/install_modules/phases/08_env.sh").read_text(encoding="utf-8")
     installer_root = Path("install_sidar.sh").read_text(encoding="utf-8")
 
@@ -2308,6 +2362,7 @@ def test_env_example_secret_keys_are_all_in_the_install_masking_allowlist() -> N
 
 
 def test_install_summary_explains_sidarkeys_when_materialization_disabled() -> None:
+    """Install summary explains sidarkeys when materialization disabled."""
     finish_phase = Path("scripts/install_modules/phases/07_finish.sh").read_text(encoding="utf-8")
     summary_start = finish_phase.index("print_summary()")
     summary_block = finish_phase[
@@ -2330,6 +2385,7 @@ def test_install_summary_explains_sidarkeys_when_materialization_disabled() -> N
 
 
 def test_install_sidar_reports_api_key_write_failures_without_missing_err_function() -> None:
+    """Install sidar reports api key write failures without missing err function."""
     env_phase = Path("scripts/install_modules/phases/08_env.sh").read_text(encoding="utf-8")
     collect_start = env_phase.index("collect_api_keys_interactive()")
     collect_block = env_phase[
@@ -2351,6 +2407,7 @@ def test_install_sidar_reports_api_key_write_failures_without_missing_err_functi
 
 
 def test_primary_env_example_stays_minimal_for_new_users() -> None:
+    """Primary env example stays minimal for new users."""
     env_example = Path(".env.example").read_text(encoding="utf-8")
 
     assert len(env_example.splitlines()) <= 50
@@ -2362,6 +2419,7 @@ def test_primary_env_example_stays_minimal_for_new_users() -> None:
 
 
 def test_development_env_derives_database_urls_from_single_postgres_password() -> None:
+    """Development env derives database urls from single postgres password."""
     env_development = Path(".env.development.example").read_text(encoding="utf-8")
 
     assert "POSTGRES_PASSWORD=replace-with-a-strong-24-plus-character-password" in env_development
@@ -2386,6 +2444,7 @@ def test_development_env_derives_database_urls_from_single_postgres_password() -
 
 
 def test_advanced_env_gpu_defaults_stay_within_safe_vram_budget() -> None:
+    """Advanced env gpu defaults stay within safe vram budget."""
     env_advanced = Path(".env.advanced.example").read_text(encoding="utf-8")
 
     assert "GPU_MEMORY_FRACTION=0.8" in env_advanced
@@ -2395,6 +2454,7 @@ def test_advanced_env_gpu_defaults_stay_within_safe_vram_budget() -> None:
 
 
 def test_test_env_uses_stronger_postgres_password_and_runtime_database_url() -> None:
+    """Test env uses stronger postgres password and runtime database url."""
     env_test_example = Path(".env.test.example").read_text(encoding="utf-8")
 
     assert "POSTGRES_PASSWORD=__GENERATE__" in env_test_example
@@ -2407,6 +2467,7 @@ def test_test_env_uses_stronger_postgres_password_and_runtime_database_url() -> 
 
 
 def test_run_tests_renders_generate_sentinel_when_creating_env_test() -> None:
+    """Run tests renders generate sentinel when creating env test."""
     script = _script()
 
     assert "render_generated_secret_sentinels" in script
@@ -2415,6 +2476,7 @@ def test_run_tests_renders_generate_sentinel_when_creating_env_test() -> None:
 
 
 def test_install_sidar_bootstraps_env_secrets_after_uv_sync() -> None:
+    """Install sidar bootstraps env secrets after uv sync."""
     contract = installer_contract_sources()
     python_env = Path("scripts/install_modules/utils/python_env.sh").read_text(encoding="utf-8")
     env_phase = Path("scripts/install_modules/phases/08_env.sh").read_text(encoding="utf-8")
@@ -2434,6 +2496,7 @@ def test_install_sidar_bootstraps_env_secrets_after_uv_sync() -> None:
 
 
 def test_install_sidar_treats_change_me_placeholders_as_weak_secrets() -> None:
+    """Install sidar treats change me placeholders as weak secrets."""
     script = installer_contract_sources()
 
     assert "change-me*|replace-with-*" in script
@@ -2441,6 +2504,7 @@ def test_install_sidar_treats_change_me_placeholders_as_weak_secrets() -> None:
 
 
 def test_install_sidar_uses_central_known_weak_secret_list() -> None:
+    """Install sidar uses central known weak secret list."""
     script = installer_contract_sources()
     known_weak = Path("scripts/known_weak_secrets.txt").read_text(encoding="utf-8")
 
@@ -2459,6 +2523,7 @@ def test_install_sidar_uses_central_known_weak_secret_list() -> None:
 
 
 def test_known_weak_secret_list_captures_legacy_install_examples() -> None:
+    """Known weak secret list captures legacy install examples."""
     known_weak = Path("scripts/known_weak_secrets.txt").read_text(encoding="utf-8")
 
     for weak_postgres_password in (
@@ -2491,6 +2556,7 @@ def test_known_weak_secret_list_captures_legacy_install_examples() -> None:
 
 
 def test_install_sidar_uses_entropy_checker_for_database_password_hardening() -> None:
+    """Install sidar uses entropy checker for database password hardening."""
     script = installer_contract_sources()
 
     assert 'if is_weak_secret_value "$db_password"; then' in script
@@ -2500,6 +2566,7 @@ def test_install_sidar_uses_entropy_checker_for_database_password_hardening() ->
 
 
 def test_install_sidar_never_runs_destructive_git_cleanup_without_stash_guard() -> None:
+    """Install sidar never runs destructive git cleanup without stash guard."""
     script = installer_contract_sources()
     recovery_start = script.index('warn "Stash apply sırasında çakışma oluştu')
     recovery_block = script[
@@ -2521,6 +2588,7 @@ def test_install_sidar_never_runs_destructive_git_cleanup_without_stash_guard() 
 
 
 def test_install_sidar_has_locale_switch_for_english_messages() -> None:
+    """Install sidar has locale switch for english messages."""
     script = installer_contract_sources()
 
     assert "resolve_sidar_locale()" in script
@@ -2533,6 +2601,7 @@ def test_install_sidar_has_locale_switch_for_english_messages() -> None:
 
 
 def test_developer_prerequisite_docs_call_system_deps_before_uv_sync() -> None:
+    """Developer prerequisite docs call system deps before uv sync."""
     readme = Path("README.md").read_text(encoding="utf-8")
     testing_doc = Path("docs/TESTING.md").read_text(encoding="utf-8")
     prerequisite = (
@@ -2584,6 +2653,7 @@ def test_developer_prerequisite_docs_call_system_deps_before_uv_sync() -> None:
 
 
 def test_installer_prompts_dependency_profile_after_runtime_mode() -> None:
+    """Installer prompts dependency profile after runtime mode."""
     install_cli = Path("scripts/install_modules/install_cli.sh").read_text(encoding="utf-8")
     install_contract = installer_contract_sources()
     runtime_phase = Path("scripts/install_modules/phases/03_runtime.sh").read_text(encoding="utf-8")
@@ -2624,6 +2694,7 @@ def test_installer_prompts_dependency_profile_after_runtime_mode() -> None:
 
 
 def test_pytest_warning_filters_do_not_import_runtime_only_modules_during_config() -> None:
+    """Pytest warning filters do not import runtime only modules during config."""
     pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
 
     assert "ignore::pydantic.warnings.PydanticDeprecatedSince20" not in pyproject
@@ -2633,6 +2704,7 @@ def test_pytest_warning_filters_do_not_import_runtime_only_modules_during_config
 
 
 def test_ci_system_dependency_installer_provisions_shell_test_tools() -> None:
+    """Ci system dependency installer provisions shell test tools."""
     installer = Path("scripts/install_ci_system_deps.sh").read_text(encoding="utf-8")
     sidar_installer_contract = installer_contract_sources()
 
@@ -2672,6 +2744,7 @@ def test_ci_system_dependency_installer_provisions_shell_test_tools() -> None:
 
 
 def test_ci_system_dependency_installer_check_mode_reports_apt_missing(tmp_path: Path) -> None:
+    """Ci system dependency installer check mode reports apt missing."""
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     apt_log = tmp_path / "apt.log"
@@ -2706,6 +2779,7 @@ exit 1
 
 
 def test_ci_system_dependency_installer_check_mode_supports_brew(tmp_path: Path) -> None:
+    """Ci system dependency installer check mode supports brew."""
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     brew_log = tmp_path / "brew.log"
@@ -2738,6 +2812,7 @@ exit 99
 
 
 def test_doctor_production_readiness_target_checks_environment_prerequisites() -> None:
+    """Doctor production readiness target checks environment prerequisites."""
     makefile = Path("Makefile").read_text(encoding="utf-8")
     doctor = Path("scripts/doctor_production_readiness.py").read_text(encoding="utf-8")
     testing = Path("docs/TESTING.md").read_text(encoding="utf-8")
@@ -2763,6 +2838,7 @@ def test_doctor_production_readiness_target_checks_environment_prerequisites() -
 
 
 def test_makefile_benchmark_seed_is_local_only_and_production_readiness_is_release_gate() -> None:
+    """Makefile benchmark seed is local only and production readiness is release gate."""
     makefile = Path("Makefile").read_text(encoding="utf-8")
     testing = Path("docs/TESTING.md").read_text(encoding="utf-8")
     pr_template = Path(".github/PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
@@ -3004,6 +3080,7 @@ def test_benchmark_baseline_cache_key_prefix_is_identical_everywhere() -> None:
 
 
 def test_make_lint_requires_installer_shellcheck_gate() -> None:
+    """Make lint requires installer shellcheck gate."""
     makefile = Path("Makefile").read_text(encoding="utf-8")
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 
@@ -3062,6 +3139,7 @@ def test_direct_local_stage_all_enables_frontend_bundle_budget_by_default() -> N
 
 
 def test_frontend_bundle_budget_defaults_are_ratcheted_and_match_ci() -> None:
+    """Frontend bundle budget defaults are ratcheted and match ci."""
     makefile = Path("Makefile").read_text(encoding="utf-8")
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 
@@ -3087,6 +3165,7 @@ def test_pre_commit_ruff_format_scope_matches_repository_ci_gate() -> None:
 
 
 def test_pre_commit_config_runs_uv_managed_static_gates() -> None:
+    """Pre commit config runs uv managed static gates."""
     config = Path(".pre-commit-config.yaml").read_text(encoding="utf-8")
     pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
     readme = Path("README.md").read_text(encoding="utf-8")
@@ -3180,6 +3259,7 @@ def test_pre_commit_config_runs_secret_scanning_and_frontend_lint() -> None:
 
 
 def test_install_sidar_core_manifest_hashes_match_current_security_files() -> None:
+    """Install sidar core manifest hashes match current security files."""
     install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
     sidar_manifest = Path(".sidar_manifest.txt").read_text(encoding="utf-8")
     protected_files = ("core/memory.py", "core/multimodal.py")
@@ -3202,6 +3282,7 @@ def test_install_sidar_core_manifest_hashes_match_current_security_files() -> No
 
 
 def test_sync_install_manifest_updates_core_manifest_contract() -> None:
+    """Sync install manifest updates core manifest contract."""
     sync_script = Path("scripts/sync_install_manifest.sh").read_text(encoding="utf-8")
     update_tool = Path("scripts/tools/update_core_install_manifest.py").read_text(encoding="utf-8")
 
@@ -3214,6 +3295,7 @@ def test_sync_install_manifest_updates_core_manifest_contract() -> None:
 
 
 def test_web_framework_dependencies_exclude_vulnerable_starlette_release() -> None:
+    """Web framework dependencies exclude vulnerable starlette release."""
     with Path("pyproject.toml").open("rb") as pyproject_file:
         dependencies = tomllib.load(pyproject_file)["project"]["dependencies"]
     with Path("uv.lock").open("rb") as lock_file:
@@ -3243,6 +3325,7 @@ def test_web_framework_dependencies_exclude_vulnerable_starlette_release() -> No
 
 
 def test_pytest_shellcheck_quality_gate_is_registered() -> None:
+    """Pytest shellcheck quality gate is registered."""
     pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     shellcheck_gate = Path("tests/quality/test_shellcheck_quality_gate.py").read_text(
@@ -3258,6 +3341,7 @@ def test_pytest_shellcheck_quality_gate_is_registered() -> None:
 
 
 def test_ci_publishes_standalone_installer_bundle() -> None:
+    """Ci publishes standalone installer bundle."""
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     bundle_script = Path("scripts/tools/bundle_install_sidar.sh").read_text(encoding="utf-8")
     readme = Path("README.md").read_text(encoding="utf-8")
@@ -3335,12 +3419,14 @@ def test_ci_publishes_standalone_installer_bundle() -> None:
 
 
 def test_install_sidar_root_guard_allows_explicit_test_mode_only() -> None:
+    """Install sidar root guard allows explicit test mode only."""
     script = installer_contract_sources()
 
     assert '"${EUID:-$(id -u)}" -eq 0 && "${SIDAR_INSTALL_TEST_MODE:-0}" != "1"' in script
 
 
 def test_install_sidar_prefers_existing_repo_module_tree_before_download_or_clone() -> None:
+    """Install sidar prefers existing repo module tree before download or clone."""
     install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
 
     assert "use_existing_install_module_tree_if_available()" in install_script
@@ -3386,6 +3472,7 @@ def test_installer_doctor_fix_is_forwarded_and_scope_limited() -> None:
 
 
 def test_install_sidar_detects_offline_mode_before_bootstrap_downloads() -> None:
+    """Install sidar detects offline mode before bootstrap downloads."""
     install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
 
     assert "sidar_detect_early_offline_mode()" in install_script
@@ -3418,6 +3505,7 @@ def test_install_sidar_detects_offline_mode_before_bootstrap_downloads() -> None
 def test_install_sidar_sources_existing_cwd_module_tree_before_remote_fallback(
     tmp_path: Path,
 ) -> None:
+    """Install sidar sources existing cwd module tree before remote fallback."""
     runner_dir = tmp_path / "runner"
     runner_dir.mkdir()
     shutil.copy2("install_sidar.sh", runner_dir / "install_sidar.sh")
@@ -3449,6 +3537,7 @@ def test_install_sidar_sources_existing_cwd_module_tree_before_remote_fallback(
 
 
 def test_install_sidar_keeps_plural_module_dir_alias_synced(tmp_path: Path) -> None:
+    """Install sidar keeps plural module dir alias synced."""
     runner_dir = tmp_path / "runner"
     runner_dir.mkdir()
     shutil.copy2("install_sidar.sh", runner_dir / "install_sidar.sh")
@@ -3485,6 +3574,7 @@ def test_install_sidar_keeps_plural_module_dir_alias_synced(tmp_path: Path) -> N
 
 
 def test_install_sidar_single_file_fallback_downloads_all_modules(tmp_path: Path) -> None:
+    """Install sidar single file fallback downloads all modules."""
     remote_modules = tmp_path / "remote"
     runner_dir = tmp_path / "runner"
     shutil.copytree("scripts/install_modules", remote_modules)
@@ -3544,6 +3634,7 @@ def test_install_sidar_single_file_fallback_downloads_all_modules(tmp_path: Path
 
 
 def test_install_sidar_remote_module_download_has_retry_backoff_and_resume_cache() -> None:
+    """Install sidar remote module download has retry backoff and resume cache."""
     install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
 
     assert (
@@ -3573,6 +3664,7 @@ def test_install_sidar_remote_module_download_has_retry_backoff_and_resume_cache
 
 
 def test_wsl_integration_autofix_ps1_uses_utf8_bom_for_windows_powershell_51() -> None:
+    """Wsl integration autofix ps1 uses utf8 bom for windows powershell 51."""
     raw_script = Path("scripts/install_modules/utils/wsl_integration_autofix.ps1").read_bytes()
 
     assert raw_script.startswith(b"\xef\xbb\xbf")
@@ -3585,6 +3677,7 @@ def test_wsl_integration_autofix_ps1_uses_utf8_bom_for_windows_powershell_51() -
 
 
 def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
+    """Install sidar main uses phase modules as orchestrator."""
     script = installer_contract_sources()
     main_body = shell_function_body(script, "sidar_dispatch_install_phases")
 
@@ -3640,6 +3733,7 @@ def test_install_sidar_main_uses_phase_modules_as_orchestrator() -> None:
 
 
 def test_install_sidar_phases_delegate_functional_install_utils() -> None:
+    """Install sidar phases delegate functional install utils."""
     helper = Path("scripts/install_modules/install_helpers.sh").read_text(encoding="utf-8")
     context_phase = Path("scripts/install_modules/phases/01_context.sh").read_text(encoding="utf-8")
     system_phase = Path("scripts/install_modules/phases/03_system.sh").read_text(encoding="utf-8")
@@ -3833,6 +3927,7 @@ def test_install_sidar_phases_delegate_functional_install_utils() -> None:
 
 
 def test_playwright_install_fallback_does_not_depend_on_cli_error_text(tmp_path: Path) -> None:
+    """Playwright install fallback does not depend on cli error text."""
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     python_log = tmp_path / "python.log"
@@ -3881,6 +3976,7 @@ def test_playwright_install_fallback_does_not_depend_on_cli_error_text(tmp_path:
 
 
 def test_alembic_weak_password_recovery_is_disabled_in_production() -> None:
+    """Alembic weak password recovery is disabled in production."""
     result = subprocess.run(
         [
             "bash",
@@ -3899,6 +3995,7 @@ def test_alembic_weak_password_recovery_is_disabled_in_production() -> None:
 
 
 def test_react_frontend_phase_suppresses_npm_update_notice_with_opt_in_upgrade() -> None:
+    """React frontend phase suppresses npm update notice with opt in upgrade."""
     react_phase = Path("scripts/install_modules/phases/14_react.sh").read_text(encoding="utf-8")
 
     assert "maybe_upgrade_npm_latest()" in react_phase
@@ -3911,6 +4008,7 @@ def test_react_frontend_phase_suppresses_npm_update_notice_with_opt_in_upgrade()
 
 
 def test_install_sidar_ollama_install_keeps_sudo_alive_and_tolerates_post_install_rc() -> None:
+    """Install sidar ollama install keeps sudo alive and tolerates post install rc."""
     script = installer_contract_sources()
     ollama_block = script[
         script.index("# Ollama (varsayılan AI provider)") : script.index(
@@ -3930,6 +4028,7 @@ def test_install_sidar_ollama_install_keeps_sudo_alive_and_tolerates_post_instal
 
 
 def test_install_sidar_defaults_gpu_available_for_resume_mode() -> None:
+    """Install sidar defaults gpu available for resume mode."""
     script = installer_contract_sources()
 
     strict_mode_pos = script.index("set -Eeuo pipefail")
@@ -3940,6 +4039,7 @@ def test_install_sidar_defaults_gpu_available_for_resume_mode() -> None:
 
 
 def test_install_remediation_treats_timeout_exit_codes_as_non_retryable() -> None:
+    """Install remediation treats timeout exit codes as non retryable."""
     result = subprocess.run(
         [
             "bash",
@@ -3971,6 +4071,7 @@ def test_install_remediation_treats_timeout_exit_codes_as_non_retryable() -> Non
 
 
 def test_install_sidar_runtime_phase_uses_transient_retry_budget() -> None:
+    """Install sidar runtime phase uses transient retry budget."""
     result = subprocess.run(
         [
             "bash",
@@ -4002,6 +4103,7 @@ def test_install_sidar_runtime_phase_uses_transient_retry_budget() -> None:
 
 
 def test_install_sidar_auto_heal_wraps_phases_and_resumes() -> None:
+    """Install sidar auto heal wraps phases and resumes."""
     script = installer_contract_sources()
     main_body = shell_function_body(script, "sidar_dispatch_install_phases")
     remediation_utils = Path("scripts/install_modules/utils/install_remediation.sh").read_text(
@@ -4043,6 +4145,7 @@ def test_install_sidar_auto_heal_wraps_phases_and_resumes() -> None:
 
 
 def test_install_sidar_runtime_ollama_remediation_writes_action_reports(tmp_path: Path) -> None:
+    """Install sidar runtime ollama remediation writes action reports."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     ollama = bin_dir / "ollama"
@@ -4259,6 +4362,7 @@ def test_create_directories_permission_steps_no_longer_swallow_errors_silently()
 
 
 def test_sidar_run_or_warn_surfaces_error_and_stays_non_fatal(tmp_path: Path) -> None:
+    """Sidar run or warn surfaces error and stays non fatal."""
     workspace_phase = Path("scripts/install_modules/phases/04_workspace.sh").read_text(
         encoding="utf-8"
     )
@@ -4325,6 +4429,7 @@ def test_wslconfig_ini_helpers_consolidated_into_one_function() -> None:
 
 
 def test_ini_set_key_once_ensure_mode_preserves_existing_value(tmp_path: Path) -> None:
+    """Ini set key once ensure mode preserves existing value."""
     harness = tmp_path / "ini_probe.sh"
     harness.write_text(
         "#!/usr/bin/env bash\nset -uo pipefail\n" + _extract_ini_set_key_once(),
@@ -4355,6 +4460,7 @@ def test_ini_set_key_once_ensure_mode_preserves_existing_value(tmp_path: Path) -
 
 
 def test_ini_set_key_once_force_mode_overwrites_and_dedups(tmp_path: Path) -> None:
+    """Ini set key once force mode overwrites and dedups."""
     harness = tmp_path / "ini_probe.sh"
     harness.write_text(
         "#!/usr/bin/env bash\nset -uo pipefail\n" + _extract_ini_set_key_once(),
@@ -4383,6 +4489,7 @@ def test_ini_set_key_once_force_mode_overwrites_and_dedups(tmp_path: Path) -> No
 
 
 def test_ini_set_key_once_creates_missing_section(tmp_path: Path) -> None:
+    """Ini set key once creates missing section."""
     harness = tmp_path / "ini_probe.sh"
     harness.write_text(
         "#!/usr/bin/env bash\nset -uo pipefail\n" + _extract_ini_set_key_once(),
@@ -4411,6 +4518,7 @@ def test_ini_set_key_once_creates_missing_section(tmp_path: Path) -> None:
 def test_install_sidar_download_verified_script_fails_after_http_200_when_checksum_missing(
     tmp_path: Path,
 ) -> None:
+    """Install sidar download verified script fails after http 200 when checksum missing."""
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     curl_log = tmp_path / "curl.log"
@@ -4464,6 +4572,7 @@ def test_install_sidar_download_verified_script_fails_after_http_200_when_checks
 
 
 def test_install_sidar_remote_script_checksum_missing_is_classified_deterministic() -> None:
+    """Install sidar remote script checksum missing is classified deterministic."""
     result = subprocess.run(
         [
             "bash",
@@ -4514,6 +4623,7 @@ def test_install_sidar_remote_script_checksum_missing_is_classified_deterministi
 def test_install_sidar_smoke_gate_version_failure_is_classified_deterministic(
     tmp_path: Path,
 ) -> None:
+    """Install sidar smoke gate version failure is classified deterministic."""
     result = subprocess.run(
         [
             "bash",
@@ -4565,6 +4675,7 @@ def test_install_sidar_smoke_gate_version_failure_is_classified_deterministic(
 def test_install_sidar_runtime_phase_skips_retry_when_remote_script_checksum_missing(
     tmp_path: Path,
 ) -> None:
+    """Install sidar runtime phase skips retry when remote script checksum missing."""
     result = subprocess.run(
         [
             "bash",
@@ -4602,6 +4713,7 @@ def test_install_sidar_runtime_phase_skips_retry_when_remote_script_checksum_mis
 
 
 def test_install_sidar_remote_script_checksum_guidance_covers_runtime_phase() -> None:
+    """Install sidar remote script checksum guidance covers runtime phase."""
     result = subprocess.run(
         [
             "bash",
@@ -4651,6 +4763,7 @@ def test_install_sidar_remote_script_checksum_guidance_covers_runtime_phase() ->
 
 
 def test_install_sidar_remote_script_checksum_hint_warns_about_deterministic_wall() -> None:
+    """Install sidar remote script checksum hint warns about deterministic wall."""
     remote_script_util = Path("scripts/install_modules/utils/remote_script.sh").read_text(
         encoding="utf-8"
     )
@@ -4662,6 +4775,7 @@ def test_install_sidar_remote_script_checksum_hint_warns_about_deterministic_wal
 
 
 def test_install_sidar_uses_single_source_project_version() -> None:
+    """Install sidar uses single source project version."""
     script = installer_contract_sources()
     pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
     project_version = next(
@@ -4680,6 +4794,7 @@ def test_install_sidar_uses_single_source_project_version() -> None:
 
 
 def test_install_sidar_runtime_reexec_guard_has_smoke_coverage() -> None:
+    """Install sidar runtime reexec guard has smoke coverage."""
     script = installer_contract_sources()
     smoke_tests = Path("tests/smoke/test_install_verification.py").read_text(encoding="utf-8")
 
@@ -4697,6 +4812,7 @@ def test_install_sidar_runtime_reexec_guard_has_smoke_coverage() -> None:
 
 
 def test_install_sidar_runtime_mode_is_selected_once_before_service_launch() -> None:
+    """Install sidar runtime mode is selected once before service launch."""
     script = installer_contract_sources()
     launch_body = script[
         script.index("launch_docker_services() {") : script.index(
@@ -4772,6 +4888,7 @@ def test_install_sidar_loads_remote_checksum_defaults_without_overriding_operato
 
 
 def test_install_sidar_remote_script_checksum_failure_guides_operator() -> None:
+    """Install sidar remote script checksum failure guides operator."""
     script = installer_contract_sources()
     docs = Path("README.md").read_text(encoding="utf-8")
     modular_note = Path("docs/module-notes/install_sidar_modularization.md").read_text(
@@ -4856,6 +4973,7 @@ def test_node_install_fallbacks_report_failures_and_validate_apt_major() -> None
 def test_download_verified_script_soft_warns_and_returns_instead_of_exiting(
     tmp_path: Path,
 ) -> None:
+    """Download verified script soft warns and returns instead of exiting."""
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     curl_log = tmp_path / "curl.log"
@@ -4927,6 +5045,7 @@ def test_remote_checksum_defaults_are_empty_or_valid_sha256_pins() -> None:
 
 
 def test_install_sidar_uv_steps_have_explicit_names_and_order() -> None:
+    """Install sidar uv steps have explicit names and order."""
     script = installer_contract_sources()
     runtime_phase = Path("scripts/install_modules/phases/03_runtime.sh").read_text(encoding="utf-8")
     workspace_phase = Path("scripts/install_modules/phases/04_workspace.sh").read_text(
@@ -4949,6 +5068,7 @@ def test_install_sidar_uv_steps_have_explicit_names_and_order() -> None:
 
 
 def test_install_sidar_repo_url_is_env_overrideable_for_forks() -> None:
+    """Install sidar repo url is env overrideable for forks."""
     script = installer_contract_sources()
 
     assert (
@@ -4961,6 +5081,7 @@ def test_install_sidar_repo_url_is_env_overrideable_for_forks() -> None:
 
 
 def test_install_sidar_uses_cross_platform_sed_inplace_wrapper() -> None:
+    """Install sidar uses cross platform sed inplace wrapper."""
     script = Path("install_sidar.sh").read_text(encoding="utf-8")
     contract = installer_contract_sources()
     wrapper_start = script.index("sed_inplace() {")
@@ -4976,6 +5097,7 @@ def test_install_sidar_uses_cross_platform_sed_inplace_wrapper() -> None:
 
 
 def test_install_sidar_centralizes_env_value_reads() -> None:
+    """Install sidar centralizes env value reads."""
     script = installer_contract_sources()
     database_url_utils = Path("scripts/install_modules/utils/database_url.sh").read_text(
         encoding="utf-8"
@@ -4992,6 +5114,7 @@ def test_install_sidar_centralizes_env_value_reads() -> None:
 
 
 def test_install_sidar_prompt_timeout_is_centralized() -> None:
+    """Install sidar prompt timeout is centralized."""
     script = installer_contract_sources()
 
     assert 'SIDAR_PROMPT_TIMEOUT="${SIDAR_PROMPT_TIMEOUT:-180}"' in script
@@ -5004,6 +5127,7 @@ def test_install_sidar_prompt_timeout_is_centralized() -> None:
 
 
 def test_install_sidar_flushes_typeahead_before_interactive_reads() -> None:
+    """Install sidar flushes typeahead before interactive reads."""
     script = installer_contract_sources()
     helpers = Path("scripts/install_modules/install_helpers.sh").read_text(encoding="utf-8")
 
@@ -5039,6 +5163,7 @@ def test_install_sidar_flushes_typeahead_before_interactive_reads() -> None:
 
 
 def test_install_sidar_selects_pytorch_cuda_wheel_dynamically() -> None:
+    """Install sidar selects pytorch cuda wheel dynamically."""
     script = installer_contract_sources()
     selector_start = script.index("select_pytorch_cuda_wheel_tag()")
     selector_body = script[
@@ -5077,6 +5202,7 @@ def test_install_sidar_selects_pytorch_cuda_wheel_dynamically() -> None:
 
 
 def test_run_tests_builds_missing_docker_test_image_only_with_explicit_opt_in() -> None:
+    """Run tests builds missing docker test image only with explicit opt in."""
     script = _script()
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     makefile = Path("Makefile").read_text(encoding="utf-8")
@@ -5106,6 +5232,7 @@ def test_run_tests_builds_missing_docker_test_image_only_with_explicit_opt_in() 
 
 
 def test_validation_class_and_frontend_e2e_messages_distinguish_all_profiles() -> None:
+    """Validation class and frontend e2e messages distinguish all profiles."""
     run_tests = _script()
     frontend_helpers = Path("scripts/test_gates/frontend_helpers.sh").read_text(encoding="utf-8")
     summary_helpers = Path("scripts/test_gates/summary_helpers.sh").read_text(encoding="utf-8")
@@ -5123,6 +5250,7 @@ def test_validation_class_and_frontend_e2e_messages_distinguish_all_profiles() -
 
 
 def test_run_tests_defaults_bats_to_required_in_ci_and_auto_detects_locally() -> None:
+    """Run tests defaults bats to required in ci and auto detects locally."""
     script = _script()
     profile_block = script[
         script.index('if [ "${TEST_PROFILE}" = "ci" ]; then') : script.index(
@@ -5140,6 +5268,7 @@ def test_run_tests_defaults_bats_to_required_in_ci_and_auto_detects_locally() ->
 def test_run_tests_offers_local_tty_bats_install_prompt_without_blocking_noninteractive_runs() -> (
     None
 ):
+    """Run tests offers local tty bats install prompt without blocking noninteractive runs."""
     script = _script()
     prompt_block = script[
         script.index("install_local_bats_dependencies()") : script.index(
@@ -5168,6 +5297,7 @@ def test_run_tests_offers_local_tty_bats_install_prompt_without_blocking_noninte
 
 
 def test_run_tests_local_bats_auto_install_opt_in_is_effective_before_optional_skip() -> None:
+    """Run tests local bats auto install opt in is effective before optional skip."""
     script = _script()
     prompt_block = script[
         script.index("configure_local_bats_shell_tests()") : script.index(
@@ -5183,6 +5313,7 @@ def test_run_tests_local_bats_auto_install_opt_in_is_effective_before_optional_s
 
 
 def test_run_tests_reports_backend_failure_reason_when_ratchet_is_skipped() -> None:
+    """Run tests reports backend failure reason when ratchet is skipped."""
     script = _script()
     ratchet_block = script[
         script.index("update_progressive_coverage_gate()") : script.index(
@@ -5207,6 +5338,7 @@ def test_run_tests_reports_backend_failure_reason_when_ratchet_is_skipped() -> N
 
 
 def test_run_tests_preserves_explicit_coverage_fail_under_after_ratchet() -> None:
+    """Run tests preserves explicit coverage fail under after ratchet."""
     script = _script()
     ratchet_block = script[
         script.index("update_progressive_coverage_gate()") : script.index(
@@ -5223,6 +5355,7 @@ def test_run_tests_preserves_explicit_coverage_fail_under_after_ratchet() -> Non
 
 
 def test_run_tests_prepares_ci_system_deps_before_full_uv_sync() -> None:
+    """Run tests prepares ci system deps before full uv sync."""
     runtime_deps_block = _extract_run_tests_function("ensure_runtime_dependencies")
 
     assert "bash scripts/install_ci_system_deps.sh" in runtime_deps_block
@@ -5233,6 +5366,7 @@ def test_run_tests_prepares_ci_system_deps_before_full_uv_sync() -> None:
 
 
 def test_run_tests_records_backend_failure_when_required_bats_is_missing() -> None:
+    """Run tests records backend failure when required bats is missing."""
     bats_block = _extract_run_tests_function("run_bats_shell_tests")
 
     assert 'if [ "${RUN_BATS_TESTS}" != "1" ]; then' in bats_block
@@ -5251,6 +5385,7 @@ def test_run_tests_records_backend_failure_when_required_bats_is_missing() -> No
 
 
 def test_run_tests_auto_installs_ci_system_deps_only_with_explicit_opt_in() -> None:
+    """Run tests auto installs ci system deps only with explicit opt in."""
     script = _script()
     auto_install_block = script[
         script.index("try_auto_install_ci_system_deps()") : script.index("run_bats_shell_tests()")
@@ -5266,6 +5401,7 @@ def test_run_tests_auto_installs_ci_system_deps_only_with_explicit_opt_in() -> N
 
 
 def test_run_tests_writes_bats_junit_report_to_configurable_artifact_dir() -> None:
+    """Run tests writes bats junit report to configurable artifact dir."""
     script = _script()
     bats_block = _extract_run_tests_function("run_bats_shell_tests")
 
@@ -5287,6 +5423,7 @@ def test_run_tests_writes_bats_junit_report_to_configurable_artifact_dir() -> No
 
 
 def test_install_sidar_bats_helper_clears_runtime_database_env() -> None:
+    """Install sidar bats helper clears runtime database env."""
     bats_file = Path("tests/shell/install_sidar_functions.bats").read_text(encoding="utf-8")
     helper_block = bats_file[
         bats_file.index("run_installer_function()") : bats_file.index(
@@ -5301,6 +5438,7 @@ def test_install_sidar_bats_helper_clears_runtime_database_env() -> None:
 
 
 def test_ci_uploads_bats_junit_report_artifact() -> None:
+    """Ci uploads bats junit report artifact."""
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 
     assert "name: Upload BATS JUnit Report" in ci_workflow
@@ -5310,6 +5448,7 @@ def test_ci_uploads_bats_junit_report_artifact() -> None:
 
 
 def test_ci_uploads_test_summary_coverage_and_benchmark_reports() -> None:
+    """Ci uploads test summary coverage and benchmark reports."""
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     artifact_block = ci_workflow[
         ci_workflow.index(
@@ -5328,6 +5467,7 @@ def test_ci_uploads_test_summary_coverage_and_benchmark_reports() -> None:
 
 
 def test_ci_postgres_credentials_are_documented_as_test_only() -> None:
+    """Ci postgres credentials are documented as test only."""
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
 
@@ -5339,6 +5479,7 @@ def test_ci_postgres_credentials_are_documented_as_test_only() -> None:
 
 
 def test_pip_audit_skips_only_local_editable_package_and_uses_dated_policy() -> None:
+    """Pip audit skips only local editable package and uses dated policy."""
     script = _script()
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     policy = Path("security/pip-audit-ignores.tsv").read_text(encoding="utf-8")
@@ -5491,6 +5632,7 @@ def test_nightly_gpu_uses_persistent_local_uv_cache_instead_of_actions_cache() -
 
 
 def test_ci_uses_shared_system_dependency_installer_without_duplicate_apt_step() -> None:
+    """Ci uses shared system dependency installer without duplicate apt step."""
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 
     assert "sudo apt-get install -y portaudio19-dev shellcheck bats" not in ci_workflow
@@ -5501,6 +5643,7 @@ def test_ci_uses_shared_system_dependency_installer_without_duplicate_apt_step()
 def test_ci_bootstraps_benchmark_baseline_when_unreachable_and_nightly_gpu_uses_full_profile() -> (
     None
 ):
+    """Ci bootstraps benchmark baseline when unreachable and nightly gpu uses full profile."""
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     seed_workflow = Path(".github/workflows/benchmark-baseline-seed.yml").read_text(
         encoding="utf-8"
@@ -5597,6 +5740,7 @@ def test_ci_bootstraps_benchmark_baseline_when_unreachable_and_nightly_gpu_uses_
 
 
 def test_gpu_concurrent_benchmark_uses_smoke_and_full_profiles() -> None:
+    """Gpu concurrent benchmark uses smoke and full profiles."""
     gpu_benchmark = Path("tests/performance/test_gpu_benchmark.py").read_text(encoding="utf-8")
     notes = Path("docs/module-notes/tests.md").read_text(encoding="utf-8")
     env_test_example = Path(".env.test.example").read_text(encoding="utf-8")
@@ -5624,6 +5768,7 @@ def test_gpu_concurrent_benchmark_uses_smoke_and_full_profiles() -> None:
 
 
 def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browser_cache() -> None:
+    """Run tests executes playwright smoke in ci and auto detects local browser cache."""
     script = _script()
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 
@@ -5746,6 +5891,7 @@ def test_run_tests_executes_playwright_smoke_in_ci_and_auto_detects_local_browse
 
 
 def test_release_playwright_evidence_is_pinned_to_supported_ubuntu_runner() -> None:
+    """Release playwright evidence is pinned to supported ubuntu runner."""
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     test_job = ci[ci.index("  test:\n") : ci.index("  installer-smoke:")]
     testing_doc = Path("docs/TESTING.md").read_text(encoding="utf-8")
@@ -6353,6 +6499,7 @@ def test_frontend_quality_signals_do_not_fail_fast_after_lint() -> None:
 
 
 def test_frontend_security_dependencies_are_patched_in_package_lock() -> None:
+    """Frontend security dependencies are patched in package lock."""
     package_json = json.loads(Path("web_ui_react/package.json").read_text(encoding="utf-8"))
     package_lock = json.loads(Path("web_ui_react/package-lock.json").read_text(encoding="utf-8"))
 
@@ -6399,6 +6546,7 @@ def test_frontend_security_dependencies_are_patched_in_package_lock() -> None:
 
 
 def test_frontend_bundle_budget_warns_when_totals_approach_budget(tmp_path: Path) -> None:
+    """Frontend bundle budget warns when totals approach budget."""
     assets_dir = tmp_path / "assets"
     assets_dir.mkdir()
     chunk_path = assets_dir / "react-dom-near-budget.js"
@@ -6436,6 +6584,7 @@ def test_frontend_bundle_budget_warns_when_totals_approach_budget(tmp_path: Path
 
 
 def test_frontend_bundle_budget_warns_before_named_chunk_hard_limit(tmp_path: Path) -> None:
+    """Frontend bundle budget warns before named chunk hard limit."""
     assets_dir = tmp_path / "assets"
     assets_dir.mkdir()
     (assets_dir / "react-dom-near-budget.js").write_text("a" * 950, encoding="utf-8")
@@ -6513,6 +6662,7 @@ def test_frontend_bundle_budget_fails_ci_on_reviewed_baseline_regression(
 
 
 def test_frontend_bundle_budget_requires_total_budgets_for_ci_gate(tmp_path: Path) -> None:
+    """Frontend bundle budget requires total budgets for ci gate."""
     assets_dir = tmp_path / "assets"
     assets_dir.mkdir()
     chunk_path = assets_dir / "react-dom-test.js"
@@ -6694,6 +6844,7 @@ def test_frontend_rehype_sidar_highlight_has_its_own_manual_chunk() -> None:
 
 
 def test_frontend_playwright_e2e_retries_once_and_preserves_retry_failure(tmp_path: Path) -> None:
+    """Frontend playwright e2e retries once and preserves retry failure."""
     script = _script()
     helper = tmp_path / "frontend_e2e_retry.sh"
     helper.write_text(
@@ -6747,6 +6898,7 @@ printf '%s' "${count}" > "${MOCK_NPM_COUNT}"
 
 
 def test_benchmark_and_frontend_e2e_flakes_are_soft_local_but_hard_in_ci() -> None:
+    """Benchmark and frontend e2e flakes are soft local but hard in ci."""
     script = _script()
     final_evaluation = script[script.index("# 4) Final Durum Değerlendirmesi") :]
     common_prefix = """
@@ -7003,6 +7155,7 @@ def test_production_compose_failure_diagnostics_infers_service_from_breadcrumb_c
 
 
 def test_final_summary_prints_production_compose_gate_fields() -> None:
+    """Final summary prints production compose gate fields."""
     final_evaluation = _script().split("# 4) Final Durum Değerlendirmesi", maxsplit=1)[1]
 
     assert "Production Compose Çıkış Kodu: ${PRODUCTION_COMPOSE_EXIT_CODE:-0}" in final_evaluation
@@ -7017,6 +7170,7 @@ def test_final_summary_prints_production_compose_gate_fields() -> None:
 
 
 def test_websocket_mount_status_is_resolved_before_first_paint() -> None:
+    """Websocket mount status is resolved before first paint."""
     websocket_hook = Path("web_ui_react/src/hooks/useWebSocket.ts").read_text(encoding="utf-8")
 
     assert (
@@ -7033,6 +7187,7 @@ def test_websocket_mount_status_is_resolved_before_first_paint() -> None:
 def test_shared_playwright_ubuntu_override_helper_runs_node_install_with_synthetic_os_release(
     tmp_path: Path,
 ) -> None:
+    """Shared playwright ubuntu override helper runs node install with synthetic os release."""
     helper = Path("scripts/install_modules/utils/playwright_ubuntu_override.sh").resolve()
     os_release = tmp_path / "os-release"
     mock_install = tmp_path / "mock-install.sh"
@@ -7069,6 +7224,7 @@ grep -q '^VERSION_ID="24.04"$' "${OS_RELEASE_PATH}"
 def test_node_playwright_official_ubuntu26_support_disables_override(
     tmp_path: Path,
 ) -> None:
+    """Node playwright official ubuntu26 support disables override."""
     helper = Path("scripts/install_modules/utils/playwright_ubuntu_override.sh").resolve()
     os_release = tmp_path / "os-release"
     mock_npx = tmp_path / "npx"
@@ -7159,6 +7315,7 @@ exit 0
 def test_shared_playwright_ubuntu_override_helper_uses_latest_supported_ubuntu_bundle(
     tmp_path: Path,
 ) -> None:
+    """Shared playwright ubuntu override helper uses latest supported ubuntu bundle."""
     helper = Path("scripts/install_modules/utils/playwright_ubuntu_override.sh").resolve()
     package_dir = tmp_path / "playwright"
     host_platform = (
@@ -7207,6 +7364,7 @@ PYTHONPATH={tmp_path} python3 "$@"
 def test_playwright_phase_python_installer_still_resolves_latest_supported_ubuntu_bundle(
     tmp_path: Path,
 ) -> None:
+    """Playwright phase python installer still resolves latest supported ubuntu bundle."""
     helper = Path("scripts/install_modules/utils/playwright_ubuntu_override.sh").resolve()
     phase = Path("scripts/install_modules/phases/13_playwright.sh").resolve()
     bin_dir = tmp_path / "bin"
@@ -7307,6 +7465,7 @@ install_playwright_browsers""",
 
 
 def test_shared_playwright_ubuntu_override_helper_skips_future_ubuntu_override() -> None:
+    """Shared playwright ubuntu override helper skips future ubuntu override."""
     helper = Path("scripts/install_modules/utils/playwright_ubuntu_override.sh").resolve()
 
     result = subprocess.run(
@@ -7330,6 +7489,7 @@ def test_shared_playwright_ubuntu_override_helper_skips_future_ubuntu_override()
 def test_shared_playwright_ubuntu_override_helper_skips_override_when_upstream_supports_host(
     tmp_path: Path,
 ) -> None:
+    """Shared playwright ubuntu override helper skips override when upstream supports host."""
     helper = Path("scripts/install_modules/utils/playwright_ubuntu_override.sh").resolve()
     os_release = tmp_path / "os-release"
     mock_python = tmp_path / "mock-python.sh"
@@ -7371,6 +7531,7 @@ exit "${MOCK_PROBE_EXIT:-0}"
 
 
 def test_shared_playwright_ubuntu_override_helper_lists_modern_chromium_dependencies() -> None:
+    """Shared playwright ubuntu override helper lists modern chromium dependencies."""
     helper = Path("scripts/install_modules/utils/playwright_ubuntu_override.sh").read_text(
         encoding="utf-8"
     )
@@ -7451,6 +7612,7 @@ def test_local_frontend_playwright_sentinel_skips_repeat_node_resolution_and_rem
     ubuntu_version: str,
     expects_ubuntu_override: bool,
 ) -> None:
+    """Local frontend playwright sentinel skips repeat node resolution and removes stale cache."""
     helper_script = tmp_path / "frontend_playwright_helpers.sh"
     helper_script.write_text(
         _run_tests_frontend_playwright_helpers(),
@@ -7579,6 +7741,7 @@ resolve_local_frontend_e2e_mode
 def test_forced_frontend_playwright_mode_attempts_cache_install_before_failing(
     tmp_path: Path,
 ) -> None:
+    """Forced frontend playwright mode attempts cache install before failing."""
     helper_script = tmp_path / "frontend_playwright_helpers.sh"
     helper_script.write_text(
         _run_tests_frontend_playwright_helpers(),
@@ -7662,6 +7825,7 @@ grep -qx -- '--no-install playwright install chromium' "${MOCK_NPX_LOG}" """,
 
 
 def test_vitest_coverage_explicitly_lists_fully_covered_source_files() -> None:
+    """Vitest coverage explicitly lists fully covered source files."""
     vite = Path("web_ui_react/vite.config.js").read_text(encoding="utf-8")
 
     assert 'include: ["src/**/*.{js,jsx,ts,tsx}"]' in vite
@@ -7670,6 +7834,7 @@ def test_vitest_coverage_explicitly_lists_fully_covered_source_files() -> None:
 
 
 def test_run_tests_stage_argument_contract_is_documented_and_wired() -> None:
+    """Run tests stage argument contract is documented and wired."""
     script = _script()
 
     assert (
@@ -7692,6 +7857,7 @@ def test_run_tests_stage_argument_contract_is_documented_and_wired() -> None:
 
 
 def test_run_tests_stage_filters_pytest_phase_directories() -> None:
+    """Run tests stage filters pytest phase directories."""
     script = _script()
 
     assert "local run_unit_phase=0" in script
@@ -7730,6 +7896,7 @@ def test_run_tests_stage_filters_pytest_phase_directories() -> None:
 
 
 def test_docker_compose_redis_has_healthcheck_and_healthy_dependencies() -> None:
+    """Docker compose redis has healthcheck and healthy dependencies."""
     compose = Path("docker-compose.yml").read_text(encoding="utf-8")
     redis_start = compose.index("  redis:")
     postgres_start = compose.index("  postgres:", redis_start)
@@ -7753,6 +7920,7 @@ def test_docker_compose_redis_has_healthcheck_and_healthy_dependencies() -> None
 
 
 def test_docker_compose_redis_requires_password_and_is_bound_to_loopback() -> None:
+    """Docker compose redis requires password and is bound to loopback."""
     compose = Path("docker-compose.yml").read_text(encoding="utf-8")
     redis_start = compose.index("  redis:")
     postgres_start = compose.index("  postgres:", redis_start)
@@ -7765,6 +7933,7 @@ def test_docker_compose_redis_requires_password_and_is_bound_to_loopback() -> No
 
 
 def test_install_sidar_remote_module_trust_root_requires_commit_pin() -> None:
+    """Install sidar remote module trust root requires commit pin."""
     install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
 
     assert "resolve_remote_module_ref()" in install_script
@@ -7779,6 +7948,7 @@ def test_install_sidar_remote_module_trust_root_requires_commit_pin() -> None:
 
 
 def test_install_sidar_resolves_mutable_ref_without_anonymous_github_api(tmp_path: Path) -> None:
+    """Install sidar resolves mutable ref without anonymous github api."""
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     git_script = fake_bin / "git"
@@ -7819,6 +7989,7 @@ def test_install_sidar_resolves_mutable_ref_without_anonymous_github_api(tmp_pat
 def test_install_sidar_does_not_use_anonymous_api_when_git_resolution_fails(
     tmp_path: Path,
 ) -> None:
+    """Install sidar does not use anonymous api when git resolution fails."""
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     for command in ("git", "curl"):
@@ -7852,6 +8023,7 @@ def test_install_sidar_does_not_use_anonymous_api_when_git_resolution_fails(
 
 
 def test_ci_publish_standalone_installer_depends_on_installer_smoke_only() -> None:
+    """Ci publish standalone installer depends on installer smoke only."""
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     publish_block = ci[ci.index("  publish-standalone-installer:") :]
     publish_block = publish_block[: publish_block.index("    steps:")]
@@ -7862,6 +8034,7 @@ def test_ci_publish_standalone_installer_depends_on_installer_smoke_only() -> No
 
 
 def test_install_sidar_embedded_remote_module_ref_is_pinned_commit() -> None:
+    """Install sidar embedded remote module ref is pinned commit."""
     install_script = Path("install_sidar.sh").read_text(encoding="utf-8")
 
     assert 'SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="unknown"' not in install_script
@@ -7873,6 +8046,7 @@ def test_install_sidar_embedded_remote_module_ref_is_pinned_commit() -> None:
 
 
 def test_install_sidar_validate_remote_module_trust_root_blocks_raw_github_main() -> None:
+    """Install sidar validate remote module trust root blocks raw github main."""
     result = subprocess.run(
         [
             "bash",
@@ -7904,6 +8078,7 @@ def test_install_sidar_validate_remote_module_trust_root_blocks_raw_github_main(
 
 
 def test_install_sidar_resolve_remote_module_base_accepts_commit_pinned_raw_github() -> None:
+    """Install sidar resolve remote module base accepts commit pinned raw github."""
     pinned_ref = "0123456789abcdef0123456789abcdef01234567"
     result = subprocess.run(
         [
@@ -7936,6 +8111,7 @@ def test_install_sidar_resolve_remote_module_base_accepts_commit_pinned_raw_gith
 
 
 def test_installer_warns_when_production_env_shares_local_generated_secrets() -> None:
+    """Installer warns when production env shares local generated secrets."""
     env_phase = Path("scripts/install_modules/phases/08_env.sh").read_text(encoding="utf-8")
 
     assert "sidar_production_secret_rotation_keys()" in env_phase
@@ -7965,6 +8141,7 @@ def test_installer_warns_when_production_env_shares_local_generated_secrets() ->
 
 
 def test_installer_pin_finalize_workflow_is_one_documented_command() -> None:
+    """Installer pin finalize workflow is one documented command."""
     finalize = Path("scripts/finalize_install_module_pin.sh").read_text(encoding="utf-8")
     sync = Path("scripts/sync_install_module_hashes.sh").read_text(encoding="utf-8")
     makefile = Path("Makefile").read_text(encoding="utf-8")
@@ -7983,6 +8160,7 @@ def test_installer_pin_finalize_workflow_is_one_documented_command() -> None:
 
 
 def test_production_secret_rotation_gate_rejects_shared_values(tmp_path: Path) -> None:
+    """Production secret rotation gate rejects shared values."""
     local_env = tmp_path / ".env"
     production_env = tmp_path / ".env.production"
     shared = "shared-secret-value-abcdefghijklmnopqrstuvwxyz"
@@ -8013,6 +8191,7 @@ def test_production_secret_rotation_gate_rejects_shared_values(tmp_path: Path) -
 def test_production_secret_rotation_gate_rejects_missing_production_profile(
     tmp_path: Path,
 ) -> None:
+    """Production secret rotation gate rejects missing production profile."""
     (tmp_path / ".env").write_text("API_KEY=local-only-secret\n", encoding="utf-8")
 
     probe = subprocess.run(

@@ -1,3 +1,5 @@
+"""Unit tests for ``scripts.repo_contract_report``."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -6,6 +8,7 @@ from scripts import repo_contract_report as report
 
 
 def test_role_contract_report_has_no_current_builtin_drift() -> None:
+    """Role contract report has no current builtin drift."""
     role_report = report.build_role_contract_report()
 
     assert role_report["status"] == "ok"
@@ -27,6 +30,7 @@ def test_role_contract_report_has_no_current_builtin_drift() -> None:
 def test_scan_repo_standards_flags_direct_pip_legacy_name_and_low_model_default(
     tmp_path: Path,
 ) -> None:
+    """Scan repo standards flags direct pip legacy name and low model default."""
     doc = tmp_path / "README.md"
     doc.write_text(
         "Install with pip install sidar\n"
@@ -47,6 +51,7 @@ def test_scan_repo_standards_flags_direct_pip_legacy_name_and_low_model_default(
 
 
 def test_build_report_marks_selected_standards_violations_as_fail(tmp_path: Path) -> None:
+    """Build report marks selected standards violations as fail."""
     doc = tmp_path / "guide.md"
     doc.write_text("python -m pip install bad-example\n", encoding="utf-8")
 
@@ -58,6 +63,7 @@ def test_build_report_marks_selected_standards_violations_as_fail(tmp_path: Path
 
 
 def test_dependency_profile_plan_sync_current_repo_is_ok() -> None:
+    """Dependency profile plan sync current repo is ok."""
     status = report.check_dependency_profile_plan_sync()
 
     assert status.status == "ok"
@@ -74,6 +80,7 @@ def test_dependency_profile_plan_sync_current_repo_is_ok() -> None:
 
 
 def test_dependency_profile_plan_sync_reports_drift_for_unsynced_docs(tmp_path: Path) -> None:
+    """Dependency profile plan sync reports drift for unsynced docs."""
     pyproject = tmp_path / "pyproject.toml"
     plan = tmp_path / "docs" / "DEPENDENCY_PROFILE_PLAN.md"
     plan.parent.mkdir()

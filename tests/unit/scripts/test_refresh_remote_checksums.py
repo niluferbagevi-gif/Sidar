@@ -15,6 +15,7 @@ def _managed_pins() -> tuple[object, ...]:
 
 
 def test_refresh_tool_manages_every_declared_remote_checksum() -> None:
+    """Refresh tool manages every declared remote checksum."""
     pins = _managed_pins()
     managed_names = {pin.env_var for pin in pins}
     declared_names = {
@@ -36,6 +37,7 @@ def test_refresh_tool_manages_every_declared_remote_checksum() -> None:
 
 
 def test_node_installer_pins_match_runtime_download_urls() -> None:
+    """Node installer pins match runtime download urls."""
     pins = {pin.env_var: pin.url for pin in _managed_pins()}
     system_phase = Path("scripts/install_modules/phases/03_system.sh").read_text(encoding="utf-8")
 

@@ -1,3 +1,5 @@
+"""Unit tests for ``scripts.sync_postgres_password``."""
+
 from __future__ import annotations
 
 import json
@@ -26,6 +28,7 @@ def _write_env(path: Path, *, sidar_env: str = "development", password: str) -> 
 def test_sync_postgres_password_uses_docker_exec_stdin_and_redacts_secret(
     monkeypatch, tmp_path: Path
 ):
+    """Sync postgres password uses docker exec stdin and redacts secret."""
     calls = {}
     secret = "super-secret-password-123456"
     env_file = tmp_path / ".env"
@@ -56,6 +59,7 @@ def test_sync_postgres_password_uses_docker_exec_stdin_and_redacts_secret(
 
 
 def test_sync_postgres_password_reads_later_dotenv_override(monkeypatch, tmp_path: Path):
+    """Sync postgres password reads later dotenv override."""
     calls = {}
     base_secret = "base-secret-password-123456"
     override_secret = "override-secret-password-123456"
@@ -87,6 +91,7 @@ def test_sync_postgres_password_reads_later_dotenv_override(monkeypatch, tmp_pat
 def test_sync_postgres_password_refuses_non_dev_from_env_file_without_override(
     monkeypatch, tmp_path: Path
 ):
+    """Sync postgres password refuses non dev from env file without override."""
     env_file = tmp_path / ".env"
     _write_env(env_file, sidar_env="production", password="super-secret-password-123456")
     monkeypatch.delenv("SIDAR_ENV", raising=False)
@@ -104,6 +109,7 @@ def test_sync_postgres_password_refuses_non_dev_from_env_file_without_override(
 def test_sync_postgres_password_backward_compatible_wrapper_uses_docker_exec(
     monkeypatch, tmp_path: Path
 ):
+    """Sync postgres password backward compatible wrapper uses docker exec."""
     calls = {}
     env_file = tmp_path / ".env"
     _write_env(env_file, password="super-secret-password-123456")
@@ -122,6 +128,7 @@ def test_sync_postgres_password_backward_compatible_wrapper_uses_docker_exec(
 
 
 def test_sync_postgres_password_main_emits_redacted_summary(monkeypatch, capsys, tmp_path: Path):
+    """Sync postgres password main emits redacted summary."""
     secret = "super-secret-password-123456"
     env_file = tmp_path / ".env"
     _write_env(env_file, password=secret)

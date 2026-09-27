@@ -175,6 +175,7 @@ _GUARDED_PROMPT_SITES = (
 def test_interactive_prompt_sites_route_their_context_through_dev_tty(
     relative_path: str, marker: str, read_line: str
 ) -> None:
+    """Interactive prompt sites route their context through dev tty."""
     text = (REPO_ROOT / relative_path).read_text(encoding="utf-8")
 
     assert read_line in text, f"expected read call not found in {relative_path}"

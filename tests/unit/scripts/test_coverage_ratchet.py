@@ -1,3 +1,5 @@
+"""Unit tests for ``scripts.coverage_ratchet``."""
+
 from __future__ import annotations
 
 import json
@@ -17,27 +19,33 @@ def _write_coverage_json(path: Path, percent: float) -> None:
 
 
 def test_compute_next_gate_raises_to_reached_step_without_overshooting() -> None:
+    """Compute next gate raises to reached step without overshooting."""
     assert compute_next_gate(12.4, 5, step=5, min_gate=5) == 10
     assert compute_next_gate(15.0, 10, step=5, min_gate=5) == 15
 
 
 def test_compute_next_gate_never_decreases_existing_gate() -> None:
+    """Compute next gate never decreases existing gate."""
     assert compute_next_gate(84.9, 90, step=5, min_gate=5) == 90
 
 
 def test_default_one_percent_step_promotes_high_coverage_without_exact_lock() -> None:
+    """Default one percent step promotes high coverage without exact lock."""
     assert compute_next_gate(99.04, 95, min_gate=5) == 99
 
 
 def test_coarse_five_percent_step_keeps_gate_at_reached_floor() -> None:
+    """Coarse five percent step keeps gate at reached floor."""
     assert compute_next_gate(99.04, 95, step=5, min_gate=5) == 95
 
 
 def test_hundredth_percent_step_locks_to_measured_coverage() -> None:
+    """Hundredth percent step locks to measured coverage."""
     assert compute_next_gate(99.04, 95, step=0.01, min_gate=5) == 99.04
 
 
 def test_ratchet_coverage_gate_updates_coverage_config_preserving_comments(tmp_path: Path) -> None:
+    """Ratchet coverage gate updates coverage config preserving comments."""
     coverage_config = tmp_path / "pyproject.toml"
     coverage_json = tmp_path / "coverage.json"
     coverage_config.write_text(
@@ -61,6 +69,7 @@ def test_ratchet_coverage_gate_updates_coverage_config_preserving_comments(tmp_p
 def test_ratchet_coverage_gate_leaves_gate_when_next_one_percent_step_not_reached(
     tmp_path: Path,
 ) -> None:
+    """Ratchet coverage gate leaves gate when next one percent step not reached."""
     coverage_config = tmp_path / "pyproject.toml"
     coverage_json = tmp_path / "coverage.json"
     coverage_config.write_text("[tool.coverage.report]\nfail_under = 30\n", encoding="utf-8")
@@ -76,6 +85,7 @@ def test_ratchet_coverage_gate_leaves_gate_when_next_one_percent_step_not_reache
 
 
 def test_parse_percentage_rejects_invalid_and_clamps() -> None:
+    """Parse percentage rejects invalid and clamps."""
     from scripts.coverage_ratchet import _parse_percentage
 
     assert _parse_percentage("150%", field_name="x") == 100.0
@@ -85,6 +95,7 @@ def test_parse_percentage_rejects_invalid_and_clamps() -> None:
 
 
 def test_read_total_coverage_validates_totals_and_display_fallback(tmp_path: Path) -> None:
+    """Read total coverage validates totals and display fallback."""
     from scripts.coverage_ratchet import read_total_coverage
 
     coverage_json = tmp_path / "coverage.json"
@@ -103,6 +114,7 @@ def test_read_total_coverage_validates_totals_and_display_fallback(tmp_path: Pat
 
 
 def test_compute_next_gate_validates_step_and_gate_order() -> None:
+    """Compute next gate validates step and gate order."""
     with pytest.raises(ValueError, match="step"):
         compute_next_gate(10, 5, step=0)
     with pytest.raises(ValueError, match="min_gate"):
@@ -111,6 +123,7 @@ def test_compute_next_gate_validates_step_and_gate_order() -> None:
 
 
 def test_write_fail_under_inserts_into_existing_and_missing_report_sections(tmp_path: Path) -> None:
+    """Write fail under inserts into existing and missing report sections."""
     from scripts.coverage_ratchet import write_fail_under
 
     coverage_config = tmp_path / "pyproject.toml"
@@ -132,6 +145,7 @@ def test_write_fail_under_inserts_into_existing_and_missing_report_sections(tmp_
 def test_main_prints_updated_and_unchanged_results(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Main prints updated and unchanged results."""
     from scripts.coverage_ratchet import main
 
     coverage_config = tmp_path / "pyproject.toml"
@@ -153,6 +167,7 @@ def test_main_prints_updated_and_unchanged_results(
 
 
 def test_write_fail_under_appends_to_report_at_end(tmp_path: Path) -> None:
+    """Write fail under appends to report at end."""
     from scripts.coverage_ratchet import write_fail_under
 
     coverage_config = tmp_path / "pyproject.toml"
@@ -166,6 +181,7 @@ def test_write_fail_under_appends_to_report_at_end(tmp_path: Path) -> None:
 
 
 def test_write_fail_under_adds_missing_report_after_newline_terminated_file(tmp_path: Path) -> None:
+    """Write fail under adds missing report after newline terminated file."""
     from scripts.coverage_ratchet import write_fail_under
 
     coverage_config = tmp_path / "pyproject.toml"
@@ -177,6 +193,7 @@ def test_write_fail_under_adds_missing_report_after_newline_terminated_file(tmp_
 
 
 def test_ensure_html_dark_mode_css_adds_missing_html_section(tmp_path: Path) -> None:
+    """Ensure html dark mode css adds missing html section."""
     from scripts.coverage_ratchet import ensure_html_dark_mode_css
 
     coverage_config = tmp_path / "pyproject.toml"
@@ -191,6 +208,7 @@ def test_ensure_html_dark_mode_css_adds_missing_html_section(tmp_path: Path) -> 
 
 
 def test_ratchet_coverage_gate_enforces_dark_mode_css(tmp_path: Path) -> None:
+    """Ratchet coverage gate enforces dark mode css."""
     coverage_config = tmp_path / "pyproject.toml"
     coverage_json = tmp_path / "coverage.json"
     coverage_config.write_text(
@@ -205,14 +223,17 @@ def test_ratchet_coverage_gate_enforces_dark_mode_css(tmp_path: Path) -> None:
 
 
 def test_ninety_nine_gate_does_not_require_hundred_until_measurement_reaches_it() -> None:
+    """Ninety nine gate does not require hundred until measurement reaches it."""
     assert compute_next_gate(99.58, 99, step=1, min_gate=5, max_gate=100) == 99
     assert compute_next_gate(100.0, 99, step=1, min_gate=5, max_gate=100) == 100
 
 
 def test_hundred_percent_gate_never_drops_after_a_regression() -> None:
+    """Hundred percent gate never drops after a regression."""
     assert compute_next_gate(99.3, 100, step=1, min_gate=5, max_gate=100) == 100
     assert compute_next_gate(100.0, 100, step=1, min_gate=5, max_gate=100) == 100
 
 
 def test_default_cap_promotes_hundred_percent_measurement() -> None:
+    """Default cap promotes hundred percent measurement."""
     assert compute_next_gate(100.0, 99, step=1, min_gate=5, max_gate=100) == 100

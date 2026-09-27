@@ -13,10 +13,12 @@ def _write_baseline(path: Path, maximum: object) -> None:
 
 
 def test_count_lines_returns_zero_for_missing_file(tmp_path: Path) -> None:
+    """Count lines returns zero for missing file."""
     assert checker.count_lines(tmp_path / "missing.py") == 0
 
 
 def test_count_lines_counts_source_lines(tmp_path: Path) -> None:
+    """Count lines counts source lines."""
     target = tmp_path / "web_server.py"
     target.write_text("a = 1\nb = 2\nc = 3\n", encoding="utf-8")
 
@@ -24,6 +26,7 @@ def test_count_lines_counts_source_lines(tmp_path: Path) -> None:
 
 
 def test_size_budget_passes_at_or_below_maximum(tmp_path: Path) -> None:
+    """Size budget passes at or below maximum."""
     baseline = tmp_path / "baseline.json"
     target = tmp_path / "web_server.py"
     target.write_text("a = 1\nb = 2\n", encoding="utf-8")
@@ -33,6 +36,7 @@ def test_size_budget_passes_at_or_below_maximum(tmp_path: Path) -> None:
 
 
 def test_size_budget_is_one_way_and_fails_closed(tmp_path: Path) -> None:
+    """Size budget is one way and fails closed."""
     baseline = tmp_path / "baseline.json"
     target = tmp_path / "web_server.py"
     target.write_text("a = 1\nb = 2\n", encoding="utf-8")
@@ -45,6 +49,7 @@ def test_size_budget_is_one_way_and_fails_closed(tmp_path: Path) -> None:
 
 
 def test_size_budget_rejects_missing_baseline_key(tmp_path: Path) -> None:
+    """Size budget rejects missing baseline key."""
     baseline = tmp_path / "baseline.json"
     baseline.write_text("{}", encoding="utf-8")
 
@@ -52,6 +57,7 @@ def test_size_budget_rejects_missing_baseline_key(tmp_path: Path) -> None:
 
 
 def test_size_budget_rejects_invalid_json(tmp_path: Path) -> None:
+    """Size budget rejects invalid json."""
     baseline = tmp_path / "baseline.json"
     baseline.write_text("not json", encoding="utf-8")
 
@@ -59,6 +65,7 @@ def test_size_budget_rejects_invalid_json(tmp_path: Path) -> None:
 
 
 def test_size_budget_rejects_negative_maximum(tmp_path: Path) -> None:
+    """Size budget rejects negative maximum."""
     baseline = tmp_path / "baseline.json"
     _write_baseline(baseline, -1)
 
@@ -66,6 +73,7 @@ def test_size_budget_rejects_negative_maximum(tmp_path: Path) -> None:
 
 
 def test_size_budget_rejects_bool_maximum(tmp_path: Path) -> None:
+    """Size budget rejects bool maximum."""
     baseline = tmp_path / "baseline.json"
     _write_baseline(baseline, True)
 

@@ -13,6 +13,7 @@ import yaml
 
 
 def test_production_compose_gate_covers_runtime_release_evidence() -> None:
+    """Production compose gate covers runtime release evidence."""
     script = Path("scripts/ci/validate_production_compose.sh").read_text(encoding="utf-8")
 
     for evidence in (
@@ -663,6 +664,7 @@ def test_enable_tracing_defaults_to_false_without_the_observability_profile(
 
 
 def test_production_readiness_aggregate_requires_compose_and_minimal_profiles() -> None:
+    """Production readiness aggregate requires compose and minimal profiles."""
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     aggregate = workflow[
         workflow.index("  production-readiness:") : workflow.index("  production-profile-dry-run:")
@@ -674,6 +676,7 @@ def test_production_readiness_aggregate_requires_compose_and_minimal_profiles() 
 
 
 def test_production_override_requires_healthcheck_restart_and_named_volumes() -> None:
+    """Production override requires healthcheck restart and named volumes."""
     override = Path("docker-compose.production.yml").read_text(encoding="utf-8")
 
     assert "restart: always" in override
