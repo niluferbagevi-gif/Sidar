@@ -1,3 +1,5 @@
+"""Unit tests for ``agent.roles.coverage_agent``."""
+
 import asyncio
 import hashlib
 import importlib
@@ -27,12 +29,14 @@ def _reload_coverage_agent_module():
 
 
 def make_agent(tmp_path, code_manager):
+    """Return a CoverageAgent rooted at ``tmp_path`` using the given code manager."""
     a = CoverageAgent(cfg=SimpleNamespace(BASE_DIR=tmp_path))
     a.code = code_manager
     return a
 
 
 async def test_init_registers_tools(mocker, tmp_path):
+    """Init registers tools."""
     events = []
 
     def fake_base_init(self, cfg=None, role_name="base"):
@@ -70,6 +74,8 @@ async def test_init_registers_tools(mocker, tmp_path):
 
 
 async def test_reload_fixture_recovers_from_stubbed_base_agent(monkeypatch, tmp_path):
+    """Reload fixture recovers from stubbed base agent."""
+
     class _BrokenBaseAgent:
         def __init__(self, cfg=None, role_name="broken"):
             self.cfg = cfg
@@ -85,6 +91,7 @@ async def test_reload_fixture_recovers_from_stubbed_base_agent(monkeypatch, tmp_
 
 
 async def test_static_helpers_and_parsers(tmp_path):
+    """Static helpers and parsers."""
     assert CoverageAgent._parse_payload("") == {}
     assert CoverageAgent._parse_payload('{"k":1}') == {"k": 1}
     assert CoverageAgent._parse_payload("[1]") == {"command": "[1]"}
@@ -121,6 +128,7 @@ async def test_static_helpers_and_parsers(tmp_path):
 
 
 async def test_parse_coverage_xml_and_terminal(tmp_path):
+    """Parse coverage xml and terminal."""
     xml_path = tmp_path / "coverage.xml"
     xml_path.write_text(
         """
@@ -210,6 +218,7 @@ agent/roles/ok.py                 100      0      0      0 100%
 
 
 async def test_build_dynamic_prompt():
+    """Build dynamic prompt."""
     prompt = CoverageAgent._build_dynamic_pytest_prompt(
         finding={"target_path": "src/a.py", "missing_lines": [1, 2], "missing_branches": ["3:50%"]},
         coveragerc={"run": {"include": "src/*"}, "report": {"omit": "tests/*"}},
@@ -228,6 +237,7 @@ async def test_build_dynamic_prompt():
 
 @pytest.mark.asyncio
 async def test_tool_methods(tmp_path, fake_coverage_code_manager):
+    """Tool methods."""
     agent = make_agent(tmp_path, fake_coverage_code_manager)
     run_json = await agent._tool_run_pytest('{"command":"pytest -q","cwd":"/tmp"}')
     assert json.loads(run_json)["analysis"]["summary"] == "ok"
@@ -399,6 +409,7 @@ async def test_tool_analyze_test_artifacts_handles_empty_argument(
 
 @pytest.mark.asyncio
 async def test_write_missing_tests_failure(tmp_path, fake_coverage_code_manager, mocker):
+    """Write missing tests failure."""
     agent = make_agent(tmp_path, fake_coverage_code_manager)
     mocker.patch.object(
         agent.code, "write_generated_test", return_value=(False, "Permission Denied")
@@ -424,6 +435,7 @@ async def test_write_missing_tests_failure(tmp_path, fake_coverage_code_manager,
 async def test_write_missing_tests_rejects_duplicate_test_function(
     tmp_path, fake_coverage_code_manager
 ):
+    """Write missing tests rejects duplicate test function."""
     agent = make_agent(tmp_path, fake_coverage_code_manager)
     test_file = tmp_path / "tests" / "test_dup.py"
     test_file.parent.mkdir(parents=True)
@@ -452,6 +464,7 @@ async def test_write_missing_tests_rejects_duplicate_test_function(
 async def test_autonomous_coverage_batch_writes_multiple_findings(
     tmp_path, fake_coverage_code_manager, monkeypatch
 ):
+    """Autonomous coverage batch writes multiple findings."""
     agent = make_agent(tmp_path, fake_coverage_code_manager)
     findings = [
         {"target_path": "src/a.py", "suggested_test_path": "tests/test_a.py"},
@@ -484,6 +497,7 @@ async def test_autonomous_coverage_batch_writes_multiple_findings(
 
 
 async def test_cap_autonomous_finding_scope_limits_context() -> None:
+    """Cap autonomous finding scope limits context."""
     finding = {
         "target_path": "core/rag.py",
         "summary": "large gap",
@@ -510,6 +524,7 @@ async def test_cap_autonomous_finding_scope_limits_context() -> None:
 
 @pytest.mark.asyncio
 async def test_ensure_db_timeout_guard(tmp_path, fake_coverage_code_manager):
+    """Ensure db timeout guard."""
     agent = make_agent(tmp_path, fake_coverage_code_manager)
 
     class BlockingLock:
@@ -530,6 +545,7 @@ async def test_ensure_db_timeout_guard(tmp_path, fake_coverage_code_manager):
 async def test_ensure_db_and_record_task(
     tmp_path, monkeypatch, fake_coverage_code_manager, fake_coverage_db_class
 ):
+    """Ensure db and record task."""
     agent = make_agent(tmp_path, fake_coverage_code_manager)
     core_pkg = ModuleType("core")
     core_db = ModuleType("core.db")
@@ -559,6 +575,7 @@ async def test_ensure_db_and_record_task(
 async def test_ensure_db_when_lock_already_exists(
     tmp_path, monkeypatch, fake_coverage_code_manager, fake_coverage_db_class
 ):
+    """Ensure db when lock already exists."""
     agent = make_agent(tmp_path, fake_coverage_code_manager)
     agent._db_lock = asyncio.Lock()
     core_pkg = ModuleType("core")
@@ -574,6 +591,7 @@ async def test_ensure_db_when_lock_already_exists(
 
 @pytest.mark.asyncio
 async def test_ensure_db_returns_existing_db_inside_lock(tmp_path, fake_coverage_code_manager):
+    """Ensure db returns existing db inside lock."""
     agent = make_agent(tmp_path, fake_coverage_code_manager)
     existing_db = SimpleNamespace(name="already-ready")
 
@@ -594,6 +612,7 @@ async def test_ensure_db_returns_existing_db_inside_lock(tmp_path, fake_coverage
 async def test_ensure_db_concurrency(
     tmp_path, monkeypatch, fake_coverage_code_manager, fake_coverage_db_class
 ):
+    """Ensure db concurrency."""
     agent = make_agent(tmp_path, fake_coverage_code_manager)
     core_pkg = ModuleType("core")
     core_db = ModuleType("core.db")
@@ -608,6 +627,8 @@ async def test_ensure_db_concurrency(
 
 
 async def test_parse_terminal_coverage_skips_empty_path():
+    """Parse terminal coverage skips empty path."""
+
     class FakeMatch:
         @staticmethod
         def groupdict():
@@ -637,6 +658,8 @@ async def test_parse_terminal_coverage_skips_empty_path():
 
 
 async def test_clean_code_output_handles_closing_fence_without_opening_hint():
+    """Clean code output handles closing fence without opening hint."""
+
     class FakeStr(str):
         def splitlines(self):
             return []
@@ -650,11 +673,13 @@ async def test_clean_code_output_handles_closing_fence_without_opening_hint():
 
 
 async def test_clean_code_output_real_markdown_fence_cleanup():
+    """Clean code output real markdown fence cleanup."""
     cleaned = CoverageAgent._clean_code_output(" ```python\nprint('hi')\n``` ")
     assert cleaned == "print('hi')"
 
 
 async def test_clean_code_output_handles_multiple_and_nested_like_fences():
+    """Clean code output handles multiple and nested like fences."""
     multi_block = (
         "```python\n"
         "def test_a():\n"
@@ -674,12 +699,14 @@ async def test_clean_code_output_handles_multiple_and_nested_like_fences():
 
 
 async def test_complex_code_sanitization():
+    """Complex code sanitization."""
     raw = "Giriş metni\n```python\nx = 1\n```\n```js\nconsole.log('x')\n```\n```python\ny = 2\n```"
     cleaned = CoverageAgent._clean_code_output(raw)
     assert cleaned == "x = 1\n\ny = 2"
 
 
 async def test_parse_coverage_xml_branch_line_with_full_coverage_is_ignored(tmp_path):
+    """Parse coverage xml branch line with full coverage is ignored."""
     xml_path = tmp_path / "coverage_full_branch.xml"
     xml_path.write_text(
         """
@@ -707,6 +734,7 @@ async def test_parse_coverage_xml_branch_line_with_full_coverage_is_ignored(tmp_
 
 @pytest.mark.asyncio
 async def test_run_task_routes_and_flows(tmp_path, fake_coverage_code_manager):
+    """Run task routes and flows."""
     agent = make_agent(tmp_path, fake_coverage_code_manager)
 
     async def fake_tool(name, arg):
@@ -776,6 +804,7 @@ async def test_run_task_routes_and_flows(tmp_path, fake_coverage_code_manager):
 async def test_run_task_analyze_coverage_report_handles_invalid_xml_fail_safe(
     tmp_path, fake_coverage_code_manager
 ):
+    """Run task analyze coverage report handles invalid xml fail safe."""
     agent = make_agent(tmp_path, fake_coverage_code_manager)
     agent.register_tool("analyze_coverage_report", agent._tool_analyze_coverage_report)
 
@@ -802,6 +831,7 @@ async def test_run_task_analyze_coverage_report_handles_invalid_xml_fail_safe(
 async def test_coverage_agent_generate_candidate_with_fake_llm(
     tmp_path, fake_coverage_code_manager
 ):
+    """Coverage agent generate candidate with fake llm."""
     agent = make_agent(tmp_path, fake_coverage_code_manager)
 
     async def _coverage_llm(*_args, **_kwargs):
@@ -827,6 +857,7 @@ async def test_coverage_agent_generate_candidate_with_fake_llm(
 async def test_coverage_agent_run_task_marks_pending_approval(
     tmp_path, monkeypatch, fake_coverage_code_manager
 ):
+    """Coverage agent run task marks pending approval."""
     agent = make_agent(tmp_path, fake_coverage_code_manager)
     monkeypatch.setattr(
         agent.code,
@@ -856,6 +887,7 @@ async def test_coverage_agent_run_task_marks_pending_approval(
 async def test_validate_candidate_with_isolated_pytest_uses_uv_command(
     tmp_path, fake_coverage_code_manager
 ):
+    """Validate candidate with isolated pytest uses uv command."""
     agent = make_agent(tmp_path, fake_coverage_code_manager)
 
     generated_test = "def test_candidate():\n    value = 'x'.upper()\n    assert value == 'X'\n"
@@ -883,6 +915,7 @@ async def test_validate_candidate_with_isolated_pytest_uses_uv_command(
 async def test_autonomous_batch_rejects_candidate_when_isolated_pytest_fails(
     tmp_path, fake_coverage_code_manager, monkeypatch
 ):
+    """Autonomous batch rejects candidate when isolated pytest fails."""
     agent = make_agent(tmp_path, fake_coverage_code_manager)
     fake_coverage_code_manager.run_pytest_and_collect.return_value = {
         "success": False,
@@ -928,6 +961,7 @@ async def test_autonomous_batch_rejects_candidate_when_isolated_pytest_fails(
 
 
 async def test_coverage_exclude_target_supports_paths_directories_and_globs() -> None:
+    """Coverage exclude target supports paths directories and globs."""
     excludes = CoverageAgent._normalize_exclude_files(
         "web_server.py, agent/core/, integrations/*.py, ./tools/main.py"
     )
@@ -950,6 +984,7 @@ async def test_coverage_exclude_target_supports_paths_directories_and_globs() ->
 async def test_coverage_exclude_target_matches_single_segment_directory_anywhere(
     target_path: str, exclude_file: str, expected: bool
 ) -> None:
+    """Coverage exclude target matches single segment directory anywhere."""
     assert CoverageAgent._is_excluded_coverage_target(target_path, [exclude_file]) is expected
 
 
@@ -957,6 +992,7 @@ async def test_coverage_exclude_target_matches_single_segment_directory_anywhere
 async def test_autonomous_coverage_batch_excludes_configured_targets(
     tmp_path, fake_coverage_code_manager, monkeypatch
 ):
+    """Autonomous coverage batch excludes configured targets."""
     agent = make_agent(tmp_path, fake_coverage_code_manager)
     findings = [
         {"target_path": "web_server.py", "suggested_test_path": "tests/test_web_server.py"},
@@ -1005,6 +1041,7 @@ async def test_autonomous_coverage_batch_excludes_configured_targets(
 async def test_autonomous_coverage_batch_reports_no_actionable_when_all_excluded(
     tmp_path, fake_coverage_code_manager, monkeypatch
 ):
+    """Autonomous coverage batch reports no actionable when all excluded."""
     agent = make_agent(tmp_path, fake_coverage_code_manager)
 
     async def fake_analyze(_arg):
@@ -1036,6 +1073,7 @@ async def test_autonomous_coverage_batch_reports_no_actionable_when_all_excluded
 async def test_autonomous_batch_reviewer_gate_reject_payload(
     tmp_path, fake_coverage_code_manager, monkeypatch
 ):
+    """Autonomous batch reviewer gate reject payload."""
     agent = make_agent(tmp_path, fake_coverage_code_manager)
     finding = {
         "target_path": "agent/roles/coverage_agent.py",
@@ -1089,6 +1127,7 @@ async def test_autonomous_batch_reviewer_gate_reject_payload(
 async def test_autonomous_batch_reviewer_gate_exception_is_rejected(
     tmp_path, fake_coverage_code_manager, monkeypatch
 ):
+    """Autonomous batch reviewer gate exception is rejected."""
     agent = make_agent(tmp_path, fake_coverage_code_manager)
 
     async def fake_analyze(_arg):
@@ -1132,6 +1171,7 @@ async def test_autonomous_batch_reviewer_gate_exception_is_rejected(
 async def test_autonomous_batch_rejects_missing_and_trivial_candidates_before_reviewer(
     tmp_path, fake_coverage_code_manager, monkeypatch
 ):
+    """Autonomous batch rejects missing and trivial candidates before reviewer."""
     agent = make_agent(tmp_path, fake_coverage_code_manager)
     findings = [
         {"target_path": "src/empty.py", "suggested_test_path": "tests/test_empty.py"},
@@ -1172,6 +1212,7 @@ async def test_autonomous_batch_rejects_missing_and_trivial_candidates_before_re
 async def test_autonomous_batch_partial_success_and_all_rejected_scenarios(
     tmp_path, fake_coverage_code_manager, monkeypatch
 ):
+    """Autonomous batch partial success and all rejected scenarios."""
     agent = make_agent(tmp_path, fake_coverage_code_manager)
     findings = [
         {"target_path": "src/a.py", "suggested_test_path": "tests/test_a.py"},
@@ -1237,6 +1278,7 @@ async def test_autonomous_batch_partial_success_and_all_rejected_scenarios(
 
 @pytest.mark.asyncio
 async def test_candidate_rejection_and_cleaning_edge_cases():
+    """Candidate rejection and cleaning edge cases."""
     assert CoverageAgent._candidate_rejection_reason("") == "generated_candidate_empty"
     assert (
         CoverageAgent._candidate_rejection_reason("def helper():\n    return True")
@@ -1316,6 +1358,7 @@ async def test_candidate_rejection_and_cleaning_edge_cases():
 
 @pytest.mark.asyncio
 async def test_candidate_rejection_requires_target_coupled_behavior():
+    """Candidate rejection requires target coupled behavior."""
     finding = {"target_path": "src/service.py", "summary": "line gap"}
 
     assert (
@@ -1533,6 +1576,7 @@ async def test_has_runtime_behavior_signal_attribute_and_subscript():
 
 
 async def test_mock_detection_helpers_return_false_without_mock_signals():
+    """Mock detection helpers return false without mock signals."""
     import ast
 
     tree = ast.parse("value = 'x'.upper()")
@@ -1541,6 +1585,7 @@ async def test_mock_detection_helpers_return_false_without_mock_signals():
 
 
 async def test_uses_mocking_name_and_direct_mock_creation_name_signals():
+    """Uses mocking name and direct mock creation name signals."""
     import ast
 
     tree = ast.parse("value = Mock()")
@@ -2009,6 +2054,7 @@ async def test_target_behavior_handles_non_name_assignments_and_pytest_raises():
 
 
 async def test_coverage_exclude_target_ignores_blank_target_and_rules() -> None:
+    """Coverage exclude target ignores blank target and rules."""
     assert CoverageAgent._is_excluded_coverage_target("   ", ["main.py"]) is False
     assert CoverageAgent._is_excluded_coverage_target("src/domain.py", ["  ", None]) is False
     assert CoverageAgent._is_excluded_coverage_target("src/main.py", ["main.py"]) is True

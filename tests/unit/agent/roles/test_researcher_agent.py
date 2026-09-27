@@ -1,3 +1,5 @@
+"""Unit tests for ``agent.roles.researcher_agent``."""
+
 import asyncio
 import importlib.util
 import sys
@@ -33,47 +35,62 @@ class _StubAgentCatalog:
 
 
 def test_stub_base_agent_call_tool_returns_error_for_unknown_tool():
+    """Stub base agent call tool returns error for unknown tool."""
     agent = _StubBaseAgent()
     result = asyncio.run(agent.call_tool("unknown_tool", "payload"))
     assert result.startswith("[HATA]")
 
 
 class DummyWebSearchManager:
+    """WebSearchManager stand-in that records and echoes calls."""
+
     def __init__(self, cfg):
+        """Store the config and start with no recorded calls."""
         self.cfg = cfg
         self.search_calls = []
         self.fetch_calls = []
         self.search_docs_calls = []
 
     async def search(self, arg: str):
+        """Record the query and echo it."""
         self.search_calls.append(arg)
         return True, f"web:{arg}"
 
     async def fetch_url(self, arg: str):
+        """Record the URL and echo it."""
         self.fetch_calls.append(arg)
         return True, f"fetch:{arg}"
 
     async def search_docs(self, lib: str, topic: str):
+        """Record the library and topic and echo them."""
         self.search_docs_calls.append((lib, topic))
         return True, f"docs:{lib}:{topic}"
 
 
 class SyncDocStore:
+    """Document store stand-in with a synchronous search."""
+
     def __init__(self, *args, **kwargs):
+        """Store constructor arguments and start with no searches."""
         self.args = args
         self.kwargs = kwargs
         self.calls = []
 
     def search(self, query: str, _filters, mode: str, session_id: str):
+        """Record the search and echo its arguments."""
         self.calls.append((query, mode, session_id))
         return True, f"sync:{query}:{mode}:{session_id}"
 
 
 class AsyncLikeDocStore:
+    """Document store stand-in whose search returns an awaitable."""
+
     def __init__(self, *args, **kwargs):
+        """Start with no recorded searches."""
         self.calls = []
 
     def search(self, query: str, _filters, mode: str, session_id: str):
+        """Record the search and return a coroutine that echoes its arguments."""
         self.calls.append((query, mode, session_id))
 
         async def _inner():
@@ -83,16 +100,21 @@ class AsyncLikeDocStore:
 
 
 class ErrorDocStore:
+    """Document store stand-in whose search always fails."""
+
     def __init__(self, *args, **kwargs):
+        """Start with no recorded searches."""
         self.calls = []
 
     def search(self, query: str, _filters, mode: str, session_id: str):
+        """Record the search and raise a storage error."""
         self.calls.append((query, mode, session_id))
         raise RuntimeError("storage backend unavailable")
 
 
 @pytest.fixture
 def researcher_module(monkeypatch: pytest.MonkeyPatch):
+    """Load the researcher agent module from its file with stubbed dependencies."""
     config_mod = types.ModuleType("config")
     config_mod.Config = object
     core_rag_mod = types.ModuleType("core.rag")
@@ -120,6 +142,7 @@ def researcher_module(monkeypatch: pytest.MonkeyPatch):
 
 @pytest.fixture
 def fake_cfg(tmp_path):
+    """Return a config namespace with RAG settings for the researcher."""
     return SimpleNamespace(
         RAG_DIR=str(tmp_path / "rag"),
         RAG_TOP_K=5,
@@ -138,6 +161,7 @@ def _build_agent(researcher_module, fake_cfg, docstore_cls=SyncDocStore):
 
 
 def test_init_registers_all_tools(researcher_module, fake_cfg):
+    """Init registers all tools."""
     agent = _build_agent(researcher_module, fake_cfg)
 
     assert agent.role_name == "researcher"
@@ -145,6 +169,7 @@ def test_init_registers_all_tools(researcher_module, fake_cfg):
 
 
 def test_web_and_fetch_tools(researcher_module, fake_cfg):
+    """Web and fetch tools."""
     agent = _build_agent(researcher_module, fake_cfg)
 
     web_result = asyncio.run(agent._tool_web_search("python"))
@@ -157,6 +182,7 @@ def test_web_and_fetch_tools(researcher_module, fake_cfg):
 
 
 def test_search_docs_tool_parses_library_and_topic(researcher_module, fake_cfg):
+    """Search docs tool parses library and topic."""
     agent = _build_agent(researcher_module, fake_cfg)
 
     with_topic = asyncio.run(agent._tool_search_docs("numpy indexing"))
@@ -168,6 +194,7 @@ def test_search_docs_tool_parses_library_and_topic(researcher_module, fake_cfg):
 
 
 def test_docs_search_tool_handles_sync_result(researcher_module, fake_cfg):
+    """Docs search tool handles sync result."""
     agent = _build_agent(researcher_module, fake_cfg, docstore_cls=SyncDocStore)
 
     result = asyncio.run(agent._tool_docs_search("vector db"))
@@ -177,6 +204,7 @@ def test_docs_search_tool_handles_sync_result(researcher_module, fake_cfg):
 
 
 def test_docs_search_tool_handles_awaitable_result(researcher_module, fake_cfg):
+    """Docs search tool handles awaitable result."""
     agent = _build_agent(researcher_module, fake_cfg, docstore_cls=AsyncLikeDocStore)
 
     result = asyncio.run(agent._tool_docs_search("embeddings"))
@@ -188,6 +216,7 @@ def test_docs_search_tool_handles_awaitable_result(researcher_module, fake_cfg):
 def test_docs_search_tool_returns_timeout_message_on_timeout_error(
     researcher_module, fake_cfg, monkeypatch
 ):
+    """Docs search tool returns timeout message on timeout error."""
     agent = _build_agent(researcher_module, fake_cfg, docstore_cls=SyncDocStore)
 
     async def raise_timeout(*_args, **_kwargs):
@@ -203,6 +232,7 @@ def test_docs_search_tool_returns_timeout_message_on_timeout_error(
 def test_docs_search_tool_returns_unavailable_message_on_unexpected_error(
     researcher_module, fake_cfg
 ):
+    """Docs search tool returns unavailable message on unexpected error."""
     agent = _build_agent(researcher_module, fake_cfg, docstore_cls=ErrorDocStore)
 
     result = asyncio.run(agent._tool_docs_search("unexpected errors are handled"))
@@ -212,6 +242,7 @@ def test_docs_search_tool_returns_unavailable_message_on_unexpected_error(
 
 
 def test_run_task_routing(researcher_module, fake_cfg):
+    """Run task routing."""
     agent = _build_agent(researcher_module, fake_cfg)
 
     empty = asyncio.run(agent.run_task("   "))
@@ -228,6 +259,7 @@ def test_run_task_routing(researcher_module, fake_cfg):
 
 
 def test_init_fallback_populates_tools_when_register_tool_is_noop(researcher_module, fake_cfg):
+    """Init fallback populates tools when register tool is noop."""
     researcher_module.WebSearchManager = DummyWebSearchManager
     researcher_module.DocumentStore = SyncDocStore
 
@@ -244,6 +276,7 @@ def test_init_fallback_populates_tools_when_register_tool_is_noop(researcher_mod
 def test_run_task_falls_back_to_web_search_when_llm_returns_invalid_json(
     researcher_module, fake_cfg
 ):
+    """Run task falls back to web search when llm returns invalid json."""
     agent = _build_agent(researcher_module, fake_cfg)
 
     async def fake_call_llm(**_kwargs):
@@ -257,6 +290,7 @@ def test_run_task_falls_back_to_web_search_when_llm_returns_invalid_json(
 
 
 def test_run_task_falls_back_when_llm_selects_unknown_tool(researcher_module, fake_cfg):
+    """Run task falls back when llm selects unknown tool."""
     agent = _build_agent(researcher_module, fake_cfg)
 
     async def fake_call_llm(**_kwargs):
@@ -272,6 +306,7 @@ def test_run_task_falls_back_when_llm_selects_unknown_tool(researcher_module, fa
 def test_run_task_falls_back_to_web_search_when_llm_hits_token_limit_error(
     researcher_module, fake_cfg
 ):
+    """Run task falls back to web search when llm hits token limit error."""
     agent = _build_agent(researcher_module, fake_cfg)
 
     async def fake_call_llm(**_kwargs):
@@ -287,6 +322,7 @@ def test_run_task_falls_back_to_web_search_when_llm_hits_token_limit_error(
 def test_run_task_after_four_llm_tool_iterations_falls_back_with_latest_prompt(
     researcher_module, fake_cfg
 ):
+    """Run task after four llm tool iterations falls back with latest prompt."""
     agent = _build_agent(researcher_module, fake_cfg)
 
     async def fake_call_llm(**_kwargs):
@@ -321,6 +357,7 @@ def test_run_task_after_four_llm_tool_iterations_falls_back_with_latest_prompt(
 def test_run_task_conflicting_llm_directions_use_latest_tool_output_as_fallback(
     researcher_module, fake_cfg
 ):
+    """Run task conflicting llm directions use latest tool output as fallback."""
     agent = _build_agent(researcher_module, fake_cfg)
     llm_payloads = iter(
         [
@@ -342,6 +379,7 @@ def test_run_task_conflicting_llm_directions_use_latest_tool_output_as_fallback(
 def test_run_task_returns_llm_final_answer_content_when_tool_is_final_answer(
     researcher_module, fake_cfg
 ):
+    """Run task returns llm final answer content when tool is final answer."""
     agent = _build_agent(researcher_module, fake_cfg)
 
     async def fake_call_llm(**_kwargs):

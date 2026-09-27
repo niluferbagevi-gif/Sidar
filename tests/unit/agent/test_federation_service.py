@@ -1,3 +1,5 @@
+"""Unit tests for ``agent.federation.service``."""
+
 from __future__ import annotations
 
 from agent.federation.service import (
@@ -8,6 +10,7 @@ from agent.federation.service import (
 
 
 def test_federation_service_builds_task_prompt() -> None:
+    """Federation service builds task prompt."""
     prompt = build_trigger_prompt(
         {"trigger_id": "trg-1", "source": "hub", "correlation_id": "corr-1"},
         {"kind": "federation_task", "task_id": "task-1", "goal": "Sync records"},
@@ -19,6 +22,7 @@ def test_federation_service_builds_task_prompt() -> None:
 
 
 def test_federation_service_prefers_preset_prompt() -> None:
+    """Federation service prefers preset prompt."""
     assert (
         build_trigger_prompt(
             {"trigger_id": "trg-1"},
@@ -30,6 +34,7 @@ def test_federation_service_prefers_preset_prompt() -> None:
 
 
 def test_federation_service_formats_generic_dict_trigger() -> None:
+    """Federation service formats generic dict trigger."""
     prompt = trigger_to_prompt(
         {"event_name": "deploy", "source": "ci", "payload": {"status": "green"}}
     )
@@ -40,6 +45,7 @@ def test_federation_service_formats_generic_dict_trigger() -> None:
 
 
 def test_federation_service_ci_context_takes_precedence() -> None:
+    """Federation service ci context takes precedence."""
     prompt = build_trigger_prompt(
         {"event_name": "deploy", "source": "ci"},
         {"kind": "federation_task", "task_id": "task-1", "goal": "Should not render"},
@@ -81,10 +87,12 @@ class _FeedbackTrigger:
 
 
 def test_federation_service_uses_trigger_to_prompt_method() -> None:
+    """Federation service uses trigger to prompt method."""
     assert trigger_to_prompt(_PromptTrigger()) == "CUSTOM PROMPT"
 
 
 def test_federation_service_formats_generic_object_trigger() -> None:
+    """Federation service formats generic object trigger."""
     prompt = trigger_to_prompt(_ObjectTrigger())
 
     assert "source=object_source" in prompt
@@ -93,6 +101,7 @@ def test_federation_service_formats_generic_object_trigger() -> None:
 
 
 def test_federation_service_builds_action_feedback_from_event_name() -> None:
+    """Federation service builds action feedback from event name."""
     prompt = build_trigger_prompt(
         _FeedbackTrigger(),
         {"status": "ok", "summary": "completed", "details": {"step": "deploy"}},
@@ -107,6 +116,7 @@ def test_federation_service_builds_action_feedback_from_event_name() -> None:
 
 
 def test_federation_service_builds_action_feedback_from_kind_for_dict_trigger() -> None:
+    """Federation service builds action feedback from kind for dict trigger."""
     prompt = build_trigger_prompt(
         {"trigger_id": "fb-1", "source": "worker", "event_name": "ignored"},
         {"kind": "action_feedback", "action_name": "publish", "meta": {"team": "qa"}},
@@ -119,6 +129,7 @@ def test_federation_service_builds_action_feedback_from_kind_for_dict_trigger() 
 
 
 def test_federation_service_build_trigger_prompt_falls_back_to_generic_prompt() -> None:
+    """Federation service build trigger prompt falls back to generic prompt."""
     prompt = build_trigger_prompt(
         {"event_name": "deploy", "source": "ci", "payload": {"status": "green"}},
         {},
@@ -130,6 +141,7 @@ def test_federation_service_build_trigger_prompt_falls_back_to_generic_prompt() 
 
 
 def test_federation_service_caps_oversized_federation_task_prompt() -> None:
+    """Federation service caps oversized federation task prompt."""
     huge_context = {"blob": "x" * (_MAX_TRIGGER_PROMPT_CHARS * 2)}
     prompt = build_trigger_prompt(
         {"trigger_id": "trg-1", "source": "hub", "correlation_id": "corr-1"},
@@ -149,6 +161,7 @@ def test_federation_service_caps_oversized_federation_task_prompt() -> None:
 
 
 def test_federation_service_caps_oversized_action_feedback_prompt() -> None:
+    """Federation service caps oversized action feedback prompt."""
     prompt = build_trigger_prompt(
         {"trigger_id": "fb-1", "source": "worker"},
         {
@@ -163,6 +176,7 @@ def test_federation_service_caps_oversized_action_feedback_prompt() -> None:
 
 
 def test_federation_service_caps_oversized_generic_trigger_prompt() -> None:
+    """Federation service caps oversized generic trigger prompt."""
     prompt = build_trigger_prompt(
         {
             "event_name": "deploy",
@@ -177,6 +191,7 @@ def test_federation_service_caps_oversized_generic_trigger_prompt() -> None:
 
 
 def test_federation_service_does_not_truncate_prompts_under_the_cap() -> None:
+    """Federation service does not truncate prompts under the cap."""
     prompt = build_trigger_prompt(
         {"trigger_id": "trg-1", "source": "hub", "correlation_id": "corr-1"},
         {"kind": "federation_task", "task_id": "task-1", "goal": "Sync records"},

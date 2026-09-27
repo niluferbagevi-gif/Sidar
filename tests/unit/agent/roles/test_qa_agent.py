@@ -1,3 +1,5 @@
+"""Unit tests for ``agent.roles.qa_agent``."""
+
 import asyncio
 import importlib.util
 import json
@@ -29,6 +31,7 @@ QAAgent = _QA_MODULE.QAAgent
 
 
 def test_load_qa_agent_returns_cached_module(monkeypatch):
+    """Load qa agent returns cached module."""
     sentinel = object()
     cached_module = SimpleNamespace(QAAgent=sentinel)
     monkeypatch.setitem(sys.modules, "qa_agent_under_test", cached_module)
@@ -37,6 +40,7 @@ def test_load_qa_agent_returns_cached_module(monkeypatch):
 
 
 def test_load_qa_agent_injects_httpx_when_missing(monkeypatch):
+    """Load qa agent injects httpx when missing."""
     sentinel = object()
 
     class _Loader:
@@ -59,34 +63,43 @@ def test_load_qa_agent_injects_httpx_when_missing(monkeypatch):
 
 
 class DummyCode:
+    """CodeManager stand-in that records each call and echoes its arguments."""
+
     def __init__(self):
+        """Start with no recorded calls."""
         self.calls = []
 
     def read_file(self, arg):
+        """Record the call and echo the path."""
         self.calls.append(("read_file", arg))
         return True, f"READ:{arg}"
 
     def list_directory(self, arg):
+        """Record the call and echo the path."""
         self.calls.append(("list_directory", arg))
         return True, f"LIST:{arg}"
 
     def grep_files(
         self, pattern, path, file_glob, case_sensitive=True, context_lines=0, max_results=100
     ):
+        """Record the call and echo the search arguments."""
         self.calls.append(("grep_files", pattern, path, file_glob, context_lines))
         return True, f"GREP:{pattern}:{path}:{file_glob}:{context_lines}"
 
     def write_generated_test(self, path, content, append=True):
+        """Record the call and echo the target path."""
         self.calls.append(("write_generated_test", path, content, append))
         return True, f"WROTE:{path}:{append}"
 
     def run_pytest_and_collect(self, command, cwd):
+        """Record the call and echo the command and working directory."""
         self.calls.append(("run_pytest_and_collect", command, cwd))
         return {"success": True, "command": command, "cwd": cwd}
 
 
 @pytest.fixture
 def qa(tmp_path):
+    """Return a QAAgent built without ``__init__``, with stub code and a local tool registry."""
     agent = QAAgent.__new__(QAAgent)
     agent.cfg = SimpleNamespace(BASE_DIR=tmp_path)
     agent.code = DummyCode()
@@ -104,6 +117,8 @@ def qa(tmp_path):
 
 
 def test_qa_fixture_register_tool_and_call_tool(qa):
+    """Qa fixture register tool and call tool."""
+
     async def _tool(arg):
         return f"T:{arg}"
 
@@ -112,6 +127,7 @@ def test_qa_fixture_register_tool_and_call_tool(qa):
 
 
 def test_init_registers_tools(monkeypatch, tmp_path):
+    """Init registers tools."""
     events = []
 
     def fake_base_init(self, cfg=None, role_name="base"):
@@ -149,6 +165,7 @@ def test_init_registers_tools(monkeypatch, tmp_path):
 
 
 def test_helpers_and_parsers(tmp_path, qa):
+    """Helpers and parsers."""
     (tmp_path / ".coveragerc").write_text(
         "[run]\nomit = a.py, b.py\n "
         "c.py\n[report]\nfail_under=90\nshow_missing=true\nskip_covered=false\n",
@@ -176,6 +193,7 @@ def test_helpers_and_parsers(tmp_path, qa):
 
 
 def test_tool_methods(qa):
+    """Tool methods."""
     assert asyncio.run(qa._tool_read_file("x.py")) == "READ:x.py"
     assert asyncio.run(qa._tool_list_directory("")) == "LIST:."
 
@@ -207,6 +225,8 @@ def test_tool_methods(qa):
 
 
 def test_generate_and_build_plan(qa, monkeypatch):
+    """Generate and build plan."""
+
     async def fake_llm(messages, system_prompt, temperature):
         assert "Hedef modül: src/a.py" in messages[0]["content"]
         assert "tests/conftest.py" in messages[0]["content"]
@@ -230,6 +250,8 @@ def test_generate_and_build_plan(qa, monkeypatch):
 
 
 def test_run_task_routes(qa, monkeypatch):
+    """Run task routes."""
+
     async def fake_tool(name, arg):
         return f"TOOL:{name}:{arg}"
 

@@ -7,6 +7,7 @@ from agent.services.tool_service import execute_tool
 
 
 def test_response_service_normalizes_json_markdown_and_fallbacks() -> None:
+    """Response service normalizes json markdown and fallbacks."""
     assert parse_tool_call('```json\n{"argument":"done"}\n```') == {
         "tool": "final_answer",
         "argument": "done",
@@ -19,6 +20,8 @@ def test_response_service_normalizes_json_markdown_and_fallbacks() -> None:
 
 @pytest.mark.asyncio
 async def test_tool_service_supports_sync_and_async_handlers() -> None:
+    """Tool service supports sync and async handlers."""
+
     async def async_handler(argument: str) -> str:
         return f"async:{argument}"
 
@@ -34,6 +37,7 @@ async def test_tool_service_supports_sync_and_async_handlers() -> None:
 
 @pytest.mark.asyncio
 async def test_tool_service_rejects_invalid_handlers() -> None:
+    """Tool service rejects invalid handlers."""
     with pytest.raises(ValueError, match="Araç adı boş"):
         await execute_tool("", "x", resolve_handler=lambda _name: None)
     with pytest.raises(ValueError, match="Bilinmeyen araç"):

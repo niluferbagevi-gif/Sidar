@@ -1,3 +1,5 @@
+"""Unit tests for the ``agent`` package exports."""
+
 import importlib
 import sys
 import types
@@ -40,6 +42,7 @@ def _load_agent_module(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_getattr_exposes_lazy_class_imports(monkeypatch):
+    """Getattr exposes lazy class imports."""
     mod = _load_agent_module(monkeypatch)
 
     assert mod.SidarAgent.__name__ == "SidarAgent"
@@ -48,6 +51,7 @@ def test_getattr_exposes_lazy_class_imports(monkeypatch):
 
 
 def test_getattr_exposes_lazy_module_imports(monkeypatch):
+    """Getattr exposes lazy module imports."""
     mod = _load_agent_module(monkeypatch)
 
     assert mod.roles.ROLES_SENTINEL is True
@@ -56,6 +60,7 @@ def test_getattr_exposes_lazy_module_imports(monkeypatch):
 
 
 def test_getattr_exposes_lazy_constant_imports(monkeypatch):
+    """Getattr exposes lazy constant imports."""
     mod = _load_agent_module(monkeypatch)
 
     assert mod.SIDAR_SYSTEM_PROMPT == "prompt"
@@ -64,6 +69,7 @@ def test_getattr_exposes_lazy_constant_imports(monkeypatch):
 
 
 def test_getattr_raises_for_unknown_names(monkeypatch):
+    """Getattr raises for unknown names."""
     mod = _load_agent_module(monkeypatch)
 
     with pytest.raises(AttributeError):
@@ -71,6 +77,7 @@ def test_getattr_raises_for_unknown_names(monkeypatch):
 
 
 def test_module_all_exports_public_api(monkeypatch):
+    """Module all exports public api."""
     mod = _load_agent_module(monkeypatch)
 
     assert mod.__all__ == [

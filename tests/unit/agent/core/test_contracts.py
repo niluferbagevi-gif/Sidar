@@ -1,3 +1,5 @@
+"""Unit tests for ``agent.core.contracts``."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -43,6 +45,7 @@ from agent.core.contracts import (
     ],
 )
 def test_normalize_federation_protocol(value: object, expected: str) -> None:
+    """Normalize federation protocol."""
     assert normalize_federation_protocol(value) == expected
 
 
@@ -56,10 +59,12 @@ def test_normalize_federation_protocol(value: object, expected: str) -> None:
     ],
 )
 def test_normalize_broker_protocol(value: object, expected: str) -> None:
+    """Normalize broker protocol."""
     assert normalize_broker_protocol(value) == expected
 
 
 def test_derive_helpers_cover_fallback_paths() -> None:
+    """Derive helpers cover fallback paths."""
     assert (
         derive_broker_routing_key(receiver="  QA ", intent=" Test ", namespace=" SIDAR ")
         == "sidar.qa.test"
@@ -73,6 +78,7 @@ def test_derive_helpers_cover_fallback_paths() -> None:
 
 
 def test_p2p_message_properties_and_bump() -> None:
+    """P2p message properties and bump."""
     message = P2PMessage(task_id="t1", reply_to="reviewer", target_agent="coder", payload="fix")
 
     bumped = message.bumped()
@@ -84,6 +90,7 @@ def test_p2p_message_properties_and_bump() -> None:
 
 
 def test_external_trigger_post_init_and_prompt() -> None:
+    """External trigger post init and prompt."""
     trigger = ExternalTrigger(
         trigger_id="tr-1",
         source="webhook",
@@ -100,6 +107,7 @@ def test_external_trigger_post_init_and_prompt() -> None:
 
 
 def test_external_trigger_with_non_dict_payload_uses_trigger_id_as_correlation() -> None:
+    """External trigger with non dict payload uses trigger id as correlation."""
     trigger = ExternalTrigger(
         trigger_id="tr-last",
         source="cron",
@@ -110,6 +118,7 @@ def test_external_trigger_with_non_dict_payload_uses_trigger_id_as_correlation()
 
 
 def test_federation_task_envelope_conversion_and_prompt() -> None:
+    """Federation task envelope conversion and prompt."""
     envelope = FederationTaskEnvelope(
         task_id="fed-1",
         source_system="sidar",
@@ -135,6 +144,7 @@ def test_federation_task_envelope_conversion_and_prompt() -> None:
 
 
 def test_federation_task_result_conversion_and_prompt() -> None:
+    """Federation task result conversion and prompt."""
     result = FederationTaskResult(
         task_id="fed-2",
         source_system="ext",
@@ -160,6 +170,7 @@ def test_federation_task_result_conversion_and_prompt() -> None:
 
 
 def test_broker_task_envelope_post_init_from_to_and_prompt() -> None:
+    """Broker task envelope post init from to and prompt."""
     task = TaskEnvelope(
         task_id="t-1",
         sender="supervisor",
@@ -189,6 +200,7 @@ def test_broker_task_envelope_post_init_from_to_and_prompt() -> None:
 
 
 def test_broker_task_envelope_keeps_existing_routing_key() -> None:
+    """Broker task envelope keeps existing routing key."""
     envelope = BrokerTaskEnvelope(
         task_id="t-2",
         sender="a",
@@ -200,6 +212,7 @@ def test_broker_task_envelope_keeps_existing_routing_key() -> None:
 
 
 def test_broker_task_result_post_init_from_to_and_prompt() -> None:
+    """Broker task result post init from to and prompt."""
     result = TaskResult(
         task_id="t-3", status="failed", summary="boom", evidence=["log"], next_actions=["retry"]
     )
@@ -222,6 +235,7 @@ def test_broker_task_result_post_init_from_to_and_prompt() -> None:
 
 
 def test_broker_task_result_keeps_existing_routing_key() -> None:
+    """Broker task result keeps existing routing key."""
     broker_result = BrokerTaskResult(
         task_id="t-4",
         sender="x",
@@ -234,6 +248,7 @@ def test_broker_task_result_keeps_existing_routing_key() -> None:
 
 
 def test_action_feedback_to_external_trigger_and_prompt() -> None:
+    """Action feedback to external trigger and prompt."""
     feedback = ActionFeedback(
         feedback_id="fb-1",
         source_system="jira",
@@ -356,6 +371,7 @@ _LikeBrokerTaskResult.__name__ = "BrokerTaskResult"
 
 
 def test_type_guards_support_instances_and_duck_typing_variants() -> None:
+    """Type guards support instances and duck typing variants."""
     assert is_p2p_message(P2PMessage(task_id="t", reply_to="a", target_agent="b", payload="p"))
     assert is_p2p_message(_LikeP2P()) is False  # name is not P2PMessage/DelegationRequest
     like_p2p = _LikeP2P()
@@ -419,6 +435,7 @@ def test_type_guards_support_instances_and_duck_typing_variants() -> None:
 
 
 def test_type_guards_reject_invalid_objects() -> None:
+    """Type guards reject invalid objects."""
     assert not is_p2p_message(object())
     assert not is_delegation_request(object())
     assert not is_external_trigger(object())

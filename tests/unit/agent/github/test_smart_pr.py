@@ -1,3 +1,5 @@
+"""Unit tests for ``agent.github.smart_pr``."""
+
 from __future__ import annotations
 
 import asyncio
@@ -15,11 +17,15 @@ from agent.github.smart_pr import (
 
 
 class FakeCodeManager:
+    """CodeManager stand-in that answers shell commands from a substring map."""
+
     def __init__(self, outputs: dict[str, tuple[bool, str]]) -> None:
+        """Store the command-to-output map and start with no recorded commands."""
         self.outputs = outputs
         self.commands: list[str] = []
 
     def run_shell(self, command: str) -> tuple[bool, str]:
+        """Record the command and return the first output whose key it contains."""
         self.commands.append(command)
         for key, output in self.outputs.items():
             if key in command:
@@ -28,6 +34,8 @@ class FakeCodeManager:
 
 
 class FakeGitHubManager:
+    """GitHubManager stand-in with configurable default branch and PR creation results."""
+
     def __init__(
         self,
         *,
@@ -37,6 +45,7 @@ class FakeGitHubManager:
         create_result: tuple[bool, str] = (True, "https://github.test/pr/1"),
         create_exc: Exception | None = None,
     ) -> None:
+        """Store availability, default branch and PR creation outcomes."""
         self.available = available
         self._default_branch = default_branch
         self.default_branch_exc = default_branch_exc
@@ -46,16 +55,19 @@ class FakeGitHubManager:
 
     @property
     def default_branch(self) -> str:
+        """Return the default branch, or raise the configured exception."""
         if self.default_branch_exc is not None:
             raise self.default_branch_exc
         return self._default_branch
 
     def is_available(self) -> bool:
+        """Return the configured availability."""
         return self.available
 
     async def create_pull_request_hitl(
         self, title: str, body: str, head: str, base: str
     ) -> tuple[bool, str]:
+        """Record the PR request, then raise or return the configured result."""
         self.created.append((title, body, head, base))
         if self.create_exc is not None:
             raise self.create_exc
@@ -75,6 +87,7 @@ def _changed_code(diff: str = "diff --git a/a.py b/a.py") -> FakeCodeManager:
 
 
 def test_create_smart_pr_requires_available_github_token() -> None:
+    """Create smart pr requires available github token."""
     result = asyncio.run(
         create_smart_pr(
             arg="title", code=_changed_code(), github=FakeGitHubManager(available=False)
@@ -85,6 +98,7 @@ def test_create_smart_pr_requires_available_github_token() -> None:
 
 
 def test_create_smart_pr_requires_current_branch() -> None:
+    """Create smart pr requires current branch."""
     code = FakeCodeManager({"branch --show-current": (True, "\n")})
 
     result = asyncio.run(create_smart_pr(arg="title", code=code, github=FakeGitHubManager()))
@@ -93,6 +107,7 @@ def test_create_smart_pr_requires_current_branch() -> None:
 
 
 def test_create_smart_pr_skips_when_worktree_has_no_changes() -> None:
+    """Create smart pr skips when worktree has no changes."""
     code = FakeCodeManager(
         {
             "branch --show-current": (True, "feature/no-changes"),
@@ -106,6 +121,7 @@ def test_create_smart_pr_skips_when_worktree_has_no_changes() -> None:
 
 
 def test_create_smart_pr_defaults_base_to_main_when_default_branch_property_fails() -> None:
+    """Create smart pr defaults base to main when default branch property fails."""
     github = FakeGitHubManager(default_branch_exc=RuntimeError("default branch unavailable"))
 
     result = asyncio.run(create_smart_pr(arg="title", code=_changed_code(), github=github))
@@ -115,6 +131,7 @@ def test_create_smart_pr_defaults_base_to_main_when_default_branch_property_fail
 
 
 def test_create_smart_pr_truncates_large_diff_in_pr_body() -> None:
+    """Create smart pr truncates large diff in pr body."""
     github = FakeGitHubManager()
     large_diff = "x" * 20
 
@@ -135,6 +152,7 @@ def test_create_smart_pr_truncates_large_diff_in_pr_body() -> None:
 
 
 def test_create_smart_pr_reports_create_timeout() -> None:
+    """Create smart pr reports create timeout."""
     result = asyncio.run(
         create_smart_pr(
             arg="title|||main|||notes",
@@ -147,6 +165,7 @@ def test_create_smart_pr_reports_create_timeout() -> None:
 
 
 def test_create_smart_pr_reports_generic_create_exception() -> None:
+    """Create smart pr reports generic create exception."""
     result = asyncio.run(
         create_smart_pr(
             arg="title|||main|||notes",
@@ -159,6 +178,7 @@ def test_create_smart_pr_reports_generic_create_exception() -> None:
 
 
 def test_create_smart_pr_reports_false_create_result_reason() -> None:
+    """Create smart pr reports false create result reason."""
     result = asyncio.run(
         create_smart_pr(
             arg="title|||main|||notes",
@@ -171,6 +191,7 @@ def test_create_smart_pr_reports_false_create_result_reason() -> None:
 
 
 def test_protocol_method_stubs_are_import_coverage_only() -> None:
+    """Protocol method stubs are import coverage only."""
     assert _CodeManagerLike.run_shell(object(), "git status") is None  # type: ignore[arg-type]
     assert _GitHubManagerLike.default_branch.fget(object()) is None  # type: ignore[union-attr,arg-type]
     assert _GitHubManagerLike.is_available(object()) is None  # type: ignore[arg-type]

@@ -27,6 +27,7 @@ def _load_registry_module(monkeypatch: pytest.MonkeyPatch):
 def test_active_agent_registry_register_get_and_roles(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Active agent registry register get and roles."""
     module = _load_registry_module(monkeypatch)
     registry = module.ActiveAgentRegistry()
     mock_agent = object()
@@ -41,6 +42,7 @@ def test_active_agent_registry_register_get_and_roles(
 def test_active_agent_registry_get_missing_role_raises_keyerror(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Active agent registry get missing role raises keyerror."""
     module = _load_registry_module(monkeypatch)
     registry = module.ActiveAgentRegistry()
 
@@ -51,6 +53,7 @@ def test_active_agent_registry_get_missing_role_raises_keyerror(
 def test_active_agent_registry_has_returns_false_for_unknown_role(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Active agent registry has returns false for unknown role."""
     module = _load_registry_module(monkeypatch)
     registry = module.ActiveAgentRegistry()
 

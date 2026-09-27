@@ -1,7 +1,10 @@
+"""Unit tests for ``agent.core.memory_hub``."""
+
 from agent.core.memory_hub import MemoryHub, RoleMemory
 
 
 def test_add_global_ignores_empty_and_returns_latest_with_limit() -> None:
+    """Add global ignores empty and returns latest with limit."""
     hub = MemoryHub()
 
     hub.add_global("")
@@ -15,6 +18,7 @@ def test_add_global_ignores_empty_and_returns_latest_with_limit() -> None:
 
 
 def test_add_role_note_ignores_empty_and_creates_memory_for_missing_role() -> None:
+    """Add role note ignores empty and creates memory for missing role."""
     hub = MemoryHub()
 
     hub.add_role_note("reviewer", "")
@@ -29,6 +33,7 @@ def test_add_role_note_ignores_empty_and_creates_memory_for_missing_role() -> No
 
 
 def test_add_role_note_replaces_unknown_default_memory() -> None:
+    """Add role note replaces unknown default memory."""
     hub = MemoryHub()
 
     # defaultdict üzerinden erişim, role='unknown' ile placeholder üretir.
@@ -42,12 +47,14 @@ def test_add_role_note_replaces_unknown_default_memory() -> None:
 
 
 def test_role_context_returns_empty_for_missing_role() -> None:
+    """Role context returns empty for missing role."""
     hub = MemoryHub()
 
     assert hub.role_context("missing") == []
 
 
 def test_async_alias_methods_delegate_to_sync_methods() -> None:
+    """Async alias methods delegate to sync methods."""
     hub = MemoryHub()
 
     hub.aadd_global("g1")
@@ -62,6 +69,7 @@ def test_async_alias_methods_delegate_to_sync_methods() -> None:
 
 
 def test_role_memory_dataclass_defaults() -> None:
+    """Role memory dataclass defaults."""
     memory = RoleMemory(role="researcher")
 
     assert memory.role == "researcher"

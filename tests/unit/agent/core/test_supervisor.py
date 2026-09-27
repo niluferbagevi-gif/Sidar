@@ -1,3 +1,5 @@
+"""Unit tests for ``agent.core.supervisor``."""
+
 from __future__ import annotations
 
 import asyncio
@@ -35,6 +37,7 @@ class _StubBaseAgent:
 
 
 def test_stub_base_agent_initializes_cfg_and_role_name() -> None:
+    """Stub base agent initializes cfg and role name."""
     agent = _StubBaseAgent(cfg={"x": 1}, role_name="tester")
 
     assert agent.cfg == {"x": 1}
@@ -61,6 +64,7 @@ class _StubEventBus:
 
 
 def get_agent_event_bus() -> _StubEventBus:
+    """Return a stub event bus whose ``publish`` does nothing."""
     return _StubEventBus()
 
 
@@ -128,6 +132,7 @@ def _isolated_supervisor_import() -> Iterator[None]:
 
 
 def test_register_stub_module_creates_runnable_role() -> None:
+    """Register stub module creates runnable role."""
     module_name = "agent.roles._temporary_stub_role"
     _register_stub_module(module_name, "TempAgent")
     stub_module = sys.modules[module_name]
@@ -141,6 +146,7 @@ def test_register_stub_module_creates_runnable_role() -> None:
 
 
 def test_stub_event_bus_factory_returns_publishable_bus() -> None:
+    """Stub event bus factory returns publishable bus."""
     bus = get_agent_event_bus()
     assert isinstance(bus, _StubEventBus)
     assert asyncio.run(bus.publish("supervisor", "hello")) is None
@@ -199,6 +205,7 @@ def _build_supervisor(*, max_qa_retries: int = 2, has_coverage: bool = True) -> 
     ],
 )
 def test_intent_classification(prompt: str, expected_intent: str) -> None:
+    """Intent classification."""
     assert SupervisorAgent._intent(prompt) == expected_intent
 
 
@@ -214,10 +221,12 @@ def test_intent_classification(prompt: str, expected_intent: str) -> None:
     ],
 )
 def test_review_requires_revision(summary: str, expected: bool) -> None:
+    """Review requires revision."""
     assert SupervisorAgent._review_requires_revision(summary) is expected
 
 
 def test_extract_review_decision_prefers_structured_signal_over_summary_words() -> None:
+    """Extract review decision prefers structured signal over summary words."""
     payload = {
         "decision": "APPROVE",
         "summary": "[REVIEW:PASS] Dinamik + regresyon + LSP semantik denetimleri değerlendirildi.",
@@ -228,6 +237,7 @@ def test_extract_review_decision_prefers_structured_signal_over_summary_words() 
 
 
 def test_decision_from_review_payload_returns_none_for_unrecognized_dict() -> None:
+    """Decision from review payload returns none for unrecognized dict."""
     assert SupervisorAgent._decision_from_review_payload({"summary": "yalnız açıklama"}) is None
 
 
@@ -248,6 +258,7 @@ def test_decision_from_review_payload_returns_none_for_unrecognized_dict() -> No
 def test_extract_review_decision_handles_fallback_formats(
     summary: object, expected: str | None
 ) -> None:
+    """Extract review decision handles fallback formats."""
     assert SupervisorAgent._extract_review_decision(summary) == expected
 
 
@@ -262,6 +273,7 @@ def test_extract_review_decision_handles_fallback_formats(
     ],
 )
 def test_is_reject_feedback_payload(payload: str, expected: bool) -> None:
+    """Is reject feedback payload."""
     assert SupervisorAgent._is_reject_feedback_payload(payload) is expected
 
 
@@ -285,6 +297,7 @@ def test_is_reject_feedback_payload(payload: str, expected: bool) -> None:
 def test_validate_p2p_request_reports_missing_fields(
     delegation_request: DelegationRequest, expected_missing: str
 ) -> None:
+    """Validate p2p request reports missing fields."""
     missing = SupervisorAgent._validate_p2p_request(delegation_request)
     assert missing is not None
     assert expected_missing in missing
@@ -301,6 +314,7 @@ def test_validate_p2p_request_reports_missing_fields(
 def test_max_turns_handles_none_invalid_and_negative_values(
     configured_max_turns: object, expected: int
 ) -> None:
+    """Max turns handles none invalid and negative values."""
     sup = _build_supervisor()
     sup.cfg.MAX_TURNS = configured_max_turns
 
@@ -321,6 +335,7 @@ def test_route_p2p_coerces_max_turns_and_fails_closed_at_zero(
     expected_summary: str,
     expected_delegate_calls: int,
 ) -> None:
+    """Route p2p coerces max turns and fails closed at zero."""
     sup = _build_supervisor()
     calls: list[dict[str, object]] = []
 
@@ -345,6 +360,7 @@ def test_route_p2p_coerces_max_turns_and_fails_closed_at_zero(
 
 
 def test_route_p2p_uses_shared_turn_budget_for_chained_handoffs() -> None:
+    """Route p2p uses shared turn budget for chained handoffs."""
     sup = _build_supervisor()
     remaining_turns = 1
     calls: list[str] = []
@@ -385,6 +401,7 @@ def test_route_p2p_uses_shared_turn_budget_for_chained_handoffs() -> None:
 
 
 def test_route_p2p_stops_when_reject_feedback_exceeds_retry_limit() -> None:
+    """Route p2p stops when reject feedback exceeds retry limit."""
     sup = _build_supervisor(max_qa_retries=0)
 
     async def _delegate(*_args, **_kwargs):
@@ -409,6 +426,7 @@ def test_route_p2p_stops_when_reject_feedback_exceeds_retry_limit() -> None:
 
 
 def test_route_p2p_fails_when_max_hops_exceeded() -> None:
+    """Route p2p fails when max hops exceeded."""
     sup = _build_supervisor(max_qa_retries=3)
 
     async def _delegate(*_args, **_kwargs):
@@ -449,6 +467,7 @@ def test_route_p2p_fails_when_max_hops_exceeded() -> None:
     ],
 )
 def test_run_task_routes_non_code_intents(prompt: str, expected_receiver: str) -> None:
+    """Run task routes non code intents."""
     sup = _build_supervisor(has_coverage=True)
     calls: list[tuple[str, str]] = []
 
@@ -472,6 +491,7 @@ def test_run_task_routes_non_code_intents(prompt: str, expected_receiver: str) -
 
 
 def test_run_task_qa_intent_delegates_and_routes_p2p_request() -> None:
+    """Run task qa intent delegates and routes p2p request."""
     sup = _build_supervisor(max_qa_retries=2)
     calls: list[tuple[str, str]] = []
 
@@ -502,6 +522,7 @@ def test_run_task_qa_intent_delegates_and_routes_p2p_request() -> None:
 
 
 def test_run_task_qa_intent_returns_terminal_summary_without_p2p() -> None:
+    """Run task qa intent returns terminal summary without p2p."""
     sup = _build_supervisor(max_qa_retries=2)
     calls: list[tuple[str, str]] = []
 
@@ -522,6 +543,7 @@ def test_run_task_qa_intent_returns_terminal_summary_without_p2p() -> None:
 
 
 def test_run_task_qa_intent_stops_when_max_turns_exceeded() -> None:
+    """Run task qa intent stops when max turns exceeded."""
     sup = _build_supervisor(max_qa_retries=2)
     sup.cfg.MAX_TURNS = 0
 
@@ -546,6 +568,7 @@ def test_run_task_qa_intent_stops_when_max_turns_exceeded() -> None:
     ],
 )
 def test_run_task_non_code_intents_stop_when_turn_budget_is_exhausted(prompt: str) -> None:
+    """Run task non code intents stop when turn budget is exhausted."""
     sup = _build_supervisor(max_qa_retries=2)
 
     async def _delegate(*_args, **_kwargs):
@@ -559,6 +582,7 @@ def test_run_task_non_code_intents_stop_when_turn_budget_is_exhausted(prompt: st
 
 
 def test_run_task_coverage_falls_back_to_qa_when_coverage_agent_missing() -> None:
+    """Run task coverage falls back to qa when coverage agent missing."""
     sup = _build_supervisor(has_coverage=False)
 
     async def _delegate(receiver: str, goal: str, intent: str, **_kwargs):
@@ -575,6 +599,7 @@ def test_run_task_coverage_falls_back_to_qa_when_coverage_agent_missing() -> Non
 
 
 def test_run_task_chat_intent_skips_agent_delegation() -> None:
+    """Run task chat intent skips agent delegation."""
     sup = _build_supervisor(has_coverage=True)
     calls: list[tuple[str, str, str]] = []
 
@@ -593,6 +618,7 @@ def test_run_task_chat_intent_skips_agent_delegation() -> None:
 
 
 def test_run_task_code_flow_retries_and_returns_final_review_summary() -> None:
+    """Run task code flow retries and returns final review summary."""
     sup = _build_supervisor(max_qa_retries=2)
 
     responses = iter(
@@ -623,6 +649,7 @@ def test_run_task_code_flow_retries_and_returns_final_review_summary() -> None:
 
 
 def test_run_task_invalid_max_turns_argument_falls_back_to_configured_budget() -> None:
+    """Run task invalid max turns argument falls back to configured budget."""
     sup = _build_supervisor(max_qa_retries=2)
     sup.cfg.MAX_TURNS = 3
     calls: list[str] = []
@@ -647,6 +674,7 @@ def test_run_task_invalid_max_turns_argument_falls_back_to_configured_budget() -
 
 
 def test_run_task_code_flow_stops_on_turn_budget_during_review_retry() -> None:
+    """Run task code flow stops on turn budget during review retry."""
     sup = _build_supervisor(max_qa_retries=2)
     responses = iter(
         [
@@ -672,6 +700,7 @@ def test_run_task_code_flow_stops_on_turn_budget_during_review_retry() -> None:
 
 
 def test_run_task_code_flow_stops_after_retry_limit() -> None:
+    """Run task code flow stops after retry limit."""
     sup = _build_supervisor(max_qa_retries=1)
 
     responses = iter(
@@ -701,6 +730,7 @@ def test_run_task_code_flow_stops_after_retry_limit() -> None:
 
 
 def test_run_task_code_flow_skips_reviewer_in_cli_fast_mode() -> None:
+    """Run task code flow skips reviewer in cli fast mode."""
     sup = _build_supervisor(max_qa_retries=2)
     sup.cfg.CLI_FAST_MODE = True
     calls: list[tuple[str, str]] = []
@@ -724,6 +754,7 @@ def test_run_task_code_flow_skips_reviewer_in_cli_fast_mode() -> None:
 
 
 def test_null_span_noop_methods() -> None:
+    """Null span noop methods."""
     span = supervisor_mod._NullSpan()
     with span as ctx:
         assert ctx is span
@@ -733,6 +764,8 @@ def test_null_span_noop_methods() -> None:
 def test_supervisor_init_falls_back_when_base_agent_init_raises_type_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Supervisor init falls back when base agent init raises type error."""
+
     def _broken_base_init(self, *args, **kwargs):  # type: ignore[no-untyped-def]
         raise TypeError("stub object init")
 
@@ -747,6 +780,8 @@ def test_supervisor_init_falls_back_when_base_agent_init_raises_type_error(
 def test_supervisor_init_falls_back_when_base_agent_init_raises_attribute_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Supervisor init falls back when base agent init raises attribute error."""
+
     def _broken_base_init(self, *args, **kwargs):  # type: ignore[no-untyped-def]
         raise AttributeError("missing AI_PROVIDER")
 
@@ -763,6 +798,7 @@ def test_supervisor_init_keeps_minimal_state_when_base_init_fails(
     monkeypatch: pytest.MonkeyPatch,
     exc: Exception,
 ) -> None:
+    """Supervisor init keeps minimal state when base init fails."""
     calls: list[tuple[object, tuple[object, ...], dict[str, object]]] = []
 
     def _broken_base_init(self, *args, **kwargs):  # type: ignore[no-untyped-def]
@@ -786,6 +822,8 @@ def test_supervisor_init_keeps_minimal_state_when_base_init_fails(
 def test_supervisor_init_sets_agents_none_when_role_instantiation_type_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Supervisor init sets agents none when role instantiation type error."""
+
     class _BrokenRole:
         def __init__(self, _cfg=None) -> None:
             raise TypeError("role build failed")
@@ -805,6 +843,8 @@ def test_supervisor_init_sets_agents_none_when_role_instantiation_type_error(
 def test_supervisor_init_coverage_registration_failure_falls_back_to_qa(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Supervisor init coverage registration failure falls back to qa."""
+
     class _BrokenCoverage:
         def __init__(self, _cfg=None) -> None:
             raise RuntimeError("coverage unavailable")
@@ -817,12 +857,14 @@ def test_supervisor_init_coverage_registration_failure_falls_back_to_qa(
 
 
 def test_is_reject_feedback_payload_false_when_empty_body() -> None:
+    """Is reject feedback payload false when empty body."""
     assert SupervisorAgent._is_reject_feedback_payload("qa_feedback|   ") is False
 
 
 def test_delegate_records_metrics_and_ignores_metrics_record_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Delegate records metrics and ignores metrics record errors."""
     sup = _build_supervisor()
 
     class _Agent:
@@ -861,6 +903,7 @@ def test_delegate_records_metrics_and_ignores_metrics_record_errors(
 
 
 def test_delegate_with_span_without_set_attribute(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Delegate with span without set attribute."""
     sup = _build_supervisor()
 
     class _Agent:
@@ -899,6 +942,7 @@ def test_delegate_with_span_without_set_attribute(monkeypatch: pytest.MonkeyPatc
     ],
 )
 def test_run_task_non_code_routes_delegation_requests(prompt: str) -> None:
+    """Run task non code routes delegation requests."""
     sup = _build_supervisor(has_coverage=True)
 
     delegation = DelegationRequest(
@@ -924,6 +968,7 @@ def test_run_task_non_code_routes_delegation_requests(prompt: str) -> None:
 
 
 def test_run_task_code_flow_routes_delegation_requests_at_each_stage() -> None:
+    """Run task code flow routes delegation requests at each stage."""
     sup = _build_supervisor(max_qa_retries=2)
 
     code_req = DelegationRequest(
@@ -980,6 +1025,7 @@ def test_run_task_code_flow_routes_delegation_requests_at_each_stage() -> None:
 
 
 def test_init_registers_specialist_agents() -> None:
+    """Init registers specialist agents."""
     sup = SupervisorAgent()
     assert sup.registry.has("researcher")
     assert sup.registry.has("coder")
@@ -992,6 +1038,8 @@ def test_init_registers_specialist_agents() -> None:
 def test_init_falls_back_to_qa_when_coverage_registration_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Init falls back to qa when coverage registration fails."""
+
     class _BrokenCoverage:
         def __init__(self, _cfg=None) -> None:
             raise RuntimeError("broken")
@@ -1002,6 +1050,7 @@ def test_init_falls_back_to_qa_when_coverage_registration_fails(
 
 
 def test_delegate_success_records_metrics_and_memory(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Delegate success records metrics and memory."""
     sup = SupervisorAgent.__new__(SupervisorAgent)
     sup.cfg = SimpleNamespace(REACT_TIMEOUT=1)
     sup.memory_hub = _DummyMemoryHub()
@@ -1035,6 +1084,7 @@ def test_delegate_success_records_metrics_and_memory(monkeypatch: pytest.MonkeyP
 
 
 def test_delegate_error_records_status_and_reraises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Delegate error records status and reraises."""
     sup = SupervisorAgent.__new__(SupervisorAgent)
     sup.cfg = SimpleNamespace(REACT_TIMEOUT=1)
     sup.memory_hub = _DummyMemoryHub()
@@ -1065,6 +1115,7 @@ def test_delegate_error_records_status_and_reraises(monkeypatch: pytest.MonkeyPa
 
 
 def test_delegate_short_circuits_when_receiver_circuit_is_open() -> None:
+    """Delegate short circuits when receiver circuit is open."""
     sup = SupervisorAgent.__new__(SupervisorAgent)
     sup.cfg = SimpleNamespace(REACT_TIMEOUT=1)
     sup.memory_hub = _DummyMemoryHub()
@@ -1088,6 +1139,7 @@ def test_delegate_short_circuits_when_receiver_circuit_is_open() -> None:
 
 
 def test_delegate_records_circuit_failure_before_reraising(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Delegate records circuit failure before reraising."""
     sup = SupervisorAgent.__new__(SupervisorAgent)
     sup.cfg = SimpleNamespace(REACT_TIMEOUT=1)
     sup.memory_hub = _DummyMemoryHub()
@@ -1122,6 +1174,7 @@ def test_delegate_records_circuit_failure_before_reraising(monkeypatch: pytest.M
 
 
 def test_delegate_records_circuit_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Delegate records circuit success."""
     sup = SupervisorAgent.__new__(SupervisorAgent)
     sup.cfg = SimpleNamespace(REACT_TIMEOUT=1)
     sup.memory_hub = _DummyMemoryHub()
@@ -1159,6 +1212,7 @@ def test_delegate_records_circuit_success(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_route_p2p_delegates_and_returns_terminal_result() -> None:
+    """Route p2p delegates and returns terminal result."""
     sup = _build_supervisor(max_qa_retries=3)
     calls: list[dict[str, object]] = []
 
@@ -1188,6 +1242,7 @@ def test_route_p2p_delegates_and_returns_terminal_result() -> None:
 
 
 def test_route_p2p_reject_feedback_continues_until_retry_limit_exceeded() -> None:
+    """Route p2p reject feedback continues until retry limit exceeded."""
     sup = _build_supervisor(max_qa_retries=1)
     delegate_calls: list[str] = []
 
@@ -1225,6 +1280,7 @@ def test_route_p2p_reject_feedback_continues_until_retry_limit_exceeded() -> Non
 
 
 def test_route_p2p_returns_fail_closed_for_malformed_request() -> None:
+    """Route p2p returns fail closed for malformed request."""
     sup = _build_supervisor(max_qa_retries=2)
 
     async def _delegate(*_args, **_kwargs):
@@ -1246,6 +1302,7 @@ def test_route_p2p_returns_fail_closed_for_malformed_request() -> None:
 
 
 def test_route_p2p_handles_none_meta_without_crashing() -> None:
+    """Route p2p handles none meta without crashing."""
     sup = _build_supervisor(max_qa_retries=2)
     calls: list[dict[str, object]] = []
 
@@ -1270,6 +1327,7 @@ def test_route_p2p_handles_none_meta_without_crashing() -> None:
 
 
 def test_run_task_research_routes_p2p_when_delegation_request_returns() -> None:
+    """Run task research routes p2p when delegation request returns."""
     sup = _build_supervisor()
 
     async def _delegate(receiver: str, goal: str, intent: str, **_kwargs):
@@ -1357,12 +1415,15 @@ class MockMaxTurnsForDeadCode:
     """Defansif dal için karşılaştırma davranışını manipüle eden max_turns mock'u."""
 
     def __le__(self, _other):
+        """Always report not less-or-equal, forcing the defensive branch."""
         return False
 
     def __ge__(self, other):
+        """Report greater-or-equal only when ``other`` is below 3."""
         return other < 3
 
     def __str__(self):
+        """Render as ``3``."""
         return "3"
 
 
@@ -1412,6 +1473,8 @@ def test_run_task_circuit_breaker_before_second_reviewer() -> None:
 def test_supervisor_init_registers_and_gets_coverage_agent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Supervisor init registers and gets coverage agent."""
+
     class _Coverage:
         def __init__(self, _cfg=None) -> None:
             self.ready = True
@@ -1425,6 +1488,8 @@ def test_supervisor_init_registers_and_gets_coverage_agent(
 
 
 def test_coerce_delegation_request_uses_bumped_payload_object() -> None:
+    """Coerce delegation request uses bumped payload object."""
+
     class _CompatRequest:
         def __init__(self) -> None:
             self.task_id = "t-1"
@@ -1463,6 +1528,7 @@ def test_coerce_delegation_request_uses_bumped_payload_object() -> None:
 
 
 def test_coerce_delegation_request_returns_bumped_request_instance() -> None:
+    """Coerce delegation request returns bumped request instance."""
     bumped = DelegationRequest(
         task_id="t-9",
         reply_to="qa",
@@ -1488,6 +1554,8 @@ def test_coerce_delegation_request_returns_bumped_request_instance() -> None:
 
 
 def test_coerce_delegation_request_keeps_flow_when_bumped_returns_non_request_scalar() -> None:
+    """Coerce delegation request keeps flow when bumped returns non request scalar."""
+
     class _CompatRequest:
         def __init__(self) -> None:
             self.task_id = "t-raw"
@@ -1515,6 +1583,8 @@ def test_coerce_delegation_request_keeps_flow_when_bumped_returns_non_request_sc
 
 
 def test_coerce_delegation_request_handles_noncallable_bumped_attribute() -> None:
+    """Coerce delegation request handles noncallable bumped attribute."""
+
     class _CompatRequest:
         def __init__(self) -> None:
             self.task_id = "t-nc"
