@@ -1,3 +1,5 @@
+"""Unit tests for ``scripts.cleanup_zone_identifier``."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -10,6 +12,7 @@ from scripts.cleanup_zone_identifier import (
 
 
 def test_find_zone_identifier_files_discovers_sidecars_and_prunes_git(tmp_path: Path) -> None:
+    """Find zone identifier files discovers sidecars and prunes git."""
     sidecar = tmp_path / "downloaded.py:Zone.Identifier"
     sidecar.write_text("[ZoneTransfer]\nZoneId=3\n", encoding="utf-8")
     regular = tmp_path / "downloaded.py"
@@ -24,6 +27,7 @@ def test_find_zone_identifier_files_discovers_sidecars_and_prunes_git(tmp_path: 
 
 
 def test_remove_zone_identifier_files_deletes_only_sidecars(tmp_path: Path) -> None:
+    """Remove zone identifier files deletes only sidecars."""
     sidecar = tmp_path / "asset.png:Zone.Identifier"
     sidecar.write_text("metadata", encoding="utf-8")
     regular = tmp_path / "asset.png"
@@ -37,6 +41,7 @@ def test_remove_zone_identifier_files_deletes_only_sidecars(tmp_path: Path) -> N
 
 
 def test_remove_zone_identifier_files_dry_run_keeps_files(tmp_path: Path) -> None:
+    """Remove zone identifier files dry run keeps files."""
     sidecar = tmp_path / "doc.pdf:Zone.Identifier"
     sidecar.write_text("metadata", encoding="utf-8")
 
@@ -47,6 +52,7 @@ def test_remove_zone_identifier_files_dry_run_keeps_files(tmp_path: Path) -> Non
 
 
 def test_find_zone_identifier_files_accepts_custom_pruned_dirs(tmp_path: Path) -> None:
+    """Find zone identifier files accepts custom pruned dirs."""
     skipped = tmp_path / "custom" / "ignored.txt:Zone.Identifier"
     skipped.parent.mkdir()
     skipped.write_text("ignored", encoding="utf-8")
@@ -60,6 +66,7 @@ def test_find_zone_identifier_files_accepts_custom_pruned_dirs(tmp_path: Path) -
 
 
 def test_remove_zone_identifier_files_ignores_raced_deletions(tmp_path: Path, monkeypatch) -> None:
+    """Remove zone identifier files ignores raced deletions."""
     sidecar = tmp_path / "asset.png:Zone.Identifier"
     sidecar.write_text("metadata", encoding="utf-8")
 
@@ -74,6 +81,7 @@ def test_remove_zone_identifier_files_ignores_raced_deletions(tmp_path: Path, mo
 
 
 def test_main_reports_no_artifacts(tmp_path: Path, capsys) -> None:
+    """Main reports no artifacts."""
     exit_code = cleanup_zone_identifier.main(["--root", str(tmp_path)])
 
     assert exit_code == 0
@@ -81,6 +89,7 @@ def test_main_reports_no_artifacts(tmp_path: Path, capsys) -> None:
 
 
 def test_main_dry_run_lists_artifacts_without_deleting(tmp_path: Path, capsys) -> None:
+    """Main dry run lists artifacts without deleting."""
     sidecar = tmp_path / "download.zip:Zone.Identifier"
     sidecar.write_text("metadata", encoding="utf-8")
 
@@ -96,6 +105,7 @@ def test_main_dry_run_lists_artifacts_without_deleting(tmp_path: Path, capsys) -
 
 
 def test_main_delete_lists_removed_artifacts(tmp_path: Path, capsys) -> None:
+    """Main delete lists removed artifacts."""
     sidecar = tmp_path / "download.zip:Zone.Identifier"
     sidecar.write_text("metadata", encoding="utf-8")
 

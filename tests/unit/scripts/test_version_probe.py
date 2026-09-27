@@ -1,3 +1,5 @@
+"""Unit tests for ``scripts.version_probe``."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -6,6 +8,7 @@ from scripts.version_probe import resolve_pyproject_version
 
 
 def test_resolve_pyproject_version_reads_static_project_version(tmp_path: Path) -> None:
+    """Resolve pyproject version reads static project version."""
     pyproject = tmp_path / "pyproject.toml"
     pyproject.write_text('[project]\nversion = "7.8.9"\n', encoding="utf-8")
 
@@ -13,6 +16,7 @@ def test_resolve_pyproject_version_reads_static_project_version(tmp_path: Path) 
 
 
 def test_resolve_pyproject_version_reads_dynamic_file(tmp_path: Path) -> None:
+    """Resolve pyproject version reads dynamic file."""
     pyproject = tmp_path / "pyproject.toml"
     pyproject.write_text(
         '[project]\ndynamic = ["version"]\n'
@@ -25,6 +29,7 @@ def test_resolve_pyproject_version_reads_dynamic_file(tmp_path: Path) -> None:
 
 
 def test_resolve_pyproject_version_reads_dynamic_literal_attr(tmp_path: Path) -> None:
+    """Resolve pyproject version reads dynamic literal attr."""
     package_dir = tmp_path / "sidar_pkg"
     package_dir.mkdir()
     (package_dir / "__init__.py").write_text('__version__ = "4.3.2"\n', encoding="utf-8")

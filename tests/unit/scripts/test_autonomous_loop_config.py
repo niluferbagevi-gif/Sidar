@@ -1,3 +1,5 @@
+"""Contract tests for ``autonomous_loop.sh`` profiles and remediation defaults."""
+
 from __future__ import annotations
 
 import os
@@ -46,6 +48,7 @@ def _run_autonomous_loop_config(
 
 
 def test_coverage_campaign_short_profile_targets_99_8_percent() -> None:
+    """Coverage campaign short profile targets 99 8 percent."""
     output = _run_autonomous_loop_config(profile="short")
 
     assert "Coverage operasyon profili: coverage-campaign." in output
@@ -54,6 +57,7 @@ def test_coverage_campaign_short_profile_targets_99_8_percent() -> None:
 
 
 def test_coverage_campaign_full_profile_targets_100_percent() -> None:
+    """Coverage campaign full profile targets 100 percent."""
     output = _run_autonomous_loop_config(profile="full")
 
     assert "Coverage operasyon profili: coverage-campaign." in output
@@ -62,12 +66,14 @@ def test_coverage_campaign_full_profile_targets_100_percent() -> None:
 
 
 def test_autonomous_loop_disables_repeated_static_analysis_by_default() -> None:
+    """Autonomous loop disables repeated static analysis by default."""
     output = _run_autonomous_loop_config(profile="short")
 
     assert "Otonom test tekrarlarında RUN_STATIC_ANALYSIS=0" in output
 
 
 def test_autonomous_loop_rejects_invalid_static_analysis_override() -> None:
+    """Autonomous loop rejects invalid static analysis override."""
     output = _run_autonomous_loop_config(
         profile="short",
         extra_env={"AUTONOMOUS_LOOP_RUN_STATIC_ANALYSIS": "sometimes"},
@@ -78,6 +84,7 @@ def test_autonomous_loop_rejects_invalid_static_analysis_override() -> None:
 
 
 def test_autonomous_loop_hybrid_mode_ignores_static_analysis_override() -> None:
+    """Autonomous loop hybrid mode ignores static analysis override."""
     output = _run_autonomous_loop_config(
         profile="short",
         extra_env={"AUTONOMOUS_LOOP_RUN_STATIC_ANALYSIS": "1"},
@@ -102,6 +109,7 @@ def test_autonomous_loop_bandit_invocation_loads_pyproject_config() -> None:
 
 
 def test_autonomous_loop_full_static_mode_allows_static_analysis_override() -> None:
+    """Autonomous loop full static mode allows static analysis override."""
     output = _run_autonomous_loop_config(
         profile="short",
         extra_env={
@@ -116,6 +124,7 @@ def test_autonomous_loop_full_static_mode_allows_static_analysis_override() -> N
 
 
 def test_autonomous_loop_prints_upload_and_auto_heal_controls() -> None:
+    """Autonomous loop prints upload and auto heal controls."""
     output = _run_autonomous_loop_config(
         profile="short",
         extra_env={
@@ -132,6 +141,7 @@ def test_autonomous_loop_prints_upload_and_auto_heal_controls() -> None:
 
 
 def test_autonomous_loop_accepts_interactive_hitl_prompt_mode() -> None:
+    """Autonomous loop accepts interactive hitl prompt mode."""
     output = _run_autonomous_loop_config(
         profile="short",
         extra_env={"AUTONOMOUS_LOOP_AUTO_HEAL_HITL_APPROVE": "prompt"},
@@ -142,6 +152,7 @@ def test_autonomous_loop_accepts_interactive_hitl_prompt_mode() -> None:
 
 
 def test_autonomous_loop_rejects_invalid_auto_heal_hitl_value() -> None:
+    """Autonomous loop rejects invalid auto heal hitl value."""
     output = _run_autonomous_loop_config(
         profile="short",
         extra_env={"AUTONOMOUS_LOOP_AUTO_HEAL_HITL_APPROVE": "maybe"},
@@ -152,6 +163,7 @@ def test_autonomous_loop_rejects_invalid_auto_heal_hitl_value() -> None:
 
 
 def test_autonomous_loop_defaults_exclude_entrypoints_and_uses_parallel_mutmut() -> None:
+    """Autonomous loop defaults exclude entrypoints and uses parallel mutmut."""
     output = _run_autonomous_loop_config(
         profile="short",
         extra_env={
@@ -169,6 +181,7 @@ def test_autonomous_loop_defaults_exclude_entrypoints_and_uses_parallel_mutmut()
 
 
 def test_autonomous_loop_rejects_numeric_mutation_flag() -> None:
+    """Autonomous loop rejects numeric mutation flag."""
     output = _run_autonomous_loop_config(
         profile="short",
         extra_env={"AUTONOMOUS_LOOP_MUTATION_ENABLED": "1"},
@@ -179,6 +192,7 @@ def test_autonomous_loop_rejects_numeric_mutation_flag() -> None:
 
 
 def test_autonomous_loop_print_config_runs_config_preflight() -> None:
+    """Autonomous loop print config runs config preflight."""
     output = _run_autonomous_loop_config(profile="short")
 
     assert "[PREFLIGHT 0/3] Config: uv run python ile dotenv zinciri" in output

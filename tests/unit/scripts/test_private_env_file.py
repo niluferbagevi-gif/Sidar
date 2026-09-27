@@ -8,6 +8,7 @@ from scripts.private_env_file import write_private_env
 
 
 def test_write_private_env_replaces_content_with_owner_only_permissions(tmp_path) -> None:
+    """Write private env replaces content with owner only permissions."""
     target = tmp_path / ".env"
     target.write_text("SECRET=old\n", encoding="utf-8")
     target.chmod(0o644)

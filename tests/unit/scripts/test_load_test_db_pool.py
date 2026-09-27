@@ -1,3 +1,5 @@
+"""Unit tests for ``scripts.load_test_db_pool``."""
+
 import asyncio
 import importlib
 import sys
@@ -73,6 +75,7 @@ class _FakeDb:
 
 
 def test_run_once_returns_latency_ms_for_successful_query(monkeypatch):
+    """Run once returns latency ms for successful query."""
     module = _import_module_with_stubs(monkeypatch)
     db = _FakeDb()
     latency = asyncio.run(module._run_once(db, acquire_timeout_s=0.5))
@@ -81,6 +84,7 @@ def test_run_once_returns_latency_ms_for_successful_query(monkeypatch):
 
 
 def test_run_once_returns_none_on_query_failure(monkeypatch):
+    """Run once returns none on query failure."""
     module = _import_module_with_stubs(monkeypatch)
     db = _FakeDb()
     db._pg_pool = _FakePool(should_fail=True)
@@ -89,6 +93,7 @@ def test_run_once_returns_none_on_query_failure(monkeypatch):
 
 
 def test_run_load_test_rejects_non_postgres_and_closes_db(monkeypatch):
+    """Run load test rejects non postgres and closes db."""
     module = _import_module_with_stubs(monkeypatch)
     fake_db = _FakeDb(backend="sqlite")
 
@@ -110,6 +115,7 @@ def test_run_load_test_rejects_non_postgres_and_closes_db(monkeypatch):
 
 
 def test_run_load_test_prints_fail_when_all_requests_fail(monkeypatch, capsys):
+    """Run load test prints fail when all requests fail."""
     module = _import_module_with_stubs(monkeypatch)
     fake_db = _FakeDb(backend="postgresql")
     fake_db._pg_pool = _FakePool(should_fail=True)
@@ -133,6 +139,7 @@ def test_run_load_test_prints_fail_when_all_requests_fail(monkeypatch, capsys):
 
 
 def test_run_load_test_prints_ok_metrics(monkeypatch, capsys):
+    """Run load test prints ok metrics."""
     module = _import_module_with_stubs(monkeypatch)
     fake_db = _FakeDb(backend="postgresql")
     monkeypatch.setattr(module, "Database", lambda _cfg: fake_db)
@@ -176,12 +183,14 @@ def test_run_load_test_prints_ok_metrics(monkeypatch, capsys):
     ],
 )
 def test_main_rejects_invalid_arguments(monkeypatch, argv, expected_msg):
+    """Main rejects invalid arguments."""
     module = _import_module_with_stubs(monkeypatch)
     with pytest.raises(SystemExit, match=expected_msg):
         module.main(argv)
 
 
 def test_main_runs_load_test_with_parsed_args(monkeypatch):
+    """Main runs load test with parsed args."""
     module = _import_module_with_stubs(monkeypatch)
     argv = [
         "--database-url",

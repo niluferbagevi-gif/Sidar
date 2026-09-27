@@ -1,3 +1,5 @@
+"""Tests for the installer repository metadata shell helper."""
+
 import subprocess
 from pathlib import Path
 
@@ -16,6 +18,7 @@ def _run_bash(script: str, cwd: Path) -> subprocess.CompletedProcess[str]:
 
 
 def test_installer_metadata_reports_version_revision_and_dirty_state(tmp_path: Path) -> None:
+    """Installer metadata reports version revision and dirty state."""
     assert (
         _run_bash(
             "git init -q && git config user.email test@example.com && git config user.name Test",
@@ -49,6 +52,7 @@ def test_installer_metadata_reports_version_revision_and_dirty_state(tmp_path: P
 
 
 def test_installer_metadata_degrades_explicitly_outside_git(tmp_path: Path) -> None:
+    """Installer metadata degrades explicitly outside git."""
     result = _run_bash(
         f"source {METADATA_HELPER!s}; INSTALL_SIDAR_VERSION=5.2.0; "
         f"sidar_report_install_source_metadata {tmp_path!s}",

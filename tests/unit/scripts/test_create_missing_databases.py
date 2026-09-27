@@ -1,3 +1,5 @@
+"""Unit tests for ``scripts.create_missing_databases``."""
+
 from __future__ import annotations
 
 from scripts import create_missing_databases as cmd
@@ -38,6 +40,7 @@ class _FakeConn:
 
 
 def test_main_uses_psycopg2_and_creates_missing_databases(monkeypatch, tmp_path):
+    """Main uses psycopg2 and creates missing databases."""
     env_file = tmp_path / ".env"
     env_file.write_text("POSTGRES_PASSWORD=testpw\nPOSTGRES_DB=sidar\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)

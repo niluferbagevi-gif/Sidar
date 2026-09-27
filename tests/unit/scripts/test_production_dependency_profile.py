@@ -1,3 +1,5 @@
+"""Contract tests for the production dependency profile and its export tooling."""
+
 from __future__ import annotations
 
 import tomllib
@@ -24,6 +26,7 @@ def test_production_minimal_profile_and_artifacts_are_declared() -> None:
 
 
 def test_canonical_dependency_profiles_are_explicit_and_composable() -> None:
+    """Canonical dependency profiles are explicit and composable."""
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     optional_deps = pyproject["project"]["optional-dependencies"]
 

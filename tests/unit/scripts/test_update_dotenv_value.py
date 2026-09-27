@@ -1,3 +1,5 @@
+"""Unit tests for ``scripts.update_dotenv_value``."""
+
 from __future__ import annotations
 
 import stat
@@ -6,6 +8,7 @@ from scripts.update_dotenv_value import update_dotenv_value
 
 
 def test_update_dotenv_value_clamps_existing_secret_file_mode(tmp_path) -> None:
+    """Update dotenv value clamps existing secret file mode."""
     dotenv = tmp_path / ".env"
     dotenv.write_text("TOKEN=old\n", encoding="utf-8")
     dotenv.chmod(0o644)
@@ -17,6 +20,7 @@ def test_update_dotenv_value_clamps_existing_secret_file_mode(tmp_path) -> None:
 
 
 def test_update_dotenv_value_replaces_spaced_assignment_without_duplicate(tmp_path) -> None:
+    """Update dotenv value replaces spaced assignment without duplicate."""
     dotenv = tmp_path / ".env"
     dotenv.write_text("TOKEN = old\nOTHER=value\n", encoding="utf-8")
 

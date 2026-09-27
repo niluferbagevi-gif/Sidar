@@ -1,3 +1,5 @@
+"""Unit tests for ``scripts/secret_strength.py``."""
+
 from __future__ import annotations
 
 import importlib.util
@@ -15,6 +17,7 @@ def _load_secret_strength():
 
 
 def test_secret_strength_rejects_common_medium_weak_passwords() -> None:
+    """Secret strength rejects common medium weak passwords."""
     secret_strength = _load_secret_strength()
 
     for value in (
@@ -27,6 +30,7 @@ def test_secret_strength_rejects_common_medium_weak_passwords() -> None:
 
 
 def test_secret_strength_accepts_high_entropy_generated_tokens() -> None:
+    """Secret strength accepts high entropy generated tokens."""
     secret_strength = _load_secret_strength()
 
     assert not secret_strength.is_weak_secret("N7b_Uz9mKq2pR8tYv3wXc5aHj6sDf4Gh")

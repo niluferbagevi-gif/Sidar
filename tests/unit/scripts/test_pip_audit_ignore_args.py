@@ -1,3 +1,5 @@
+"""Unit tests for ``scripts.pip_audit_ignore_args``."""
+
 from __future__ import annotations
 
 from datetime import date
@@ -9,6 +11,7 @@ from scripts.pip_audit_ignore_args import DEFAULT_POLICY_PATH, build_ignore_args
 
 
 def test_parse_policy_builds_dated_ignore_args(tmp_path: Path) -> None:
+    """Parse policy builds dated ignore args."""
     policy = tmp_path / "pip-audit-ignores.tsv"
     policy.write_text(
         "# vuln_id\tpackage\texpires\treason\n"
@@ -23,6 +26,7 @@ def test_parse_policy_builds_dated_ignore_args(tmp_path: Path) -> None:
 
 
 def test_parse_policy_rejects_expired_entries(tmp_path: Path) -> None:
+    """Parse policy rejects expired entries."""
     policy = tmp_path / "pip-audit-ignores.tsv"
     policy.write_text(
         "CVE-2025-3000\ttorch\t2026-06-10\tExpired acceptance.\n",
@@ -34,6 +38,7 @@ def test_parse_policy_rejects_expired_entries(tmp_path: Path) -> None:
 
 
 def test_parse_policy_requires_tab_separated_reason(tmp_path: Path) -> None:
+    """Parse policy requires tab separated reason."""
     policy = tmp_path / "pip-audit-ignores.tsv"
     policy.write_text("CVE-2025-3000 torch 2026-07-11 missing-tabs\n", encoding="utf-8")
 
@@ -42,6 +47,7 @@ def test_parse_policy_requires_tab_separated_reason(tmp_path: Path) -> None:
 
 
 def test_repository_torch_policy_exception_was_removed_after_patched_upgrade() -> None:
+    """Repository torch policy exception was removed after patched upgrade."""
     ignores = parse_policy(DEFAULT_POLICY_PATH, today=date(2026, 9, 15))
 
     assert not any(ignore.package == "torch" for ignore in ignores)

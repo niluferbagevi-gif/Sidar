@@ -1,3 +1,5 @@
+"""Unit tests for ``scripts.ci.check_coverage_exclusion_budget``."""
+
 from __future__ import annotations
 
 import json
@@ -11,6 +13,7 @@ def _write_baseline(path: Path, maximum: int) -> None:
 
 
 def test_collect_exclusions_ignores_tests_and_omitted_directories(tmp_path: Path) -> None:
+    """Collect exclusions ignores tests and omitted directories."""
     (tmp_path / "core.py").write_text("value = 1  # pragma: no cover\n", encoding="utf-8")
     for directory in ("tests", "migrations", "web_ui_react"):
         path = tmp_path / directory
@@ -21,6 +24,7 @@ def test_collect_exclusions_ignores_tests_and_omitted_directories(tmp_path: Path
 
 
 def test_exclusion_budget_is_one_way_and_fails_closed(tmp_path: Path) -> None:
+    """Exclusion budget is one way and fails closed."""
     baseline = tmp_path / "baseline.json"
     source = tmp_path / "core.py"
     source.write_text("a = 1  # pragma: no cover\nb = 2  # pragma: no cover\n", encoding="utf-8")
@@ -35,6 +39,7 @@ def test_exclusion_budget_is_one_way_and_fails_closed(tmp_path: Path) -> None:
 
 
 def test_exclusion_budget_rejects_invalid_baseline(tmp_path: Path) -> None:
+    """Exclusion budget rejects invalid baseline."""
     baseline = tmp_path / "baseline.json"
     baseline.write_text("{}", encoding="utf-8")
 

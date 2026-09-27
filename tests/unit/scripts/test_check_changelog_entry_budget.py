@@ -13,6 +13,7 @@ def _write_baseline(path: Path, maximum: object) -> None:
 
 
 def test_unreleased_entries_only_collects_bullets_inside_the_section() -> None:
+    """Unreleased entries only collects bullets inside the section."""
     text = "\n".join(
         [
             "# Sürüm Geçmişi",
@@ -38,16 +39,19 @@ def test_unreleased_entries_only_collects_bullets_inside_the_section() -> None:
 
 
 def test_unreleased_entries_returns_empty_without_an_unreleased_section() -> None:
+    """Unreleased entries returns empty without an unreleased section."""
     text = "\n".join(["# Sürüm Geçmişi", "", "## [v1.0.0] - 2026-01-01", "- **Entry:** x."])
 
     assert checker.unreleased_entries(text) == []
 
 
 def test_word_count_counts_whitespace_delimited_tokens() -> None:
+    """Word count counts whitespace delimited tokens."""
     assert checker.word_count("- **Kısa madde:** iki kelime daha.") == 6
 
 
 def test_budget_passes_when_every_entry_is_within_budget(tmp_path: Path) -> None:
+    """Budget passes when every entry is within budget."""
     baseline = tmp_path / "baseline.json"
     target = tmp_path / "CHANGELOG.md"
     target.write_text(
@@ -67,6 +71,7 @@ def test_budget_passes_when_every_entry_is_within_budget(tmp_path: Path) -> None
 
 
 def test_budget_fails_closed_when_an_entry_exceeds_the_word_budget(tmp_path: Path) -> None:
+    """Budget fails closed when an entry exceeds the word budget."""
     baseline = tmp_path / "baseline.json"
     target = tmp_path / "CHANGELOG.md"
     long_entry = "- **" + " ".join(f"kelime{i}" for i in range(20)) + ":** detay."
@@ -79,6 +84,7 @@ def test_budget_fails_closed_when_an_entry_exceeds_the_word_budget(tmp_path: Pat
 
 
 def test_budget_rejects_missing_target_file(tmp_path: Path) -> None:
+    """Budget rejects missing target file."""
     baseline = tmp_path / "baseline.json"
     _write_baseline(baseline, 10)
 
@@ -88,6 +94,7 @@ def test_budget_rejects_missing_target_file(tmp_path: Path) -> None:
 
 
 def test_budget_rejects_missing_baseline_key(tmp_path: Path) -> None:
+    """Budget rejects missing baseline key."""
     baseline = tmp_path / "baseline.json"
     baseline.write_text("{}", encoding="utf-8")
 
@@ -95,6 +102,7 @@ def test_budget_rejects_missing_baseline_key(tmp_path: Path) -> None:
 
 
 def test_budget_rejects_invalid_json(tmp_path: Path) -> None:
+    """Budget rejects invalid json."""
     baseline = tmp_path / "baseline.json"
     baseline.write_text("not json", encoding="utf-8")
 
@@ -102,6 +110,7 @@ def test_budget_rejects_invalid_json(tmp_path: Path) -> None:
 
 
 def test_budget_rejects_non_positive_maximum(tmp_path: Path) -> None:
+    """Budget rejects non positive maximum."""
     baseline = tmp_path / "baseline.json"
     _write_baseline(baseline, 0)
 
@@ -109,6 +118,7 @@ def test_budget_rejects_non_positive_maximum(tmp_path: Path) -> None:
 
 
 def test_budget_rejects_bool_maximum(tmp_path: Path) -> None:
+    """Budget rejects bool maximum."""
     baseline = tmp_path / "baseline.json"
     _write_baseline(baseline, True)
 

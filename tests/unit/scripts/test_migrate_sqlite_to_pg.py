@@ -1,3 +1,5 @@
+"""Unit tests for ``scripts.migrate_sqlite_to_pg``."""
+
 import asyncio
 import sqlite3
 from pathlib import Path
@@ -8,11 +10,13 @@ from scripts import migrate_sqlite_to_pg
 
 
 def test_safe_table_name_rejects_unknown_table():
+    """Safe table name rejects unknown table."""
     with pytest.raises(ValueError, match="Geçersiz tablo adı: not_allowed"):
         migrate_sqlite_to_pg._safe_table_name("not_allowed")
 
 
 def test_load_rows_reads_columns_and_data(tmp_path: Path):
+    """Load rows reads columns and data."""
     db_path = tmp_path / "sample.db"
     conn = sqlite3.connect(db_path)
     try:
@@ -29,11 +33,13 @@ def test_load_rows_reads_columns_and_data(tmp_path: Path):
 
 
 def test_safe_column_names_rejects_unsafe_identifier():
+    """Safe column names rejects unsafe identifier."""
     with pytest.raises(ValueError, match="Geçersiz sütun adı"):
         migrate_sqlite_to_pg._safe_column_names("users", ["id", "email); DROP TABLE users; --"])
 
 
 def test_load_rows_rejects_table_with_malicious_column_name(tmp_path: Path):
+    """Load rows rejects table with malicious column name."""
     db_path = tmp_path / "sample.db"
     conn = sqlite3.connect(db_path)
     try:
@@ -50,6 +56,7 @@ def test_load_rows_rejects_table_with_malicious_column_name(tmp_path: Path):
 
 
 def test_load_rows_returns_columns_for_empty_table(tmp_path: Path):
+    """Load rows returns columns for empty table."""
     db_path = tmp_path / "sample.db"
     conn = sqlite3.connect(db_path)
     try:
@@ -101,6 +108,7 @@ class _FakeAsyncPg:
 
 
 def test_copy_table_dry_run_reports_row_count(monkeypatch, tmp_path: Path):
+    """Copy table dry run reports row count."""
     db_path = tmp_path / "sample.db"
     conn = sqlite3.connect(db_path)
     try:
@@ -119,6 +127,7 @@ def test_copy_table_dry_run_reports_row_count(monkeypatch, tmp_path: Path):
 
 
 def test_copy_table_writes_rows_inside_transaction(tmp_path: Path):
+    """Copy table writes rows inside transaction."""
     db_path = tmp_path / "sample.db"
     conn = sqlite3.connect(db_path)
     try:
@@ -148,6 +157,7 @@ def test_copy_table_writes_rows_inside_transaction(tmp_path: Path):
 
 
 def test_copy_table_returns_zero_when_table_has_no_columns(monkeypatch, tmp_path: Path):
+    """Copy table returns zero when table has no columns."""
     fake_conn = _FakeConn()
 
     monkeypatch.setattr(migrate_sqlite_to_pg, "_load_rows", lambda *_: ([], []))
@@ -161,6 +171,7 @@ def test_copy_table_returns_zero_when_table_has_no_columns(monkeypatch, tmp_path
 
 
 def test_migrate_raises_when_sqlite_file_missing(monkeypatch, tmp_path: Path):
+    """Migrate raises when sqlite file missing."""
     fake_conn = _FakeAsyncPgConn()
     monkeypatch.setitem(__import__("sys").modules, "asyncpg", _FakeAsyncPg(fake_conn))
 
@@ -175,6 +186,7 @@ def test_migrate_raises_when_sqlite_file_missing(monkeypatch, tmp_path: Path):
 
 
 def test_migrate_iterates_all_tables(monkeypatch, tmp_path: Path):
+    """Migrate iterates all tables."""
     db_path = tmp_path / "sample.db"
     db_path.write_bytes(b"placeholder")
     fake_conn = _FakeAsyncPgConn()
@@ -202,6 +214,7 @@ def test_migrate_iterates_all_tables(monkeypatch, tmp_path: Path):
 
 
 def test_main_parses_args_and_runs_migrate(monkeypatch, tmp_path: Path):
+    """Main parses args and runs migrate."""
     db_path = tmp_path / "sample.db"
     db_path.write_bytes(b"placeholder")
     seen = {}

@@ -1,3 +1,5 @@
+"""Unit tests for ``scripts.auto_heal``."""
+
 import argparse
 import asyncio
 import json
@@ -27,6 +29,7 @@ from scripts.auto_heal import (
 
 
 def test_parse_args_reads_all_cli_options(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Parse args reads all cli options."""
     log_path = tmp_path / "mypy.log"
     monkeypatch.setattr(
         "sys.argv",
@@ -69,6 +72,7 @@ def test_parse_args_reads_all_cli_options(monkeypatch: pytest.MonkeyPatch, tmp_p
 def test_parse_args_applies_optional_defaults(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Parse args applies optional defaults."""
     log_path = tmp_path / "mypy.log"
     monkeypatch.setattr("sys.argv", ["auto_heal.py", "--log", str(log_path)])
 
@@ -87,6 +91,7 @@ def test_parse_args_applies_optional_defaults(
 def test_parse_args_clamps_batch_retries_to_safety_cap(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Parse args clamps batch retries to safety cap."""
     log_path = tmp_path / "mypy.log"
     monkeypatch.setattr(
         "sys.argv",
@@ -102,6 +107,7 @@ def test_parse_args_clamps_batch_retries_to_safety_cap(
 def test_parse_args_clamps_negative_batch_retries_to_zero(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Parse args clamps negative batch retries to zero."""
     log_path = tmp_path / "mypy.log"
     monkeypatch.setattr(
         "sys.argv",
@@ -116,6 +122,7 @@ def test_parse_args_clamps_negative_batch_retries_to_zero(
 def test_resolve_auto_heal_database_url_defaults_to_log_scoped_sqlite(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Resolve auto heal database url defaults to log scoped sqlite."""
     monkeypatch.delenv("SELF_HEAL_DATABASE_URL", raising=False)
     log_path = tmp_path / "artifacts" / "mypy.log"
 
@@ -127,6 +134,7 @@ def test_resolve_auto_heal_database_url_defaults_to_log_scoped_sqlite(
 def test_resolve_auto_heal_database_url_honors_cli_and_env(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Resolve auto heal database url honors cli and env."""
     log_path = tmp_path / "mypy.log"
     monkeypatch.setenv("SELF_HEAL_DATABASE_URL", "sqlite+aiosqlite:///env.db")
 
@@ -138,6 +146,7 @@ def test_resolve_auto_heal_database_url_honors_cli_and_env(
 
 
 def test_configure_auto_heal_memory_backend_uses_bm25_for_sqlite_pgvector() -> None:
+    """Configure auto heal memory backend uses bm25 for sqlite pgvector."""
     cfg = types.SimpleNamespace(RAG_VECTOR_BACKEND="pgvector")
 
     backend = _configure_auto_heal_memory_backend(cfg, "sqlite+aiosqlite:///tmp/auto_heal.db")
@@ -147,6 +156,7 @@ def test_configure_auto_heal_memory_backend_uses_bm25_for_sqlite_pgvector() -> N
 
 
 def test_configure_auto_heal_memory_backend_preserves_postgres_pgvector() -> None:
+    """Configure auto heal memory backend preserves postgres pgvector."""
     cfg = types.SimpleNamespace(RAG_VECTOR_BACKEND="pgvector")
 
     backend = _configure_auto_heal_memory_backend(cfg, "postgresql+asyncpg://u:p@db/sidar")
@@ -156,6 +166,7 @@ def test_configure_auto_heal_memory_backend_preserves_postgres_pgvector() -> Non
 
 
 def test_redact_database_url_masks_password() -> None:
+    """Redact database url masks password."""
     assert (
         _redact_database_url("postgresql+asyncpg://sidar:secret@localhost:5432/sidar")
         == "postgresql+asyncpg://sidar:***@localhost:5432/sidar"
@@ -184,6 +195,7 @@ def test_redact_database_url_returns_text_when_credentials_have_no_password() ->
 def test_prompt_hitl_approval_reprompts_until_value_is_parseable(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Prompt hitl approval reprompts until value is parseable."""
     answers = iter(["belki", "e"])
     monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
     monkeypatch.setattr(auto_heal, "_has_interactive_tty", lambda: True)
@@ -215,6 +227,7 @@ def test_prompt_hitl_approval_fails_closed_without_tty(
 def test_has_interactive_tty_returns_false_when_stdin_is_not_a_tty(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Has interactive tty returns false when stdin is not a tty."""
     monkeypatch.setattr(auto_heal.sys.stdin, "isatty", lambda: False)
     monkeypatch.setattr(auto_heal.sys.stdout, "isatty", lambda: True)
 
@@ -224,6 +237,7 @@ def test_has_interactive_tty_returns_false_when_stdin_is_not_a_tty(
 def test_has_interactive_tty_returns_true_when_stdin_and_stdout_are_ttys(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Has interactive tty returns true when stdin and stdout are ttys."""
     monkeypatch.setattr(auto_heal.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(auto_heal.sys.stdout, "isatty", lambda: True)
 
@@ -231,6 +245,8 @@ def test_has_interactive_tty_returns_true_when_stdin_and_stdout_are_ttys(
 
 
 def test_initialize_agent_soft_dependency_continues_after_failure() -> None:
+    """Initialize agent soft dependency continues after failure."""
+
     class _Agent:
         async def initialize(self):
             raise RuntimeError("pgvector offline")
@@ -243,6 +259,8 @@ def test_initialize_agent_soft_dependency_continues_after_failure() -> None:
 
 
 def test_initialize_agent_soft_dependency_returns_none_when_ready() -> None:
+    """Initialize agent soft dependency returns none when ready."""
+
     class _Agent:
         async def initialize(self):
             return None
@@ -251,6 +269,7 @@ def test_initialize_agent_soft_dependency_returns_none_when_ready() -> None:
 
 
 def test_parse_approval_value_accepts_short_and_tr_aliases() -> None:
+    """Parse approval value accepts short and tr aliases."""
     assert _parse_approval_value("e") is True
     assert _parse_approval_value("evet") is True
     assert _parse_approval_value("h") is False
@@ -258,6 +277,7 @@ def test_parse_approval_value_accepts_short_and_tr_aliases() -> None:
 
 
 def test_parse_approval_value_accepts_en_boolean_aliases() -> None:
+    """Parse approval value accepts en boolean aliases."""
     assert _parse_approval_value("yes") is True
     assert _parse_approval_value("true") is True
     assert _parse_approval_value("1") is True
@@ -267,6 +287,7 @@ def test_parse_approval_value_accepts_en_boolean_aliases() -> None:
 
 
 def test_parse_approval_value_returns_none_for_unknown_and_prompt() -> None:
+    """Parse approval value returns none for unknown and prompt."""
     assert _parse_approval_value(None) is None
     assert _parse_approval_value("") is None
     assert _parse_approval_value("prompt") is None
@@ -276,10 +297,12 @@ def test_parse_approval_value_returns_none_for_unknown_and_prompt() -> None:
 
 
 def test_select_auto_heal_model_promotes_3b_for_mypy() -> None:
+    """Select auto heal model promotes 3b for mypy."""
     assert _select_auto_heal_model("qwen2.5-coder:3b", "mypy", None) == "qwen2.5-coder:7b"
 
 
 def test_select_auto_heal_model_honors_requested_model() -> None:
+    """Select auto heal model honors requested model."""
     assert (
         _select_auto_heal_model("qwen2.5-coder:3b", "mypy", "qwen2.5-coder:14b")
         == "qwen2.5-coder:14b"
@@ -287,10 +310,12 @@ def test_select_auto_heal_model_honors_requested_model() -> None:
 
 
 def test_build_scope_queue_returns_empty_when_scope_paths_are_blank() -> None:
+    """Build scope queue returns empty when scope paths are blank."""
     assert _build_scope_queue({"scope_paths": ["", "  "]}, batch_size=0) == []
 
 
 def test_extract_mypy_targets_from_log_parses_unique_python_files() -> None:
+    """Extract mypy targets from log parses unique python files."""
     log_text = """core/doctor.py:1183: error: Incompatible return value type  [return-value]
 core/doctor.py:1183: error: Incompatible return value type  [return-value]
 manager.py: note: not an error
@@ -303,10 +328,12 @@ agent/roles/coder_agent.py:42:7: error: Name "x" is not defined  [name-defined]
 
 
 def test_extract_mypy_targets_from_log_returns_empty_for_non_mypy_text() -> None:
+    """Extract mypy targets from log returns empty for non mypy text."""
     assert _extract_mypy_targets_from_log("[LINTER] no mypy lines here") == []
 
 
 def test_extract_scope_error_lines_empty_and_non_matching_inputs() -> None:
+    """Extract scope error lines empty and non matching inputs."""
     assert _extract_scope_error_lines("   ", scope_paths=["pkg/a.py"], limit=1) == []
     assert _extract_scope_error_lines("pkg/a.py: ok", scope_paths=[], limit=1) == []
     assert (
@@ -320,6 +347,7 @@ def test_extract_scope_error_lines_empty_and_non_matching_inputs() -> None:
 
 
 def test_extract_scope_error_lines_includes_pytest_failures() -> None:
+    """Extract scope error lines includes pytest failures."""
     log_text = """FAILED tests/unit/core/test_doctor.py::test_x - AssertionError: drift
 tests/unit/core/test_doctor.py:44: AttributeError: missing status
 other.py:1: AssertionError: ignored
@@ -338,6 +366,7 @@ other.py:1: AssertionError: ignored
 
 
 def test_build_attempt_diagnosis_uses_default_scope_message_without_error_lines() -> None:
+    """Build attempt diagnosis uses default scope message without error lines."""
     diagnosis = _build_attempt_diagnosis(
         base_diagnosis="",
         scope_paths=["pkg/a.py"],
@@ -352,6 +381,7 @@ def test_build_attempt_diagnosis_uses_default_scope_message_without_error_lines(
 
 
 def test_build_scope_queue_chunks_paths_by_batch_size() -> None:
+    """Build scope queue chunks paths by batch size."""
     queue = _build_scope_queue(
         {"scope_paths": ["a.py", "b.py", "c.py", "d.py"]},
         batch_size=2,
@@ -360,6 +390,7 @@ def test_build_scope_queue_chunks_paths_by_batch_size() -> None:
 
 
 def test_build_attempt_diagnosis_includes_mypy_reference() -> None:
+    """Build attempt diagnosis includes mypy reference."""
     diagnosis = _build_attempt_diagnosis(
         base_diagnosis="root cause",
         scope_paths=["pkg/a.py"],
@@ -372,6 +403,7 @@ def test_build_attempt_diagnosis_includes_mypy_reference() -> None:
 
 
 def test_extract_scope_error_lines_filters_deduplicates_and_limits() -> None:
+    """Extract scope error lines filters deduplicates and limits."""
     log_text = """pkg/a.py:10: error: incompatible types
 pkg/a.py:10: error: incompatible types
 pkg/a.py:11: note: revealed type is str
@@ -401,6 +433,7 @@ class _FakeAgent:
 
 
 def test_run_self_heal_attempt_retries_with_human_approval(monkeypatch) -> None:
+    """Run self heal attempt retries with human approval."""
     agent = _FakeAgent(
         [
             {"status": "awaiting_hitl", "summary": "needs approval"},
@@ -427,6 +460,7 @@ def test_run_self_heal_attempt_retries_with_human_approval(monkeypatch) -> None:
 def test_run_self_heal_attempt_prompt_value_uses_interactive_prompt(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Run self heal attempt prompt value uses interactive prompt."""
     agent = _FakeAgent(
         [
             {"status": "awaiting_hitl", "summary": "needs approval"},
@@ -454,6 +488,7 @@ def test_run_self_heal_attempt_prompt_value_uses_interactive_prompt(
 
 
 def test_run_self_heal_attempt_uses_prompt_for_unrecognized_cli_value(monkeypatch) -> None:
+    """Run self heal attempt uses prompt for unrecognized cli value."""
     agent = _FakeAgent(
         [
             {"status": "awaiting_hitl", "summary": "needs approval"},
@@ -480,6 +515,7 @@ def test_run_self_heal_attempt_uses_prompt_for_unrecognized_cli_value(monkeypatc
 def test_run_returns_1_when_log_file_missing(
     capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
+    """Run returns 1 when log file missing."""
     args = argparse.Namespace(
         log=str(tmp_path / "missing.log"),
         source="mypy",
@@ -500,6 +536,7 @@ def test_run_returns_1_when_log_file_missing(
 def test_run_raises_when_failure_context_parser_crashes(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Run raises when failure context parser crashes."""
     log_path = tmp_path / "mypy.log"
     log_path.write_text("bad log", encoding="utf-8")
 
@@ -547,6 +584,7 @@ def test_run_raises_when_failure_context_parser_crashes(
 
 
 def test_main_uses_asyncio_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Main uses asyncio run."""
     parsed = argparse.Namespace(
         log="x.log",
         source="mypy",
@@ -570,6 +608,7 @@ def test_main_uses_asyncio_run(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_run_uses_isolated_sqlite_memory_by_default(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Run uses isolated sqlite memory by default."""
     log_path = tmp_path / "mypy.log"
     log_path.write_text("pkg/a.py:10: error: incompatible types", encoding="utf-8")
     monkeypatch.delenv("SELF_HEAL_DATABASE_URL", raising=False)
@@ -639,6 +678,7 @@ def test_run_uses_isolated_sqlite_memory_by_default(
 def test_run_continues_when_agent_initialize_fails(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Run continues when agent initialize fails."""
     log_path = tmp_path / "mypy.log"
     log_path.write_text("pkg/a.py:10: error: incompatible types", encoding="utf-8")
 
@@ -698,6 +738,7 @@ def test_run_continues_when_agent_initialize_fails(
 def test_run_returns_partial_when_later_retry_applies(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Run returns partial when later retry applies."""
     log_path = tmp_path / "mypy.log"
     log_path.write_text("pkg/a.py:10: error: incompatible types", encoding="utf-8")
 
@@ -753,6 +794,7 @@ def test_run_returns_partial_when_later_retry_applies(
 def test_run_returns_1_when_all_batches_fail(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Run returns 1 when all batches fail."""
     log_path = tmp_path / "mypy.log"
     log_path.write_text("pkg/a.py:10: error: incompatible types", encoding="utf-8")
 
@@ -806,6 +848,7 @@ def test_run_returns_1_when_all_batches_fail(
 def test_run_skips_clean_mypy_output_without_targets(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Run skips clean mypy output without targets."""
     log_path = tmp_path / "mypy-clean.log"
     log_path.write_text("Success: no issues found in 12 source files", encoding="utf-8")
 
@@ -851,6 +894,7 @@ def test_run_skips_clean_mypy_output_without_targets(
 def test_run_persists_final_json_result_when_output_is_requested(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Run persists final json result when output is requested."""
     log_path = tmp_path / "mypy.log"
     output_path = tmp_path / "artifacts" / "auto_heal_result.json"
     log_path.write_text("pkg/a.py:10: error: incompatible types", encoding="utf-8")
@@ -912,6 +956,7 @@ def test_run_persists_final_json_result_when_output_is_requested(
 def test_run_does_not_retry_non_retryable_batch_status(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Run does not retry non retryable batch status."""
     log_path = tmp_path / "mypy.log"
     log_path.write_text("pkg/a.py:10: error: incompatible types", encoding="utf-8")
 
@@ -978,6 +1023,7 @@ def test_run_does_not_retry_non_retryable_batch_status(
 def test_run_handles_targeted_context_without_scope_error_lines(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Run handles targeted context without scope error lines."""
     log_path = tmp_path / "mypy.log"
     log_path.write_text("pkg/a.py:10: note: informational only", encoding="utf-8")
 

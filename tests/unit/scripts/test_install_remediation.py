@@ -1,3 +1,5 @@
+"""Contract tests for installer remediation and remote script helpers."""
+
 from __future__ import annotations
 
 import os
@@ -164,6 +166,7 @@ def test_phase_remediation_strategy_classifies_signals_from_specific_to_generic(
     expected_reason: str,
     expected_rc: int,
 ) -> None:
+    """Phase remediation strategy classifies signals from specific to generic."""
     script = r"""
         set +e
         source scripts/install_modules/utils/install_remediation.sh
@@ -192,6 +195,7 @@ def test_phase_remediation_strategy_classifies_signals_from_specific_to_generic(
 
 
 def test_install_modules_declare_strict_mode_for_standalone_safety() -> None:
+    """Install modules declare strict mode for standalone safety."""
     missing = []
     for module in sorted((REPO_ROOT / "scripts/install_modules").rglob("*.sh")):
         first_lines = module.read_text(encoding="utf-8").splitlines()[:5]
@@ -243,6 +247,7 @@ def test_nodesource_detection_uses_installed_dpkg_version(
 
 
 def test_nodejs_package_source_checks_do_not_use_apt_policy_cache() -> None:
+    """Nodejs package source checks do not use apt policy cache."""
     system_phase = (REPO_ROOT / "scripts/install_modules/phases/03_system.sh").read_text(
         encoding="utf-8"
     )
@@ -257,6 +262,7 @@ def test_nodejs_package_source_checks_do_not_use_apt_policy_cache() -> None:
 
 
 def test_install_remediation_uses_structured_failure_codes_and_scoped_venv_cleanup() -> None:
+    """Install remediation uses structured failure codes and scoped venv cleanup."""
     result = subprocess.run(
         [
             "bash",

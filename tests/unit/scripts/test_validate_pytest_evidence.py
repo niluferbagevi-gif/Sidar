@@ -25,6 +25,7 @@ def _artifacts(
 
 
 def test_validate_evidence_binds_nonzero_pytest_and_coverage_to_commit(tmp_path: Path) -> None:
+    """Validate evidence binds nonzero pytest and coverage to commit."""
     summary, junit, coverage = _artifacts(tmp_path)
 
     errors, evidence = validate_evidence(
@@ -48,6 +49,7 @@ def test_validate_evidence_binds_nonzero_pytest_and_coverage_to_commit(tmp_path:
 
 
 def test_validate_evidence_rejects_missing_or_skipped_pytest(tmp_path: Path) -> None:
+    """Validate evidence rejects missing or skipped pytest."""
     summary, junit, coverage = _artifacts(tmp_path, tests=0, aggregate="failed")
 
     errors, evidence = validate_evidence(
@@ -65,6 +67,7 @@ def test_validate_evidence_rejects_missing_or_skipped_pytest(tmp_path: Path) -> 
 
 
 def test_cli_writes_invalid_attestation_when_artifacts_are_missing(tmp_path: Path) -> None:
+    """Cli writes invalid attestation when artifacts are missing."""
     output = tmp_path / "evidence.json"
     missing_summary = tmp_path / "missing-summary.json"
     missing_junit = tmp_path / "missing-pytest"

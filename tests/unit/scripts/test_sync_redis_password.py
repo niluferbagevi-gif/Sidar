@@ -1,3 +1,5 @@
+"""Unit tests for ``scripts.sync_redis_password``."""
+
 from __future__ import annotations
 
 import json
@@ -11,6 +13,7 @@ def _password_from(url: str) -> str:
 
 
 def test_redis_url_with_password_preserves_optional_username_and_encodes_secret() -> None:
+    """Redis url with password preserves optional username and encodes secret."""
     assert (
         sync_redis_password._redis_url_with_password("redis://localhost:6379/0", "p@ss word/x")
         == "redis://:p%40ss%20word%2Fx@localhost:6379/0"
@@ -25,6 +28,7 @@ def test_redis_url_with_password_preserves_optional_username_and_encodes_secret(
 
 
 def test_sync_env_text_aligns_redis_url_passwords_and_url_encodes_secret() -> None:
+    """Sync env text aligns redis url passwords and url encodes secret."""
     env_text = (
         "\n".join(
             [
@@ -49,6 +53,7 @@ def test_sync_env_text_aligns_redis_url_passwords_and_url_encodes_secret() -> No
 
 
 def test_sync_env_text_is_idempotent_for_matching_passwords() -> None:
+    """Sync env text is idempotent for matching passwords."""
     env_text = (
         "\n".join(
             [
@@ -67,6 +72,7 @@ def test_sync_env_text_is_idempotent_for_matching_passwords() -> None:
 
 
 def test_sync_env_text_skips_non_redis_urls_and_requires_redis_password() -> None:
+    """Sync env text skips non redis urls and requires redis password."""
     updated, summary = sync_redis_password.sync_env_text(
         "REDIS_PASSWORD=aaaaaaaaaaaaaaaaaaaaaaaa\nSIDAR_REDIS_URL=amqp://guest:guest@localhost/\n"
     )
@@ -86,6 +92,7 @@ def test_sync_env_text_skips_non_redis_urls_and_requires_redis_password() -> Non
 
 
 def test_sync_env_file_writes_updated_content(tmp_path) -> None:
+    """Sync env file writes updated content."""
     env_file = tmp_path / ".env"
     env_file.write_text(
         "REDIS_PASSWORD=bbbbbbbbbbbbbbbbbbbbbbbb\nSIDAR_REDIS_URL=redis://:old@localhost:6379/0\n",
@@ -100,6 +107,7 @@ def test_sync_env_file_writes_updated_content(tmp_path) -> None:
 
 
 def test_main_emits_redacted_json_summary(tmp_path, capsys) -> None:
+    """Main emits redacted json summary."""
     env_file = tmp_path / ".env"
     env_file.write_text(
         "REDIS_PASSWORD=cccccccccccccccccccccccc\nSIDAR_REDIS_URL=redis://:old@localhost:6379/0\n",
@@ -118,6 +126,7 @@ def test_main_emits_redacted_json_summary(tmp_path, capsys) -> None:
 def test_sync_env_chain_updates_later_override_files_with_effective_password(
     monkeypatch, tmp_path
 ) -> None:
+    """Sync env chain updates later override files with effective password."""
     monkeypatch.delenv("REDIS_PASSWORD", raising=False)
     monkeypatch.delenv("SIDAR_ENV", raising=False)
     monkeypatch.delenv("DOTENV_FILE", raising=False)
@@ -188,6 +197,7 @@ def test_sync_env_chain_marks_effective_password_drift_warnings_critical(
 def test_main_reports_no_change_guidance_for_idempotent_chain(
     monkeypatch, tmp_path, capsys
 ) -> None:
+    """Main reports no change guidance for idempotent chain."""
     monkeypatch.delenv("REDIS_PASSWORD", raising=False)
     monkeypatch.delenv("SIDAR_ENV", raising=False)
     monkeypatch.delenv("DOTENV_FILE", raising=False)

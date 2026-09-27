@@ -1,3 +1,5 @@
+"""Unit tests for ``scripts.test_gates.summary``."""
+
 from __future__ import annotations
 
 import json
@@ -55,6 +57,7 @@ def _summary_args(output_path: Path, junit_dir: Path) -> list[str]:
 
 
 def test_summary_helper_writes_run_tests_payload_and_failed_backend_tests(tmp_path: Path) -> None:
+    """Summary helper writes run tests payload and failed backend tests."""
     junit_dir = tmp_path / "pytest"
     junit_dir.mkdir()
     (junit_dir / "backend-unit.xml").write_text(
@@ -131,6 +134,7 @@ def test_summary_helper_writes_run_tests_payload_and_failed_backend_tests(tmp_pa
 
 
 def test_summary_helper_rejects_wrong_argument_count(tmp_path: Path, capsys) -> None:
+    """Summary helper rejects wrong argument count."""
     assert summary.main([str(tmp_path / "test-summary.json")]) == 2
 
     captured = capsys.readouterr()
@@ -138,6 +142,7 @@ def test_summary_helper_rejects_wrong_argument_count(tmp_path: Path, capsys) -> 
 
 
 def test_summary_separates_local_readiness_from_external_release_evidence(tmp_path: Path) -> None:
+    """Summary separates local readiness from external release evidence."""
     args = _summary_args(tmp_path / "test-summary.json", tmp_path / "pytest")
     args[-4] = "true"
     args[11] = "true"
@@ -151,6 +156,7 @@ def test_summary_separates_local_readiness_from_external_release_evidence(tmp_pa
 
 
 def test_summary_preserves_failed_frontend_audit_result(tmp_path: Path) -> None:
+    """Summary preserves failed frontend audit result."""
     args = _summary_args(tmp_path / "test-summary.json", tmp_path / "pytest")
     args[5] = "failed"
 
@@ -160,6 +166,7 @@ def test_summary_preserves_failed_frontend_audit_result(tmp_path: Path) -> None:
 
 
 def test_summary_helper_skips_malicious_backend_junit_xml(tmp_path: Path) -> None:
+    """Summary helper skips malicious backend junit xml."""
     junit_dir = tmp_path / "pytest"
     junit_dir.mkdir()
     (junit_dir / "backend-unit.xml").write_text(

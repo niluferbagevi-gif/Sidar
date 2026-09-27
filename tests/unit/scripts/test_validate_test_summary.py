@@ -1,3 +1,5 @@
+"""Unit tests for ``scripts.ci.validate_test_summary``."""
+
 from __future__ import annotations
 
 import json
@@ -45,6 +47,7 @@ def _summary(
 
 
 def test_release_mode_accepts_production_ready_summary() -> None:
+    """Release mode accepts production ready summary."""
     summary = _summary(
         production_ready=True,
         status="passed",
@@ -57,6 +60,7 @@ def test_release_mode_accepts_production_ready_summary() -> None:
 
 
 def test_release_mode_rejects_development_summary() -> None:
+    """Release mode rejects development summary."""
     summary = _summary(
         production_ready=False,
         status="development_only",
@@ -75,6 +79,7 @@ def test_release_mode_rejects_development_summary() -> None:
 
 
 def test_release_mode_rejects_seeded_but_not_compared_benchmark() -> None:
+    """Release mode rejects seeded but not compared benchmark."""
     summary = _summary(
         production_ready=True,
         status="passed",
@@ -90,6 +95,7 @@ def test_release_mode_rejects_seeded_but_not_compared_benchmark() -> None:
 
 
 def test_summary_rejects_release_ready_without_complete_evidence() -> None:
+    """Summary rejects release ready without complete evidence."""
     summary = _summary(
         production_ready=False,
         status="development_only",
@@ -105,6 +111,7 @@ def test_summary_rejects_release_ready_without_complete_evidence() -> None:
 
 
 def test_development_mode_validates_schema_without_requiring_release() -> None:
+    """Development mode validates schema without requiring release."""
     summary = _summary(
         production_ready=False,
         status="development_only",
@@ -117,6 +124,7 @@ def test_development_mode_validates_schema_without_requiring_release() -> None:
 
 
 def test_cli_fails_release_mode_when_production_ready_false(tmp_path: Path, capsys) -> None:
+    """Cli fails release mode when production ready false."""
     summary_path = tmp_path / "test-summary.json"
     summary_path.write_text(
         json.dumps(
@@ -139,6 +147,7 @@ def test_cli_fails_release_mode_when_production_ready_false(tmp_path: Path, caps
 
 
 def test_cli_passes_release_mode_when_production_ready_true(tmp_path: Path, capsys) -> None:
+    """Cli passes release mode when production ready true."""
     summary_path = tmp_path / "test-summary.json"
     summary_path.write_text(
         json.dumps(

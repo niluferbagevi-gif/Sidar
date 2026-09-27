@@ -1,3 +1,5 @@
+"""Guards for pinned dependency versions and import boundaries."""
+
 from __future__ import annotations
 
 import tomllib

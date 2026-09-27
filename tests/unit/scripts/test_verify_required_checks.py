@@ -1,3 +1,5 @@
+"""Unit tests for ``scripts.ci.verify_required_checks``."""
+
 from __future__ import annotations
 
 import json
@@ -33,6 +35,7 @@ def _workflow(path: Path) -> Path:
 def test_repo_from_git_remote_uses_allowlisted_absolute_git(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Repo from git remote uses allowlisted absolute git."""
     captured: dict[str, object] = {}
 
     monkeypatch.setattr(
@@ -67,6 +70,7 @@ def test_repo_from_git_remote_uses_allowlisted_absolute_git(
 def test_repo_from_git_remote_fails_closed_without_absolute_git(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Repo from git remote fails closed without absolute git."""
     monkeypatch.setattr(audit.shutil, "which", lambda _name: None)
     monkeypatch.setattr(
         audit,
@@ -78,6 +82,7 @@ def test_repo_from_git_remote_fails_closed_without_absolute_git(
 
 
 def test_audit_required_checks_accepts_all_release_contexts(tmp_path: Path) -> None:
+    """Audit required checks accepts all release contexts."""
     workflow = _workflow(tmp_path / "ci.yml")
     expected_contexts = {
         "Base quality gates",
@@ -109,6 +114,7 @@ def test_audit_required_checks_accepts_all_release_contexts(tmp_path: Path) -> N
 
 
 def test_audit_required_checks_reports_missing_release_context(tmp_path: Path) -> None:
+    """Audit required checks reports missing release context."""
     workflow = _workflow(tmp_path / "ci.yml")
 
     _expected, missing = audit.audit_required_checks(
@@ -128,6 +134,7 @@ def test_audit_required_checks_reports_missing_release_context(tmp_path: Path) -
 
 
 def test_extract_required_contexts_supports_legacy_contexts_and_checks() -> None:
+    """Extract required contexts supports legacy contexts and checks."""
     payload = {
         "contexts": ["CI / Base quality gates"],
         "checks": [
@@ -144,6 +151,7 @@ def test_extract_required_contexts_supports_legacy_contexts_and_checks() -> None
 
 
 def test_audit_merge_safety_accepts_fail_closed_protection() -> None:
+    """Audit merge safety accepts fail closed protection."""
     payload = {
         "required_status_checks": {"strict": True, "checks": []},
         "required_pull_request_reviews": {"required_approving_review_count": 1},
@@ -156,6 +164,7 @@ def test_audit_merge_safety_accepts_fail_closed_protection() -> None:
 
 
 def test_audit_merge_safety_reports_each_unsafe_control() -> None:
+    """Audit merge safety reports each unsafe control."""
     payload = {
         "required_status_checks": {"strict": False, "checks": []},
         "enforce_admins": {"enabled": False},
@@ -173,6 +182,7 @@ def test_audit_merge_safety_reports_each_unsafe_control() -> None:
 
 
 def test_extract_protection_required_contexts_uses_nested_payload() -> None:
+    """Extract protection required contexts uses nested payload."""
     payload = {
         "required_status_checks": {"checks": [{"context": "CI / Production readiness aggregate"}]}
     }
@@ -185,6 +195,7 @@ def test_extract_protection_required_contexts_uses_nested_payload() -> None:
 def test_fetch_branch_protection_uses_complete_protection_endpoint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Fetch branch protection uses complete protection endpoint."""
     captured: dict[str, object] = {}
     payload = {
         "required_status_checks": {"strict": True, "checks": []},
@@ -247,6 +258,7 @@ def test_fetch_branch_protection_uses_complete_protection_endpoint(
     ["http://api.github.test", "https://user:secret@api.github.test", "file:///tmp/api"],
 )
 def test_fetch_branch_protection_rejects_unsafe_api_urls(api_url: str) -> None:
+    """Fetch branch protection rejects unsafe api urls."""
     with pytest.raises(audit.RequiredCheckAuditError, match="must be an HTTPS"):
         audit._fetch_branch_protection(
             api_url=api_url, repo="owner/repo", branch="main", token="token", timeout=3.0
@@ -254,6 +266,8 @@ def test_fetch_branch_protection_rejects_unsafe_api_urls(api_url: str) -> None:
 
 
 def test_fetch_branch_protection_wraps_http_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fetch branch protection wraps http errors."""
+
     class FakeResponse:
         status = 404
         reason = "Not Found"
@@ -289,6 +303,8 @@ def test_fetch_branch_protection_wraps_http_errors(monkeypatch: pytest.MonkeyPat
 def test_fetch_branch_protection_explains_403_admin_token_requirement(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Fetch branch protection explains 403 admin token requirement."""
+
     class ForbiddenResponse:
         status = 403
         reason = "Forbidden"
@@ -328,6 +344,7 @@ def test_fetch_branch_protection_explains_403_admin_token_requirement(
 
 
 def test_cli_prefers_branch_protection_audit_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cli prefers branch protection audit token."""
     monkeypatch.setenv("BRANCH_PROTECTION_AUDIT_TOKEN", "admin-read-token")
     monkeypatch.setenv("GITHUB_TOKEN", "default-actions-token")
 
@@ -337,6 +354,7 @@ def test_cli_prefers_branch_protection_audit_token(monkeypatch: pytest.MonkeyPat
 
 
 def test_audit_workflow_injects_dedicated_admin_read_token() -> None:
+    """Audit workflow injects dedicated admin read token."""
     workflow = Path(".github/workflows/branch-protection-audit.yml").read_text(encoding="utf-8")
 
     assert "BRANCH_PROTECTION_AUDIT_TOKEN: ${{ secrets.BRANCH_PROTECTION_AUDIT_TOKEN }}" in workflow
@@ -351,6 +369,7 @@ def test_audit_workflow_injects_dedicated_admin_read_token() -> None:
 def test_cli_offline_mode_fails_when_context_is_missing(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Cli offline mode fails when context is missing."""
     workflow = _workflow(tmp_path / "ci.yml")
 
     exit_code = audit.main(

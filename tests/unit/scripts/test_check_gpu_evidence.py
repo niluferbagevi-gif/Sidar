@@ -34,6 +34,7 @@ def _run(
 
 
 def test_gpu_evidence_rejects_missing_or_non_boolean_repository_variable() -> None:
+    """Gpu evidence rejects missing or non boolean repository variable."""
     for value, rendered in ((None, "<empty>"), ("1", "1"), ("TRUE", "TRUE")):
         completed = _run(enabled=value)
 
@@ -62,6 +63,7 @@ def test_gpu_evidence_false_is_valid_boolean_but_not_release_ready() -> None:
 
 
 def test_gpu_evidence_requires_successful_hardware_job() -> None:
+    """Gpu evidence requires successful hardware job."""
     completed = _run(enabled="true", result="failure")
 
     assert completed.returncode == 1
@@ -69,6 +71,7 @@ def test_gpu_evidence_requires_successful_hardware_job() -> None:
 
 
 def test_gpu_evidence_accepts_enabled_successful_hardware_job() -> None:
+    """Gpu evidence accepts enabled successful hardware job."""
     completed = _run(enabled="true")
 
     assert completed.returncode == 0
@@ -102,6 +105,7 @@ def test_gpu_evidence_missing_variable_writes_actionable_step_summary(tmp_path: 
 
 
 def test_gpu_evidence_false_writes_actionable_step_summary(tmp_path: Path) -> None:
+    """Gpu evidence false writes actionable step summary."""
     summary_path = tmp_path / "summary.md"
     completed = _run(enabled="false", step_summary_path=summary_path)
 
@@ -127,6 +131,7 @@ def test_gpu_evidence_hardware_failure_step_summary_does_not_blame_repo_config(
 
 
 def test_gpu_evidence_success_writes_step_summary(tmp_path: Path) -> None:
+    """Gpu evidence success writes step summary."""
     summary_path = tmp_path / "summary.md"
     completed = _run(enabled="true", step_summary_path=summary_path)
 

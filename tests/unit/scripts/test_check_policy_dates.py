@@ -1,3 +1,5 @@
+"""Unit tests for ``scripts.ci.check_policy_dates``."""
+
 from __future__ import annotations
 
 from datetime import date

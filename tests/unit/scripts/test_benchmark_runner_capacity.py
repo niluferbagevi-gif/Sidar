@@ -18,6 +18,7 @@ def _runner(name: str, *, status: str = "online", labels: tuple[str, ...] = ()) 
 
 
 def test_watchdog_workflow_uses_hosted_control_plane_and_checks_capacity() -> None:
+    """Watchdog workflow uses hosted control plane and checks capacity."""
     workflow = Path(".github/workflows/benchmark-runner-capacity-watchdog.yml").read_text(
         encoding="utf-8"
     )
@@ -33,6 +34,7 @@ def test_watchdog_workflow_uses_hosted_control_plane_and_checks_capacity() -> No
 
 
 def test_watchdog_token_is_documented_in_advanced_env_template() -> None:
+    """Watchdog token is documented in advanced env template."""
     env_template = Path(".env.advanced.example").read_text(encoding="utf-8")
 
     assert "BENCHMARK_RUNNER_MONITOR_TOKEN=" in env_template
@@ -40,6 +42,7 @@ def test_watchdog_token_is_documented_in_advanced_env_template() -> None:
 
 
 def test_eligible_online_runners_requires_every_label_and_online_state() -> None:
+    """Eligible online runners requires every label and online state."""
     payload = {
         "runners": [
             _runner("stable", labels=("self-hosted", "Linux", "Benchmark")),
@@ -57,6 +60,7 @@ def test_eligible_online_runners_requires_every_label_and_online_state() -> None
 
 
 def test_main_fails_closed_without_redundancy_and_passes_with_two(tmp_path, capsys) -> None:
+    """Main fails closed without redundancy and passes with two."""
     fixture = tmp_path / "runners.json"
     labels = ("self-hosted", "linux", "benchmark")
     fixture.write_text(json.dumps({"runners": []}), encoding="utf-8")
@@ -100,6 +104,7 @@ def test_main_permits_single_runner_when_explicitly_configured(tmp_path, capsys)
 
 
 def test_main_fails_when_redundant_runners_are_all_busy(tmp_path, capsys) -> None:
+    """Main fails when redundant runners are all busy."""
     fixture = tmp_path / "runners.json"
     labels = ("self-hosted", "linux", "benchmark")
     primary = _runner("primary", labels=labels)
@@ -113,11 +118,13 @@ def test_main_fails_when_redundant_runners_are_all_busy(tmp_path, capsys) -> Non
 
 
 def test_main_requires_authenticated_api_inputs(capsys) -> None:
+    """Main requires authenticated api inputs."""
     assert capacity.main(["--repo", "", "--token", ""]) == 2
     assert "BENCHMARK_RUNNER_MONITOR_TOKEN" in capsys.readouterr().err
 
 
 def test_runbook_keeps_compare_and_baseline_evidence_fail_closed() -> None:
+    """Runbook keeps compare and baseline evidence fail closed."""
     runbook = Path("docs/runbooks/benchmark-runner-continuity.md").read_text(encoding="utf-8")
 
     assert "[self-hosted, linux, benchmark]" in runbook

@@ -1,3 +1,5 @@
+"""Unit tests for ``scripts.coverage_hotspots``."""
+
 from __future__ import annotations
 
 import runpy
@@ -16,6 +18,7 @@ from scripts.coverage_hotspots import (
 
 
 def test_parse_and_rank_end_to_end(tmp_path):
+    """Parse and rank end to end."""
     xml = tmp_path / "coverage.xml"
     xml.write_text(
         """<?xml version='1.0'?>
@@ -35,6 +38,7 @@ def test_parse_and_rank_end_to_end(tmp_path):
 
 
 def test_main_success_output(monkeypatch, capsys):
+    """Main success output."""
     rows = [FileCoverage(path="svc.py", covered=4, missed=1)]
     monkeypatch.setattr("sys.argv", ["coverage_hotspots.py", "--xml", "x.xml"])
     monkeypatch.setattr(
@@ -50,6 +54,7 @@ def test_main_success_output(monkeypatch, capsys):
 
 
 def test_main_module_entrypoint_exits(monkeypatch, tmp_path):
+    """Main module entrypoint exits."""
     xml = tmp_path / "empty.xml"
     xml.write_text("<?xml version='1.0'?><coverage/>", encoding="utf-8")
     monkeypatch.setattr("sys.argv", ["coverage_hotspots.py", "--xml", str(xml)])
@@ -62,11 +67,13 @@ def test_main_module_entrypoint_exits(monkeypatch, tmp_path):
 
 
 def test_format_table_layout():
+    """Format table layout."""
     table = format_table([FileCoverage(path="x.py", covered=0, missed=2)])
     assert table.splitlines()[0] == "| File | Coverage | Missed | Covered |"
 
 
 def test_filecoverage_zero_total_reports_full_coverage():
+    """Filecoverage zero total reports full coverage."""
     row = FileCoverage(path="empty.py", covered=0, missed=0)
 
     assert row.total == 0
@@ -74,6 +81,7 @@ def test_filecoverage_zero_total_reports_full_coverage():
 
 
 def test_normalize_path_converts_absolute_path_under_root(tmp_path):
+    """Normalize path converts absolute path under root."""
     root = tmp_path / "repo"
     module = root / "pkg" / "module.py"
     module.parent.mkdir(parents=True)
@@ -83,6 +91,7 @@ def test_normalize_path_converts_absolute_path_under_root(tmp_path):
 
 
 def test_parse_coverage_xml_ignores_missing_or_empty_filename(tmp_path):
+    """Parse coverage xml ignores missing or empty filename."""
     xml = tmp_path / "coverage.xml"
     xml.write_text(
         """<?xml version='1.0'?>
