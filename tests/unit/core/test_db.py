@@ -1,3 +1,5 @@
+"""``core.db`` paketi için unit testler."""
+
 from __future__ import annotations
 
 import asyncio
@@ -45,6 +47,8 @@ from core.db.helpers import json_dumps as _json_dumps
 
 @dataclass
 class DummyCfg:
+    """Veritabanı URL'si, havuz, şema ve JWT ayarlarını taşıyan test config'i."""
+
     DATABASE_URL: str
     BASE_DIR: str
     DB_POOL_SIZE: int = 2
@@ -60,6 +64,7 @@ class DummyCfg:
 
 
 def test_render_sql_identifier_template_accepts_only_validated_tokens() -> None:
+    """Render sql identifier template accepts only validated tokens."""
     statement = render_sql_identifier_template(
         "INSERT INTO {table} ({columns}) VALUES ($1, $2) LIMIT {limit}",
         table="users",
@@ -77,11 +82,13 @@ def test_render_sql_identifier_template_accepts_only_validated_tokens() -> None:
 
 @pytest.mark.parametrize("count", [0, -1, True, False])
 def test_postgres_bind_placeholders_rejects_invalid_counts(count: int) -> None:
+    """Postgres bind placeholders rejects invalid counts."""
     with pytest.raises(ValueError, match="must be positive"):
         postgres_bind_placeholders(count)
 
 
 def test_postgres_bind_placeholders_renders_sequence() -> None:
+    """Postgres bind placeholders renders sequence."""
     placeholders = postgres_bind_placeholders(3)
 
     assert placeholders == "$1, $2, $3"
@@ -92,11 +99,13 @@ def test_postgres_bind_placeholders_renders_sequence() -> None:
 
 @pytest.mark.parametrize("value", [True, False])
 def test_render_sql_identifier_template_rejects_bool_integer_literal(value: bool) -> None:
+    """Render sql identifier template rejects bool integer literal."""
     with pytest.raises(ValueError, match="Invalid SQL integer literal"):
         render_sql_identifier_template("SELECT {value}", value=value)
 
 
 def test_database_missing_url_fails_closed_in_production(tmp_path: Path) -> None:
+    """Database missing url fails closed in production."""
     cfg = DummyCfg(DATABASE_URL="", BASE_DIR=str(tmp_path))
     cfg.SIDAR_ENV = "production"
     cfg.SIDAR_ALLOW_INSECURE_LOCAL_DB_DEFAULT = True
@@ -108,6 +117,7 @@ def test_database_missing_url_fails_closed_in_production(tmp_path: Path) -> None
 def test_database_allows_insecure_default_only_with_explicit_local_opt_in(
     tmp_path: Path,
 ) -> None:
+    """Database allows insecure default only with explicit local opt in."""
     cfg = DummyCfg(DATABASE_URL="", BASE_DIR=str(tmp_path))
     cfg.SIDAR_ENV = "development"
     cfg.SIDAR_ALLOW_INSECURE_LOCAL_DB_DEFAULT = True
@@ -132,26 +142,33 @@ class FakePgAdapter:
     """DB testleri için davranış odaklı, kırılgan olmayan fake PostgreSQL adaptörü."""
 
     def __init__(self) -> None:
+        """Tek bir ``AsyncMock`` bağlantısı ile açık havuz durumunu hazırlar."""
         self.conn = AsyncMock()
         self.closed = False
 
     def acquire(self) -> _FakeAcquire:
+        """Paylaşılan bağlantıyı döndüren async context manager üretir."""
         return _FakeAcquire(self.conn)
 
     async def close(self) -> None:
+        """Havuzu kapatılmış olarak işaretler."""
         self.closed = True
 
     def set_timeout_error(self) -> None:
+        """Sonraki ``execute`` çağrısını zaman aşımı hatasıyla başarısız kılar."""
         self.conn.execute.side_effect = TimeoutError("db request timed out")
 
     def set_conflict_error(self) -> None:
+        """Sonraki ``execute`` çağrısını çakışma hatasıyla başarısız kılar."""
         self.conn.execute.side_effect = RuntimeError("conflict")
 
     def set_disconnect_error(self) -> None:
+        """Sonraki ``execute`` çağrısını bağlantı kopması hatasıyla başarısız kılar."""
         self.conn.execute.side_effect = ConnectionError("database connection lost")
 
 
 def test_run_alembic_upgrade_head_configures_repo_migrations(monkeypatch, tmp_path) -> None:
+    """Run alembic upgrade head configures repo migrations."""
     cfg = DummyCfg(DATABASE_URL="postgresql+asyncpg://u:p@localhost/db", BASE_DIR=str(tmp_path))
     db = Database(cfg)
     captured: dict[str, object] = {}
@@ -191,6 +208,7 @@ def test_run_alembic_upgrade_head_configures_repo_migrations(monkeypatch, tmp_pa
 
 @pytest.mark.asyncio
 async def test_init_schema_postgresql_runs_alembic_upgrade(tmp_path) -> None:
+    """Init schema postgresql runs alembic upgrade."""
     cfg = DummyCfg(DATABASE_URL="postgresql+asyncpg://u:p@localhost/db", BASE_DIR=str(tmp_path))
     db = Database(cfg)
     db._backend = "postgresql"
@@ -209,6 +227,7 @@ async def test_init_schema_postgresql_runs_alembic_upgrade(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_init_schema_postgresql_propagates_alembic_failure(tmp_path) -> None:
+    """Init schema postgresql propagates alembic failure."""
     cfg = DummyCfg(DATABASE_URL="postgresql+asyncpg://u:p@localhost/db", BASE_DIR=str(tmp_path))
     db = Database(cfg)
     db._backend = "postgresql"
@@ -227,6 +246,7 @@ async def test_init_schema_postgresql_propagates_alembic_failure(tmp_path) -> No
 async def test_ensure_default_prompt_registry_postgres_branches(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
+    """Ensure default prompt registry postgres branches."""
     cfg = DummyCfg(DATABASE_URL="postgresql+asyncpg://u:p@localhost/db", BASE_DIR=str(tmp_path))
     db = Database(cfg)
     db._backend = "postgresql"
@@ -257,6 +277,7 @@ async def test_ensure_default_prompt_registry_postgres_branches(
 
 @pytest.mark.asyncio
 async def test_list_prompts_postgresql_role_and_no_role(tmp_path) -> None:
+    """List prompts postgresql role and no role."""
     cfg = DummyCfg(DATABASE_URL="postgresql+asyncpg://u:p@localhost/db", BASE_DIR=str(tmp_path))
     db = Database(cfg)
     db._backend = "postgresql"
@@ -284,6 +305,7 @@ async def test_list_prompts_postgresql_role_and_no_role(tmp_path) -> None:
 
 
 def test_helper_functions_basic_contracts() -> None:
+    """Helper functions basic contracts."""
     now = _utc_now_iso()
     exp = _expires_in(1)
     assert datetime.fromisoformat(now)
@@ -303,6 +325,7 @@ def test_helper_functions_basic_contracts() -> None:
 def test_password_hash_algorithm_defaults_to_argon2id_and_allows_pbkdf2(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Password hash algorithm defaults to argon2id and allows pbkdf2."""
     monkeypatch.delenv(core_db._CREDENTIAL_HASH_ALGORITHM_ENV, raising=False)
     assert core_db._current_password_hash_algorithm() == core_db._ARGON2ID_ALGORITHM
 
@@ -314,6 +337,7 @@ def test_password_hash_algorithm_defaults_to_argon2id_and_allows_pbkdf2(
 
 
 def test_argon2id_params_env_uses_safe_floor(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Argon2id params env uses safe floor."""
     monkeypatch.setenv(core_db._ARGON2ID_MEMORY_COST_ENV, "20480")
     monkeypatch.setenv(core_db._ARGON2ID_TIME_COST_ENV, "3")
     monkeypatch.setenv(core_db._ARGON2ID_PARALLELISM_ENV, "2")
@@ -334,6 +358,7 @@ def test_argon2id_params_env_uses_safe_floor(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_pbkdf2_iterations_env_uses_secure_floor(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pbkdf2 iterations env uses secure floor."""
     monkeypatch.setenv("SIDAR_PBKDF2_ITERATIONS", "700000")
     assert core_db._current_pbkdf2_iterations() == 700000
 
@@ -347,6 +372,7 @@ def test_pbkdf2_iterations_env_uses_secure_floor(monkeypatch: pytest.MonkeyPatch
 def test_hash_password_uses_configured_iterations_and_records_latency(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Hash password uses configured iterations and records latency."""
     calls: list[tuple[str, str, float, int]] = []
 
     class Collector:
@@ -373,6 +399,7 @@ def test_hash_password_uses_configured_iterations_and_records_latency(
 def test_hash_password_uses_argon2id_by_default_and_records_latency(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Hash password uses argon2id by default and records latency."""
     calls: list[tuple[str, str, float, int]] = []
 
     class Collector:
@@ -396,6 +423,7 @@ def test_hash_password_uses_argon2id_by_default_and_records_latency(
 
 
 def test_verify_password_accepts_argon2id_hash(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify password accepts argon2id hash."""
     monkeypatch.setattr(db_auth, "_argon2id_hash", lambda *_args, **_kwargs: "argon2digest")
     encoded = "argon2id$v=19$m=19456,t=2,p=1$0123456789abcdef0123456789abcdef$argon2digest"
     assert _verify_password("abc123", encoded)
@@ -403,6 +431,7 @@ def test_verify_password_accepts_argon2id_hash(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_verify_password_accepts_legacy_120k_hash_format(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verify password accepts legacy 120k hash format."""
     monkeypatch.setenv("SIDAR_PBKDF2_ITERATIONS", "700000")
     salt = "legacysalt"
     current_digest = hashlib.pbkdf2_hmac("sha256", b"abc123", salt.encode("utf-8"), 600000).hex()
@@ -415,6 +444,7 @@ def test_verify_password_accepts_legacy_120k_hash_format(monkeypatch: pytest.Mon
 
 
 def test_verify_password_rejects_unknown_algorithm_and_invalid_parameters() -> None:
+    """Verify password rejects unknown algorithm and invalid parameters."""
     assert _verify_password("abc123", "unknown_algo$600000$salt$deadbeef") is False
     assert _verify_password("abc123", "pbkdf2_sha256$not-a-number$salt$deadbeef") is False
     assert _verify_password("abc123", "argon2id$v=16$m=19456,t=2,p=1$salt$deadbeef") is False
@@ -433,16 +463,20 @@ def test_verify_password_rejects_unknown_algorithm_and_invalid_parameters() -> N
     ],
 )
 def test_parse_asyncpg_affected_rows(command_tag, expected: int) -> None:
+    """Parse asyncpg affected rows."""
     assert _parse_asyncpg_affected_rows(command_tag) == expected
 
 
 def test_new_entity_id_returns_valid_uuid() -> None:
+    """New entity id returns valid uuid."""
     generated = _new_entity_id()
     parsed = uuid.UUID(generated)
     assert str(parsed) == generated
 
 
 def test_new_entity_id_prefers_builtin_uuid7(monkeypatch: pytest.MonkeyPatch) -> None:
+    """New entity id prefers builtin uuid7."""
+
     class _FakeUUID7:
         def __call__(self):
             return uuid.UUID("00000000-0000-7000-8000-000000000001")
@@ -454,6 +488,7 @@ def test_new_entity_id_prefers_builtin_uuid7(monkeypatch: pytest.MonkeyPatch) ->
 def test_new_entity_id_uses_uuid6_fallback_when_builtin_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """New entity id uses uuid6 fallback when builtin missing."""
     monkeypatch.delattr(uuid, "uuid7", raising=False)
 
     fake_uuid6 = types.ModuleType("uuid6")
@@ -466,6 +501,7 @@ def test_new_entity_id_uses_uuid6_fallback_when_builtin_missing(
 def test_new_entity_id_falls_back_to_uuid4_when_uuid7_not_callable_and_uuid6_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """New entity id falls back to uuid4 when uuid7 not callable and uuid6 missing."""
     monkeypatch.setattr(uuid, "uuid7", "not-callable", raising=False)
     monkeypatch.setitem(sys.modules, "uuid6", None)
     monkeypatch.setattr(uuid, "uuid4", lambda: uuid.UUID("00000000-0000-4000-8000-000000000111"))
@@ -476,6 +512,8 @@ def test_new_entity_id_falls_back_to_uuid4_when_uuid7_not_callable_and_uuid6_mis
 def test_parse_asyncpg_affected_rows_returns_zero_for_invalid_match_value(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Parse asyncpg affected rows returns zero for invalid match value."""
+
     class _FakeMatch:
         def group(self, _index: int) -> str:
             return "not-a-number"
@@ -490,6 +528,7 @@ def test_parse_asyncpg_affected_rows_returns_zero_for_invalid_match_value(
 
 @pytest.mark.parametrize("identifier", ["", "1abc", "bad-name", "bad space"])
 def test_quote_sql_identifier_rejects_invalid(identifier: str) -> None:
+    """Quote sql identifier rejects invalid."""
     with pytest.raises(ValueError, match="SQL identifier cannot be empty|Invalid SQL identifier"):
         _quote_sql_identifier(identifier)
 
@@ -508,15 +547,18 @@ def test_quote_sql_identifier_rejects_invalid(identifier: str) -> None:
     ],
 )
 def test_is_safe_sql_identifier(identifier: str, allowed: set[str] | None, expected: bool) -> None:
+    """Is safe sql identifier."""
     assert is_safe_sql_identifier(identifier, allowed=allowed) is expected
 
 
 def test_assert_safe_sql_identifier_returns_identifier_when_valid() -> None:
+    """Assert safe sql identifier returns identifier when valid."""
     assert assert_safe_sql_identifier("events") == "events"
     assert assert_safe_sql_identifier("events", allowed={"events"}) == "events"
 
 
 def test_assert_safe_sql_identifier_raises_when_invalid() -> None:
+    """Assert safe sql identifier raises when invalid."""
     with pytest.raises(ValueError, match="Invalid SQL identifier: 'bad-name'"):
         assert_safe_sql_identifier("bad-name")
     with pytest.raises(ValueError, match="Invalid SQL identifier: 'events'"):
@@ -524,6 +566,7 @@ def test_assert_safe_sql_identifier_raises_when_invalid() -> None:
 
 
 def test_join_sql_identifiers_validates_the_joined_values() -> None:
+    """Join sql identifiers validates the joined values."""
     assert join_sql_identifiers(("id", "role_name")) == "id, role_name"
     assert join_sql_identifiers(("id",), allowed={"id"}) == "id"
 
@@ -537,6 +580,7 @@ def test_join_sql_identifiers_validates_the_joined_values() -> None:
 
 @pytest.mark.asyncio
 async def test_user_session_message_lifecycle(sqlite_db: Database) -> None:
+    """User session message lifecycle."""
     user = await sqlite_db.create_user("alice", role="admin", password="pw")
     auth = await sqlite_db.authenticate_user("alice", "pw")
     assert auth is not None
@@ -572,6 +616,7 @@ async def test_user_session_message_lifecycle(sqlite_db: Database) -> None:
 
 @pytest.mark.asyncio
 async def test_bulk_message_write_and_multi_session_fetch(sqlite_db: Database) -> None:
+    """Bulk message write and multi session fetch."""
     user = await sqlite_db.create_user("bulk-user", password="pw")
     first = await sqlite_db.create_session(user.id, "first")
     second = await sqlite_db.create_session(user.id, "second")
@@ -595,12 +640,14 @@ async def test_bulk_message_write_and_multi_session_fetch(sqlite_db: Database) -
 
 @pytest.mark.asyncio
 async def test_bulk_and_grouped_messages_empty_inputs_return_empty(sqlite_db: Database) -> None:
+    """Bulk and grouped messages empty inputs return empty."""
     assert await sqlite_db.add_messages_bulk([]) == 0
     assert await sqlite_db.get_messages_for_sessions(["", "   "]) == {}
 
 
 @pytest.mark.asyncio
 async def test_sqlite_connection_uses_wal_mode(sqlite_db: Database) -> None:
+    """Sqlite connection uses wal mode."""
     assert sqlite_db._sqlite_conn is not None
 
     def _run() -> str:
@@ -615,6 +662,7 @@ async def test_sqlite_connection_uses_wal_mode(sqlite_db: Database) -> None:
 
 @pytest.mark.asyncio
 async def test_messages_session_index_exists_in_sqlite_schema(sqlite_db: Database) -> None:
+    """Messages session index exists in sqlite schema."""
     assert sqlite_db._sqlite_conn is not None
 
     def _run() -> list[str]:
@@ -634,6 +682,7 @@ async def test_messages_session_index_exists_in_sqlite_schema(sqlite_db: Databas
 
 @pytest.mark.asyncio
 async def test_create_duplicate_user_raises_integrity_error(sqlite_db: Database) -> None:
+    """Create duplicate user raises integrity error."""
     await sqlite_db.create_user("unique_user", password="pw")
     with pytest.raises(sqlite3.IntegrityError):
         await sqlite_db.create_user("unique_user", password="pw2")
@@ -641,6 +690,7 @@ async def test_create_duplicate_user_raises_integrity_error(sqlite_db: Database)
 
 @pytest.mark.asyncio
 async def test_prompt_registry_flow(sqlite_db: Database) -> None:
+    """Prompt registry flow."""
     with pytest.raises(ValueError, match="role_name ve prompt_text boş olamaz"):
         await sqlite_db.upsert_prompt("", "")
 
@@ -663,6 +713,7 @@ async def test_prompt_registry_flow(sqlite_db: Database) -> None:
 
 @pytest.mark.asyncio
 async def test_access_policy_precedence_and_fallback(sqlite_db: Database) -> None:
+    """Access policy precedence and fallback."""
     user = await sqlite_db.create_user("bob", password="pw")
 
     await sqlite_db.upsert_access_policy(
@@ -705,6 +756,7 @@ async def test_access_policy_precedence_and_fallback(sqlite_db: Database) -> Non
 
 @pytest.mark.asyncio
 async def test_run_sqlite_op_rolls_back_on_failure(sqlite_db: Database) -> None:
+    """Run sqlite op rolls back on failure."""
     user = await sqlite_db.create_user("rollback", password="pw")
 
     def _failing_op() -> None:
@@ -727,6 +779,7 @@ async def test_run_sqlite_op_rolls_back_on_failure(sqlite_db: Database) -> None:
 
 @pytest.mark.asyncio
 async def test_run_sqlite_op_recreates_missing_executor(sqlite_db: Database) -> None:
+    """Run sqlite op recreates missing executor."""
     executor = sqlite_db._sqlite_executor
     assert executor is not None
     executor.shutdown(wait=True)
@@ -738,6 +791,8 @@ async def test_run_sqlite_op_recreates_missing_executor(sqlite_db: Database) -> 
 
 @pytest.mark.asyncio
 async def test_run_sqlite_op_read_failures_skip_rollback(sqlite_db: Database) -> None:
+    """Run sqlite op read failures skip rollback."""
+
     class _RollbackTrackingConn:
         rollback_called = False
 
@@ -767,6 +822,8 @@ async def test_run_sqlite_op_read_failures_skip_rollback(sqlite_db: Database) ->
 
 @pytest.mark.asyncio
 async def test_close_sqlite_connection_without_executor_uses_thread_fallback(tmp_path) -> None:
+    """Close sqlite connection without executor uses thread fallback."""
+
     class _CloseOnlyConn:
         def __init__(self) -> None:
             self.closed = False
@@ -792,6 +849,7 @@ async def test_close_sqlite_connection_without_executor_uses_thread_fallback(tmp
 
 @pytest.mark.asyncio
 async def test_jwt_token_flow_prefers_db_user(sqlite_db: Database) -> None:
+    """Jwt token flow prefers db user."""
     user = await sqlite_db.create_user(
         "jwt-user", role="admin", password="pw", tenant_id="tenant-a"
     )
@@ -834,6 +892,7 @@ async def test_create_and_verify_auth_token_fail_closed_without_jwt_secret(
 
 @pytest.mark.asyncio
 async def test_run_sqlite_op_requires_initialized_connection(tmp_path) -> None:
+    """Run sqlite op requires initialized connection."""
     cfg = DummyCfg(
         DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'sidar_test.db'}",
         BASE_DIR=str(tmp_path),
@@ -848,6 +907,7 @@ async def test_run_sqlite_op_requires_initialized_connection(tmp_path) -> None:
 async def test_fetch_message_rows_by_session_ids_returns_empty_for_blank_input(
     sqlite_db: Database,
 ) -> None:
+    """Fetch message rows by session ids returns empty for blank input."""
     assert await sqlite_db._fetch_message_rows_by_session_ids([]) == []
     assert await sqlite_db._fetch_message_rows_by_session_ids(["", "   "]) == []
 
@@ -856,6 +916,8 @@ async def test_fetch_message_rows_by_session_ids_returns_empty_for_blank_input(
 async def test_run_sqlite_op_raises_runtime_error_when_rollback_also_fails(
     sqlite_db: Database, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Run sqlite op raises runtime error when rollback also fails."""
+
     class _BrokenConn:
         def rollback(self) -> None:
             raise sqlite3.OperationalError("rollback failed")
@@ -871,6 +933,7 @@ async def test_run_sqlite_op_raises_runtime_error_when_rollback_also_fails(
 
 @pytest.mark.asyncio
 async def test_run_sqlite_op_retries_when_database_is_locked(sqlite_db: Database) -> None:
+    """Run sqlite op retries when database is locked."""
     attempts = {"count": 0}
 
     def _flaky_operation() -> int:
@@ -888,6 +951,7 @@ async def test_run_sqlite_op_retries_when_database_is_locked(sqlite_db: Database
 async def test_run_sqlite_op_raises_after_max_retries_for_locked_database(
     sqlite_db: Database,
 ) -> None:
+    """Run sqlite op raises after max retries for locked database."""
     attempts = {"count": 0}
 
     def _always_locked() -> int:
@@ -902,6 +966,8 @@ async def test_run_sqlite_op_raises_after_max_retries_for_locked_database(
 
 @pytest.mark.asyncio
 async def test_run_sqlite_op_re_raises_non_lock_operational_error(sqlite_db: Database) -> None:
+    """Run sqlite op re raises non lock operational error."""
+
     def _op() -> int:
         raise sqlite3.OperationalError("disk I/O error")
 
@@ -913,6 +979,7 @@ async def test_run_sqlite_op_re_raises_non_lock_operational_error(sqlite_db: Dat
 async def test_run_sqlite_op_covers_empty_retry_range_exit(
     sqlite_db: Database, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Run sqlite op covers empty retry range exit."""
     monkeypatch.setattr(core_db, "range", lambda *_args, **_kwargs: [], raising=False)
     with pytest.raises(sqlite3.OperationalError, match="deneme sınırına ulaştı"):
         await sqlite_db._run_sqlite_op(lambda: 99)
@@ -920,6 +987,7 @@ async def test_run_sqlite_op_covers_empty_retry_range_exit(
 
 @pytest.mark.asyncio
 async def test_run_sqlite_op_initializes_write_lock_and_keeps_reads_unlocked(tmp_path) -> None:
+    """Run sqlite op initializes write lock and keeps reads unlocked."""
     cfg = DummyCfg(
         DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'sidar_lock.db'}",
         BASE_DIR=str(tmp_path),
@@ -937,6 +1005,7 @@ async def test_run_sqlite_op_initializes_write_lock_and_keeps_reads_unlocked(tmp
 
 @pytest.mark.asyncio
 async def test_transaction_sqlite_edge_branches(sqlite_db: Database, tmp_path) -> None:
+    """Transaction sqlite edge branches."""
     db = Database(
         DummyCfg(
             DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'tx-no-conn.db'}", BASE_DIR=str(tmp_path)
@@ -966,6 +1035,7 @@ async def test_transaction_sqlite_edge_branches(sqlite_db: Database, tmp_path) -
 
 @pytest.mark.asyncio
 async def test_transaction_sqlite_rolls_back_on_operational_error(tmp_path) -> None:
+    """Transaction sqlite rolls back on operational error."""
     db = Database(
         DummyCfg(
             DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'tx-rollback.db'}",
@@ -1006,6 +1076,7 @@ async def test_transaction_sqlite_rolls_back_on_operational_error(tmp_path) -> N
 
 @pytest.mark.asyncio
 async def test_transaction_postgresql_supports_awaitable_transaction_factory(tmp_path) -> None:
+    """Transaction postgresql supports awaitable transaction factory."""
     db = Database(
         DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR=str(tmp_path))
     )
@@ -1030,6 +1101,7 @@ async def test_transaction_postgresql_supports_awaitable_transaction_factory(tmp
 
 @pytest.mark.asyncio
 async def test_transaction_postgresql_supports_sync_transaction_factory(tmp_path) -> None:
+    """Transaction postgresql supports sync transaction factory."""
     db = Database(
         DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR=str(tmp_path))
     )
@@ -1053,6 +1125,8 @@ async def test_transaction_postgresql_supports_sync_transaction_factory(tmp_path
 async def test_ensure_default_prompt_registry_branches(
     monkeypatch: pytest.MonkeyPatch, sqlite_db: Database
 ) -> None:
+    """Ensure default prompt registry branches."""
+
     class _BrokenLoader:
         def exec_module(self, module):
             module.SIDAR_SYSTEM_PROMPT = "sys prompt"
@@ -1079,6 +1153,7 @@ async def test_ensure_default_prompt_registry_branches(
 
 @pytest.mark.asyncio
 async def test_verify_and_get_user_by_token_invalid_paths(sqlite_db: Database) -> None:
+    """Verify and get user by token invalid paths."""
     payload = {"sub": "u1", "role": "", "username": "x", "tenant_id": "default"}
     bad_token = jwt.encode(
         payload, sqlite_db.cfg.JWT_SECRET_KEY, algorithm=sqlite_db.cfg.JWT_ALGORITHM
@@ -1102,6 +1177,7 @@ async def test_verify_auth_token_rejects_non_uuid_sub_without_reaching_db(
 
 @pytest.mark.asyncio
 async def test_access_control_schema_sqlite_adds_missing_tenant_column(tmp_path) -> None:
+    """Access control schema sqlite adds missing tenant column."""
     cfg = DummyCfg(DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'ac.db'}", BASE_DIR=str(tmp_path))
     db = Database(cfg)
     await db.connect()
@@ -1130,6 +1206,7 @@ async def test_access_control_schema_sqlite_adds_missing_tenant_column(tmp_path)
 
 @pytest.mark.asyncio
 async def test_campaign_content_checklist_coverage_workflow(sqlite_db: Database) -> None:
+    """Campaign content checklist coverage workflow."""
     campaign = await sqlite_db.upsert_marketing_campaign(
         tenant_id="t1",
         name="Launch",
@@ -1175,6 +1252,7 @@ async def test_campaign_content_checklist_coverage_workflow(sqlite_db: Database)
 
 @pytest.mark.asyncio
 async def test_postgresql_session_ops_with_fake_adapter() -> None:
+    """Postgresql session ops with fake adapter."""
     db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR="."))
     fake_pg = FakePgAdapter()
     db._pg_pool = fake_pg
@@ -1213,6 +1291,7 @@ async def test_postgresql_session_ops_with_fake_adapter() -> None:
 
 @pytest.mark.asyncio
 async def test_postgresql_bulk_and_grouped_message_paths() -> None:
+    """Postgresql bulk and grouped message paths."""
     db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR="."))
     fake_pg = FakePgAdapter()
     db._pg_pool = fake_pg
@@ -1262,6 +1341,7 @@ async def test_postgresql_bulk_and_grouped_message_paths() -> None:
 
 @pytest.mark.asyncio
 async def test_postgresql_adapter_timeout_path() -> None:
+    """Postgresql adapter timeout path."""
     db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR="."))
     fake_pg = FakePgAdapter()
     fake_pg.set_timeout_error()
@@ -1273,6 +1353,7 @@ async def test_postgresql_adapter_timeout_path() -> None:
 
 @pytest.mark.asyncio
 async def test_postgresql_adapter_disconnect_path() -> None:
+    """Postgresql adapter disconnect path."""
     db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR="."))
     fake_pg = FakePgAdapter()
     fake_pg.set_disconnect_error()
@@ -1284,6 +1365,7 @@ async def test_postgresql_adapter_disconnect_path() -> None:
 
 @pytest.mark.asyncio
 async def test_postgresql_adapter_conflict_and_close_path() -> None:
+    """Postgresql adapter conflict and close path."""
     db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR="."))
     fake_pg = FakePgAdapter()
     fake_pg.set_conflict_error()
@@ -1298,6 +1380,7 @@ async def test_postgresql_adapter_conflict_and_close_path() -> None:
 
 @pytest.mark.asyncio
 async def test_ensure_user_and_ensure_user_id_paths(sqlite_db: Database) -> None:
+    """Ensure user and ensure user id paths."""
     created = await sqlite_db.ensure_user("ensured-user", role="admin")
     existing = await sqlite_db.ensure_user("ensured-user", role="user")
     assert existing.id == created.id
@@ -1315,6 +1398,7 @@ async def test_ensure_user_and_ensure_user_id_paths(sqlite_db: Database) -> None
 
 @pytest.mark.asyncio
 async def test_marketing_and_content_listing_filters_and_validations(sqlite_db: Database) -> None:
+    """Marketing and content listing filters and validations."""
     with pytest.raises(ValueError, match="campaign name is required"):
         await sqlite_db.upsert_marketing_campaign(name="")
 
@@ -1350,6 +1434,7 @@ async def test_marketing_and_content_listing_filters_and_validations(sqlite_db: 
 
 @pytest.mark.asyncio
 async def test_operation_checklist_and_coverage_management(sqlite_db: Database) -> None:
+    """Operation checklist and coverage management."""
     with pytest.raises(ValueError, match="title is required"):
         await sqlite_db.add_operation_checklist(tenant_id="t1", title="", items=[])
 
@@ -1394,6 +1479,7 @@ async def test_operation_checklist_and_coverage_management(sqlite_db: Database) 
 
 @pytest.mark.asyncio
 async def test_quota_usage_and_admin_stats(sqlite_db: Database) -> None:
+    """Quota usage and admin stats."""
     user = await sqlite_db.create_user("quota-user", password="pw")
 
     await sqlite_db.upsert_user_quota(user.id, daily_token_limit=100, daily_request_limit=5)
@@ -1418,6 +1504,7 @@ async def test_quota_usage_and_admin_stats(sqlite_db: Database) -> None:
 
 @pytest.mark.asyncio
 async def test_audit_log_sqlite_validation_and_listing(sqlite_db: Database) -> None:
+    """Audit log sqlite validation and listing."""
     user = await sqlite_db.create_user("audit-user", password="pw")
 
     with pytest.raises(ValueError, match="action and resource are required"):
@@ -1452,6 +1539,7 @@ async def test_audit_log_sqlite_validation_and_listing(sqlite_db: Database) -> N
 
 @pytest.mark.asyncio
 async def test_postgresql_marketing_and_coverage_branches() -> None:
+    """Postgresql marketing and coverage branches."""
     db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR="."))
     fake_pg = FakePgAdapter()
     db._pg_pool = fake_pg
@@ -1577,6 +1665,7 @@ async def test_postgresql_marketing_and_coverage_branches() -> None:
 
 @pytest.mark.asyncio
 async def test_postgresql_quota_admin_and_replace_messages_paths() -> None:
+    """Postgresql quota admin and replace messages paths."""
     db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR="."))
     fake_pg = FakePgAdapter()
     db._pg_pool = fake_pg
@@ -1629,6 +1718,7 @@ async def test_postgresql_quota_admin_and_replace_messages_paths() -> None:
 async def test_replace_session_messages_postgresql_supports_awaitable_transaction_factory(
     tmp_path,
 ) -> None:
+    """Replace session messages postgresql supports awaitable transaction factory."""
     db = Database(
         DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR=str(tmp_path))
     )
@@ -1655,6 +1745,7 @@ async def test_replace_session_messages_postgresql_supports_awaitable_transactio
 
 @pytest.mark.asyncio
 async def test_sqlite_backend_path_resolution_and_connect_idempotent(tmp_path) -> None:
+    """Sqlite backend path resolution and connect idempotent."""
     rel_cfg = DummyCfg(DATABASE_URL="sqlite:///relative.db", BASE_DIR=str(tmp_path))
     rel_db = Database(rel_cfg)
     assert rel_db._backend == "sqlite"
@@ -1671,6 +1762,7 @@ async def test_sqlite_backend_path_resolution_and_connect_idempotent(tmp_path) -
 
 
 def test_sqlite_triple_slash_url_branch(tmp_path) -> None:
+    """Sqlite triple slash url branch."""
     cfg = DummyCfg(DATABASE_URL=f"sqlite:///{tmp_path / 'triple.db'}", BASE_DIR=str(tmp_path))
     db = Database(cfg)
     assert db._backend == "sqlite"
@@ -1678,6 +1770,7 @@ def test_sqlite_triple_slash_url_branch(tmp_path) -> None:
 
 
 def test_sqlite_plain_path_url_branch(tmp_path) -> None:
+    """Sqlite plain path url branch."""
     cfg = DummyCfg(DATABASE_URL="plain_relative.db", BASE_DIR=str(tmp_path))
     db = Database(cfg)
     assert db._backend == "sqlite"
@@ -1686,6 +1779,7 @@ def test_sqlite_plain_path_url_branch(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_connect_postgresql_branch_matrix(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+    """Connect postgresql branch matrix."""
     cfg = DummyCfg(DATABASE_URL="postgresql+asyncpg://u:p@localhost/db", BASE_DIR=str(tmp_path))
 
     already_connected = Database(cfg)
@@ -1764,6 +1858,7 @@ async def test_connect_postgresql_branch_matrix(monkeypatch: pytest.MonkeyPatch,
 async def test_connect_postgresql_connection_drop_enters_degraded_mode(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
+    """Connect postgresql connection drop enters degraded mode."""
     cfg = DummyCfg(DATABASE_URL="postgresql+asyncpg://u:p@localhost/db", BASE_DIR=str(tmp_path))
     db = Database(cfg)
 
@@ -1790,6 +1885,7 @@ async def test_connect_postgresql_connection_drop_enters_degraded_mode(
 async def test_connect_postgresql_auth_failure_logs_actionable_warning_without_raw_error(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, tmp_path
 ) -> None:
+    """Connect postgresql auth failure logs actionable warning without raw error."""
     cfg = DummyCfg(
         DATABASE_URL="postgresql+asyncpg://sidar:wrong@localhost/db", BASE_DIR=str(tmp_path)
     )
@@ -1820,6 +1916,7 @@ async def test_connect_postgresql_auth_failure_logs_actionable_warning_without_r
 
 @pytest.mark.asyncio
 async def test_postgresql_schema_helpers_and_init_routing(tmp_path) -> None:
+    """Postgresql schema helpers and init routing."""
     cfg = DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR=str(tmp_path))
     db = Database(cfg)
     fake_pg = FakePgAdapter()
@@ -1847,6 +1944,7 @@ async def test_postgresql_schema_helpers_and_init_routing(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_postgresql_create_session_and_add_message_paths(tmp_path) -> None:
+    """Postgresql create session and add message paths."""
     cfg = DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR=str(tmp_path))
     db = Database(cfg)
     fake_pg = FakePgAdapter()
@@ -1863,6 +1961,7 @@ async def test_postgresql_create_session_and_add_message_paths(tmp_path) -> None
 
 @pytest.mark.asyncio
 async def test_postgresql_prompt_activation_and_upsert_edges() -> None:
+    """Postgresql prompt activation and upsert edges."""
     db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR="."))
     fake_pg = FakePgAdapter()
     db._pg_pool = fake_pg
@@ -1939,6 +2038,7 @@ async def test_postgresql_prompt_activation_and_upsert_edges() -> None:
 async def test_sqlite_password_hash_and_verify_run_off_event_loop_thread(
     sqlite_db: Database, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Sqlite password hash and verify run off event loop thread."""
     event_loop_thread = threading.get_ident()
     hash_threads: list[int] = []
     verify_threads: list[int] = []
@@ -1966,6 +2066,7 @@ async def test_sqlite_password_hash_and_verify_run_off_event_loop_thread(
 async def test_password_hash_and_verify_are_offloaded_to_thread(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Password hash and verify are offloaded to thread."""
     db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR="."))
     fake_pg = FakePgAdapter()
     db._pg_pool = fake_pg
@@ -2008,6 +2109,7 @@ async def test_password_hash_and_verify_are_offloaded_to_thread(
 
 @pytest.mark.asyncio
 async def test_postgresql_user_and_session_branches() -> None:
+    """Postgresql user and session branches."""
     db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR="."))
     fake_pg = FakePgAdapter()
     db._pg_pool = fake_pg
@@ -2100,6 +2202,7 @@ async def test_postgresql_user_and_session_branches() -> None:
 
 @pytest.mark.asyncio
 async def test_postgresql_policy_audit_and_listing_branches() -> None:
+    """Postgresql policy audit and listing branches."""
     db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR="."))
     fake_pg = FakePgAdapter()
     db._pg_pool = fake_pg
@@ -2201,6 +2304,7 @@ async def test_postgresql_policy_audit_and_listing_branches() -> None:
 
 @pytest.mark.asyncio
 async def test_postgresql_timestamp_writes_use_datetime_instances() -> None:
+    """Postgresql timestamp writes use datetime instances."""
     db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR="."))
     fake_pg = FakePgAdapter()
     db._pg_pool = fake_pg
@@ -2313,6 +2417,7 @@ async def test_postgresql_timestamp_writes_use_datetime_instances() -> None:
 
 @pytest.mark.asyncio
 async def test_postgresql_listing_without_optional_filters() -> None:
+    """Postgresql listing without optional filters."""
     db = Database(DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR="."))
     fake_pg = FakePgAdapter()
     db._pg_pool = fake_pg
@@ -2385,6 +2490,7 @@ async def test_postgresql_listing_without_optional_filters() -> None:
 
 @pytest.mark.asyncio
 async def test_sqlite_branches_for_prompt_policy_and_listings(sqlite_db: Database) -> None:
+    """Sqlite branches for prompt policy and listings."""
     # list_prompts without filter (901-908)
     await sqlite_db.upsert_prompt("system", "v1", activate=True)
     prompts = await sqlite_db.list_prompts()
@@ -2439,6 +2545,8 @@ async def test_sqlite_branches_for_prompt_policy_and_listings(sqlite_db: Databas
 async def test_run_sqlite_op_recreates_lock_when_bound_to_different_loop(
     sqlite_db: Database, caplog: pytest.LogCaptureFixture
 ) -> None:
+    """Run sqlite op recreates lock when bound to different loop."""
+
     class _ForeignLoopLock:
         def __init__(self) -> None:
             self._loop = object()
@@ -2455,6 +2563,7 @@ async def test_run_sqlite_op_recreates_lock_when_bound_to_different_loop(
 
 @pytest.mark.asyncio
 async def test_postgresql_and_schema_version_edge_branches(tmp_path) -> None:
+    """Postgresql and schema version edge branches."""
     db = Database(
         DummyCfg(DATABASE_URL="postgresql://user:pw@localhost:5432/sidar", BASE_DIR=str(tmp_path))
     )
@@ -2509,6 +2618,7 @@ async def test_postgresql_and_schema_version_edge_branches(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_sqlite_remaining_edge_branches(tmp_path) -> None:
+    """Sqlite remaining edge branches."""
     cfg = DummyCfg(
         DATABASE_URL=f"sqlite+aiosqlite:///{tmp_path / 'edges.db'}",
         BASE_DIR=str(tmp_path),
@@ -2538,6 +2648,7 @@ async def test_sqlite_remaining_edge_branches(tmp_path) -> None:
 
 
 def test_parse_iso_datetime_assumes_utc_for_naive_input() -> None:
+    """Parse iso datetime assumes utc for naive input."""
     parsed = _parse_iso_datetime("2026-01-02T03:04:05")
     assert parsed.tzinfo == UTC
     assert parsed.isoformat() == "2026-01-02T03:04:05+00:00"
@@ -2546,6 +2657,7 @@ def test_parse_iso_datetime_assumes_utc_for_naive_input() -> None:
 def test_new_entity_id_falls_back_to_uuid4_when_uuid7_and_uuid6_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """New entity id falls back to uuid4 when uuid7 and uuid6 unavailable."""
     monkeypatch.delattr(uuid, "uuid7", raising=False)
     monkeypatch.setitem(sys.modules, "uuid6", None)
     monkeypatch.setattr(uuid, "uuid4", lambda: uuid.UUID("00000000-0000-4000-8000-000000000099"))
@@ -2584,6 +2696,7 @@ def test_redact_database_url_returns_text_when_credentials_have_no_password() ->
 
 
 def test_redact_database_url_masks_password_in_credentials() -> None:
+    """Redact database url masks password in credentials."""
     redacted = Database._redact_database_url("postgresql://user:secret@host:5432/db")
     assert redacted == "postgresql://user:***@host:5432/db"
 
@@ -2597,6 +2710,7 @@ def test_postgres_degraded_sqlite_url_returns_configured_when_set(tmp_path) -> N
 
 
 def test_postgres_degraded_sqlite_url_falls_back_to_base_dir_default(tmp_path, monkeypatch) -> None:
+    """Postgres degraded sqlite url falls back to base dir default."""
     # Run outside any xdist worker context: run_tests.sh always executes unit
     # tests under `-n auto`, which sets PYTEST_XDIST_WORKER and would append a
     # worker suffix (see test_..._is_xdist_worker_specific below) that this
@@ -2673,6 +2787,7 @@ async def test_add_messages_bulk_handles_diverse_token_types(sqlite_db: Database
 
 
 def test_expires_in_uses_default_days_when_no_argument() -> None:
+    """Expires in uses default days when no argument."""
     now = datetime.now(UTC)
     expiry = datetime.fromisoformat(_expires_in())
     assert timedelta(days=6, hours=23, minutes=59) < (expiry - now) < timedelta(days=7, minutes=1)
@@ -2682,6 +2797,7 @@ def test_expires_in_uses_default_days_when_no_argument() -> None:
 async def test_get_user_by_token_returns_jwt_user_when_db_lookup_missing(
     sqlite_db: Database,
 ) -> None:
+    """Get user by token returns jwt user when db lookup missing."""
     missing_user_id = "55555555-5555-4555-8555-555555555555"
     token = await sqlite_db.create_auth_token(
         user_id=missing_user_id,
@@ -2703,6 +2819,7 @@ async def test_get_user_by_token_returns_jwt_user_when_db_lookup_missing(
 async def test_connect_postgresql_degraded_mode_uses_doctor_lost_url_diagnosis(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Connect postgresql degraded mode uses doctor lost url diagnosis."""
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.delenv("SIDAR_CONTAINER_DATABASE_URL", raising=False)
     monkeypatch.setenv("POSTGRES_PASSWORD", "a" * 24)
@@ -2733,6 +2850,7 @@ async def test_connect_postgresql_degraded_mode_uses_doctor_lost_url_diagnosis(
 
 @pytest.mark.asyncio
 async def test_init_schema_postgresql_skips_alembic_when_auto_migrate_disabled(tmp_path) -> None:
+    """Init schema postgresql skips alembic when auto migrate disabled."""
     cfg = DummyCfg(
         DATABASE_URL="postgresql+asyncpg://u:p@localhost/db",
         BASE_DIR=str(tmp_path),
@@ -2757,6 +2875,7 @@ async def test_init_schema_postgresql_skips_alembic_when_auto_migrate_disabled(t
 async def test_count_sessions_total_sqlite_and_postgresql_paths(
     sqlite_db: Database, tmp_path: Path
 ) -> None:
+    """Count sessions total sqlite and postgresql paths."""
     user = await sqlite_db.create_user("count-sessions-user", password="pw")
     await sqlite_db.create_session(user.id, "first")
     await sqlite_db.create_session(user.id, "second")
@@ -2773,6 +2892,7 @@ async def test_count_sessions_total_sqlite_and_postgresql_paths(
 
 
 def test_postgres_failure_diagnosis_uses_doctor_details_and_auth_message(monkeypatch) -> None:
+    """Postgres failure diagnosis uses doctor details and auth message."""
     monkeypatch.setattr(
         core_db,
         "_doctor_database_env_failure_reason",
@@ -2789,6 +2909,7 @@ def test_postgres_failure_diagnosis_uses_doctor_details_and_auth_message(monkeyp
 
 @pytest.mark.asyncio
 async def test_connect_postgresql_test_short_circuit_and_injected_factory(tmp_path) -> None:
+    """Connect postgresql test short circuit and injected factory."""
     short_circuit_cfg = DummyCfg(
         DATABASE_URL="postgresql+asyncpg://u:p@localhost:5432/db", BASE_DIR=str(tmp_path)
     )
@@ -2828,6 +2949,7 @@ async def test_connect_postgresql_test_short_circuit_and_injected_factory(tmp_pa
 
 
 def test_database_postgresql_pool_tuning_settings_are_clamped(tmp_path) -> None:
+    """Database postgresql pool tuning settings are clamped."""
     cfg = DummyCfg(DATABASE_URL="postgresql://u:p@db.example/db", BASE_DIR=str(tmp_path))
     cfg.DB_POOL_SIZE = 4
     cfg.DB_POOL_MIN_SIZE = 10
@@ -2846,6 +2968,7 @@ def test_database_postgresql_pool_tuning_settings_are_clamped(tmp_path) -> None:
 async def test_connect_postgresql_pool_error_detection_tolerates_asyncpg_reimport_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
+    """Connect postgresql pool error detection tolerates asyncpg reimport failure."""
     cfg = DummyCfg(DATABASE_URL="postgresql://u:p@db.example/db", BASE_DIR=str(tmp_path))
     db = Database(cfg)
     import builtins
@@ -2880,6 +3003,7 @@ async def test_connect_postgresql_pool_error_detection_tolerates_asyncpg_reimpor
 async def test_initialize_postgresql_schema_supports_pool_capabilities_and_fresh_bootstrap(
     monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
+    """Initialize postgresql schema supports pool capabilities and fresh bootstrap."""
     upgrades = []
 
     class _FetchvalPool:
@@ -2922,6 +3046,7 @@ async def test_initialize_postgresql_schema_supports_pool_capabilities_and_fresh
 
 
 def test_doctor_database_env_reason_and_remaining_diagnosis_fallbacks(monkeypatch) -> None:
+    """Doctor database env reason and remaining diagnosis fallbacks."""
     import core.doctor as doctor
 
     monkeypatch.setattr(
@@ -2980,6 +3105,7 @@ def test_doctor_database_env_reason_returns_empty_when_env_check_does_not_fail(
 
 
 def test_postgres_user_action_message_handles_missing_database_url(monkeypatch) -> None:
+    """Postgres user action message handles missing database url."""
     import core.db.diagnostics as db_diagnostics
 
     monkeypatch.setattr(
@@ -2995,6 +3121,7 @@ def test_postgres_user_action_message_handles_missing_database_url(monkeypatch) 
 
 
 def test_doctor_database_env_reason_uses_message_when_details_are_not_mapping(monkeypatch) -> None:
+    """Doctor database env reason uses message when details are not mapping."""
     import core.doctor as doctor
 
     monkeypatch.setattr(
@@ -3008,6 +3135,8 @@ def test_doctor_database_env_reason_uses_message_when_details_are_not_mapping(mo
 
 @pytest.mark.asyncio
 async def test_connect_postgresql_injected_factory_failure_skips_asyncpg_reimport(tmp_path) -> None:
+    """Connect postgresql injected factory failure skips asyncpg reimport."""
+
     async def _raise_pool(**_kwargs):
         raise RuntimeError("pool unavailable")
 
@@ -3026,6 +3155,7 @@ async def test_connect_postgresql_injected_factory_failure_skips_asyncpg_reimpor
 def test_auth_hash_slo_invalid_env_falls_back_to_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Auth hash slo invalid env falls back to default."""
     monkeypatch.setenv(core_db._AUTH_HASH_SLO_MS_ENV, "not-an-int")
 
     assert core_db._auth_hash_slo_ms() == 120
@@ -3034,6 +3164,7 @@ def test_auth_hash_slo_invalid_env_falls_back_to_default(
 def test_hash_password_records_error_latency_when_hashing_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Hash password records error latency when hashing fails."""
     records: list[tuple[str, str]] = []
     monkeypatch.setenv(db_auth._CREDENTIAL_HASH_ALGORITHM_ENV, db_auth._PBKDF2_ALGORITHM)
     monkeypatch.setattr(db_auth, "_current_pbkdf2_iterations", lambda: 700000)
@@ -3057,6 +3188,7 @@ def test_hash_password_records_error_latency_when_hashing_fails(
 def test_verify_password_records_error_latency_when_digest_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Verify password records error latency when digest fails."""
     records: list[tuple[str, str]] = []
     monkeypatch.setattr(
         db_auth,

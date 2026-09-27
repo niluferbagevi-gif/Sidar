@@ -11,11 +11,13 @@ import core.db.audit_log as audit_log
 
 
 def test_audit_module_is_primary_and_legacy_wrapper_reexports_helpers() -> None:
+    """Audit module is primary and legacy wrapper reexports helpers."""
     assert audit.record_audit_log is audit_log.record_audit_log
     assert audit.list_audit_logs is audit_log.list_audit_logs
 
 
 def test_monolith_delegates_audit_persistence_to_audit_module() -> None:
+    """Monolith delegates audit persistence to audit module."""
     source = Path("core/db/monolith.py").read_text(encoding="utf-8")
 
     assert "from core.db import audit as db_audit" in source
@@ -36,6 +38,8 @@ class _SqliteAuditDb:
 
 @pytest.mark.asyncio
 async def test_sqlite_audit_insert_error_is_logged_and_masked(caplog) -> None:
+    """Sqlite audit insert error is logged and masked."""
+
     class _Conn:
         def execute(self, *_args):
             raise sqlite3.OperationalError("disk is full")
@@ -62,6 +66,8 @@ async def test_sqlite_audit_insert_error_is_logged_and_masked(caplog) -> None:
 
 @pytest.mark.asyncio
 async def test_sqlite_audit_query_error_is_logged_and_masked(caplog) -> None:
+    """Sqlite audit query error is logged and masked."""
+
     class _Conn:
         def execute(self, *_args):
             raise sqlite3.OperationalError("database is locked")
@@ -77,6 +83,7 @@ async def test_sqlite_audit_query_error_is_logged_and_masked(caplog) -> None:
 
 @pytest.mark.asyncio
 async def test_sqlite_audit_filters_user_tenant_and_clamps_limit() -> None:
+    """Sqlite audit filters user tenant and clamps limit."""
     captured: dict[str, object] = {}
 
     class _Cursor:
@@ -157,6 +164,7 @@ class _PgPool:
 
 @pytest.mark.asyncio
 async def test_postgresql_audit_insert_uses_numbered_placeholders() -> None:
+    """Postgresql audit insert uses numbered placeholders."""
     conn = _PgConn()
     db = SimpleNamespace(_backend="postgresql", _pg_pool=_PgPool(conn))
 
@@ -189,6 +197,7 @@ async def test_postgresql_audit_insert_uses_numbered_placeholders() -> None:
 
 @pytest.mark.asyncio
 async def test_postgresql_audit_filters_use_numbered_placeholders_and_limit_clamp() -> None:
+    """Postgresql audit filters use numbered placeholders and limit clamp."""
     conn = _PgConn()
     db = SimpleNamespace(_backend="postgresql", _pg_pool=_PgPool(conn))
 

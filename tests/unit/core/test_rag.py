@@ -1,3 +1,5 @@
+"""``core.rag`` paketi için unit testler."""
+
 from __future__ import annotations
 
 import ast
@@ -52,6 +54,7 @@ def _make_store_stub(tmp_path: Path) -> rag.DocumentStore:
 
 
 async def test_graph_index_basic_node_edge_operations(tmp_path: Path) -> None:
+    """Graph index basic node edge operations."""
     graph = rag.GraphIndex(tmp_path)
     graph.add_node("a.py", node_type="file")
     graph.add_node("b.py", node_type="file")
@@ -67,6 +70,7 @@ async def test_graph_index_basic_node_edge_operations(tmp_path: Path) -> None:
 
 
 async def test_graph_index_normalizers_and_extract_str_literal(tmp_path: Path) -> None:
+    """Graph index normalizers and extract str literal."""
     graph = rag.GraphIndex(tmp_path)
     nested = tmp_path / "src" / "api.py"
     nested.parent.mkdir(parents=True)
@@ -93,12 +97,14 @@ async def test_graph_index_normalizers_and_extract_str_literal(tmp_path: Path) -
 async def test_graph_index_normalize_endpoint_path(
     tmp_path: Path, raw: str, expected: str | None
 ) -> None:
+    """Graph index normalize endpoint path."""
     graph = rag.GraphIndex(tmp_path)
 
     assert graph._normalize_endpoint_path(raw) == expected
 
 
 async def test_graph_index_python_and_script_import_candidates(tmp_path: Path) -> None:
+    """Graph index python and script import candidates."""
     root = tmp_path
     pkg = root / "pkg"
     pkg.mkdir()
@@ -117,6 +123,7 @@ async def test_graph_index_python_and_script_import_candidates(tmp_path: Path) -
 
 
 async def test_graph_index_parse_python_source_extracts_deps_defs_calls(tmp_path: Path) -> None:
+    """Graph index parse python source extracts deps defs calls."""
     root = tmp_path
     app_file = root / "app.py"
     dep = root / "dep.py"
@@ -149,6 +156,7 @@ def call_it():
 
 
 async def test_graph_index_parse_python_source_handles_syntax_error(tmp_path: Path) -> None:
+    """Graph index parse python source handles syntax error."""
     graph = rag.GraphIndex(tmp_path)
     deps, defs, calls = graph._parse_python_source(tmp_path / "bad.py", "def broken(:\n")
 
@@ -156,6 +164,7 @@ async def test_graph_index_parse_python_source_handles_syntax_error(tmp_path: Pa
 
 
 async def test_graph_index_extract_script_calls_deduplicates(tmp_path: Path) -> None:
+    """Graph index extract script calls deduplicates."""
     graph = rag.GraphIndex(tmp_path)
     content = """
 fetch('/api/items', { method: 'POST' })
@@ -172,6 +181,7 @@ new WebSocket('ws://localhost/ws/stream')
 
 
 async def test_graph_index_endpoint_call_skip_branches_are_explicit(tmp_path: Path) -> None:
+    """Graph index endpoint call skip branches are explicit."""
     graph = rag.GraphIndex(tmp_path)
     src = """
 def call_it():
@@ -195,6 +205,7 @@ def call_it():
 async def test_graph_index_script_endpoint_call_skip_branches_are_explicit(
     tmp_path: Path,
 ) -> None:
+    """Graph index script endpoint call skip branches are explicit."""
     graph = rag.GraphIndex(tmp_path)
 
     calls = graph._extract_script_endpoint_calls(
@@ -224,6 +235,7 @@ new WebSocket('/ws/local')
 async def test_document_store_add_document_from_file_empty_and_explicit_title(
     tmp_path: Path,
 ) -> None:
+    """Document store add document from file empty and explicit title."""
     store = _make_store_stub(tmp_path)
     captured: dict[str, object] = {}
 
@@ -263,6 +275,7 @@ async def test_document_store_add_document_from_file_empty_and_explicit_title(
 
 
 async def test_graph_index_rebuild_resolve_search_and_impact(tmp_path: Path) -> None:
+    """Graph index rebuild resolve search and impact."""
     root = tmp_path
     (root / "dep.py").write_text("", encoding="utf-8")
     (root / "api.py").write_text(
@@ -292,6 +305,7 @@ async def test_graph_index_rebuild_resolve_search_and_impact(tmp_path: Path) -> 
 
 
 async def test_graph_index_collect_bfs_and_extract_dependencies_non_python(tmp_path: Path) -> None:
+    """Graph index collect bfs and extract dependencies non python."""
     graph = rag.GraphIndex(tmp_path)
     adjacency = {"a": {"b", "c"}, "b": {"d"}, "c": set(), "d": set()}
 
@@ -309,6 +323,7 @@ async def test_graph_index_collect_bfs_and_extract_dependencies_non_python(tmp_p
 
 
 async def test_graph_index_circular(tmp_path: Path) -> None:
+    """Graph index circular."""
     graph = rag.GraphIndex(tmp_path)
     graph.add_node("a.py", node_type="file")
     graph.add_node("b.py", node_type="file")
@@ -324,6 +339,7 @@ async def test_graph_index_circular(tmp_path: Path) -> None:
 
 
 async def test_graph_index_deep_dependency_path(tmp_path: Path) -> None:
+    """Graph index deep dependency path."""
     graph = rag.GraphIndex(tmp_path)
     for node in ("entry.py", "service.py", "repo.py", "client.py", "adapter.py"):
         graph.add_node(node, node_type="file")
@@ -342,12 +358,14 @@ async def test_graph_index_deep_dependency_path(tmp_path: Path) -> None:
 
 
 async def test_embed_texts_for_semantic_cache_empty() -> None:
+    """Embed texts for semantic cache empty."""
     assert rag.embed_texts_for_semantic_cache([]) == []
 
 
 async def test_document_store_accepts_injected_embedding_function_builder(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Document store accepts injected embedding function builder."""
     injected_builder = object()
     captured: dict[str, object] = {}
     store = rag.DocumentStore.__new__(rag.DocumentStore)
@@ -365,6 +383,7 @@ async def test_document_store_accepts_injected_embedding_function_builder(
 
 
 async def test_shared_document_store_keys_custom_embedding_builders(tmp_path: Path) -> None:
+    """Shared document store keys custom embedding builders."""
     cfg = SimpleNamespace(
         RAG_VECTOR_BACKEND="chroma",
         RAG_TOP_K=3,
@@ -400,6 +419,7 @@ async def test_shared_document_store_keys_custom_embedding_builders(tmp_path: Pa
 
 
 async def test_shared_document_store_reuses_cached_store_for_same_key(tmp_path: Path) -> None:
+    """Shared document store reuses cached store for same key."""
     cfg = SimpleNamespace(
         RAG_VECTOR_BACKEND="chroma",
         RAG_TOP_K=3,
@@ -427,6 +447,7 @@ async def test_shared_document_store_reuses_cached_store_for_same_key(tmp_path: 
 async def test_public_build_embedding_function_delegates_to_internal_builder(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Public build embedding function delegates to internal builder."""
     monkeypatch.setattr(rag, "_build_embedding_function", lambda **kwargs: kwargs)
 
     assert rag.build_embedding_function(
@@ -442,6 +463,7 @@ async def test_public_build_embedding_function_delegates_to_internal_builder(
 async def test_build_embedding_function_uses_explicit_cpu_without_gpu(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Build embedding function uses explicit cpu without gpu."""
     monkeypatch.setenv("HF_HOME", str(tmp_path / "hf"))
     monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "hub"))
     monkeypatch.setenv("TRANSFORMERS_CACHE", str(tmp_path / "transformers"))
@@ -467,6 +489,7 @@ async def test_build_embedding_function_uses_explicit_cpu_without_gpu(
 
 
 async def test_document_store_helper_methods(tmp_path: Path) -> None:
+    """Document store helper methods."""
     store = _make_store_stub(tmp_path)
 
     assert (
@@ -488,6 +511,7 @@ async def test_document_store_helper_methods(tmp_path: Path) -> None:
 
 
 async def test_document_store_validate_url_safe_accepts_and_blocks() -> None:
+    """Document store validate url safe accepts and blocks."""
     rag.DocumentStore._validate_url_safe("https://example.com/resource")
 
     with pytest.raises(ValueError):
@@ -513,6 +537,8 @@ async def test_document_store_validate_url_safe_accepts_and_blocks() -> None:
 async def test_document_store_validate_url_safe_resolves_dns_to_public_addresses(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Document store validate url safe resolves dns to public addresses."""
+
     def _public_getaddrinfo(*_args, **_kwargs):
         return [(rag.socket.AF_INET, rag.socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]
 
@@ -524,6 +550,7 @@ async def test_document_store_validate_url_safe_resolves_dns_to_public_addresses
 async def test_document_store_validate_url_safe_handles_invalid_and_unresolved_dns(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Document store validate url safe handles invalid and unresolved dns."""
     assert rag.DocumentStore._is_public_ip_address("not-an-ip") is False
 
     def _raise_gaierror(*_args, **_kwargs):
@@ -541,6 +568,8 @@ async def test_document_store_validate_url_safe_handles_invalid_and_unresolved_d
 async def test_document_store_validate_url_safe_blocks_dns_private_resolution(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Document store validate url safe blocks dns private resolution."""
+
     def _private_getaddrinfo(*_args, **_kwargs):
         return [(rag.socket.AF_INET, rag.socket.SOCK_STREAM, 6, "", ("169.254.169.254", 80))]
 
@@ -553,6 +582,7 @@ async def test_document_store_validate_url_safe_blocks_dns_private_resolution(
 async def test_document_store_add_url_blocks_redirect_to_private_network(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Document store add url blocks redirect to private network."""
     store = _make_store_stub(tmp_path)
     add_calls: list[tuple[str, str, str]] = []
 
@@ -608,6 +638,7 @@ async def test_document_store_add_url_blocks_redirect_to_private_network(
 
 
 async def test_document_store_index_get_delete_and_status(tmp_path: Path) -> None:
+    """Document store index get delete and status."""
     store = _make_store_stub(tmp_path)
 
     class _DummyLock:
@@ -658,6 +689,7 @@ async def test_document_store_index_get_delete_and_status(tmp_path: Path) -> Non
 
 
 async def test_document_store_clean_html_with_bleach(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Document store clean html with bleach."""
     html = "<script>alert(1)</script><p>Hello&nbsp; <b>World</b></p>"
 
     class _FakeBleach:
@@ -672,6 +704,7 @@ async def test_document_store_clean_html_with_bleach(monkeypatch: pytest.MonkeyP
 async def test_document_store_scoped_hf_runtime_env_sets_expected_vars(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Document store scoped hf runtime env sets expected vars."""
     store = _make_store_stub(Path("/tmp"))
     store.cfg = SimpleNamespace(HF_TOKEN="abc-token", HF_HUB_OFFLINE=True)
 
@@ -695,6 +728,7 @@ async def test_document_store_scoped_hf_runtime_env_sets_expected_vars(
 async def test_document_store_apply_hf_runtime_env_does_not_leak(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Document store apply hf runtime env does not leak."""
     store = _make_store_stub(Path("/tmp"))
     store.cfg = SimpleNamespace(HF_TOKEN="abc-token", HF_HUB_OFFLINE=True)
 
@@ -714,6 +748,7 @@ async def test_document_store_apply_hf_runtime_env_does_not_leak(
 async def test_document_store_scoped_hf_runtime_env_restores_existing_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Document store scoped hf runtime env restores existing values."""
     store = _make_store_stub(Path("/tmp"))
     store.cfg = SimpleNamespace(HF_TOKEN="new-token", HF_HUB_OFFLINE=True)
 
@@ -737,6 +772,7 @@ async def test_document_store_scoped_hf_runtime_env_restores_existing_values(
 async def test_document_store_apply_hf_runtime_env_uses_local_cache_flag(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Document store apply hf runtime env uses local cache flag."""
     store = _make_store_stub(tmp_path)
     store.cfg = SimpleNamespace(HF_TOKEN="", HF_HUB_OFFLINE="false", HF_USE_LOCAL_CACHE_ONLY=True)
     store._pg_embedding_model_name = "custom/model"
@@ -755,6 +791,7 @@ async def test_document_store_apply_hf_runtime_env_uses_local_cache_flag(
 async def test_document_store_apply_hf_runtime_env_auto_offline_when_model_cache_exists(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Document store apply hf runtime env auto offline when model cache exists."""
     cache_root = tmp_path / "hf"
     (cache_root / "hub" / "models--sentence-transformers--all-MiniLM-L6-v2").mkdir(parents=True)
     monkeypatch.setenv("HF_HOME", str(cache_root))
@@ -776,6 +813,7 @@ async def test_document_store_apply_hf_runtime_env_auto_offline_when_model_cache
 
 
 async def test_document_store_add_document_from_file_validation_branches(tmp_path: Path) -> None:
+    """Document store add document from file validation branches."""
     store = _make_store_stub(tmp_path)
     captured: dict[str, object] = {}
 
@@ -806,6 +844,7 @@ async def test_document_store_add_document_from_file_validation_branches(tmp_pat
 
 
 async def test_document_store_graph_helpers_and_projection_and_plan(tmp_path: Path) -> None:
+    """Document store graph helpers and projection and plan."""
     store = _make_store_stub(tmp_path)
     store._graph_rag_enabled = True
     store._graph_root_dir = tmp_path
@@ -847,6 +886,7 @@ async def test_document_store_graph_helpers_and_projection_and_plan(tmp_path: Pa
 
 
 async def test_document_store_search_sync_mode_routing(tmp_path: Path) -> None:
+    """Document store search sync mode routing."""
     store = _make_store_stub(tmp_path)
     store.default_top_k = 3
     store.cfg = SimpleNamespace(RAG_TOP_K=3)
@@ -882,6 +922,7 @@ async def test_document_store_search_sync_mode_routing(tmp_path: Path) -> None:
 
 
 async def test_document_store_consolidate_session_documents(tmp_path: Path) -> None:
+    """Document store consolidate session documents."""
     store = _make_store_stub(tmp_path)
     store._index = {
         "a": {
@@ -935,6 +976,7 @@ async def test_document_store_consolidate_session_documents(tmp_path: Path) -> N
 
 
 async def test_document_store_graph_disabled_and_dispatch_branches(tmp_path: Path) -> None:
+    """Document store graph disabled and dispatch branches."""
     store = _make_store_stub(tmp_path)
     store._graph_rag_enabled = False
     store._graph_ready = False
@@ -954,6 +996,7 @@ async def test_document_store_graph_disabled_and_dispatch_branches(tmp_path: Pat
 
 
 async def test_document_store_graph_query_dispatch_and_empty_impact_target(tmp_path: Path) -> None:
+    """Document store graph query dispatch and empty impact target."""
     store = _make_store_stub(tmp_path)
     store._graph_rag_enabled = True
     store._graph_ready = True
@@ -975,6 +1018,7 @@ async def test_document_store_graph_query_dispatch_and_empty_impact_target(tmp_p
 async def test_document_store_build_graphrag_search_plan_with_pgvector_candidates(
     tmp_path: Path,
 ) -> None:
+    """Document store build graphrag search plan with pgvector candidates."""
     store = _make_store_stub(tmp_path)
     store._graph_rag_enabled = True
     store._graph_ready = True
@@ -998,6 +1042,7 @@ async def test_document_store_build_graphrag_search_plan_with_pgvector_candidate
 
 
 async def test_document_store_rrf_and_formatting_and_snippet_behaviors(tmp_path: Path) -> None:
+    """Document store rrf and formatting and snippet behaviors."""
     store = _make_store_stub(tmp_path)
     store._index = {"d1": {"session_id": "s1", "title": "Title 1", "source": "src://1"}}
     store._pgvector_available = True
@@ -1016,6 +1061,7 @@ async def test_document_store_rrf_and_formatting_and_snippet_behaviors(tmp_path:
 
 
 async def test_document_store_list_documents_and_touch_and_missing_file(tmp_path: Path) -> None:
+    """Document store list documents and touch and missing file."""
     store = _make_store_stub(tmp_path)
     store._save_index = lambda: None
     store._index = {
@@ -1042,6 +1088,7 @@ async def test_document_store_list_documents_and_touch_and_missing_file(tmp_path
 
 
 async def test_document_store_format_extract_and_consolidate_skip_branches(tmp_path: Path) -> None:
+    """Document store format extract and consolidate skip branches."""
     store = _make_store_stub(tmp_path)
 
     ok, text = store._format_results_from_struct([], "q", source_name="BM25")
@@ -1080,6 +1127,7 @@ async def test_document_store_format_extract_and_consolidate_skip_branches(tmp_p
 async def test_document_store_search_sync_fallback_chain_and_graph_not_found(
     tmp_path: Path,
 ) -> None:
+    """Document store search sync fallback chain and graph not found."""
     store = _make_store_stub(tmp_path)
     store.cfg = SimpleNamespace(RAG_TOP_K=2)
     store.default_top_k = 2
@@ -1110,6 +1158,7 @@ async def test_document_store_search_sync_fallback_chain_and_graph_not_found(
 
 
 async def test_document_store_search_sync_preferred_chroma_fallbacks_to_rrf(tmp_path: Path) -> None:
+    """Document store search sync preferred chroma fallbacks to rrf."""
     store = _make_store_stub(tmp_path)
     store.cfg = SimpleNamespace(RAG_TOP_K=2)
     store.default_top_k = 2
@@ -1132,6 +1181,7 @@ async def test_document_store_search_sync_preferred_chroma_fallbacks_to_rrf(tmp_
 async def test_document_store_search_sync_empty_session_and_analyze_graph_impact(
     tmp_path: Path,
 ) -> None:
+    """Document store search sync empty session and analyze graph impact."""
     store = _make_store_stub(tmp_path)
     store.cfg = SimpleNamespace(RAG_TOP_K=2)
     store.default_top_k = 2
@@ -1157,6 +1207,7 @@ async def test_document_store_search_sync_empty_session_and_analyze_graph_impact
 async def test_embed_texts_for_semantic_cache_success_and_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Embed texts for semantic cache success and failure."""
     monkeypatch.setenv("HF_HOME", str(tmp_path / "hf"))
     monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "hub"))
     monkeypatch.setenv("TRANSFORMERS_CACHE", str(tmp_path / "transformers"))
@@ -1213,6 +1264,8 @@ async def test_embed_texts_for_semantic_cache_success_and_failure(
 async def test_build_embedding_function_gpu_success_and_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Build embedding function gpu success and fallback."""
+
     class _Cuda:
         enabled = False
 
@@ -1285,6 +1338,8 @@ async def test_build_embedding_function_gpu_success_and_fallback(
 async def test_build_embedding_function_import_module_and_missing_autocast_warning(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
+    """Build embedding function import module and missing autocast warning."""
+
     class _Cuda:
         @staticmethod
         def is_available() -> bool:
@@ -1314,6 +1369,7 @@ async def test_build_embedding_function_import_module_and_missing_autocast_warni
 async def test_document_store_init_pgvector_backend_dispatch(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Document store init pgvector backend dispatch."""
     calls: list[str] = []
 
     monkeypatch.setattr(
@@ -1345,6 +1401,7 @@ async def test_document_store_init_pgvector_backend_dispatch(
 
 
 async def test_document_store_add_document_and_search_helpers(tmp_path: Path) -> None:
+    """Document store add document and search helpers."""
     store = _make_store_stub(tmp_path)
     store._bm25_available = True
     store._chroma_available = True
@@ -1387,6 +1444,7 @@ async def test_document_store_add_document_from_url_success_and_failure(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    """Document store add document from url success and failure."""
     httpx = pytest.importorskip("httpx")
     store = _make_store_stub(tmp_path)
     # _validate_url_safe(resolve_dns=True) yapıyor gerçek bir socket.getaddrinfo() çağrısı --
@@ -1426,6 +1484,7 @@ async def test_document_store_add_document_from_url_success_and_failure(
 async def test_document_store_add_document_from_url_redirect_error_paths(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Document store add document from url redirect error paths."""
     store = _make_store_stub(tmp_path)
     monkeypatch.setattr(
         rag.socket,
@@ -1486,6 +1545,7 @@ async def test_document_store_add_document_from_url_handles_httpx_transport_erro
     exc_name: str,
     expected_hint: str,
 ) -> None:
+    """Document store add document from url handles httpx transport errors."""
     httpx = pytest.importorskip("httpx")
     store = _make_store_stub(tmp_path)
     # respx httpx transport'unu mock'lar ama _validate_url_safe(resolve_dns=True) ham
@@ -1515,6 +1575,7 @@ async def test_document_store_vector_runtime_init_failures_fallback_to_bm25(
     mock_chromadb,
     tmp_path: Path,
 ) -> None:
+    """Document store vector runtime init failures fallback to bm25."""
     # Chroma runtime failure (import hatası değil): PersistentClient patlasa da BM25 devam etmeli.
     mock_chromadb(
         persistent_client_factory=lambda **_kwargs: (_ for _ in ()).throw(
@@ -1614,6 +1675,7 @@ async def test_document_store_vector_runtime_init_failures_fallback_to_bm25(
 
 
 async def test_init_pgvector_rejects_invalid_table_without_sql(tmp_path: Path) -> None:
+    """Init pgvector rejects invalid table without sql."""
     store = _make_store_stub(tmp_path)
     store.cfg = SimpleNamespace(DATABASE_URL="postgresql://user:pass@localhost/db")
     store._pg_table = "rag_embeddings;DROP_TABLE_docs"
@@ -1665,6 +1727,7 @@ async def test_pgvector_call_sites_reject_table_name_mutated_after_init(
 
 
 async def test_pgvector_failure_action_message_is_actionable_without_raw_auth_error() -> None:
+    """Pgvector failure action message is actionable without raw auth error."""
     msg = rag._pgvector_failure_action_message(
         RuntimeError('password authentication failed for user "sidar"; DETAIL: raw driver text')
     )
@@ -1681,6 +1744,8 @@ async def test_pgvector_failure_action_message_is_actionable_without_raw_auth_er
 async def test_document_store_schedule_judge_and_search_with_otel(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Document store schedule judge and search with otel."""
+
     class _Judge:
         enabled = True
 
@@ -1723,6 +1788,7 @@ async def test_document_store_schedule_judge_and_search_with_otel(
 async def test_document_store_upsert_pgvector_chunks_rolls_back_on_transaction_failure(
     tmp_path: Path,
 ) -> None:
+    """Document store upsert pgvector chunks rolls back on transaction failure."""
     store = _make_store_stub(tmp_path)
     store._pgvector_available = True
     store._pg_table = "rag_embeddings"
@@ -1760,6 +1826,7 @@ async def test_document_store_upsert_pgvector_chunks_rolls_back_on_transaction_f
 async def test_document_store_recursive_chunk_text_overlap_preserves_continuity(
     tmp_path: Path,
 ) -> None:
+    """Document store recursive chunk text overlap preserves continuity."""
     store = _make_store_stub(tmp_path)
     chunks = store._recursive_chunk_text("supercalifragilistic", size=6, overlap=2)
 
@@ -1775,6 +1842,7 @@ async def test_document_store_recursive_chunk_text_overlap_preserves_continuity(
 async def test_document_store_init_backends_and_import_checks(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Document store init backends and import checks."""
     store = _make_store_stub(tmp_path)
     store._write_lock = threading.Lock()
     store._index = {"doc1": {"session_id": "s1"}}
@@ -1832,6 +1900,7 @@ async def test_document_store_init_backends_and_import_checks(
 async def test_document_store_pgvector_init_and_query_helpers(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Document store pgvector init and query helpers."""
     store = _make_store_stub(tmp_path)
     store._check_import = lambda _name: True  # type: ignore[method-assign]
     store._pg_table = "rag_pg"
@@ -1936,6 +2005,7 @@ async def test_document_store_pgvector_init_and_query_helpers(
 async def test_document_store_load_and_bm25_fetch_and_keyword_paths(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Document store load and bm25 fetch and keyword paths."""
     store = _make_store_stub(tmp_path)
     store._write_lock = threading.Lock()
     store._bm25_available = True
@@ -1981,6 +2051,7 @@ async def test_document_store_load_and_bm25_fetch_and_keyword_paths(
 
 
 async def test_graph_index_iter_source_files_limits_and_excludes(tmp_path: Path) -> None:
+    """Graph index iter source files limits and excludes."""
     root = tmp_path
     (root / "a.py").write_text("print('a')", encoding="utf-8")
     (root / "b.js").write_text("console.log('b')", encoding="utf-8")
@@ -1998,6 +2069,7 @@ async def test_graph_index_iter_source_files_limits_and_excludes(tmp_path: Path)
 
 
 async def test_graph_index_python_import_candidates_with_relative_levels(tmp_path: Path) -> None:
+    """Graph index python import candidates with relative levels."""
     root = tmp_path
     pkg = root / "pkg" / "sub"
     pkg.mkdir(parents=True)
@@ -2013,6 +2085,7 @@ async def test_graph_index_python_import_candidates_with_relative_levels(tmp_pat
 async def test_document_store_init_chroma_and_fts_error_branches(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Document store init chroma and fts error branches."""
     store = _make_store_stub(tmp_path)
     store._chroma_available = True
     store._apply_hf_runtime_env = lambda: None  # type: ignore[method-assign]
@@ -2064,6 +2137,7 @@ async def test_document_store_init_chroma_and_fts_error_branches(
 async def test_document_store_apply_hf_runtime_env_when_disabled(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Document store apply hf runtime env when disabled."""
     store = _make_store_stub(tmp_path)
     store.cfg = SimpleNamespace(HF_TOKEN="", HF_HUB_OFFLINE=False, HF_USE_LOCAL_CACHE_ONLY=False)
     monkeypatch.setenv("HF_HOME", str(tmp_path / "empty-hf"))
@@ -2082,6 +2156,7 @@ async def test_document_store_apply_hf_runtime_env_when_disabled(
 
 
 async def test_document_store_consolidate_session_documents_branches(tmp_path: Path) -> None:
+    """Document store consolidate session documents branches."""
     store = _make_store_stub(tmp_path)
     store._index = {
         "keep-new": {
@@ -2142,6 +2217,7 @@ async def test_document_store_consolidate_session_documents_branches(tmp_path: P
 
 
 async def test_document_store_list_documents_and_status_engine_variants(tmp_path: Path) -> None:
+    """Document store list documents and status engine variants."""
     store = _make_store_stub(tmp_path)
     assert "Belge deposu boş" in store.list_documents(session_id="s1")
 
@@ -2191,6 +2267,7 @@ async def test_document_store_list_documents_and_status_engine_variants(tmp_path
 async def test_document_store_add_file_security_and_failure_paths(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Document store add file security and failure paths."""
     store = _make_store_stub(tmp_path)
 
     outside = Path("/etc/hosts")
@@ -2220,6 +2297,7 @@ async def test_document_store_add_file_security_and_failure_paths(
 
 
 async def test_document_store_delete_document_graph_and_wrappers(tmp_path: Path) -> None:
+    """Document store delete document graph and wrappers."""
     store = _make_store_stub(tmp_path)
 
     class _DummyLock:
@@ -2268,6 +2346,7 @@ async def test_document_store_delete_document_graph_and_wrappers(tmp_path: Path)
 
 
 async def test_document_store_search_mode_and_cache_update_edges(tmp_path: Path) -> None:
+    """Document store search mode and cache update edges."""
     store = _make_store_stub(tmp_path)
     store.cfg = SimpleNamespace(RAG_TOP_K=2)
     store.default_top_k = 2
@@ -2309,6 +2388,7 @@ async def test_document_store_search_mode_and_cache_update_edges(tmp_path: Path)
 async def test_document_store_judge_and_vector_fetch_error_paths(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Document store judge and vector fetch error paths."""
     monkeypatch.setitem(
         __import__("sys").modules,
         "core.judge",
@@ -2330,6 +2410,7 @@ async def test_document_store_judge_and_vector_fetch_error_paths(
 async def test_document_store_pgvector_search_handles_pool_drop_and_empty_results(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Document store pgvector search handles pool drop and empty results."""
     store = _make_store_stub(tmp_path)
     store._pgvector_available = True
 
@@ -2349,6 +2430,7 @@ async def test_document_store_pgvector_search_handles_pool_drop_and_empty_result
 
 
 async def test_document_store_fetch_chroma_bm25_and_formatter_edges(tmp_path: Path) -> None:
+    """Document store fetch chroma bm25 and formatter edges."""
     store = _make_store_stub(tmp_path)
     store.cfg = SimpleNamespace(RAG_LOCAL_VECTOR_CANDIDATE_MULTIPLIER=1)
     store._is_local_llm_provider = False
@@ -2390,6 +2472,7 @@ async def test_document_store_fetch_chroma_bm25_and_formatter_edges(tmp_path: Pa
 
 
 async def test_document_store_graph_impact_and_helpers_extra_branches(tmp_path: Path) -> None:
+    """Document store graph impact and helpers extra branches."""
     store = _make_store_stub(tmp_path)
     store._graph_rag_enabled = True
     store._graph_ready = False
@@ -2436,6 +2519,7 @@ async def test_document_store_graph_impact_and_helpers_extra_branches(tmp_path: 
 
 
 async def test_document_store_misc_uncovered_fallback_paths(tmp_path: Path) -> None:
+    """Document store misc uncovered fallback paths."""
     store = _make_store_stub(tmp_path)
     store.cfg = SimpleNamespace(RAG_TOP_K=2)
     store.default_top_k = 2
@@ -2477,6 +2561,7 @@ async def test_document_store_misc_uncovered_fallback_paths(tmp_path: Path) -> N
 async def test_graph_index_additional_branch_coverage(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Graph index additional branch coverage."""
     root = tmp_path / "repo"
     root.mkdir()
     (root / "node_modules").mkdir()
@@ -2550,6 +2635,8 @@ obj.session.post("/y")
 async def test_embedding_function_mixed_precision_cuda_branch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Embedding function mixed precision cuda branch."""
+
     class _EF:
         def __call__(self, input):
             return ["ok", input]
@@ -2583,6 +2670,7 @@ async def test_embedding_function_mixed_precision_cuda_branch(
 async def test_graph_index_parse_and_search_additional_branches(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Graph index parse and search additional branches."""
     gi = rag.GraphIndex(tmp_path)
     sample = tmp_path / "svc.py"
     sample.write_text("", encoding="utf-8")
@@ -2618,6 +2706,7 @@ obj.router.get("/skip")
 async def test_document_store_init_and_core_fallback_branches(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Document store init and core fallback branches."""
     monkeypatch.setattr(rag.DocumentStore, "_load_index", lambda self: {})
     monkeypatch.setattr(rag.DocumentStore, "_init_fts", lambda self: None)
     chroma_calls: list[str] = []
@@ -2650,6 +2739,7 @@ async def test_document_store_init_and_core_fallback_branches(
 async def test_document_store_low_level_misc_branches(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Document store low level misc branches."""
     store = _make_store_stub(tmp_path)
     store._index = {}
     store._save_index()
@@ -2671,6 +2761,7 @@ async def test_document_store_low_level_misc_branches(
 async def test_document_store_url_file_delete_and_graph_branches(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Document store url file delete and graph branches."""
     store = _make_store_stub(tmp_path)
     store._write_lock = threading.Lock()
     # _validate_url_safe(resolve_dns=True) ham socket.getaddrinfo() çağırır -- burada
@@ -2748,6 +2839,7 @@ async def test_document_store_url_file_delete_and_graph_branches(
 
 
 async def test_document_store_search_projection_and_rrf_branches(tmp_path: Path) -> None:
+    """Document store search projection and rrf branches."""
     store = _make_store_stub(tmp_path)
     store.cfg = SimpleNamespace(RAG_TOP_K=2)
     store.default_top_k = 2
@@ -2793,6 +2885,7 @@ async def test_document_store_search_projection_and_rrf_branches(tmp_path: Path)
 async def test_document_store_vector_and_keyword_file_not_found_paths(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Document store vector and keyword file not found paths."""
     store = _make_store_stub(tmp_path)
     store._index = {"d1": {"session_id": "s1", "title": "Doc1", "source": "src", "tags": ["alpha"]}}
     store._bm25_available = True
@@ -2831,6 +2924,7 @@ async def test_document_store_vector_and_keyword_file_not_found_paths(
 async def test_rag_remaining_branches_for_pgvector_and_add_document(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Rag remaining branches for pgvector and add document."""
     store = _make_store_stub(tmp_path)
     store.cfg = SimpleNamespace(DATABASE_URL="postgresql://u:p@h/db")
     store._check_import = lambda _m: True  # type: ignore[method-assign]
@@ -2901,6 +2995,7 @@ async def test_rag_remaining_branches_for_pgvector_and_add_document(
 
 
 async def test_rag_remaining_branches_for_graph_search_and_rrf(tmp_path: Path) -> None:
+    """Rag remaining branches for graph search and rrf."""
     # parse branch 217->219, 192
     gi = rag.GraphIndex(tmp_path)
     src = "@router.get\ndef x(): pass\nobj.app.get('/x')\n"
@@ -2938,6 +3033,7 @@ async def test_rag_remaining_branches_for_graph_search_and_rrf(tmp_path: Path) -
 async def test_graph_index_parse_python_source_skips_router_like_attribute_calls(
     tmp_path: Path,
 ) -> None:
+    """Graph index parse python source skips router like attribute calls."""
     gi = rag.GraphIndex(tmp_path)
     src = """
 def call_it():
@@ -2954,6 +3050,7 @@ def call_it():
 async def test_document_store_pgvector_init_handles_hnsw_index_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Document store pgvector init handles hnsw index failure."""
     store = _make_store_stub(tmp_path)
     store.cfg = SimpleNamespace(DATABASE_URL="postgresql://u:p@localhost/db")
     store._pg_table = "rag_embeddings"
@@ -3008,6 +3105,7 @@ async def test_document_store_pgvector_init_handles_hnsw_index_failure(
 
 
 async def test_document_store_init_fts_skips_migration_when_index_empty(tmp_path: Path) -> None:
+    """Document store init fts skips migration when index empty."""
     store = _make_store_stub(tmp_path)
     store._write_lock = threading.Lock()
     store._index = {}
@@ -3021,6 +3119,7 @@ async def test_document_store_init_fts_skips_migration_when_index_empty(tmp_path
 async def test_document_store_recursive_chunk_text_forced_fallback_split(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Document store recursive chunk text forced fallback split."""
     store = _make_store_stub(tmp_path)
     original_list = list
 
@@ -3083,6 +3182,7 @@ async def test_document_store_recursive_chunk_text_forced_fallback_split(
 async def test_rag_remaining_edge_branches_round_two(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Rag remaining edge branches round two."""
     gi = rag.GraphIndex(tmp_path)
     src = """
 @router.get()
@@ -3216,6 +3316,7 @@ obj.client.get('/ok')
 async def test_rag_final_remaining_branches(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Rag final remaining branches."""
     # __init__ 631->635
     monkeypatch.setattr(rag.DocumentStore, "_load_index", lambda self: {})
     monkeypatch.setattr(rag.DocumentStore, "_init_fts", lambda self: None)
@@ -3284,6 +3385,7 @@ async def test_rag_final_remaining_branches(
 async def test_document_store_reinitialization_logs_ready_bm25_vector_backends(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Document store reinitialization logs ready bm25 vector backends."""
     store = _make_store_stub(tmp_path)
     store._backend_init_lock = threading.Lock()
     store._vector_initialization_enabled = True
@@ -3305,6 +3407,7 @@ async def test_document_store_reinitialization_logs_ready_bm25_vector_backends(
 async def test_document_store_init_with_vector_initialization_disabled(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
+    """Document store init with vector initialization disabled."""
     init_calls: list[str] = []
     monkeypatch.setattr(rag.DocumentStore, "_load_index", lambda self: {})
     monkeypatch.setattr(rag.DocumentStore, "_init_fts", lambda self: init_calls.append("fts"))
@@ -3335,6 +3438,7 @@ async def test_document_store_init_with_vector_initialization_disabled(
 async def test_metadata_only_notice_is_not_suppressed_by_prior_store(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
+    """Metadata only notice is not suppressed by prior store."""
     monkeypatch.setattr(rag.DocumentStore, "_load_index", lambda self: {})
     monkeypatch.setattr(rag.DocumentStore, "_init_fts", lambda self: None)
     monkeypatch.setattr(rag.DocumentStore, "_check_import", lambda self, _m: True)
@@ -3359,6 +3463,7 @@ async def test_metadata_only_notice_is_not_suppressed_by_prior_store(
 
 
 async def test_add_document_from_file_uses_filename_when_title_empty(tmp_path: Path) -> None:
+    """Add document from file uses filename when title empty."""
     store = _make_store_stub(tmp_path)
     captured: dict[str, str] = {}
 
@@ -3378,6 +3483,7 @@ async def test_add_document_from_file_uses_filename_when_title_empty(tmp_path: P
 
 
 async def test_rrf_search_merges_bm25_only_ids_into_docs_map(tmp_path: Path) -> None:
+    """Rrf search merges bm25 only ids into docs map."""
     store = _make_store_stub(tmp_path)
     store._pgvector_available = False
     store._fetch_chroma = lambda *_a, **_k: [{"id": "v1", "content": "vector"}]  # type: ignore[method-assign]
@@ -3396,6 +3502,7 @@ async def test_rrf_search_merges_bm25_only_ids_into_docs_map(tmp_path: Path) -> 
 async def test_rag_almost_final_branches_for_parser_impact_and_fts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Rag almost final branches for parser impact and fts."""
     gi = rag.GraphIndex(tmp_path)
     deps, defs, calls = gi._parse_python_source(tmp_path / "p.py", "obj.client.get('/z')")
     assert deps == [] and defs == [] and calls[0]["path"] == "/z"
@@ -3430,6 +3537,7 @@ async def test_document_store_search_uses_vector_hits_from_fake_vector_store(
     tmp_path: Path,
     fake_vector_store,
 ) -> None:
+    """Document store search uses vector hits from fake vector store."""
     store = _make_store_stub(tmp_path)
     store._index = {"doc-1": {"session_id": "s1"}}
     store._pgvector_available = True
@@ -3456,6 +3564,7 @@ async def test_document_store_search_fallbacks_when_fake_vector_store_empty_or_e
     tmp_path: Path,
     fake_vector_store,
 ) -> None:
+    """Document store search fallbacks when fake vector store empty or error."""
     store = _make_store_stub(tmp_path)
     store._index = {"doc-1": {"session_id": "s1"}}
     store._pgvector_available = True
@@ -3526,6 +3635,7 @@ async def test_require_chroma_collection_raises_when_collection_missing(
 
 
 async def test_fetch_pgvector_returns_empty_when_query_embedding_empty(tmp_path: Path) -> None:
+    """Fetch pgvector returns empty when query embedding empty."""
     store = _make_store_stub(tmp_path)
     store._pgvector_available = True
     store.pg_engine = SimpleNamespace(
@@ -3559,6 +3669,7 @@ async def test_pgvector_embed_texts_uses_tolist_when_vectors_support_it(
 async def test_pgvector_embed_texts_falls_back_when_vectors_lack_tolist(
     tmp_path: Path,
 ) -> None:
+    """Pgvector embed texts falls back when vectors lack tolist."""
     store = _make_store_stub(tmp_path)
 
     class _FakeModel:
@@ -3573,6 +3684,7 @@ async def test_pgvector_embed_texts_falls_back_when_vectors_lack_tolist(
 async def test_pgvector_embed_texts_returns_empty_for_missing_model_or_texts(
     tmp_path: Path,
 ) -> None:
+    """Pgvector embed texts returns empty for missing model or texts."""
     store = _make_store_stub(tmp_path)
     store._pg_embedding_model = None
     assert store._pgvector_embed_texts(["a"]) == []
@@ -3638,6 +3750,7 @@ async def test_rrf_search_skips_duplicate_doc_id_in_bm25(tmp_path: Path) -> None
 
 
 async def test_document_store_extracts_marketing_entities_and_graph_search(tmp_path: Path) -> None:
+    """Document store extracts marketing entities and graph search."""
     store = _make_store_stub(tmp_path)
     store.entity_graph_file = tmp_path / "entity_graph.json"
     store._entity_graph = {"nodes": {}, "edges": []}
@@ -3695,6 +3808,7 @@ async def test_document_store_extracts_marketing_entities_and_graph_search(tmp_p
 
 
 async def test_pgvector_failure_action_message_specific_branches() -> None:
+    """Pgvector failure action message specific branches."""
     assert "zaman aşımı" in rag._pgvector_failure_action_message(TimeoutError("timed out"))
     assert "bağlantısı kurulamadı" in rag._pgvector_failure_action_message(
         ConnectionError("connection refused")
@@ -3707,6 +3821,7 @@ async def test_pgvector_failure_action_message_specific_branches() -> None:
 async def test_pgvector_failure_action_message_surfaces_unclassified_embedding_error(
     monkeypatch,
 ) -> None:
+    """Pgvector failure action message surfaces unclassified embedding error."""
     monkeypatch.setattr(
         rag,
         "postgres_failure_diagnosis",
@@ -3728,6 +3843,7 @@ async def test_pgvector_failure_action_message_surfaces_unclassified_embedding_e
 async def test_entity_graph_loading_normalization_and_json_extraction_branches(
     tmp_path: Path,
 ) -> None:
+    """Entity graph loading normalization and json extraction branches."""
     store = _make_store_stub(tmp_path)
     graph_file = tmp_path / "entity_graph.json"
     store.entity_graph_file = graph_file
@@ -3755,6 +3871,7 @@ async def test_entity_graph_loading_normalization_and_json_extraction_branches(
 async def test_document_store_llm_entity_extraction_feature_flag_merges_payload(
     tmp_path: Path,
 ) -> None:
+    """Document store llm entity extraction feature flag merges payload."""
     store = _make_store_stub(tmp_path)
     store._entity_max_per_doc = 24
     store._llm_entity_extraction_settings = rag.LLMEntityExtractionSettings(enabled=True)
@@ -3797,6 +3914,7 @@ async def test_document_store_llm_entity_extraction_feature_flag_merges_payload(
 async def test_document_store_llm_entity_extraction_builds_configured_client(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Document store llm entity extraction builds configured client."""
     store = _make_store_stub(tmp_path)
     store._entity_max_per_doc = 24
     store.cfg = SimpleNamespace(
@@ -3849,6 +3967,7 @@ async def test_document_store_llm_entity_extraction_builds_configured_client(
 async def test_extract_document_entities_json_tags_empty_and_invalid_branches(
     tmp_path: Path,
 ) -> None:
+    """Extract document entities json tags empty and invalid branches."""
     store = _make_store_stub(tmp_path)
     store._entity_max_per_doc = 24
 
@@ -3885,6 +4004,7 @@ async def test_extract_document_entities_json_tags_empty_and_invalid_branches(
 
 
 async def test_upsert_and_search_entity_graph_edge_filter_branches(tmp_path: Path) -> None:
+    """Upsert and search entity graph edge filter branches."""
     store = _make_store_stub(tmp_path)
     store.entity_graph_file = tmp_path / "entity_graph.json"
     store._entity_graph = {"nodes": {}, "edges": []}
@@ -3922,6 +4042,7 @@ async def test_upsert_and_search_entity_graph_edge_filter_branches(tmp_path: Pat
 
 
 async def test_knowledge_graph_projection_entity_filters_and_limits(tmp_path: Path) -> None:
+    """Knowledge graph projection entity filters and limits."""
     store = _make_store_stub(tmp_path)
     store._index = {
         "doc-other": {"title": "Other", "source": "", "session_id": "other"},
@@ -3965,6 +4086,7 @@ async def test_knowledge_graph_projection_entity_filters_and_limits(tmp_path: Pa
 
 
 async def test_entity_extraction_empty_values_and_invalid_relation_skip(tmp_path: Path) -> None:
+    """Entity extraction empty values and invalid relation skip."""
     store = _make_store_stub(tmp_path)
     store._entity_max_per_doc = 24
     # Empty JSON list and empty cleaned campaign value cover recursion/no-op branches.
@@ -3993,6 +4115,7 @@ async def test_entity_extraction_empty_values_and_invalid_relation_skip(tmp_path
 async def test_entity_graph_load_rejects_non_dict_and_projection_skips_session_nodes(
     tmp_path: Path,
 ) -> None:
+    """Entity graph load rejects non dict and projection skips session nodes."""
     store = _make_store_stub(tmp_path)
     store.entity_graph_file = tmp_path / "entity_graph.json"
     store.entity_graph_file.write_text(json.dumps(["not", "a", "dict"]), encoding="utf-8")
@@ -4027,6 +4150,7 @@ async def test_entity_graph_load_rejects_non_dict_and_projection_skips_session_n
 async def test_entity_extraction_ignores_blank_regex_capture_and_scalar_json_payload(
     tmp_path: Path,
 ) -> None:
+    """Entity extraction ignores blank regex capture and scalar json payload."""
     store = _make_store_stub(tmp_path)
     store._entity_max_per_doc = 24
 
@@ -4039,6 +4163,7 @@ async def test_entity_extraction_ignores_blank_regex_capture_and_scalar_json_pay
 
 
 async def test_pgvector_failure_message_uses_shared_db_diagnosis(monkeypatch) -> None:
+    """Pgvector failure message uses shared db diagnosis."""
     monkeypatch.setattr(
         rag, "postgres_failure_diagnosis", lambda _reason, _exc: "shared-db-diagnosis"
     )
@@ -4052,6 +4177,7 @@ async def test_pgvector_failure_message_uses_shared_db_diagnosis(monkeypatch) ->
 async def test_entity_extraction_ignores_empty_tag_value_after_normalization(
     tmp_path: Path,
 ) -> None:
+    """Entity extraction ignores empty tag value after normalization."""
     store = _make_store_stub(tmp_path)
     store._entity_max_per_doc = 24
 
@@ -4062,6 +4188,7 @@ async def test_entity_extraction_ignores_empty_tag_value_after_normalization(
 
 
 async def test_document_store_listing_marks_unavailable_pgvector_backend(tmp_path: Path) -> None:
+    """Document store listing marks unavailable pgvector backend."""
     store = _make_store_stub(tmp_path)
     store._vector_backend = "pgvector"
     store._pgvector_available = False
@@ -4086,6 +4213,7 @@ async def test_bm25_vector_preference_hint_supports_each_vector_backend_individu
     chroma_available: bool,
     pgvector_available: bool,
 ) -> None:
+    """Bm25 vector preference hint supports each vector backend individually."""
     store = _make_store_stub(tmp_path)
     store._vector_backend = "bm25"
     store._chroma_available = chroma_available
@@ -4098,6 +4226,7 @@ async def test_bm25_vector_preference_hint_supports_each_vector_backend_individu
 
 
 async def test_pgvector_compat_wrappers_delegate_to_backend() -> None:
+    """Pgvector compat wrappers delegate to backend."""
     assert rag._is_valid_pgvector_identifier("rag_embeddings") is True
     assert rag._is_valid_pgvector_identifier("1bad") is False
 

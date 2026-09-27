@@ -1,3 +1,5 @@
+"""``core.db.auth`` modülü için unit testler."""
+
 import pytest
 
 from core.db import auth as db_auth
@@ -14,6 +16,7 @@ from core.db import auth as db_auth
     ],
 )
 def test_minimum_argon2id_time_cost_owasp_ladder_boundaries(memory_cost, expected_time_cost):
+    """Minimum argon2id time cost owasp ladder boundaries."""
     assert db_auth._minimum_argon2id_time_cost(memory_cost) == expected_time_cost
 
 
@@ -27,10 +30,12 @@ def test_minimum_argon2id_time_cost_owasp_ladder_boundaries(memory_cost, expecte
     ],
 )
 def test_parse_argon2id_params_rejects_malformed_inputs(params_text):
+    """Parse argon2id params rejects malformed inputs."""
     assert db_auth._parse_argon2id_params(params_text) is None
 
 
 def test_verify_argon2id_password_rejects_malformed_and_unhashable_inputs(monkeypatch):
+    """Verify argon2id password rejects malformed and unhashable inputs."""
     assert db_auth._verify_argon2id_password("pw", ["argon2id", "too-short"]) is False
 
     monkeypatch.setattr(
@@ -63,10 +68,12 @@ def test_verify_argon2id_password_rejects_malformed_and_unhashable_inputs(monkey
     ],
 )
 def test_verify_pbkdf2_password_rejects_malformed_inputs(parts):
+    """Verify pbkdf2 password rejects malformed inputs."""
     assert db_auth._verify_pbkdf2_password("pw", parts) is False
 
 
 def test_verify_pbkdf2_password_compares_four_part_digest(monkeypatch):
+    """Verify pbkdf2 password compares four part digest."""
     monkeypatch.setattr(db_auth, "_pbkdf2_sha256", lambda *_args: "digest")
 
     assert (

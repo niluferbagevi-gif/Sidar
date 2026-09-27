@@ -21,6 +21,7 @@ class _FastSentenceTransformer:
 
 
 def test_sentence_transformer_load_timeout(monkeypatch) -> None:
+    """Sentence transformer load timeout."""
     embeddings.clear_model_cache()
     monkeypatch.setattr(
         embeddings, "_load_sentence_transformer_class", lambda: _SlowSentenceTransformer
@@ -35,6 +36,7 @@ def test_sentence_transformer_load_timeout(monkeypatch) -> None:
 
 
 def test_sentence_transformer_load_timeout_disabled_allows_normal_load(monkeypatch) -> None:
+    """Sentence transformer load timeout disabled allows normal load."""
     embeddings.clear_model_cache()
     monkeypatch.setattr(
         embeddings, "_load_sentence_transformer_class", lambda: _FastSentenceTransformer

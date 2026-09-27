@@ -24,6 +24,7 @@ from core.vision import (
 
 
 def test_load_image_from_bytes_valid():
+    """Load image from bytes valid."""
     data = b"\x89PNG\r\n"
     b64, mime = load_image_from_bytes(data, "image/png")
     assert mime == "image/png"
@@ -31,17 +32,20 @@ def test_load_image_from_bytes_valid():
 
 
 def test_load_image_from_bytes_jpeg():
+    """Load image from bytes jpeg."""
     data = b"\xff\xd8\xff"
     b64, mime = load_image_from_bytes(data, "image/jpeg")
     assert mime == "image/jpeg"
 
 
 def test_load_image_from_bytes_unsupported_mime():
+    """Load image from bytes unsupported mime."""
     with pytest.raises(ValueError, match="Desteklenmeyen MIME"):
         load_image_from_bytes(b"data", "application/pdf")
 
 
 def test_load_image_from_bytes_too_large():
+    """Load image from bytes too large."""
     huge = b"x" * (_DEFAULT_MAX_BYTES + 1)
     with pytest.raises(ValueError, match="Görsel çok büyük"):
         load_image_from_bytes(huge, "image/png")
@@ -53,12 +57,14 @@ def test_load_image_from_bytes_too_large():
 
 
 def test_load_image_from_bytes_respects_custom_max_bytes():
+    """Load image from bytes respects custom max bytes."""
     with pytest.raises(ValueError, match="Görsel çok büyük"):
         load_image_from_bytes(b"1234", "image/png", max_bytes=3)
 
 
 @pytest.mark.asyncio
 async def test_load_image_as_base64_respects_custom_max_bytes(tmp_path):
+    """Load image as base64 respects custom max bytes."""
     f = tmp_path / "small-limit.png"
     f.write_bytes(b"1234")
     with pytest.raises(ValueError, match="Görsel çok büyük"):
@@ -67,12 +73,14 @@ async def test_load_image_as_base64_respects_custom_max_bytes(tmp_path):
 
 @pytest.mark.asyncio
 async def test_load_image_as_base64_file_not_found(tmp_path):
+    """Load image as base64 file not found."""
     with pytest.raises(FileNotFoundError):
         await load_image_as_base64(tmp_path / "missing.png")
 
 
 @pytest.mark.asyncio
 async def test_load_image_as_base64_unsupported_format(tmp_path):
+    """Load image as base64 unsupported format."""
     f = tmp_path / "file.bmp"
     f.write_bytes(b"BM data")
     with pytest.raises(ValueError, match="Desteklenmeyen"):
@@ -81,6 +89,7 @@ async def test_load_image_as_base64_unsupported_format(tmp_path):
 
 @pytest.mark.asyncio
 async def test_load_image_as_base64_too_large(tmp_path):
+    """Load image as base64 too large."""
     f = tmp_path / "big.png"
     f.write_bytes(b"x" * (_DEFAULT_MAX_BYTES + 1))
     with pytest.raises(ValueError, match="Görsel çok büyük"):
@@ -89,6 +98,7 @@ async def test_load_image_as_base64_too_large(tmp_path):
 
 @pytest.mark.asyncio
 async def test_load_image_as_base64_success(tmp_path):
+    """Load image as base64 success."""
     f = tmp_path / "img.png"
     raw = b"\x89PNG\r\n"
     f.write_bytes(raw)
@@ -107,6 +117,7 @@ def _b64():
 
 
 def test_build_vision_messages_openai():
+    """Build vision messages openai."""
     msgs = build_vision_messages("openai", "prompt", _b64(), "image/png")
     assert len(msgs) == 1
     content = msgs[0]["content"]
@@ -115,12 +126,14 @@ def test_build_vision_messages_openai():
 
 
 def test_build_vision_messages_litellm():
+    """Build vision messages litellm."""
     msgs = build_vision_messages("litellm", "p", _b64(), "image/png")
     assert msgs[0]["role"] == "user"
     assert any(p.get("type") == "image_url" for p in msgs[0]["content"])
 
 
 def test_build_vision_messages_anthropic():
+    """Build vision messages anthropic."""
     msgs = build_vision_messages("anthropic", "prompt", _b64(), "image/webp")
     content = msgs[0]["content"]
     img_block = next(p for p in content if p.get("type") == "image")
@@ -129,6 +142,7 @@ def test_build_vision_messages_anthropic():
 
 
 def test_build_vision_messages_gemini():
+    """Build vision messages gemini."""
     msgs = build_vision_messages("gemini", "prompt", _b64(), "image/jpeg")
     content = msgs[0]["content"]
     inline = next(p for p in content if "inline_data" in p)
@@ -136,18 +150,21 @@ def test_build_vision_messages_gemini():
 
 
 def test_build_vision_messages_ollama_default():
+    """Build vision messages ollama default."""
     msgs = build_vision_messages("ollama", "prompt", _b64(), "image/png")
     assert msgs[0]["role"] == "user"
     assert _b64() in msgs[0]["images"]
 
 
 def test_build_vision_messages_unknown_provider_fallback():
+    """Build vision messages unknown provider fallback."""
     msgs = build_vision_messages("unknown_xyz", "prompt", _b64(), "image/png")
     # Bilinmeyen provider ollama formatına düşer
     assert "images" in msgs[0]
 
 
 def test_build_vision_messages_case_insensitive():
+    """Build vision messages case insensitive."""
     msgs_upper = build_vision_messages("OpenAI", "p", _b64(), "image/png")
     msgs_lower = build_vision_messages("openai", "p", _b64(), "image/png")
     assert msgs_upper == msgs_lower
@@ -159,6 +176,7 @@ def test_build_vision_messages_case_insensitive():
 
 
 def test_build_mockup_prompt_defaults():
+    """Build mockup prompt defaults."""
     prompt = build_mockup_prompt()
     assert "React" in prompt
     assert "Tailwind CSS" in prompt
@@ -166,6 +184,7 @@ def test_build_mockup_prompt_defaults():
 
 
 def test_build_mockup_prompt_custom():
+    """Build mockup prompt custom."""
     prompt = build_mockup_prompt(framework="Vue", css_framework="Bootstrap", language="JavaScript")
     assert "Vue" in prompt
     assert "Bootstrap" in prompt
@@ -173,11 +192,13 @@ def test_build_mockup_prompt_custom():
 
 
 def test_build_mockup_prompt_extra_instructions():
+    """Build mockup prompt extra instructions."""
     prompt = build_mockup_prompt(extra_instructions="Dark mode zorunlu")
     assert "Dark mode zorunlu" in prompt
 
 
 def test_build_mockup_prompt_empty_strings_use_defaults():
+    """Build mockup prompt empty strings use defaults."""
     prompt = build_mockup_prompt(framework="", css_framework="", language="")
     assert "React" in prompt
     assert "Tailwind CSS" in prompt
@@ -189,21 +210,25 @@ def test_build_mockup_prompt_empty_strings_use_defaults():
 
 
 def test_build_analyze_prompt_general():
+    """Build analyze prompt general."""
     p = build_analyze_prompt("general")
     assert "analiz" in p.lower()
 
 
 def test_build_analyze_prompt_accessibility():
+    """Build analyze prompt accessibility."""
     p = build_analyze_prompt("accessibility")
     assert "WCAG" in p or "erişilebilirlik" in p.lower()
 
 
 def test_build_analyze_prompt_ux_review():
+    """Build analyze prompt ux review."""
     p = build_analyze_prompt("ux_review")
     assert "UX" in p or "kullanıcı" in p.lower()
 
 
 def test_build_analyze_prompt_unknown_falls_back_to_general():
+    """Build analyze prompt unknown falls back to general."""
     p_unknown = build_analyze_prompt("nonexistent_type")
     p_general = build_analyze_prompt("general")
     assert p_unknown == p_general
@@ -226,6 +251,7 @@ def _make_pipeline(provider="openai", enabled=True):
 
 @pytest.mark.asyncio
 async def test_pipeline_disabled_returns_error():
+    """Pipeline disabled returns error."""
     pipeline, llm = _make_pipeline(enabled=False)
     result = await pipeline.mockup_to_code(image_bytes=b"x", mime_type="image/png")
     assert result["success"] is False
@@ -235,6 +261,7 @@ async def test_pipeline_disabled_returns_error():
 
 @pytest.mark.asyncio
 async def test_pipeline_no_input_returns_error():
+    """Pipeline no input returns error."""
     pipeline, _ = _make_pipeline()
     result = await pipeline.mockup_to_code()
     assert result["success"] is False
@@ -243,6 +270,7 @@ async def test_pipeline_no_input_returns_error():
 
 @pytest.mark.asyncio
 async def test_pipeline_mockup_to_code_enforces_configured_image_limit():
+    """Pipeline mockup to code enforces configured image limit."""
     pipeline, llm = _make_pipeline()
     pipeline.max_image_bytes = 3
     result = await pipeline.mockup_to_code(image_bytes=b"1234", mime_type="image/png")
@@ -253,6 +281,7 @@ async def test_pipeline_mockup_to_code_enforces_configured_image_limit():
 
 @pytest.mark.asyncio
 async def test_pipeline_analyze_enforces_configured_image_limit(tmp_path):
+    """Pipeline analyze enforces configured image limit."""
     pipeline, llm = _make_pipeline()
     pipeline.max_image_bytes = 3
     f = tmp_path / "too-big.png"
@@ -265,6 +294,7 @@ async def test_pipeline_analyze_enforces_configured_image_limit(tmp_path):
 
 @pytest.mark.asyncio
 async def test_pipeline_mockup_to_code_from_bytes():
+    """Pipeline mockup to code from bytes."""
     pipeline, llm = _make_pipeline()
     raw = b"\x89PNG\r\n"
     result = await pipeline.mockup_to_code(image_bytes=raw, mime_type="image/png")
@@ -276,6 +306,7 @@ async def test_pipeline_mockup_to_code_from_bytes():
 
 @pytest.mark.asyncio
 async def test_pipeline_mockup_to_code_from_path(tmp_path):
+    """Pipeline mockup to code from path."""
     pipeline, llm = _make_pipeline()
     f = tmp_path / "ui.png"
     f.write_bytes(b"\x89PNG\r\n")
@@ -286,6 +317,7 @@ async def test_pipeline_mockup_to_code_from_path(tmp_path):
 
 @pytest.mark.asyncio
 async def test_pipeline_mockup_to_code_file_not_found():
+    """Pipeline mockup to code file not found."""
     pipeline, _ = _make_pipeline()
     result = await pipeline.mockup_to_code(image_path="/nonexistent/ui.png")
     assert result["success"] is False
@@ -293,6 +325,7 @@ async def test_pipeline_mockup_to_code_file_not_found():
 
 @pytest.mark.asyncio
 async def test_pipeline_mockup_to_code_llm_error():
+    """Pipeline mockup to code llm error."""
     pipeline, llm = _make_pipeline()
     llm.chat.side_effect = RuntimeError("LLM quota exceeded")
     raw = b"\x89PNG\r\n"
@@ -303,6 +336,7 @@ async def test_pipeline_mockup_to_code_llm_error():
 
 @pytest.mark.asyncio
 async def test_pipeline_analyze_from_bytes():
+    """Pipeline analyze from bytes."""
     pipeline, llm = _make_pipeline()
     llm.chat.return_value = "Bu bir analiz."
     raw = b"\x89PNG\r\n"
@@ -314,6 +348,7 @@ async def test_pipeline_analyze_from_bytes():
 
 @pytest.mark.asyncio
 async def test_pipeline_analyze_from_path(tmp_path):
+    """Pipeline analyze from path."""
     pipeline, llm = _make_pipeline()
     llm.chat.return_value = "Path üzerinden analiz."
     f = tmp_path / "screen.png"
@@ -326,6 +361,7 @@ async def test_pipeline_analyze_from_path(tmp_path):
 
 @pytest.mark.asyncio
 async def test_pipeline_analyze_disabled():
+    """Pipeline analyze disabled."""
     pipeline, llm = _make_pipeline(enabled=False)
     result = await pipeline.analyze(image_bytes=b"x", mime_type="image/png")
     assert result["success"] is False
@@ -334,6 +370,7 @@ async def test_pipeline_analyze_disabled():
 
 @pytest.mark.asyncio
 async def test_pipeline_analyze_no_input():
+    """Pipeline analyze no input."""
     pipeline, _ = _make_pipeline()
     result = await pipeline.analyze()
     assert result["success"] is False
@@ -342,6 +379,7 @@ async def test_pipeline_analyze_no_input():
 
 @pytest.mark.asyncio
 async def test_pipeline_analyze_file_not_found():
+    """Pipeline analyze file not found."""
     pipeline, _ = _make_pipeline()
     result = await pipeline.analyze(image_path="/nonexistent/analysis.png")
     assert result["success"] is False
@@ -350,6 +388,7 @@ async def test_pipeline_analyze_file_not_found():
 
 @pytest.mark.asyncio
 async def test_pipeline_analyze_llm_error():
+    """Pipeline analyze llm error."""
     pipeline, llm = _make_pipeline()
     llm.chat.side_effect = Exception("timeout")
     result = await pipeline.analyze(image_bytes=b"\x89PNG\r\n", mime_type="image/png")
@@ -358,11 +397,13 @@ async def test_pipeline_analyze_llm_error():
 
 
 def test_pipeline_provider_from_llm():
+    """Pipeline provider from llm."""
     pipeline, _ = _make_pipeline(provider="anthropic")
     assert pipeline._provider == "anthropic"
 
 
 def test_supported_mime_types_constant():
+    """Supported mime types constant."""
     assert "image/png" in SUPPORTED_MIME_TYPES
     assert "image/jpeg" in SUPPORTED_MIME_TYPES
     assert "image/webp" in SUPPORTED_MIME_TYPES

@@ -1,3 +1,5 @@
+"""``core.llm_metrics`` modülü için unit testler."""
+
 import asyncio
 import builtins
 import types
@@ -9,6 +11,7 @@ from core.llm_metrics import LLMMetricsCollector
 
 
 def test_env_float_handles_defaults_and_invalid_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Env float handles defaults and invalid values."""
     monkeypatch.delenv("TEST_FLOAT", raising=False)
     assert llm_metrics._env_float("TEST_FLOAT", 1.5) == 1.5
 
@@ -29,11 +32,13 @@ def test_env_float_handles_defaults_and_invalid_values(monkeypatch: pytest.Monke
 
 
 def test_env_float_handles_none_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Env float handles none default."""
     monkeypatch.delenv("TEST_FLOAT_NONE", raising=False)
     assert llm_metrics._env_float("TEST_FLOAT_NONE", None) == 0.0
 
 
 def test_context_user_id_roundtrip() -> None:
+    """Context user id roundtrip."""
     token = llm_metrics.set_current_metrics_user_id("  user-1  ")
     assert llm_metrics.get_current_metrics_user_id() == "user-1"
 
@@ -42,6 +47,7 @@ def test_context_user_id_roundtrip() -> None:
 
 
 def test_estimate_cost_known_and_unknown_models() -> None:
+    """Estimate cost known and unknown models."""
     known = LLMMetricsCollector.estimate_cost_usd("openai", "gpt-4o-mini", 1_000_000, 1_000_000)
     unknown = LLMMetricsCollector.estimate_cost_usd("x", "y", 100, 100)
 
@@ -50,6 +56,7 @@ def test_estimate_cost_known_and_unknown_models() -> None:
 
 
 def test_record_clamps_values_and_detects_rate_limit() -> None:
+    """Record clamps values and detects rate limit."""
     collector = LLMMetricsCollector(max_events=3)
 
     token = llm_metrics.set_current_metrics_user_id("ctx-user")
@@ -82,6 +89,7 @@ def test_record_clamps_values_and_detects_rate_limit() -> None:
 
 
 def test_record_usage_sink_schedules_awaitable_with_running_loop() -> None:
+    """Record usage sink schedules awaitable with running loop."""
     collector = LLMMetricsCollector()
     seen = []
 
@@ -101,6 +109,7 @@ def test_record_usage_sink_schedules_awaitable_with_running_loop() -> None:
 def test_record_usage_sink_closes_awaitable_without_running_loop(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Record usage sink closes awaitable without running loop."""
     collector = LLMMetricsCollector()
 
     class ClosableAwaitable:
@@ -134,6 +143,7 @@ def test_record_usage_sink_closes_awaitable_without_running_loop(
 def test_record_usage_sink_awaitable_without_close_and_without_running_loop(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Record usage sink awaitable without close and without running loop."""
     collector = LLMMetricsCollector()
 
     class NonClosableAwaitable:
@@ -159,6 +169,7 @@ def test_record_usage_sink_awaitable_without_close_and_without_running_loop(
 
 
 def test_record_usage_sink_errors_are_swallowed() -> None:
+    """Record usage sink errors are swallowed."""
     collector = LLMMetricsCollector()
     collector.set_usage_sink(lambda _event: (_ for _ in ()).throw(RuntimeError("sink failed")))
 
@@ -168,6 +179,7 @@ def test_record_usage_sink_errors_are_swallowed() -> None:
 
 
 def test_record_usage_sink_non_awaitable_result_is_ignored() -> None:
+    """Record usage sink non awaitable result is ignored."""
     collector = LLMMetricsCollector()
     called = {"n": 0}
 
@@ -183,6 +195,7 @@ def test_record_usage_sink_non_awaitable_result_is_ignored() -> None:
 def test_snapshot_aggregates_provider_user_budget_recent_and_fallback_cache(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Snapshot aggregates provider user budget recent and fallback cache."""
     collector = LLMMetricsCollector(max_events=10)
 
     monkeypatch.setenv("LLM_BUDGET_DAILY_USD", "1.0")
@@ -253,6 +266,7 @@ def test_snapshot_aggregates_provider_user_budget_recent_and_fallback_cache(
 
 
 def test_snapshot_uses_cache_metrics_module_when_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Snapshot uses cache metrics module when available."""
     collector = LLMMetricsCollector()
     collector.record(provider="openai", model="gpt-4o", latency_ms=1)
 
@@ -267,4 +281,5 @@ def test_snapshot_uses_cache_metrics_module_when_available(monkeypatch: pytest.M
 
 
 def test_get_collector_returns_singleton_instance() -> None:
+    """Get collector returns singleton instance."""
     assert llm_metrics.get_llm_metrics_collector() is llm_metrics._COLLECTOR

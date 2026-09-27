@@ -184,6 +184,7 @@ def test_normalize_llm_entity_payload_accepts_relation_raw_ids_and_filters_bad_e
 
 
 def test_extract_llm_entity_payload_respects_feature_flag_and_coerces_json() -> None:
+    """Extract llm entity payload respects feature flag and coerces json."""
     calls: list[str] = []
 
     def fake_extractor(title, content, tags, source, settings):
@@ -216,6 +217,7 @@ def test_extract_llm_entity_payload_respects_feature_flag_and_coerces_json() -> 
 
 
 async def test_extract_llm_entity_payload_uses_llm_client_factory_when_enabled() -> None:
+    """Extract llm entity payload uses llm client factory when enabled."""
     captured: dict[str, object] = {}
 
     class FakeClient:
@@ -250,6 +252,7 @@ async def test_extract_llm_entity_payload_uses_llm_client_factory_when_enabled()
 
 
 def test_coerce_llm_entity_payload_rejects_non_json_and_non_mapping_values() -> None:
+    """Coerce llm entity payload rejects non json and non mapping values."""
     assert coerce_llm_entity_payload(123) is None
     assert coerce_llm_entity_payload("not-json") is None
     assert coerce_llm_entity_payload('["not", "mapping"]') is None
@@ -259,6 +262,7 @@ def test_coerce_llm_entity_payload_rejects_non_json_and_non_mapping_values() -> 
 
 
 def test_extract_llm_entity_payload_returns_none_without_extractor_or_client() -> None:
+    """Extract llm entity payload returns none without extractor or client."""
     assert (
         extract_llm_entity_payload(
             "Launch", "content", settings=LLMEntityExtractionSettings(enabled=True)
@@ -268,6 +272,7 @@ def test_extract_llm_entity_payload_returns_none_without_extractor_or_client() -
 
 
 def test_extract_llm_entity_payload_uses_llm_client_factory_without_running_loop() -> None:
+    """Extract llm entity payload uses llm client factory without running loop."""
     captured: dict[str, object] = {}
 
     class FakeClient:
@@ -288,6 +293,8 @@ def test_extract_llm_entity_payload_uses_llm_client_factory_without_running_loop
 
 
 async def test_extract_llm_entity_payload_reraises_threaded_llm_errors() -> None:
+    """Extract llm entity payload reraises threaded llm errors."""
+
     class FailingClient:
         async def chat(self, messages, **kwargs):
             raise RuntimeError("llm unavailable")

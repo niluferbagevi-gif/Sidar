@@ -10,6 +10,7 @@
 > Bu bölümdeki maddelerin tam kök-neden analizi, araştırma süreci ve test referansları için bkz. [`docs/archive/unreleased_root_cause_detail.md`](docs/archive/unreleased_root_cause_detail.md) (2026-09-10 tarihli P3 bulgusu sonrası arşivlendi).
 
 ### Düzeltmeler
+- **`tests/unit/core`'da 1.378 docstring eksikti:** 1.263 test fonksiyonu test adından; DB/Redis/LLM/Gemini/HTTP fake'leri, config taklitleri ve fixture'lar (71) ile 44 test modülü koddan okunarak belgelendi. Test docstring kampanyasının son dilimi; ratchet toplamı 1.410→32 (kalan: installer manifestindeki `core/memory.py`, `core/multimodal.py` ve bir fixture dosyası).
 - **`tests/unit/agent`'ta 878 docstring eksikti:** 638 test fonksiyonu test adından; event bus Redis/RabbitMQ/Kafka stub'ları, rol ajanı fake'leri, auto_handle manager fake'leri ve fixture'lar (214) ile 26 test modülü koddan okunarak belgelendi. Test docstring kampanyasının altıncı dilimi; ratchet toplamı 2.288→1.410.
 - **`tests/unit/root`'ta 614 docstring eksikti:** 603 test fonksiyonu test adından, `github_upload` ana akış test harness'ı ve 8 test modülü koddan okunarak belgelendi. Test docstring kampanyasının beşinci dilimi; ratchet toplamı 2.902→2.288.
 - **Küçük test dizinlerinde (smoke, integration, e2e, quality, fixtures, `tests/unit` kökü) 310 docstring eksikti:** 231 test fonksiyonu test adından, GitHub mock'ları, Docker sandbox yardımcıları ve fixture'lar ile 38 test modülü koddan okunarak belgelendi. Test docstring kampanyasının dördüncü dilimi; ratchet toplamı 3.212→2.902.

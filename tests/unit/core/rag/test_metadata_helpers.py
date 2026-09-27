@@ -1,3 +1,5 @@
+"""``core.rag.metadata`` modülü için unit testler."""
+
 from __future__ import annotations
 
 import uuid
@@ -7,6 +9,7 @@ from core.rag.metadata import build_chunk_ids, build_chunk_metadatas, build_inde
 
 
 def test_build_document_identity_preserves_legacy_shapes(monkeypatch) -> None:
+    """Build document identity preserves legacy shapes."""
     monkeypatch.setattr(
         metadata.uuid,
         "uuid4",
@@ -20,6 +23,7 @@ def test_build_document_identity_preserves_legacy_shapes(monkeypatch) -> None:
 
 
 def test_build_chunk_metadata_preserves_chroma_schema() -> None:
+    """Build chunk metadata preserves chroma schema."""
     assert build_chunk_ids("doc", 2) == ["doc_0", "doc_1"]
 
     metadatas = build_chunk_metadatas(
@@ -48,6 +52,7 @@ def test_build_chunk_metadata_preserves_chroma_schema() -> None:
 
 
 def test_build_index_metadata_preserves_preview_and_counters() -> None:
+    """Build index metadata preserves preview and counters."""
     meta = build_index_metadata(
         title="Title",
         source="source",

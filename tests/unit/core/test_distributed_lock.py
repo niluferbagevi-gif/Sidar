@@ -1,3 +1,5 @@
+"""``core.distributed_lock`` modülü için unit testler."""
+
 import asyncio
 
 import pytest
@@ -8,7 +10,10 @@ pytestmark = pytest.mark.asyncio
 
 
 class FakeRedis:
+    """``SET NX PX`` ve ``EVAL`` çağrılarını kaydeden, sonuçları ayarlanabilir Redis taklidi."""
+
     def __init__(self, *, acquire_result=True, release_result=1) -> None:
+        """Kilit alma/bırakma sonuçlarını ve çağrı kayıtlarını hazırlar."""
         self.acquire_result = acquire_result
         self.release_result = release_result
         self.set_calls = []
@@ -16,18 +21,22 @@ class FakeRedis:
         self.closed = False
 
     async def set(self, key, token, *, nx, px):
+        """``SET`` çağrısını kaydeder ve ayarlanan alma sonucunu döndürür."""
         self.set_calls.append((key, token, nx, px))
         return self.acquire_result
 
     async def eval(self, script, numkeys, key, token):
+        """Bırakma script'i çağrısını kaydeder ve ayarlanan sonucu döndürür."""
         self.eval_calls.append((script, numkeys, key, token))
         return self.release_result
 
     async def aclose(self):
+        """İstemciyi kapatılmış olarak işaretler."""
         self.closed = True
 
 
 async def test_redis_distributed_lock_acquire_and_token_checked_release() -> None:
+    """Redis distributed lock acquire and token checked release."""
     redis = FakeRedis(acquire_result=True, release_result=1)
     lock = RedisDistributedLock(redis, timeout_seconds=0.1)
 
@@ -50,6 +59,7 @@ async def test_redis_distributed_lock_acquire_and_token_checked_release() -> Non
 
 
 async def test_redis_distributed_lock_returns_none_when_lease_is_busy() -> None:
+    """Redis distributed lock returns none when lease is busy."""
     redis = FakeRedis(acquire_result=False)
     lock = RedisDistributedLock(redis, timeout_seconds=0.1)
 
@@ -57,6 +67,7 @@ async def test_redis_distributed_lock_returns_none_when_lease_is_busy() -> None:
 
 
 async def test_redis_distributed_lock_rejects_empty_keys() -> None:
+    """Redis distributed lock rejects empty keys."""
     lock = RedisDistributedLock(FakeRedis(), timeout_seconds=0.1)
 
     with pytest.raises(ValueError, match="key cannot be empty"):
@@ -64,6 +75,8 @@ async def test_redis_distributed_lock_rejects_empty_keys() -> None:
 
 
 async def test_redis_distributed_lock_surfaces_timeout() -> None:
+    """Redis distributed lock surfaces timeout."""
+
     class SlowRedis(FakeRedis):
         async def set(self, key, token, *, nx, px):
             await asyncio.sleep(0.2)
@@ -76,6 +89,7 @@ async def test_redis_distributed_lock_surfaces_timeout() -> None:
 
 
 async def test_redis_distributed_lock_from_url_configures_bounded_client(monkeypatch) -> None:
+    """Redis distributed lock from url configures bounded client."""
     import core.distributed_lock as distributed_lock
 
     captured = {}
@@ -104,6 +118,8 @@ async def test_redis_distributed_lock_from_url_configures_bounded_client(monkeyp
 
 
 async def test_redis_distributed_lock_release_surfaces_timeout() -> None:
+    """Redis distributed lock release surfaces timeout."""
+
     class SlowReleaseRedis(FakeRedis):
         async def eval(self, script, numkeys, key, token):
             await asyncio.sleep(0.2)
@@ -117,6 +133,7 @@ async def test_redis_distributed_lock_release_surfaces_timeout() -> None:
 
 
 async def test_redis_distributed_lock_surfaces_redis_disconnects() -> None:
+    """Redis distributed lock surfaces redis disconnects."""
     from redis.exceptions import ConnectionError
 
     class DisconnectingRedis(FakeRedis):
@@ -136,6 +153,8 @@ async def test_redis_distributed_lock_surfaces_redis_disconnects() -> None:
 
 
 async def test_redis_distributed_lock_close_handles_missing_and_sync_close() -> None:
+    """Redis distributed lock close handles missing and sync close."""
+
     class NoCloseRedis:
         pass
 
@@ -155,6 +174,8 @@ async def test_redis_distributed_lock_close_handles_missing_and_sync_close() -> 
 
 
 async def test_redis_distributed_lock_concurrent_acquire_only_one_winner() -> None:
+    """Redis distributed lock concurrent acquire only one winner."""
+
     class ContendedRedis(FakeRedis):
         def __init__(self) -> None:
             super().__init__()

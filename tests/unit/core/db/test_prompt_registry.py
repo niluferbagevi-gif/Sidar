@@ -1,3 +1,5 @@
+"""``core.db.prompt_registry`` modülü için unit testler."""
+
 import importlib
 import logging
 from pathlib import Path
@@ -64,6 +66,8 @@ class _FakePostgresDb:
 
 @pytest.mark.asyncio
 async def test_ensure_default_prompt_registry_logs_upsert_failure(monkeypatch, caplog):
+    """Ensure default prompt registry logs upsert failure."""
+
     class Loader:
         def exec_module(self, module):
             module.SIDAR_SYSTEM_PROMPT = "default prompt"
@@ -137,6 +141,7 @@ async def test_upsert_prompt_postgresql_wraps_deactivate_and_insert_in_one_trans
 
 @pytest.mark.asyncio
 async def test_upsert_prompt_postgresql_rolls_back_on_crash_between_statements() -> None:
+    """Upsert prompt postgresql rolls back on crash between statements."""
     events: list[str] = []
     conn = AsyncMock()
     conn.transaction = lambda: _TrackingTransaction(events)
@@ -193,6 +198,7 @@ async def test_activate_prompt_postgresql_wraps_both_updates_in_one_transaction(
 
 @pytest.mark.asyncio
 async def test_activate_prompt_postgresql_rolls_back_on_crash_between_updates() -> None:
+    """Activate prompt postgresql rolls back on crash between updates."""
     events: list[str] = []
     conn = AsyncMock()
     conn.transaction = lambda: _TrackingTransaction(events)

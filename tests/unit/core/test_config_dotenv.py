@@ -1,3 +1,5 @@
+"""``core.config_dotenv`` modülü için unit testler."""
+
 from __future__ import annotations
 
 import os
@@ -8,6 +10,7 @@ from core import config_dotenv
 
 
 def test_config_dotenv_parse_and_resolve_paths(tmp_path, monkeypatch):
+    """Config dotenv parse and resolve paths."""
     monkeypatch.setenv("HOME", str(tmp_path))
     dotenv_file = tmp_path / "sample.env"
     dotenv_file.write_text(
@@ -31,6 +34,7 @@ def test_config_dotenv_parse_and_resolve_paths(tmp_path, monkeypatch):
 
 
 def test_secret_overlay_path_must_resolve_outside_repository(tmp_path) -> None:
+    """Secret overlay path must resolve outside repository."""
     repo = tmp_path / "repo"
     repo.mkdir()
     outside = tmp_path / "secrets" / "sidar.env"
@@ -47,6 +51,7 @@ def test_secret_overlay_path_must_resolve_outside_repository(tmp_path) -> None:
 
 
 def test_secret_overlay_rejects_symlink_that_resolves_into_repository(tmp_path) -> None:
+    """Secret overlay rejects symlink that resolves into repository."""
     repo = tmp_path / "repo"
     repo.mkdir()
     repo_secret = repo / ".env"
@@ -59,6 +64,7 @@ def test_secret_overlay_rejects_symlink_that_resolves_into_repository(tmp_path) 
 
 
 def test_config_dotenv_tracking_and_reset_helpers(tmp_path):
+    """Config dotenv tracking and reset helpers."""
     env = {"EXISTING": "original", "NEW": "value"}
     managed: set[str] = set()
     originals: dict[str, str] = {}
@@ -89,6 +95,7 @@ def test_config_dotenv_tracking_and_reset_helpers(tmp_path):
 
 
 def test_config_dotenv_event_reports_and_skip_flag(tmp_path, monkeypatch):
+    """Config dotenv event reports and skip flag."""
     events: list[dict[str, object]] = []
     missing: list[str] = []
 
@@ -114,6 +121,7 @@ def test_config_dotenv_event_reports_and_skip_flag(tmp_path, monkeypatch):
 
 
 def test_config_dotenv_parse_missing_file_and_non_override_tracking(tmp_path):
+    """Config dotenv parse missing file and non override tracking."""
     missing_path = tmp_path / "missing.env"
     assert config_dotenv.parse_dotenv_source_values(missing_path) == {}
 
@@ -156,6 +164,7 @@ def test_config_dotenv_parse_missing_file_and_non_override_tracking(tmp_path):
 
 
 def test_load_dotenv_if_exists_records_empty_missing_and_loaded_paths(tmp_path, monkeypatch):
+    """Load dotenv if exists records empty missing and loaded paths."""
     monkeypatch.delenv("DOTENV_SAMPLE", raising=False)
     events: list[dict[str, object]] = []
     missing: list[str] = []
@@ -240,6 +249,7 @@ def test_load_dotenv_if_exists_records_empty_missing_and_loaded_paths(tmp_path, 
 
 
 def test_dotenv_layer_active_for_label_covers_all_layer_categories(tmp_path):
+    """Dotenv layer active for label covers all layer categories."""
     active_plan = config_dotenv.DotenvReloadPlan(
         base_path=tmp_path / ".env",
         advanced_path=tmp_path / ".env.advanced",
@@ -269,6 +279,7 @@ def test_dotenv_layer_active_for_label_covers_all_layer_categories(tmp_path):
 
 
 def test_load_dotenv_into_effective_env_and_reload_baseline(tmp_path):
+    """Load dotenv into effective env and reload baseline."""
     events: list[dict[str, object]] = []
     missing: list[str] = []
     managed: set[str] = {"MANAGED"}
@@ -373,6 +384,7 @@ def test_load_dotenv_into_effective_env_and_reload_baseline(tmp_path):
 
 
 def test_drop_empty_path_overrides_removes_only_blank_cache_paths():
+    """Drop empty path overrides removes only blank cache paths."""
     environ = {
         "HF_HUB_CACHE": "",
         "HF_HOME": "   ",

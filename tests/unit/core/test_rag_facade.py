@@ -1,3 +1,5 @@
+"""``core.rag.facade`` modülü için unit testler."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -8,6 +10,7 @@ from core.rag import facade
 def test_public_embedding_function_wrapper_delegates_all_arguments(
     monkeypatch,
 ) -> None:
+    """Public embedding function wrapper delegates all arguments."""
     calls: list[dict[str, Any]] = []
 
     def _fake_builder(**kwargs: Any) -> dict[str, Any]:

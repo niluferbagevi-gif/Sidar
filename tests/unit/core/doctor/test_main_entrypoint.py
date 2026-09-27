@@ -1,3 +1,5 @@
+"""``python -m core.doctor`` giriş noktası için unit testler."""
+
 from __future__ import annotations
 
 import runpy

@@ -16,6 +16,7 @@ class _SampleSettings(BaseSettings):
 
 
 def test_build_scoped_settings_type_reads_the_given_env_file(tmp_path: Path) -> None:
+    """Build scoped settings type reads the given env file."""
     env_path = tmp_path / ".env"
     env_path.write_text("VALUE=42\n", encoding="utf-8")
 
@@ -26,6 +27,7 @@ def test_build_scoped_settings_type_reads_the_given_env_file(tmp_path: Path) -> 
 
 
 def test_build_scoped_settings_type_defaults_env_ignore_empty_to_false(tmp_path: Path) -> None:
+    """Build scoped settings type defaults env ignore empty to false."""
     env_path = tmp_path / ".env"
     env_path.write_text("VALUE=\n", encoding="utf-8")
 
@@ -43,6 +45,7 @@ def test_build_scoped_settings_type_defaults_env_ignore_empty_to_false(tmp_path:
 
 
 def test_build_scoped_settings_type_honors_env_ignore_empty(tmp_path: Path) -> None:
+    """Build scoped settings type honors env ignore empty."""
     env_path = tmp_path / ".env"
     env_path.write_text("VALUE=\n", encoding="utf-8")
 
@@ -54,6 +57,7 @@ def test_build_scoped_settings_type_honors_env_ignore_empty(tmp_path: Path) -> N
 
 
 def test_build_scoped_settings_type_names_the_subclass_after_its_base() -> None:
+    """Build scoped settings type names the subclass after its base."""
     scoped_type = build_scoped_settings_type(_SampleSettings, env_file="/nonexistent/.env")
 
     assert scoped_type.__name__ == "Scoped_SampleSettings"

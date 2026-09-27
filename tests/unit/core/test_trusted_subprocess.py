@@ -23,6 +23,7 @@ from core.utils.trusted_subprocess import (
 
 
 def test_run_trusted_command_executes_and_forwards_kwargs() -> None:
+    """Run trusted command executes and forwards kwargs."""
     result = run_trusted_command(
         [sys.executable, "-c", "print('hello')"], capture_output=True, text=True, check=True
     )
@@ -31,26 +32,31 @@ def test_run_trusted_command_executes_and_forwards_kwargs() -> None:
 
 
 def test_run_trusted_command_rejects_shell_true() -> None:
+    """Run trusted command rejects shell true."""
     with pytest.raises(UntrustedCommandError, match="shell"):
         run_trusted_command([sys.executable, "-c", "print(1)"], shell=True)
 
 
 def test_run_trusted_command_rejects_empty_command() -> None:
+    """Run trusted command rejects empty command."""
     with pytest.raises(UntrustedCommandError, match="empty"):
         run_trusted_command([])
 
 
 def test_run_trusted_command_rejects_embedded_nul_byte() -> None:
+    """Run trusted command rejects embedded nul byte."""
     with pytest.raises(UntrustedCommandError, match="NUL"):
         run_trusted_command([sys.executable, "-c\x00--evil-flag"])
 
 
 def test_run_trusted_command_propagates_check_true_failure() -> None:
+    """Run trusted command propagates check true failure."""
     with pytest.raises(subprocess.CalledProcessError):
         run_trusted_command([sys.executable, "-c", "import sys; sys.exit(1)"], check=True)
 
 
 def test_popen_trusted_command_starts_and_communicates() -> None:
+    """Popen trusted command starts and communicates."""
     proc = popen_trusted_command(
         [sys.executable, "-c", "print('hi')"], stdout=subprocess.PIPE, text=True
     )
@@ -64,15 +70,18 @@ def test_popen_trusted_command_starts_and_communicates() -> None:
 
 
 def test_popen_trusted_command_rejects_shell_true() -> None:
+    """Popen trusted command rejects shell true."""
     with pytest.raises(UntrustedCommandError, match="shell"):
         popen_trusted_command([sys.executable, "-c", "print(1)"], shell=True)
 
 
 def test_popen_trusted_command_rejects_empty_command() -> None:
+    """Popen trusted command rejects empty command."""
     with pytest.raises(UntrustedCommandError, match="empty"):
         popen_trusted_command([])
 
 
 def test_popen_trusted_command_rejects_embedded_nul_byte() -> None:
+    """Popen trusted command rejects embedded nul byte."""
     with pytest.raises(UntrustedCommandError, match="NUL"):
         popen_trusted_command(["git", "show", "HEAD:foo\x00bar"])

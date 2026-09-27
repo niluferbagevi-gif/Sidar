@@ -39,6 +39,7 @@ def _detect(logger: _Logger, *, enabled: bool = True) -> HardwareInfo:
 def test_is_wsl2_handles_matching_and_unreadable_kernel_release(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Is wsl2 handles matching and unreadable kernel release."""
     monkeypatch.setattr(Path, "read_text", lambda *_args, **_kwargs: "WSL2-Microsoft")
     assert config_gpu_detect.is_wsl2() is True
 
@@ -51,6 +52,7 @@ def test_is_wsl2_handles_matching_and_unreadable_kernel_release(
 
 
 def test_normalize_gpu_memory_fractions_covers_default_safe_and_scaled_budgets() -> None:
+    """Normalize gpu memory fractions covers default safe and scaled budgets."""
     assert config_gpu_detect.normalize_gpu_memory_fractions(0, 0)["llm"] == 0.4
     assert config_gpu_detect.normalize_gpu_memory_fractions(0.3, 0.2)["normalized"] is False
     gray_zone = config_gpu_detect.normalize_gpu_memory_fractions(0.6, 0.3)
@@ -63,6 +65,7 @@ def test_normalize_gpu_memory_fractions_covers_default_safe_and_scaled_budgets()
 
 
 def test_resolve_adaptive_gpu_pool_size_uses_env_and_hardware_budget() -> None:
+    """Resolve adaptive gpu pool size uses env and hardware budget."""
     logger = _Logger()
     info = HardwareInfo(
         has_cuda=True,
@@ -103,6 +106,7 @@ def test_resolve_adaptive_gpu_pool_size_uses_env_and_hardware_budget() -> None:
 def test_detect_gpu_disabled_cuda_available_and_cuda_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Detect gpu disabled cuda available and cuda missing."""
     logger = _Logger()
     monkeypatch.setattr(config_gpu_detect, "is_wsl2", lambda: True)
     disabled = _detect(logger, enabled=False)
@@ -141,6 +145,7 @@ def test_detect_gpu_disabled_cuda_available_and_cuda_missing(
 def test_detect_gpu_handles_missing_torch_and_runtime_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Detect gpu handles missing torch and runtime error."""
     original_import = builtins.__import__
 
     def _missing_torch(name: str, *args: Any, **kwargs: Any) -> Any:
@@ -164,6 +169,7 @@ def test_detect_gpu_handles_missing_torch_and_runtime_error(
 
 
 def test_detect_gpu_uses_cpu_count_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Detect gpu uses cpu count fallback."""
     monkeypatch.setattr(
         multiprocessing, "cpu_count", lambda: (_ for _ in ()).throw(RuntimeError("cpu"))
     )
@@ -174,6 +180,7 @@ def test_detect_gpu_uses_cpu_count_fallback(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_detect_gpu_skips_wsl_log_outside_wsl(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Detect gpu skips wsl log outside wsl."""
     logger = _Logger()
     monkeypatch.setattr(config_gpu_detect, "is_wsl2", lambda: False)
     monkeypatch.setitem(
@@ -193,6 +200,7 @@ def test_detect_gpu_skips_wsl_log_outside_wsl(monkeypatch: pytest.MonkeyPatch) -
     ],
 )
 def test_resolve_adaptive_gpu_pool_size_vram_thresholds(vram_mb: int, expected: int) -> None:
+    """Resolve adaptive gpu pool size vram thresholds."""
     info = HardwareInfo(
         has_cuda=True,
         gpu_name="threshold-gpu",
@@ -212,6 +220,7 @@ def test_resolve_adaptive_gpu_pool_size_vram_thresholds(vram_mb: int, expected: 
 def test_detect_gpu_sets_zero_vram_when_device_properties_fail(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Detect gpu sets zero vram when device properties fail."""
     monkeypatch.setattr(config_gpu_detect, "is_wsl2", lambda: False)
     monkeypatch.setitem(
         sys.modules,

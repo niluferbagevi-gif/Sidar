@@ -1,3 +1,5 @@
+"""``core.rag.strategies`` arama stratejileri için unit testler."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -6,7 +8,10 @@ from core.rag.strategies import BM25OnlyStrategy, HybridStrategy, VectorOnlyStra
 
 
 class FakeRagSearchStore:
+    """RAG search store double for strategy tests; records calls and returns preset results."""
+
     def __init__(self) -> None:
+        """Start with every backend unavailable and a canned keyword fallback response."""
         self._pgvector_available = False
         self._chroma_available = False
         self._bm25_available = False
@@ -56,6 +61,7 @@ class FakeRagSearchStore:
 
 
 def test_vector_only_uses_chroma_when_pgvector_disabled_and_collection_ready() -> None:
+    """Vector only uses chroma when pgvector disabled and collection ready."""
     store = FakeRagSearchStore()
     store._pgvector_available = False
     store._chroma_available = True
@@ -66,6 +72,7 @@ def test_vector_only_uses_chroma_when_pgvector_disabled_and_collection_ready() -
 
 
 def test_vector_only_reports_unavailable_when_chroma_collection_missing() -> None:
+    """Vector only reports unavailable when chroma collection missing."""
     store = FakeRagSearchStore()
     store._pgvector_available = False
     store._chroma_available = True
@@ -79,6 +86,7 @@ def test_vector_only_reports_unavailable_when_chroma_collection_missing() -> Non
 
 
 def test_bm25_only_reports_unavailable_when_bm25_disabled() -> None:
+    """Bm25 only reports unavailable when bm25 disabled."""
     store = FakeRagSearchStore()
     store._bm25_available = False
 
@@ -90,6 +98,7 @@ def test_bm25_only_reports_unavailable_when_bm25_disabled() -> None:
 
 
 def test_hybrid_uses_keyword_fallback_when_vector_and_bm25_are_empty() -> None:
+    """Hybrid uses keyword fallback when vector and bm25 are empty."""
     store = FakeRagSearchStore()
     store._pgvector_available = False
     store.chroma_results = []
@@ -105,6 +114,7 @@ def test_hybrid_uses_keyword_fallback_when_vector_and_bm25_are_empty() -> None:
 
 
 def test_hybrid_formats_bm25_only_results_with_chroma_source_when_pgvector_disabled() -> None:
+    """Hybrid formats bm25 only results with chroma source when pgvector disabled."""
     store = FakeRagSearchStore()
     store._pgvector_available = False
     store.chroma_results = []
@@ -115,6 +125,7 @@ def test_hybrid_formats_bm25_only_results_with_chroma_source_when_pgvector_disab
 
 
 def test_vector_only_prefers_pgvector_when_available() -> None:
+    """Vector only prefers pgvector when available."""
     store = FakeRagSearchStore()
     store._pgvector_available = True
     store._chroma_available = True
@@ -125,6 +136,7 @@ def test_vector_only_prefers_pgvector_when_available() -> None:
 
 
 def test_bm25_only_delegates_when_bm25_available() -> None:
+    """Bm25 only delegates when bm25 available."""
     store = FakeRagSearchStore()
     store._bm25_available = True
 
@@ -133,6 +145,7 @@ def test_bm25_only_delegates_when_bm25_available() -> None:
 
 
 def test_hybrid_merges_pgvector_and_bm25_results_with_pgvector_source() -> None:
+    """Hybrid merges pgvector and bm25 results with pgvector source."""
     store = FakeRagSearchStore()
     store._pgvector_available = True
     store.pgvector_results = [{"id": "shared", "content": "vector"}]

@@ -1,3 +1,5 @@
+"""``core.cache_metrics`` modülü için unit testler."""
+
 import types
 
 import pytest
@@ -13,6 +15,7 @@ def reset_metric_state(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_cache_metrics_snapshot_and_normalization() -> None:
+    """Cache metrics snapshot and normalization."""
     metrics = cache_metrics._CacheMetrics()
 
     metrics.record_hit()
@@ -45,10 +48,12 @@ def test_cache_metrics_snapshot_and_normalization() -> None:
 
 
 def test_snapshot_hit_rate_is_zero_when_total_lookup_is_zero() -> None:
+    """Snapshot hit rate is zero when total lookup is zero."""
     assert cache_metrics._CacheMetrics().snapshot()["hit_rate"] == 0.0
 
 
 def test_get_prometheus_metric_returns_cached_instance_without_import() -> None:
+    """Get prometheus metric returns cached instance without import."""
     cached = object()
     cache_metrics._prometheus_metric_cache["my_metric"] = cached
 
@@ -60,6 +65,7 @@ def test_get_prometheus_metric_returns_cached_instance_without_import() -> None:
 def test_get_prometheus_metric_returns_none_when_import_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Get prometheus metric returns none when import fails."""
     monkeypatch.setattr(
         cache_metrics.importlib,
         "import_module",
@@ -72,6 +78,7 @@ def test_get_prometheus_metric_returns_none_when_import_fails(
 def test_get_prometheus_metric_returns_cached_inside_lock_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Get prometheus metric returns cached inside lock path."""
     sentinel = object()
     cache_metrics._prometheus_metric_cache.clear()
 
@@ -90,6 +97,7 @@ def test_get_prometheus_metric_returns_cached_inside_lock_path(
 def test_get_prometheus_metric_uses_registry_existing_collector(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Get prometheus metric uses registry existing collector."""
     existing_collector = object()
     fake_registry = types.SimpleNamespace(_names_to_collectors={"metric": existing_collector})
     fake_prom = types.SimpleNamespace(REGISTRY=fake_registry)
@@ -104,6 +112,7 @@ def test_get_prometheus_metric_uses_registry_existing_collector(
 def test_get_prometheus_metric_returns_none_when_factory_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Get prometheus metric returns none when factory missing."""
     fake_prom = types.SimpleNamespace(REGISTRY=None, Counter=None)
     monkeypatch.setattr(cache_metrics.importlib, "import_module", lambda _: fake_prom)
 
@@ -115,6 +124,7 @@ def test_get_prometheus_metric_returns_none_when_factory_missing(
 def test_get_prometheus_metric_creates_new_counter_and_caches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Get prometheus metric creates new counter and caches."""
     created_calls = []
 
     def fake_counter(name: str, desc: str) -> object:
@@ -134,6 +144,7 @@ def test_get_prometheus_metric_creates_new_counter_and_caches(
 def test_inc_prometheus_counter_early_exit_for_non_positive_count(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Inc prometheus counter early exit for non positive count."""
     called = []
     monkeypatch.setattr(cache_metrics, "_get_prometheus_metric", lambda *args: called.append(args))
 
@@ -146,6 +157,7 @@ def test_inc_prometheus_counter_early_exit_for_non_positive_count(
 def test_inc_prometheus_counter_calls_inc_only_when_available(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Inc prometheus counter calls inc only when available."""
     inc_calls = []
     counter = types.SimpleNamespace(inc=lambda value: inc_calls.append(value))
     monkeypatch.setattr(cache_metrics, "_get_prometheus_metric", lambda *args: counter)
@@ -158,6 +170,7 @@ def test_inc_prometheus_counter_calls_inc_only_when_available(
 def test_inc_prometheus_counter_noop_when_counter_has_no_inc(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Inc prometheus counter noop when counter has no inc."""
     monkeypatch.setattr(cache_metrics, "_get_prometheus_metric", lambda *args: object())
     cache_metrics._inc_prometheus_counter("metric", "desc", count=2)
 
@@ -165,6 +178,7 @@ def test_inc_prometheus_counter_noop_when_counter_has_no_inc(
 def test_set_prometheus_gauge_calls_set_only_when_available(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Set prometheus gauge calls set only when available."""
     gauge_values = []
     gauge = types.SimpleNamespace(set=lambda value: gauge_values.append(value))
     monkeypatch.setattr(cache_metrics, "_get_prometheus_metric", lambda *args: gauge)
@@ -175,6 +189,7 @@ def test_set_prometheus_gauge_calls_set_only_when_available(
 
 
 def test_set_prometheus_gauge_noop_when_set_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Set prometheus gauge noop when set missing."""
     monkeypatch.setattr(cache_metrics, "_get_prometheus_metric", lambda *args: object())
     cache_metrics._set_prometheus_gauge("metric", "desc", 1.2)
 
@@ -182,6 +197,7 @@ def test_set_prometheus_gauge_noop_when_set_missing(monkeypatch: pytest.MonkeyPa
 def test_public_cache_record_functions_update_internal_metrics_and_prometheus(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Public cache record functions update internal metrics and prometheus."""
     counter_calls = []
     gauge_calls = []
     monkeypatch.setattr(

@@ -13,6 +13,7 @@ from core.rag.backends.pgvector import _pgvector_failure_action_message as pgvec
 
 
 def test_backend_compatibility_exports_reference_document_store_contract() -> None:
+    """Backend compatibility exports reference document store contract."""
     assert issubclass(BM25BackendMixin, DocumentStore)
     assert issubclass(KeywordBackendMixin, DocumentStore)
     assert pgvector_message is _pgvector_failure_action_message
@@ -21,6 +22,7 @@ def test_backend_compatibility_exports_reference_document_store_contract() -> No
 def test_document_store_facade_status_embedding_and_cache_helpers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Document store facade status embedding and cache helpers."""
     passive_store = SimpleNamespace(
         status=lambda: "BM25 fallback aktif", _vector_backend="PGVECTOR", _pgvector_available=False
     )
@@ -56,6 +58,7 @@ def test_document_store_facade_status_embedding_and_cache_helpers(
 def test_document_store_pgvector_runtime_status_delegates_to_backend(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Document store pgvector runtime status delegates to backend."""
     store = DocumentStore.__new__(DocumentStore)
     expected = {"backend": "pgvector", "available": False, "degraded": True}
     calls: list[DocumentStore] = []
@@ -70,6 +73,7 @@ def test_document_store_pgvector_runtime_status_delegates_to_backend(
 
 
 def test_document_store_status_label_includes_degraded_operation() -> None:
+    """Document store status label includes degraded operation."""
     store = SimpleNamespace(
         status=lambda: "RAG hazır",
         _vector_backend="pgvector",

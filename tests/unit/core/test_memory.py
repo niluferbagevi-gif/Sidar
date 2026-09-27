@@ -1,3 +1,5 @@
+"""``core.memory`` modülü için unit testler."""
+
 import asyncio
 import sys
 import types
@@ -14,7 +16,10 @@ from core.memory import ConversationMemory, MemoryAuthError, get_config
 
 
 class FakeDB:
+    """Oturum ve mesajları bellekte tutan, bağlantı/şema çağrılarını sayan veritabanı taklidi."""
+
     def __init__(self, cfg=None):
+        """Boş oturum, mesaj ve kullanıcı eşlemeleriyle başlar."""
         self.cfg = cfg
         self.connected = 0
         self.inited = 0
@@ -25,22 +30,28 @@ class FakeDB:
         self._seq = 0
 
     async def connect(self):
+        """Bağlantı çağrısını sayar."""
         self.connected += 1
 
     async def init_schema(self):
+        """Şema kurulum çağrısını sayar."""
         self.inited += 1
 
     async def list_sessions(self, user_id):
+        """Kullanıcının oturumlarını en yeni önce sırasıyla döndürür."""
         ids = self.user_sessions.get(user_id, [])
         return [self.sessions[sid] for sid in ids if sid in self.sessions]
 
     async def get_session_messages(self, session_id):
+        """Oturumun mesajlarının kopyasını döndürür."""
         return list(self.messages.get(session_id, []))
 
     async def count_sessions_total(self):
+        """Toplam oturum sayısını döndürür."""
         return len(self.sessions)
 
     async def create_session(self, user_id, title):
+        """Sıralı id ile yeni oturum oluşturur ve kullanıcının listesinin başına ekler."""
         self._seq += 1
         sid = f"s{self._seq}"
         row = types.SimpleNamespace(
@@ -52,12 +63,14 @@ class FakeDB:
         return row
 
     async def load_session(self, session_id, user_id):
+        """Oturum kullanıcıya aitse döndürür, değilse ``None``."""
         row = self.sessions.get(session_id)
         if row and row.user_id == user_id:
             return row
         return None
 
     async def delete_session(self, session_id, user_id):
+        """Kullanıcıya ait oturumu mesajlarıyla siler; sahiplik yoksa ``False`` döner."""
         row = self.sessions.get(session_id)
         if not row or row.user_id != user_id:
             return False
@@ -70,10 +83,12 @@ class FakeDB:
         return True
 
     async def update_session_title(self, session_id, new_title):
+        """Mevcut oturumun başlığını günceller."""
         if session_id in self.sessions:
             self.sessions[session_id].title = new_title
 
     async def add_message(self, session_id, role, content, tokens_used=0):
+        """Oturuma sabit zaman damgalı bir mesaj ekler."""
         self.messages.setdefault(session_id, []).append(
             types.SimpleNamespace(
                 role=role,
@@ -84,6 +99,7 @@ class FakeDB:
         )
 
     async def replace_session_messages(self, session_id, compact_turns):
+        """Oturum mesajlarını sıkıştırılmış turlarla değiştirir ve yeni sayıyı döndürür."""
         self.messages[session_id] = [
             types.SimpleNamespace(
                 role=i["role"],
@@ -96,17 +112,20 @@ class FakeDB:
         return len(compact_turns)
 
     async def list_users_with_quotas(self):
+        """Kota tanımlı kullanıcıların listesini döndürür."""
         return list(self.users_with_quotas)
 
 
 @pytest.fixture
 def mem(monkeypatch, tmp_path: Path):
+    """``FakeDB`` ile kurulmuş, ``max_turns=2`` ve ``keep_last=1`` olan ConversationMemory."""
     monkeypatch.setattr(memory_module, "Database", FakeDB)
     m = ConversationMemory(base_dir=tmp_path, max_turns=2, keep_last=1)
     return m
 
 
 def test_fake_db_delete_and_update_noop_branches() -> None:
+    """Fake db delete and update noop branches."""
     db = FakeDB()
 
     async def scenario() -> None:
@@ -120,6 +139,7 @@ def test_fake_db_delete_and_update_noop_branches() -> None:
 
 
 def test_get_config_variants(monkeypatch):
+    """Get config variants."""
     cfg = types.SimpleNamespace(DATABASE_URL="sqlite+aiosqlite:///x.db")
     monkeypatch.setattr(memory_module, "_config_get_config", lambda: cfg)
     assert get_config() is cfg
@@ -130,6 +150,7 @@ def test_get_config_variants(monkeypatch):
 
 
 def test_init_path_and_database_url_resolution(monkeypatch, tmp_path: Path):
+    """Init path and database url resolution."""
     monkeypatch.setattr(memory_module, "Database", FakeDB)
 
     m1 = ConversationMemory(base_dir=tmp_path)
@@ -143,6 +164,7 @@ def test_init_path_and_database_url_resolution(monkeypatch, tmp_path: Path):
 
 
 def test_init_replaces_placeholder_sqlite_database_url_from_config(monkeypatch, tmp_path: Path):
+    """Init replaces placeholder sqlite database url from config."""
     monkeypatch.setattr(memory_module, "Database", FakeDB)
     monkeypatch.setattr(
         memory_module, "get_config", lambda: types.SimpleNamespace(DATABASE_URL="sqlite:///x")
@@ -153,6 +175,7 @@ def test_init_replaces_placeholder_sqlite_database_url_from_config(monkeypatch, 
 
 
 def test_memory_encrypts_db_content_and_decrypts_history(monkeypatch, tmp_path: Path) -> None:
+    """Memory encrypts db content and decrypts history."""
     monkeypatch.setattr(memory_module, "Database", FakeDB)
     key = Fernet.generate_key().decode("utf-8")
     mem = ConversationMemory(base_dir=tmp_path, encryption_key=key)
@@ -179,6 +202,7 @@ def test_memory_encrypts_db_content_and_decrypts_history(monkeypatch, tmp_path: 
 def test_memory_rejects_invalid_fernet_key_and_skips_double_encryption(
     monkeypatch, tmp_path: Path
 ) -> None:
+    """Memory rejects invalid fernet key and skips double encryption."""
     monkeypatch.setattr(memory_module, "Database", FakeDB)
 
     with pytest.raises(ValueError, match="Fernet"):
@@ -195,6 +219,7 @@ def test_memory_rejects_invalid_fernet_key_and_skips_double_encryption(
 
 
 def test_encrypted_memory_requires_key_for_decryption(monkeypatch, tmp_path: Path) -> None:
+    """Encrypted memory requires key for decryption."""
     monkeypatch.setattr(memory_module, "Database", FakeDB)
     key = Fernet.generate_key().decode("utf-8")
     encrypted = ConversationMemory(base_dir=tmp_path, encryption_key=key)
@@ -209,6 +234,7 @@ def test_encrypted_memory_requires_key_for_decryption(monkeypatch, tmp_path: Pat
 def test_decrypt_content_raises_memory_auth_error_on_invalid_utf8(
     monkeypatch, tmp_path: Path
 ) -> None:
+    """Decrypt content raises memory auth error on invalid utf8."""
     monkeypatch.setattr(memory_module, "Database", FakeDB)
     key = Fernet.generate_key().decode("utf-8")
     encrypted = ConversationMemory(base_dir=tmp_path, encryption_key=key)
@@ -223,6 +249,7 @@ def test_decrypt_content_raises_memory_auth_error_on_invalid_utf8(
 def test_memory_rotation_decrypts_with_previous_key_and_encrypts_with_current(
     monkeypatch, tmp_path: Path
 ) -> None:
+    """Memory rotation decrypts with previous key and encrypts with current."""
     monkeypatch.setattr(memory_module, "Database", FakeDB)
     previous_key = Fernet.generate_key().decode("utf-8")
     unrelated_key = Fernet.generate_key().decode("utf-8")
@@ -246,6 +273,7 @@ def test_memory_rotation_decrypts_with_previous_key_and_encrypts_with_current(
 
 
 def test_memory_rotation_rejects_invalid_previous_key(monkeypatch, tmp_path: Path) -> None:
+    """Memory rotation rejects invalid previous key."""
     monkeypatch.setattr(memory_module, "Database", FakeDB)
 
     with pytest.raises(ValueError, match="Fernet"):
@@ -257,6 +285,7 @@ def test_memory_rotation_rejects_invalid_previous_key(monkeypatch, tmp_path: Pat
 
 
 def test_user_required_and_repr_len(mem):
+    """User required and repr len."""
     assert "session=None" in repr(mem)
     assert len(mem) == 0
     with pytest.raises(MemoryAuthError):
@@ -264,6 +293,7 @@ def test_user_required_and_repr_len(mem):
 
 
 def test_sync_api_helpers(mem):
+    """Sync api helpers."""
     mem._turns = [{"role": "user", "content": "merhaba"}]
     assert mem.get_messages_for_llm() == [{"role": "user", "content": "merhaba"}]
 
@@ -276,6 +306,8 @@ def test_sync_api_helpers(mem):
 
 @pytest.mark.filterwarnings("ignore::RuntimeWarning")
 def test_estimate_tokens_with_tiktoken(monkeypatch, mem):
+    """Estimate tokens with tiktoken."""
+
     class Enc:
         @staticmethod
         def encode(text):
@@ -289,6 +321,8 @@ def test_estimate_tokens_with_tiktoken(monkeypatch, mem):
 
 
 def test_async_main_flows(mem):
+    """Async main flows."""
+
     async def scenario():
         await mem.initialize()
         assert mem.db.connected == 1
@@ -334,6 +368,7 @@ def test_async_main_flows(mem):
 
 
 def test_history_reads_from_database_when_cache_is_compacted(monkeypatch, tmp_path: Path) -> None:
+    """History reads from database when cache is compacted."""
     monkeypatch.setattr(memory_module, "Database", FakeDB)
     mem = ConversationMemory(base_dir=tmp_path, max_turns=1, keep_last=1)
 
@@ -366,6 +401,8 @@ def test_history_reads_from_database_when_cache_is_compacted(monkeypatch, tmp_pa
 
 
 def test_get_history_without_active_session_respects_n_last(mem) -> None:
+    """Get history without active session respects n last."""
+
     async def scenario() -> None:
         await mem.initialize()
         mem.active_session_id = None
@@ -383,6 +420,8 @@ def test_get_history_without_active_session_respects_n_last(mem) -> None:
 
 
 def test_apply_summary_and_clear(mem):
+    """Apply summary and clear."""
+
     async def scenario():
         await mem.initialize()
         await mem.set_active_user("u1")
@@ -407,6 +446,8 @@ def test_apply_summary_and_clear(mem):
 
 
 def test_compaction_and_nightly(mem):
+    """Compaction and nightly."""
+
     async def scenario():
         await mem.initialize()
         await mem.set_active_user("u1")
@@ -450,6 +491,7 @@ def test_compaction_and_nightly(mem):
 
 
 def test_static_helpers_and_noop_methods(mem):
+    """Static helpers and noop methods."""
     assert ConversationMemory._parse_iso_ts("2024-01-01T00:00:00Z") > 0
     assert ConversationMemory._parse_iso_ts("x") == 0.0
 
@@ -472,11 +514,13 @@ def test_static_helpers_and_noop_methods(mem):
 
 
 def test_del_swallows_exceptions(mem, monkeypatch):
+    """Del swallows exceptions."""
     monkeypatch.setattr(mem, "force_save", lambda: (_ for _ in ()).throw(RuntimeError("x")))
     mem.__del__()
 
 
 def test_constructor_defaults_and_ensure_initialized_lock(monkeypatch, tmp_path: Path):
+    """Constructor defaults and ensure initialized lock."""
     monkeypatch.setattr(memory_module, "Database", FakeDB)
     monkeypatch.chdir(tmp_path)
     cfg = types.SimpleNamespace(DATABASE_URL="", BASE_DIR=str(tmp_path))
@@ -492,6 +536,8 @@ def test_constructor_defaults_and_ensure_initialized_lock(monkeypatch, tmp_path:
 
 
 def test_async_branches_for_existing_session_and_noop_paths(mem):
+    """Async branches for existing session and noop paths."""
+
     async def scenario():
         await mem.initialize()
         await mem.set_active_user("u1")
@@ -525,6 +571,7 @@ def test_async_branches_for_existing_session_and_noop_paths(mem):
 
 
 def test_estimate_tokens_importerror_and_misc_branches(monkeypatch, mem):
+    """Estimate tokens importerror and misc branches."""
     real_import = __import__
 
     def fake_import(name, *args, **kwargs):
@@ -554,6 +601,8 @@ def test_estimate_tokens_importerror_and_misc_branches(monkeypatch, mem):
 
 
 def test_nightly_consolidation_skip_and_non_compacted_report(mem):
+    """Nightly consolidation skip and non compacted report."""
+
     async def scenario():
         await mem.initialize()
         await mem.set_active_user("u1")
@@ -571,6 +620,7 @@ def test_nightly_consolidation_skip_and_non_compacted_report(mem):
 def test_ensure_initialized_with_existing_lock_and_inner_already_initialized(
     monkeypatch, tmp_path: Path
 ):
+    """Ensure initialized with existing lock and inner already initialized."""
     monkeypatch.setattr(memory_module, "Database", FakeDB)
     mem = ConversationMemory(base_dir=tmp_path)
     mem._initialized = False
@@ -597,6 +647,8 @@ def test_ensure_initialized_with_existing_lock_and_inner_already_initialized(
 
 
 def test_delete_non_active_session_and_nightly_skipped_report_branch(mem):
+    """Delete non active session and nightly skipped report branch."""
+
     async def scenario():
         await mem.initialize()
         await mem.set_active_user("u1")
@@ -685,6 +737,8 @@ def test_set_active_user_skips_ensure_user_id_when_not_callable(mem):
 
 
 def test_count_sessions_any_user_uses_active_user_or_global_total(mem) -> None:
+    """Count sessions any user uses active user or global total."""
+
     async def scenario() -> None:
         await mem.initialize()
         await mem.db.create_session("u1", "first")

@@ -1,3 +1,5 @@
+"""``core.utils.token_counter`` modülü için unit testler."""
+
 import math
 import types
 
@@ -5,6 +7,7 @@ from core.utils import token_counter
 
 
 def test_estimate_tokens_keeps_openai_models_unscaled(monkeypatch):
+    """Estimate tokens keeps openai models unscaled."""
     token_counter.get_tiktoken_encoding.cache_clear()
 
     class _Encoding:
@@ -20,6 +23,7 @@ def test_estimate_tokens_keeps_openai_models_unscaled(monkeypatch):
 
 
 def test_estimate_tokens_applies_provider_multiplier(monkeypatch):
+    """Estimate tokens applies provider multiplier."""
     token_counter.get_tiktoken_encoding.cache_clear()
 
     class _Encoding:
@@ -36,6 +40,7 @@ def test_estimate_tokens_applies_provider_multiplier(monkeypatch):
 
 
 def test_estimate_tokens_uses_fallback_and_multiplier_without_tiktoken(monkeypatch):
+    """Estimate tokens uses fallback and multiplier without tiktoken."""
     token_counter.get_tiktoken_encoding.cache_clear()
     # monkeypatching builtins import is fragile across modules; directly patch function for
     # deterministic fallback.

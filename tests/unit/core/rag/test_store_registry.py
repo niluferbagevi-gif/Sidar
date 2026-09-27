@@ -7,6 +7,7 @@ from core.rag.retrieval.store_registry import SharedStoreRegistry, build_store_c
 
 
 def test_store_cache_key_normalizes_backend_and_builder_identity(tmp_path) -> None:
+    """Store cache key normalizes backend and builder identity."""
     cfg = SimpleNamespace(RAG_VECTOR_BACKEND=" PGVECTOR ")
     builder = object()
 
@@ -21,6 +22,7 @@ def test_store_cache_key_normalizes_backend_and_builder_identity(tmp_path) -> No
 
 
 def test_shared_store_registry_creates_once_under_concurrency() -> None:
+    """Shared store registry creates once under concurrency."""
     registry: SharedStoreRegistry[object] = SharedStoreRegistry()
     created: list[object] = []
 

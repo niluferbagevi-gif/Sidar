@@ -1,3 +1,5 @@
+"""``sidar_assets`` paket varlıkları ve ``scripts.offline_bundle`` için unit testler."""
+
 from __future__ import annotations
 
 import filecmp
@@ -17,6 +19,7 @@ from sidar_assets.paths import (
 
 
 def test_asset_paths_resolve_packaged_readiness_assets() -> None:
+    """Asset paths resolve packaged readiness assets."""
     assert web_dist_path().joinpath("index.html").is_file()
     assert helm_chart_path().joinpath("Chart.yaml").is_file()
     assert migrations_path().joinpath("env.py").is_file()
@@ -58,6 +61,7 @@ def test_packaged_deployment_assets_match_source_tree(source, packaged) -> None:
 
 
 def test_offline_bundle_manifest_create_and_verify(tmp_path) -> None:
+    """Offline bundle manifest create and verify."""
     wheel_dir = tmp_path / "wheels"
     npm_dir = tmp_path / "npm" / "cache"
     wheel_dir.mkdir(parents=True)
@@ -76,6 +80,7 @@ def test_offline_bundle_manifest_create_and_verify(tmp_path) -> None:
 
 
 def test_offline_bundle_main_create_and_verify_success(tmp_path, capsys) -> None:
+    """Offline bundle main create and verify success."""
     wheel_dir = tmp_path / "wheels"
     wheel_dir.mkdir()
     (wheel_dir / "sidar-0.0.0-py3-none-any.whl").write_bytes(b"fake-wheel")
@@ -91,6 +96,8 @@ def test_offline_bundle_main_create_and_verify_success(tmp_path, capsys) -> None
 
 
 def test_offline_bundle_main_create_reports_io_failures(monkeypatch, tmp_path, capsys) -> None:
+    """Offline bundle main create reports io failures."""
+
     def fail_build_manifest(root):
         raise OSError(28, "No space left on device")
 
@@ -105,6 +112,7 @@ def test_offline_bundle_main_create_reports_io_failures(monkeypatch, tmp_path, c
 def test_offline_bundle_verify_manifest_reports_manifest_read_io_error(
     monkeypatch, tmp_path
 ) -> None:
+    """Offline bundle verify manifest reports manifest read io error."""
     manifest_path = tmp_path / "manifest.json"
     manifest_path.write_text('{"files": []}', encoding="utf-8")
     original_read_text = offline_bundle.Path.read_text
@@ -126,6 +134,7 @@ def test_offline_bundle_verify_manifest_reports_manifest_read_io_error(
 def test_offline_bundle_verify_manifest_reports_artifact_read_io_error(
     monkeypatch, tmp_path
 ) -> None:
+    """Offline bundle verify manifest reports artifact read io error."""
     wheel_dir = tmp_path / "wheels"
     wheel_dir.mkdir()
     wheel_path = wheel_dir / "sidar-0.0.0-py3-none-any.whl"
@@ -160,6 +169,7 @@ def test_offline_bundle_verify_manifest_reports_artifact_read_io_error(
 def test_offline_bundle_main_verify_prints_fail_closed_errors(
     monkeypatch, tmp_path, capsys
 ) -> None:
+    """Offline bundle main verify prints fail closed errors."""
     monkeypatch.setattr(
         offline_bundle,
         "verify_manifest",
@@ -174,6 +184,7 @@ def test_offline_bundle_main_verify_prints_fail_closed_errors(
 
 
 def test_offline_bundle_verify_manifest_reports_malformed_entries(tmp_path) -> None:
+    """Offline bundle verify manifest reports malformed entries."""
     assert offline_bundle.verify_manifest(tmp_path) == [
         f"missing manifest: {tmp_path / 'manifest.json'}"
     ]
@@ -210,6 +221,7 @@ def test_offline_bundle_verify_manifest_reports_malformed_entries(tmp_path) -> N
 def test_offline_bundle_main_create_reports_manifest_write_io_failures(
     monkeypatch, tmp_path, capsys
 ) -> None:
+    """Offline bundle main create reports manifest write io failures."""
     monkeypatch.setattr(
         offline_bundle, "build_manifest", lambda root: {"schema_version": 1, "files": []}
     )

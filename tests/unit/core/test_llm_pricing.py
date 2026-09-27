@@ -1,3 +1,5 @@
+"""``core.llm_pricing`` modülü için unit testler."""
+
 from __future__ import annotations
 
 from core import llm_client, llm_metrics, llm_pricing
@@ -15,6 +17,7 @@ def test_llm_client_reads_the_shared_routing_pricing_table() -> None:
 
 
 def test_llm_metrics_reads_the_shared_dashboard_pricing_table() -> None:
+    """Llm metrics reads the shared dashboard pricing table."""
     assert llm_metrics._MODEL_PRICES_PER_1M is llm_pricing.MODEL_PRICES_PER_1M_TOKENS_USD
 
 
