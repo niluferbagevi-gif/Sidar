@@ -577,6 +577,8 @@ WEB_SEARCH_MAX_RESULTS
 
 ---
 
+<a id="6-güvenlik-ve-izolasyon-notları"></a>
+
 ## 6. Güvenlik ve İzolasyon Notları
 
 - Path traversal ve kritik yol engelleme regex/pattern kontrolleri `SecurityManager` üzerinde uygulanır.

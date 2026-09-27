@@ -13,6 +13,7 @@ def _make_repo(tmp_path, monkeypatch, allowed=None):
     """Point the checker at an isolated repo root with its own exemption table."""
     monkeypatch.setattr(checker, "ROOT", tmp_path)
     monkeypatch.setattr(checker, "ALLOWED_MISSING", allowed or {})
+    checker._anchors_of.cache_clear()
     (tmp_path / "core").mkdir()
     (tmp_path / "core" / "llm.py").write_text("", encoding="utf-8")
     (tmp_path / "docs").mkdir()
@@ -93,6 +94,58 @@ def test_broken_links_checks_inline_html_hrefs(tmp_path, monkeypatch) -> None:
     )
 
     assert checker.broken_links("docs/index.md", text) == ["gone.md", "docs/guide.md"]
+
+
+def test_heading_slug_follows_github_rules() -> None:
+    """Punctuation/backticks/emoji drop out, spaces become dashes, Turkish İ keeps its dot."""
+    assert checker.heading_slug("2. Veri Katmanı (core/db.py)") == "2-veri-katmanı-coredbpy"
+    websocket = checker.heading_slug("3.3 WebSocket: `/ws/chat` ve **ses**")
+    assert websocket == "33-websocket-wschat-ve-ses"
+    assert checker.heading_slug("[Kurulum](x.md) <b>Adımları</b> 🚀") == "kurulum-adımları-"
+    assert checker.heading_slug("snake_case - adı") == "snake_case---adı"
+    assert checker.heading_slug("İzolasyon") == "i\u0307zolasyon"
+
+
+def test_document_anchors_counts_duplicates_and_skips_code_fences() -> None:
+    """Duplicate headings get -1/-2 suffixes, fenced ``#`` lines are ignored, ids count."""
+    text = (
+        "# Başlık\n## Başlık\n### Başlık ###\n"
+        "```bash\n# yorum satırı\n```\n"
+        '<a id="özel-çapa"></a>\n<a name="eski"></a>\n#etiket değil\n'
+    )
+
+    assert checker.document_anchors(text) == {
+        "başlık",
+        "başlık-1",
+        "başlık-2",
+        "özel-çapa",
+        "eski",
+    }
+
+
+def test_broken_anchors_checks_markdown_fragments_only(tmp_path, monkeypatch) -> None:
+    """Fragments into Markdown targets must exist; code/external/missing targets are skipped."""
+    _make_repo(tmp_path, monkeypatch)
+    (tmp_path / "docs" / "guide.md").write_text(
+        '# Kurulum Adımları\n<a id="6-güvenlik-ve-izolasyon-notları"></a>\n'
+        "## 6. Güvenlik ve İzolasyon Notları\n",
+        encoding="utf-8",
+    )
+    text = (
+        "# Giriş\n"
+        "[ok](guide.md#kurulum-adımları) [enc](guide.md#kurulum-ad%C4%B1mlar%C4%B1) "
+        "[case](guide.md#Kurulum-Adımları) [id](guide.md#6-güvenlik-ve-izolasyon-notları) "
+        "[self](#giriş) [nofrag](guide.md) [empty](guide.md#) "
+        "[code](../core/llm.py#L1) [web](https://example.com/a.md#x) [gone](nope.md#x) "
+        "[stale](guide.md#kurulum) [selfstale](#yok)\n"
+        '<a href="guide.md#eski-başlık">html</a>\n'
+    )
+
+    assert checker.broken_anchors("docs/index.md", text) == [
+        "guide.md#kurulum",
+        "#yok",
+        "guide.md#eski-başlık",
+    ]
 
 
 def test_missing_paths_checks_only_repo_rooted_backticks(tmp_path, monkeypatch) -> None:
