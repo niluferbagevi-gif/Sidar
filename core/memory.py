@@ -47,6 +47,19 @@ class ConversationMemory:
         previous_encryption_keys: Sequence[str] | str = (),
         keep_last: int = 4,
     ) -> None:
+        """Bellek dizinini, şifrelemeyi ve veritabanı bağlantısını hazırlar.
+
+        Args:
+            database_url: Açık DB URL'si; verilmezse config'deki değer kullanılır.
+                Değer yoksa, placeholder ise veya ``base_dir`` verilmişse
+                ``<base_dir>/sidar_memory.db`` sqlite dosyası seçilir.
+            base_dir: Oturum ve sqlite dosyalarının kök dizini.
+            file_path: Geriye dönük uyumluluk; üst dizini ``base_dir`` olarak kullanılır.
+            max_turns: Bellekte tutulan en fazla konuşma turu (tur başına iki mesaj).
+            encryption_key: Mesaj içeriği için Fernet anahtarı; boşsa şifreleme kapalıdır.
+            previous_encryption_keys: Eski mesajları çözmek için önceki anahtarlar.
+            keep_last: Özetleme sonrası korunacak son mesaj sayısı.
+        """
         # Geriye dönük uyumluluk: file_path hâlâ desteklenir, ancak yeni API
         # base_dir/database_url'dur.
         resolved_base_dir = Path(base_dir) if base_dir is not None else None
@@ -193,6 +206,7 @@ class ConversationMemory:
     # ─────────────────────────────────────────────
 
     async def initialize(self) -> None:
+        """DB bağlantısını ve şemayı kurar; aktif kullanıcı bağlamını sıfırlar."""
         await self.db.connect()
         await self.db.init_schema()
         self.active_user_id = None
@@ -209,6 +223,11 @@ class ConversationMemory:
                 await self.initialize()
 
     async def get_all_sessions(self) -> list[dict[str, Any]]:
+        """Aktif kullanıcının oturumlarını mesaj sayılarıyla döndürür.
+
+        Raises:
+            MemoryAuthError: Aktif kullanıcı yoksa.
+        """
         await self._ensure_initialized()
         user_id = self._require_active_user()
         rows = await self.db.list_sessions(user_id)
@@ -235,6 +254,7 @@ class ConversationMemory:
         return int(await self.db.count_sessions_total())
 
     async def create_session(self, title: str = "Yeni Sohbet") -> str:
+        """Aktif kullanıcı için yeni oturum açar, onu aktif yapar ve id'sini döndürür."""
         await self._ensure_initialized()
         user_id = self._require_active_user()
         row = await self.db.create_session(user_id, title)
@@ -247,6 +267,7 @@ class ConversationMemory:
         return str(row.id)
 
     async def load_session(self, session_id: str) -> bool:
+        """Kullanıcıya ait oturumu mesajlarıyla belleğe yükler; bulunamazsa ``False``."""
         await self._ensure_initialized()
         user_id = self._require_active_user()
         row = await self.db.load_session(session_id, user_id)
@@ -271,6 +292,10 @@ class ConversationMemory:
         return True
 
     async def delete_session(self, session_id: str) -> bool:
+        """Kullanıcıya ait oturumu siler; aktif oturum silindiyse başka birine geçer.
+
+        Başka oturum yoksa yeni bir oturum açılır. Silme başarısızsa ``False`` döner.
+        """
         await self._ensure_initialized()
         user_id = self._require_active_user()
         ok = await self.db.delete_session(session_id, user_id)
@@ -286,6 +311,7 @@ class ConversationMemory:
         return True
 
     async def update_title(self, new_title: str) -> None:
+        """Aktif oturumun başlığını bellekte ve DB'de günceller."""
         await self._ensure_initialized()
         if not self.active_session_id:
             return
@@ -294,6 +320,11 @@ class ConversationMemory:
         await self.db.update_session_title(self.active_session_id, new_title)
 
     async def add(self, role: str, content: str | None) -> None:
+        """Aktif oturuma mesaj ekler; oturum yoksa yenisini açar.
+
+        Bellekteki turlar ``max_turns`` sınırında kırpılır; içerik DB'ye
+        şifreleme açıksa şifrelenerek yazılır.
+        """
         await self._ensure_initialized()
         self._require_active_user()
         if not self.active_session_id:
@@ -335,6 +366,7 @@ class ConversationMemory:
         return turns if n_last is None else turns[-n_last:]
 
     async def get_history(self, n_last: int | None = None) -> list[dict[str, Any]]:
+        """Aktif oturumun geçmişini (varsa son ``n_last`` mesajı) döndürür."""
         await self._ensure_initialized()
         if self.active_session_id:
             return await self.get_session_history(self.active_session_id, n_last=n_last)
@@ -343,6 +375,7 @@ class ConversationMemory:
         return turns if n_last is None else turns[-n_last:]
 
     async def set_active_user(self, user_id: str, username: str | None = None) -> None:
+        """Aktif kullanıcıyı ayarlar ve en son oturumunu yükler ya da yenisini açar."""
         await self._ensure_initialized()
         ensure_user_with_id = getattr(self.db, "ensure_user_id", None)
         if callable(ensure_user_with_id):
@@ -360,15 +393,18 @@ class ConversationMemory:
     # ─────────────────────────────────────────────
 
     def get_messages_for_llm(self) -> list[dict[str, str]]:
+        """Bellekteki turları LLM'e uygun ``role``/``content`` listesi olarak döndürür."""
         with self._lock:
             return [{"role": t["role"], "content": t["content"]} for t in self._turns]
 
     def set_last_file(self, path: str) -> None:
+        """Son işlenen dosya yolunu kaydeder."""
         with self._lock:
             self._last_file = path
             self._dirty = True
 
     def get_last_file(self) -> str | None:
+        """Son işlenen dosya yolunu döndürür."""
         with self._lock:
             return self._last_file
 
@@ -383,12 +419,18 @@ class ConversationMemory:
             return int(len(total_text) / 3.5)
 
     def needs_summarization(self) -> bool:
+        """Tur sayısı eşiğin %80'ine ulaştıysa veya tahmini token 6000'i aştıysa ``True``."""
         with self._lock:
             threshold = int(self.max_turns * 2 * 0.8)
             token_est = self._estimate_tokens()
             return len(self._turns) >= threshold or token_est > 6000
 
     async def apply_summary(self, summary_text: str) -> None:
+        """Konuşmayı özet ve son ``keep_last`` mesajla değiştirir.
+
+        Aktif oturum DB'de silinip aynı başlıkla sıkıştırılmış mesajlarla yeniden
+        oluşturulur.
+        """
         await self._ensure_initialized()
         with self._lock:
             kept_turns = self._turns[-self.keep_last :] if self.keep_last > 0 else []
@@ -418,6 +460,7 @@ class ConversationMemory:
                 await self.add(turn["role"], turn["content"])
 
     async def clear(self) -> None:
+        """Bellekteki turları temizler ve aktif oturumu aynı başlıkla sıfırdan açar."""
         await self._ensure_initialized()
         with self._lock:
             self._turns.clear()
@@ -577,6 +620,7 @@ class ConversationMemory:
         }
 
     def force_save(self) -> None:
+        """Uyumluluk için korunur; DB yazımı anlık olduğundan yalnız kirli bayrağını sıfırlar."""
         # DB yazımı add/update sırasında anlık yapılıyor.
         self._dirty = False
 
@@ -600,14 +644,17 @@ class ConversationMemory:
             return time.time()
 
     def __del__(self) -> None:
+        """Nesne silinirken ``force_save`` çağırır; hataları yalnız debug loglar."""
         try:
             self.force_save()
         except Exception as exc:
             logger.debug("Memory force_save çağrısı __del__ içinde başarısız: %s", exc)
 
     def __len__(self) -> int:
+        """Bellekteki tur sayısını döndürür."""
         with self._lock:
             return len(self._turns)
 
     def __repr__(self) -> str:
+        """Aktif oturum ve tur sayısını gösteren kısa temsil döndürür."""
         return f"<ConversationMemory session={self.active_session_id} turns={len(self._turns)}>"
