@@ -1,3 +1,5 @@
+"""Unit tests for ``web_server``."""
+
 import asyncio
 import json
 import sys
@@ -101,6 +103,7 @@ def _collect_app_routes() -> set[tuple[str, str]]:
 
 
 def test_auth_and_admin_endpoints_are_declared():
+    """Auth and admin endpoints are declared."""
     routes = _collect_app_routes()
     expected = {
         ("POST", "/auth/register"),
@@ -115,6 +118,7 @@ def test_auth_and_admin_endpoints_are_declared():
 
 
 def test_agent_plugin_swarm_and_hitl_endpoints_are_declared():
+    """Agent plugin swarm and hitl endpoints are declared."""
     routes = _collect_app_routes()
     expected = {
         ("POST", "/api/agents/register"),
@@ -131,6 +135,7 @@ def test_agent_plugin_swarm_and_hitl_endpoints_are_declared():
 
 
 def test_observability_and_health_endpoints_are_declared():
+    """Observability and health endpoints are declared."""
     routes = _collect_app_routes()
     expected = {
         ("GET", "/healthz"),
@@ -144,6 +149,7 @@ def test_observability_and_health_endpoints_are_declared():
 
 
 def test_session_file_git_and_rag_endpoints_are_declared():
+    """Session file git and rag endpoints are declared."""
     routes = _collect_app_routes()
     expected = {
         ("GET", "/sessions/{session_id}"),
@@ -165,6 +171,7 @@ def test_session_file_git_and_rag_endpoints_are_declared():
 
 
 def test_web_server_route_table_has_no_duplicate_method_path_pairs():
+    """Web server route table has no duplicate method path pairs."""
     matches = _collect_app_route_entries()
     assert len(matches) == len(set(matches))
 
@@ -195,6 +202,7 @@ def _reset_collaboration_state(monkeypatch, tmp_path):
 
 
 def test_room_id_normalization_and_validation():
+    """Room id normalization and validation."""
     assert web_server._normalize_room_id("  team:alpha  ") == "team:alpha"
     assert web_server._normalize_room_id("") == "workspace:default"
     with pytest.raises(HTTPException):
@@ -202,6 +210,7 @@ def test_room_id_normalization_and_validation():
 
 
 def test_require_admin_and_metrics_access_paths(monkeypatch):
+    """Require admin and metrics access paths."""
     user = SimpleNamespace(id="u1", username="normal", role="user")
     admin = SimpleNamespace(id="a1", username="root", role="admin")
 
@@ -221,6 +230,7 @@ def test_require_admin_and_metrics_access_paths(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_schedule_access_audit_log_missing_recorder_and_error_paths(monkeypatch):
+    """Schedule access audit log missing recorder and error paths."""
     calls = {"created": []}
 
     class _Loop:
@@ -269,6 +279,7 @@ async def test_schedule_access_audit_log_missing_recorder_and_error_paths(monkey
 
 
 def test_collaboration_role_and_write_scope_resolution(tmp_path, monkeypatch):
+    """Collaboration role and write scope resolution."""
     monkeypatch.setattr(web_server.cfg, "BASE_DIR", str(tmp_path))
 
     assert web_server._normalize_collaboration_role("ADMIN") == "admin"
@@ -284,6 +295,7 @@ def test_collaboration_role_and_write_scope_resolution(tmp_path, monkeypatch):
 
 
 def test_command_detection_message_build_and_chunking(monkeypatch):
+    """Command detection message build and chunking."""
     monkeypatch.setattr(web_server, "_collaboration_now_iso", lambda: "2026-01-01T00:00:00+00:00")
     monkeypatch.setattr(web_server, "_mask_collaboration_text", lambda text: f"masked:{text}")
 
@@ -306,6 +318,7 @@ def test_command_detection_message_build_and_chunking(monkeypatch):
 
 
 def test_append_and_serialize_room_data(monkeypatch):
+    """Append and serialize room data."""
     monkeypatch.setattr(
         web_server, "_mask_collaboration_text", lambda text: text.replace("123", "***")
     )
@@ -335,6 +348,7 @@ def test_append_and_serialize_room_data(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_join_leave_and_broadcast_room_lifecycle(monkeypatch, tmp_path):
+    """Join leave and broadcast room lifecycle."""
     monkeypatch.setattr(web_server.cfg, "BASE_DIR", str(tmp_path))
     monkeypatch.setattr(web_server, "_collaboration_now_iso", lambda: "now")
 
@@ -377,6 +391,7 @@ async def test_join_leave_and_broadcast_room_lifecycle(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_hitl_broadcast_and_prompt_helpers():
+    """Hitl broadcast and prompt helpers."""
     ws_ok = _DummyWebSocket()
     ws_fail = _DummyWebSocket(fail=True)
     web_server._hitl_ws_clients.update({ws_ok, ws_fail})
@@ -417,6 +432,7 @@ async def test_hitl_broadcast_and_prompt_helpers():
 
 
 def test_collaboration_participant_legacy_joined_at_mode(monkeypatch):
+    """Collaboration participant legacy joined at mode."""
     monkeypatch.setattr(web_server, "_collaboration_now_iso", lambda: "fallback-now")
     ws = _DummyWebSocket()
 
@@ -434,6 +450,7 @@ def test_collaboration_participant_legacy_joined_at_mode(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_leave_collaboration_room_cancels_active_task(monkeypatch):
+    """Leave collaboration room cancels active task."""
     websocket = _DummyWebSocket()
     websocket._sidar_room_id = "team:cleanup"
     cancelled = {"value": False}
@@ -461,6 +478,7 @@ async def test_leave_collaboration_room_cancels_active_task(monkeypatch):
 
 
 def test_reap_child_processes_nonblocking_reaps_until_zero(monkeypatch):
+    """Reap child processes nonblocking reaps until zero."""
     waitpid_results = iter([(101, 0), (102, 0), (0, 0)])
     monkeypatch.setattr(web_server.os, "waitpid", lambda *args: next(waitpid_results))
 
@@ -468,6 +486,7 @@ def test_reap_child_processes_nonblocking_reaps_until_zero(monkeypatch):
 
 
 def test_reap_child_processes_nonblocking_handles_childprocesserror(monkeypatch):
+    """Reap child processes nonblocking handles childprocesserror."""
     monkeypatch.setattr(
         web_server.os, "waitpid", lambda *_args: (_ for _ in ()).throw(ChildProcessError())
     )
@@ -475,6 +494,7 @@ def test_reap_child_processes_nonblocking_handles_childprocesserror(monkeypatch)
 
 
 def test_force_shutdown_local_llm_processes_ollama_enabled(monkeypatch):
+    """Force shutdown local llm processes ollama enabled."""
     monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
     monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "ollama")
     monkeypatch.setattr(web_server.cfg, "OLLAMA_FORCE_KILL_ON_SHUTDOWN", True)
@@ -492,6 +512,7 @@ def test_force_shutdown_local_llm_processes_ollama_enabled(monkeypatch):
 
 
 def test_force_shutdown_local_llm_processes_non_ollama_and_idempotent(monkeypatch):
+    """Force shutdown local llm processes non ollama and idempotent."""
     monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
     monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "openai")
     reaped = {"count": 0}
@@ -511,6 +532,7 @@ def test_force_shutdown_local_llm_processes_non_ollama_and_idempotent(monkeypatc
 
 
 def test_force_shutdown_local_llm_processes_ollama_without_force_kill(monkeypatch):
+    """Force shutdown local llm processes ollama without force kill."""
     monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
     monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "ollama")
     monkeypatch.setattr(web_server.cfg, "OLLAMA_FORCE_KILL_ON_SHUTDOWN", False)
@@ -535,6 +557,8 @@ def test_force_shutdown_local_llm_processes_ollama_without_force_kill(monkeypatc
 
 @pytest.mark.asyncio
 async def test_collect_agent_response_joins_chunks():
+    """Collect agent response joins chunks."""
+
     class _Agent:
         async def respond(self, _prompt):
             for chunk in [" Mer", "haba ", "dünya "]:
@@ -545,6 +569,7 @@ async def test_collect_agent_response_joins_chunks():
 
 
 def test_bind_llm_usage_sink_sets_sink_once(monkeypatch):
+    """Bind llm usage sink sets sink once."""
     sink_holder = {}
 
     class _Collector:
@@ -570,6 +595,7 @@ def test_bind_llm_usage_sink_sets_sink_once(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_bind_llm_usage_sink_persists_usage_and_handles_errors(monkeypatch):
+    """Bind llm usage sink persists usage and handles errors."""
     captured = {}
     persisted = {"calls": []}
 
@@ -615,6 +641,7 @@ async def test_bind_llm_usage_sink_persists_usage_and_handles_errors(monkeypatch
 
 @pytest.mark.asyncio
 async def test_bind_llm_usage_sink_early_exit_for_empty_user_id(monkeypatch):
+    """Bind llm usage sink early exit for empty user id."""
     captured = {}
     persisted_calls = []
 
@@ -645,6 +672,7 @@ async def test_bind_llm_usage_sink_early_exit_for_empty_user_id(monkeypatch):
 
 
 def test_bind_llm_usage_sink_skips_when_no_running_loop(monkeypatch):
+    """Bind llm usage sink skips when no running loop."""
     captured = {}
 
     class _Collector:
@@ -669,6 +697,7 @@ def test_bind_llm_usage_sink_skips_when_no_running_loop(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_get_agent_initializes_once_and_reuses_singleton(monkeypatch):
+    """Get agent initializes once and reuses singleton."""
     created = {"count": 0}
 
     class _FakeAgent:
@@ -692,6 +721,8 @@ async def test_get_agent_initializes_once_and_reuses_singleton(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_dispatch_autonomy_trigger_with_handler(monkeypatch):
+    """Dispatch autonomy trigger with handler."""
+
     class _Agent:
         async def handle_external_trigger(self, trigger):
             return {
@@ -724,6 +755,7 @@ async def test_dispatch_autonomy_trigger_with_handler(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_dispatch_autonomy_trigger_sets_service_memory_context(monkeypatch):
+    """Dispatch autonomy trigger sets service memory context."""
     calls = {"active_user": None}
 
     class _Memory:
@@ -763,6 +795,7 @@ async def test_dispatch_autonomy_trigger_sets_service_memory_context(monkeypatch
 
 @pytest.mark.asyncio
 async def test_dispatch_autonomy_trigger_without_handler_uses_action_feedback_prompt(monkeypatch):
+    """Dispatch autonomy trigger without handler uses action feedback prompt."""
     captured = {"prompt": None}
 
     class _Agent:
@@ -798,6 +831,7 @@ async def test_dispatch_autonomy_trigger_without_handler_uses_action_feedback_pr
 
 @pytest.mark.asyncio
 async def test_get_agent_instance_and_resolve_agent_instance_with_sync_overrides(monkeypatch):
+    """Get agent instance and resolve agent instance with sync overrides."""
     fake_agent = SimpleNamespace(name="sync-agent")
     monkeypatch.setattr(web_server, "get_agent", lambda: fake_agent)
     assert await web_server._get_agent_instance() is fake_agent
@@ -807,6 +841,7 @@ async def test_get_agent_instance_and_resolve_agent_instance_with_sync_overrides
 
 
 def test_fallback_ci_failure_context_for_workflow_run():
+    """Fallback ci failure context for workflow run."""
     payload = {
         "repository": {"full_name": "org/repo", "default_branch": "main"},
         "workflow_run": {
@@ -832,6 +867,7 @@ def test_fallback_ci_failure_context_for_workflow_run():
 
 
 def test_fallback_ci_failure_context_for_check_run_and_suite_and_generic_payload():
+    """Fallback ci failure context for check run and suite and generic payload."""
     check_run_payload = {
         "repository": {"full_name": "org/repo", "default_branch": "main"},
         "check_run": {
@@ -889,6 +925,7 @@ def test_fallback_ci_failure_context_for_check_run_and_suite_and_generic_payload
 
 
 def test_fallback_ci_failure_context_returns_empty_for_non_failure_payloads():
+    """Fallback ci failure context returns empty for non failure payloads."""
     non_failure_workflow = {
         "repository": {"full_name": "org/repo"},
         "workflow_run": {"status": "in_progress", "conclusion": "", "name": "CI"},
@@ -903,6 +940,7 @@ def test_fallback_ci_failure_context_returns_empty_for_non_failure_payloads():
 
 
 def test_socket_key_and_participant_serialization():
+    """Socket key and participant serialization."""
     websocket = _DummyWebSocket()
     participant = web_server._CollaborationParticipant(
         websocket,
@@ -927,6 +965,7 @@ def test_socket_key_and_participant_serialization():
 
 
 def test_build_user_from_jwt_payload_defaults_and_missing_values():
+    """Build user from jwt payload defaults and missing values."""
     valid_sub = "33333333-3333-4333-8333-333333333333"
     assert (
         web_server._build_user_from_jwt_payload({"sub": valid_sub, "username": "ada"}).tenant_id
@@ -938,6 +977,7 @@ def test_build_user_from_jwt_payload_defaults_and_missing_values():
 
 
 def test_get_jwt_secret_fails_closed_instead_of_dev_fallback(monkeypatch):
+    """Get jwt secret fails closed instead of dev fallback."""
     monkeypatch.setattr(web_server.cfg, "JWT_SECRET_KEY", "")
     critical_messages = []
     monkeypatch.setattr(web_server.logger, "critical", lambda msg: critical_messages.append(msg))
@@ -949,6 +989,7 @@ def test_get_jwt_secret_fails_closed_instead_of_dev_fallback(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_resolve_user_from_token_jwt_success_and_db_fallback(monkeypatch):
+    """Resolve user from token jwt success and db fallback."""
     monkeypatch.setattr(web_server.cfg, "JWT_SECRET_KEY", "s3cr3t-key-32-bytes-minimum-value")
     monkeypatch.setattr(web_server.cfg, "JWT_ALGORITHM", "HS256")
 
@@ -982,6 +1023,7 @@ async def test_resolve_user_from_token_jwt_success_and_db_fallback(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_issue_auth_token_embeds_claims_and_ttl(monkeypatch):
+    """Issue auth token embeds claims and ttl."""
     monkeypatch.setattr(web_server.cfg, "JWT_SECRET_KEY", "token-secret-key-32-bytes-minimum")
     monkeypatch.setattr(web_server.cfg, "JWT_ALGORITHM", "HS256")
     monkeypatch.setattr(web_server.cfg, "JWT_TTL_DAYS", 3)
@@ -999,6 +1041,7 @@ async def test_issue_auth_token_embeds_claims_and_ttl(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_resolve_user_from_token_invalid_jwt_without_db_returns_none(monkeypatch):
+    """Resolve user from token invalid jwt without db returns none."""
     monkeypatch.setattr(web_server.cfg, "JWT_SECRET_KEY", "s3cr3t-key-32-bytes-minimum-value")
     monkeypatch.setattr(web_server.cfg, "JWT_ALGORITHM", "HS256")
 
@@ -1007,6 +1050,7 @@ async def test_resolve_user_from_token_invalid_jwt_without_db_returns_none(monke
 
 
 def test_register_exception_handlers_http_and_unhandled():
+    """Register exception handlers http and unhandled."""
     app = web_server.FastAPI()
     web_server._register_exception_handlers(app)
 
@@ -1032,6 +1076,8 @@ def test_register_exception_handlers_http_and_unhandled():
 
 
 def test_register_exception_handlers_without_exception_handler_attr_is_noop():
+    """Register exception handlers without exception handler attr is noop."""
+
     class _NoExceptionHandler:
         pass
 
@@ -1040,6 +1086,8 @@ def test_register_exception_handlers_without_exception_handler_attr_is_noop():
 
 @pytest.mark.asyncio
 async def test_basic_auth_middleware_auth_paths(monkeypatch):
+    """Basic auth middleware auth paths."""
+
     async def _ok_next(_request):
         return web_server.JSONResponse({"ok": True}, status_code=200)
 
@@ -1150,6 +1198,7 @@ async def test_basic_auth_middleware_auth_paths(monkeypatch):
 
 
 def test_trim_autonomy_text_truncates_with_suffix():
+    """Trim autonomy text truncates with suffix."""
     short = web_server._trim_autonomy_text(" kısa ", limit=10)
     assert short == "kısa"
 
@@ -1158,6 +1207,7 @@ def test_trim_autonomy_text_truncates_with_suffix():
 
 
 def test_plugin_role_capabilities_and_filename_helpers():
+    """Plugin role capabilities and filename helpers."""
     assert web_server._validate_plugin_role_name("  Custom-Role_9 ") == "custom-role_9"
     with pytest.raises(HTTPException):
         web_server._validate_plugin_role_name("!")
@@ -1170,6 +1220,7 @@ def test_plugin_role_capabilities_and_filename_helpers():
 
 
 def test_plugin_marketplace_state_read_write_and_bad_payload(monkeypatch, tmp_path):
+    """Plugin marketplace state read write and bad payload."""
     monkeypatch.chdir(tmp_path)
 
     assert web_server._read_plugin_marketplace_state() == {}
@@ -1191,6 +1242,7 @@ def test_plugin_marketplace_state_read_write_and_bad_payload(monkeypatch, tmp_pa
 
 @pytest.mark.asyncio
 async def test_app_lifespan_starts_and_cleans_background_tasks(monkeypatch):
+    """App lifespan starts and cleans background tasks."""
     cancelled = {"prewarm": False, "cron": False, "nightly": False}
     thread_calls = {"count": 0}
     cleanup = {"redis": 0, "shutdown": 0}
@@ -1247,6 +1299,7 @@ async def test_app_lifespan_starts_and_cleans_background_tasks(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_app_lifespan_without_optional_tasks_still_runs_cleanup(monkeypatch):
+    """App lifespan without optional tasks still runs cleanup."""
     thread_calls = {"count": 0}
     cleanup = {"redis": 0, "shutdown": 0}
 
@@ -1288,6 +1341,8 @@ async def test_app_lifespan_without_optional_tasks_still_runs_cleanup(monkeypatc
 
 @pytest.mark.asyncio
 async def test_close_redis_client_handles_sync_close_and_unknown_client(monkeypatch):
+    """Close redis client handles sync close and unknown client."""
+
     class _SyncCloseRedis:
         def __init__(self) -> None:
             self.closed = False
@@ -1309,6 +1364,7 @@ async def test_close_redis_client_handles_sync_close_and_unknown_client(monkeypa
 
 @pytest.mark.asyncio
 async def test_autonomous_cron_loop_skips_when_prompt_blank(monkeypatch):
+    """Autonomous cron loop skips when prompt blank."""
     monkeypatch.setattr(web_server.cfg, "AUTONOMOUS_CRON_INTERVAL_SECONDS", 1)
     monkeypatch.setattr(web_server.cfg, "AUTONOMOUS_CRON_PROMPT", "   ")
 
@@ -1325,6 +1381,7 @@ async def test_autonomous_cron_loop_skips_when_prompt_blank(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_autonomous_cron_loop_dispatches_and_logs_failure(monkeypatch):
+    """Autonomous cron loop dispatches and logs failure."""
     monkeypatch.setattr(web_server.cfg, "AUTONOMOUS_CRON_INTERVAL_SECONDS", 1)
     monkeypatch.setattr(web_server.cfg, "AUTONOMOUS_CRON_PROMPT", "Durum kontrolü yap")
 
@@ -1366,6 +1423,7 @@ async def test_autonomous_cron_loop_dispatches_and_logs_failure(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_nightly_memory_loop_disabled_and_failure_paths(monkeypatch):
+    """Nightly memory loop disabled and failure paths."""
     monkeypatch.setattr(web_server.cfg, "ENABLE_NIGHTLY_MEMORY_PRUNING", False)
     logs: list[str] = []
     monkeypatch.setattr(
@@ -1411,6 +1469,7 @@ async def test_nightly_memory_loop_disabled_and_failure_paths(monkeypatch):
 
 
 def test_get_plugin_marketplace_entry_and_serialization(monkeypatch):
+    """Get plugin marketplace entry and serialization."""
     with pytest.raises(HTTPException):
         plugin_marketplace_routes.get_plugin_marketplace_entry(
             "unknown", catalog=web_server.PLUGIN_MARKETPLACE_CATALOG
@@ -1441,6 +1500,7 @@ def test_get_plugin_marketplace_entry_and_serialization(monkeypatch):
 
 
 def test_verify_hmac_signature_happy_path_and_failures():
+    """Verify hmac signature happy path and failures."""
     payload = b'{"ok":true}'
     secret = "top-secret"
     expected = (
@@ -1469,6 +1529,7 @@ def test_verify_hmac_signature_happy_path_and_failures():
 
 
 def test_verify_hmac_signature_rejects_replayed_delivery() -> None:
+    """Verify hmac signature rejects replayed delivery."""
     payload = b'{"delivery":true}'
     secret = "top-secret"
     signature = (
@@ -1490,6 +1551,7 @@ def test_verify_hmac_signature_rejects_replayed_delivery() -> None:
 
 
 def test_build_event_driven_federation_spec_for_jira_issue_created():
+    """Build event driven federation spec for jira issue created."""
     payload = {
         "action": "created",
         "issue": {
@@ -1514,6 +1576,7 @@ def test_build_event_driven_federation_spec_for_jira_issue_created():
 
 
 def test_build_event_driven_federation_spec_for_github_pr_opened():
+    """Build event driven federation spec for github pr opened."""
     payload = {
         "action": "opened",
         "repository": {"full_name": "org/repo"},
@@ -1538,6 +1601,7 @@ def test_build_event_driven_federation_spec_for_github_pr_opened():
 
 
 def test_build_event_driven_federation_spec_for_system_alert(monkeypatch):
+    """Build event driven federation spec for system alert."""
     monkeypatch.setattr(web_server.secrets, "token_hex", lambda _: "a1b2c3d4")
 
     spec = web_server._build_event_driven_federation_spec(
@@ -1553,10 +1617,12 @@ def test_build_event_driven_federation_spec_for_system_alert(monkeypatch):
 
 
 def test_build_event_driven_federation_spec_returns_none_for_unknown_source():
+    """Build event driven federation spec returns none for unknown source."""
     assert web_server._build_event_driven_federation_spec("slack", "message", {"text": "x"}) is None
 
 
 def test_build_event_driven_federation_spec_returns_none_for_unqualified_payloads():
+    """Build event driven federation spec returns none for unqualified payloads."""
     jira_payload = {
         "action": "updated",
         "issue": {"key": "SID-10", "summary": "Mevcut issue"},
@@ -1583,6 +1649,7 @@ def test_build_event_driven_federation_spec_returns_none_for_unqualified_payload
 
 
 def test_build_swarm_goal_for_role_includes_context_and_role_marker():
+    """Build swarm goal for role includes context and role marker."""
     spec = {"context": {"repo": "org/repo"}, "inputs": ["a=1"]}
     coder_goal = web_server._build_swarm_goal_for_role("Temel hedef", "coder", spec)
     reviewer_goal = web_server._build_swarm_goal_for_role("Temel hedef", "reviewer", spec)
@@ -1594,6 +1661,7 @@ def test_build_swarm_goal_for_role_includes_context_and_role_marker():
 
 
 def test_embed_event_driven_federation_payload_projects_core_fields():
+    """Embed event driven federation payload projects core fields."""
     workflow = {
         "correlation_id": "corr-1",
         "federation_prompt": "prompt",
@@ -1615,6 +1683,7 @@ def test_embed_event_driven_federation_payload_projects_core_fields():
 
 @pytest.mark.asyncio
 async def test_run_event_driven_federation_workflow_none_when_spec_missing(monkeypatch):
+    """Run event driven federation workflow none when spec missing."""
     monkeypatch.setattr(web_server, "_build_event_driven_federation_spec", lambda *_: None)
     result = await web_server._run_event_driven_federation_workflow(
         source="github", event_name="push", payload={"x": 1}
@@ -1624,6 +1693,7 @@ async def test_run_event_driven_federation_workflow_none_when_spec_missing(monke
 
 @pytest.mark.asyncio
 async def test_run_event_driven_federation_workflow_builds_result_payload(monkeypatch):
+    """Run event driven federation workflow builds result payload."""
     monkeypatch.setattr(
         web_server, "_trim_autonomy_text", lambda value, limit=1200: str(value)[:limit]
     )
@@ -1686,6 +1756,7 @@ async def test_run_event_driven_federation_workflow_builds_result_payload(monkey
 
 
 def test_setup_tracing_custom_init_and_fallback_paths(monkeypatch):
+    """Setup tracing custom init and fallback paths."""
     calls = {"init": None, "warnings": [], "infos": []}
 
     original_cfg = web_server.cfg
@@ -1769,6 +1840,7 @@ def test_setup_tracing_custom_init_and_fallback_paths(monkeypatch):
 
 
 def test_request_user_admin_and_metrics_guards():
+    """Request user admin and metrics guards."""
     req = _make_request("/metrics", method="GET")
     req.state.user = SimpleNamespace(id="u1", username="ada", role="admin")
     assert web_server._get_request_user(req).id == "u1"
@@ -1794,6 +1866,7 @@ def test_request_user_admin_and_metrics_guards():
 
 
 def test_policy_resolution_and_audit_resource_builder():
+    """Policy resolution and audit resource builder."""
     assert web_server._resolve_policy_from_request(_make_request("/rag/docs", method="GET")) == (
         "rag",
         "read",
@@ -1832,6 +1905,7 @@ def test_policy_resolution_and_audit_resource_builder():
 
 @pytest.mark.asyncio
 async def test_schedule_access_audit_log_success_and_no_loop(monkeypatch):
+    """Schedule access audit log success and no loop."""
     recorded = {}
 
     async def _record_audit_log(**kwargs):
@@ -1889,6 +1963,7 @@ async def test_schedule_access_audit_log_success_and_no_loop(monkeypatch):
 
 
 def test_schedule_access_audit_log_early_exit_when_resource_type_missing(monkeypatch):
+    """Schedule access audit log early exit when resource type missing."""
     loop_calls = {"count": 0}
 
     def _fake_loop():
@@ -1918,6 +1993,7 @@ def test_schedule_access_audit_log_early_exit_when_resource_type_missing(monkeyp
 
 
 def test_serialize_marketing_records():
+    """Serialize marketing records."""
     campaign = SimpleNamespace(
         id=1,
         tenant_id="t1",
@@ -1961,6 +2037,7 @@ def test_serialize_marketing_records():
 
 
 def test_load_plugin_agent_class_branches():
+    """Load plugin agent class branches."""
     with pytest.raises(HTTPException):
         web_server._load_plugin_agent_class("not valid py(", None, "bad_mod")
 
@@ -1989,6 +2066,7 @@ def test_load_plugin_agent_class_branches():
 
 
 def test_persist_and_import_plugin_file_paths(monkeypatch, tmp_path):
+    """Persist and import plugin file paths."""
     monkeypatch.chdir(tmp_path)
 
     imported = web_server._persist_and_import_plugin_file("demo", b"x=1\n", "plugin_demo")
@@ -2010,6 +2088,7 @@ def test_persist_and_import_plugin_file_paths(monkeypatch, tmp_path):
 
 
 def test_resolve_ci_failure_context_prefers_core_builder(monkeypatch):
+    """Resolve ci failure context prefers core builder."""
     monkeypatch.setattr(
         web_server, "build_ci_failure_context", lambda *_: {"kind": "from-core", "run_id": "1"}
     )
@@ -2019,6 +2098,7 @@ def test_resolve_ci_failure_context_prefers_core_builder(monkeypatch):
 
 
 def test_resolve_ci_failure_context_falls_back_when_core_empty(monkeypatch):
+    """Resolve ci failure context falls back when core empty."""
     monkeypatch.setattr(web_server, "build_ci_failure_context", lambda *_: {})
     monkeypatch.setattr(web_server, "_fallback_ci_failure_context", lambda *_: {"kind": "fallback"})
 
@@ -2027,6 +2107,7 @@ def test_resolve_ci_failure_context_falls_back_when_core_empty(monkeypatch):
 
 
 def test_plugin_role_validation_and_sanitizers():
+    """Plugin role validation and sanitizers."""
     assert web_server._validate_plugin_role_name("  My-Role_1 ") == "my-role_1"
     with pytest.raises(HTTPException):
         web_server._validate_plugin_role_name("x")
@@ -2039,6 +2120,7 @@ def test_plugin_role_validation_and_sanitizers():
 
 
 def test_validate_plugin_source_rejects_banned_function_and_attribute_calls():
+    """Validate plugin source rejects banned function and attribute calls."""
     with pytest.raises(HTTPException) as direct_call:
         web_server._validate_plugin_source("eval('1')")
     assert direct_call.value.status_code == 400
@@ -2112,6 +2194,7 @@ def test_load_plugin_agent_class_recognizes_base_via_module_only_match(
 
 
 def test_validate_plugin_source_rejects_banned_import_statements():
+    """Validate plugin source rejects banned import statements."""
     with pytest.raises(HTTPException) as import_call:
         web_server._validate_plugin_source("import os\n")
     assert import_call.value.status_code == 400
@@ -2126,6 +2209,7 @@ def test_validate_plugin_source_rejects_banned_import_statements():
 
 
 def test_validate_plugin_source_rejects_chained_introspection_escape():
+    """Validate plugin source rejects chained introspection escape."""
     exploit = "classes = ().__class__.__bases__[0].__subclasses__()"
 
     with pytest.raises(HTTPException) as exc:
@@ -2136,6 +2220,7 @@ def test_validate_plugin_source_rejects_chained_introspection_escape():
 
 
 def test_validate_plugin_source_rejects_introspection_attribute_without_call():
+    """Validate plugin source rejects introspection attribute without call."""
     with pytest.raises(HTTPException) as exc:
         web_server._validate_plugin_source("leak = (lambda: 1).__globals__")
 
@@ -2144,6 +2229,7 @@ def test_validate_plugin_source_rejects_introspection_attribute_without_call():
 
 
 def test_validate_plugin_source_rejects_chained_banned_module_calls():
+    """Validate plugin source rejects chained banned module calls."""
     with pytest.raises(HTTPException) as exc:
         web_server._validate_plugin_source("import importlib\nimportlib.resources.files('os')")
 
@@ -2167,6 +2253,7 @@ def test_build_restricted_plugin_builtins_strips_dangerous_names():
 
 
 def test_validate_plugin_source_rejects_dynamic_getattr_bypass():
+    """Validate plugin source rejects dynamic getattr bypass."""
     with pytest.raises(HTTPException) as exc:
         web_server._validate_plugin_source("getattr(__builtins__, '__import__')('os')")
 
@@ -2175,6 +2262,7 @@ def test_validate_plugin_source_rejects_dynamic_getattr_bypass():
 
 
 def test_plugin_source_execution_fails_closed_in_production(monkeypatch):
+    """Plugin source execution fails closed in production."""
     monkeypatch.setenv("SIDAR_ENV", "production")
     monkeypatch.delenv("SIDAR_ENABLE_IN_PROCESS_PLUGINS", raising=False)
 
@@ -2186,6 +2274,7 @@ def test_plugin_source_execution_fails_closed_in_production(monkeypatch):
 
 
 def test_plugin_source_execution_production_cannot_be_enabled_by_environment(monkeypatch):
+    """Plugin source execution production cannot be enabled by environment."""
     monkeypatch.setenv("SIDAR_ENV", "production")
     monkeypatch.setenv("SIDAR_ENABLE_IN_PROCESS_PLUGINS", "1")
 
@@ -2220,6 +2309,7 @@ def test_load_plugin_agent_class_runtime_blocks_dangerous_builtin_access():
 
 
 def test_load_plugin_agent_class_runtime_blocks_import_allowlist_bypass():
+    """Load plugin agent class runtime blocks import allowlist bypass."""
     source = (
         "class BaseAgent:\n"
         "    pass\n"
@@ -2238,6 +2328,8 @@ def test_load_plugin_agent_class_runtime_blocks_import_allowlist_bypass():
 def test_load_plugin_agent_class_wraps_unexpected_source_validation_error(
     monkeypatch: pytest.MonkeyPatch,
 ):
+    """Load plugin agent class wraps unexpected source validation error."""
+
     def _raise_unexpected(_source_code):
         raise RuntimeError("validator down")
 
@@ -2251,6 +2343,7 @@ def test_load_plugin_agent_class_wraps_unexpected_source_validation_error(
 
 
 def test_load_plugin_agent_class_reraises_http_exception_and_wraps_runtime_exec_errors():
+    """Load plugin agent class reraises http exception and wraps runtime exec errors."""
     with pytest.raises(HTTPException) as http_exc:
         web_server._load_plugin_agent_class(
             "from fastapi import HTTPException\nraise HTTPException(status_code=418, "
@@ -2269,6 +2362,7 @@ def test_load_plugin_agent_class_reraises_http_exception_and_wraps_runtime_exec_
 
 
 def test_load_plugin_agent_class_discovers_and_validates():
+    """Load plugin agent class discovers and validates."""
     source = """
 from agent.base_agent import BaseAgent
 class DemoAgent(BaseAgent):
@@ -2287,6 +2381,7 @@ class DemoAgent(BaseAgent):
 
 
 def test_persist_and_read_write_plugin_marketplace_state(tmp_path, monkeypatch):
+    """Persist and read write plugin marketplace state."""
     monkeypatch.chdir(tmp_path)
 
     plugin_path = web_server._persist_and_import_plugin_file(
@@ -2304,6 +2399,7 @@ def test_persist_and_read_write_plugin_marketplace_state(tmp_path, monkeypatch):
 
 
 def test_get_and_serialize_marketplace_plugin(monkeypatch, tmp_path):
+    """Get and serialize marketplace plugin."""
     entrypoint = tmp_path / "demo.py"
     entrypoint.write_text("x=1", encoding="utf-8")
     monkeypatch.setattr(
@@ -2350,6 +2446,7 @@ def test_get_and_serialize_marketplace_plugin(monkeypatch, tmp_path):
 
 
 def test_install_uninstall_and_reload_marketplace_plugins(monkeypatch, tmp_path):
+    """Install uninstall and reload marketplace plugins."""
     entrypoint = tmp_path / "demo_plugin.py"
     entrypoint.write_text("print('ok')", encoding="utf-8")
     monkeypatch.setattr(
@@ -2424,6 +2521,7 @@ def _make_request(
 
 
 def test_policy_resolution_helpers_and_metrics_access(monkeypatch):
+    """Policy resolution helpers and metrics access."""
     assert web_server._resolve_policy_from_request(_make_request("/rag/docs", "GET")) == (
         "rag",
         "read",
@@ -2460,6 +2558,7 @@ def test_policy_resolution_helpers_and_metrics_access(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_schedule_access_audit_log_and_rate_limit_helpers(monkeypatch):
+    """Schedule access audit log and rate limit helpers."""
     user = SimpleNamespace(id="u1", tenant_id="t1")
     called = {"audit": None}
 
@@ -2499,6 +2598,7 @@ async def test_schedule_access_audit_log_and_rate_limit_helpers(monkeypatch):
 async def test_local_rate_limit_fallback_cleans_expired_keys_and_bounds_cardinality(
     monkeypatch,
 ):
+    """Local rate limit fallback cleans expired keys and bounds cardinality."""
     monkeypatch.setattr(web_server.time, "time", lambda: 1_000.0)
     monkeypatch.setattr(web_server, "_local_rate_last_cleanup", 0.0)
     monkeypatch.setattr(web_server, "_LOCAL_RATE_MAX_KEYS", 2)
@@ -2532,6 +2632,7 @@ async def test_local_rate_limit_fallback_cleans_expired_keys_and_bounds_cardinal
 
 @pytest.mark.asyncio
 async def test_websocket_connection_guard_uses_shared_ip_bucket(monkeypatch):
+    """Websocket connection guard uses shared ip bucket."""
     calls = []
 
     async def _check(namespace, key, limit, window):
@@ -2548,6 +2649,7 @@ async def test_websocket_connection_guard_uses_shared_ip_bucket(monkeypatch):
 
 
 def test_get_client_ip_ignores_injected_or_invalid_forwarded_headers(monkeypatch):
+    """Get client ip ignores injected or invalid forwarded headers."""
     monkeypatch.setattr(web_server.Config, "TRUSTED_PROXIES", {"127.0.0.1"})
 
     req = _make_request(
@@ -2560,6 +2662,7 @@ def test_get_client_ip_ignores_injected_or_invalid_forwarded_headers(monkeypatch
 
 
 def test_get_client_ip_accepts_trusted_proxy_cidr(monkeypatch):
+    """Get client ip accepts trusted proxy cidr."""
     monkeypatch.setattr(web_server.Config, "TRUSTED_PROXIES", {"10.0.0.0/24"})
 
     req = _make_request("/x", headers={"X-Forwarded-For": "2001:db8::1"}, client_ip="10.0.0.42")
@@ -2569,6 +2672,8 @@ def test_get_client_ip_accepts_trusted_proxy_cidr(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_redis_rate_limit_fallback_and_redis_paths(monkeypatch):
+    """Redis rate limit fallback and redis paths."""
+
     class _RedisOk:
         def __init__(self):
             self.count = 0
@@ -2601,6 +2706,7 @@ async def test_redis_rate_limit_fallback_and_redis_paths(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_async_force_shutdown_paths(monkeypatch):
+    """Async force shutdown paths."""
     events: list[tuple[str, int]] = []
 
     monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
@@ -2630,6 +2736,7 @@ async def test_async_force_shutdown_paths(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_prewarm_rag_embeddings_branches(monkeypatch):
+    """Prewarm rag embeddings branches."""
     logs = {"info": [], "warn": []}
     monkeypatch.setattr(
         web_server.logger,
@@ -2681,6 +2788,7 @@ async def test_prewarm_rag_embeddings_branches(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_prewarm_rag_embeddings_logs_when_init_chroma_raises(monkeypatch):
+    """Prewarm rag embeddings logs when init chroma raises."""
     warnings: list[str] = []
     monkeypatch.setattr(
         web_server.logger,
@@ -2706,6 +2814,8 @@ async def test_prewarm_rag_embeddings_logs_when_init_chroma_raises(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_await_if_needed_and_health_response_branches(monkeypatch):
+    """Await if needed and health response branches."""
+
     async def _sample():
         return "awaited"
 
@@ -2772,6 +2882,7 @@ async def test_await_if_needed_and_health_response_branches(monkeypatch):
 
 
 def test_serialize_record_helpers_cover_defaults_and_values():
+    """Serialize record helpers cover defaults and values."""
     prompt_payload = web_server._serialize_prompt(
         SimpleNamespace(
             id="11",
@@ -2814,6 +2925,7 @@ def test_serialize_record_helpers_cover_defaults_and_values():
 
 
 def test_verify_hmac_signature_and_git_run_paths(monkeypatch):
+    """Verify hmac signature and git run paths."""
     with pytest.raises(HTTPException):
         web_server._verify_hmac_signature(b"{}", "", "", label="sig")
 
@@ -2850,6 +2962,8 @@ def test_verify_hmac_signature_and_git_run_paths(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_autonomy_webhook_ci_and_federation_paths(monkeypatch):
+    """Autonomy webhook ci and federation paths."""
+
     class _Req:
         def __init__(self, payload: bytes):
             self._payload = payload
@@ -2942,6 +3056,7 @@ class _ChatWebSocket:
 
 
 def test_ws_chat_protocol_token_parser_uses_fixed_subprotocol_without_echoing_token() -> None:
+    """Ws chat protocol token parser uses fixed subprotocol without echoing token."""
     token, accepted = web_security.extract_ws_header_token(
         f"{web_security.SIDAR_WS_CHAT_PROTOCOL}, ey.fake-token_123"
     )
@@ -2952,6 +3067,7 @@ def test_ws_chat_protocol_token_parser_uses_fixed_subprotocol_without_echoing_to
 
 
 def test_ws_chat_protocol_token_parser_keeps_legacy_header_without_echo() -> None:
+    """Ws chat protocol token parser keeps legacy header without echo."""
     token, accepted = web_security.extract_ws_header_token("legacy-token")
 
     assert token == "legacy-token"
@@ -2959,6 +3075,7 @@ def test_ws_chat_protocol_token_parser_keeps_legacy_header_without_echo() -> Non
 
 
 def test_ws_protocol_token_parser_supports_voice_and_hitl_fixed_protocols() -> None:
+    """Ws protocol token parser supports voice and hitl fixed protocols."""
     voice_token, voice_accepted = web_security.extract_ws_header_token(
         f"{web_security.SIDAR_WS_VOICE_PROTOCOL}, voice-token",
         web_security.SIDAR_WS_VOICE_PROTOCOL,
@@ -2976,6 +3093,8 @@ def test_ws_protocol_token_parser_supports_voice_and_hitl_fixed_protocols() -> N
 
 @pytest.mark.asyncio
 async def test_websocket_chat_fixed_subprotocol_header_auth_does_not_echo_token(monkeypatch):
+    """Websocket chat fixed subprotocol header auth does not echo token."""
+
     class _Memory:
         async def set_active_user(self, *_args):
             return None
@@ -3012,6 +3131,7 @@ async def test_websocket_chat_fixed_subprotocol_header_auth_does_not_echo_token(
 
 @pytest.mark.asyncio
 async def test_websocket_chat_requires_auth_before_non_auth_actions(monkeypatch):
+    """Websocket chat requires auth before non auth actions."""
     ws = _ChatWebSocket([json.dumps({"action": "noop"})])
     closed = {}
 
@@ -3033,6 +3153,8 @@ async def test_websocket_chat_requires_auth_before_non_auth_actions(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_websocket_chat_handles_websocketdisconnect_with_room_cleanup(monkeypatch):
+    """Websocket chat handles websocketdisconnect with room cleanup."""
+
     class _Ws:
         def __init__(self):
             self.headers = {}
@@ -3070,6 +3192,8 @@ async def test_websocket_chat_handles_websocketdisconnect_with_room_cleanup(monk
 
 @pytest.mark.asyncio
 async def test_websocket_chat_handles_anyio_closedresource_with_room_cleanup(monkeypatch):
+    """Websocket chat handles anyio closedresource with room cleanup."""
+
     class _ClosedResourceError(Exception):
         pass
 
@@ -3111,6 +3235,7 @@ async def test_websocket_chat_handles_anyio_closedresource_with_room_cleanup(mon
 
 @pytest.mark.asyncio
 async def test_websocket_chat_rate_limit_and_room_mention_validation(monkeypatch):
+    """Websocket chat rate limit and room mention validation."""
     user = SimpleNamespace(id="u1", username="ada", role="developer")
     ws = _ChatWebSocket(
         [
@@ -3179,6 +3304,8 @@ async def test_websocket_chat_rate_limit_and_room_mention_validation(monkeypatch
 
 @pytest.mark.asyncio
 async def test_sessions_endpoints_cover_success_and_not_found(monkeypatch):
+    """Sessions endpoints cover success and not found."""
+
     class _DB:
         async def list_sessions(self, _user_id):
             return [SimpleNamespace(id="s1", title="ilk", updated_at="ts")]
@@ -3226,6 +3353,7 @@ async def test_sessions_endpoints_cover_success_and_not_found(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_file_listing_and_content_endpoints_cover_guards(tmp_path, monkeypatch):
+    """File listing and content endpoints cover guards."""
     fake_root = tmp_path / "root"
     fake_root.mkdir()
     (fake_root / "visible.txt").write_text("hello", encoding="utf-8")
@@ -3254,6 +3382,8 @@ async def test_file_listing_and_content_endpoints_cover_guards(tmp_path, monkeyp
 
 @pytest.mark.asyncio
 async def test_git_and_branch_endpoints(monkeypatch):
+    """Git and branch endpoints."""
+
     async def _inline_to_thread(fn, *args, **kwargs):
         return fn(*args, **kwargs)
 
@@ -3286,6 +3416,8 @@ async def test_git_and_branch_endpoints(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_github_rag_todo_clear_and_level_endpoints(monkeypatch, tmp_path):
+    """Github rag todo clear and level endpoints."""
+
     class _Github:
         repo_name = "org/active"
 
@@ -3375,6 +3507,7 @@ async def test_github_rag_todo_clear_and_level_endpoints(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_vision_endpoints_cover_success(monkeypatch):
+    """Vision endpoints cover success."""
     import sys
     import types
 
@@ -3408,6 +3541,8 @@ async def test_vision_endpoints_cover_success(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_entity_and_feedback_store_endpoints(monkeypatch):
+    """Entity and feedback store endpoints."""
+
     class _EntityMem:
         async def initialize(self):
             return None
@@ -3456,6 +3591,8 @@ async def test_entity_and_feedback_store_endpoints(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_slack_jira_and_teams_endpoints_error_and_success(monkeypatch):
+    """Slack jira and teams endpoints error and success."""
+
     class _Slack:
         def __init__(self, available=True):
             self.available = available
@@ -3512,6 +3649,8 @@ async def test_slack_jira_and_teams_endpoints_error_and_success(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_operations_autonomy_and_spa_fallback_paths(monkeypatch):
+    """Operations autonomy and spa fallback paths."""
+
     class _DB:
         async def list_marketing_campaigns(self, **_):
             return [SimpleNamespace(id="1", metadata_json="{}", budget=2.5)]
@@ -3602,6 +3741,7 @@ async def test_operations_autonomy_and_spa_fallback_paths(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_operations_and_qa_agent_api_bridges(monkeypatch):
+    """Operations and qa agent api bridges."""
     user = SimpleNamespace(id="u-api", tenant_id="tenant-api")
     poyraz_calls = []
 
@@ -3743,6 +3883,8 @@ async def test_operations_route_proxy_resets_dependencies_and_resolves_route_at_
 
 @pytest.mark.asyncio
 async def test_basic_auth_middleware_branches(monkeypatch):
+    """Basic auth middleware branches."""
+
     async def _call_next(_request):
         return web_server.JSONResponse({"ok": True}, status_code=200)
 
@@ -3806,6 +3948,8 @@ async def test_basic_auth_middleware_branches(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_access_policy_and_rate_limit_middlewares(monkeypatch):
+    """Access policy and rate limit middlewares."""
+
     async def _call_next(_request):
         return web_server.JSONResponse({"ok": True}, status_code=200)
 
@@ -3890,6 +4034,7 @@ async def test_access_policy_and_rate_limit_middlewares(monkeypatch):
 
 
 def test_http_middleware_chain_applies_acl_after_auth_and_user_rate_limit(monkeypatch):
+    """Http middleware chain applies acl after auth and user rate limit."""
     calls = {"policies": [], "rate_keys": [], "active_users": []}
     user = SimpleNamespace(id="u-chain", username="lin", role="user", tenant_id="tenant-a")
 
@@ -3944,6 +4089,8 @@ def test_http_middleware_chain_applies_acl_after_auth_and_user_rate_limit(monkey
 
 @pytest.mark.asyncio
 async def test_rate_limit_middleware_allows_ws_and_get_io_when_not_limited(monkeypatch):
+    """Rate limit middleware allows ws and get io when not limited."""
+
     async def _never_limited(*_args, **_kwargs):
         return False
 
@@ -3961,6 +4108,7 @@ async def test_rate_limit_middleware_allows_ws_and_get_io_when_not_limited(monke
 
 @pytest.mark.asyncio
 async def test_swarm_federation_execute_success(monkeypatch):
+    """Swarm federation execute success."""
     signature_calls = []
 
     def _verify_signature(payload, secret, signature, **kwargs):
@@ -4011,6 +4159,7 @@ async def test_swarm_federation_execute_success(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_swarm_federation_feedback_success(monkeypatch):
+    """Swarm federation feedback success."""
     signature_calls = []
 
     def _verify_signature(payload, secret, signature, **kwargs):
@@ -4061,6 +4210,8 @@ async def test_swarm_federation_feedback_success(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_github_webhook_unsigned_local_secret_empty_success(monkeypatch):
+    """Github webhook unsigned local secret empty success."""
+
     class _Req:
         def __init__(self, payload: bytes):
             self._payload = payload
@@ -4124,6 +4275,7 @@ async def test_github_webhook_unsigned_local_secret_empty_success(monkeypatch):
 
 
 def test_github_webhook_signature_validation_contract():
+    """Github webhook signature validation contract."""
     calls = []
     logger = SimpleNamespace(warning=lambda *args, **kwargs: calls.append(("warning", args)))
 
@@ -4195,6 +4347,7 @@ def test_github_webhook_signature_validation_contract():
 
 
 def test_mask_collaboration_text_success_and_import_fallback(monkeypatch):
+    """Mask collaboration text success and import fallback."""
     monkeypatch.setitem(
         sys.modules, "core.dlp", SimpleNamespace(mask_pii=lambda value: f"masked:{value}")
     )
@@ -4213,11 +4366,14 @@ def test_mask_collaboration_text_success_and_import_fallback(monkeypatch):
 
 
 def test_mask_collaboration_text_returns_original_when_masker_not_callable(monkeypatch):
+    """Mask collaboration text returns original when masker not callable."""
     monkeypatch.setitem(sys.modules, "core.dlp", SimpleNamespace(mask_pii="not-callable"))
     assert web_server._mask_collaboration_text("abc") == "abc"
 
 
 def test_list_child_ollama_pids_windows_and_psutil_failure(monkeypatch):
+    """List child ollama pids windows and psutil failure."""
+
     class _Psutil:
         class Process:
             def __init__(self, _pid):
@@ -4230,6 +4386,8 @@ def test_list_child_ollama_pids_windows_and_psutil_failure(monkeypatch):
 
 
 def test_list_child_ollama_pids_psutil_success_path(monkeypatch):
+    """List child ollama pids psutil success path."""
+
     class _Child:
         def __init__(self, pid, comm, args):
             self.pid = pid
@@ -4263,6 +4421,7 @@ def test_list_child_ollama_pids_psutil_success_path(monkeypatch):
 
 
 def test_reap_child_processes_nonblocking_handles_generic_exception(monkeypatch):
+    """Reap child processes nonblocking handles generic exception."""
     monkeypatch.setattr(
         web_server.os, "waitpid", lambda *_: (_ for _ in ()).throw(RuntimeError("boom"))
     )
@@ -4270,6 +4429,7 @@ def test_reap_child_processes_nonblocking_handles_generic_exception(monkeypatch)
 
 
 def test_list_child_ollama_pids_ps_fallback_handles_malformed_and_failures(monkeypatch):
+    """List child ollama pids ps fallback handles malformed and failures."""
     monkeypatch.setattr(web_server, "os", SimpleNamespace(name="posix", getpid=lambda: 77))
 
     class _Psutil:
@@ -4323,6 +4483,7 @@ def test_list_child_ollama_pids_ps_fallback_handles_malformed_and_failures(monke
 
 @pytest.mark.asyncio
 async def test_leave_collaboration_room_broadcasts_when_room_survives(monkeypatch):
+    """Leave collaboration room broadcasts when room survives."""
     ws_departing = _DummyWebSocket()
     ws_staying = _DummyWebSocket()
     ws_departing._sidar_room_id = "team:survive"
@@ -4350,6 +4511,7 @@ async def test_leave_collaboration_room_broadcasts_when_room_survives(monkeypatc
 
 
 def test_terminate_ollama_child_pids_sends_term_and_kill(monkeypatch):
+    """Terminate ollama child pids sends term and kill."""
     calls = []
 
     def _kill(pid, sig):
@@ -4368,6 +4530,7 @@ def test_terminate_ollama_child_pids_sends_term_and_kill(monkeypatch):
 
 
 def test_terminate_ollama_child_pids_without_grace_skips_sleep_and_kill(monkeypatch):
+    """Terminate ollama child pids without grace skips sleep and kill."""
     calls = []
     monkeypatch.setattr(web_server.os, "kill", lambda pid, sig: calls.append((pid, sig)))
     monkeypatch.setattr(web_server.time, "sleep", lambda seconds: calls.append(("sleep", seconds)))
@@ -4379,6 +4542,7 @@ def test_terminate_ollama_child_pids_without_grace_skips_sleep_and_kill(monkeypa
 
 
 def test_force_shutdown_local_llm_processes_non_ollama_and_without_force_kill(monkeypatch):
+    """Force shutdown local llm processes non ollama and without force kill."""
     reaped = {"count": 0}
     monkeypatch.setattr(
         web_server,
@@ -4400,6 +4564,7 @@ def test_force_shutdown_local_llm_processes_non_ollama_and_without_force_kill(mo
 
 
 def test_force_shutdown_local_llm_processes_logs_when_reap_or_pids_present(monkeypatch):
+    """Force shutdown local llm processes logs when reap or pids present."""
     monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
     monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "ollama")
     monkeypatch.setattr(web_server.cfg, "OLLAMA_FORCE_KILL_ON_SHUTDOWN", True)
@@ -4416,6 +4581,7 @@ def test_force_shutdown_local_llm_processes_logs_when_reap_or_pids_present(monke
 
 @pytest.mark.asyncio
 async def test_async_force_shutdown_handles_idempotent_and_no_force_paths(monkeypatch):
+    """Async force shutdown handles idempotent and no force paths."""
     monkeypatch.setattr(web_server, "_shutdown_cleanup_done", True)
     reaped = {"count": 0}
     monkeypatch.setattr(
@@ -4434,6 +4600,8 @@ async def test_async_force_shutdown_handles_idempotent_and_no_force_paths(monkey
 
 
 def test_bind_llm_usage_sink_handles_missing_setter_and_runtime_error(monkeypatch):
+    """Bind llm usage sink handles missing setter and runtime error."""
+
     class _Collector:
         _sidar_usage_sink_bound = False
 
@@ -4470,6 +4638,8 @@ def test_bind_llm_usage_sink_handles_missing_setter_and_runtime_error(monkeypatc
 
 @pytest.mark.asyncio
 async def test_ws_stream_agent_text_response_handles_sentinels_and_voice_packets():
+    """Ws stream agent text response handles sentinels and voice packets."""
+
     class _Ws:
         def __init__(self):
             self.payloads = []
@@ -4520,6 +4690,8 @@ async def test_ws_stream_agent_text_response_handles_sentinels_and_voice_packets
 
 @pytest.mark.asyncio
 async def test_ws_stream_agent_text_response_extract_ready_segments_fallback():
+    """Ws stream agent text response extract ready segments fallback."""
+
     class _Ws:
         def __init__(self):
             self.payloads = []
@@ -4554,6 +4726,8 @@ async def test_ws_stream_agent_text_response_extract_ready_segments_fallback():
 
 @pytest.mark.asyncio
 async def test_websocket_chat_requires_auth_before_processing(monkeypatch):
+    """Websocket chat requires auth before processing."""
+
     class _Ws:
         def __init__(self):
             self.headers = {}
@@ -4594,6 +4768,8 @@ async def test_websocket_chat_requires_auth_before_processing(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_github_webhook_signature_and_event_variants(monkeypatch):
+    """Github webhook signature and event variants."""
+
     class _Req:
         def __init__(self, payload: bytes):
             self._payload = payload
@@ -4663,6 +4839,7 @@ async def test_github_webhook_signature_and_event_variants(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_spa_fallback_rejects_static_like_paths_and_index_passthrough(monkeypatch):
+    """Spa fallback rejects static like paths and index passthrough."""
     api_like = await web_server.spa_fallback("api/metrics")
     static_like = await web_server.spa_fallback("assets/app.js")
     assert api_like.status_code == 404
@@ -4678,6 +4855,8 @@ async def test_spa_fallback_rejects_static_like_paths_and_index_passthrough(monk
 
 @pytest.mark.asyncio
 async def test_spa_fallback_handles_empty_path_async_index_and_extension_guard(monkeypatch):
+    """Spa fallback handles empty path async index and extension guard."""
+
     async def _async_index():
         return web_server.HTMLResponse("<h1>async</h1>", status_code=200)
 
@@ -4692,6 +4871,7 @@ async def test_spa_fallback_handles_empty_path_async_index_and_extension_guard(m
 
 @pytest.mark.asyncio
 async def test_spa_fallback_empty_path_with_sync_index_return(monkeypatch):
+    """Spa fallback empty path with sync index return."""
     sync_response = web_server.HTMLResponse("<html>sync-index</html>", status_code=200)
     monkeypatch.setattr(web_server, "index", lambda: sync_response)
 
@@ -4701,6 +4881,8 @@ async def test_spa_fallback_empty_path_with_sync_index_return(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_github_webhook_ci_context_and_webhook_toggle(monkeypatch):
+    """Github webhook ci context and webhook toggle."""
+
     class _Req:
         async def body(self):
             return b'{"workflow_run":{"id":10}}'
@@ -4769,6 +4951,8 @@ async def test_github_webhook_ci_context_and_webhook_toggle(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_github_webhook_unknown_event_skips_memory_and_dispatch(monkeypatch):
+    """Github webhook unknown event skips memory and dispatch."""
+
     class _Req:
         async def body(self):
             return b'{"action":"noop"}'
@@ -4808,6 +4992,8 @@ async def test_github_webhook_unknown_event_skips_memory_and_dispatch(monkeypatc
 
 @pytest.mark.asyncio
 async def test_github_webhook_handles_sync_await_helper_result(monkeypatch):
+    """Github webhook handles sync await helper result."""
+
     class _Req:
         async def body(self):
             return b'{"action":"noop"}'
@@ -4841,6 +5027,8 @@ async def test_github_webhook_handles_sync_await_helper_result(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_auth_endpoints_cover_success_and_validation_errors(monkeypatch):
+    """Auth endpoints cover success and validation errors."""
+
     class _DB:
         async def register_user(self, username, password, tenant_id):
             if username == "taken":
@@ -4898,6 +5086,8 @@ async def test_auth_endpoints_cover_success_and_validation_errors(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_admin_prompt_and_policy_endpoints(monkeypatch):
+    """Admin prompt and policy endpoints."""
+
     class _DB:
         async def list_prompts(self, role_name=None):
             return [
@@ -5025,6 +5215,8 @@ async def test_admin_prompt_and_policy_endpoints(monkeypatch):
 
 
 def test_main_bootstrap_paths_with_and_without_agent_init(monkeypatch):
+    """Main bootstrap paths with and without agent init."""
+
     class _Args:
         host = "0.0.0.0"
         port = 9191
@@ -5087,6 +5279,7 @@ def test_main_bootstrap_paths_with_and_without_agent_init(monkeypatch):
 
 
 def test_main_skips_config_override_when_optional_args_missing(monkeypatch):
+    """Main skips config override when optional args missing."""
     original_level = web_server.cfg.ACCESS_LEVEL
     original_provider = web_server.cfg.AI_PROVIDER
 
@@ -5128,6 +5321,8 @@ def test_main_skips_config_override_when_optional_args_missing(monkeypatch):
 
 
 def test_main_handles_non_callable_initialize_attribute(monkeypatch):
+    """Main handles non callable initialize attribute."""
+
     class _Args:
         host = "127.0.0.1"
         port = 9193
@@ -5165,6 +5360,7 @@ def test_main_handles_non_callable_initialize_attribute(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_favicon_vendor_and_index_paths(tmp_path, monkeypatch):
+    """Favicon vendor and index paths."""
     web_server.WEB_DIR = tmp_path
 
     favicon_res = await web_server.favicon()
@@ -5197,6 +5393,8 @@ async def test_favicon_vendor_and_index_paths(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_ws_close_policy_violation_and_close_redis_client(monkeypatch):
+    """Ws close policy violation and close redis client."""
+
     class _Ws:
         def __init__(self):
             self.calls = []
@@ -5232,6 +5430,8 @@ async def test_ws_close_policy_violation_and_close_redis_client(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_close_redis_client_reraises_unexpected_runtime_error(monkeypatch):
+    """Close redis client reraises unexpected runtime error."""
+
     class _Redis:
         async def aclose(self):
             raise RuntimeError("unexpected close failure")
@@ -5243,6 +5443,8 @@ async def test_close_redis_client_reraises_unexpected_runtime_error(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_get_redis_initialization_success_and_failure_paths(monkeypatch):
+    """Get redis initialization success and failure paths."""
+
     class _RedisClient:
         def __init__(self, should_fail=False):
             self.should_fail = should_fail
@@ -5287,6 +5489,7 @@ async def test_get_redis_initialization_success_and_failure_paths(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_redis_rate_limit_first_request_sets_expire_and_get_client_ip_real_ip(monkeypatch):
+    """Redis rate limit first request sets expire and get client ip real ip."""
     calls = {"expire": []}
 
     class _RedisStub:
@@ -5316,6 +5519,8 @@ async def test_redis_rate_limit_first_request_sets_expire_and_get_client_ip_real
 
 @pytest.mark.asyncio
 async def test_is_rate_limited_wrapper_and_redis_second_hit_branch(monkeypatch):
+    """Is rate limited wrapper and redis second hit branch."""
+
     class _RedisStub:
         def __init__(self):
             self.expire_calls = 0
@@ -5341,6 +5546,8 @@ async def test_is_rate_limited_wrapper_and_redis_second_hit_branch(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_ws_helpers_cover_no_close_and_voice_tts_skip_branches():
+    """Ws helpers cover no close and voice tts skip branches."""
+
     class _NoClose:
         pass
 
@@ -5390,6 +5597,8 @@ async def test_ws_helpers_cover_no_close_and_voice_tts_skip_branches():
 
 @pytest.mark.asyncio
 async def test_websocket_chat_rejects_invalid_header_token(monkeypatch):
+    """Websocket chat rejects invalid header token."""
+
     class _Ws:
         def __init__(self):
             self.headers = {"sec-websocket-protocol": "bad-token"}
@@ -5420,6 +5629,8 @@ async def test_websocket_chat_rejects_invalid_header_token(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_websocket_chat_auth_message_requires_token(monkeypatch):
+    """Websocket chat auth message requires token."""
+
     class _Ws:
         def __init__(self):
             self.headers = {}
@@ -5447,6 +5658,8 @@ async def test_websocket_chat_auth_message_requires_token(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_websocket_chat_auth_message_rejects_invalid_token(monkeypatch):
+    """Websocket chat auth message rejects invalid token."""
+
     class _Ws:
         def __init__(self):
             self.headers = {}
@@ -5479,6 +5692,8 @@ async def test_websocket_chat_auth_message_rejects_invalid_token(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_websocket_chat_header_auth_and_message_flow(monkeypatch):
+    """Websocket chat header auth and message flow."""
+
     class _EventBus:
         def subscribe(self):
             q = asyncio.Queue()
@@ -5550,6 +5765,8 @@ async def test_websocket_chat_header_auth_and_message_flow(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_websocket_chat_streams_tool_thought_and_done_packets(monkeypatch):
+    """Websocket chat streams tool thought and done packets."""
+
     class _EventBus:
         def subscribe(self):
             return "sub-1", asyncio.Queue()
@@ -5626,6 +5843,8 @@ async def test_websocket_chat_streams_tool_thought_and_done_packets(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_websocket_chat_status_pump_stops_cleanly_when_flag_set(monkeypatch):
+    """Websocket chat status pump stops cleanly when flag set."""
+
     class _DeferredTask:
         def __init__(self, coro):
             self._coro = coro
@@ -5711,6 +5930,8 @@ async def test_websocket_chat_status_pump_stops_cleanly_when_flag_set(monkeypatc
 
 @pytest.mark.asyncio
 async def test_websocket_chat_generate_response_finally_skips_unset_sub_and_ctx(monkeypatch):
+    """Websocket chat generate response finally skips unset sub and ctx."""
+
     class _EventBus:
         def subscribe(self):
             raise RuntimeError("subscription failed")
@@ -5778,6 +5999,8 @@ async def test_websocket_chat_generate_response_finally_skips_unset_sub_and_ctx(
 
 @pytest.mark.asyncio
 async def test_websocket_chat_join_room_and_sidar_command_stream(monkeypatch):
+    """Websocket chat join room and sidar command stream."""
+
     class _EventBus:
         def subscribe(self):
             return "sub-1", asyncio.Queue()
@@ -5853,6 +6076,8 @@ async def test_websocket_chat_join_room_and_sidar_command_stream(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_websocket_chat_room_response_finally_skips_unset_sub_and_ctx(monkeypatch):
+    """Websocket chat room response finally skips unset sub and ctx."""
+
     class _EventBus:
         def subscribe(self):
             raise RuntimeError("subscription failed")
@@ -5924,6 +6149,8 @@ async def test_websocket_chat_room_response_finally_skips_unset_sub_and_ctx(monk
 
 @pytest.mark.asyncio
 async def test_websocket_chat_room_status_pump_stops_cleanly_when_flag_set(monkeypatch):
+    """Websocket chat room status pump stops cleanly when flag set."""
+
     class _DeferredTask:
         def __init__(self, coro):
             self._coro = coro
@@ -6016,6 +6243,8 @@ async def test_websocket_chat_room_status_pump_stops_cleanly_when_flag_set(monke
 
 @pytest.mark.asyncio
 async def test_websocket_chat_suppresses_send_error_when_agent_response_crashes(monkeypatch):
+    """Websocket chat suppresses send error when agent response crashes."""
+
     class _EventBus:
         def subscribe(self):
             return "sub-1", asyncio.Queue()
@@ -6088,6 +6317,8 @@ async def test_websocket_chat_suppresses_send_error_when_agent_response_crashes(
 
 @pytest.mark.asyncio
 async def test_websocket_chat_llm_error_branch_suppresses_send_failure(monkeypatch):
+    """Websocket chat llm error branch suppresses send failure."""
+
     class _EventBus:
         def subscribe(self):
             return "sub-1", asyncio.Queue()
@@ -6157,6 +6388,8 @@ async def test_websocket_chat_llm_error_branch_suppresses_send_failure(monkeypat
 
 @pytest.mark.asyncio
 async def test_websocket_chat_broadcasts_room_error_when_collab_agent_fails(monkeypatch):
+    """Websocket chat broadcasts room error when collab agent fails."""
+
     class _EventBus:
         def subscribe(self):
             return "sub-1", asyncio.Queue()
@@ -6239,6 +6472,8 @@ async def test_websocket_chat_broadcasts_room_error_when_collab_agent_fails(monk
 
 @pytest.mark.asyncio
 async def test_websocket_chat_handles_room_cancel_blank_message_and_rbac_denial(monkeypatch):
+    """Websocket chat handles room cancel blank message and rbac denial."""
+
     class _EventBus:
         def subscribe(self):
             return "sub-1", asyncio.Queue()
@@ -6313,6 +6548,7 @@ async def test_websocket_chat_handles_room_cancel_blank_message_and_rbac_denial(
 
 @pytest.mark.asyncio
 async def test_websocket_chat_cancel_action_cancels_active_task_and_notifies(monkeypatch):
+    """Websocket chat cancel action cancels active task and notifies."""
     state = {"cancelled": False}
 
     class _Memory:
@@ -6404,6 +6640,8 @@ async def test_websocket_chat_cancel_action_cancels_active_task_and_notifies(mon
 
 @pytest.mark.asyncio
 async def test_status_endpoint_returns_provider_specific_model(monkeypatch):
+    """Status endpoint returns provider specific model."""
+
     class _Health:
         def get_gpu_info(self):
             return {"devices": ["GPU-0"]}
@@ -6458,6 +6696,8 @@ async def test_status_endpoint_returns_provider_specific_model(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_websocket_voice_import_error_closes_connection(monkeypatch):
+    """Websocket voice import error closes connection."""
+
     class _Ws:
         def __init__(self):
             self.headers = {}
@@ -6493,6 +6733,8 @@ async def test_websocket_voice_import_error_closes_connection(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_websocket_voice_core_voice_import_error_falls_back_without_crashing(monkeypatch):
+    """Websocket voice core voice import error falls back without crashing."""
+
     class _MultimodalPipeline:
         def __init__(self, *_args, **_kwargs):
             return None
@@ -6566,6 +6808,8 @@ async def test_websocket_voice_core_voice_import_error_falls_back_without_crashi
 
 @pytest.mark.asyncio
 async def test_websocket_voice_auth_start_append_commit_and_cancel(monkeypatch):
+    """Websocket voice auth start append commit and cancel."""
+
     class _VoicePipeline:
         def __init__(self, _cfg):
             self.enabled = True
@@ -6704,6 +6948,8 @@ async def test_websocket_voice_auth_start_append_commit_and_cancel(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_websocket_voice_degrades_when_voice_pipeline_init_fails(monkeypatch):
+    """Websocket voice degrades when voice pipeline init fails."""
+
     class _VoicePipeline:
         def __init__(self, _cfg):
             raise RuntimeError("audio device unavailable")
@@ -6779,6 +7025,8 @@ async def test_websocket_voice_degrades_when_voice_pipeline_init_fails(monkeypat
 
 @pytest.mark.asyncio
 async def test_websocket_voice_rejects_invalid_header_token(monkeypatch):
+    """Websocket voice rejects invalid header token."""
+
     class _MultimodalPipeline:
         def __init__(self, *_):
             pass
@@ -6835,6 +7083,8 @@ async def test_websocket_voice_rejects_invalid_header_token(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_websocket_voice_closes_on_binary_before_auth_and_payload_limit(monkeypatch):
+    """Websocket voice closes on binary before auth and payload limit."""
+
     class _MultimodalPipeline:
         def __init__(self, *_):
             pass
@@ -6907,6 +7157,8 @@ async def test_websocket_voice_closes_on_binary_before_auth_and_payload_limit(mo
 
 @pytest.mark.asyncio
 async def test_websocket_voice_auth_token_validation_paths(monkeypatch):
+    """Websocket voice auth token validation paths."""
+
     class _MultimodalPipeline:
         def __init__(self, *_):
             pass
@@ -6963,6 +7215,8 @@ async def test_websocket_voice_auth_token_validation_paths(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_websocket_voice_handles_malformed_packets_and_empty_chunks(monkeypatch):
+    """Websocket voice handles malformed packets and empty chunks."""
+
     class _MultimodalPipeline:
         def __init__(self, *_):
             pass
@@ -7065,6 +7319,8 @@ async def test_websocket_voice_handles_malformed_packets_and_empty_chunks(monkey
 
 @pytest.mark.asyncio
 async def test_websocket_voice_reports_transcription_failure_reason(monkeypatch):
+    """Websocket voice reports transcription failure reason."""
+
     class _MultimodalPipeline:
         def __init__(self, *_):
             pass
@@ -7133,6 +7389,8 @@ async def test_websocket_voice_reports_transcription_failure_reason(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_websocket_voice_header_auth_success_and_requires_auth_for_other_actions(monkeypatch):
+    """Websocket voice header auth success and requires auth for other actions."""
+
     class _MultimodalPipeline:
         def __init__(self, *_):
             pass
@@ -7199,6 +7457,8 @@ async def test_websocket_voice_header_auth_success_and_requires_auth_for_other_a
 
 @pytest.mark.asyncio
 async def test_websocket_voice_fixed_subprotocol_header_auth_does_not_echo_token(monkeypatch):
+    """Websocket voice fixed subprotocol header auth does not echo token."""
+
     class _Memory:
         async def set_active_user(self, *_args):
             return None
@@ -7254,6 +7514,8 @@ async def test_websocket_voice_fixed_subprotocol_header_auth_does_not_echo_token
 async def test_websocket_voice_commit_empty_buffer_and_vad_interrupt_cancels_active_turn(
     monkeypatch,
 ):
+    """Websocket voice commit empty buffer and vad interrupt cancels active turn."""
+
     class _VoicePipeline:
         def __init__(self, _cfg):
             self.enabled = True
@@ -7371,6 +7633,8 @@ async def test_websocket_voice_commit_empty_buffer_and_vad_interrupt_cancels_act
 
 @pytest.mark.asyncio
 async def test_websocket_voice_vad_event_without_voice_pipeline_skips_commit_path(monkeypatch):
+    """Websocket voice vad event without voice pipeline skips commit path."""
+
     class _MultimodalPipeline:
         def __init__(self, *_):
             pass
@@ -7433,6 +7697,8 @@ async def test_websocket_voice_vad_event_without_voice_pipeline_skips_commit_pat
 
 @pytest.mark.asyncio
 async def test_status_uses_coding_model_for_non_gemini_provider(monkeypatch):
+    """Status uses coding model for non gemini provider."""
+
     class _Health:
         def get_gpu_info(self):
             return {"devices": []}
@@ -7471,6 +7737,7 @@ async def test_status_uses_coding_model_for_non_gemini_provider(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_agent_plugin_registration_endpoints(monkeypatch):
+    """Agent plugin registration endpoints."""
     captured = {}
 
     def _register_plugin_agent(**kwargs):
@@ -7497,6 +7764,8 @@ async def test_agent_plugin_registration_endpoints(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_register_agent_plugin_file_validations_and_success(monkeypatch):
+    """Register agent plugin file validations and success."""
+
     class _Upload:
         def __init__(self, filename: str, data: bytes):
             self.filename = filename
@@ -7577,6 +7846,7 @@ async def test_register_agent_plugin_file_validations_and_success(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_plugin_marketplace_http_handlers(monkeypatch):
+    """Plugin marketplace http handlers."""
     monkeypatch.setattr(
         web_server,
         "PLUGIN_MARKETPLACE_CATALOG",
@@ -7627,6 +7897,8 @@ async def test_plugin_marketplace_http_handlers(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_execute_swarm_pipeline_parallel_and_validation(monkeypatch):
+    """Execute swarm pipeline parallel and validation."""
+
     class _Orchestrator:
         def __init__(self, _cfg):
             self.cfg = _cfg
@@ -7686,6 +7958,7 @@ async def test_execute_swarm_pipeline_parallel_and_validation(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_hitl_endpoints_cover_create_pending_and_respond(monkeypatch):
+    """Hitl endpoints cover create pending and respond."""
     added: list[object] = []
     pending_items = [SimpleNamespace(to_dict=lambda: {"request_id": "r1"})]
 
@@ -7755,6 +8028,7 @@ async def test_hitl_endpoints_cover_create_pending_and_respond(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_websocket_hitl_accepts_without_token_sends_snapshot_and_cleans_up(monkeypatch):
+    """Websocket hitl accepts without token sends snapshot and cleans up."""
     pending_items = [SimpleNamespace(to_dict=lambda: {"request_id": "req-1"})]
 
     class _Store:
@@ -7795,6 +8069,7 @@ async def test_websocket_hitl_accepts_without_token_sends_snapshot_and_cleans_up
 
 @pytest.mark.asyncio
 async def test_websocket_hitl_rejects_invalid_header_token(monkeypatch):
+    """Websocket hitl rejects invalid header token."""
     closes = []
 
     class _Ws:
@@ -7830,6 +8105,8 @@ async def test_websocket_hitl_rejects_invalid_header_token(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_websocket_hitl_accepts_valid_header_token_and_cleans_up(monkeypatch):
+    """Websocket hitl accepts valid header token and cleans up."""
+
     class _Store:
         async def pending(self):
             return []
@@ -7871,6 +8148,8 @@ async def test_websocket_hitl_accepts_valid_header_token_and_cleans_up(monkeypat
 
 @pytest.mark.asyncio
 async def test_websocket_hitl_fixed_subprotocol_header_auth_does_not_echo_token(monkeypatch):
+    """Websocket hitl fixed subprotocol header auth does not echo token."""
+
     class _Store:
         async def pending(self):
             return []
@@ -7912,6 +8191,7 @@ async def test_websocket_hitl_fixed_subprotocol_header_auth_does_not_echo_token(
 
 
 def test_agent_singleton_factories_cache_instances(monkeypatch):
+    """Agent singleton factories cache instances."""
     created = []
 
     class _Poyraz:
@@ -7951,6 +8231,7 @@ def test_agent_singleton_factories_cache_instances(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_file_content_covers_security_dir_and_size_guards(tmp_path, monkeypatch):
+    """File content covers security dir and size guards."""
     fake_root = tmp_path / "root"
     fake_root.mkdir()
     (fake_root / "docs").mkdir()
@@ -7970,6 +8251,7 @@ async def test_file_content_covers_security_dir_and_size_guards(tmp_path, monkey
 
 @pytest.mark.asyncio
 async def test_set_branch_empty_and_checkout_error_paths(monkeypatch):
+    """Set branch empty and checkout error paths."""
     empty_name = await web_server.set_branch(_JsonRequest({"branch": "   "}))
     assert empty_name.status_code == 400
 
@@ -7992,6 +8274,8 @@ async def test_set_branch_empty_and_checkout_error_paths(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_github_endpoints_failure_paths(monkeypatch):
+    """Github endpoints failure paths."""
+
     class _Github:
         repo_name = "org/active"
 
@@ -8021,6 +8305,8 @@ async def test_github_endpoints_failure_paths(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_upload_rag_file_size_error_and_backend_failure(monkeypatch):
+    """Upload rag file size error and backend failure."""
+
     class _FakeUpload:
         def __init__(self, filename: str, data: bytes):
             self.filename = filename
@@ -8061,6 +8347,7 @@ async def test_upload_rag_file_size_error_and_backend_failure(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_rag_add_file_guards_and_upload_unexpected_error(monkeypatch, tmp_path):
+    """Rag add file guards and upload unexpected error."""
     empty_path = await web_server.rag_add_file(_JsonRequest({"path": "   "}))
     assert empty_path.status_code == 400
 
@@ -8086,6 +8373,7 @@ async def test_rag_add_file_guards_and_upload_unexpected_error(monkeypatch, tmp_
 
 
 def test_append_room_telemetry_handles_missing_optional_fields():
+    """Append room telemetry handles missing optional fields."""
     room = web_server._CollaborationRoom(room_id="workspace:default")
 
     web_server._append_room_telemetry(room, {"type": "status"}, limit=1)
@@ -8096,6 +8384,7 @@ def test_append_room_telemetry_handles_missing_optional_fields():
 
 @pytest.mark.asyncio
 async def test_leave_collaboration_room_when_room_missing_is_noop():
+    """Leave collaboration room when room missing is noop."""
     websocket = _DummyWebSocket()
     websocket._sidar_room_id = "team:missing"
 
@@ -8106,6 +8395,7 @@ async def test_leave_collaboration_room_when_room_missing_is_noop():
 
 @pytest.mark.asyncio
 async def test_async_force_shutdown_local_llm_processes_ollama_logs_when_reaped(monkeypatch):
+    """Async force shutdown local llm processes ollama logs when reaped."""
     monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
     monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "ollama")
     monkeypatch.setattr(web_server.cfg, "OLLAMA_FORCE_KILL_ON_SHUTDOWN", True)
@@ -8133,6 +8423,7 @@ async def test_async_force_shutdown_local_llm_processes_ollama_logs_when_reaped(
 
 @pytest.mark.asyncio
 async def test_async_force_shutdown_local_llm_processes_without_children_skips_log(monkeypatch):
+    """Async force shutdown local llm processes without children skips log."""
     monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
     monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "ollama")
     monkeypatch.setattr(web_server.cfg, "OLLAMA_FORCE_KILL_ON_SHUTDOWN", True)
@@ -8151,6 +8442,7 @@ async def test_async_force_shutdown_local_llm_processes_without_children_skips_l
 
 @pytest.mark.asyncio
 async def test_get_agent_returns_cached_instance_without_reinitialization(monkeypatch):
+    """Get agent returns cached instance without reinitialization."""
     cached = SimpleNamespace(name="cached-agent")
     monkeypatch.setattr(web_server, "_agent", cached)
 
@@ -8159,6 +8451,7 @@ async def test_get_agent_returns_cached_instance_without_reinitialization(monkey
 
 @pytest.mark.asyncio
 async def test_slack_jira_teams_error_branches_and_manager_singletons(monkeypatch):
+    """Slack jira teams error branches and manager singletons."""
     original_get_jira_manager = web_server._get_jira_manager
     original_get_teams_manager = web_server._get_teams_manager
 
@@ -8272,6 +8565,7 @@ async def test_slack_jira_teams_error_branches_and_manager_singletons(monkeypatc
 
 @pytest.mark.asyncio
 async def test_swarm_federation_disabled_returns_503(monkeypatch):
+    """Swarm federation disabled returns 503."""
     monkeypatch.setattr(web_server.cfg, "ENABLE_SWARM_FEDERATION", False)
     with pytest.raises(HTTPException) as exec_err:
         await web_server.swarm_federation_execute(
@@ -8301,6 +8595,7 @@ async def test_swarm_federation_disabled_returns_503(monkeypatch):
 
 
 def test_optional_otel_import_path_executes_when_modules_present(monkeypatch):
+    """Optional otel import path executes when modules present."""
     import importlib.util
 
     module_name = "web_server_otel_success_case"
@@ -8357,6 +8652,7 @@ def test_optional_otel_import_path_executes_when_modules_present(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_autonomous_cron_loop_logs_success(monkeypatch):
+    """Autonomous cron loop logs success."""
     monkeypatch.setattr(web_server.cfg, "AUTONOMOUS_CRON_INTERVAL_SECONDS", 1)
     monkeypatch.setattr(web_server.cfg, "AUTONOMOUS_CRON_PROMPT", "durum")
 
@@ -8392,6 +8688,7 @@ async def test_autonomous_cron_loop_logs_success(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_nightly_memory_loop_logs_success(monkeypatch):
+    """Nightly memory loop logs success."""
     monkeypatch.setattr(web_server.cfg, "ENABLE_NIGHTLY_MEMORY_PRUNING", True)
     monkeypatch.setattr(web_server.cfg, "NIGHTLY_MEMORY_INTERVAL_SECONDS", 1)
 
@@ -8432,6 +8729,7 @@ async def test_nightly_memory_loop_logs_success(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_readiness_check_and_metrics_json_fallback(monkeypatch):
+    """Readiness check and metrics json fallback."""
     calls: list[bool] = []
 
     async def _health_response(require_dependencies=False):
@@ -8478,6 +8776,7 @@ async def test_readiness_check_and_metrics_json_fallback(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_health_response_hides_agent_exception_detail_in_production(monkeypatch):
+    """Health response hides agent exception detail in production."""
     monkeypatch.setenv("SIDAR_ENV", "production")
 
     async def _resolve():
@@ -8495,6 +8794,7 @@ async def test_health_response_hides_agent_exception_detail_in_production(monkey
 
 @pytest.mark.asyncio
 async def test_health_response_hides_dependency_exception_detail_in_production(monkeypatch):
+    """Health response hides dependency exception detail in production."""
     monkeypatch.setenv("SIDAR_ENV", "production")
 
     class _Health:
@@ -8519,6 +8819,8 @@ async def test_health_response_hides_dependency_exception_detail_in_production(m
 
 @pytest.mark.asyncio
 async def test_health_response_dependency_exception_marks_degraded(monkeypatch):
+    """Health response dependency exception marks degraded."""
+
     class _Health:
         def get_health_summary(self):
             return {"status": "ok", "ollama_online": True}
@@ -8541,6 +8843,7 @@ async def test_health_response_dependency_exception_marks_degraded(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_metrics_prometheus_importerror_falls_back_to_json(monkeypatch):
+    """Metrics prometheus importerror falls back to json."""
     scope = {
         "type": "http",
         "method": "GET",
@@ -8593,6 +8896,8 @@ async def test_metrics_prometheus_importerror_falls_back_to_json(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_llm_metrics_endpoints_cover_delegation_failure_and_budget_snapshot(monkeypatch):
+    """Llm metrics endpoints cover delegation failure and budget snapshot."""
+
     class _Collector:
         def snapshot(self):
             return {"totals": {"calls": 2}}
@@ -8623,6 +8928,7 @@ async def test_llm_metrics_endpoints_cover_delegation_failure_and_budget_snapsho
 
 
 def test_load_plugin_agent_class_handles_typeerror_from_issubclass(monkeypatch):
+    """Load plugin agent class handles typeerror from issubclass."""
     fake_base_module = types.ModuleType("agent.base_agent")
     fake_base_module.BaseAgent = 123  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "agent.base_agent", fake_base_module)
@@ -8635,6 +8941,7 @@ def test_load_plugin_agent_class_handles_typeerror_from_issubclass(monkeypatch):
 
 
 def test_load_plugin_agent_class_prefers_canonical_baseagent_when_global_is_stale(monkeypatch):
+    """Load plugin agent class prefers canonical baseagent when global is stale."""
     original_baseagent = web_server.BaseAgent
     monkeypatch.setattr(web_server, "BaseAgent", 123)
     source = (
@@ -8649,6 +8956,7 @@ def test_load_plugin_agent_class_prefers_canonical_baseagent_when_global_is_stal
 
 
 def test_load_plugin_agent_class_rejects_object_baseagent_stub(monkeypatch):
+    """Load plugin agent class rejects object baseagent stub."""
     fake_base_module = types.ModuleType("agent.base_agent")
     fake_base_module.BaseAgent = object  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "agent.base_agent", fake_base_module)
@@ -8661,6 +8969,8 @@ def test_load_plugin_agent_class_rejects_object_baseagent_stub(monkeypatch):
 
 
 def test_register_plugin_agent_returns_registered_spec_metadata(monkeypatch):
+    """Register plugin agent returns registered spec metadata."""
+
     class _PluginAgent:
         __name__ = "PluginAgent"
 
@@ -8706,6 +9016,7 @@ def test_register_plugin_agent_returns_registered_spec_metadata(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_register_user_rejects_invalid_short_credentials_without_db_call(monkeypatch):
+    """Register user rejects invalid short credentials without db call."""
     called = {"resolve": 0}
 
     async def _resolve():
@@ -8725,6 +9036,8 @@ async def test_register_user_rejects_invalid_short_credentials_without_db_call(m
 
 @pytest.mark.asyncio
 async def test_access_policy_middleware_bypasses_when_resource_not_resolved(monkeypatch):
+    """Access policy middleware bypasses when resource not resolved."""
+
     async def _call_next(_request):
         return JSONResponse({"ok": True})
 
@@ -8738,6 +9051,7 @@ async def test_access_policy_middleware_bypasses_when_resource_not_resolved(monk
 
 @pytest.mark.asyncio
 async def test_metrics_prometheus_plain_text_success_path(monkeypatch):
+    """Metrics prometheus plain text success path."""
     scope = {
         "type": "http",
         "method": "GET",
@@ -8798,6 +9112,8 @@ async def test_metrics_prometheus_plain_text_success_path(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_llm_prometheus_metrics_includes_delegation_metrics_when_available(monkeypatch):
+    """Llm prometheus metrics includes delegation metrics when available."""
+
     class _Collector:
         def snapshot(self):
             return {"totals": {"calls": 1}}
@@ -8822,6 +9138,7 @@ async def test_llm_prometheus_metrics_includes_delegation_metrics_when_available
 
 @pytest.mark.asyncio
 async def test_git_info_falls_back_to_origin_head_and_github_repos_query_filter(monkeypatch):
+    """Git info falls back to origin head and github repos query filter."""
     calls: list[list[str]] = []
 
     async def _to_thread(fn, cmd, cwd):
@@ -8864,6 +9181,8 @@ async def test_git_info_falls_back_to_origin_head_and_github_repos_query_filter(
 
 @pytest.mark.asyncio
 async def test_github_endpoints_cover_error_branches(monkeypatch):
+    """Github endpoints cover error branches."""
+
     class _Github:
         repo_name = "org/repo"
 
@@ -8903,6 +9222,7 @@ async def test_github_endpoints_cover_error_branches(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_vision_endpoints_cover_typeerror_fallback_and_invalid_base64(monkeypatch):
+    """Vision endpoints cover typeerror fallback and invalid base64."""
     import sys
     import types
 
@@ -8943,6 +9263,7 @@ async def test_vision_endpoints_cover_typeerror_fallback_and_invalid_base64(monk
 
 @pytest.mark.asyncio
 async def test_entity_and_feedback_store_init_error_paths(monkeypatch):
+    """Entity and feedback store init error paths."""
     web_server._entity_memory_instance = None
     web_server._feedback_store_instance = None
 
@@ -8965,6 +9286,7 @@ async def test_entity_and_feedback_store_init_error_paths(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_list_project_files_returns_404_and_400_for_invalid_targets(tmp_path, monkeypatch):
+    """List project files returns 404 and 400 for invalid targets."""
     fake_root = tmp_path / "root"
     fake_root.mkdir()
     (fake_root / "just_a_file.txt").write_text("x", encoding="utf-8")
@@ -8979,6 +9301,7 @@ async def test_list_project_files_returns_404_and_400_for_invalid_targets(tmp_pa
 
 @pytest.mark.asyncio
 async def test_file_content_handles_read_text_exception(tmp_path, monkeypatch):
+    """File content handles read text exception."""
     fake_root = tmp_path / "root"
     fake_root.mkdir()
     target = fake_root / "ok.txt"
@@ -9002,6 +9325,8 @@ async def test_file_content_handles_read_text_exception(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_entity_feedback_success_paths(monkeypatch):
+    """Entity feedback success paths."""
+
     class _MemStore:
         async def initialize(self):
             return None
@@ -9037,6 +9362,7 @@ async def test_entity_feedback_success_paths(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_slack_manager_init_and_error_branches(monkeypatch):
+    """Slack manager init and error branches."""
     web_server._slack_mgr_instance = None
 
     class _SlackManager:
@@ -9078,6 +9404,7 @@ async def test_slack_manager_init_and_error_branches(monkeypatch):
 
 
 def test_mask_collaboration_text_returns_original_on_runtime_error(monkeypatch):
+    """Mask collaboration text returns original on runtime error."""
     monkeypatch.setattr(
         web_server.importlib,
         "import_module",
@@ -9088,6 +9415,7 @@ def test_mask_collaboration_text_returns_original_on_runtime_error(monkeypatch):
 
 
 def test_reap_child_processes_nonblocking_breaks_on_unexpected_error(monkeypatch):
+    """Reap child processes nonblocking breaks on unexpected error."""
     monkeypatch.setattr(
         web_server.os,
         "waitpid",
@@ -9098,6 +9426,7 @@ def test_reap_child_processes_nonblocking_breaks_on_unexpected_error(monkeypatch
 
 
 def test_force_shutdown_local_llm_processes_without_children_skips_info_log(monkeypatch):
+    """Force shutdown local llm processes without children skips info log."""
     monkeypatch.setattr(web_server, "_shutdown_cleanup_done", False)
     monkeypatch.setattr(web_server.cfg, "AI_PROVIDER", "ollama")
     monkeypatch.setattr(web_server.cfg, "OLLAMA_FORCE_KILL_ON_SHUTDOWN", True)
@@ -9118,6 +9447,8 @@ def test_force_shutdown_local_llm_processes_without_children_skips_info_log(monk
 
 @pytest.mark.asyncio
 async def test_get_agent_lock_guard_skips_reinitialize_when_agent_set_inside_lock(monkeypatch):
+    """Get agent lock guard skips reinitialize when agent set inside lock."""
+
     class _LockThatSetsAgent:
         async def __aenter__(self):
             web_server._agent = "already-created"
@@ -9145,6 +9476,8 @@ async def test_get_agent_lock_guard_skips_reinitialize_when_agent_set_inside_loc
 
 @pytest.mark.asyncio
 async def test_get_agent_creates_lock_when_missing(monkeypatch):
+    """Get agent creates lock when missing."""
+
     class _Agent:
         def __init__(self, _cfg):
             self.initialized = False
@@ -9165,6 +9498,8 @@ async def test_get_agent_creates_lock_when_missing(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_rag_search_handles_awaitable_returned_from_sync_search(monkeypatch):
+    """Rag search handles awaitable returned from sync search."""
+
     async def _async_result():
         return True, {"mode": "awaitable"}
 
@@ -9215,6 +9550,7 @@ async def test_rag_search_awaits_to_thread_result_when_awaitable(monkeypatch):
 
 
 def test_list_child_ollama_pids_ps_fallback_skips_non_matching_rows(monkeypatch):
+    """List child ollama pids ps fallback skips non matching rows."""
     monkeypatch.setattr(
         web_server,
         "_resolve_psutil_module",
@@ -9237,6 +9573,7 @@ def test_list_child_ollama_pids_ps_fallback_skips_non_matching_rows(monkeypatch)
 
 
 def test_reload_persisted_marketplace_plugins_tolerates_reload_failures(monkeypatch):
+    """Reload persisted marketplace plugins tolerates reload failures."""
     monkeypatch.setattr(
         web_server,
         "_read_plugin_marketplace_state",
@@ -9264,6 +9601,8 @@ def test_reload_persisted_marketplace_plugins_tolerates_reload_failures(monkeypa
 
 @pytest.mark.asyncio
 async def test_admin_prompt_endpoints_cover_validation_and_system_updates(monkeypatch):
+    """Admin prompt endpoints cover validation and system updates."""
+
     class _DB:
         async def upsert_prompt(self, **_kwargs):
             return SimpleNamespace(
@@ -9311,6 +9650,8 @@ async def test_admin_prompt_endpoints_cover_validation_and_system_updates(monkey
 
 @pytest.mark.asyncio
 async def test_rag_add_url_and_set_level_additional_error_paths(monkeypatch):
+    """Rag add url and set level additional error paths."""
+
     class _Agent:
         def __init__(self):
             self.memory = SimpleNamespace(active_session_id=None)
@@ -9342,6 +9683,8 @@ async def test_rag_add_url_and_set_level_additional_error_paths(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_upload_rag_file_sanitizes_empty_filename_and_cleanup_error(monkeypatch):
+    """Upload rag file sanitizes empty filename and cleanup error."""
+
     class _Upload:
         filename = "???"
 
@@ -9378,6 +9721,8 @@ async def test_upload_rag_file_sanitizes_empty_filename_and_cleanup_error(monkey
 
 @pytest.mark.asyncio
 async def test_git_info_without_remote_and_slack_unavailable(monkeypatch):
+    """Git info without remote and slack unavailable."""
+
     async def _inline_to_thread(fn, *args, **kwargs):
         return fn(*args, **kwargs)
 
@@ -9406,6 +9751,7 @@ async def test_git_info_without_remote_and_slack_unavailable(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_api_vision_mockup_invalid_base64_in_legacy_fallback(monkeypatch):
+    """Api vision mockup invalid base64 in legacy fallback."""
     import sys
     import types
 
@@ -9436,6 +9782,8 @@ def _decode_json_response(resp):
 
 @pytest.mark.asyncio
 async def test_dispatch_autonomy_trigger_awaitable_agent_branch(monkeypatch):
+    """Dispatch autonomy trigger awaitable agent branch."""
+
     class _Agent:
         async def respond(self, _prompt):
             yield "ok"
@@ -9455,6 +9803,7 @@ async def test_dispatch_autonomy_trigger_awaitable_agent_branch(monkeypatch):
 
 
 def test_auth_helpers_and_metrics_access_paths(monkeypatch):
+    """Auth helpers and metrics access paths."""
     req = SimpleNamespace(state=SimpleNamespace())
     with pytest.raises(HTTPException):
         web_server._get_request_user(req)
@@ -9470,6 +9819,7 @@ def test_auth_helpers_and_metrics_access_paths(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_schedule_access_audit_log_recorder_missing_and_no_loop(monkeypatch):
+    """Schedule access audit log recorder missing and no loop."""
     agent = SimpleNamespace(memory=SimpleNamespace(db=SimpleNamespace(record_audit_log=None)))
 
     async def _resolve():
@@ -9509,6 +9859,7 @@ async def test_schedule_access_audit_log_recorder_missing_and_no_loop(monkeypatc
 
 @pytest.mark.asyncio
 async def test_plugin_install_missing_source_raises(monkeypatch):
+    """Plugin install missing source raises."""
     pid = next(iter(web_server.PLUGIN_MARKETPLACE_CATALOG.keys()))
     entry = dict(web_server.PLUGIN_MARKETPLACE_CATALOG[pid])
     monkeypatch.setitem(
@@ -9520,6 +9871,7 @@ async def test_plugin_install_missing_source_raises(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_admin_prompt_and_stats_branches(monkeypatch):
+    """Admin prompt and stats branches."""
     db = SimpleNamespace(
         get_admin_stats=lambda: {"k": 1},
         upsert_prompt=lambda **_: SimpleNamespace(
@@ -9576,6 +9928,8 @@ async def test_admin_prompt_and_stats_branches(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_access_policy_middleware_and_rate_limit_helpers(monkeypatch):
+    """Access policy middleware and rate limit helpers."""
+
     async def _next(_request):
         return JSONResponse({"ok": True})
 
@@ -9622,6 +9976,8 @@ async def test_access_policy_middleware_and_rate_limit_helpers(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_redis_and_client_ip_and_static_and_close_helpers(monkeypatch, tmp_path):
+    """Redis and client ip and static and close helpers."""
+
     class _Redis:
         def __init__(self):
             self.expire_calls = 0
@@ -9671,6 +10027,8 @@ async def test_redis_and_client_ip_and_static_and_close_helpers(monkeypatch, tmp
 
 @pytest.mark.asyncio
 async def test_github_and_rag_endpoints_extra_branches(monkeypatch):
+    """Github and rag endpoints extra branches."""
+
     class _Github:
         repo_name = "org/repo"
 
@@ -9708,6 +10066,8 @@ async def test_github_and_rag_endpoints_extra_branches(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_dispatch_autonomy_trigger_non_awaitable_agent_and_ci_fallback_edges(monkeypatch):
+    """Dispatch autonomy trigger non awaitable agent and ci fallback edges."""
+
     class _Agent:
         async def respond(self, _prompt):
             yield "non-awaitable"
@@ -9757,6 +10117,7 @@ async def test_dispatch_autonomy_trigger_non_awaitable_agent_and_ci_fallback_edg
 
 @pytest.mark.asyncio
 async def test_periodic_loops_exit_when_stop_event_pre_set(monkeypatch):
+    """Periodic loops exit when stop event pre set."""
     monkeypatch.setattr(web_server.cfg, "AUTONOMOUS_CRON_PROMPT", "tick")
     monkeypatch.setattr(web_server.cfg, "ENABLE_NIGHTLY_MEMORY_PRUNING", True)
     stop_cron = asyncio.Event()
@@ -9769,6 +10130,7 @@ async def test_periodic_loops_exit_when_stop_event_pre_set(monkeypatch):
 
 
 def test_require_metrics_access_without_metrics_token(monkeypatch):
+    """Require metrics access without metrics token."""
     monkeypatch.setattr(web_server.cfg, "METRICS_TOKEN", "")
     user = SimpleNamespace(id="u1", username="alice", role="user")
     req = _make_request("/metrics", method="GET")
@@ -9778,6 +10140,7 @@ def test_require_metrics_access_without_metrics_token(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_auth_middleware_skips_memory_set_active_user_when_not_callable(monkeypatch):
+    """Auth middleware skips memory set active user when not callable."""
     request = SimpleNamespace(
         method="POST",
         url=SimpleNamespace(path="/api/test"),
@@ -9800,12 +10163,14 @@ async def test_auth_middleware_skips_memory_set_active_user_when_not_callable(mo
 
 
 def test_load_plugin_agent_class_rejects_baseagent_itself():
+    """Load plugin agent class rejects baseagent itself."""
     source = "from agent.base_agent import BaseAgent\nPluginAgent = BaseAgent\n"
     with pytest.raises(HTTPException):
         web_server._load_plugin_agent_class(source, "PluginAgent", "baseagent_alias")
 
 
 def test_load_plugin_agent_class_class_name_path_uses_direct_issubclass_branch():
+    """Load plugin agent class class name path uses direct issubclass branch."""
     source = (
         "from web_server import BaseAgent\n"
         "class PluginAgent(BaseAgent):\n"
@@ -9820,6 +10185,8 @@ def test_load_plugin_agent_class_class_name_path_uses_direct_issubclass_branch()
 
 @pytest.mark.asyncio
 async def test_admin_prompt_updates_system_prompt_for_system_role(monkeypatch):
+    """Admin prompt updates system prompt for system role."""
+
     class _DB:
         async def upsert_prompt(self, **_kwargs):
             return SimpleNamespace(
@@ -9863,6 +10230,8 @@ async def test_admin_prompt_updates_system_prompt_for_system_role(monkeypatch):
 async def test_get_redis_double_checked_lock_inner_skip_and_client_ip_empty_proxy_headers(
     monkeypatch,
 ):
+    """Get redis double checked lock inner skip and client ip empty proxy headers."""
+
     class _Lock:
         async def __aenter__(self):
             web_server._redis_client = object()
@@ -9884,6 +10253,7 @@ async def test_get_redis_double_checked_lock_inner_skip_and_client_ip_empty_prox
 
 @pytest.mark.asyncio
 async def test_ddos_rate_limit_middleware_get_non_io_path_skips_get_bucket(monkeypatch):
+    """Ddos rate limit middleware get non io path skips get bucket."""
     calls = []
 
     async def _next(_request):
@@ -9906,6 +10276,7 @@ async def test_ddos_rate_limit_middleware_get_non_io_path_skips_get_bucket(monke
 
 
 def test_mount_frontend_static_routes_mounts_assets_when_available(tmp_path):
+    """Mount frontend static routes mounts assets when available."""
     web_dir = tmp_path / "web"
     (web_dir / "assets").mkdir(parents=True)
 
@@ -9923,6 +10294,7 @@ def test_mount_frontend_static_routes_mounts_assets_when_available(tmp_path):
 
 
 def test_mount_frontend_static_routes_skips_assets_when_missing(tmp_path):
+    """Mount frontend static routes skips assets when missing."""
     web_dir = tmp_path / "web"
     web_dir.mkdir(parents=True)
 
@@ -9941,6 +10313,8 @@ def test_mount_frontend_static_routes_skips_assets_when_missing(tmp_path):
 
 @pytest.mark.asyncio
 async def test_github_repos_query_empty_takes_non_filter_branch(monkeypatch):
+    """Github repos query empty takes non filter branch."""
+
     class _Github:
         repo_name = "org/repo"
 
@@ -9963,6 +10337,8 @@ async def test_github_repos_query_empty_takes_non_filter_branch(monkeypatch):
 async def test_metrics_awaits_get_all_sessions_coroutine_and_github_repos_query_filter_branch(
     monkeypatch,
 ):
+    """Metrics awaits get all sessions coroutine and github repos query filter branch."""
+
     class _Memory:
         def __len__(self):
             return 0
@@ -10026,6 +10402,7 @@ async def test_metrics_awaits_get_all_sessions_coroutine_and_github_repos_query_
 
 
 def test_install_marketplace_plugin_without_persist_does_not_write_state(monkeypatch, tmp_path):
+    """Install marketplace plugin without persist does not write state."""
     entrypoint = tmp_path / "demo_plugin.py"
     entrypoint.write_text("print('ok')", encoding="utf-8")
     monkeypatch.setattr(
@@ -10069,6 +10446,8 @@ def test_install_marketplace_plugin_without_persist_does_not_write_state(monkeyp
 async def test_admin_prompt_endpoints_do_not_override_system_prompt_for_non_system_role(
     monkeypatch,
 ):
+    """Admin prompt endpoints do not override system prompt for non system role."""
+
     class _Record:
         def __init__(self, role_name: str):
             self.id = 1
@@ -10109,6 +10488,8 @@ async def test_admin_prompt_endpoints_do_not_override_system_prompt_for_non_syst
 
 @pytest.mark.asyncio
 async def test_status_github_pr_detail_and_rag_search_cover_remaining_branches(monkeypatch):
+    """Status github pr detail and rag search cover remaining branches."""
+
     async def _sessions_coroutine():
         return ["s1"]
 
@@ -10194,6 +10575,7 @@ async def test_status_github_pr_detail_and_rag_search_cover_remaining_branches(m
 
 @pytest.mark.asyncio
 async def test_get_client_ip_prefers_x_real_ip_for_trusted_proxy(monkeypatch):
+    """Get client ip prefers x real ip for trusted proxy."""
     monkeypatch.setattr(web_server.Config, "TRUSTED_PROXIES", {"127.0.0.1"})
     req = SimpleNamespace(
         client=SimpleNamespace(host="127.0.0.1"),
@@ -10204,6 +10586,7 @@ async def test_get_client_ip_prefers_x_real_ip_for_trusted_proxy(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_get_client_ip_trusted_proxy_without_forward_headers_returns_direct_ip(monkeypatch):
+    """Get client ip trusted proxy without forward headers returns direct ip."""
     monkeypatch.setattr(web_server.Config, "TRUSTED_PROXIES", {"127.0.0.1"})
     req = SimpleNamespace(client=SimpleNamespace(host="127.0.0.1"), headers={})
     assert web_server._get_client_ip(req) == "127.0.0.1"
@@ -10211,6 +10594,8 @@ async def test_get_client_ip_trusted_proxy_without_forward_headers_returns_direc
 
 @pytest.mark.asyncio
 async def test_rate_limit_middleware_get_non_io_path_falls_through(monkeypatch):
+    """Rate limit middleware get non io path falls through."""
+
     async def _never_limited(*_args, **_kwargs):
         return False
 
@@ -10224,6 +10609,8 @@ async def test_rate_limit_middleware_get_non_io_path_falls_through(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_rate_limit_middleware_put_method_falls_through(monkeypatch):
+    """Rate limit middleware put method falls through."""
+
     async def _never_limited(*_args, **_kwargs):
         return False
 
@@ -10237,6 +10624,8 @@ async def test_rate_limit_middleware_put_method_falls_through(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_websocket_chat_cancels_active_task_on_disconnect_and_unexpected_error(monkeypatch):
+    """Websocket chat cancels active task on disconnect and unexpected error."""
+
     class _Memory:
         async def set_active_user(self, *_):
             return None
@@ -10301,6 +10690,7 @@ async def test_websocket_chat_cancels_active_task_on_disconnect_and_unexpected_e
 
 @pytest.mark.asyncio
 async def test_websocket_chat_room_paths_cancel_rejoin_non_mention_and_anyio_closed(monkeypatch):
+    """Websocket chat room paths cancel rejoin non mention and anyio closed."""
     cancelled_flags = {"top_level": False, "room_task": False}
 
     class _PendingTask:
@@ -10429,6 +10819,7 @@ async def test_websocket_chat_room_paths_cancel_rejoin_non_mention_and_anyio_clo
 
 @pytest.mark.asyncio
 async def test_websocket_chat_llm_error_send_failure_and_cleanup(monkeypatch):
+    """Websocket chat llm error send failure and cleanup."""
     unsubscribed: list[str] = []
     warnings: list[str] = []
     event_bus = None
@@ -10506,6 +10897,8 @@ async def test_websocket_chat_llm_error_send_failure_and_cleanup(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_websocket_voice_stream_error_paths_and_append_base64_size_limit(monkeypatch):
+    """Websocket voice stream error paths and append base64 size limit."""
+
     class _MultimodalPipeline:
         def __init__(self, *_):
             pass
@@ -10592,6 +10985,8 @@ async def test_websocket_voice_stream_error_paths_and_append_base64_size_limit(m
 
 @pytest.mark.asyncio
 async def test_websocket_voice_non_dict_transcribe_returns_default_error(monkeypatch):
+    """Websocket voice non dict transcribe returns default error."""
+
     class _MultimodalPipeline:
         def __init__(self, *_):
             pass
@@ -10679,6 +11074,8 @@ async def test_websocket_voice_non_dict_transcribe_returns_default_error(monkeyp
 
 @pytest.mark.asyncio
 async def test_websocket_voice_cancel_action_emits_voice_interruption(monkeypatch):
+    """Websocket voice cancel action emits voice interruption."""
+
     class _MultimodalPipeline:
         def __init__(self, *_):
             pass
@@ -10745,6 +11142,7 @@ async def test_websocket_voice_cancel_action_emits_voice_interruption(monkeypatc
 
 @pytest.mark.asyncio
 async def test_websocket_voice_exception_branch_logs_warning(monkeypatch):
+    """Websocket voice exception branch logs warning."""
     warnings: list[str] = []
 
     class _MultimodalPipeline:
@@ -10800,6 +11198,8 @@ async def test_websocket_voice_exception_branch_logs_warning(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_metrics_get_all_sessions_non_awaitable_branch(monkeypatch):
+    """Metrics get all sessions non awaitable branch."""
+
     class _Memory:
         def __len__(self):
             return 0
@@ -10847,6 +11247,8 @@ async def test_metrics_get_all_sessions_non_awaitable_branch(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_metrics_awaits_get_all_sessions_when_it_returns_awaitable(monkeypatch):
+    """Metrics awaits get all sessions when it returns awaitable."""
+
     class _Memory:
         def __len__(self):
             return 2
@@ -10898,6 +11300,7 @@ async def test_metrics_awaits_get_all_sessions_when_it_returns_awaitable(monkeyp
 
 @pytest.mark.asyncio
 async def test_websocket_chat_status_pump_timeout_path_runs_and_unsubscribes(monkeypatch):
+    """Websocket chat status pump timeout path runs and unsubscribes."""
     unsubscribed: list[str] = []
 
     class _EventBus:
@@ -10969,6 +11372,7 @@ async def test_websocket_chat_status_pump_timeout_path_runs_and_unsubscribes(mon
 
 @pytest.mark.asyncio
 async def test_websocket_chat_room_cancel_triggers_cancelled_done_event(monkeypatch):
+    """Websocket chat room cancel triggers cancelled done event."""
     events: list[dict[str, object]] = []
 
     class _EventBus:
@@ -11052,6 +11456,7 @@ async def test_websocket_chat_room_cancel_triggers_cancelled_done_event(monkeypa
 
 @pytest.mark.asyncio
 async def test_local_rate_limiter_initializes_lock_when_missing(monkeypatch):
+    """Local rate limiter initializes lock when missing."""
     monkeypatch.setattr(web_server, "_local_rate_lock", None)
     web_server._local_rate_limits.clear()
     assert await web_server._local_is_rate_limited("init-lock", limit=1, window_sec=30) is False
@@ -11061,6 +11466,8 @@ async def test_local_rate_limiter_initializes_lock_when_missing(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_websocket_chat_anyio_closed_cancels_active_task(monkeypatch):
+    """Websocket chat anyio closed cancels active task."""
+
     class _AnyioClosed(Exception):
         pass
 
@@ -11134,6 +11541,8 @@ async def test_websocket_chat_anyio_closed_cancels_active_task(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_websocket_voice_recommit_cancels_active_task_and_disconnect_waits(monkeypatch):
+    """Websocket voice recommit cancels active task and disconnect waits."""
+
     class _MultimodalPipeline:
         def __init__(self, *_):
             pass
@@ -11227,6 +11636,8 @@ async def test_websocket_voice_recommit_cancels_active_task_and_disconnect_waits
 
 @pytest.mark.asyncio
 async def test_health_response_without_dependencies_returns_success(monkeypatch):
+    """Health response without dependencies returns success."""
+
     class _Health:
         def get_health_summary(self):
             return {"status": "ok", "ollama_online": True}
@@ -11241,6 +11652,8 @@ async def test_health_response_without_dependencies_returns_success(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_websocket_voice_anyio_closed_branch_logs_and_exits(monkeypatch):
+    """Websocket voice anyio closed branch logs and exits."""
+
     class _AnyioClosed(Exception):
         pass
 
@@ -11307,6 +11720,7 @@ async def test_websocket_voice_anyio_closed_branch_logs_and_exits(monkeypatch):
 
 
 def test_register_exception_handlers_http_string_detail_branch():
+    """Register exception handlers http string detail branch."""
     app = web_server.FastAPI()
     web_server._register_exception_handlers(app)
 
@@ -11322,6 +11736,7 @@ def test_register_exception_handlers_http_string_detail_branch():
 
 @pytest.mark.asyncio
 async def test_close_redis_client_when_client_is_none_is_noop():
+    """Close redis client when client is none is noop."""
     web_server._redis_client = None
     await web_server._close_redis_client()
     assert web_server._redis_client is None
@@ -11329,6 +11744,8 @@ async def test_close_redis_client_when_client_is_none_is_noop():
 
 @pytest.mark.asyncio
 async def test_rate_limit_middleware_post_path_falls_through_when_not_limited(monkeypatch):
+    """Rate limit middleware post path falls through when not limited."""
+
     async def _never_limited(*_args, **_kwargs):
         return False
 
@@ -11342,6 +11759,8 @@ async def test_rate_limit_middleware_post_path_falls_through_when_not_limited(mo
 
 @pytest.mark.asyncio
 async def test_websocket_chat_auth_message_success_and_cancel_response_branch(monkeypatch):
+    """Websocket chat auth message success and cancel response branch."""
+
     class _Memory:
         def __len__(self):
             return 1
@@ -11407,6 +11826,8 @@ async def test_websocket_chat_auth_message_success_and_cancel_response_branch(mo
 
 @pytest.mark.asyncio
 async def test_ws_stream_agent_text_response_without_voice_pipeline_sends_plain_chunks():
+    """Ws stream agent text response without voice pipeline sends plain chunks."""
+
     class _Ws:
         def __init__(self):
             self.sent = []
@@ -11425,6 +11846,8 @@ async def test_ws_stream_agent_text_response_without_voice_pipeline_sends_plain_
 
 @pytest.mark.asyncio
 async def test_ddos_rate_limit_uses_local_fallback_and_allows_request(monkeypatch):
+    """Ddos rate limit uses local fallback and allows request."""
+
     async def _no_redis():
         return None
 
@@ -11444,6 +11867,7 @@ async def test_ddos_rate_limit_uses_local_fallback_and_allows_request(monkeypatc
 
 @pytest.mark.asyncio
 async def test_websocket_chat_updates_title_streams_status_and_cleans_metrics(monkeypatch):
+    """Websocket chat updates title streams status and cleans metrics."""
     calls = {"title": [], "reset_tokens": [], "unsubscribed": [], "broadcasts": []}
 
     class _EventBus:
@@ -11545,6 +11969,7 @@ async def test_websocket_chat_updates_title_streams_status_and_cleans_metrics(mo
 
 @pytest.mark.asyncio
 async def test_websocket_chat_message_status_stream_emits_and_cleans_context(monkeypatch):
+    """Websocket chat message status stream emits and cleans context."""
     calls = {"unsubscribe": [], "reset": [], "statuses": []}
 
     class _EventBus:
@@ -11626,6 +12051,7 @@ async def test_websocket_chat_message_status_stream_emits_and_cleans_context(mon
 
 @pytest.mark.asyncio
 async def test_websocket_chat_room_status_stream_timeout_and_task_cleanup(monkeypatch):
+    """Websocket chat room status stream timeout and task cleanup."""
     calls = {"broadcast": [], "unsubscribe": [], "reset": []}
 
     class _EventBus:
@@ -11712,6 +12138,7 @@ async def test_websocket_chat_room_status_stream_timeout_and_task_cleanup(monkey
 
 @pytest.mark.asyncio
 async def test_health_check_delegates_to_health_response(monkeypatch):
+    """Health check delegates to health response."""
     calls = []
 
     async def _health(require_dependencies: bool):
@@ -11728,6 +12155,7 @@ async def test_health_check_delegates_to_health_response(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_ready_check_delegates_to_health_response(monkeypatch):
+    """Ready check delegates to health response."""
     calls = []
 
     async def _health(require_dependencies: bool):
@@ -11746,6 +12174,7 @@ async def test_ready_check_delegates_to_health_response(monkeypatch):
 async def test_websocket_chat_cleanup_unsubscribes_and_resets_metrics_on_status_task_failure(
     monkeypatch,
 ):
+    """Websocket chat cleanup unsubscribes and resets metrics on status task failure."""
     calls = {"unsubscribe": [], "reset": []}
 
     class _EventBus:
@@ -11834,6 +12263,7 @@ async def test_websocket_chat_cleanup_unsubscribes_and_resets_metrics_on_status_
 async def test_websocket_chat_room_cleanup_clears_done_active_task_when_status_task_creation_fails(
     monkeypatch,
 ):
+    """Websocket chat room cleanup clears done active task when status task creation fails."""
     calls = {"unsubscribe": [], "reset": []}
     room = web_server._CollaborationRoom("team:cleanup")
 
@@ -11935,6 +12365,7 @@ async def test_websocket_chat_room_cleanup_clears_done_active_task_when_status_t
 
 # Tests kept from the former test_main.py during root web-server suite consolidation.
 def test_get_rate_limit_key_prefers_authenticated_user() -> None:
+    """Get rate limit key prefers authenticated user."""
     request = _make_request("/files", "GET")
     request.state.user = SimpleNamespace(id="u-42", tenant_id="tenant-a")
 
@@ -11945,6 +12376,7 @@ def test_get_rate_limit_key_prefers_authenticated_user() -> None:
 
 
 async def test_federation_and_github_webhook_paths(monkeypatch):
+    """Federation and github webhook paths."""
     monkeypatch.setattr(web_server.cfg, "ENABLE_SWARM_FEDERATION", True)
     monkeypatch.setattr(web_server.cfg, "SIDAR_ENV", "test", raising=False)
     monkeypatch.setattr(
@@ -12051,6 +12483,7 @@ async def test_federation_and_github_webhook_paths(monkeypatch):
 
 
 def test_resolve_safe_ps_binary_accepts_whitelisted_only(monkeypatch, tmp_path):
+    """Resolve safe ps binary accepts whitelisted only."""
     # /tmp altındaki rastgele bir ikili kabul edilmemeli (SAST B603 hardening).
     bogus = tmp_path / "ps"
     bogus.write_text("#!/bin/sh\necho hi\n")
@@ -12061,6 +12494,7 @@ def test_resolve_safe_ps_binary_accepts_whitelisted_only(monkeypatch, tmp_path):
 
 
 def test_resolve_safe_ps_binary_returns_existing_whitelisted_path(monkeypatch, tmp_path):
+    """Resolve safe ps binary returns existing whitelisted path."""
     fake_ps = tmp_path / "ps"
     fake_ps.write_text("#!/bin/sh\necho hi\n")
     fake_ps.chmod(0o755)
@@ -12070,6 +12504,8 @@ def test_resolve_safe_ps_binary_returns_existing_whitelisted_path(monkeypatch, t
 
 
 def test_main_rejects_wildcard_host_in_production(monkeypatch):
+    """Main rejects wildcard host in production."""
+
     class _Args:
         host = "0.0.0.0"
         port = 9194
@@ -12111,6 +12547,7 @@ def test_main_rejects_wildcard_host_in_production(monkeypatch):
 
 
 def test_load_plugin_agent_class_rejects_baseagent_symbol_name():
+    """Load plugin agent class rejects baseagent symbol name."""
     with pytest.raises(web_server.HTTPException):
         web_server._load_plugin_agent_class(
             "from agent.base_agent import BaseAgent\n",
@@ -12120,6 +12557,7 @@ def test_load_plugin_agent_class_rejects_baseagent_symbol_name():
 
 
 def test_web_server_uses_cached_config_singleton() -> None:
+    """Web server uses cached config singleton."""
     import config as config_module
     import web_server
 
@@ -12132,6 +12570,7 @@ def test_web_server_uses_cached_config_singleton() -> None:
 
 
 def test_web_server_refreshes_cached_config_after_environment_reload(monkeypatch) -> None:
+    """Web server refreshes cached config after environment reload."""
     import config as config_module
     import web_server
 

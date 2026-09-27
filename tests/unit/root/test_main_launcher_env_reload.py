@@ -1,3 +1,5 @@
+"""Unit tests for env reloading in the ``main`` launcher."""
+
 from types import SimpleNamespace
 
 import main as launcher
@@ -9,6 +11,7 @@ class _FakeConfig:
 
 
 def test_doctor_auto_fix_reloads_database_url_from_dotenv_chain(monkeypatch, tmp_path):
+    """Doctor auto fix reloads database url from dotenv chain."""
     base_env = tmp_path / ".env"
     advanced_env = tmp_path / ".env.advanced"
     development_env = tmp_path / ".env.development"
@@ -55,6 +58,7 @@ def test_doctor_auto_fix_reloads_database_url_from_dotenv_chain(monkeypatch, tmp
 
 
 def test_revalidate_doctor_check_flags_lost_env_key_regression(monkeypatch, capsys):
+    """Revalidate doctor check flags lost env key regression."""
     monkeypatch.setattr(launcher, "_reload_environment_after_auto_fix", lambda details: True)
     updated_check = SimpleNamespace(
         name="database_env",
@@ -84,6 +88,7 @@ def test_revalidate_doctor_check_flags_lost_env_key_regression(monkeypatch, caps
 
 
 def test_run_doctor_auto_fix_command_keeps_seed_rag_command(monkeypatch, capsys):
+    """Run doctor auto fix command keeps seed rag command."""
     captured: dict[str, list[str]] = {}
 
     def fake_run(cmd, **_kwargs):
