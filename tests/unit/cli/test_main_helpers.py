@@ -98,6 +98,7 @@ def _mock_critical_config_validation(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_import_time_config_success_initializes_directories(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Import time config success initializes directories."""
     fake_config = types.ModuleType("config")
 
     class _ConfigWithInit:
@@ -118,6 +119,7 @@ def test_import_time_config_success_initializes_directories(
 def test_import_time_config_success_without_initialize_directories(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Import time config success without initialize directories."""
     fake_config = types.ModuleType("config")
 
     class _ConfigWithoutInit:
@@ -134,6 +136,7 @@ def test_import_time_config_success_without_initialize_directories(
 def test_import_time_config_failure_uses_dummy_config(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Import time config failure uses dummy config."""
     loaded = _load_main_module_with_config(
         monkeypatch, "main_config_missing", fail_config_import=True
     )
@@ -145,6 +148,7 @@ def test_import_time_config_failure_uses_dummy_config(
 
 
 def test_print_banner_outputs_launcher_title(capsys: pytest.CaptureFixture[str]) -> None:
+    """Print banner outputs launcher title."""
     main.print_banner()
 
     out = capsys.readouterr().out
@@ -155,6 +159,7 @@ def test_print_banner_outputs_launcher_title(capsys: pytest.CaptureFixture[str])
 def test_ask_choice_reprompts_then_returns_default(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Ask choice reprompts then returns default."""
     answers = iter(["bad", ""])
     monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
 
@@ -169,12 +174,14 @@ def test_ask_choice_reprompts_then_returns_default(
 
 
 def test_ask_choice_returns_selected_option(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ask choice returns selected option."""
     monkeypatch.setattr(builtins, "input", lambda _prompt: "2")
 
     assert main.ask_choice("Mod seç", {"1": ("Web", "web"), "2": ("CLI", "cli")}, "1") == "cli"
 
 
 def test_ask_text_and_confirm_defaults_and_responses(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ask text and confirm defaults and responses."""
     answers = iter(["", "custom text", "", "n", "evet"])
     monkeypatch.setattr(builtins, "input", lambda _prompt: next(answers))
 
@@ -186,6 +193,7 @@ def test_ask_text_and_confirm_defaults_and_responses(monkeypatch: pytest.MonkeyP
 
 
 def test_safe_choice_falls_back_for_invalid_inputs() -> None:
+    """Safe choice falls back for invalid inputs."""
     allowed = {"web", "cli"}
 
     assert _safe_choice("web", default="cli", allowed=allowed) == "web"
@@ -194,6 +202,7 @@ def test_safe_choice_falls_back_for_invalid_inputs() -> None:
 
 
 def test_safe_text_and_port_normalization() -> None:
+    """Safe text and port normalization."""
     assert _safe_text("  hello  ", default="x") == "hello"
     assert _safe_text("", default="x") == "x"
 
@@ -203,10 +212,12 @@ def test_safe_text_and_port_normalization() -> None:
 
 
 def test_safe_text_returns_default_for_none() -> None:
+    """Safe text returns default for none."""
     assert _safe_text(None, default="fallback") == "fallback"
 
 
 def test_safe_host_validates_and_falls_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Safe host validates and falls back."""
     monkeypatch.delenv("SIDAR_ENV", raising=False)
     monkeypatch.delenv("SIDAR_ALLOW_PUBLIC_BIND", raising=False)
 
@@ -222,6 +233,7 @@ def test_safe_host_validates_and_falls_back(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_build_command_rejects_invalid_provider_level_and_log() -> None:
+    """Build command rejects invalid provider level and log."""
     with pytest.raises(ValueError, match="provider"):
         build_command("web", "bad", "full", "info", {})
     with pytest.raises(ValueError, match="level"):
@@ -231,6 +243,7 @@ def test_build_command_rejects_invalid_provider_level_and_log() -> None:
 
 
 def test_build_command_cli_non_ollama_omits_model() -> None:
+    """Build command cli non ollama omits model."""
     cmd = build_command("cli", "openai", "sandbox", "warning", {"model": "ignored"})
 
     assert "cli.py" in cmd
@@ -238,6 +251,8 @@ def test_build_command_cli_non_ollama_omits_model() -> None:
 
 
 def test_launcher_event_loop_manager_runs_coroutine() -> None:
+    """Launcher event loop manager runs coroutine."""
+
     async def _coro() -> str:
         return "ok"
 
@@ -246,6 +261,8 @@ def test_launcher_event_loop_manager_runs_coroutine() -> None:
 
 @pytest.mark.asyncio
 async def test_launcher_event_loop_manager_rejects_nested_loop() -> None:
+    """Launcher event loop manager rejects nested loop."""
+
     async def _coro() -> str:
         return "nested"
 
@@ -258,6 +275,7 @@ async def test_launcher_event_loop_manager_rejects_nested_loop() -> None:
 def test_reload_config_environment_reports_typed_failure(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Reload config environment reports typed failure."""
     fake_config = types.SimpleNamespace(
         reload_environment=lambda **_kwargs: (_ for _ in ()).throw(ValueError("bad env"))
     )
@@ -270,6 +288,7 @@ def test_reload_config_environment_reports_typed_failure(
 def test_launcher_doctor_preflight_prints_actionable_guidance(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Launcher doctor preflight prints actionable guidance."""
     import core.doctor as doctor
 
     monkeypatch.setattr(
@@ -332,6 +351,7 @@ def test_launcher_doctor_preflight_prints_actionable_guidance(
 def test_launcher_doctor_preflight_revalidates_successful_auto_fix(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Launcher doctor preflight revalidates successful auto fix."""
     import core.doctor as doctor
 
     calls = {"database_env": 0}
@@ -390,6 +410,7 @@ def test_launcher_doctor_preflight_revalidates_successful_auto_fix(
 def test_launcher_doctor_preflight_reports_failed_revalidation(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Launcher doctor preflight reports failed revalidation."""
     import core.doctor as doctor
 
     calls = {"database_env": 0}
@@ -442,6 +463,7 @@ def test_launcher_doctor_preflight_reports_failed_revalidation(
 def test_launcher_doctor_preflight_ignores_stale_revalidation_cache(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Launcher doctor preflight ignores stale revalidation cache."""
     import core.doctor as doctor
 
     calls = {"database_env": 0, "connectivity": 0, "rag": 0, "gpu": 0}
@@ -493,6 +515,7 @@ def test_launcher_doctor_preflight_ignores_stale_revalidation_cache(
 def test_launcher_doctor_preflight_skips_database_dependents_after_failed_database_env(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Launcher doctor preflight skips database dependents after failed database env."""
     import core.doctor as doctor
 
     calls = {"database_env": 0, "connectivity": 0, "rag": 0, "gpu": 0}
@@ -536,6 +559,7 @@ def test_launcher_doctor_preflight_skips_database_dependents_after_failed_databa
 def test_launcher_doctor_preflight_prompts_for_apply_all_when_interactive(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Launcher doctor preflight prompts for apply all when interactive."""
     import core.doctor as doctor
     from core.doctor.launcher_preflight import (
         LauncherDoctorPreflightHooks,
@@ -583,6 +607,7 @@ def test_launcher_doctor_preflight_prompts_for_apply_all_when_interactive(
 def test_launcher_doctor_preflight_reports_parallel_check_exception(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Launcher doctor preflight reports parallel check exception."""
     import core.doctor as doctor
 
     monkeypatch.setattr(
@@ -624,6 +649,7 @@ def test_launcher_doctor_preflight_reports_parallel_check_exception(
 def test_revalidate_doctor_auto_fix_reloads_doctor_source_definitions(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Revalidate doctor auto fix reloads doctor source definitions."""
     env_file = tmp_path / ".env"
     env_file.write_text(
         "DATABASE_URL=postgresql://sidar:new@localhost:5432/sidar\n", encoding="utf-8"
@@ -657,6 +683,7 @@ def test_revalidate_doctor_auto_fix_reloads_doctor_source_definitions(
 def test_revalidate_doctor_auto_fix_reloads_environment_before_check(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Revalidate doctor auto fix reloads environment before check."""
     reload_calls: list[tuple[str | None, str]] = []
     monkeypatch.setattr(main, "cfg", SimpleNamespace(BASE_DIR=str(tmp_path)))
     monkeypatch.delenv("SIDAR_ENV", raising=False)
@@ -687,6 +714,7 @@ def test_revalidate_doctor_auto_fix_reloads_environment_before_check(
 def test_doctor_auto_fix_runs_seed_command_in_subprocess(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Doctor auto fix runs seed command in subprocess."""
     seen: dict[str, object] = {}
     check = SimpleNamespace(
         name="rag_readiness",
@@ -712,6 +740,7 @@ def test_doctor_auto_fix_runs_seed_command_in_subprocess(
 def test_doctor_auto_fix_uses_subprocess_for_other_commands(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Doctor auto fix uses subprocess for other commands."""
     seen: dict[str, object] = {}
     check = SimpleNamespace(
         name="database_env",
@@ -737,6 +766,7 @@ def test_doctor_auto_fix_uses_subprocess_for_other_commands(
 def test_doctor_auto_fix_steps_revalidate_after_each_step_until_pass(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Doctor auto fix steps revalidate after each step until pass."""
     commands: list[list[str]] = []
     revalidation_calls = {"count": 0}
     check = SimpleNamespace(
@@ -783,6 +813,7 @@ def test_doctor_auto_fix_steps_revalidate_after_each_step_until_pass(
 def test_doctor_auto_fix_runs_fallback_when_primary_fails(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Doctor auto fix runs fallback when primary fails."""
     commands: list[list[str]] = []
     check = SimpleNamespace(
         name="database_env",
@@ -810,6 +841,7 @@ def test_doctor_auto_fix_runs_fallback_when_primary_fails(
 
 
 def test_doctor_auto_fix_skips_without_tty(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Doctor auto fix skips without tty."""
     check = SimpleNamespace(
         name="rag_readiness",
         status="warn",
@@ -824,6 +856,7 @@ def test_doctor_auto_fix_skips_without_tty(monkeypatch: pytest.MonkeyPatch) -> N
 def test_preflight_offers_development_bootstrap_from_preflight_block(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Preflight offers development bootstrap from preflight block."""
     (tmp_path / ".env").write_text("DATABASE_URL=sqlite:///x", encoding="utf-8")
     monkeypatch.setattr(
         main,
@@ -846,6 +879,7 @@ def test_preflight_offers_development_bootstrap_from_preflight_block(
 def test_preflight_reports_existing_env_and_database_url_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
+    """Preflight reports existing env and database url warning."""
     (tmp_path / ".env").write_text("DATABASE_URL=sqlite:///x", encoding="utf-8")
     monkeypatch.setattr(
         main,
@@ -861,6 +895,8 @@ def test_preflight_reports_existing_env_and_database_url_warning(
 def test_preflight_ollama_success_and_non_200(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Preflight ollama success and non 200."""
+
     class _Response:
         def __init__(self, status_code: int) -> None:
             self.status_code = status_code
@@ -903,6 +939,7 @@ def test_preflight_ollama_success_and_non_200(
 def test_preflight_ollama_import_error_and_runtime_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Preflight ollama import error and runtime error."""
     monkeypatch.setattr(
         main,
         "cfg",
@@ -943,6 +980,7 @@ def test_preflight_ollama_import_error_and_runtime_error(
 def test_run_wizard_cli_ollama_runs_without_extra_final_confirm(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
+    """Run wizard cli ollama runs without extra final confirm."""
     monkeypatch.setattr(main, "print_banner", lambda: None)
     choices = iter(["cli", "ollama", "sandbox", "debug"])
     seen: dict[str, object] = {}
@@ -970,6 +1008,7 @@ def test_run_wizard_cli_ollama_runs_without_extra_final_confirm(
 
 
 def test_run_wizard_web_executes_confirmed_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run wizard web executes confirmed command."""
     monkeypatch.setattr(main, "print_banner", lambda: None)
     choices = iter(["web", "openai", "full", "info"])
     text_answers = iter(["127.0.0.1", "9000"])
@@ -994,6 +1033,7 @@ def test_run_wizard_web_executes_confirmed_command(monkeypatch: pytest.MonkeyPat
 def test_launcher_session_save_load_normalizes_values(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Launcher session save load normalizes values."""
     monkeypatch.setattr(
         main,
         "cfg",
@@ -1030,6 +1070,7 @@ def test_launcher_session_save_load_normalizes_values(
 def test_launcher_session_save_load_uses_file_lock(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Launcher session save load uses file lock."""
     calls: list[int] = []
 
     def _fake_flock(_fd: int, operation: int) -> None:
@@ -1059,6 +1100,7 @@ def test_launcher_session_save_load_uses_file_lock(
 def test_run_doctor_auto_fix_stops_at_retry_limit(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Run doctor auto fix stops at retry limit."""
     monkeypatch.setattr(main.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(main, "MAX_AUTOFIX_RETRIES", 2)
     monkeypatch.setattr(main, "_run_doctor_auto_fix_command", lambda _cmd: True)
@@ -1083,6 +1125,7 @@ def test_run_doctor_auto_fix_stops_at_retry_limit(
 def test_launcher_doctor_preflight_limits_total_auto_fix_attempts(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Launcher doctor preflight limits total auto fix attempts."""
     import core.doctor as doctor
 
     monkeypatch.setattr(main, "MAX_AUTOFIX_RETRIES", 1)
@@ -1122,6 +1165,7 @@ def test_launcher_doctor_preflight_limits_total_auto_fix_attempts(
 
 
 def test_launcher_child_env_quiets_config_banner(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Launcher child env quiets config banner."""
     monkeypatch.setenv("SIDAR_CONFIG_QUIET", "false")
     monkeypatch.setenv("CUSTOM_ENV", "kept")
 
@@ -1135,6 +1179,7 @@ def test_launcher_child_env_quiets_config_banner(monkeypatch: pytest.MonkeyPatch
 def test_launcher_child_env_does_not_force_skip_boot_checks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Launcher child env does not force skip boot checks."""
     monkeypatch.delenv("SIDAR_SKIP_BOOT_CHECKS", raising=False)
 
     child_env = main._launcher_child_env()
@@ -1145,6 +1190,7 @@ def test_launcher_child_env_does_not_force_skip_boot_checks(
 def test_launcher_child_env_preserves_explicit_skip_boot_checks_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Launcher child env preserves explicit skip boot checks request."""
     monkeypatch.setenv("SIDAR_SKIP_BOOT_CHECKS", "1")
 
     child_env = main._launcher_child_env()
@@ -1155,6 +1201,7 @@ def test_launcher_child_env_preserves_explicit_skip_boot_checks_request(
 def test_maybe_bootstrap_development_env_runs_bootstrap_command(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Maybe bootstrap development env runs bootstrap command."""
     seen: dict[str, object] = {}
     reload_calls: list[str] = []
     monkeypatch.setattr(main, "cfg", SimpleNamespace(BASE_DIR=str(tmp_path)))
@@ -1192,6 +1239,7 @@ def test_maybe_bootstrap_development_env_runs_bootstrap_command(
 def test_maybe_bootstrap_development_env_skips_non_interactive(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Maybe bootstrap development env skips non interactive."""
     monkeypatch.setattr(main, "cfg", SimpleNamespace(BASE_DIR=str(tmp_path)))
     monkeypatch.setattr(main.sys.stdin, "isatty", lambda: False)
     monkeypatch.setattr(main, "confirm", lambda *_args, **_kwargs: pytest.fail("should not prompt"))
@@ -1200,6 +1248,7 @@ def test_maybe_bootstrap_development_env_skips_non_interactive(
 
 
 def test_execute_command_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Execute command success."""
     seen: dict[str, object] = {}
 
     def _run(cmd: list[str], **kwargs: object) -> None:
@@ -1214,6 +1263,7 @@ def test_execute_command_success(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_main_quick_mode_without_telemetry_hook(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Main quick mode without telemetry hook."""
     monkeypatch.setattr(
         main,
         "cfg",
@@ -1237,6 +1287,7 @@ def test_main_quick_mode_without_telemetry_hook(monkeypatch: pytest.MonkeyPatch)
 
 
 def test_build_command_for_web_and_cli_modes() -> None:
+    """Build command for web and cli modes."""
     web_cmd = build_command(
         mode="web",
         provider="ollama",
@@ -1258,6 +1309,7 @@ def test_build_command_for_web_and_cli_modes() -> None:
 
 
 def test_build_command_rejects_invalid_mode() -> None:
+    """Build command rejects invalid mode."""
     with pytest.raises(ValueError):
         build_command(
             mode="invalid",
@@ -1269,6 +1321,7 @@ def test_build_command_rejects_invalid_mode() -> None:
 
 
 def test_main_quick_mode_executes_built_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Main quick mode executes built command."""
     monkeypatch.setattr(
         "sys.argv",
         ["main.py", "--quick", "cli", "--provider", "ollama", "--level", "full"],
@@ -1301,6 +1354,7 @@ def test_main_quick_mode_executes_built_command(monkeypatch: pytest.MonkeyPatch)
 def test_main_skip_wizard_uses_default_selection_with_cli_overrides(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Main skip wizard uses default selection with cli overrides."""
     monkeypatch.setattr(
         "sys.argv",
         [
@@ -1346,6 +1400,7 @@ def test_main_skip_wizard_uses_default_selection_with_cli_overrides(
 
 
 def test_main_last_replays_cached_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Main last replays cached session."""
     cached = {
         "mode": "cli",
         "provider": "ollama",
@@ -1374,6 +1429,7 @@ def test_main_last_replays_cached_session(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_main_rejects_conflicting_launch_modes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Main rejects conflicting launch modes."""
     monkeypatch.setattr("sys.argv", ["main.py", "--quick", "web", "--last"])
 
     with pytest.raises(SystemExit) as exc:
@@ -1383,6 +1439,7 @@ def test_main_rejects_conflicting_launch_modes(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_main_quick_mode_rejects_invalid_port(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Main quick mode rejects invalid port."""
     monkeypatch.setattr("sys.argv", ["main.py", "--quick", "web", "--port", "70000"])
 
     with pytest.raises(SystemExit) as exc:
@@ -1392,6 +1449,7 @@ def test_main_quick_mode_rejects_invalid_port(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_main_quick_mode_rejects_nonnumeric_port(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Main quick mode rejects nonnumeric port."""
     monkeypatch.setattr("sys.argv", ["main.py", "--quick", "web", "--port", "abc"])
 
     with pytest.raises(SystemExit) as exc:
@@ -1401,6 +1459,7 @@ def test_main_quick_mode_rejects_nonnumeric_port(monkeypatch: pytest.MonkeyPatch
 
 
 def test_main_exits_when_runtime_dependencies_fail(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Main exits when runtime dependencies fail."""
     monkeypatch.setattr("sys.argv", ["main.py", "--quick", "web", "--provider", "openai"])
     monkeypatch.setattr(
         main, "validate_runtime_dependencies", lambda _mode: (False, "runtime error")
@@ -1415,6 +1474,7 @@ def test_main_exits_when_runtime_dependencies_fail(monkeypatch: pytest.MonkeyPat
 def test_run_wizard_returns_2_when_runtime_dependencies_fail(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Run wizard returns 2 when runtime dependencies fail."""
     monkeypatch.setattr(main, "print_banner", lambda: None)
     choices = iter(["web", "openai", "full", "info"])
     monkeypatch.setattr(main, "ask_choice", lambda *args, **kwargs: next(choices))
@@ -1433,6 +1493,7 @@ def test_run_wizard_returns_2_when_runtime_dependencies_fail(
 def test_execute_command_capture_output_nonzero(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Execute command capture output nonzero."""
     monkeypatch.setattr(main, "_run_with_streaming", lambda _cmd, _log: 7)
 
     rc = main.execute_command(["python", "cli.py"], capture_output=True)
@@ -1443,6 +1504,8 @@ def test_execute_command_capture_output_nonzero(
 
 
 def test_execute_command_handles_called_process_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Execute command handles called process error."""
+
     def _raise(*_args, **_kwargs):
         raise main.subprocess.CalledProcessError(returncode=9, cmd=["python", "cli.py"])
 
@@ -1454,6 +1517,7 @@ def test_execute_command_handles_called_process_error(monkeypatch: pytest.Monkey
 
 
 def test_main_without_quick_runs_wizard_exit_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Main without quick runs wizard exit code."""
     monkeypatch.setattr("sys.argv", ["main.py"])
     monkeypatch.setattr(main, "run_wizard", lambda: 5)
 
@@ -1466,6 +1530,7 @@ def test_main_without_quick_runs_wizard_exit_code(monkeypatch: pytest.MonkeyPatc
 def test_validate_runtime_dependencies_reflects_config_import_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Validate runtime dependencies reflects config import state."""
     monkeypatch.setattr(main, "CONFIG_IMPORT_OK", True)
     assert main.validate_runtime_dependencies("web") == (True, None)
 
@@ -1478,6 +1543,7 @@ def test_validate_runtime_dependencies_reflects_config_import_state(
 def test_preflight_warns_when_env_missing_and_provider_keys_empty(
     monkeypatch: pytest.MonkeyPatch, tmp_path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Preflight warns when env missing and provider keys empty."""
     cfg = SimpleNamespace(
         BASE_DIR=str(tmp_path),
         DATABASE_URL="",
@@ -1502,6 +1568,8 @@ def test_preflight_warns_when_env_missing_and_provider_keys_empty(
 
 
 def test_execute_command_handles_keyboard_interrupt(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Execute command handles keyboard interrupt."""
+
     def _raise(*_args, **_kwargs):
         raise KeyboardInterrupt
 
@@ -1512,6 +1580,8 @@ def test_execute_command_handles_keyboard_interrupt(monkeypatch: pytest.MonkeyPa
 def test_execute_command_capture_output_handles_keyboard_interrupt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Execute command capture output handles keyboard interrupt."""
+
     def _raise(*_args, **_kwargs):
         raise KeyboardInterrupt
 
@@ -1520,6 +1590,8 @@ def test_execute_command_capture_output_handles_keyboard_interrupt(
 
 
 def test_execute_command_handles_unexpected_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Execute command handles unexpected exception."""
+
     def _raise(*_args, **_kwargs):
         raise RuntimeError("boom")
 
@@ -1530,6 +1602,7 @@ def test_execute_command_handles_unexpected_exception(monkeypatch: pytest.Monkey
 def test_main_propagates_unexpected_runtime_error_from_wizard(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Main propagates unexpected runtime error from wizard."""
     monkeypatch.setattr("sys.argv", ["main.py"])
 
     def _boom():
@@ -1541,6 +1614,7 @@ def test_main_propagates_unexpected_runtime_error_from_wizard(
 
 
 def test_main_exits_when_critical_settings_invalid(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Main exits when critical settings invalid."""
     fake_cfg = SimpleNamespace(
         validate_critical_settings=lambda: False,
         init_telemetry=lambda **_kwargs: None,
@@ -1562,6 +1636,7 @@ def test_main_exits_when_critical_settings_invalid(monkeypatch: pytest.MonkeyPat
 def test_run_with_streaming_writes_stdout_stderr_and_exit_code(
     monkeypatch: pytest.MonkeyPatch, tmp_path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Run with streaming writes stdout stderr and exit code."""
     fake_stdout = _FakeStreamingPipe("hello stdout\n")
     fake_stderr = _FakeStreamingPipe("warn stderr\n")
     fake_process = _FakeStreamingProcess(stdout=fake_stdout, stderr=fake_stderr, return_code=0)
@@ -1601,6 +1676,7 @@ def test_run_with_streaming_writes_stdout_stderr_and_exit_code(
 def test_run_with_streaming_without_log_returns_child_exit_code(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Run with streaming without log returns child exit code."""
     fake_process = _FakeStreamingProcess(
         stdout=_FakeStreamingPipe("only stdout\n"),
         stderr=_FakeStreamingPipe(""),
@@ -1617,6 +1693,7 @@ def test_run_with_streaming_without_log_returns_child_exit_code(
 def test_run_with_streaming_rejects_missing_child_pipes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Run with streaming rejects missing child pipes."""
     fake_process = _FakeStreamingProcess(stdout=None, stderr=_FakeStreamingPipe(""))
     monkeypatch.setattr(main.subprocess, "Popen", lambda *_args, **_kwargs: fake_process)
 
@@ -1627,6 +1704,7 @@ def test_run_with_streaming_rejects_missing_child_pipes(
 def test_run_with_streaming_terminates_process_still_running_after_wait(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Run with streaming terminates process still running after wait."""
     fake_process = _FakeStreamingProcess(
         stdout=_FakeStreamingPipe(""),
         stderr=_FakeStreamingPipe(""),
@@ -1643,6 +1721,8 @@ def test_run_with_streaming_terminates_process_still_running_after_wait(
 def test_run_with_streaming_kills_when_terminate_timeout_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Run with streaming kills when terminate timeout fails."""
+
     class _TimeoutOnTerminateProcess(_FakeStreamingProcess):
         def __init__(self) -> None:
             super().__init__(

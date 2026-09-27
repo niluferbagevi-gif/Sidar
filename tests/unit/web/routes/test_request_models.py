@@ -9,6 +9,7 @@ from web.routes import request_models
 
 
 def test_swarm_execute_request_builds_typed_tasks() -> None:
+    """Swarm execute request builds typed tasks."""
     payload = request_models.SwarmExecuteRequest(
         mode="pipeline",
         tasks=[{"goal": "Review", "intent": "review"}],
@@ -32,5 +33,6 @@ def test_swarm_execute_request_builds_typed_tasks() -> None:
 def test_request_models_reject_invalid_route_payloads(
     model: type, payload: dict[str, object]
 ) -> None:
+    """Request models reject invalid route payloads."""
     with pytest.raises(ValidationError):
         model.model_validate(payload)

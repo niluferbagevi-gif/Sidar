@@ -43,6 +43,7 @@ class _Agent:
 
 
 def test_prewarm_closes_db_pool_on_the_loop_that_opened_it() -> None:
+    """Prewarm closes db pool on the loop that opened it."""
     agent = _Agent()
 
     asyncio.run(web_cli._prewarm_agent(agent))
@@ -53,6 +54,7 @@ def test_prewarm_closes_db_pool_on_the_loop_that_opened_it() -> None:
 
 
 def test_prewarm_still_releases_pool_when_initialize_fails() -> None:
+    """Prewarm still releases pool when initialize fails."""
     agent = _Agent(fail=True)
 
     with pytest.raises(RuntimeError, match="init failed"):
@@ -62,6 +64,7 @@ def test_prewarm_still_releases_pool_when_initialize_fails() -> None:
 
 
 def test_prewarm_tolerates_agents_without_memory_or_async_initialize() -> None:
+    """Prewarm tolerates agents without memory or async initialize."""
     asyncio.run(web_cli._prewarm_agent(SimpleNamespace(initialize=lambda: None)))
     asyncio.run(web_cli._prewarm_agent(SimpleNamespace(memory=SimpleNamespace(db=None))))
     sync_db = SimpleNamespace(closed=False)
@@ -72,6 +75,7 @@ def test_prewarm_tolerates_agents_without_memory_or_async_initialize() -> None:
 
 @pytest.mark.parametrize("fail", [False, True])
 def test_main_never_hands_prewarmed_agent_to_server(monkeypatch, fail: bool) -> None:
+    """Main never hands prewarmed agent to server."""
     import web_server
 
     class _Args:

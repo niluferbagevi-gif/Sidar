@@ -1,3 +1,5 @@
+"""Tests for the ``/ws/chat`` router factory in ``web.routes.ws_chat``."""
+
 from __future__ import annotations
 
 import pytest
@@ -8,6 +10,7 @@ from web.routes import ws_chat
 
 
 def test_build_ws_chat_router_dispatches_to_websocket_chat(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Build ws chat router dispatches to websocket chat."""
     called: dict[str, object] = {}
 
     async def fake_chat(websocket, deps):

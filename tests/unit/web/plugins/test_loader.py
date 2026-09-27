@@ -1,3 +1,5 @@
+"""Unit tests for the uploaded-plugin loader in ``web.plugins.loader``."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -14,6 +16,7 @@ def _unexpected_sandbox_run(_source: str, _label: str) -> dict[str, Any]:
 
 
 def test_load_plugin_agent_class_uses_isolated_proxy_for_docker_backend(monkeypatch):
+    """Load plugin agent class uses isolated proxy for docker backend."""
     proxy = type("IsolatedPluginProxy", (), {})
     calls: list[tuple[str, str | None, str]] = []
 
@@ -37,6 +40,8 @@ def test_load_plugin_agent_class_uses_isolated_proxy_for_docker_backend(monkeypa
 
 
 def test_load_plugin_agent_class_maps_docker_sandbox_error_to_503(monkeypatch):
+    """Load plugin agent class maps docker sandbox error to 503."""
+
     def _fail(*_args: Any) -> type:
         raise plugin_sandbox.PluginSandboxError("docker unavailable")
 
@@ -57,6 +62,8 @@ def test_load_plugin_agent_class_maps_docker_sandbox_error_to_503(monkeypatch):
 
 
 def test_load_plugin_agent_class_rejects_base_whose_subclass_check_fails(monkeypatch):
+    """Load plugin agent class rejects base whose subclass check fails."""
+
     class _BrokenCheckMeta(type):
         def __subclasscheck__(cls, subclass: type) -> bool:
             raise TypeError("subclass check failed")
@@ -84,6 +91,8 @@ def test_load_plugin_agent_class_rejects_base_whose_subclass_check_fails(monkeyp
 
 
 def test_load_plugin_agent_class_ignores_classes_with_unrelated_bases(monkeypatch):
+    """Load plugin agent class ignores classes with unrelated bases."""
+
     class Unrelated:
         pass
 
@@ -112,6 +121,7 @@ def test_load_plugin_agent_class_ignores_classes_with_unrelated_bases(monkeypatc
 def test_validate_and_persist_plugin_file_describes_source_for_docker_backend(
     monkeypatch, tmp_path
 ):
+    """Validate and persist plugin file describes source for docker backend."""
     described: list[tuple[str, str | None, str]] = []
 
     class _Backend:
@@ -132,6 +142,8 @@ def test_validate_and_persist_plugin_file_describes_source_for_docker_backend(
 
 
 def test_validate_and_persist_plugin_file_maps_docker_sandbox_error_to_503(monkeypatch, tmp_path):
+    """Validate and persist plugin file maps docker sandbox error to 503."""
+
     class _Backend:
         def describe(self, *_args: Any) -> None:
             raise plugin_sandbox.PluginSandboxError("image missing")

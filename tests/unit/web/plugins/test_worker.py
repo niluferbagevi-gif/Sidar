@@ -42,6 +42,7 @@ def _enable_worker_internal_execution(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_worker_describes_and_runs_versioned_agent_rpc() -> None:
+    """Worker describes and runs versioned agent rpc."""
     base = {
         "rpc_version": PLUGIN_RPC_VERSION,
         "source": SOURCE,
@@ -61,6 +62,7 @@ def test_worker_describes_and_runs_versioned_agent_rpc() -> None:
 
 
 def test_worker_rejects_protocol_mismatch_and_unknown_action() -> None:
+    """Worker rejects protocol mismatch and unknown action."""
     with pytest.raises(ValueError, match="RPC sürümü"):
         handle_request({"rpc_version": "0", "action": "describe", "source": SOURCE})
     with pytest.raises(ValueError, match="Desteklenmeyen"):
@@ -68,11 +70,13 @@ def test_worker_rejects_protocol_mismatch_and_unknown_action() -> None:
 
 
 def test_worker_rejects_non_string_plugin_source() -> None:
+    """Worker rejects non string plugin source."""
     with pytest.raises(ValueError, match="metin olmalıdır"):
         handle_request({"rpc_version": PLUGIN_RPC_VERSION, "action": "describe", "source": 123})
 
 
 def test_agent_class_raises_when_requested_name_is_not_a_baseagent_subclass() -> None:
+    """Agent class raises when requested name is not a baseagent subclass."""
     with pytest.raises(ValueError, match="Belirtilen BaseAgent sınıfı bulunamadı: GhostAgent"):
         handle_request(
             {
@@ -85,6 +89,7 @@ def test_agent_class_raises_when_requested_name_is_not_a_baseagent_subclass() ->
 
 
 def test_agent_class_defaults_to_the_only_candidate_when_none_is_requested() -> None:
+    """Agent class defaults to the only candidate when none is requested."""
     described = handle_request(
         {"rpc_version": PLUGIN_RPC_VERSION, "action": "describe", "source": SOURCE}
     )
@@ -93,6 +98,7 @@ def test_agent_class_defaults_to_the_only_candidate_when_none_is_requested() -> 
 
 
 def test_agent_class_raises_when_no_baseagent_subclass_is_defined() -> None:
+    """Agent class raises when no baseagent subclass is defined."""
     with pytest.raises(ValueError, match="BaseAgent türevi bir sınıf bulunamadı"):
         handle_request(
             {
@@ -104,6 +110,7 @@ def test_agent_class_raises_when_no_baseagent_subclass_is_defined() -> None:
 
 
 def test_worker_rejects_non_string_task_prompt() -> None:
+    """Worker rejects non string task prompt."""
     with pytest.raises(ValueError, match="görev girdisi metin olmalıdır"):
         handle_request(
             {
@@ -117,6 +124,7 @@ def test_worker_rejects_non_string_task_prompt() -> None:
 
 
 def test_worker_rejects_agent_returning_non_string_task_result() -> None:
+    """Worker rejects agent returning non string task result."""
     with pytest.raises(ValueError, match="görev çıktısı metin olmalıdır"):
         handle_request(
             {
@@ -132,6 +140,7 @@ def test_worker_rejects_agent_returning_non_string_task_result() -> None:
 def test_main_reads_one_envelope_from_stdin_and_writes_ok_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Main reads one envelope from stdin and writes ok response."""
     request = {
         "rpc_version": PLUGIN_RPC_VERSION,
         "action": "describe",
@@ -153,6 +162,7 @@ def test_main_reads_one_envelope_from_stdin_and_writes_ok_response(
 def test_main_serializes_any_failure_into_a_bounded_ok_false_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Main serializes any failure into a bounded ok false response."""
     monkeypatch.setattr(worker.sys, "stdin", io.StringIO("not-json"))
     out = io.StringIO()
     monkeypatch.setattr(worker, "_RPC_STDOUT", out)
@@ -169,6 +179,7 @@ def test_main_serializes_any_failure_into_a_bounded_ok_false_response(
 
 
 def test_main_rejects_non_dict_envelope(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Main rejects non dict envelope."""
     monkeypatch.setattr(worker.sys, "stdin", io.StringIO(json.dumps(["not", "a", "dict"])))
     out = io.StringIO()
     monkeypatch.setattr(worker, "_RPC_STDOUT", out)

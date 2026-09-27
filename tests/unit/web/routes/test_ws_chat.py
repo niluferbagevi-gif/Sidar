@@ -1,3 +1,5 @@
+"""Unit tests for the chat WebSocket handler in ``web.routes.ws_chat``."""
+
 from __future__ import annotations
 
 import asyncio
@@ -48,6 +50,7 @@ class _Agent:
 
 @pytest.mark.asyncio
 async def test_ws_stream_agent_text_response_streams_sentinels_and_chunks() -> None:
+    """Ws stream agent text response streams sentinels and chunks."""
     ws = _Ws()
 
     await ws_chat.ws_stream_agent_text_response(ws, _Agent(), "prompt")
@@ -61,6 +64,8 @@ async def test_ws_stream_agent_text_response_streams_sentinels_and_chunks() -> N
 
 @pytest.mark.asyncio
 async def test_ws_stream_agent_text_response_stops_when_client_disconnects() -> None:
+    """Ws stream agent text response stops when client disconnects."""
+
     class _StreamingAgent:
         async def respond(self, _prompt: str):
             yield "first"
@@ -81,6 +86,7 @@ async def test_ws_stream_agent_text_response_stops_when_client_disconnects() -> 
 
 @pytest.mark.asyncio
 async def test_send_json_if_connected_returns_false_without_sending_when_disconnected() -> None:
+    """Send json if connected returns false without sending when disconnected."""
     ws = _Ws()
     ws.client_state = WebSocketState.DISCONNECTED
 
@@ -92,6 +98,8 @@ async def test_send_json_if_connected_returns_false_without_sending_when_disconn
 
 @pytest.mark.asyncio
 async def test_ws_stream_agent_text_response_flushes_legacy_voice_pipeline() -> None:
+    """Ws stream agent text response flushes legacy voice pipeline."""
+
     class _LegacyVoicePipeline:
         enabled = True
 
@@ -143,6 +151,8 @@ async def test_ws_stream_agent_text_response_flushes_legacy_voice_pipeline() -> 
 async def test_ws_stream_agent_text_response_flushes_buffered_voice_pipeline_after_sentinels() -> (
     None
 ):
+    """Ws stream agent text response flushes buffered voice pipeline after sentinels."""
+
     class _BufferedVoicePipeline:
         enabled = True
 
@@ -204,6 +214,8 @@ async def test_ws_stream_agent_text_response_flushes_buffered_voice_pipeline_aft
 async def test_ws_stream_agent_text_response_skips_voice_flush_when_disconnects_after_text() -> (
     None
 ):
+    """Ws stream agent text response skips voice flush when disconnects after text."""
+
     class _VoicePipeline:
         enabled = True
 
@@ -240,6 +252,7 @@ async def test_ws_stream_agent_text_response_skips_voice_flush_when_disconnects_
 
 @pytest.mark.asyncio
 async def test_websocket_chat_requires_auth_before_non_auth_action() -> None:
+    """Websocket chat requires auth before non auth action."""
     ws = _Ws(['{"action":"message","message":"hello"}'])
 
     async def _resolve_agent():
@@ -338,6 +351,7 @@ async def test_websocket_chat_auth_timeout_is_absolute_not_reset_by_junk_message
 
 @pytest.mark.asyncio
 async def test_websocket_chat_uses_default_header_token_extractor_when_dependency_missing() -> None:
+    """Websocket chat uses default header token extractor when dependency missing."""
     ws = _Ws(['{"action":"message","message":"hello"}'])
 
     async def _resolve_agent():
@@ -550,6 +564,7 @@ class _Deps:
 
 @pytest.mark.asyncio
 async def test_websocket_chat_rejects_connection_flood_before_accept_and_agent_init() -> None:
+    """Websocket chat rejects connection flood before accept and agent init."""
     ws = _Ws()
     deps = _Deps()
 
@@ -570,6 +585,7 @@ async def test_websocket_chat_rejects_connection_flood_before_accept_and_agent_i
 
 @pytest.mark.asyncio
 async def test_websocket_chat_rejects_invalid_auth_token() -> None:
+    """Websocket chat rejects invalid auth token."""
     ws = _Ws([json.dumps({"action": "auth", "token": "bad-token"})])
     deps = _Deps()
 
@@ -581,6 +597,8 @@ async def test_websocket_chat_rejects_invalid_auth_token() -> None:
 
 @pytest.mark.asyncio
 async def test_websocket_chat_rejects_invalid_header_token_before_first_message() -> None:
+    """Websocket chat rejects invalid header token before first message."""
+
     class _HeaderDeps(_Deps):
         def extract_ws_header_token(self, _header: str):
             return "bad-token", "sidar.ws.chat"
@@ -597,6 +615,7 @@ async def test_websocket_chat_rejects_invalid_header_token_before_first_message(
 
 @pytest.mark.asyncio
 async def test_websocket_chat_ignores_invalid_json_after_auth_then_cleans_up() -> None:
+    """Websocket chat ignores invalid json after auth then cleans up."""
     ws = _Ws(
         [
             json.dumps({"action": "auth", "token": "valid-token"}),
@@ -614,6 +633,7 @@ async def test_websocket_chat_ignores_invalid_json_after_auth_then_cleans_up() -
 
 @pytest.mark.asyncio
 async def test_websocket_chat_ignores_malformed_json_and_processes_next_message() -> None:
+    """Websocket chat ignores malformed json and processes next message."""
     ws = _Ws(
         [
             json.dumps({"action": "auth", "token": "valid-token"}),
@@ -632,6 +652,7 @@ async def test_websocket_chat_ignores_malformed_json_and_processes_next_message(
 
 @pytest.mark.asyncio
 async def test_websocket_chat_ignores_empty_message_after_auth() -> None:
+    """Websocket chat ignores empty message after auth."""
     ws = _Ws(
         [
             json.dumps({"action": "auth", "token": "valid-token"}),
@@ -648,6 +669,8 @@ async def test_websocket_chat_ignores_empty_message_after_auth() -> None:
 
 @pytest.mark.asyncio
 async def test_websocket_chat_returns_rate_limit_response() -> None:
+    """Websocket chat returns rate limit response."""
+
     class _RateLimitedDeps(_Deps):
         async def redis_is_rate_limited(self, *_args) -> bool:
             return True
@@ -670,6 +693,7 @@ async def test_websocket_chat_returns_rate_limit_response() -> None:
 
 @pytest.mark.asyncio
 async def test_websocket_chat_cancel_active_task_sends_cancel_confirmation() -> None:
+    """Websocket chat cancel active task sends cancel confirmation."""
     ws = _CancelThenDisconnectWs(
         [
             json.dumps({"action": "auth", "token": "valid-token"}),
@@ -692,6 +716,7 @@ async def test_websocket_chat_cancel_active_task_sends_cancel_confirmation() -> 
 
 @pytest.mark.asyncio
 async def test_websocket_chat_reports_llm_provider_error() -> None:
+    """Websocket chat reports llm provider error."""
     ws = _Ws(
         [
             json.dumps({"action": "auth", "token": "valid-token"}),
@@ -707,6 +732,7 @@ async def test_websocket_chat_reports_llm_provider_error() -> None:
 
 @pytest.mark.asyncio
 async def test_websocket_chat_stops_stream_when_client_disconnects_during_send() -> None:
+    """Websocket chat stops stream when client disconnects during send."""
     ws = _Ws(
         [
             json.dumps({"action": "auth", "token": "valid-token"}),
@@ -730,6 +756,8 @@ async def test_websocket_chat_stops_stream_when_client_disconnects_during_send()
 
 @pytest.mark.asyncio
 async def test_websocket_chat_streams_status_queue_events() -> None:
+    """Websocket chat streams status queue events."""
+
     class _StatusAgent(_RouteAgent):
         async def respond(self, _message: str):
             await asyncio.sleep(0.01)
@@ -753,6 +781,8 @@ async def test_websocket_chat_streams_status_queue_events() -> None:
 
 @pytest.mark.asyncio
 async def test_websocket_chat_falls_back_to_sync_update_title_when_async_missing() -> None:
+    """Websocket chat falls back to sync update title when async missing."""
+
     class _SyncTitleMemory:
         def __init__(self) -> None:
             self.titles: list[str] = []
@@ -786,6 +816,7 @@ async def test_websocket_chat_falls_back_to_sync_update_title_when_async_missing
 
 @pytest.mark.asyncio
 async def test_websocket_chat_room_stream_error_broadcasts_room_error() -> None:
+    """Websocket chat room stream error broadcasts room error."""
     ws = _Ws(
         [
             json.dumps({"action": "auth", "token": "valid-token"}),
@@ -803,6 +834,7 @@ async def test_websocket_chat_room_stream_error_broadcasts_room_error() -> None:
 
 @pytest.mark.asyncio
 async def test_websocket_chat_room_empty_sidar_command_broadcasts_error() -> None:
+    """Websocket chat room empty sidar command broadcasts error."""
     ws = _Ws(
         [
             json.dumps({"action": "auth", "token": "valid-token"}),
@@ -823,6 +855,7 @@ async def test_websocket_chat_room_empty_sidar_command_broadcasts_error() -> Non
 
 @pytest.mark.asyncio
 async def test_websocket_chat_room_sidar_command_streams_successful_response() -> None:
+    """Websocket chat room sidar command streams successful response."""
     ws = _Ws(
         [
             json.dumps({"action": "auth", "token": "valid-token"}),
@@ -858,6 +891,7 @@ class _CancelThenDisconnectWs(_Ws):
 
 @pytest.mark.asyncio
 async def test_websocket_chat_room_cancel_broadcasts_cancelled_done() -> None:
+    """Websocket chat room cancel broadcasts cancelled done."""
     ws = _CancelThenDisconnectWs(
         [
             json.dumps({"action": "auth", "token": "valid-token"}),
@@ -879,6 +913,8 @@ async def test_websocket_chat_room_cancel_broadcasts_cancelled_done() -> None:
 
 @pytest.mark.asyncio
 async def test_websocket_chat_room_rbac_denied_records_telemetry_and_error() -> None:
+    """Websocket chat room rbac denied records telemetry and error."""
+
     class _ReadOnlyDeps(_Deps):
         async def join_collaboration_room(
             self, websocket, *, room_id, user_id, username, display_name, user_role
@@ -912,6 +948,7 @@ async def test_websocket_chat_room_rbac_denied_records_telemetry_and_error() -> 
 
 @pytest.mark.asyncio
 async def test_websocket_chat_disconnect_cleans_lifecycle_and_room() -> None:
+    """Websocket chat disconnect cleans lifecycle and room."""
     ws = _Ws(
         [
             json.dumps({"action": "auth", "token": "valid-token"}),
@@ -930,6 +967,8 @@ async def test_websocket_chat_disconnect_cleans_lifecycle_and_room() -> None:
 
 @pytest.mark.asyncio
 async def test_websocket_chat_anyio_closed_resource_cleans_up_like_disconnect() -> None:
+    """Websocket chat anyio closed resource cleans up like disconnect."""
+
     class _ClosedResourceError(Exception):
         pass
 
@@ -949,6 +988,8 @@ async def test_websocket_chat_anyio_closed_resource_cleans_up_like_disconnect() 
 
 @pytest.mark.asyncio
 async def test_websocket_chat_unexpected_exception_sends_error_and_leaves_room() -> None:
+    """Websocket chat unexpected exception sends error and leaves room."""
+
     class _BoomWs(_Ws):
         async def receive_text(self) -> str:
             raise RuntimeError("socket boom")
@@ -965,6 +1006,8 @@ async def test_websocket_chat_unexpected_exception_sends_error_and_leaves_room()
 
 @pytest.mark.asyncio
 async def test_ws_stream_agent_text_response_stops_when_tool_send_fails(monkeypatch) -> None:
+    """Ws stream agent text response stops when tool send fails."""
+
     class _ToolThenChunkAgent:
         async def respond(self, _prompt: str):
             yield "\x00TOOL:search\x00"
@@ -984,6 +1027,8 @@ async def test_ws_stream_agent_text_response_stops_when_tool_send_fails(monkeypa
 
 @pytest.mark.asyncio
 async def test_ws_stream_agent_text_response_stops_when_thought_send_fails(monkeypatch) -> None:
+    """Ws stream agent text response stops when thought send fails."""
+
     class _ThoughtThenChunkAgent:
         async def respond(self, _prompt: str):
             yield "\x00THOUGHT:thinking\x00"
@@ -1003,6 +1048,8 @@ async def test_ws_stream_agent_text_response_stops_when_thought_send_fails(monke
 
 @pytest.mark.asyncio
 async def test_websocket_chat_generate_response_stops_when_tool_send_fails(monkeypatch) -> None:
+    """Websocket chat generate response stops when tool send fails."""
+
     class _ToolAgent(_RouteAgent):
         async def respond(self, _message: str):
             yield "\x00TOOL:search\x00"
@@ -1030,6 +1077,8 @@ async def test_websocket_chat_generate_response_stops_when_tool_send_fails(monke
 
 @pytest.mark.asyncio
 async def test_websocket_chat_generate_response_stops_when_thought_send_fails(monkeypatch) -> None:
+    """Websocket chat generate response stops when thought send fails."""
+
     class _ThoughtAgent(_RouteAgent):
         async def respond(self, _message: str):
             yield "\x00THOUGHT:thinking\x00"
@@ -1057,6 +1106,7 @@ async def test_websocket_chat_generate_response_stops_when_thought_send_fails(mo
 
 @pytest.mark.asyncio
 async def test_websocket_chat_room_cancel_clears_existing_active_task() -> None:
+    """Websocket chat room cancel clears existing active task."""
     room = _Room("room-1")
     started = asyncio.Event()
 

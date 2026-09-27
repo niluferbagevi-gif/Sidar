@@ -1,3 +1,5 @@
+"""Unit tests for project operation helpers in ``web.routes.project_ops``."""
+
 from __future__ import annotations
 
 import inspect
@@ -20,6 +22,7 @@ from web.routes.project_ops import (
 
 
 def test_is_allowed_git_command_rejects_null_byte_injection() -> None:
+    """Is allowed git command rejects null byte injection."""
     assert (
         _is_allowed_git_command(["git", "remote", "get-url", "origin\x00--upload-pack=evil"])
         is False
@@ -27,6 +30,7 @@ def test_is_allowed_git_command_rejects_null_byte_injection() -> None:
 
 
 def test_is_allowed_git_command_accepts_only_validated_checkout_with_separator() -> None:
+    """Is allowed git command accepts only validated checkout with separator."""
     assert _is_allowed_git_command(["git", "checkout", "--", "feature/safe"]) is True
     assert _is_allowed_git_command(["git", "checkout", "feature/safe"]) is False
     assert _is_allowed_git_command(["git", "checkout", "--", "-unsafe"]) is False
@@ -54,11 +58,13 @@ def test_is_valid_git_ref_name_rejects_leading_dash_argument_injection(branch_na
 
 
 def test_is_valid_git_ref_name_accepts_normal_branch_names() -> None:
+    """Is valid git ref name accepts normal branch names."""
     for branch_name in ("feature/safe-branch_1", "main", "release-1.0"):
         assert is_valid_git_ref_name(branch_name) is True
 
 
 def test_git_run_logs_called_process_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Git run logs called process errors."""
     from subprocess import CalledProcessError
 
     from web.routes.project_ops import _git_run
@@ -84,6 +90,7 @@ def test_git_run_logs_called_process_errors(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_git_run_requires_absolute_executable_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Git run requires absolute executable resolution."""
     from web.routes.project_ops import _git_run
 
     calls: list[list[str]] = []
@@ -100,6 +107,7 @@ def test_git_run_requires_absolute_executable_resolution(monkeypatch: pytest.Mon
 def test_git_run_executes_resolved_git_with_exact_allowlisted_args(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Git run executes resolved git with exact allowlisted args."""
     from web.routes.project_ops import _git_run
 
     calls: list[tuple[list[str], dict[str, Any]]] = []
@@ -137,12 +145,14 @@ def test_git_run_executes_resolved_git_with_exact_allowlisted_args(
     ],
 )
 def test_extract_repo_from_remote_supports_common_url_formats(remote: str, expected: str) -> None:
+    """Extract repo from remote supports common url formats."""
     assert _extract_repo_from_remote(remote) == expected
 
 
 def test_resolve_web_server_helper_returns_default_without_legacy_module(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Resolve web server helper returns default without legacy module."""
     default = object()
     monkeypatch.delitem(sys.modules, "web_server", raising=False)
 
@@ -172,6 +182,7 @@ def _json_body(response: Any) -> dict[str, Any]:
 
 @pytest.mark.asyncio
 async def test_github_repos_accepts_sync_list_repos_result(tmp_path: Path) -> None:
+    """Github repos accepts sync list repos result."""
     github = SimpleNamespace(
         repo_name="sidar-ai/sidar",
         list_repos=lambda **_kwargs: (True, [{"full_name": "sidar-ai/sidar"}]),
@@ -189,6 +200,8 @@ async def test_github_repos_accepts_sync_list_repos_result(tmp_path: Path) -> No
 
 @pytest.mark.asyncio
 async def test_github_repos_awaits_async_list_repos_result(tmp_path: Path) -> None:
+    """Github repos awaits async list repos result."""
+
     async def _list_repos(**_kwargs: Any) -> tuple[bool, list[dict[str, str]]]:
         return True, [{"full_name": "sidar-ai/sidar"}]
 
@@ -231,6 +244,7 @@ def _build_project_exports(tmp_path: Path, db: Any) -> dict[str, Any]:
 
 @pytest.mark.asyncio
 async def test_project_session_handlers_cover_create_load_list_and_delete(tmp_path: Path) -> None:
+    """Project session handlers cover create load list and delete."""
     session = SimpleNamespace(id="s1", title="Session", updated_at="now")
     messages = [SimpleNamespace(role="user", content="hello", created_at="then", tokens_used=1)]
 
@@ -272,6 +286,7 @@ async def test_project_session_handlers_cover_create_load_list_and_delete(tmp_pa
 
 
 def test_project_file_handlers_require_authenticated_user_dependency(tmp_path: Path) -> None:
+    """Project file handlers require authenticated user dependency."""
     exports = _build_project_exports(tmp_path, SimpleNamespace())
 
     list_user_default = inspect.signature(exports["list_project_files"]).parameters["_user"].default
@@ -285,6 +300,7 @@ def test_project_file_handlers_require_authenticated_user_dependency(tmp_path: P
 async def test_project_file_handlers_cover_listing_content_and_security_edges(
     tmp_path: Path,
 ) -> None:
+    """Project file handlers cover listing content and security edges."""
     (tmp_path / "visible").mkdir()
     (tmp_path / ".hidden").mkdir()
     (tmp_path / "note.txt").write_text("hey", encoding="utf-8")
@@ -314,6 +330,7 @@ async def test_project_file_handlers_cover_listing_content_and_security_edges(
 async def test_project_git_branch_handlers_validate_and_report_checkout_errors(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Project git branch handlers validate and report checkout errors."""
     web_server = SimpleNamespace(
         _git_run=lambda cmd, _cwd, _logger: "feature\nmain" if cmd[1] == "branch" else "feature"
     )
@@ -368,6 +385,7 @@ def _build_github_project_exports(
 async def test_project_github_handlers_cover_errors_filters_and_repo_updates(
     tmp_path: Path,
 ) -> None:
+    """Project github handlers cover errors filters and repo updates."""
     cfg = SimpleNamespace(GITHUB_REPO="sidar-ai/sidar")
     github = SimpleNamespace(
         repo_name="sidar-ai/sidar",
@@ -397,6 +415,7 @@ async def test_project_github_handlers_cover_errors_filters_and_repo_updates(
 async def test_project_github_pr_handlers_cover_upstream_failures_and_success(
     tmp_path: Path,
 ) -> None:
+    """Project github pr handlers cover upstream failures and success."""
     github = SimpleNamespace(
         repo_name="sidar-ai/sidar",
         is_available=lambda: True,

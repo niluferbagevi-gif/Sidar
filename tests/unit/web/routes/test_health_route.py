@@ -1,3 +1,5 @@
+"""Unit tests for the health router built by ``web.routes.health``."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -9,6 +11,7 @@ from web.routes.health import build_health_router
 
 
 def test_health_router_distinguishes_liveness_and_readiness(make_test_client) -> None:
+    """Health router distinguishes liveness and readiness."""
     readiness_flags: list[bool] = []
 
     async def _health_response(readiness: bool) -> Any:
@@ -28,6 +31,8 @@ def test_health_router_distinguishes_liveness_and_readiness(make_test_client) ->
 
 
 def test_health_router_can_expose_legacy_status_endpoint(make_test_client) -> None:
+    """Health router can expose legacy status endpoint."""
+
     async def _health_response(readiness: bool) -> Any:
         return JSONResponse({"ready": readiness})
 

@@ -1,3 +1,5 @@
+"""Unit tests for the webhook routes in ``web.routes.webhooks``."""
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -26,6 +28,7 @@ class _Logger:
 def test_github_webhook_signature_required_defaults_to_secure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Github webhook signature required defaults to secure."""
     monkeypatch.delenv("SIDAR_ENV", raising=False)
 
     assert _github_webhook_signature_required(SimpleNamespace()) is True
@@ -40,6 +43,7 @@ def test_github_webhook_signature_required_defaults_to_secure(
 def test_github_webhook_signature_required_forces_production(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Github webhook signature required forces production."""
     monkeypatch.setenv("SIDAR_ENV", "production")
 
     assert (
@@ -49,6 +53,7 @@ def test_github_webhook_signature_required_forces_production(
 
 
 def test_validate_github_webhook_signature_fails_closed_when_secret_missing() -> None:
+    """Validate github webhook signature fails closed when secret missing."""
     calls: list[tuple[Any, ...]] = []
     logger = _Logger()
 
@@ -69,6 +74,7 @@ def test_validate_github_webhook_signature_fails_closed_when_secret_missing() ->
 def test_validate_github_webhook_signature_can_bypass_for_local_compatibility(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Validate github webhook signature can bypass for local compatibility."""
     monkeypatch.setenv("SIDAR_ENV", "testing")
     calls: list[tuple[Any, ...]] = []
     logger = _Logger()
@@ -89,6 +95,7 @@ def test_validate_github_webhook_signature_can_bypass_for_local_compatibility(
 
 
 def test_validate_github_webhook_signature_delegates_to_shared_hmac_verifier() -> None:
+    """Validate github webhook signature delegates to shared hmac verifier."""
     calls: list[tuple[Any, ...]] = []
 
     _validate_github_webhook_signature(
@@ -111,6 +118,8 @@ def test_validate_github_webhook_signature_delegates_to_shared_hmac_verifier() -
 
 
 def test_validate_github_webhook_signature_preserves_verifier_http_errors() -> None:
+    """Validate github webhook signature preserves verifier http errors."""
+
     def _raise(*_args: Any, **_kwargs: Any) -> None:
         raise HTTPException(status_code=401, detail="Geçersiz imza.")
 
@@ -139,11 +148,13 @@ def test_validate_github_webhook_signature_preserves_verifier_http_errors() -> N
     ],
 )
 def test_coerce_bool_handles_text_values_and_defaults(value: str, expected: bool) -> None:
+    """Coerce bool handles text values and defaults."""
     assert _coerce_bool(value, default=True) is expected
 
 
 @pytest.mark.asyncio
 async def test_github_webhook_wraps_non_dict_json_payload() -> None:
+    """Github webhook wraps non dict json payload."""
     memory_entries: list[tuple[str, str]] = []
 
     class _Req:

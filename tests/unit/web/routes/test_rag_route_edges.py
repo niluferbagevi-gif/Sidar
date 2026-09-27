@@ -1,3 +1,5 @@
+"""Edge-case tests for the RAG routes in ``web.routes.rag``."""
+
 from __future__ import annotations
 
 import asyncio
@@ -52,6 +54,7 @@ def _json_body(response: Any) -> dict[str, Any]:
 
 @pytest.mark.asyncio
 async def test_rag_add_file_rejects_missing_and_oversized_files(tmp_path: Path) -> None:
+    """Rag add file rejects missing and oversized files."""
     rag_add_file = _build_rag_exports(tmp_path, SimpleNamespace())["rag_add_file"]
 
     with pytest.raises(HTTPException, match="Dosya bulunamadı") as missing:
@@ -67,6 +70,7 @@ async def test_rag_add_file_rejects_missing_and_oversized_files(tmp_path: Path) 
 
 @pytest.mark.asyncio
 async def test_rag_search_rejects_blank_and_oversized_queries(tmp_path: Path) -> None:
+    """Rag search rejects blank and oversized queries."""
     rag_search = _build_rag_exports(tmp_path, SimpleNamespace())["rag_search"]
 
     blank = await rag_search(q="   ")
@@ -83,6 +87,7 @@ async def test_rag_search_accepts_sync_result_marked_as_coroutine_function(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    """Rag search accepts sync result marked as coroutine function."""
     docs = SimpleNamespace(search=lambda *_args: (True, [{"id": "sync-coroutine-marker"}]))
     rag_search = _build_rag_exports(tmp_path, docs)["rag_search"]
     monkeypatch.setattr(asyncio, "iscoroutinefunction", lambda _call: True)
@@ -97,6 +102,7 @@ async def test_rag_search_accepts_non_awaitable_thread_adapter_result(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    """Rag search accepts non awaitable thread adapter result."""
     docs = SimpleNamespace(search=lambda *_args: (True, [{"id": "thread-adapter"}]))
     rag_search = _build_rag_exports(tmp_path, docs)["rag_search"]
     monkeypatch.setattr(asyncio, "to_thread", lambda call, *args: call(*args))
@@ -108,6 +114,8 @@ async def test_rag_search_accepts_non_awaitable_thread_adapter_result(
 
 @pytest.mark.asyncio
 async def test_rag_search_awaits_async_search_result(tmp_path: Path) -> None:
+    """Rag search awaits async search result."""
+
     async def _search(*_args: Any) -> tuple[bool, list[dict[str, str]]]:
         return True, [{"id": "async-search"}]
 
@@ -120,6 +128,8 @@ async def test_rag_search_awaits_async_search_result(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_rag_search_awaits_coroutine_returned_from_thread(tmp_path: Path) -> None:
+    """Rag search awaits coroutine returned from thread."""
+
     async def _result() -> tuple[bool, list[dict[str, str]]]:
         return True, [{"id": "thread-coroutine"}]
 
@@ -134,6 +144,7 @@ async def test_rag_search_awaits_coroutine_returned_from_thread(tmp_path: Path) 
 
 @pytest.mark.asyncio
 async def test_rag_search_accepts_query_at_maximum_length(tmp_path: Path) -> None:
+    """Rag search accepts query at maximum length."""
     docs = SimpleNamespace(search=lambda *_args: (True, []))
     rag_search = _build_rag_exports(tmp_path, docs)["rag_search"]
 
@@ -144,6 +155,7 @@ async def test_rag_search_accepts_query_at_maximum_length(tmp_path: Path) -> Non
 
 @pytest.mark.asyncio
 async def test_rag_search_returns_503_when_required_runtime_is_not_ready(tmp_path: Path) -> None:
+    """Rag search returns 503 when required runtime is not ready."""
     docs = SimpleNamespace(
         runtime_readiness_report=lambda: {
             "ready": False,
@@ -168,6 +180,7 @@ async def test_rag_search_returns_503_when_required_runtime_is_not_ready(tmp_pat
 
 @pytest.mark.asyncio
 async def test_rag_search_continues_when_optional_runtime_is_not_ready(tmp_path: Path) -> None:
+    """Rag search continues when optional runtime is not ready."""
     search_calls: list[tuple[Any, ...]] = []
     docs = SimpleNamespace(
         runtime_readiness_report=lambda: {
@@ -191,6 +204,7 @@ async def test_rag_search_continues_when_optional_runtime_is_not_ready(tmp_path:
 
 @pytest.mark.asyncio
 async def test_rag_document_management_routes_cover_success_and_validation(tmp_path: Path) -> None:
+    """Rag document management routes cover success and validation."""
     added_files: list[tuple[Any, ...]] = []
     docs = SimpleNamespace(
         get_index_info=lambda **kwargs: {"session_id": kwargs["session_id"]},
@@ -228,6 +242,7 @@ async def _async_result(value: Any) -> Any:
 
 
 def test_rag_upload_endpoint_handles_success_rejection_and_size_limit(tmp_path: Path) -> None:
+    """Rag upload endpoint handles success rejection and size limit."""
     docs = SimpleNamespace(
         add_document_from_file=lambda _path, original_name, _metadata, _session_id: (
             (False, "rejected") if original_name == "reject.txt" else (True, "✓ uploaded")

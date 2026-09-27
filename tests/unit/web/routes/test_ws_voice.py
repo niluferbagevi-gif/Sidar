@@ -1,3 +1,5 @@
+"""Unit tests for the voice WebSocket handler in ``web.routes.ws_voice``."""
+
 from __future__ import annotations
 
 import asyncio
@@ -165,6 +167,7 @@ def _deps(**overrides) -> SimpleNamespace:
 
 @pytest.mark.asyncio
 async def test_websocket_voice_rejects_connection_flood_before_accept_and_agent_init() -> None:
+    """Websocket voice rejects connection flood before accept and agent init."""
     ws = _Ws()
 
     async def _limited(_websocket) -> bool:
@@ -187,6 +190,7 @@ async def test_websocket_voice_rejects_connection_flood_before_accept_and_agent_
 
 @pytest.mark.asyncio
 async def test_websocket_voice_import_error_closes_connection(monkeypatch) -> None:
+    """Websocket voice import error closes connection."""
     original_import = builtins.__import__
 
     def _fake_import(name, *args, **kwargs):
@@ -206,6 +210,7 @@ async def test_websocket_voice_import_error_closes_connection(monkeypatch) -> No
 
 @pytest.mark.asyncio
 async def test_websocket_voice_rejects_binary_before_auth(monkeypatch) -> None:
+    """Websocket voice rejects binary before auth."""
     original_import = builtins.__import__
 
     def _fake_import(name, *args, **kwargs):
@@ -290,6 +295,7 @@ async def test_websocket_voice_auth_timeout_is_absolute_not_reset_by_junk_messag
 
 @pytest.mark.asyncio
 async def test_websocket_voice_rejects_oversized_binary_after_auth(monkeypatch) -> None:
+    """Websocket voice rejects oversized binary after auth."""
     original_import = builtins.__import__
 
     def _fake_import(name, *args, **kwargs):
@@ -319,6 +325,7 @@ async def test_websocket_voice_rejects_oversized_binary_after_auth(monkeypatch) 
 
 @pytest.mark.asyncio
 async def test_websocket_voice_does_not_transcribe_after_disconnect(monkeypatch) -> None:
+    """Websocket voice does not transcribe after disconnect."""
     original_import = builtins.__import__
     calls = {"transcribe": 0}
 
@@ -367,6 +374,7 @@ async def test_websocket_voice_does_not_transcribe_after_disconnect(monkeypatch)
 async def test_websocket_voice_uses_default_header_token_extractor_without_echo(
     monkeypatch,
 ) -> None:
+    """Websocket voice uses default header token extractor without echo."""
     original_import = builtins.__import__
 
     def _fake_import(name, *args, **kwargs):
@@ -433,6 +441,7 @@ class _SuccessfulTranscriptionPipeline:
 
 @pytest.mark.asyncio
 async def test_websocket_voice_reports_empty_audio_commit(monkeypatch) -> None:
+    """Websocket voice reports empty audio commit."""
     _install_voice_imports(monkeypatch, _SuccessfulTranscriptionPipeline)
     ws = _Ws(
         [
@@ -449,6 +458,7 @@ async def test_websocket_voice_reports_empty_audio_commit(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_websocket_voice_rejects_missing_auth_token(monkeypatch) -> None:
+    """Websocket voice rejects missing auth token."""
     _install_voice_imports(monkeypatch, _SuccessfulTranscriptionPipeline)
     ws = _Ws([{"text": '{"action":"auth","token":"   "}'}])
 
@@ -460,6 +470,8 @@ async def test_websocket_voice_rejects_missing_auth_token(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_websocket_voice_rejects_invalid_auth_token(monkeypatch) -> None:
+    """Websocket voice rejects invalid auth token."""
+
     async def _resolve_user(_agent, token: str):
         assert token == "bad-token"
         return None
@@ -475,6 +487,8 @@ async def test_websocket_voice_rejects_invalid_auth_token(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_websocket_voice_rejects_invalid_header_token(monkeypatch) -> None:
+    """Websocket voice rejects invalid header token."""
+
     async def _resolve_user(_agent, token: str):
         assert token == "bad-header-token"
         return None
@@ -499,6 +513,7 @@ async def test_websocket_voice_rejects_invalid_header_token(monkeypatch) -> None
 
 @pytest.mark.asyncio
 async def test_websocket_voice_ignores_bad_json_then_accepts_auth(monkeypatch) -> None:
+    """Websocket voice ignores bad json then accepts auth."""
     _install_voice_imports(monkeypatch, _SuccessfulTranscriptionPipeline)
     ws = _Ws(
         [
@@ -516,6 +531,7 @@ async def test_websocket_voice_ignores_bad_json_then_accepts_auth(monkeypatch) -
 
 @pytest.mark.asyncio
 async def test_websocket_voice_reports_invalid_base64_chunk(monkeypatch) -> None:
+    """Websocket voice reports invalid base64 chunk."""
     _install_voice_imports(monkeypatch, _SuccessfulTranscriptionPipeline)
     ws = _Ws(
         [
@@ -532,6 +548,7 @@ async def test_websocket_voice_reports_invalid_base64_chunk(monkeypatch) -> None
 
 @pytest.mark.asyncio
 async def test_websocket_voice_rejects_oversized_base64_chunk(monkeypatch) -> None:
+    """Websocket voice rejects oversized base64 chunk."""
     _install_voice_imports(monkeypatch, _SuccessfulTranscriptionPipeline)
     chunk = base64.b64encode(b"123456789").decode()
     ws = _Ws(
@@ -548,6 +565,7 @@ async def test_websocket_voice_rejects_oversized_base64_chunk(monkeypatch) -> No
 
 @pytest.mark.asyncio
 async def test_websocket_voice_start_resets_session_and_buffers_base64(monkeypatch) -> None:
+    """Websocket voice start resets session and buffers base64."""
     _install_voice_imports(monkeypatch, _SuccessfulTranscriptionPipeline)
     chunk = base64.b64encode(b"abc").decode()
     ws = _Ws(
@@ -580,6 +598,7 @@ async def test_websocket_voice_start_resets_session_and_buffers_base64(monkeypat
 async def test_websocket_voice_uses_generic_state_payload_without_voice_pipeline(
     monkeypatch,
 ) -> None:
+    """Websocket voice uses generic state payload without voice pipeline."""
     _install_multimodal_only(monkeypatch, _SuccessfulTranscriptionPipeline)
     ws = _Ws(
         [
@@ -599,6 +618,7 @@ async def test_websocket_voice_uses_generic_state_payload_without_voice_pipeline
 async def test_websocket_voice_cancel_action_without_active_response_sends_done(
     monkeypatch,
 ) -> None:
+    """Websocket voice cancel action without active response sends done."""
     _install_voice_imports(monkeypatch, _SuccessfulTranscriptionPipeline)
     ws = _Ws(
         [
@@ -616,6 +636,7 @@ async def test_websocket_voice_cancel_action_without_active_response_sends_done(
 
 @pytest.mark.asyncio
 async def test_websocket_voice_cancel_action_cancels_active_response(monkeypatch) -> None:
+    """Websocket voice cancel action cancels active response."""
     first_stream_started = asyncio.Event()
 
     async def _stream(*_args, **_kwargs) -> None:
@@ -661,6 +682,7 @@ async def test_websocket_voice_cancel_action_cancels_active_response(monkeypatch
 
 @pytest.mark.asyncio
 async def test_websocket_voice_vad_barge_in_cancels_active_response(monkeypatch) -> None:
+    """Websocket voice vad barge in cancels active response."""
     first_stream_started = asyncio.Event()
 
     async def _stream(*_args, **_kwargs) -> None:
@@ -707,6 +729,7 @@ async def test_websocket_voice_vad_barge_in_cancels_active_response(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_websocket_voice_vad_speech_end_commits_buffer(monkeypatch) -> None:
+    """Websocket voice vad speech end commits buffer."""
     _install_voice_imports(monkeypatch, _SuccessfulTranscriptionPipeline)
     ws = _WaitUntilSentWs(
         [
@@ -725,6 +748,8 @@ async def test_websocket_voice_vad_speech_end_commits_buffer(monkeypatch) -> Non
 
 @pytest.mark.asyncio
 async def test_websocket_voice_reports_transcription_failure(monkeypatch) -> None:
+    """Websocket voice reports transcription failure."""
+
     class _FailingTranscriptionPipeline:
         def __init__(self, *_args, **_kwargs) -> None:
             return None
@@ -750,6 +775,7 @@ async def test_websocket_voice_reports_transcription_failure(monkeypatch) -> Non
 
 @pytest.mark.asyncio
 async def test_websocket_voice_finishes_empty_transcript_without_llm(monkeypatch) -> None:
+    """Websocket voice finishes empty transcript without llm."""
     calls = {"stream": 0}
 
     class _EmptyTranscriptPipeline:
@@ -785,6 +811,8 @@ async def test_websocket_voice_finishes_empty_transcript_without_llm(monkeypatch
 
 @pytest.mark.asyncio
 async def test_websocket_voice_reports_llm_provider_error(monkeypatch) -> None:
+    """Websocket voice reports llm provider error."""
+
     class _ProviderError(Exception):
         provider = "mock-llm"
         status_code = 429
@@ -820,6 +848,8 @@ async def test_websocket_voice_reports_llm_provider_error(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_websocket_voice_reports_generic_stream_error(monkeypatch) -> None:
+    """Websocket voice reports generic stream error."""
+
     async def _stream(*_args, **_kwargs) -> None:
         raise ValueError("boom")
 
@@ -844,6 +874,7 @@ async def test_websocket_voice_reports_generic_stream_error(monkeypatch) -> None
 
 @pytest.mark.asyncio
 async def test_websocket_voice_stops_turn_when_transcript_send_fails(monkeypatch) -> None:
+    """Websocket voice stops turn when transcript send fails."""
     calls = {"stream": 0}
 
     async def _stream(*_args, **_kwargs) -> None:
@@ -877,6 +908,8 @@ async def test_websocket_voice_stops_turn_when_transcript_send_fails(monkeypatch
 async def test_websocket_voice_emits_assistant_turn_started_before_completed(
     monkeypatch,
 ) -> None:
+    """Websocket voice emits assistant turn started before completed."""
+
     async def _stream(websocket, *_args, **_kwargs) -> None:
         await websocket.send_json({"chunk": "voice answer"})
 
@@ -912,6 +945,8 @@ async def test_websocket_voice_emits_assistant_turn_started_before_completed(
 async def test_websocket_voice_stops_done_when_completed_turn_send_fails(
     monkeypatch,
 ) -> None:
+    """Websocket voice stops done when completed turn send fails."""
+
     async def _stream(websocket, *_args, **_kwargs) -> None:
         await websocket.send_json({"chunk": "voice answer"})
 
@@ -947,6 +982,7 @@ async def test_websocket_voice_stops_done_when_completed_turn_send_fails(
 
 @pytest.mark.asyncio
 async def test_websocket_voice_cancels_active_response_on_new_turn(monkeypatch) -> None:
+    """Websocket voice cancels active response on new turn."""
     first_stream_started = asyncio.Event()
     release_stream = asyncio.Event()
     stream_calls = {"count": 0}
@@ -1000,6 +1036,7 @@ async def test_websocket_voice_cancels_active_response_on_new_turn(monkeypatch) 
 async def test_websocket_voice_cancel_does_not_emit_interruption_without_active_task(
     monkeypatch,
 ) -> None:
+    """Websocket voice cancel does not emit interruption without active task."""
     _install_voice_imports(monkeypatch, _SuccessfulTranscriptionPipeline)
     ws = _Ws(
         [
@@ -1017,6 +1054,7 @@ async def test_websocket_voice_cancel_does_not_emit_interruption_without_active_
 
 @pytest.mark.asyncio
 async def test_websocket_voice_run_turn_returns_when_disconnected_before_start(monkeypatch) -> None:
+    """Websocket voice run turn returns when disconnected before start."""
     calls = {"transcribe": 0}
 
     class _CountingPipeline:
@@ -1051,6 +1089,7 @@ async def test_websocket_voice_run_turn_returns_when_disconnected_before_start(m
 
 @pytest.mark.asyncio
 async def test_websocket_voice_stops_when_assistant_turn_start_send_fails(monkeypatch) -> None:
+    """Websocket voice stops when assistant turn start send fails."""
     calls = {"stream": 0}
 
     async def _stream(*_args, **_kwargs) -> None:

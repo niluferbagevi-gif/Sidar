@@ -12,6 +12,7 @@ from web.routes.static import build_frontend_router
 
 @pytest.mark.asyncio
 async def test_static_favicon_svg_missing_and_present_paths(tmp_path) -> None:
+    """Static favicon svg missing and present paths."""
     router = build_frontend_router(web_dir=lambda: tmp_path, grafana_url=lambda: "http://grafana")
     favicon = router.legacy_exports["favicon"]
     favicon_svg = next(route.endpoint for route in router.routes if route.path == "/favicon.svg")
@@ -31,6 +32,7 @@ async def test_static_favicon_svg_missing_and_present_paths(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_static_vendor_route_rejects_traversal_and_missing_assets(tmp_path) -> None:
+    """Static vendor route rejects traversal and missing assets."""
     vendor_dir = tmp_path / "vendor"
     vendor_dir.mkdir()
     asset = vendor_dir / "app.js"
@@ -50,6 +52,7 @@ async def test_static_vendor_route_rejects_traversal_and_missing_assets(tmp_path
 
 @pytest.mark.asyncio
 async def test_static_index_missing_dist_returns_actionable_500(tmp_path) -> None:
+    """Static index missing dist returns actionable 500."""
     router = build_frontend_router(web_dir=lambda: tmp_path, grafana_url=lambda: "http://grafana")
     index = router.legacy_exports["index"]
 
@@ -62,6 +65,7 @@ async def test_static_index_missing_dist_returns_actionable_500(tmp_path) -> Non
 
 @pytest.mark.asyncio
 async def test_static_index_injects_config_before_head_close(tmp_path) -> None:
+    """Static index injects config before head close."""
     (tmp_path / "index.html").write_text(
         "<html><head><title>Sidar</title></head><body>SPA</body></html>",
         encoding="utf-8",

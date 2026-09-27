@@ -1,3 +1,5 @@
+"""Tests for autonomy webhooks and swarm federation routes working together."""
+
 from __future__ import annotations
 
 import json
@@ -24,6 +26,7 @@ class _Request:
 
 @pytest.mark.asyncio
 async def test_autonomy_webhook_dispatches_general_event() -> None:
+    """Autonomy webhook dispatches general event."""
     calls: list[dict[str, Any]] = []
 
     async def _dispatch(**kwargs):
@@ -59,6 +62,8 @@ async def test_autonomy_webhook_dispatches_general_event() -> None:
 
 @pytest.mark.asyncio
 async def test_autonomy_webhook_fails_closed_when_production_secret_missing() -> None:
+    """Autonomy webhook fails closed when production secret missing."""
+
     async def _dispatch(**_kwargs):
         raise AssertionError("unsigned production autonomy request must not dispatch")
 
@@ -118,6 +123,7 @@ class _Result:
 
 @pytest.mark.asyncio
 async def test_federation_execute_builds_autonomy_payload() -> None:
+    """Federation execute builds autonomy payload."""
     calls: list[dict[str, Any]] = []
 
     async def _dispatch(**kwargs):
@@ -154,6 +160,8 @@ async def test_federation_execute_builds_autonomy_payload() -> None:
 
 @pytest.mark.asyncio
 async def test_federation_execute_fails_closed_when_production_secret_missing() -> None:
+    """Federation execute fails closed when production secret missing."""
+
     async def _dispatch(**_kwargs):
         raise AssertionError("unsigned production federation request must not dispatch")
 
@@ -191,6 +199,8 @@ async def test_federation_execute_fails_closed_when_production_secret_missing() 
 
 @pytest.mark.asyncio
 async def test_federation_feedback_fails_closed_when_production_secret_missing() -> None:
+    """Federation feedback fails closed when production secret missing."""
+
     async def _dispatch(**_kwargs):
         raise AssertionError("unsigned production federation feedback must not dispatch")
 

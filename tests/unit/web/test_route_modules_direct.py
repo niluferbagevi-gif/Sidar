@@ -1,3 +1,5 @@
+"""Direct tests for route builders exercised without the full web server."""
+
 from __future__ import annotations
 
 import inspect
@@ -50,6 +52,7 @@ class _PluginInstallReq:
 
 
 def test_agent_router_catalog_endpoint_direct(make_test_client) -> None:
+    """Agent router catalog endpoint direct."""
     router = build_agent_router(
         require_admin_user=_admin_user,
         register_plugin_agent=lambda **_: {"ok": True},
@@ -106,6 +109,7 @@ class _PolicyReq:
 
 
 def test_auth_admin_router_register_direct(make_test_client) -> None:
+    """Auth admin router register direct."""
     db = SimpleNamespace(
         register_user=lambda **_: SimpleNamespace(id="1", username="alice", role="user"),
         authenticate_user=lambda **_: None,
@@ -143,6 +147,7 @@ def test_auth_admin_router_register_direct(make_test_client) -> None:
 
 
 def test_auth_admin_router_json_posts_read_request_body_direct(make_test_client) -> None:
+    """Auth admin router json posts read request body direct."""
     prompt = SimpleNamespace(id="p1", role_name="system", prompt_text="hello", is_active=1)
     policy = SimpleNamespace(id="a1", user_id="u1", tenant_id="default")
 
@@ -218,6 +223,7 @@ def test_auth_admin_router_json_posts_read_request_body_direct(make_test_client)
 
 @pytest.mark.asyncio
 async def test_hitl_router_pending_direct() -> None:
+    """Hitl router pending direct."""
     store = SimpleNamespace(pending=lambda: _async_value([]))
     router = build_hitl_router(
         get_request_user=_admin_user,
@@ -239,6 +245,8 @@ async def test_hitl_router_pending_direct() -> None:
 
 
 def test_metrics_router_json_direct(make_test_client) -> None:
+    """Metrics router json direct."""
+
     class _Memory:
         def get_all_sessions(self):
             return []
@@ -273,6 +281,8 @@ def test_metrics_router_json_direct(make_test_client) -> None:
 
 
 def test_orchestration_parse_payload_supports_constructor_and_passthrough() -> None:
+    """Orchestration parse payload supports constructor and passthrough."""
+
     class _Payload:
         def __init__(self, **kwargs):
             self.value = kwargs["value"]
@@ -285,6 +295,7 @@ def test_orchestration_parse_payload_supports_constructor_and_passthrough() -> N
 
 
 def test_orchestration_router_requires_request_model() -> None:
+    """Orchestration router requires request model."""
     with pytest.raises(ValueError, match="swarm_execute_request_model"):
         build_orchestration_router(
             require_admin_user=_admin_user,
@@ -298,6 +309,7 @@ def test_orchestration_router_requires_request_model() -> None:
 
 
 def test_orchestration_router_clear_direct(make_test_client) -> None:
+    """Orchestration router clear direct."""
     agent = SimpleNamespace(memory=SimpleNamespace(clear=lambda: None))
     router = build_orchestration_router(
         require_admin_user=_admin_user,
@@ -318,6 +330,7 @@ def test_orchestration_router_clear_direct(make_test_client) -> None:
 
 
 def test_project_ops_router_git_info_direct(tmp_path, make_test_client) -> None:
+    """Project ops router git info direct."""
     agent = SimpleNamespace(memory=SimpleNamespace(db=None))
     router = build_project_ops_router(
         get_request_user=_admin_user,
@@ -335,6 +348,7 @@ def test_project_ops_router_git_info_direct(tmp_path, make_test_client) -> None:
 
 
 def test_rag_router_search_direct(make_test_client) -> None:
+    """Rag router search direct."""
     docs = SimpleNamespace(search=lambda *_: (True, [{"id": "d1"}]))
     agent = SimpleNamespace(memory=SimpleNamespace(active_session_id="s1"), docs=docs)
     router = build_rag_router(
@@ -352,6 +366,7 @@ def test_rag_router_search_direct(make_test_client) -> None:
 
 
 def test_agent_parse_payload_supports_modern_and_passthrough_models() -> None:
+    """Agent parse payload supports modern and passthrough models."""
     from web.routes.agent import _parse_payload
 
     class _Modern:
@@ -367,6 +382,8 @@ def test_agent_parse_payload_supports_modern_and_passthrough_models() -> None:
 def test_agent_router_json_posts_and_file_upload_direct(
     monkeypatch: pytest.MonkeyPatch, make_test_client
 ) -> None:
+    """Agent router json posts and file upload direct."""
+
     def _unexpected_web_server_helper(*_args: Any, **_kwargs: Any) -> Any:
         raise AssertionError("Agent router must use its injected dependencies")
 
@@ -441,6 +458,7 @@ def test_agent_router_json_posts_and_file_upload_direct(
 
 
 def test_agent_router_file_upload_validation_direct(make_test_client) -> None:
+    """Agent router file upload validation direct."""
     router = build_agent_router(
         require_admin_user=_admin_user,
         register_plugin_agent=lambda **_: {},
@@ -475,6 +493,7 @@ def test_metrics_router_prometheus_llm_and_context_restore_direct(
     monkeypatch: pytest.MonkeyPatch,
     make_test_client,
 ) -> None:
+    """Metrics router prometheus llm and context restore direct."""
     monkeypatch.delitem(sys.modules, "web_server", raising=False)
 
     prometheus_mod = ModuleType("prometheus_client")
@@ -654,6 +673,7 @@ def test_metrics_router_plain_text_falls_back_to_json_without_prometheus(
     monkeypatch: pytest.MonkeyPatch,
     make_test_client,
 ) -> None:
+    """Metrics router plain text falls back to json without prometheus."""
     monkeypatch.delitem(sys.modules, "web_server", raising=False)
     monkeypatch.setitem(sys.modules, "prometheus_client", None)
 
@@ -691,6 +711,7 @@ def test_metrics_router_plain_text_falls_back_to_json_without_prometheus(
 def test_frontend_static_router_injects_config_without_head_tag(
     tmp_path: Path, make_test_client
 ) -> None:
+    """Frontend static router injects config without head tag."""
     from web.routes.static import build_frontend_router
 
     (tmp_path / "index.html").write_text("<body>SPA</body>", encoding="utf-8")
@@ -707,6 +728,7 @@ def test_frontend_static_router_injects_config_without_head_tag(
 
 
 def test_frontend_static_router_legacy_exports_cover_asset_paths(tmp_path: Path) -> None:
+    """Frontend static router legacy exports cover asset paths."""
     from web.routes.static import build_frontend_router
 
     router = build_frontend_router(web_dir=lambda: tmp_path, grafana_url=lambda: "http://grafana")
@@ -715,6 +737,7 @@ def test_frontend_static_router_legacy_exports_cover_asset_paths(tmp_path: Path)
 
 
 def test_configure_loopback_cors_adds_middleware() -> None:
+    """Configure loopback cors adds middleware."""
     from web.middleware.cors import LOOPBACK_ORIGIN_REGEX, configure_loopback_cors
 
     app = FastAPI()

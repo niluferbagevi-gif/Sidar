@@ -1,3 +1,5 @@
+"""Edge-case tests for the orchestration router in ``web.routes.orchestration``."""
+
 from __future__ import annotations
 
 import inspect
@@ -74,6 +76,7 @@ def _exports(agent: Any) -> dict[str, Any]:
 
 @pytest.mark.asyncio
 async def test_execute_swarm_filters_blank_tasks_and_routes_both_modes() -> None:
+    """Execute swarm filters blank tasks and routes both modes."""
     _Orchestrator.calls.clear()
     exports = _exports(SimpleNamespace(cfg=SimpleNamespace()))
     user = SimpleNamespace(id="u1")
@@ -98,6 +101,8 @@ async def test_execute_swarm_filters_blank_tasks_and_routes_both_modes() -> None
 
 @pytest.mark.asyncio
 async def test_orchestration_todo_and_set_level_edges() -> None:
+    """Orchestration todo and set level edges."""
+
     async def _set_level(level: str) -> str:
         agent.security.level_name = level
         return f"level={level}"

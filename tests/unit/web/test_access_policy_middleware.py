@@ -1,3 +1,5 @@
+"""Unit tests for the access policy middleware in ``web.middleware.access_policy``."""
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -43,12 +45,14 @@ class _Logger:
 def test_resolve_policy_from_request_contract(
     path: str, method: str, expected: tuple[str, str, str]
 ) -> None:
+    """Resolve policy from request contract."""
     request = SimpleNamespace(method=method, url=URL(f"http://testserver{path}"))
 
     assert access_policy.resolve_policy_from_request(request) == expected
 
 
 def test_access_policy_helpers_normalize_and_serialize_records() -> None:
+    """Access policy helpers normalize and serialize records."""
     assert access_policy.get_user_tenant(SimpleNamespace(tenant_id="  team-a ")) == "team-a"
     assert access_policy.get_user_tenant(SimpleNamespace(tenant_id="")) == "default"
     assert access_policy.build_audit_resource(" RAG ", "") == "rag:*"
@@ -70,6 +74,7 @@ def test_access_policy_helpers_normalize_and_serialize_records() -> None:
 
 @pytest.mark.asyncio
 async def test_access_policy_middleware_allows_and_audits_when_checker_allows() -> None:
+    """Access policy middleware allows and audits when checker allows."""
     audit_calls: list[dict[str, Any]] = []
     checker_calls: list[dict[str, Any]] = []
 
@@ -112,6 +117,7 @@ async def test_access_policy_middleware_allows_and_audits_when_checker_allows() 
 
 @pytest.mark.asyncio
 async def test_access_policy_middleware_denies_and_audits_when_checker_denies() -> None:
+    """Access policy middleware denies and audits when checker denies."""
     audit_calls: list[dict[str, Any]] = []
 
     async def _call_next(_request: _Request) -> Any:

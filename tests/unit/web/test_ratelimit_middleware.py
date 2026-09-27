@@ -1,3 +1,5 @@
+"""Unit tests for the rate limit middleware in ``web.middleware.ratelimit``."""
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -36,6 +38,7 @@ async def _ok_next(_request: Request):
     "path", ["/health", "/healthz", "/readyz", "/ui/index.html", "/static/app.css"]
 )
 async def test_ddos_rate_limit_impl_skips_bypass_paths(path: str) -> None:
+    """Ddos rate limit impl skips bypass paths."""
     calls: list[tuple[str, str, int, int]] = []
 
     async def _limited(namespace: str, key: str, limit: int, window: int) -> bool:
@@ -57,6 +60,7 @@ async def test_ddos_rate_limit_impl_skips_bypass_paths(path: str) -> None:
 
 @pytest.mark.asyncio
 async def test_ddos_rate_limit_impl_honors_custom_bypass_paths() -> None:
+    """Ddos rate limit impl honors custom bypass paths."""
     calls: list[tuple[str, str, int, int]] = []
 
     async def _limited(namespace: str, key: str, limit: int, window: int) -> bool:
@@ -80,6 +84,7 @@ async def test_ddos_rate_limit_impl_honors_custom_bypass_paths() -> None:
 
 @pytest.mark.asyncio
 async def test_rate_limit_impl_blocks_get_io_bucket() -> None:
+    """Rate limit impl blocks get io bucket."""
     calls: list[tuple[str, str, int, int]] = []
 
     async def _limited(namespace: str, key: str, limit: int, window: int) -> bool:
@@ -106,6 +111,7 @@ async def test_rate_limit_impl_blocks_get_io_bucket() -> None:
     "path", ["/healthz", "/readyz", "/metrics", "/ui/index.html", "/static/app.css"]
 )
 async def test_rate_limit_impl_skips_get_bucket_for_exempt_paths(path: str) -> None:
+    """Rate limit impl skips get bucket for exempt paths."""
     calls: list[tuple[str, str, int, int]] = []
 
     async def _limited(namespace: str, key: str, limit: int, window: int) -> bool:
@@ -153,6 +159,7 @@ async def test_rate_limit_impl_applies_get_bucket_by_default_to_new_paths() -> N
 
 @pytest.mark.asyncio
 async def test_rate_limit_impl_uses_principal_key_resolver() -> None:
+    """Rate limit impl uses principal key resolver."""
     calls: list[tuple[str, str, int, int]] = []
 
     async def _limited(namespace: str, key: str, limit: int, window: int) -> bool:
@@ -176,9 +183,11 @@ async def test_rate_limit_impl_uses_principal_key_resolver() -> None:
 
 
 def test_trusted_proxy_matches_wildcard_trusts_every_peer():
+    """Trusted proxy matches wildcard trusts every peer."""
     assert trusted_proxy_matches("203.0.113.9", {"*"})
 
 
 def test_trusted_proxy_matches_skips_invalid_proxy_networks():
+    """Trusted proxy matches skips invalid proxy networks."""
     assert not trusted_proxy_matches("10.0.0.5", ["not-a-network", "192.168.0.0/24"])
     assert trusted_proxy_matches("10.0.0.5", ["not-a-network", "10.0.0.0/24"])

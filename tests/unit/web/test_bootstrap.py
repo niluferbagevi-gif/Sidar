@@ -1,3 +1,5 @@
+"""Unit tests for frontend static mounting and SPA fallback in ``web.bootstrap``."""
+
 from __future__ import annotations
 
 import pytest
@@ -9,6 +11,7 @@ from web.bootstrap import build_spa_fallback_handler, mount_frontend_static_rout
 
 @pytest.mark.asyncio
 async def test_spa_fallback_serves_index_for_history_paths_and_empty_path():
+    """Spa fallback serves index for history paths and empty path."""
     calls = []
 
     async def index():
@@ -27,6 +30,8 @@ async def test_spa_fallback_serves_index_for_history_paths_and_empty_path():
 
 @pytest.mark.asyncio
 async def test_spa_fallback_uses_default_await_helper_for_sync_index():
+    """Spa fallback uses default await helper for sync index."""
+
     def index():
         return HTMLResponse("sync ok")
 
@@ -39,6 +44,8 @@ async def test_spa_fallback_uses_default_await_helper_for_sync_index():
 
 @pytest.mark.asyncio
 async def test_spa_fallback_does_not_mask_backend_or_asset_paths():
+    """Spa fallback does not mask backend or asset paths."""
+
     async def index():  # pragma: no cover - must not be called for rejected paths
         raise AssertionError("index should not be called")
 
@@ -51,6 +58,8 @@ async def test_spa_fallback_does_not_mask_backend_or_asset_paths():
 
 @pytest.mark.asyncio
 async def test_spa_fallback_returns_emergency_shell_when_dist_index_missing():
+    """Spa fallback returns emergency shell when dist index missing."""
+
     async def index():
         return HTMLResponse("missing dist", status_code=500)
 
@@ -62,6 +71,7 @@ async def test_spa_fallback_returns_emergency_shell_when_dist_index_missing():
 
 
 def test_mount_frontend_static_routes_mounts_assets_when_present(tmp_path):
+    """Mount frontend static routes mounts assets when present."""
     (tmp_path / "assets").mkdir()
     app = FastAPI()
 
@@ -73,6 +83,7 @@ def test_mount_frontend_static_routes_mounts_assets_when_present(tmp_path):
 
 
 def test_mount_frontend_static_routes_skips_missing_assets(tmp_path):
+    """Mount frontend static routes skips missing assets."""
     app = FastAPI()
 
     mount_frontend_static_routes(app, tmp_path)
