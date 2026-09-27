@@ -8,6 +8,7 @@ from web.routes.serialization import serialize_prompt, serialize_swarm_result
 
 
 def test_serialize_prompt_normalizes_values_and_preserves_legacy_id() -> None:
+    """Serialize prompt normalizes values and preserves legacy id."""
     record = SimpleNamespace(
         id="legacy-id",
         role_name=None,
@@ -30,6 +31,7 @@ def test_serialize_prompt_normalizes_values_and_preserves_legacy_id() -> None:
 
 
 def test_serialize_swarm_result_copies_mutable_collections() -> None:
+    """Serialize swarm result copies mutable collections."""
     evidence = ["unit-test"]
     handoffs = ["reviewer"]
     graph = {"coder": ["reviewer"]}

@@ -1,3 +1,5 @@
+"""Unit tests for FastAPI app construction in ``web.app_factory``."""
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -21,6 +23,7 @@ from web.app_factory import (
 
 @pytest.mark.asyncio
 async def test_noop_lifespan_async_context_manager_yields_none() -> None:
+    """Noop lifespan async context manager yields none."""
     app = create_app(register_handlers=False)
 
     async with _noop_lifespan(app) as yielded:
@@ -28,6 +31,7 @@ async def test_noop_lifespan_async_context_manager_yields_none() -> None:
 
 
 def test_expose_exception_details_follows_environment(monkeypatch) -> None:
+    """Expose exception details follows environment."""
     monkeypatch.delenv("SIDAR_ENV", raising=False)
     assert _expose_exception_details() is True
 
@@ -39,6 +43,7 @@ def test_expose_exception_details_follows_environment(monkeypatch) -> None:
 
 
 def test_expose_api_docs_follows_environment(monkeypatch) -> None:
+    """Expose api docs follows environment."""
     monkeypatch.delenv("SIDAR_ENV", raising=False)
     assert _expose_api_docs() is True
 
@@ -52,6 +57,7 @@ def test_expose_api_docs_follows_environment(monkeypatch) -> None:
 def test_create_app_disables_api_documentation_routes_in_production(
     monkeypatch, make_test_client
 ) -> None:
+    """Create app disables api documentation routes in production."""
     monkeypatch.setenv("SIDAR_ENV", "production")
     app = create_app()
     client = make_test_client(app)
@@ -67,6 +73,7 @@ def test_create_app_disables_api_documentation_routes_in_production(
 def test_create_app_keeps_api_documentation_routes_outside_production(
     monkeypatch, make_test_client
 ) -> None:
+    """Create app keeps api documentation routes outside production."""
     monkeypatch.setenv("SIDAR_ENV", "development")
     app = create_app()
     client = make_test_client(app)
@@ -77,6 +84,7 @@ def test_create_app_keeps_api_documentation_routes_outside_production(
 
 
 def test_create_app_allows_explicit_api_documentation_override(monkeypatch) -> None:
+    """Create app allows explicit api documentation override."""
     monkeypatch.setenv("SIDAR_ENV", "production")
 
     app = create_app(expose_api_docs=True)
@@ -87,6 +95,7 @@ def test_create_app_allows_explicit_api_documentation_override(monkeypatch) -> N
 
 
 def test_create_app_registers_metadata_and_json_http_exception_handler(make_test_client) -> None:
+    """Create app registers metadata and json http exception handler."""
     app = create_app()
 
     @app.get("/boom")
@@ -102,6 +111,7 @@ def test_create_app_registers_metadata_and_json_http_exception_handler(make_test
 
 
 def test_create_app_json_http_exception_handler_handles_string_detail(make_test_client) -> None:
+    """Create app json http exception handler handles string detail."""
     app = create_app()
 
     @app.get("/plain-boom")
@@ -115,12 +125,14 @@ def test_create_app_json_http_exception_handler_handles_string_detail(make_test_
 
 
 def test_create_app_allows_central_version_override() -> None:
+    """Create app allows central version override."""
     app = create_app(version="9.8.7")
 
     assert app.version == "9.8.7"
 
 
 def test_create_app_attaches_isolated_runtime_state() -> None:
+    """Create app attaches isolated runtime state."""
     first = create_app()
     second = create_app()
 
@@ -138,6 +150,7 @@ def test_create_app_attaches_isolated_runtime_state() -> None:
 def test_create_app_binds_isolated_settings_without_process_env(
     monkeypatch, make_test_client
 ) -> None:
+    """Create app binds isolated settings without process env."""
     monkeypatch.setenv("SIDAR_ENV", "production")
     test_settings = cast(Config, SimpleNamespace(SIDAR_ENV="test", VERSION="test-version"))
     app = create_app(settings=test_settings)
@@ -150,6 +163,7 @@ def test_create_app_binds_isolated_settings_without_process_env(
 def test_create_app_settings_control_production_policy_without_process_env(
     monkeypatch, make_test_client
 ) -> None:
+    """Create app settings control production policy without process env."""
     monkeypatch.setenv("SIDAR_ENV", "test")
     production_settings = cast(Config, SimpleNamespace(SIDAR_ENV="production"))
     app = create_app(settings=production_settings)
@@ -165,6 +179,7 @@ def test_create_app_settings_control_production_policy_without_process_env(
 
 
 def test_initialize_runtime_state_preserves_existing_values_and_applies_overrides() -> None:
+    """Initialize runtime state preserves existing values and applies overrides."""
     app = create_app()
     state = initialize_runtime_state(app, agent="agent-1")
 
@@ -179,6 +194,7 @@ def test_initialize_runtime_state_preserves_existing_values_and_applies_override
 def test_create_app_hides_unhandled_exception_detail_in_production(
     monkeypatch, make_test_client
 ) -> None:
+    """Create app hides unhandled exception detail in production."""
     monkeypatch.setenv("SIDAR_ENV", "production")
     app = create_app()
 
@@ -195,6 +211,7 @@ def test_create_app_hides_unhandled_exception_detail_in_production(
 def test_create_app_keeps_unhandled_exception_detail_in_development(
     monkeypatch, make_test_client
 ) -> None:
+    """Create app keeps unhandled exception detail in development."""
     monkeypatch.setenv("SIDAR_ENV", "development")
     app = create_app()
 
@@ -213,6 +230,8 @@ def test_create_app_keeps_unhandled_exception_detail_in_development(
 
 
 def test_register_exception_handlers_is_noop_without_exception_handler() -> None:
+    """Register exception handlers is noop without exception handler."""
+
     class NoExceptionHandler:
         pass
 
@@ -220,6 +239,7 @@ def test_register_exception_handlers_is_noop_without_exception_handler() -> None
 
 
 def test_register_routers_includes_routes_and_collects_legacy_exports(make_test_client) -> None:
+    """Register routers includes routes and collects legacy exports."""
     from fastapi import APIRouter
 
     from web.app_factory import register_routers

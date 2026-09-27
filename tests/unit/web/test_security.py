@@ -1,3 +1,5 @@
+"""Unit tests for authentication and webhook security helpers in ``web.security``."""
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -26,6 +28,7 @@ class _Logger:
 
 
 def test_extract_ws_header_token_preserves_sidar_protocol_without_echoing_token() -> None:
+    """Extract ws header token preserves sidar protocol without echoing token."""
     token, protocol = security.extract_ws_header_token("sidar.chat.v1, opaque.jwt-token_123")
 
     assert token == "opaque.jwt-token_123"
@@ -35,17 +38,20 @@ def test_extract_ws_header_token_preserves_sidar_protocol_without_echoing_token(
 
 @pytest.mark.parametrize("kwargs", [{"ttl_seconds": 0}, {"ttl_seconds": -1}])
 def test_webhook_replay_guard_rejects_non_positive_ttl(kwargs: dict[str, float]) -> None:
+    """Webhook replay guard rejects non positive ttl."""
     with pytest.raises(ValueError, match="ttl_seconds pozitif olmalıdır"):
         security.WebhookReplayGuard(**kwargs)
 
 
 @pytest.mark.parametrize("kwargs", [{"max_entries": 0}, {"max_entries": -1}])
 def test_webhook_replay_guard_rejects_non_positive_max_entries(kwargs: dict[str, int]) -> None:
+    """Webhook replay guard rejects non positive max entries."""
     with pytest.raises(ValueError, match="max_entries pozitif olmalıdır"):
         security.WebhookReplayGuard(**kwargs)
 
 
 def test_webhook_replay_guard_expires_and_bounds_entries() -> None:
+    """Webhook replay guard expires and bounds entries."""
     guard = security.WebhookReplayGuard(ttl_seconds=10, max_entries=2)
     guard.reject_replay(label="GitHub", replay_key="old", now=0)
     guard.reject_replay(label="GitHub", replay_key="new", now=5)
@@ -58,6 +64,7 @@ def test_webhook_replay_guard_expires_and_bounds_entries() -> None:
 
 
 def test_verify_webhook_hmac_signature_uses_replay_guard() -> None:
+    """Verify webhook hmac signature uses replay guard."""
     payload = b'{"delivery": true}'
     secret = "webhook-secret"
     signature = (
@@ -82,6 +89,7 @@ def test_verify_webhook_hmac_signature_uses_replay_guard() -> None:
 
 
 def test_verify_webhook_hmac_signature_without_replay_guard_still_validates() -> None:
+    """Verify webhook hmac signature without replay guard still validates."""
     payload = b'{"delivery": true}'
     secret = "webhook-secret"
     signature = (
@@ -93,6 +101,7 @@ def test_verify_webhook_hmac_signature_without_replay_guard_still_validates() ->
 
 
 def test_extract_ws_header_token_supports_raw_token_without_subprotocol_echo() -> None:
+    """Extract ws header token supports raw token without subprotocol echo."""
     token, protocol = security.extract_ws_header_token("raw-token-1")
 
     assert token == "raw-token-1"
@@ -100,6 +109,7 @@ def test_extract_ws_header_token_supports_raw_token_without_subprotocol_echo() -
 
 
 def test_extract_ws_header_token_supports_voice_and_hitl_fixed_protocols() -> None:
+    """Extract ws header token supports voice and hitl fixed protocols."""
     voice_token, voice_protocol = security.extract_ws_header_token(
         "sidar.voice.v1, voice-token", security.SIDAR_WS_VOICE_PROTOCOL
     )
@@ -114,6 +124,7 @@ def test_extract_ws_header_token_supports_voice_and_hitl_fixed_protocols() -> No
 
 
 def test_extract_ws_header_token_ignores_invalid_token_but_accepts_fixed_protocol() -> None:
+    """Extract ws header token ignores invalid token but accepts fixed protocol."""
     token, protocol = security.extract_ws_header_token("sidar.chat.v1, bad token with spaces")
 
     assert token == ""
@@ -121,6 +132,7 @@ def test_extract_ws_header_token_ignores_invalid_token_but_accepts_fixed_protoco
 
 
 def test_extract_ws_header_token_keeps_legacy_token_without_subprotocol_echo() -> None:
+    """Extract ws header token keeps legacy token without subprotocol echo."""
     token, protocol = security.extract_ws_header_token("legacy-token")
 
     assert token == "legacy-token"
@@ -128,6 +140,7 @@ def test_extract_ws_header_token_keeps_legacy_token_without_subprotocol_echo() -
 
 
 def test_get_jwt_secret_fails_closed_instead_of_dev_fallback() -> None:
+    """Get jwt secret fails closed instead of dev fallback."""
     logger = _Logger()
 
     with pytest.raises(RuntimeError, match="JWT_SECRET_KEY"):
@@ -137,6 +150,7 @@ def test_get_jwt_secret_fails_closed_instead_of_dev_fallback() -> None:
 
 @pytest.mark.asyncio
 async def test_resolve_user_from_token_uses_jwt_then_opaque_db_fallback() -> None:
+    """Resolve user from token uses jwt then opaque db fallback."""
     logger = _Logger()
     token = jwt.encode(
         {
@@ -173,6 +187,7 @@ async def test_resolve_user_from_token_uses_jwt_then_opaque_db_fallback() -> Non
 
 
 def test_is_valid_user_id_accepts_uuids_and_rejects_everything_else() -> None:
+    """Is valid user id accepts uuids and rejects everything else."""
     assert security.is_valid_user_id("22222222-2222-4222-8222-222222222222") is True
     assert security.is_valid_user_id("regular-user") is False
     assert security.is_valid_user_id("42") is False
@@ -196,6 +211,7 @@ async def test_resolve_user_from_token_rejects_non_uuid_sub_without_reaching_db(
 
 @pytest.mark.asyncio
 async def test_issue_auth_token_embeds_expected_claims() -> None:
+    """Issue auth token embeds expected claims."""
     user = SimpleNamespace(id="7", username="lin", role="editor", tenant_id="tenant")
 
     token = await security.issue_auth_token(None, user, config=_Config, logger_obj=_Logger())
@@ -209,6 +225,7 @@ async def test_issue_auth_token_embeds_expected_claims() -> None:
 
 
 def test_request_admin_and_metrics_access_guards() -> None:
+    """Request admin and metrics access guards."""
     request = SimpleNamespace(state=SimpleNamespace(), headers=Headers({}))
 
     with pytest.raises(HTTPException) as unauthorized:
@@ -251,6 +268,7 @@ def test_request_admin_and_metrics_access_guards() -> None:
 
 
 def test_metrics_service_token_uses_constant_time_comparison(monkeypatch) -> None:
+    """Metrics service token uses constant time comparison."""
     comparisons: list[tuple[str, str]] = []
 
     def _compare_digest(supplied: str, configured: str) -> bool:

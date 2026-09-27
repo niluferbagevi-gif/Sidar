@@ -9,6 +9,7 @@ from web import autonomy_bridge, collaboration_service, process_lifecycle
 
 
 def test_autonomy_bridge_preserves_service_actor_fallbacks() -> None:
+    """Autonomy bridge preserves service actor fallbacks."""
     config = SimpleNamespace(AUTONOMY_SERVICE_USER_ID="", SYSTEM_USER_ID="system:ops")
 
     assert autonomy_bridge.autonomy_service_actor(config, "webhook:github") == (
@@ -18,16 +19,19 @@ def test_autonomy_bridge_preserves_service_actor_fallbacks() -> None:
 
 
 def test_autonomy_bridge_trim_uses_existing_truncated_suffix() -> None:
+    """Autonomy bridge trim uses existing truncated suffix."""
     assert autonomy_bridge.trim_autonomy_text(" abc ", limit=10) == "abc"
     assert autonomy_bridge.trim_autonomy_text("abcdefghijk", limit=5) == "abcde …[truncated]"
 
 
 def test_collaboration_service_chunks_stream_text() -> None:
+    """Collaboration service chunks stream text."""
     assert collaboration_service.iter_stream_chunks("", size=2) == []
     assert collaboration_service.iter_stream_chunks("abcde", size=2) == ["ab", "cd", "e"]
 
 
 def test_process_lifecycle_terminates_with_term_then_kill() -> None:
+    """Process lifecycle terminates with term then kill."""
     calls: list[tuple[int, int] | tuple[str, float]] = []
 
     process_lifecycle.terminate_process_pids(
@@ -43,6 +47,8 @@ def test_process_lifecycle_terminates_with_term_then_kill() -> None:
 
 
 def test_process_lifecycle_psutil_path_detects_ollama_children() -> None:
+    """Process lifecycle psutil path detects ollama children."""
+
     class Child:
         pid = 42
 
@@ -70,6 +76,7 @@ def test_process_lifecycle_psutil_path_detects_ollama_children() -> None:
 
 
 def test_resolve_safe_ps_binary_skips_candidates_that_raise() -> None:
+    """Resolve safe ps binary skips candidates that raise."""
     with (
         mock.patch.object(process_lifecycle.Path, "is_file", return_value=True),
         mock.patch.object(process_lifecycle.os, "access", side_effect=OSError("boom")),
@@ -79,11 +86,13 @@ def test_resolve_safe_ps_binary_skips_candidates_that_raise() -> None:
 
 
 def test_resolve_safe_ps_binary_swallows_which_lookup_errors() -> None:
+    """Resolve safe ps binary swallows which lookup errors."""
     with mock.patch.object(process_lifecycle.shutil, "which", side_effect=OSError("boom")):
         assert process_lifecycle.resolve_safe_ps_binary(safe_paths=()) is None
 
 
 def test_resolve_safe_ps_binary_returns_which_result_when_whitelisted() -> None:
+    """Resolve safe ps binary returns which result when whitelisted."""
     with (
         mock.patch.object(process_lifecycle.Path, "is_file", return_value=False),
         mock.patch.object(process_lifecycle.shutil, "which", return_value="/usr/bin/ps"),
@@ -94,6 +103,8 @@ def test_resolve_safe_ps_binary_returns_which_result_when_whitelisted() -> None:
 
 
 def test_list_child_ollama_pids_returns_empty_without_safe_ps_binary() -> None:
+    """List child ollama pids returns empty without safe ps binary."""
+
     def _raising_resolver() -> SimpleNamespace:
         raise RuntimeError("psutil unavailable")
 

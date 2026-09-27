@@ -1,3 +1,5 @@
+"""Unit tests for the operations routes in ``web.routes.operations``."""
+
 from __future__ import annotations
 
 import json
@@ -92,6 +94,7 @@ def _assert_database_unavailable_response(response) -> None:
 
 @pytest.mark.asyncio
 async def test_operations_router_lists_campaigns_with_configured_dependencies() -> None:
+    """Operations router lists campaigns with configured dependencies."""
     operations.configure_operations_dependencies(
         lambda: SimpleNamespace(
             get_user_tenant=lambda _user: "tenant-route",
@@ -109,6 +112,7 @@ async def test_operations_router_lists_campaigns_with_configured_dependencies() 
 
 
 def test_allowed_poyraz_rest_tools_contract_excludes_direct_publish_tools() -> None:
+    """Allowed poyraz rest tools contract excludes direct publish tools."""
     assert operations.ALLOWED_POYRAZ_REST_TOOLS == frozenset(
         {
             "build_landing_page",
@@ -127,6 +131,7 @@ def test_allowed_poyraz_rest_tools_contract_excludes_direct_publish_tools() -> N
 
 @pytest.mark.asyncio
 async def test_get_request_user_proxy_delegates_to_configured_dependencies() -> None:
+    """Get request user proxy delegates to configured dependencies."""
     request = object()
     user = SimpleNamespace(id="u-proxy")
     calls: list[object] = []
@@ -144,6 +149,7 @@ async def test_get_request_user_proxy_delegates_to_configured_dependencies() -> 
 
 
 def test_operations_serializers_normalize_optional_campaign_id() -> None:
+    """Operations serializers normalize optional campaign id."""
     payload = operations.serialize_operation_checklist(
         SimpleNamespace(id="5", campaign_id=None, items_json=None)
     )
@@ -156,6 +162,7 @@ def test_operations_serializers_normalize_optional_campaign_id() -> None:
 async def test_operations_router_returns_controlled_db_error_when_agent_resolution_fails(
     caplog,
 ) -> None:
+    """Operations router returns controlled db error when agent resolution fails."""
     operations.configure_operations_dependencies(
         lambda: SimpleNamespace(
             get_user_tenant=lambda _user: "tenant-route",
@@ -177,12 +184,14 @@ async def test_operations_router_returns_controlled_db_error_when_agent_resoluti
 
 
 def test_decode_agent_tool_result_returns_dict_results_directly() -> None:
+    """Decode agent tool result returns dict results directly."""
     raw = {"success": True}
 
     assert operations.decode_agent_tool_result(raw) is raw
 
 
 def test_coverage_routes_are_split_to_coverage_ops_module() -> None:
+    """Coverage routes are split to coverage ops module."""
     assert operations.api_qa_coverage_tasks.__module__ == "web.routes.coverage_ops"
     assert operations.api_qa_coverage_analyze.__module__ == "web.routes.coverage_ops"
     assert operations.serialize_coverage_task.__module__ == "web.routes.coverage_ops"
@@ -190,6 +199,7 @@ def test_coverage_routes_are_split_to_coverage_ops_module() -> None:
 
 @pytest.mark.asyncio
 async def test_poyraz_run_rejects_tools_outside_rest_allowlist() -> None:
+    """Poyraz run rejects tools outside rest allowlist."""
     operations.configure_operations_dependencies(
         lambda: SimpleNamespace(get_user_tenant=lambda _user: "tenant-route")
     )
@@ -203,6 +213,7 @@ async def test_poyraz_run_rejects_tools_outside_rest_allowlist() -> None:
 
 
 def test_decode_agent_tool_result_wraps_json_non_dict_payloads() -> None:
+    """Decode agent tool result wraps json non dict payloads."""
     assert operations.decode_agent_tool_result('["item"]') == {
         "success": True,
         "output": ["item"],
@@ -249,6 +260,7 @@ def test_decode_agent_tool_result_wraps_json_non_dict_payloads() -> None:
 async def test_operations_db_routes_return_503_when_database_methods_raise(
     route_name: str, args: tuple, kwargs: dict
 ) -> None:
+    """Operations db routes return 503 when database methods raise."""
     _configure_raising_operations_db()
     route = getattr(operations, route_name)
 
@@ -259,6 +271,7 @@ async def test_operations_db_routes_return_503_when_database_methods_raise(
 
 @pytest.mark.asyncio
 async def test_operations_db_routes_log_and_mask_unexpected_database_errors(caplog) -> None:
+    """Operations db routes log and mask unexpected database errors."""
     operations.configure_operations_dependencies(
         lambda: SimpleNamespace(
             get_user_tenant=lambda _user: "tenant-route",
@@ -277,6 +290,7 @@ async def test_operations_db_routes_log_and_mask_unexpected_database_errors(capl
 
 @pytest.mark.asyncio
 async def test_operations_plan_service_includes_owner_and_reports_tool_failure() -> None:
+    """Operations plan service includes owner and reports tool failure."""
     events: list[dict] = []
     prompts: list[str] = []
 
@@ -319,6 +333,7 @@ async def test_operations_plan_service_includes_owner_and_reports_tool_failure()
 
 @pytest.mark.asyncio
 async def test_poyraz_rest_bridge_runs_allowed_tool_with_tenant_and_owner_payload() -> None:
+    """Poyraz rest bridge runs allowed tool with tenant and owner payload."""
     events: list[dict] = []
     prompts: list[str] = []
 
@@ -372,6 +387,7 @@ async def test_poyraz_rest_bridge_runs_allowed_tool_with_tenant_and_owner_payloa
 
 @pytest.mark.asyncio
 async def test_named_poyraz_request_uses_raw_output_fallback_when_result_has_no_output() -> None:
+    """Named poyraz request uses raw output fallback when result has no output."""
     prompts: list[str] = []
 
     class _Poyraz:
@@ -417,6 +433,8 @@ async def test_named_poyraz_request_uses_raw_output_fallback_when_result_has_no_
 
 @pytest.mark.asyncio
 async def test_operations_create_campaign_masks_unexpected_database_errors(caplog) -> None:
+    """Operations create campaign masks unexpected database errors."""
+
     class _CreateUnexpectedDb(_RaisingDb):
         async def upsert_marketing_campaign(self, **_kwargs):
             raise ValueError("campaign metadata was not serializable")
@@ -442,6 +460,8 @@ async def test_operations_create_campaign_masks_unexpected_database_errors(caplo
 
 @pytest.mark.asyncio
 async def test_operations_create_campaign_serializes_initial_assets_and_checklists() -> None:
+    """Operations create campaign serializes initial assets and checklists."""
+
     class _CreateDb:
         async def upsert_marketing_campaign(self, **kwargs):
             assert kwargs["tenant_id"] == "tenant-route"
@@ -520,6 +540,7 @@ async def test_operations_create_campaign_serializes_initial_assets_and_checklis
 
 @pytest.mark.asyncio
 async def test_poyraz_rest_bridge_preserves_existing_owner_user_id() -> None:
+    """Poyraz rest bridge preserves existing owner user id."""
     prompts: list[str] = []
 
     class _Poyraz:
@@ -635,6 +656,7 @@ async def test_operations_db_routes_mask_expected_and_unexpected_exceptions(
     args: tuple,
     kwargs: dict,
 ) -> None:
+    """Operations db routes mask expected and unexpected exceptions."""
     _configure_operations_db_exception(exc)
 
     response = await getattr(operations, route_name)(
@@ -664,6 +686,8 @@ def _assert_poyraz_unavailable_response(response) -> None:
     ],
 )
 async def test_poyraz_tool_bridge_returns_api_response_for_tool_exceptions(exc: Exception) -> None:
+    """Poyraz tool bridge returns api response for tool exceptions."""
+
     class _Poyraz:
         async def run_task(self, _prompt: str) -> str:
             raise exc
@@ -700,6 +724,8 @@ async def test_poyraz_tool_bridge_returns_api_response_for_tool_exceptions(exc: 
     ],
 )
 async def test_named_poyraz_bridge_returns_api_response_for_tool_exceptions(exc: Exception) -> None:
+    """Named poyraz bridge returns api response for tool exceptions."""
+
     class _Poyraz:
         async def run_task(self, _prompt: str) -> str:
             raise exc

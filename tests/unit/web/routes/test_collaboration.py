@@ -1,3 +1,5 @@
+"""Unit tests for collaboration room helpers in ``web.routes.collaboration``."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -30,6 +32,7 @@ class _WebSocket:
 
 
 def test_collaboration_model_normalization_serialization_and_prompt(tmp_path: Path) -> None:
+    """Collaboration model normalization serialization and prompt."""
     with pytest.raises(HTTPException):
         collaboration.normalize_room_id("<bad>")
 
@@ -72,6 +75,7 @@ def test_collaboration_model_normalization_serialization_and_prompt(tmp_path: Pa
 
 
 def test_mask_append_and_message_builder_use_injected_dependencies() -> None:
+    """Mask append and message builder use injected dependencies."""
     logger = _Logger()
 
     def _import_module(_name: str):
@@ -107,6 +111,7 @@ def test_mask_append_and_message_builder_use_injected_dependencies() -> None:
 
 @pytest.mark.asyncio
 async def test_join_leave_broadcast_and_emit_control_room_event(tmp_path: Path) -> None:
+    """Join leave broadcast and emit control room event."""
     rooms: dict[str, collaboration.CollaborationRoom] = {}
     ws = _WebSocket()
 

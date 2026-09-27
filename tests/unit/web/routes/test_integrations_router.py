@@ -1,3 +1,5 @@
+"""Unit tests for the Slack/Jira/Teams routes in ``web.routes.integrations``."""
+
 import inspect
 import sys
 import types
@@ -73,6 +75,7 @@ def _exports(*, slack=None, jira=None, teams=None):
 
 
 def test_integrations_router_endpoints_require_admin_dependency():
+    """Integrations router endpoints require admin dependency."""
     exports = _exports(slack=_Slack(), jira=_Jira(), teams=_Teams())
     protected = {
         "api_slack_send": "_user",
@@ -89,6 +92,7 @@ def test_integrations_router_endpoints_require_admin_dependency():
 
 @pytest.mark.asyncio
 async def test_integrations_router_legacy_exports_success_paths():
+    """Integrations router legacy exports success paths."""
     exports = _exports(slack=_Slack(), jira=_Jira(), teams=_Teams())
 
     slack_send = await exports["api_slack_send"](SlackSendRequest(text="hello", channel="#general"))
@@ -122,6 +126,7 @@ async def test_integrations_router_legacy_exports_success_paths():
     ],
 )
 async def test_integrations_router_legacy_exports_unavailable_paths(export_name, payload, kwargs):
+    """Integrations router legacy exports unavailable paths."""
     exports = _exports(**kwargs)
 
     with pytest.raises(HTTPException) as exc_info:
@@ -153,6 +158,7 @@ async def test_integrations_router_legacy_exports_unavailable_paths(export_name,
 async def test_integrations_router_legacy_exports_upstream_error_paths(
     export_name, payload, kwargs
 ):
+    """Integrations router legacy exports upstream error paths."""
     exports = _exports(**kwargs)
 
     with pytest.raises(HTTPException) as exc_info:
@@ -167,6 +173,8 @@ async def test_integrations_router_legacy_exports_upstream_error_paths(
 
 
 def test_integrations_router_uses_live_cfg_provider_for_jira_manager(monkeypatch):
+    """Integrations router uses live cfg provider for jira manager."""
+
     class _JiraManager:
         def __init__(self, **kwargs):
             self.kwargs = kwargs

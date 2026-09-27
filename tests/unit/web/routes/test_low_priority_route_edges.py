@@ -1,3 +1,5 @@
+"""Edge-case tests for the HITL and metrics routers."""
+
 from __future__ import annotations
 
 import sys
@@ -16,6 +18,7 @@ async def _async_value(value: Any) -> Any:
 
 
 def test_hitl_pending_accepts_synchronous_store_result(make_test_client: Any) -> None:
+    """Hitl pending accepts synchronous store result."""
     item = SimpleNamespace(to_dict=lambda: {"request_id": "req-1"})
     router = build_hitl_router(
         get_request_user=lambda: None,
@@ -38,6 +41,7 @@ def test_hitl_pending_accepts_synchronous_store_result(make_test_client: Any) ->
 
 @pytest.mark.asyncio
 async def test_hitl_websocket_extracts_bearer_token_and_rejects_invalid_user() -> None:
+    """Hitl websocket extracts bearer token and rejects invalid user."""
     closed: list[str] = []
 
     class _WebSocket:
@@ -72,6 +76,7 @@ async def test_hitl_websocket_extracts_bearer_token_and_rejects_invalid_user() -
 def test_metrics_helper_returns_default_when_legacy_module_lacks_attribute(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Metrics helper returns default when legacy module lacks attribute."""
     monkeypatch.setitem(sys.modules, "web_server", ModuleType("web_server"))
     default = object()
 
@@ -81,6 +86,8 @@ def test_metrics_helper_returns_default_when_legacy_module_lacks_attribute(
 def test_metrics_temporarily_sets_empty_username_and_awaits_sync_named_session_provider(
     make_test_client: Any,
 ) -> None:
+    """Metrics temporarily sets empty username and awaits sync named session provider."""
+
     class _Memory:
         active_user_id = "previous-user"
         active_username = ""

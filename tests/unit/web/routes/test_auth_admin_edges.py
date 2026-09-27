@@ -1,3 +1,5 @@
+"""Edge-case tests for the auth/admin routes in ``web.routes.auth_admin``."""
+
 from __future__ import annotations
 
 import json
@@ -82,12 +84,14 @@ def _json_body(response: Any) -> dict[str, Any]:
 
 
 def test_parse_payload_returns_raw_value_without_model_validate_or_mapping() -> None:
+    """Parse payload returns raw value without model validate or mapping."""
     marker = object()
 
     assert _parse_payload(_RegisterRequest, marker) is marker
 
 
 def test_normalize_register_payload_supports_camel_case_aliases() -> None:
+    """Normalize register payload supports camel case aliases."""
     payload = _normalize_register_payload(
         {"userName": "alice", "passWord": "secret1", "tenantId": "tenant-a"}
     )
@@ -104,6 +108,8 @@ def test_normalize_register_payload_supports_camel_case_aliases() -> None:
 
 @pytest.mark.asyncio
 async def test_register_user_maps_database_exception_to_conflict() -> None:
+    """Register user maps database exception to conflict."""
+
     def _register_user(**_kwargs: Any) -> Any:
         raise RuntimeError("duplicate username")
 
@@ -119,6 +125,8 @@ async def test_register_user_maps_database_exception_to_conflict() -> None:
 
 @pytest.mark.asyncio
 async def test_register_user_rejects_reserved_default_admin_without_db_call() -> None:
+    """Register user rejects reserved default admin without db call."""
+
     def _register_user(**_kwargs: Any) -> Any:
         raise AssertionError("reserved usernames must be rejected before database registration")
 
@@ -134,6 +142,8 @@ async def test_register_user_rejects_reserved_default_admin_without_db_call() ->
 
 @pytest.mark.asyncio
 async def test_admin_stats_falls_back_to_database_provider() -> None:
+    """Admin stats falls back to database provider."""
+
     class _Database:
         async def get_admin_stats(self) -> dict[str, int]:
             return {"users": 3}

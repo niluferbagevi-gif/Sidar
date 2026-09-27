@@ -1,3 +1,5 @@
+"""Unit tests for the autonomy routes in ``web.routes.autonomy``."""
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -35,10 +37,12 @@ from web.routes.autonomy import (
 def test_coerce_bool_handles_known_values_and_unknown_defaults(
     value: object, default: bool, expected: bool
 ) -> None:
+    """Coerce bool handles known values and unknown defaults."""
     assert _coerce_bool(value, default=default) is expected
 
 
 def test_autonomy_webhook_secret_supports_sidar_alias() -> None:
+    """Autonomy webhook secret supports sidar alias."""
     assert _autonomy_webhook_secret(SimpleNamespace(AUTONOMY_WEBHOOK_SECRET="direct")) == "direct"
     assert (
         _autonomy_webhook_secret(SimpleNamespace(SIDAR_AUTONOMY_WEBHOOK_SECRET="legacy"))
@@ -47,6 +51,7 @@ def test_autonomy_webhook_secret_supports_sidar_alias() -> None:
 
 
 def test_autonomy_wake_declares_admin_dependency() -> None:
+    """Autonomy wake declares admin dependency."""
     route = next(route for route in router.routes if route.path == "/api/autonomy/wake")
 
     assert any(
@@ -55,6 +60,7 @@ def test_autonomy_wake_declares_admin_dependency() -> None:
 
 
 def test_require_autonomy_admin_delegates_authenticated_request_user() -> None:
+    """Require autonomy admin delegates authenticated request user."""
     admin = SimpleNamespace(id="admin-1", role="admin")
     calls: list[Any] = []
     configure_autonomy_dependencies(
@@ -71,6 +77,7 @@ def test_require_autonomy_admin_delegates_authenticated_request_user() -> None:
 def test_autonomy_webhook_signature_required_defaults_to_secure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Autonomy webhook signature required defaults to secure."""
     monkeypatch.delenv("SIDAR_ENV", raising=False)
 
     assert _autonomy_webhook_signature_required(SimpleNamespace()) is True
@@ -85,6 +92,7 @@ def test_autonomy_webhook_signature_required_defaults_to_secure(
 def test_autonomy_webhook_signature_required_forces_production(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Autonomy webhook signature required forces production."""
     monkeypatch.setenv("SIDAR_ENV", "production")
 
     assert (
@@ -98,6 +106,7 @@ def test_autonomy_webhook_signature_required_forces_production(
 def test_validate_autonomy_webhook_signature_fails_closed_when_nonproduction_secret_missing() -> (
     None
 ):
+    """Validate autonomy webhook signature fails closed when nonproduction secret missing."""
     calls: list[tuple[Any, ...]] = []
 
     with pytest.raises(HTTPException) as exc_info:
@@ -114,6 +123,7 @@ def test_validate_autonomy_webhook_signature_fails_closed_when_nonproduction_sec
 
 
 def test_validate_autonomy_webhook_signature_fails_closed_in_production_without_secret() -> None:
+    """Validate autonomy webhook signature fails closed in production without secret."""
     with pytest.raises(HTTPException) as exc_info:
         _validate_autonomy_webhook_signature(
             payload_body=b"{}",
@@ -129,6 +139,7 @@ def test_validate_autonomy_webhook_signature_fails_closed_in_production_without_
 def test_validate_autonomy_webhook_signature_can_bypass_for_local_compatibility(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Validate autonomy webhook signature can bypass for local compatibility."""
     monkeypatch.setenv("SIDAR_ENV", "testing")
     calls: list[tuple[Any, ...]] = []
 
@@ -146,6 +157,7 @@ def test_validate_autonomy_webhook_signature_can_bypass_for_local_compatibility(
 
 
 def test_validate_autonomy_webhook_signature_delegates_to_shared_hmac_verifier() -> None:
+    """Validate autonomy webhook signature delegates to shared hmac verifier."""
     calls: list[tuple[Any, ...]] = []
 
     _validate_autonomy_webhook_signature(
@@ -167,6 +179,7 @@ def test_validate_autonomy_webhook_signature_delegates_to_shared_hmac_verifier()
 
 
 def test_validate_autonomy_webhook_signature_rejects_missing_delivery_id() -> None:
+    """Validate autonomy webhook signature rejects missing delivery id."""
     calls: list[tuple[Any, ...]] = []
 
     with pytest.raises(HTTPException) as exc_info:
@@ -184,6 +197,8 @@ def test_validate_autonomy_webhook_signature_rejects_missing_delivery_id() -> No
 
 
 def test_validate_autonomy_webhook_signature_preserves_verifier_http_errors() -> None:
+    """Validate autonomy webhook signature preserves verifier http errors."""
+
     def _raise(*_args: Any, **_kwargs: Any) -> None:
         raise HTTPException(status_code=401, detail="Autonomy webhook imza başlığı eksik.")
 

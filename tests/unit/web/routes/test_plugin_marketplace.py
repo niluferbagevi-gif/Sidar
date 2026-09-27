@@ -1,3 +1,5 @@
+"""Unit tests for the plugin marketplace helpers in ``web.routes.plugin_marketplace``."""
+
 from __future__ import annotations
 
 import logging
@@ -41,6 +43,7 @@ def _catalog(entrypoint: Path) -> dict[str, dict[str, Any]]:
 
 
 def test_get_plugin_marketplace_entry_raises_for_unknown_plugin() -> None:
+    """Get plugin marketplace entry raises for unknown plugin."""
     with pytest.raises(HTTPException):
         plugin_marketplace.get_plugin_marketplace_entry("missing", catalog={})
 
@@ -48,6 +51,7 @@ def test_get_plugin_marketplace_entry_raises_for_unknown_plugin() -> None:
 def test_read_plugin_marketplace_state_tolerates_missing_and_malformed_files(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Read plugin marketplace state tolerates missing and malformed files."""
     monkeypatch.chdir(tmp_path)
     assert plugin_marketplace.read_plugin_marketplace_state() == {}
 
@@ -72,6 +76,7 @@ def test_read_plugin_marketplace_state_tolerates_missing_and_malformed_files(
 def test_read_plugin_marketplace_state_tolerates_os_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Read plugin marketplace state tolerates os error."""
     monkeypatch.chdir(tmp_path)
     plugin_marketplace.write_plugin_marketplace_state({"demo": {"installed_at": "now"}})
 
@@ -92,6 +97,7 @@ def test_read_plugin_marketplace_state_tolerates_os_error(
 
 
 def test_serialize_marketplace_plugin_reports_installed_and_live_state(tmp_path: Path) -> None:
+    """Serialize marketplace plugin reports installed and live state."""
     entrypoint = tmp_path / "demo.py"
     entrypoint.write_text("x = 1", encoding="utf-8")
     catalog = _catalog(entrypoint)
@@ -123,6 +129,7 @@ def test_serialize_marketplace_plugin_reports_installed_and_live_state(tmp_path:
 
 
 def test_install_uninstall_and_reload_marketplace_plugins_round_trip(tmp_path: Path) -> None:
+    """Install uninstall and reload marketplace plugins round trip."""
     entrypoint = tmp_path / "demo_plugin.py"
     entrypoint.write_text("print('ok')", encoding="utf-8")
     catalog = _catalog(entrypoint)
@@ -168,6 +175,7 @@ def test_install_uninstall_and_reload_marketplace_plugins_round_trip(tmp_path: P
 
 
 def test_reload_persisted_marketplace_plugins_tolerates_failures() -> None:
+    """Reload persisted marketplace plugins tolerates failures."""
     calls: list[str] = []
 
     def _install(plugin_id: str) -> dict[str, Any]:
@@ -198,4 +206,5 @@ def test_reload_persisted_marketplace_plugins_tolerates_failures() -> None:
 
 
 def test_module_logger_is_a_real_logger() -> None:
+    """Module logger is a real logger."""
     assert isinstance(plugin_marketplace.logger, logging.Logger)

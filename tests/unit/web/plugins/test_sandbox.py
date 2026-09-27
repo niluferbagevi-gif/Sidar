@@ -1,3 +1,5 @@
+"""Unit tests for the plugin sandbox backends in ``web.plugins.sandbox``."""
+
 from __future__ import annotations
 
 import asyncio
@@ -41,12 +43,14 @@ def _docker_backend(monkeypatch: pytest.MonkeyPatch) -> DockerPluginSandboxBacke
 
 
 def test_plugin_source_filename_sanitizes_label() -> None:
+    """Plugin source filename sanitizes label."""
     assert plugin_source_filename("mod / name.py") == "<sidar-plugin:mod___name.py>"
     assert plugin_source_filename("!!!") == "<sidar-plugin:___>"
     assert plugin_source_filename("") == "<sidar-plugin:inline>"
 
 
 def test_in_process_plugin_execution_env_matrix() -> None:
+    """In process plugin execution env matrix."""
     for explicit in ("1", "true", "yes", "on"):
         assert in_process_plugin_execution_allowed({"SIDAR_ENABLE_IN_PROCESS_PLUGINS": explicit})
     for explicit in ("0", "false", "no", "off"):
@@ -63,6 +67,7 @@ def test_in_process_plugin_execution_env_matrix() -> None:
 
 
 def test_plugin_backend_defaults_all_environments_to_docker_and_rejects_unknown() -> None:
+    """Plugin backend defaults all environments to docker and rejects unknown."""
     assert plugin_sandbox_backend({"SIDAR_ENV": "production"}) == "docker"
     assert plugin_sandbox_backend({"SIDAR_ENV": "development"}) == "docker"
     assert plugin_sandbox_backend({"SIDAR_ENV": "test"}) == "docker"
@@ -84,6 +89,7 @@ def test_plugin_backend_defaults_all_environments_to_docker_and_rejects_unknown(
 
 
 def test_docker_backend_command_applies_isolation_contract(monkeypatch) -> None:
+    """Docker backend command applies isolation contract."""
     monkeypatch.setattr("web.plugins.sandbox.shutil.which", lambda _name: "/usr/bin/docker")
     command = DockerPluginSandboxBackend({})._command()
 
@@ -178,6 +184,7 @@ def test_docker_backend_command_overrides_the_image_entrypoint(monkeypatch) -> N
 
 
 def test_docker_backend_fails_closed_without_docker(monkeypatch) -> None:
+    """Docker backend fails closed without docker."""
     monkeypatch.setattr("web.plugins.sandbox.shutil.which", lambda _name: None)
     with pytest.raises(PluginSandboxError, match="fail-closed"):
         DockerPluginSandboxBackend({}).describe("VALUE = 1", None, "missing")
@@ -186,6 +193,7 @@ def test_docker_backend_fails_closed_without_docker(monkeypatch) -> None:
 def test_docker_backend_container_command_reuses_isolation_flags_with_custom_entrypoint(
     monkeypatch,
 ) -> None:
+    """Docker backend container command reuses isolation flags with custom entrypoint."""
     monkeypatch.setattr("web.plugins.sandbox.shutil.which", lambda _name: "/usr/bin/docker")
     backend = DockerPluginSandboxBackend({})
 
@@ -196,6 +204,7 @@ def test_docker_backend_container_command_reuses_isolation_flags_with_custom_ent
 
 
 def test_docker_backend_container_command_requires_args(monkeypatch) -> None:
+    """Docker backend container command requires args."""
     monkeypatch.setattr("web.plugins.sandbox.shutil.which", lambda _name: "/usr/bin/docker")
     backend = DockerPluginSandboxBackend({})
 
@@ -206,6 +215,7 @@ def test_docker_backend_container_command_requires_args(monkeypatch) -> None:
 def test_assert_in_process_plugin_execution_allowed_rejects_disabled_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Assert in process plugin execution allowed rejects disabled env."""
     monkeypatch.setenv("SIDAR_ENABLE_IN_PROCESS_PLUGINS", "0")
 
     with pytest.raises(HTTPException) as exc:
@@ -219,6 +229,7 @@ def test_assert_in_process_plugin_execution_allowed_rejects_disabled_env(
 
 
 def test_validate_plugin_source_rejects_syntax_and_banned_imports() -> None:
+    """Validate plugin source rejects syntax and banned imports."""
     for source in ("def broken(:\n", "import os\n", "from subprocess import run\n"):
         with pytest.raises(HTTPException) as exc:
             validate_plugin_source(source)
@@ -226,6 +237,7 @@ def test_validate_plugin_source_rejects_syntax_and_banned_imports() -> None:
 
 
 def test_validate_plugin_source_rejects_introspection_and_dynamic_code() -> None:
+    """Validate plugin source rejects introspection and dynamic code."""
     for source in (
         "eval('1')",
         "safe.exec('payload')",
@@ -239,6 +251,7 @@ def test_validate_plugin_source_rejects_introspection_and_dynamic_code() -> None
 
 
 def test_validate_plugin_source_rejects_banned_subscript_and_call_attribute_roots() -> None:
+    """Validate plugin source rejects banned subscript and call attribute roots."""
     for source in ("os[0].system('id')", "factory().exec('payload')"):
         with pytest.raises(HTTPException) as exc:
             validate_plugin_source(source)
@@ -246,6 +259,7 @@ def test_validate_plugin_source_rejects_banned_subscript_and_call_attribute_root
 
 
 def test_validate_plugin_source_allows_safe_imports_and_non_name_call_shapes() -> None:
+    """Validate plugin source allows safe imports and non name call shapes."""
     validate_plugin_source("import math\nfrom typing import Any\nvalue = math.sqrt(4)\n")
     validate_plugin_source("def make():\n    return lambda: 1\n\nvalue = make()()\n")
     validate_plugin_source("handler = (lambda: None)\nhandler.__call__()\n")
@@ -317,11 +331,13 @@ def test_run_plugin_source_in_process_blocks_the_frame_walking_escape(monkeypatc
 
 
 def test_restricted_plugin_import_rejects_relative_import() -> None:
+    """Restricted plugin import rejects relative import."""
     with pytest.raises(ImportError, match="relative import engellendi"):
         restricted_plugin_import("sibling", fromlist=("thing",), level=1)
 
 
 def test_restricted_plugin_import_rejects_out_of_scope_from_imports() -> None:
+    """Restricted plugin import rejects out of scope from imports."""
     with pytest.raises(ImportError, match="web_server import kapsamı engellendi"):
         restricted_plugin_import("web_server", fromlist=("run_plugin",))
 
@@ -333,11 +349,13 @@ def test_restricted_plugin_import_rejects_out_of_scope_from_imports() -> None:
 
 
 def test_restricted_plugin_import_rejects_modules_outside_allowlist() -> None:
+    """Restricted plugin import rejects modules outside allowlist."""
     with pytest.raises(ImportError, match="import allowlist dışında"):
         restricted_plugin_import("json")
 
 
 def test_restricted_plugin_import_allows_scoped_and_allowlisted_modules() -> None:
+    """Restricted plugin import allows scoped and allowlisted modules."""
     web_server_ns = restricted_plugin_import("web_server", fromlist=("BaseAgent",))
     assert web_server_ns.BaseAgent is BaseAgent
 
@@ -351,6 +369,7 @@ def test_restricted_plugin_import_allows_scoped_and_allowlisted_modules() -> Non
 
 
 def test_execute_validated_plugin_source_uses_sanitized_filename() -> None:
+    """Execute validated plugin source uses sanitized filename."""
     namespace: dict[str, object] = {}
 
     execute_validated_plugin_source("RESULT = 42", "plugin/name", namespace)
@@ -359,6 +378,7 @@ def test_execute_validated_plugin_source_uses_sanitized_filename() -> None:
 
 
 def test_in_process_backend_executes_only_outside_production(monkeypatch) -> None:
+    """In process backend executes only outside production."""
     monkeypatch.setenv("SIDAR_ENV", "development")
     monkeypatch.setenv("SIDAR_ENABLE_IN_PROCESS_PLUGINS", "1")
     namespace = run_plugin_source_in_process("RESULT = 42", "safe_plugin")
@@ -372,6 +392,7 @@ def test_in_process_backend_executes_only_outside_production(monkeypatch) -> Non
 
 
 def test_in_process_backend_maps_validator_failure_to_http_400(monkeypatch) -> None:
+    """In process backend maps validator failure to http 400."""
     monkeypatch.setenv("SIDAR_ENV", "development")
     monkeypatch.setenv("SIDAR_ENABLE_IN_PROCESS_PLUGINS", "1")
 
@@ -386,6 +407,7 @@ def test_in_process_backend_maps_validator_failure_to_http_400(monkeypatch) -> N
 
 
 def test_in_process_backend_maps_runtime_failure_to_http_400(monkeypatch) -> None:
+    """In process backend maps runtime failure to http 400."""
     monkeypatch.setenv("SIDAR_ENV", "development")
     monkeypatch.setenv("SIDAR_ENABLE_IN_PROCESS_PLUGINS", "1")
 
@@ -397,6 +419,7 @@ def test_in_process_backend_maps_runtime_failure_to_http_400(monkeypatch) -> Non
 
 
 def test_in_process_backend_preserves_runtime_http_exception(monkeypatch) -> None:
+    """In process backend preserves runtime http exception."""
     monkeypatch.setenv("SIDAR_ENV", "development")
     monkeypatch.setenv("SIDAR_ENABLE_IN_PROCESS_PLUGINS", "1")
 
@@ -413,6 +436,7 @@ def test_in_process_backend_preserves_runtime_http_exception(monkeypatch) -> Non
 
 
 def test_docker_backend_request_maps_timeout_to_sandbox_error(monkeypatch) -> None:
+    """Docker backend request maps timeout to sandbox error."""
     backend = _docker_backend(monkeypatch)
 
     def _raise_timeout(command, **_kwargs):
@@ -429,6 +453,7 @@ def test_docker_backend_request_maps_timeout_to_sandbox_error(monkeypatch) -> No
 
 
 def test_docker_backend_request_rejects_create_timeout(monkeypatch) -> None:
+    """Docker backend request rejects create timeout."""
     backend = _docker_backend(monkeypatch)
 
     def _raise_timeout(command, **kwargs):
@@ -441,6 +466,7 @@ def test_docker_backend_request_rejects_create_timeout(monkeypatch) -> None:
 
 
 def test_docker_backend_request_rejects_failed_create(monkeypatch) -> None:
+    """Docker backend request rejects failed create."""
     backend = _docker_backend(monkeypatch)
     monkeypatch.setattr(
         "web.plugins.sandbox.subprocess.run",
@@ -452,6 +478,7 @@ def test_docker_backend_request_rejects_failed_create(monkeypatch) -> None:
 
 
 def test_docker_backend_request_rejects_empty_container_id(monkeypatch) -> None:
+    """Docker backend request rejects empty container id."""
     backend = _docker_backend(monkeypatch)
     monkeypatch.setattr(
         "web.plugins.sandbox.subprocess.run",
@@ -463,6 +490,7 @@ def test_docker_backend_request_rejects_empty_container_id(monkeypatch) -> None:
 
 
 def test_docker_backend_keeps_rpc_and_cleanup_deadlines_separate(monkeypatch) -> None:
+    """Docker backend keeps rpc and cleanup deadlines separate."""
     backend = DockerPluginSandboxBackend(
         {
             "SIDAR_PLUGIN_SANDBOX_TIMEOUT": "11",
@@ -488,6 +516,7 @@ def test_docker_backend_keeps_rpc_and_cleanup_deadlines_separate(monkeypatch) ->
 
 
 def test_docker_backend_reports_cleanup_timeout_separately_from_rpc_timeout(monkeypatch) -> None:
+    """Docker backend reports cleanup timeout separately from rpc timeout."""
     backend = _docker_backend(monkeypatch)
     response = json.dumps({"rpc_version": PLUGIN_RPC_VERSION, "ok": True})
 
@@ -506,6 +535,7 @@ def test_docker_backend_reports_cleanup_timeout_separately_from_rpc_timeout(monk
 
 
 def test_docker_backend_request_rejects_nonzero_returncode(monkeypatch) -> None:
+    """Docker backend request rejects nonzero returncode."""
     backend = _docker_backend(monkeypatch)
 
     def _run(command, **_kwargs):
@@ -522,6 +552,7 @@ def test_docker_backend_request_rejects_nonzero_returncode(monkeypatch) -> None:
 
 
 def test_docker_backend_request_rejects_oversized_response(monkeypatch) -> None:
+    """Docker backend request rejects oversized response."""
     backend = _docker_backend(monkeypatch)
     oversized = "a" * (PLUGIN_RPC_MAX_RESPONSE_BYTES + 1)
     monkeypatch.setattr(
@@ -534,6 +565,7 @@ def test_docker_backend_request_rejects_oversized_response(monkeypatch) -> None:
 
 
 def test_docker_backend_request_rejects_invalid_json(monkeypatch) -> None:
+    """Docker backend request rejects invalid json."""
     backend = _docker_backend(monkeypatch)
     monkeypatch.setattr(
         "web.plugins.sandbox.subprocess.run",
@@ -545,6 +577,7 @@ def test_docker_backend_request_rejects_invalid_json(monkeypatch) -> None:
 
 
 def test_docker_backend_request_rejects_rpc_version_mismatch(monkeypatch) -> None:
+    """Docker backend request rejects rpc version mismatch."""
     backend = _docker_backend(monkeypatch)
     monkeypatch.setattr(
         "web.plugins.sandbox.subprocess.run",
@@ -558,6 +591,7 @@ def test_docker_backend_request_rejects_rpc_version_mismatch(monkeypatch) -> Non
 
 
 def test_docker_backend_request_rejects_worker_reported_failure(monkeypatch) -> None:
+    """Docker backend request rejects worker reported failure."""
     backend = _docker_backend(monkeypatch)
     payload = json.dumps({"rpc_version": PLUGIN_RPC_VERSION, "ok": False, "error": "leak"})
     monkeypatch.setattr(
@@ -572,6 +606,7 @@ def test_docker_backend_request_rejects_worker_reported_failure(monkeypatch) -> 
 async def test_docker_backend_run_task_returns_worker_result_off_the_event_loop(
     monkeypatch,
 ) -> None:
+    """Docker backend run task returns worker result off the event loop."""
     backend = _docker_backend(monkeypatch)
     payload = json.dumps({"rpc_version": PLUGIN_RPC_VERSION, "ok": True, "result": "42"})
     monkeypatch.setattr(
@@ -585,6 +620,7 @@ async def test_docker_backend_run_task_returns_worker_result_off_the_event_loop(
 
 
 def test_build_isolated_plugin_proxy_requires_resolved_class_name(monkeypatch) -> None:
+    """Build isolated plugin proxy requires resolved class name."""
     backend = _docker_backend(monkeypatch)
     payload = json.dumps({"rpc_version": PLUGIN_RPC_VERSION, "ok": True, "class_name": ""})
     monkeypatch.setattr(
@@ -600,6 +636,7 @@ def test_build_isolated_plugin_proxy_requires_resolved_class_name(monkeypatch) -
 def test_build_isolated_plugin_proxy_creates_baseagent_subclass_that_delegates(
     monkeypatch,
 ) -> None:
+    """Build isolated plugin proxy creates baseagent subclass that delegates."""
     backend = _docker_backend(monkeypatch)
     monkeypatch.setattr("web.plugins.sandbox.DockerPluginSandboxBackend", lambda: backend)
 

@@ -1,3 +1,5 @@
+"""Unit tests for the coverage QA routes in ``web.routes.coverage_ops``."""
+
 from __future__ import annotations
 
 import json
@@ -22,6 +24,7 @@ def _assert_database_unavailable(response) -> None:
 
 
 def test_coverage_deps_raise_when_not_configured(monkeypatch) -> None:
+    """Coverage deps raise when not configured."""
     monkeypatch.setattr(coverage_ops, "_deps_factory", None)
 
     with pytest.raises(RuntimeError, match="Coverage route dependencies are not configured"):
@@ -30,6 +33,8 @@ def test_coverage_deps_raise_when_not_configured(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_coverage_tasks_returns_503_when_database_unavailable() -> None:
+    """Coverage tasks returns 503 when database unavailable."""
+
     async def _resolve_agent_instance():
         raise RuntimeError("database unavailable")
 
@@ -47,6 +52,8 @@ async def test_coverage_tasks_returns_503_when_database_unavailable() -> None:
 
 @pytest.mark.asyncio
 async def test_coverage_tasks_masks_unexpected_database_exception(caplog) -> None:
+    """Coverage tasks masks unexpected database exception."""
+
     class _DB:
         async def list_coverage_tasks(self, **_kwargs):
             raise ValueError("unexpected db serialization failure")
@@ -69,6 +76,7 @@ async def test_coverage_tasks_masks_unexpected_database_exception(caplog) -> Non
 
 
 def test_decode_agent_tool_result_wraps_non_json_string_output() -> None:
+    """Decode agent tool result wraps non json string output."""
     assert coverage_ops.decode_agent_tool_result("plain output") == {
         "success": True,
         "output": "plain output",
@@ -76,6 +84,7 @@ def test_decode_agent_tool_result_wraps_non_json_string_output() -> None:
 
 
 def test_decode_agent_tool_result_wraps_json_list_output() -> None:
+    """Decode agent tool result wraps json list output."""
     assert coverage_ops.decode_agent_tool_result('["finding"]') == {
         "success": True,
         "output": ["finding"],
@@ -83,12 +92,14 @@ def test_decode_agent_tool_result_wraps_json_list_output() -> None:
 
 
 def test_decode_agent_tool_result_returns_dict_passthrough() -> None:
+    """Decode agent tool result returns dict passthrough."""
     raw = {"success": False, "error": "bad coverage"}
 
     assert coverage_ops.decode_agent_tool_result(raw) is raw
 
 
 def test_serialize_coverage_task_uses_safe_defaults() -> None:
+    """Serialize coverage task uses safe defaults."""
     serialized = coverage_ops.serialize_coverage_task(SimpleNamespace())
 
     assert serialized == {
@@ -107,6 +118,7 @@ def test_serialize_coverage_task_uses_safe_defaults() -> None:
 
 @pytest.mark.asyncio
 async def test_coverage_get_request_user_proxy_delegates_to_configured_dependencies() -> None:
+    """Coverage get request user proxy delegates to configured dependencies."""
     request = object()
     user = SimpleNamespace(id="coverage-user")
     calls: list[object] = []
@@ -125,6 +137,7 @@ async def test_coverage_get_request_user_proxy_delegates_to_configured_dependenc
 
 @pytest.mark.asyncio
 async def test_resolve_operations_db_returns_agent_memory_database() -> None:
+    """Resolve operations db returns agent memory database."""
     db = object()
 
     async def _resolve_agent_instance():
@@ -140,6 +153,7 @@ async def test_resolve_operations_db_returns_agent_memory_database() -> None:
 
 @pytest.mark.asyncio
 async def test_coverage_tasks_returns_serialized_success_payload() -> None:
+    """Coverage tasks returns serialized success payload."""
     calls: list[dict[str, object]] = []
 
     class _DB:
@@ -197,6 +211,8 @@ async def test_coverage_tasks_returns_serialized_success_payload() -> None:
 
 @pytest.mark.asyncio
 async def test_coverage_tasks_returns_503_when_list_coverage_tasks_raises_oserror() -> None:
+    """Coverage tasks returns 503 when list coverage tasks raises oserror."""
+
     class _DB:
         async def list_coverage_tasks(self, **_kwargs):
             raise OSError("connection reset")
@@ -217,6 +233,7 @@ async def test_coverage_tasks_returns_503_when_list_coverage_tasks_raises_oserro
 
 
 def test_decode_agent_tool_result_handles_empty_invalid_and_scalar_json() -> None:
+    """Decode agent tool result handles empty invalid and scalar json."""
     assert coverage_ops.decode_agent_tool_result("") == {"success": False, "output": ""}
     assert coverage_ops.decode_agent_tool_result("{") == {"success": True, "output": "{"}
     assert coverage_ops.decode_agent_tool_result("42") == {"success": True, "output": 42}
@@ -224,6 +241,7 @@ def test_decode_agent_tool_result_handles_empty_invalid_and_scalar_json() -> Non
 
 @pytest.mark.asyncio
 async def test_coverage_analyze_returns_success_payload_and_decoded_analysis() -> None:
+    """Coverage analyze returns success payload and decoded analysis."""
     events: list[dict[str, object]] = []
 
     class _Agent:
@@ -268,6 +286,8 @@ async def test_coverage_analyze_returns_success_payload_and_decoded_analysis() -
 
 @pytest.mark.asyncio
 async def test_coverage_generate_returns_failure_payload_when_candidate_rejected() -> None:
+    """Coverage generate returns failure payload when candidate rejected."""
+
     class _Agent:
         async def _tool_generate_missing_tests(self, _payload: str) -> str:
             return "assert True"
@@ -310,6 +330,8 @@ async def test_coverage_generate_returns_failure_payload_when_candidate_rejected
 
 @pytest.mark.asyncio
 async def test_coverage_batch_returns_success_payload() -> None:
+    """Coverage batch returns success payload."""
+
     class _Agent:
         async def run_autonomous_coverage_batch(self, **kwargs):
             assert kwargs == {

@@ -1,3 +1,5 @@
+"""Unit tests for the entity memory and feedback routes in ``web.routes.memory_feedback``."""
+
 from types import SimpleNamespace
 
 import pytest
@@ -58,6 +60,7 @@ def _user(user_id: str = "u1") -> SimpleNamespace:
 
 @pytest.mark.asyncio
 async def test_memory_feedback_router_legacy_exports_success_paths():
+    """Memory feedback router legacy exports success paths."""
     entity_memory = _EntityMemory()
     feedback_store = _FeedbackStore()
     exports = _exports(entity_memory=entity_memory, feedback_store=feedback_store)
@@ -88,6 +91,7 @@ async def test_memory_feedback_router_legacy_exports_success_paths():
 
 @pytest.mark.asyncio
 async def test_memory_feedback_router_rejects_cross_user_entity_and_feedback_access():
+    """Memory feedback router rejects cross user entity and feedback access."""
     entity_memory = _EntityMemory()
     feedback_store = _FeedbackStore()
     exports = _exports(entity_memory=entity_memory, feedback_store=feedback_store)
@@ -118,6 +122,8 @@ async def test_memory_feedback_router_rejects_cross_user_entity_and_feedback_acc
 
 @pytest.mark.asyncio
 async def test_memory_feedback_router_entity_memory_factory_failure(monkeypatch):
+    """Memory feedback router entity memory factory failure."""
+
     def _raise_factory(_cfg):
         raise RuntimeError("entity unavailable")
 
@@ -135,6 +141,8 @@ async def test_memory_feedback_router_entity_memory_factory_failure(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_memory_feedback_router_feedback_store_factory_failure(monkeypatch):
+    """Memory feedback router feedback store factory failure."""
+
     def _raise_factory(_cfg):
         raise RuntimeError("feedback unavailable")
 

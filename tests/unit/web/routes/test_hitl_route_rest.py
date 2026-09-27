@@ -1,3 +1,5 @@
+"""REST tests for the HITL router built by ``web.routes.hitl``."""
+
 from __future__ import annotations
 
 import inspect
@@ -18,6 +20,7 @@ def test_hitl_rest_routes_create_list_respond_and_report_missing(
     monkeypatch: Any,
     make_test_client: Any,
 ) -> None:
+    """Hitl rest routes create list respond and report missing."""
     stored: list[Any] = []
     notifications: list[str] = []
 
@@ -78,6 +81,7 @@ def test_hitl_rest_routes_create_list_respond_and_report_missing(
 def test_hitl_websocket_without_token_sends_snapshot_and_unregisters_client(
     make_test_client: Any,
 ) -> None:
+    """Hitl websocket without token sends snapshot and unregisters client."""
     item = SimpleNamespace(to_dict=lambda: {"request_id": "req-1"})
     clients: set[Any] = set()
     app = FastAPI()

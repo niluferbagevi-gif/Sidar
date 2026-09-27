@@ -1,3 +1,5 @@
+"""Unit tests for runtime health helpers in ``web.routes.health_runtime``."""
+
 from __future__ import annotations
 
 import json
@@ -59,6 +61,7 @@ class _FailingDocs:
 
 @pytest.mark.asyncio
 async def test_build_health_response_adds_dependency_status() -> None:
+    """Build health response adds dependency status."""
     agent = SimpleNamespace(
         cfg=SimpleNamespace(AI_PROVIDER="openai", RAG_REQUIRED_FOR_READINESS=True),
         health=_Health(),
@@ -85,6 +88,7 @@ async def test_build_health_response_adds_dependency_status() -> None:
 
 @pytest.mark.asyncio
 async def test_liveness_reports_degraded_rag_but_readiness_fails_when_required() -> None:
+    """Liveness reports degraded rag but readiness fails when required."""
     agent = SimpleNamespace(
         cfg=SimpleNamespace(AI_PROVIDER="openai", RAG_REQUIRED_FOR_READINESS=True),
         health=_Health(),
@@ -120,6 +124,7 @@ async def test_liveness_reports_degraded_rag_but_readiness_fails_when_required()
 
 @pytest.mark.asyncio
 async def test_optional_rag_keeps_readiness_200_with_degraded_component_payload() -> None:
+    """Optional rag keeps readiness 200 with degraded component payload."""
     agent = SimpleNamespace(
         cfg=SimpleNamespace(AI_PROVIDER="openai", RAG_REQUIRED_FOR_READINESS=False),
         health=_Health(),
@@ -143,6 +148,7 @@ async def test_optional_rag_keeps_readiness_200_with_degraded_component_payload(
 
 @pytest.mark.asyncio
 async def test_rag_runtime_readiness_exception_fails_closed() -> None:
+    """Rag runtime readiness exception fails closed."""
     agent = SimpleNamespace(
         cfg=SimpleNamespace(AI_PROVIDER="openai", RAG_REQUIRED_FOR_READINESS=True),
         health=_Health(),
@@ -185,6 +191,7 @@ async def test_rag_runtime_readiness_exception_fails_closed() -> None:
 
 @pytest.mark.asyncio
 async def test_rag_runtime_readiness_exception_never_exposes_detail() -> None:
+    """Rag runtime readiness exception never exposes detail."""
     agent = SimpleNamespace(
         cfg=SimpleNamespace(AI_PROVIDER="openai", RAG_REQUIRED_FOR_READINESS=True),
         health=_Health(),
@@ -209,6 +216,8 @@ async def test_rag_runtime_readiness_exception_never_exposes_detail() -> None:
 
 @pytest.mark.asyncio
 async def test_build_health_response_hides_exception_details_by_default() -> None:
+    """Build health response hides exception details by default."""
+
     async def resolve_agent() -> object:
         raise RuntimeError("secret-detail")
 
@@ -229,6 +238,8 @@ async def test_build_health_response_hides_exception_details_by_default() -> Non
 
 @pytest.mark.asyncio
 async def test_build_status_response_reports_actual_memory_encryption_state() -> None:
+    """Build status response reports actual memory encryption state."""
+
     class _Availability:
         @staticmethod
         def is_available() -> bool:
@@ -288,6 +299,7 @@ async def test_build_status_response_reports_actual_memory_encryption_state() ->
 
 
 def test_domain_config_loaders_preserve_defaults() -> None:
+    """Domain config loaders preserve defaults."""
     from core.config_app import load_app_runtime_settings
     from core.config_observability import load_observability_settings
     from core.config_orchestrator import load_orchestrator_settings
@@ -302,4 +314,5 @@ def test_domain_config_loaders_preserve_defaults() -> None:
 
 
 def test_logger_protocol_stub_is_import_coverage_only() -> None:
+    """Logger protocol stub is import coverage only."""
     assert health_runtime.LoggerLike.exception(object(), "boom") is None  # type: ignore[arg-type]

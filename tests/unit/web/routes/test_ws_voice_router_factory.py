@@ -1,3 +1,5 @@
+"""Tests for the ``/ws/voice`` router factory in ``web.routes.ws_voice``."""
+
 from __future__ import annotations
 
 import pytest
@@ -10,6 +12,7 @@ from web.routes import ws_voice
 def test_build_ws_voice_router_dispatches_to_websocket_voice(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Build ws voice router dispatches to websocket voice."""
     called: dict[str, object] = {}
 
     async def fake_voice(websocket, deps):

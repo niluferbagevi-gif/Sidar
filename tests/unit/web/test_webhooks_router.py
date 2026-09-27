@@ -1,3 +1,5 @@
+"""Tests for the router built by ``web.routes.webhooks.build_webhooks_router``."""
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -9,6 +11,8 @@ from web.routes.webhooks import build_webhooks_router
 
 
 def test_webhooks_router_registers_github_webhook_legacy_export() -> None:
+    """Webhooks router registers github webhook legacy export."""
+
     async def _resolve_agent():
         return SimpleNamespace(memory=SimpleNamespace(add=lambda *_args: None))
 
@@ -35,6 +39,8 @@ def test_webhooks_router_registers_github_webhook_legacy_export() -> None:
 
 @pytest.mark.asyncio
 async def test_webhooks_router_legacy_export_reads_dynamic_cfg_getter() -> None:
+    """Webhooks router legacy export reads dynamic cfg getter."""
+
     class _Req:
         async def body(self) -> bytes:
             return b'{"action":"noop"}'

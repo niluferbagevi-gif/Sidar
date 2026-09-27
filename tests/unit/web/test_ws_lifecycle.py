@@ -1,3 +1,5 @@
+"""Unit tests for ``WebSocketLifecycle`` task and cleanup handling."""
+
 from __future__ import annotations
 
 import asyncio
@@ -9,6 +11,7 @@ from web.routes.ws_lifecycle import WebSocketLifecycle
 
 @pytest.mark.asyncio
 async def test_websocket_lifecycle_close_is_idempotent_under_concurrency() -> None:
+    """Websocket lifecycle close is idempotent under concurrency."""
     lifecycle = WebSocketLifecycle(websocket=object())
     calls = 0
 
@@ -24,6 +27,7 @@ async def test_websocket_lifecycle_close_is_idempotent_under_concurrency() -> No
 
 
 def test_track_task_ignores_none_and_duplicate_tasks() -> None:
+    """Track task ignores none and duplicate tasks."""
     lifecycle = WebSocketLifecycle(websocket=object())
     task = object()
 
