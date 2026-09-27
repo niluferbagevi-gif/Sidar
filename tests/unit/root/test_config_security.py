@@ -1,9 +1,12 @@
+"""Unit tests for ``core.config_security``."""
+
 from __future__ import annotations
 
 from core import config_security
 
 
 def test_load_security_settings_generates_runtime_jwt_without_api_key_fallback(monkeypatch):
+    """Load security settings generates runtime jwt without api key fallback."""
     monkeypatch.setattr(config_security.secrets, "token_urlsafe", lambda size: f"runtime-{size}")
     monkeypatch.setenv("JWT_TTL_DAYS", "14")
 
@@ -31,6 +34,7 @@ def test_load_security_settings_generates_runtime_jwt_without_api_key_fallback(m
 
 
 def test_missing_security_runtime_keys_requires_explicit_production_secrets():
+    """Missing security runtime keys requires explicit production secrets."""
     assert config_security.get_missing_security_runtime_keys(
         api_key="",
         jwt_secret_key="runtime-generated",
@@ -53,6 +57,7 @@ def test_missing_security_runtime_keys_requires_explicit_production_secrets():
 
 
 def test_missing_security_runtime_keys_requires_explicit_jwt_for_multi_worker():
+    """Missing security runtime keys requires explicit jwt for multi worker."""
     assert config_security.get_missing_security_runtime_keys(
         api_key="dev-api",
         jwt_secret_key="runtime-generated",
@@ -64,6 +69,7 @@ def test_missing_security_runtime_keys_requires_explicit_jwt_for_multi_worker():
 
 
 def test_missing_security_runtime_keys_rejects_weak_production_postgres_password():
+    """Missing security runtime keys rejects weak production postgres password."""
     assert "POSTGRES_PASSWORD" in config_security.get_missing_security_runtime_keys(
         api_key="api-ok",
         jwt_secret_key="jwt-ok",
@@ -75,6 +81,7 @@ def test_missing_security_runtime_keys_rejects_weak_production_postgres_password
 
 
 def test_missing_security_runtime_keys_accepts_strong_database_url_password():
+    """Missing security runtime keys accepts strong database url password."""
     assert (
         config_security.get_missing_security_runtime_keys(
             api_key="api-ok",
@@ -93,6 +100,7 @@ def test_missing_security_runtime_keys_accepts_strong_database_url_password():
 
 
 def test_has_weak_postgres_runtime_secret_flags_missing_and_default_password():
+    """Has weak postgres runtime secret flags missing and default password."""
     assert config_security.has_weak_postgres_runtime_secret(postgres_password="", database_url="")
     assert config_security.has_weak_postgres_runtime_secret(
         postgres_password="sidar", database_url=""
@@ -100,6 +108,7 @@ def test_has_weak_postgres_runtime_secret_flags_missing_and_default_password():
 
 
 def test_has_weak_postgres_runtime_secret_accepts_strong_embedded_url_password():
+    """Has weak postgres runtime secret accepts strong embedded url password."""
     assert not config_security.has_weak_postgres_runtime_secret(
         postgres_password="",
         database_url=(

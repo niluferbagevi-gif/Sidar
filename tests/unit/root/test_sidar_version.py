@@ -1,3 +1,5 @@
+"""Unit tests for ``sidar_version`` and its consistency with project metadata."""
+
 from __future__ import annotations
 
 import tomllib
@@ -10,6 +12,7 @@ from config import Config
 
 
 def test_runtime_versions_use_pyproject_single_source() -> None:
+    """Runtime versions use pyproject single source."""
     with (Path(__file__).resolve().parents[3] / "pyproject.toml").open("rb") as file_obj:
         pyproject_version = tomllib.load(file_obj)["project"]["version"]
 
@@ -20,6 +23,7 @@ def test_runtime_versions_use_pyproject_single_source() -> None:
 
 
 def test_resolve_version_prefers_installed_package_metadata(monkeypatch) -> None:
+    """Resolve version prefers installed package metadata."""
     monkeypatch.setattr(sidar_version, "package_version", lambda package_name: " 2.4.6 ")
     monkeypatch.setattr(sidar_version, "_read_pyproject_version", lambda: "0.0.0")
 
@@ -27,6 +31,8 @@ def test_resolve_version_prefers_installed_package_metadata(monkeypatch) -> None
 
 
 def test_resolve_version_falls_back_when_package_metadata_is_missing(monkeypatch) -> None:
+    """Resolve version falls back when package metadata is missing."""
+
     def raise_missing(_package_name: str) -> str:
         raise sidar_version.PackageNotFoundError
 
@@ -37,6 +43,7 @@ def test_resolve_version_falls_back_when_package_metadata_is_missing(monkeypatch
 
 
 def test_resolve_version_falls_back_when_metadata_is_blank(monkeypatch) -> None:
+    """Resolve version falls back when metadata is blank."""
     monkeypatch.setattr(sidar_version, "package_version", lambda package_name: "   ")
     monkeypatch.setattr(sidar_version, "_read_pyproject_version", lambda: "3.2.1")
 
@@ -46,6 +53,7 @@ def test_resolve_version_falls_back_when_metadata_is_blank(monkeypatch) -> None:
 def test_read_pyproject_version_returns_fallback_for_missing_file(
     monkeypatch, tmp_path: Path
 ) -> None:
+    """Read pyproject version returns fallback for missing file."""
     fake_module_file = tmp_path / "missing_package" / "sidar_version.py"
     monkeypatch.setattr(sidar_version, "__file__", str(fake_module_file))
 
@@ -55,6 +63,7 @@ def test_read_pyproject_version_returns_fallback_for_missing_file(
 def test_read_pyproject_version_returns_fallback_for_invalid_toml(
     monkeypatch, tmp_path: Path
 ) -> None:
+    """Read pyproject version returns fallback for invalid toml."""
     fake_module_file = tmp_path / "sidar_version.py"
     fake_module_file.write_text("", encoding="utf-8")
     (tmp_path / "pyproject.toml").write_text("[project\n", encoding="utf-8")
@@ -66,6 +75,7 @@ def test_read_pyproject_version_returns_fallback_for_invalid_toml(
 def test_read_pyproject_version_returns_fallback_for_blank_project_version(
     monkeypatch, tmp_path: Path
 ) -> None:
+    """Read pyproject version returns fallback for blank project version."""
     fake_module_file = tmp_path / "sidar_version.py"
     fake_module_file.write_text("", encoding="utf-8")
     (tmp_path / "pyproject.toml").write_text('[project]\nversion = "   "\n', encoding="utf-8")

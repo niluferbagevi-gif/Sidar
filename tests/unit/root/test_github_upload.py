@@ -1,3 +1,5 @@
+"""Unit tests for the ``github_upload`` tool."""
+
 import io
 import json
 import sys
@@ -57,6 +59,7 @@ def test_reexec_after_external_branch_merge_loads_new_code_without_repull(monkey
 
 
 def test_reexec_after_external_branch_merge_is_single_shot(monkeypatch):
+    """Reexec after external branch merge is single shot."""
     calls = []
     monkeypatch.setenv("SIDAR_GITHUB_UPLOAD_REEXEC_AFTER_MERGE", "1")
     monkeypatch.setattr(gu.os, "execve", lambda *args: calls.append(args))
@@ -67,6 +70,8 @@ def test_reexec_after_external_branch_merge_is_single_shot(monkeypatch):
 
 
 def test_run_command_success_and_error(monkeypatch, capsys):
+    """Run command success and error."""
+
     class Result:
         def __init__(self, stdout="ok", stderr=""):
             self.stdout = stdout
@@ -88,6 +93,7 @@ def test_run_command_success_and_error(monkeypatch, capsys):
 
 
 def test_run_command_filters_oversized_environment(monkeypatch):
+    """Run command filters oversized environment."""
     captured = {}
 
     class Result:
@@ -111,6 +117,7 @@ def test_run_command_filters_oversized_environment(monkeypatch):
 
 
 def test_upload_policy_defaults_to_pr_and_requires_explicit_direct_main_opt_in():
+    """Upload policy defaults to pr and requires explicit direct main opt in."""
     assert gu.direct_main_upload_allowed({}) is False
     assert gu.direct_main_upload_allowed({"SIDAR_GITHUB_UPLOAD_DIRECT_MAIN": "1"}) is True
     assert gu.direct_main_upload_allowed({"SIDAR_GITHUB_UPLOAD_DIRECT_MAIN": "yes"}) is True
@@ -118,6 +125,7 @@ def test_upload_policy_defaults_to_pr_and_requires_explicit_direct_main_opt_in()
 
 
 def test_create_upload_branch_and_open_pr_use_safe_explicit_argv(monkeypatch):
+    """Create upload branch and open pr use safe explicit argv."""
     calls = []
 
     def fake_run(command, show_output=True, extra_env=None):
@@ -141,6 +149,8 @@ def test_create_upload_branch_and_open_pr_use_safe_explicit_argv(monkeypatch):
 
 
 def test_open_upload_pull_request_uses_github_api_when_gh_is_missing(monkeypatch):
+    """Open upload pull request uses github api when gh is missing."""
+
     class ApiResponse:
         def __enter__(self):
             return self
@@ -194,6 +204,7 @@ def test_open_upload_pull_request_uses_github_api_when_gh_is_missing(monkeypatch
     ],
 )
 def test_github_api_request_rejects_non_allowlisted_origins(monkeypatch, url):
+    """Github api request rejects non allowlisted origins."""
     monkeypatch.setattr(
         gu.urllib.request,
         "urlopen",
@@ -214,6 +225,7 @@ def test_github_api_request_rejects_non_allowlisted_origins(monkeypatch, url):
     [("DELETE", 30, "GET veya POST"), ("GET", 0, "pozitif")],
 )
 def test_github_api_request_rejects_unsupported_method_or_timeout(method, timeout, message):
+    """Github api request rejects unsupported method or timeout."""
     with pytest.raises(ValueError, match=message):
         gu._github_api_request(
             "https://api.github.com/repos/example/sidar/pulls",
@@ -224,6 +236,8 @@ def test_github_api_request_rejects_unsupported_method_or_timeout(method, timeou
 
 
 def test_github_api_request_accepts_allowlisted_origin_and_requires_timeout(monkeypatch):
+    """Github api request accepts allowlisted origin and requires timeout."""
+
     class ApiResponse:
         def __enter__(self):
             return self
@@ -258,6 +272,7 @@ def test_github_api_request_accepts_allowlisted_origin_and_requires_timeout(monk
 
 
 def test_find_existing_upload_pull_request_encodes_branch_query(monkeypatch):
+    """Find existing upload pull request encodes branch query."""
     captured = {}
 
     def fake_request(url, **kwargs):
@@ -287,6 +302,8 @@ def test_find_existing_upload_pull_request_encodes_branch_query(monkeypatch):
     ],
 )
 def test_find_existing_upload_pull_request_fails_safe(monkeypatch, failure):
+    """Find existing upload pull request fails safe."""
+
     def fail_request(*_args, **_kwargs):
         raise failure
 
@@ -299,6 +316,8 @@ def test_find_existing_upload_pull_request_fails_safe(monkeypatch, failure):
 
 
 def test_open_upload_pull_request_retries_transient_api_failure(monkeypatch):
+    """Open upload pull request retries transient api failure."""
+
     class ApiResponse:
         def __init__(self, payload):
             self.payload = payload
@@ -343,6 +362,8 @@ def test_open_upload_pull_request_retries_transient_api_failure(monkeypatch):
 def test_open_upload_pull_request_recovers_when_transient_response_hides_created_pr(
     monkeypatch,
 ):
+    """Open upload pull request recovers when transient response hides created pr."""
+
     class ApiResponse:
         def __enter__(self):
             return self
@@ -384,6 +405,8 @@ def test_open_upload_pull_request_recovers_when_transient_response_hides_created
 
 
 def test_open_upload_pull_request_recovers_existing_pr_after_422(monkeypatch):
+    """Open upload pull request recovers existing pr after 422."""
+
     class ApiResponse:
         def __enter__(self):
             return self
@@ -425,6 +448,7 @@ def test_open_upload_pull_request_recovers_existing_pr_after_422(monkeypatch):
 
 
 def test_open_upload_pull_request_api_fails_closed_for_invalid_origin(monkeypatch):
+    """Open upload pull request api fails closed for invalid origin."""
     monkeypatch.setattr(gu.shutil, "which", lambda command: None)
     monkeypatch.setattr(
         gu,
@@ -439,6 +463,7 @@ def test_open_upload_pull_request_api_fails_closed_for_invalid_origin(monkeypatc
 
 
 def test_resolve_github_token_prefers_explicit_environment_over_config(monkeypatch):
+    """Resolve github token prefers explicit environment over config."""
     monkeypatch.setattr(gu, "cfg", types.SimpleNamespace(GITHUB_TOKEN="stale-config-token"))
     monkeypatch.setenv("GITHUB_TOKEN", "rotated-environment-token")
 
@@ -446,6 +471,8 @@ def test_resolve_github_token_prefers_explicit_environment_over_config(monkeypat
 
 
 def test_open_upload_pull_request_api_explains_bad_credentials(monkeypatch):
+    """Open upload pull request api explains bad credentials."""
+
     def reject_request(*_args, **_kwargs):
         raise gu.urllib.error.HTTPError(
             "https://api.github.com/repos/example/sidar/pulls",
@@ -473,6 +500,7 @@ def test_open_upload_pull_request_api_explains_bad_credentials(monkeypatch):
 
 
 def test_run_command_merges_extra_env_on_top_of_bounded_env(monkeypatch):
+    """Run command merges extra env on top of bounded env."""
     captured = {}
 
     class Result:
@@ -499,6 +527,8 @@ def test_run_command_merges_extra_env_on_top_of_bounded_env(monkeypatch):
 
 
 def test_run_command_reports_oserror(monkeypatch, capsys):
+    """Run command reports oserror."""
+
     def fail(*_args, **_kwargs):
         raise OSError(7, "Argument list too long", "git")
 
@@ -512,6 +542,7 @@ def test_run_command_reports_oserror(monkeypatch, capsys):
 
 
 def test_resolve_upload_version_uses_config_then_product_version(monkeypatch):
+    """Resolve upload version uses config then product version."""
     monkeypatch.setattr(gu, "cfg", types.SimpleNamespace(VERSION="5.2.0"))
     assert gu.resolve_upload_version() == "5.2.0"
 
@@ -521,6 +552,7 @@ def test_resolve_upload_version_uses_config_then_product_version(monkeypatch):
 
 
 def test_url_and_path_helpers(tmp_path):
+    """Url and path helpers."""
     assert gu._is_valid_repo_url("https://github.com/a/b")
     assert gu._is_valid_repo_url("https://github.com/a/b.git")
     assert gu._is_valid_repo_url("git@github.com:a/b.git")
@@ -562,6 +594,7 @@ def test_url_and_path_helpers(tmp_path):
 
 
 def test_get_deleted_files_and_collect_safe_files(monkeypatch, tmp_path):
+    """Get deleted files and collect safe files."""
     text_file = tmp_path / "a.py"
     text_file.write_text("print('x')", encoding="utf-8")
     conflict_file = tmp_path / "conflict.py"
@@ -604,6 +637,7 @@ def test_get_deleted_files_and_collect_safe_files(monkeypatch, tmp_path):
 
 
 def test_has_conflict_markers_ignores_decorative_separator_lines(tmp_path):
+    """Has conflict markers ignores decorative separator lines."""
     decorative_file = tmp_path / "decorative.py"
     decorative_file.write_text(
         """#!/usr/bin/env python3
@@ -632,6 +666,7 @@ Alt başlık değil, Markdown süsleme çizgisi.
 
 
 def test_has_conflict_markers_allows_known_decorative_repo_files():
+    """Has conflict markers allows known decorative repo files."""
     repo_root = Path(__file__).resolve().parents[3]
 
     for relative_path in (
@@ -644,6 +679,7 @@ def test_has_conflict_markers_allows_known_decorative_repo_files():
 
 
 def test_has_conflict_markers_detects_git_marker_lines(tmp_path):
+    """Has conflict markers detects git marker lines."""
     conflict_file = tmp_path / "conflict.py"
     conflict_file.write_text(
         "<<<<<<< HEAD\nx\n=======\ny\n>>>>>>> feature-branch\n",
@@ -654,6 +690,7 @@ def test_has_conflict_markers_detects_git_marker_lines(tmp_path):
 
 
 def test_get_commit_count_returns_zero_on_missing_or_invalid_output(monkeypatch):
+    """Get commit count returns zero on missing or invalid output."""
     monkeypatch.setattr(gu, "run_command", lambda *_a, **_k: (False, ""))
     assert gu.get_commit_count() == 0
 
@@ -662,6 +699,7 @@ def test_get_commit_count_returns_zero_on_missing_or_invalid_output(monkeypatch)
 
 
 def test_stage_files(monkeypatch):
+    """Stage files."""
     assert gu.stage_files([]) == (True, "")
 
     calls = []
@@ -679,6 +717,7 @@ def test_stage_files(monkeypatch):
 
 
 def test_stage_deleted_files_uses_option_separator_and_literal_pathspecs(monkeypatch):
+    """Stage deleted files uses option separator and literal pathspecs."""
     calls = []
 
     def fake_run(cmd, show_output=True):
@@ -705,6 +744,7 @@ def test_stage_deleted_files_uses_option_separator_and_literal_pathspecs(monkeyp
 
 
 def test_stage_files_rejects_unmerged_paths(monkeypatch):
+    """Stage files rejects unmerged paths."""
     monkeypatch.setattr(
         gu,
         "run_command",
@@ -723,6 +763,7 @@ def test_stage_files_rejects_unmerged_paths(monkeypatch):
 
 
 def test_assert_no_unmerged_files_exits_with_file_list(monkeypatch, capsys):
+    """Assert no unmerged files exits with file list."""
     monkeypatch.setattr(gu, "assert_no_unmerged_files", ORIGINAL_ASSERT_NO_UNMERGED_FILES)
     monkeypatch.setattr(
         gu, "get_unmerged_files", lambda: ["tests/smoke/test_install_verification.py"]
@@ -736,6 +777,7 @@ def test_assert_no_unmerged_files_exits_with_file_list(monkeypatch, capsys):
 
 
 def test_abort_in_progress_merge_and_rollback_tag_helpers(monkeypatch, capsys):
+    """Abort in progress merge and rollback tag helpers."""
     calls = []
 
     def fake_run(cmd, show_output=True):
@@ -755,6 +797,7 @@ def test_abort_in_progress_merge_and_rollback_tag_helpers(monkeypatch, capsys):
 
 
 def test_abort_in_progress_merge_is_silent_without_merge_head(monkeypatch, capsys):
+    """Abort in progress merge is silent without merge head."""
     calls = []
 
     def fake_run(cmd, show_output=True):
@@ -770,6 +813,7 @@ def test_abort_in_progress_merge_is_silent_without_merge_head(monkeypatch, capsy
 
 
 def test_report_ours_strategy_changes_prints_changed_files(monkeypatch, capsys):
+    """Report ours strategy changes prints changed files."""
     monkeypatch.setattr(
         gu,
         "run_command",
@@ -784,6 +828,7 @@ def test_report_ours_strategy_changes_prints_changed_files(monkeypatch, capsys):
 
 
 def test_sync_install_manifests_before_commit_runs_sync_scripts_and_stages(monkeypatch):
+    """Sync install manifests before commit runs sync scripts and stages."""
     calls = []
 
     def fake_run(cmd, show_output=True):
@@ -804,6 +849,7 @@ def test_sync_install_manifests_before_commit_runs_sync_scripts_and_stages(monke
 
 
 def test_sync_install_manifests_before_commit_stops_on_failure(monkeypatch):
+    """Sync install manifests before commit stops on failure."""
     calls = []
 
     def fake_run(cmd, show_output=True):
@@ -825,6 +871,7 @@ def test_sync_install_manifests_before_commit_stops_on_failure(monkeypatch):
 
 
 def test_ensure_full_git_history_skips_fetch_when_not_shallow(monkeypatch):
+    """Ensure full git history skips fetch when not shallow."""
     calls = []
 
     def fake_run(cmd, show_output=True):
@@ -843,6 +890,7 @@ def test_ensure_full_git_history_skips_fetch_when_not_shallow(monkeypatch):
 
 
 def test_ensure_full_git_history_unshallows_when_shallow(monkeypatch):
+    """Ensure full git history unshallows when shallow."""
     calls = []
 
     def fake_run(cmd, show_output=True):
@@ -864,6 +912,8 @@ def test_ensure_full_git_history_unshallows_when_shallow(monkeypatch):
 
 
 def test_ensure_full_git_history_stops_on_unshallow_failure(monkeypatch):
+    """Ensure full git history stops on unshallow failure."""
+
     def fake_run(cmd, show_output=True):
         if cmd == ["git", "rev-parse", "--is-shallow-repository"]:
             return True, "true"
@@ -880,6 +930,7 @@ def test_ensure_full_git_history_stops_on_unshallow_failure(monkeypatch):
 
 
 def test_ensure_full_git_history_stops_when_shallow_check_fails(monkeypatch):
+    """Ensure full git history stops when shallow check fails."""
     monkeypatch.setattr(gu, "run_command", lambda cmd, show_output=True: (False, "no git"))
 
     ok, err = ORIGINAL_ENSURE_FULL_GIT_HISTORY_FOR_MANIFEST_CHECKS()
@@ -889,6 +940,7 @@ def test_ensure_full_git_history_stops_when_shallow_check_fails(monkeypatch):
 
 
 def test_run_pre_commit_fast_gate_runs_format_then_lint_then_unit_tests(monkeypatch):
+    """Run pre commit fast gate runs format then lint then unit tests."""
     calls = []
 
     def fake_run(cmd, show_output=True, extra_env=None):
@@ -909,6 +961,7 @@ def test_run_pre_commit_fast_gate_runs_format_then_lint_then_unit_tests(monkeypa
 
 
 def test_run_pre_commit_fast_gate_stops_on_first_failure(monkeypatch):
+    """Run pre commit fast gate stops on first failure."""
     calls = []
 
     def fake_run(cmd, show_output=True, extra_env=None):
@@ -929,6 +982,7 @@ def test_run_pre_commit_fast_gate_stops_on_first_failure(monkeypatch):
 
 
 def test_run_pre_commit_fast_gate_stops_when_unit_tests_fail(monkeypatch):
+    """Run pre commit fast gate stops when unit tests fail."""
     calls = []
     unit_command = ["uv", "run", "pytest", "tests/unit", "-q", "--no-cov", "-x"]
 
@@ -975,6 +1029,7 @@ def test_run_pre_commit_fast_gate_never_touches_installer_or_git_history(monkeyp
 
 
 def test_run_post_commit_integrity_gate_runs_installer_and_manifest_checks(monkeypatch):
+    """Run post commit integrity gate runs installer and manifest checks."""
     calls = []
 
     def fake_run(cmd, show_output=True, extra_env=None):
@@ -1045,6 +1100,7 @@ def test_run_post_commit_integrity_gate_runs_installer_and_manifest_checks(monke
 
 
 def test_run_post_commit_integrity_gate_stops_on_installer_abort_smoke_failure(monkeypatch):
+    """Run post commit integrity gate stops on installer abort smoke failure."""
     calls = []
 
     def fake_run(cmd, show_output=True, extra_env=None):
@@ -1170,6 +1226,7 @@ def test_run_pre_push_quality_gate_stops_at_fast_gate_before_integrity_checks(mo
 
 
 def test_describe_post_commit_gate_failure_pr_first_offers_switch_and_delete(monkeypatch):
+    """Describe post commit gate failure pr first offers switch and delete."""
     monkeypatch.setattr(gu, "run_command", lambda cmd, show_output=False: (True, "abc1234\n"))
 
     message = ORIGINAL_DESCRIBE_POST_COMMIT_GATE_FAILURE("sidar/upload-test", direct_main=False)
@@ -1183,6 +1240,7 @@ def test_describe_post_commit_gate_failure_pr_first_offers_switch_and_delete(mon
 
 
 def test_describe_post_commit_gate_failure_direct_main_offers_reset(monkeypatch):
+    """Describe post commit gate failure direct main offers reset."""
     monkeypatch.setattr(gu, "run_command", lambda cmd, show_output=False: (True, "abc1234\n"))
 
     message = ORIGINAL_DESCRIBE_POST_COMMIT_GATE_FAILURE("main", direct_main=True)
@@ -1195,6 +1253,7 @@ def test_describe_post_commit_gate_failure_direct_main_offers_reset(monkeypatch)
 
 
 def test_describe_post_commit_gate_failure_falls_back_when_head_lookup_fails(monkeypatch):
+    """Describe post commit gate failure falls back when head lookup fails."""
     monkeypatch.setattr(gu, "run_command", lambda cmd, show_output=False: (False, ""))
 
     message = ORIGINAL_DESCRIBE_POST_COMMIT_GATE_FAILURE("sidar/upload-test", direct_main=False)
@@ -1203,6 +1262,7 @@ def test_describe_post_commit_gate_failure_falls_back_when_head_lookup_fails(mon
 
 
 def test_record_upload_source_head_captures_valid_revision(monkeypatch):
+    """Record upload source head captures valid revision."""
     monkeypatch.setattr(
         gu,
         "run_command",
@@ -1216,6 +1276,7 @@ def test_record_upload_source_head_captures_valid_revision(monkeypatch):
 
 
 def test_record_upload_source_head_fails_closed_on_invalid_output(monkeypatch):
+    """Record upload source head fails closed on invalid output."""
     monkeypatch.setattr(gu, "run_command", lambda cmd, show_output=False: (True, "HEAD"))
 
     ok, error = ORIGINAL_RECORD_UPLOAD_SOURCE_HEAD()
@@ -1225,6 +1286,7 @@ def test_record_upload_source_head_fails_closed_on_invalid_output(monkeypatch):
 
 
 def test_direct_main_readiness_gate_requires_static_then_production(monkeypatch):
+    """Direct main readiness gate requires static then production."""
     calls = []
 
     def fake_run(cmd, show_output=False):
@@ -1241,6 +1303,7 @@ def test_direct_main_readiness_gate_requires_static_then_production(monkeypatch)
 
 
 def test_direct_main_readiness_gate_stops_before_production_when_static_fails(monkeypatch):
+    """Direct main readiness gate stops before production when static fails."""
     calls = []
 
     def fake_run(cmd, show_output=False):
@@ -1258,6 +1321,7 @@ def test_direct_main_readiness_gate_stops_before_production_when_static_fails(mo
 
 
 def test_stamp_install_manifest_pin_after_commit_no_drift(monkeypatch):
+    """Stamp install manifest pin after commit no drift."""
     calls = []
 
     def fake_run(cmd, show_output=True):
@@ -1291,6 +1355,7 @@ def test_stamp_install_manifest_pin_after_commit_no_drift(monkeypatch):
 
 
 def test_stamp_install_manifest_pin_after_commit_creates_fixup_commit_on_drift(monkeypatch):
+    """Stamp install manifest pin after commit creates fixup commit on drift."""
     calls = []
 
     def fake_run(cmd, show_output=True):
@@ -1320,6 +1385,7 @@ def test_stamp_install_manifest_pin_after_commit_creates_fixup_commit_on_drift(m
 def test_stamp_install_manifest_pin_after_commit_rescans_baseline_and_includes_it_when_changed(
     monkeypatch,
 ):
+    """Stamp install manifest pin after commit rescans baseline and includes it when changed."""
     calls = []
 
     def fake_run(cmd, show_output=True):
@@ -1355,6 +1421,8 @@ def test_stamp_install_manifest_pin_after_commit_rescans_baseline_and_includes_i
 
 
 def test_stamp_install_manifest_pin_after_commit_stops_on_rescan_failure(monkeypatch):
+    """Stamp install manifest pin after commit stops on rescan failure."""
+
     def fake_run(cmd, show_output=True):
         if cmd == ["git", "rev-parse", "HEAD"]:
             return True, "f" * 40
@@ -1373,6 +1441,8 @@ def test_stamp_install_manifest_pin_after_commit_stops_on_rescan_failure(monkeyp
 
 
 def test_stamp_install_manifest_pin_after_commit_stops_on_baseline_diff_failure(monkeypatch):
+    """Stamp install manifest pin after commit stops on baseline diff failure."""
+
     def fake_run(cmd, show_output=True):
         if cmd == ["git", "rev-parse", "HEAD"]:
             return True, "0" * 40
@@ -1391,6 +1461,8 @@ def test_stamp_install_manifest_pin_after_commit_stops_on_baseline_diff_failure(
 
 
 def test_stamp_install_manifest_pin_after_commit_stops_on_stamp_failure(monkeypatch):
+    """Stamp install manifest pin after commit stops on stamp failure."""
+
     def fake_run(cmd, show_output=True):
         if cmd == ["git", "rev-parse", "HEAD"]:
             return True, "c" * 40
@@ -1407,6 +1479,8 @@ def test_stamp_install_manifest_pin_after_commit_stops_on_stamp_failure(monkeypa
 
 
 def test_stamp_install_manifest_pin_after_commit_stops_on_fixup_commit_failure(monkeypatch):
+    """Stamp install manifest pin after commit stops on fixup commit failure."""
+
     def fake_run(cmd, show_output=True):
         if cmd == ["git", "rev-parse", "HEAD"]:
             return True, "d" * 40
@@ -1426,6 +1500,7 @@ def test_stamp_install_manifest_pin_after_commit_stops_on_fixup_commit_failure(m
 
 
 def test_main_aborts_when_install_manifest_sync_fails(monkeypatch):
+    """Main aborts when install manifest sync fails."""
     monkeypatch.setattr(gu, "get_deleted_files", lambda: [])
     monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: (["a.py"], []))
     monkeypatch.setattr(gu, "stage_files", lambda _paths: (True, ""))
@@ -1447,7 +1522,10 @@ def test_main_aborts_when_install_manifest_sync_fails(monkeypatch):
 
 
 class MainHarness:
+    """Drive ``github_upload.main`` with scripted command outputs and user inputs."""
+
     def __init__(self, monkeypatch, argv, outputs, inputs=None, cfg_token="tok", cfg_version="9.9"):
+        """Patch argv, config and command/input hooks; record every command that runs."""
         self.inputs = list(inputs or [])
         self.calls = []
         gu.sys.argv = ["github_upload.py", *argv]
@@ -1472,22 +1550,26 @@ class MainHarness:
 
 
 def run_main_and_exit_code():
+    """Run ``github_upload.main`` and return its ``SystemExit`` code."""
     with pytest.raises(SystemExit) as e:
         gu.main()
     return e.value.code
 
 
 def test_main_rejects_invalid_target_branch_name(monkeypatch):
+    """Main rejects invalid target branch name."""
     MainHarness(monkeypatch, ["release.lock"], outputs=[])
     assert run_main_and_exit_code() == 1
 
 
 def test_main_invalid_rollback(monkeypatch):
+    """Main invalid rollback."""
     MainHarness(monkeypatch, ["-11"], outputs=[])
     assert run_main_and_exit_code() == 1
 
 
 def test_main_missing_token(monkeypatch):
+    """Main missing token."""
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     monkeypatch.delenv("GH_TOKEN", raising=False)
     monkeypatch.delenv("GITHUB_PAT", raising=False)
@@ -1496,6 +1578,7 @@ def test_main_missing_token(monkeypatch):
 
 
 def test_main_missing_token_points_to_secret_overlay(monkeypatch, capsys):
+    """Main missing token points to secret overlay."""
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     monkeypatch.delenv("GH_TOKEN", raising=False)
     monkeypatch.delenv("GITHUB_PAT", raising=False)
@@ -1509,11 +1592,13 @@ def test_main_missing_token_points_to_secret_overlay(monkeypatch, capsys):
 
 
 def test_main_no_git_installed(monkeypatch):
+    """Main no git installed."""
     MainHarness(monkeypatch, [], outputs=[(False, "")])
     assert run_main_and_exit_code() == 1
 
 
 def test_main_setup_identity_invalid_repo_url(monkeypatch):
+    """Main setup identity invalid repo url."""
     h = MainHarness(
         monkeypatch,
         [],
@@ -1532,6 +1617,7 @@ def test_main_setup_identity_invalid_repo_url(monkeypatch):
 
 
 def test_main_switch_to_main_checkout_fail_with_stash_pop(monkeypatch):
+    """Main switch to main checkout fail with stash pop."""
     MainHarness(
         monkeypatch,
         [],
@@ -1550,6 +1636,7 @@ def test_main_switch_to_main_checkout_fail_with_stash_pop(monkeypatch):
 
 
 def test_main_switch_to_main_stash_pop_conflict(monkeypatch):
+    """Main switch to main stash pop conflict."""
     MainHarness(
         monkeypatch,
         [],
@@ -1568,6 +1655,7 @@ def test_main_switch_to_main_stash_pop_conflict(monkeypatch):
 
 
 def test_main_rollback_rejects_when_not_enough_commits(monkeypatch):
+    """Main rollback rejects when not enough commits."""
     MainHarness(
         monkeypatch,
         ["-2"],
@@ -1584,6 +1672,7 @@ def test_main_rollback_rejects_when_not_enough_commits(monkeypatch):
 
 
 def test_main_rollback_yes_push_fail(monkeypatch):
+    """Main rollback yes push fail."""
     MainHarness(
         monkeypatch,
         ["-2"],
@@ -1602,6 +1691,7 @@ def test_main_rollback_yes_push_fail(monkeypatch):
 
 
 def test_main_rollback_uses_force_with_lease(monkeypatch):
+    """Main rollback uses force with lease."""
     monkeypatch.setattr(gu, "create_rollback_backup_tag", lambda: "backup/test")
     harness = MainHarness(
         monkeypatch,
@@ -1624,6 +1714,7 @@ def test_main_rollback_uses_force_with_lease(monkeypatch):
 
 
 def test_main_rollback_cancel(monkeypatch):
+    """Main rollback cancel."""
     MainHarness(
         monkeypatch,
         ["-1"],
@@ -1640,6 +1731,7 @@ def test_main_rollback_cancel(monkeypatch):
 
 
 def test_main_pull_branch_conflict(monkeypatch):
+    """Main pull branch conflict."""
     MainHarness(
         monkeypatch,
         ["remote-branch"],
@@ -1655,6 +1747,7 @@ def test_main_pull_branch_conflict(monkeypatch):
 
 
 def test_main_add_failure(monkeypatch):
+    """Main add failure."""
     monkeypatch.setattr(gu, "get_deleted_files", lambda: [])
     monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: (["a.py"], []))
     monkeypatch.setattr(gu, "stage_files", lambda paths: (False, "nope"))
@@ -1673,6 +1766,7 @@ def test_main_add_failure(monkeypatch):
 
 
 def test_main_aborts_when_deleted_files_cannot_be_staged(monkeypatch):
+    """Main aborts when deleted files cannot be staged."""
     monkeypatch.setattr(gu, "get_deleted_files", lambda: ["-danger.txt"])
     monkeypatch.setattr(gu, "stage_deleted_files", lambda _paths: (False, "git rm rejected path"))
     MainHarness(
@@ -1692,6 +1786,7 @@ def test_main_aborts_when_deleted_files_cannot_be_staged(monkeypatch):
 
 
 def test_main_nothing_to_push_exits(monkeypatch):
+    """Main nothing to push exits."""
     monkeypatch.setattr(gu, "get_deleted_files", lambda: [])
     monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: ([], []))
     MainHarness(
@@ -1749,6 +1844,7 @@ def test_main_nothing_to_push_restores_original_branch(monkeypatch):
 
 
 def test_switch_back_to_original_branch_noop_when_already_on_main(monkeypatch):
+    """Switch back to original branch noop when already on main."""
     calls = []
     monkeypatch.setattr(
         gu,
@@ -1760,6 +1856,7 @@ def test_switch_back_to_original_branch_noop_when_already_on_main(monkeypatch):
 
 
 def test_switch_back_to_original_branch_noop_when_already_there(monkeypatch):
+    """Switch back to original branch noop when already there."""
     calls = []
     monkeypatch.setattr(
         gu,
@@ -1771,6 +1868,7 @@ def test_switch_back_to_original_branch_noop_when_already_there(monkeypatch):
 
 
 def test_switch_back_to_original_branch_checkout_failure_is_reported(monkeypatch, capsys):
+    """Switch back to original branch checkout failure is reported."""
     outputs = [
         (True, "sidar/upload-20260830-000000"),
         (False, "local changes would be overwritten"),
@@ -1787,6 +1885,7 @@ def test_switch_back_to_original_branch_checkout_failure_is_reported(monkeypatch
 
 
 def test_main_commit_fail(monkeypatch):
+    """Main commit fail."""
     monkeypatch.setattr(gu, "get_deleted_files", lambda: [])
     monkeypatch.setattr(
         gu, "collect_safe_files", lambda deleted_files_list=None: (["a.py"], [".env"])
@@ -1810,6 +1909,7 @@ def test_main_commit_fail(monkeypatch):
 
 
 def test_main_aborts_when_pin_stamp_fails_after_commit(monkeypatch):
+    """Main aborts when pin stamp fails after commit."""
     monkeypatch.setattr(gu, "get_deleted_files", lambda: [])
     monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: (["a.py"], []))
     monkeypatch.setattr(gu, "stage_files", lambda _paths: (True, ""))
@@ -1864,6 +1964,7 @@ def test_main_aborts_when_fast_gate_fails(monkeypatch):
 
 
 def test_main_aborts_when_post_commit_integrity_gate_fails(monkeypatch, capsys):
+    """Main aborts when post commit integrity gate fails."""
     monkeypatch.setattr(gu, "get_deleted_files", lambda: [])
     monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: (["a.py"], []))
     monkeypatch.setattr(gu, "stage_files", lambda _paths: (True, ""))
@@ -1898,6 +1999,7 @@ def test_main_aborts_when_post_commit_integrity_gate_fails(monkeypatch, capsys):
 
 
 def test_main_push_rejected_then_merge_then_retry_fail_rule(monkeypatch):
+    """Main push rejected then merge then retry fail rule."""
     monkeypatch.setattr(gu, "get_deleted_files", lambda: ["old.txt"])
     monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: ([], []))
     MainHarness(
@@ -1922,6 +2024,7 @@ def test_main_push_rejected_then_merge_then_retry_fail_rule(monkeypatch):
 
 
 def test_main_push_rejected_merge_fail_or_cancel_and_unknown_error(monkeypatch):
+    """Main push rejected merge fail or cancel and unknown error."""
     monkeypatch.setattr(gu, "get_deleted_files", lambda: [])
     monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: ([], []))
 
@@ -1982,6 +2085,7 @@ def test_main_push_rejected_merge_fail_or_cancel_and_unknown_error(monkeypatch):
 
 
 def test_main_happy_path_with_new_repo_and_deleted_decline(monkeypatch):
+    """Main happy path with new repo and deleted decline."""
     monkeypatch.setattr(gu, "get_deleted_files", lambda: ["gone.py"])
     monkeypatch.setattr(
         gu, "collect_safe_files", lambda deleted_files_list=None: (["x.py"], [".env"])
@@ -2010,6 +2114,7 @@ def test_main_happy_path_with_new_repo_and_deleted_decline(monkeypatch):
 
 
 def test_main_default_upload_pushes_timestamped_branch_and_opens_pr(monkeypatch, capsys):
+    """Main default upload pushes timestamped branch and opens pr."""
     monkeypatch.setattr(gu, "get_deleted_files", lambda: [])
     monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: (["x.py"], []))
     monkeypatch.setattr(gu, "stage_files", lambda paths: (True, ""))
@@ -2138,6 +2243,8 @@ def test_main_pr_first_post_commit_gate_failure_prints_branch_recovery_instructi
 
 
 def test_run_command_silent_branches(monkeypatch):
+    """Run command silent branches."""
+
     class Result:
         stdout = "   "
         stderr = ""
@@ -2153,11 +2260,13 @@ def test_run_command_silent_branches(monkeypatch):
 
 
 def test_get_deleted_files_returns_empty_on_failure(monkeypatch):
+    """Get deleted files returns empty on failure."""
     monkeypatch.setattr(gu, "run_command", lambda *_a, **_k: (False, ""))
     assert gu.get_deleted_files() == []
 
 
 def test_collect_safe_files_default_and_directory_skip(monkeypatch, tmp_path):
+    """Collect safe files default and directory skip."""
     dir_path = tmp_path / "folder"
     dir_path.mkdir()
     bin_file = tmp_path / "img.bin"
@@ -2174,6 +2283,7 @@ def test_collect_safe_files_default_and_directory_skip(monkeypatch, tmp_path):
 
 
 def test_main_switch_to_main_stash_creation_fails(monkeypatch):
+    """Main switch to main stash creation fails."""
     MainHarness(
         monkeypatch,
         [],
@@ -2190,6 +2300,7 @@ def test_main_switch_to_main_stash_creation_fails(monkeypatch):
 
 
 def test_main_switch_to_main_success_without_stash(monkeypatch):
+    """Main switch to main success without stash."""
     monkeypatch.setattr(gu, "get_deleted_files", lambda: [])
     monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: ([], []))
     MainHarness(
@@ -2212,6 +2323,7 @@ def test_main_switch_to_main_success_without_stash(monkeypatch):
 
 
 def test_main_rollback_reset_fail(monkeypatch):
+    """Main rollback reset fail."""
     MainHarness(
         monkeypatch,
         ["-1"],
@@ -2233,6 +2345,7 @@ def test_main_rollback_reset_fail(monkeypatch):
 
 
 def test_main_target_branch_merge_made_commit_default_message(monkeypatch):
+    """Main target branch merge made commit default message."""
     monkeypatch.setattr(gu, "get_deleted_files", lambda: [])
     monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: (["a.py"], []))
     monkeypatch.setattr(gu, "stage_files", lambda paths: (True, ""))
@@ -2270,6 +2383,7 @@ def test_main_target_branch_merge_made_commit_default_message(monkeypatch):
 
 
 def test_main_retry_push_failure_non_rule_violations(monkeypatch):
+    """Main retry push failure non rule violations."""
     monkeypatch.setattr(gu, "get_deleted_files", lambda: [])
     monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: (["a.py"], []))
     monkeypatch.setattr(gu, "stage_files", lambda _paths: (True, ""))
@@ -2295,6 +2409,7 @@ def test_main_retry_push_failure_non_rule_violations(monkeypatch):
 
 
 def test_main_retry_push_success(monkeypatch):
+    """Main retry push success."""
     monkeypatch.setattr(gu, "get_deleted_files", lambda: [])
     monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: (["a.py"], []))
     monkeypatch.setattr(gu, "stage_files", lambda _paths: (True, ""))
@@ -2320,6 +2435,7 @@ def test_main_retry_push_success(monkeypatch):
 
 
 def test_main_checkout_fail_without_stash(monkeypatch):
+    """Main checkout fail without stash."""
     MainHarness(
         monkeypatch,
         [],
@@ -2336,6 +2452,7 @@ def test_main_checkout_fail_without_stash(monkeypatch):
 
 
 def test_main_switch_to_main_with_stash_pop_success(monkeypatch):
+    """Main switch to main with stash pop success."""
     monkeypatch.setattr(gu, "get_deleted_files", lambda: [])
     monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: ([], []))
     MainHarness(
@@ -2360,6 +2477,7 @@ def test_main_switch_to_main_with_stash_pop_success(monkeypatch):
 
 
 def test_main_no_staged_status_and_clean_worktree_but_unpushed(monkeypatch):
+    """Main no staged status and clean worktree but unpushed."""
     monkeypatch.setattr(gu, "get_deleted_files", lambda: [])
     monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: ([], []))
     guard_order = []
@@ -2393,6 +2511,7 @@ def test_main_no_staged_status_and_clean_worktree_but_unpushed(monkeypatch):
 
 
 def test_main_aborts_before_gate_when_unpushed_pin_repair_fails(monkeypatch):
+    """Main aborts before gate when unpushed pin repair fails."""
     monkeypatch.setattr(gu, "get_deleted_files", lambda: [])
     monkeypatch.setattr(gu, "collect_safe_files", lambda deleted_files_list=None: ([], []))
     monkeypatch.setattr(
@@ -2422,6 +2541,7 @@ def test_main_aborts_before_gate_when_unpushed_pin_repair_fails(monkeypatch):
 
 
 def test_main_rollback_push_success(monkeypatch):
+    """Main rollback push success."""
     MainHarness(
         monkeypatch,
         ["-1"],

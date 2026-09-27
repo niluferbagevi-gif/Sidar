@@ -1,3 +1,5 @@
+"""Unit tests for ``gui_launcher``."""
+
 import importlib
 import runpy
 import sys
@@ -12,6 +14,7 @@ import gui_launcher
 
 
 def test_normalize_selection_happy_path_defaults_and_trim():
+    """Normalize selection happy path defaults and trim."""
     result = gui_launcher._normalize_selection(" WEB ", " OpenAI ", " Full ", None)
     assert result == {
         "mode": "web",
@@ -33,11 +36,13 @@ def test_normalize_selection_happy_path_defaults_and_trim():
 def test_normalize_selection_invalid_values_raise(
     mode, provider, level, log_level, expected_message
 ):
+    """Normalize selection invalid values raise."""
     with pytest.raises(ValueError, match=expected_message):
         gui_launcher._normalize_selection(mode, provider, level, log_level)
 
 
 def test_extra_args_for_mode_web_and_cli():
+    """Extra args for mode web and cli."""
     web_args = gui_launcher._extra_args_for_mode("web")
     assert web_args == gui_launcher.DEFAULT_WEB_ARGS
     assert web_args is not gui_launcher.DEFAULT_WEB_ARGS
@@ -46,6 +51,7 @@ def test_extra_args_for_mode_web_and_cli():
 
 
 def test_launch_from_gui_success(monkeypatch):
+    """Launch from gui success."""
     captured = {}
 
     def fake_preflight(provider):
@@ -82,6 +88,7 @@ def test_launch_from_gui_success(monkeypatch):
 
 
 def test_launch_from_gui_nonzero_return(monkeypatch):
+    """Launch from gui nonzero return."""
     monkeypatch.setattr(gui_launcher, "preflight", lambda provider: None)
     monkeypatch.setattr(gui_launcher, "build_command", lambda *args, **kwargs: ["cmd"])
     monkeypatch.setattr(gui_launcher, "execute_command", lambda cmd: 7)
@@ -94,6 +101,8 @@ def test_launch_from_gui_nonzero_return(monkeypatch):
 
 
 def test_launch_from_gui_exception_path(monkeypatch):
+    """Launch from gui exception path."""
+
     def fake_preflight(_provider):
         raise RuntimeError("preflight fail")
 
@@ -105,6 +114,7 @@ def test_launch_from_gui_exception_path(monkeypatch):
 
 
 def test_start_sidar_delegates(monkeypatch):
+    """Start sidar delegates."""
     monkeypatch.setattr(
         gui_launcher,
         "launch_from_gui",
@@ -119,6 +129,7 @@ def test_start_sidar_delegates(monkeypatch):
 
 
 def test_start_gui_import_error(monkeypatch):
+    """Start gui import error."""
     original_import = __import__
 
     def fake_import(name, *args, **kwargs):
@@ -134,6 +145,7 @@ def test_start_gui_import_error(monkeypatch):
 
 
 def test_start_gui_happy_path(monkeypatch):
+    """Start gui happy path."""
     fake_eel = types.SimpleNamespace()
     calls = {}
 
@@ -163,6 +175,7 @@ def test_start_gui_happy_path(monkeypatch):
 
 
 def test_main_calls_start_gui(monkeypatch):
+    """Main calls start gui."""
     called = {"start_gui": False}
 
     def fake_start_gui():
@@ -176,6 +189,7 @@ def test_main_calls_start_gui(monkeypatch):
 
 
 def test_module_main_block_runs_entrypoint(monkeypatch):
+    """Module main block runs entrypoint."""
     calls = {}
     fake_eel = types.SimpleNamespace(
         init=lambda path: calls.setdefault("init", path),

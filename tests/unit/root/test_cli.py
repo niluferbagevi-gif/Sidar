@@ -1,3 +1,5 @@
+"""Unit tests for the ``cli`` entry point."""
+
 import importlib
 import logging
 import sys
@@ -153,6 +155,7 @@ class _MainFlowAgent:
 
 
 def test_cli_main_status_mode_boots_agent(monkeypatch, capsys):
+    """Cli main status mode boots agent."""
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
     monkeypatch.setattr(cli, "Config", _FakeConfig)
     monkeypatch.setattr(cli, "SidarAgent", _FakeAgent)
@@ -166,6 +169,7 @@ def test_cli_main_status_mode_boots_agent(monkeypatch, capsys):
 
 
 def test_cli_main_fails_fast_on_invalid_critical_settings(monkeypatch):
+    """Cli main fails fast on invalid critical settings."""
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
 
     class _InvalidConfig(_FakeConfig):
@@ -180,6 +184,7 @@ def test_cli_main_fails_fast_on_invalid_critical_settings(monkeypatch):
 
 
 def test_cli_main_skips_critical_validation_when_env_flag_set(monkeypatch):
+    """Cli main skips critical validation when env flag set."""
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
 
     class _ExplodingConfig(_FakeConfig):
@@ -195,12 +200,14 @@ def test_cli_main_skips_critical_validation_when_env_flag_set(monkeypatch):
 
 
 def test_setup_logging_sets_root_level(monkeypatch):
+    """Setup logging sets root level."""
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
     cli._setup_logging("debug")
     assert logging.getLogger().level == logging.DEBUG
 
 
 def test_make_banner_formats_and_truncates_version(monkeypatch):
+    """Make banner formats and truncates version."""
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
     short = cli._make_banner("1.0.0")
     long = cli._make_banner("12345678901234567890")
@@ -211,6 +218,7 @@ def test_make_banner_formats_and_truncates_version(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_interactive_loop_covers_commands_and_standard_response(monkeypatch, capsys):
+    """Interactive loop covers commands and standard response."""
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
     agent = _InteractiveAgent(provider="gemini", use_gpu=True)
     inputs = iter(
@@ -255,6 +263,7 @@ async def test_interactive_loop_covers_commands_and_standard_response(monkeypatc
 
 @pytest.mark.asyncio
 async def test_interactive_loop_prints_rag_action_hints(monkeypatch, capsys):
+    """Interactive loop prints rag action hints."""
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
     agent = _InteractiveAgent(provider="ollama", use_gpu=True)
     agent.docs_status = (
@@ -276,6 +285,7 @@ async def test_interactive_loop_prints_rag_action_hints(monkeypatch, capsys):
 
 @pytest.mark.asyncio
 async def test_interactive_loop_handles_provider_cpu_and_input_interrupt(monkeypatch, capsys):
+    """Interactive loop handles provider cpu and input interrupt."""
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
     monkeypatch.setenv("USE_GPU", "false")
     agent = _InteractiveAgent(
@@ -301,6 +311,7 @@ async def test_interactive_loop_handles_provider_cpu_and_input_interrupt(monkeyp
 
 @pytest.mark.asyncio
 async def test_interactive_loop_skips_banner_when_already_shown(monkeypatch, capsys):
+    """Interactive loop skips banner when already shown."""
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
     agent = _InteractiveAgent()
     monkeypatch.setenv("SIDAR_BANNER_SHOWN", "1")
@@ -317,6 +328,7 @@ async def test_interactive_loop_skips_banner_when_already_shown(monkeypatch, cap
 
 @pytest.mark.asyncio
 async def test_interactive_loop_handles_gpu_without_cuda_suffix(monkeypatch, capsys):
+    """Interactive loop handles gpu without cuda suffix."""
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
     agent = _InteractiveAgent(cuda_version="N/A", gpu_count=1)
 
@@ -331,6 +343,7 @@ async def test_interactive_loop_handles_gpu_without_cuda_suffix(monkeypatch, cap
 
 @pytest.mark.asyncio
 async def test_interactive_loop_handles_single_gpu_with_cuda(monkeypatch, capsys):
+    """Interactive loop handles single gpu with cuda."""
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
     agent = _InteractiveAgent(cuda_version="12.1", gpu_count=1)
 
@@ -345,6 +358,7 @@ async def test_interactive_loop_handles_single_gpu_with_cuda(monkeypatch, capsys
 
 @pytest.mark.asyncio
 async def test_interactive_loop_handles_response_cancelled(monkeypatch, capsys):
+    """Interactive loop handles response cancelled."""
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
     agent = _InteractiveAgent()
     agent._respond_error = cli.asyncio.CancelledError()
@@ -361,6 +375,7 @@ async def test_interactive_loop_handles_response_cancelled(monkeypatch, capsys):
 
 @pytest.mark.asyncio
 async def test_interactive_loop_handles_response_exception_then_exit(monkeypatch, capsys):
+    """Interactive loop handles response exception then exit."""
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
     agent = _InteractiveAgent()
     agent._respond_error = RuntimeError("boom")
@@ -377,6 +392,7 @@ async def test_interactive_loop_handles_response_exception_then_exit(monkeypatch
 
 
 def test_interactive_loop_wrapper_calls_asyncio_run(monkeypatch):
+    """Interactive loop wrapper calls asyncio run."""
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
     called = {"count": 0}
 
@@ -391,6 +407,7 @@ def test_interactive_loop_wrapper_calls_asyncio_run(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_ensure_cli_memory_user_sets_active_user(monkeypatch):
+    """Ensure cli memory user sets active user."""
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
     calls = []
 
@@ -412,6 +429,7 @@ async def test_ensure_cli_memory_user_sets_active_user(monkeypatch):
 
 
 def test_main_command_mode_runs_setup_and_response(monkeypatch, capsys):
+    """Main command mode runs setup and response."""
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
     created = {}
 
@@ -460,6 +478,7 @@ def test_main_command_mode_runs_setup_and_response(monkeypatch, capsys):
 
 
 def test_main_command_mode_timeout_prints_warning(monkeypatch, capsys):
+    """Main command mode timeout prints warning."""
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
 
     class _ConfigWithTimeout(_FakeConfig):
@@ -481,6 +500,7 @@ def test_main_command_mode_timeout_prints_warning(monkeypatch, capsys):
 
 
 def test_main_interactive_mode_initializes_and_enters_loop(monkeypatch):
+    """Main interactive mode initializes and enters loop."""
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
     created = {}
 
@@ -514,6 +534,7 @@ def test_main_interactive_mode_initializes_and_enters_loop(monkeypatch):
 
 
 def test_main_applies_cli_overrides_before_critical_validation(monkeypatch):
+    """Main applies cli overrides before critical validation."""
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
 
     class _ValidatingConfig(_FakeConfig):
@@ -545,6 +566,7 @@ def test_main_applies_cli_overrides_before_critical_validation(monkeypatch):
 
 
 def test_main_skips_overrides_when_args_are_none(monkeypatch):
+    """Main skips overrides when args are none."""
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
 
     class _ConfigWithFields(_FakeConfig):
@@ -580,6 +602,7 @@ def test_main_skips_overrides_when_args_are_none(monkeypatch):
 
 
 def test_run_doctor_command_prints_report_and_returns_status(monkeypatch, capsys, tmp_path):
+    """Run doctor command prints report and returns status."""
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
     import core.doctor as doctor
 
@@ -609,6 +632,7 @@ def test_run_doctor_command_prints_report_and_returns_status(monkeypatch, capsys
 
 
 def test_main_doctor_subcommand_parses_output_and_exits(monkeypatch):
+    """Main doctor subcommand parses output and exits."""
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
     calls = []
     monkeypatch.setattr(cli, "_run_doctor_command", lambda output: calls.append(output) or 7)
@@ -622,6 +646,7 @@ def test_main_doctor_subcommand_parses_output_and_exits(monkeypatch):
 
 
 def test_main_doctor_subcommand_forwards_opt_in_fix(monkeypatch):
+    """Main doctor subcommand forwards opt in fix."""
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
     calls = []
     monkeypatch.setattr(
@@ -643,6 +668,7 @@ def test_main_doctor_subcommand_forwards_opt_in_fix(monkeypatch):
 
 
 def test_main_doctor_subcommand_rejects_invalid_arguments(monkeypatch, capsys):
+    """Main doctor subcommand rejects invalid arguments."""
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
     monkeypatch.setattr(cli.sys, "argv", ["cli.py", "doctor", "--unknown"])
 
@@ -654,6 +680,7 @@ def test_main_doctor_subcommand_rejects_invalid_arguments(monkeypatch, capsys):
 
 
 def test_main_doctor_flag_runs_after_default_config_parse(monkeypatch):
+    """Main doctor flag runs after default config parse."""
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
     monkeypatch.setattr(cli, "Config", _FakeConfig)
     monkeypatch.setattr(cli, "_run_doctor_command", lambda: 3)
@@ -666,6 +693,7 @@ def test_main_doctor_flag_runs_after_default_config_parse(monkeypatch):
 
 
 def test_main_surfaces_broken_config_initialization(monkeypatch):
+    """Main surfaces broken config initialization."""
     cli = _load_cli_module_with_stubbed_agent(monkeypatch)
 
     class _BrokenConfig(_FakeConfig):
