@@ -10,8 +10,12 @@ over every tracked ``*.md`` file outside the historical record:
 1. Every relative Markdown link ``[text](target)`` and inline HTML link
    ``<a href="target">`` (used inside ``<pre>`` file trees, where Markdown link
    syntax does not render) resolves to an existing file or directory (relative
-   to the document; anchors and external URLs ignored).
-2. Every backticked path that starts with a tracked top-level directory
+   to the document; external URLs ignored).
+2. Every ``#fragment`` on such a link (or a bare ``(#fragment)`` in-page link)
+   that targets a Markdown file names a heading or an explicit ``<a id=...>``
+   in that file, using GitHub's heading-slug rules (lowercase, punctuation
+   dropped, spaces to ``-``, ``-1``/``-2`` suffixes for duplicate headings).
+3. Every backticked path that starts with a tracked top-level directory
    (``core/...``, ``tests/...``, ``docs/...``) exists in the working tree.
    Runtime/build outputs (``artifacts/``, ``web_ui_react/dist``...) are skipped.
 
@@ -29,7 +33,10 @@ import re
 import shutil
 import subprocess
 import sys
+import unicodedata
+from functools import cache
 from pathlib import Path
+from urllib.parse import unquote
 
 from core.utils.trusted_subprocess import run_trusted_command
 
@@ -99,6 +106,11 @@ ALLOWED_MISSING: dict[str, frozenset[str]] = {
 
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 HREF_RE = re.compile(r"<a\s[^>]*?href=\"([^\"\s]+)\"")
+HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*#*\s*$")
+FENCE_RE = re.compile(r"^\s*(```|~~~)")
+EXPLICIT_ANCHOR_RE = re.compile(r"<a\s[^>]*?(?:id|name)=\"([^\"]+)\"")
+LINK_TEXT_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+HTML_TAG_RE = re.compile(r"<[^>]+>")
 BACKTICK_RE = re.compile(r"`([^`\s]+)`")
 
 
@@ -170,6 +182,69 @@ def missing_paths(
     return missing
 
 
+def heading_slug(heading: str) -> str:
+    """Return GitHub's anchor slug for a Markdown heading's text.
+
+    Letters (Unicode-aware lowercase, so Turkish ``İ`` becomes ``i̇``), digits,
+    combining marks, ``_`` and ``-`` are kept, spaces become ``-`` and every
+    other character (punctuation, backticks, emoji) is dropped.
+    """
+    text = HTML_TAG_RE.sub("", LINK_TEXT_RE.sub(r"\1", heading)).strip().lower()
+    return "".join(
+        "-"
+        if ch == " "
+        else ch
+        if ch in "-_" or ch.isalnum() or unicodedata.category(ch).startswith("M")
+        else ""
+        for ch in text
+    )
+
+
+def document_anchors(text: str) -> frozenset[str]:
+    """Return every fragment a Markdown document defines (headings + explicit ids)."""
+    anchors = set(EXPLICIT_ANCHOR_RE.findall(text))
+    seen: dict[str, int] = {}
+    in_fence = False
+    for line in text.splitlines():
+        if FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        match = None if in_fence else HEADING_RE.match(line)
+        if match:
+            slug = heading_slug(match.group(1))
+            count = seen.get(slug, 0)
+            anchors.add(slug if count == 0 else f"{slug}-{count}")
+            seen[slug] = count + 1
+    return frozenset(anchors)
+
+
+@cache
+def _anchors_of(path: Path) -> frozenset[str]:
+    return document_anchors(path.read_text(encoding="utf-8"))
+
+
+def broken_anchors(doc: str, text: str) -> list[str]:
+    """Return link targets in ``doc`` whose ``#fragment`` names no anchor in a Markdown target."""
+    base = (ROOT / doc).parent
+    own_anchors = document_anchors(text)
+    missing = []
+    for target in [*LINK_RE.findall(text), *HREF_RE.findall(text)]:
+        path, sep, fragment = target.partition("#")
+        if not sep or not fragment or "://" in path or path.startswith(("mailto:", "/")):
+            continue
+        if path:
+            resolved = (base / path).resolve()
+            if resolved.suffix != ".md" or not resolved.is_file():
+                continue
+            anchors = _anchors_of(resolved)
+        else:
+            anchors = own_anchors
+        wanted = unquote(fragment)
+        if wanted not in anchors and wanted.lower() not in anchors:
+            missing.append(target)
+    return missing
+
+
 def find_problems(files: list[str]) -> list[str]:
     """Return one human-readable line per dead link or path across the living docs."""
     top_dirs = top_level_dirs(files)
@@ -178,6 +253,7 @@ def find_problems(files: list[str]) -> list[str]:
     for doc in living_docs(files):
         text = (ROOT / doc).read_text(encoding="utf-8")
         problems.extend(f"{doc}: kırık bağlantı -> {t}" for t in broken_links(doc, text))
+        problems.extend(f"{doc}: kırık bölüm bağlantısı -> {t}" for t in broken_anchors(doc, text))
         problems.extend(
             f"{doc}: var olmayan yol -> {p}" for p in missing_paths(doc, text, top_dirs, used)
         )
@@ -211,7 +287,9 @@ def main(argv: list[str] | None = None) -> int:
         for problem in problems:
             print(f"  - {problem}", file=sys.stderr)
         print(
-            "\nReferansı güncel yola çevirin. Taşınma/silinmeyi bilerek anlatan bir cümleyse "
+            "\nReferansı güncel yola/başlığa çevirin (Türkçe İ gibi slug'ı değişen başlıklarda "
+            'başlığın önüne <a id="..."></a> ekleyin). Taşınma/silinmeyi bilerek anlatan bir '
+            "cümleyse "
             "yolu scripts/ci/check_doc_links.py içindeki ALLOWED_MISSING'e o doküman için ekleyin.",
             file=sys.stderr,
         )
