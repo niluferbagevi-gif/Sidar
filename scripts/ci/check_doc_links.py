@@ -7,8 +7,10 @@ RAG stack ingests ``docs/``, a dead path is not just untidy, it is a wrong answe
 the system can serve as fact. This script enforces two zero-tolerance contracts
 over every tracked ``*.md`` file outside the historical record:
 
-1. Every relative Markdown link ``[text](target)`` resolves to an existing file
-   or directory (relative to the document; anchors and external URLs ignored).
+1. Every relative Markdown link ``[text](target)`` and inline HTML link
+   ``<a href="target">`` (used inside ``<pre>`` file trees, where Markdown link
+   syntax does not render) resolves to an existing file or directory (relative
+   to the document; anchors and external URLs ignored).
 2. Every backticked path that starts with a tracked top-level directory
    (``core/...``, ``tests/...``, ``docs/...``) exists in the working tree.
    Runtime/build outputs (``artifacts/``, ``web_ui_react/dist``...) are skipped.
@@ -96,6 +98,7 @@ ALLOWED_MISSING: dict[str, frozenset[str]] = {
 }
 
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
+HREF_RE = re.compile(r"<a\s[^>]*?href=\"([^\"\s]+)\"")
 BACKTICK_RE = re.compile(r"`([^`\s]+)`")
 
 
@@ -131,10 +134,10 @@ def top_level_dirs(files: list[str]) -> frozenset[str]:
 
 
 def broken_links(doc: str, text: str) -> list[str]:
-    """Return relative Markdown link targets in ``doc`` that do not resolve."""
+    """Return relative Markdown/HTML link targets in ``doc`` that do not resolve."""
     base = (ROOT / doc).parent
     missing = []
-    for target in LINK_RE.findall(text):
+    for target in [*LINK_RE.findall(text), *HREF_RE.findall(text)]:
         path = target.split("#", 1)[0]
         if not path or "://" in path or path.startswith(("mailto:", "/")):
             continue

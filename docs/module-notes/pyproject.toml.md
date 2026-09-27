@@ -5,7 +5,7 @@
 - **Amaç:** Projenin ana paket ve metadata kaynağıdır (Single Source of Truth).
 - **Not:** `core/`, `managers/` ve ses/RAG akışlarının çalışması için gerekli AI/medya paketleri (`openai`, `anthropic`, `litellm`, `chromadb`, `pgvector`, `SpeechRecognition`, `pyaudio`, `openai-whisper`, `yt-dlp`) ana `dependencies` altında tutulur; ek profiller (`extras`) isteğe bağlı genişletmeler için korunur.
 - **Dev optimizasyonu:** `dev` grubunda `ruff` standart lint/format aracı olarak bırakılmış, `black` ve `flake8` kaldırılmıştır.
-- **Lock üretimi:** `requirements*.txt` dosyaları bu dosyadan `uv pip compile` ile üretilir.
+- **Lock üretimi:** Bağımlılıklar `uv.lock` ile kilitlenir; repoda ayrı bir `requirements*.txt` tutulmaz. Production için gerektiğinde `scripts/export_production_requirements.sh`, `uv export` ile `requirements-production.txt` üretir.
 - **Durum:** UV tabanlı modern paket mimarisiyle uyumlu.
 - **Torch CVE çözüm kaydı:** 2026-08-15 hedefli inceleme 2026-08-09'da tamamlandı;
   `torch 2.13.0` patched lock kanıtı ve kaldırılan policy istisnası

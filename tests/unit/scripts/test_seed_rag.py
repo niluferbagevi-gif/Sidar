@@ -125,11 +125,22 @@ def test_default_seed_patterns_include_curated_code_context() -> None:
     """Default seed patterns include curated code context."""
     assert "docs/ARCHITECTURE.md" in seed_rag.DEFAULT_INCLUDE_PATTERNS
     assert "docs/project-report/*.md" in seed_rag.DEFAULT_INCLUDE_PATTERNS
-    assert "core/rag.py" in seed_rag.DEFAULT_INCLUDE_PATTERNS
+    assert "core/rag/__init__.py" in seed_rag.DEFAULT_INCLUDE_PATTERNS
     assert "agent/sidar_agent.py" in seed_rag.DEFAULT_INCLUDE_PATTERNS
     assert "run_tests.sh" in seed_rag.DEFAULT_INCLUDE_PATTERNS
     assert ".py" in seed_rag.TEXT_EXTENSIONS
     assert ".sh" in seed_rag.TEXT_EXTENSIONS
+
+
+def test_default_seed_patterns_resolve_to_existing_repo_files() -> None:
+    """Every default seed pattern matches a file, so moved modules cannot silently drop out."""
+    stale = [
+        pattern
+        for pattern in seed_rag.DEFAULT_INCLUDE_PATTERNS
+        if not list(seed_rag.BASE_DIR.glob(pattern))
+    ]
+
+    assert stale == []
 
 
 def test_build_store_routes_import_time_notices_to_stderr(
