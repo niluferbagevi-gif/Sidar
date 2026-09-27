@@ -44,7 +44,7 @@ DEFAULT_INCLUDE_PATTERNS = (
     "agent/core/supervisor.py",
     "agent/swarm.py",
     "agent/roles/__init__.py",
-    "core/rag.py",
+    "core/rag/__init__.py",
     "core/ci_remediation.py",
     "scripts/auto_heal.py",
     "scripts/coverage_hotspots.py",
