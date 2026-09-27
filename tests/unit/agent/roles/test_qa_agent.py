@@ -192,6 +192,26 @@ def test_helpers_and_parsers(tmp_path, qa):
     assert QAAgent._sanitize_llm_code("```python\nassert True") == "assert True"
 
 
+def test_coverage_config_summary_reads_pyproject_without_coveragerc(tmp_path, qa):
+    """Without ``.coveragerc`` the summary reflects ``pyproject.toml [tool.coverage]``."""
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.coverage.run]\nomit = ["tests/*", "migrations/*"]\n'
+        "[tool.coverage.report]\nfail_under = 99.5\nshow_missing = true\n",
+        encoding="utf-8",
+    )
+
+    summary = qa._coverage_config_summary()
+
+    assert summary == {
+        "path": str(tmp_path / "pyproject.toml"),
+        "exists": True,
+        "fail_under": 99.5,
+        "show_missing": True,
+        "skip_covered": False,
+        "omit": ["tests/*", "migrations/*"],
+    }
+
+
 def test_tool_methods(qa):
     """Tool methods."""
     assert asyncio.run(qa._tool_read_file("x.py")) == "READ:x.py"

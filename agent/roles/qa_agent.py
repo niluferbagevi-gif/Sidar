@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import configparser
 import json
 import re
 from pathlib import Path
@@ -11,6 +10,7 @@ from typing import Any
 
 from agent.base_agent import BaseAgent
 from agent.registry import AgentCatalog
+from agent.roles.coverage.config import read_coverage_config
 from config import Config
 from core.ci_remediation import build_ci_remediation_payload
 from core.test_fixture_policy import SHARED_TEST_FIXTURE_GUIDANCE
@@ -24,7 +24,8 @@ class QAAgent(BaseAgent):
 
     SYSTEM_PROMPT = (
         "Sen coverage ve test otomasyonu odaklı bir QA ajansın. "
-        "Eksik test alanlarını belirler, .coveragerc hedeflerini dikkate alır ve "
+        "Eksik test alanlarını belirler, pyproject.toml [tool.coverage] hedeflerini "
+        "dikkate alır ve "
         "CI remediation bağlamını kullanarak tests/ altında deterministik pytest çıktıları "
         "üretirsin."
     )
@@ -77,19 +78,24 @@ class QAAgent(BaseAgent):
         return out
 
     def _coverage_config_summary(self) -> dict[str, Any]:
-        parser = configparser.ConfigParser()
-        coveragerc_path = Path(self.cfg.BASE_DIR) / ".coveragerc"
-        parser.read(coveragerc_path, encoding="utf-8")
-        omit_raw = parser.get("run", "omit", fallback="")
+        config = read_coverage_config(Path(self.cfg.BASE_DIR) / ".coveragerc")
+        run_cfg = config["run"]
+        report_cfg = config["report"]
+        omit_raw = run_cfg.get("omit", "")
         omit = [part.strip() for part in re.split(r"[\n,]", omit_raw) if part.strip()]
+        fail_under = float(report_cfg.get("fail_under", "0") or 0)
         return {
-            "path": str(coveragerc_path),
-            "exists": coveragerc_path.exists(),
-            "fail_under": parser.getint("report", "fail_under", fallback=0),
-            "show_missing": parser.getboolean("report", "show_missing", fallback=False),
-            "skip_covered": parser.getboolean("report", "skip_covered", fallback=False),
+            "path": config["path"],
+            "exists": config["exists"],
+            "fail_under": int(fail_under) if fail_under.is_integer() else fail_under,
+            "show_missing": self._config_flag(report_cfg.get("show_missing")),
+            "skip_covered": self._config_flag(report_cfg.get("skip_covered")),
             "omit": omit,
         }
+
+    @staticmethod
+    def _config_flag(raw: str | None) -> bool:
+        return (raw or "").strip().lower() in {"1", "true", "yes", "on"}
 
     async def _tool_coverage_config(self, _arg: str) -> str:
         return json.dumps(self._coverage_config_summary(), ensure_ascii=False)

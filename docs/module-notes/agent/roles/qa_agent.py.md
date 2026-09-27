@@ -11,5 +11,6 @@ kullanır.
 
 **Özellikler:**
 - `QAAgent(BaseAgent)` — `managers/code_manager.py` üzerinden coverage
-  analiz/üretim/toplu (batch) görevlerini yürütür; `configparser`/`re` ile
-  mevcut coverage konfigürasyonunu ayrıştırır.
+  analiz/üretim/toplu (batch) görevlerini yürütür; coverage konfigürasyonunu
+  `agent/roles/coverage/config.py::read_coverage_config` ile okur (`.coveragerc`
+  yoksa `pyproject.toml` `[tool.coverage]`).
