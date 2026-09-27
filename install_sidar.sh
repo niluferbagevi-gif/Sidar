@@ -263,8 +263,8 @@ verify_core_install_manifest() {
     done
 
     cat <<'SIDAR_INSTALL_MANIFEST_EOF' > "$manifest_path"
-32bb465e8344f235b5d50b76498466415dda43b03d7e40fa7014aa3d38847e63  core/memory.py
-1aa1bf4b4e4146f0c958990c3f895d494245a3eac9754babf7e6720a8d2d6c35  core/multimodal.py
+3250ed65bb560973fa14b35d34a5a58ce49656f698201377860fae7a929a0c4e  core/memory.py
+6e3bf6c9f97748cae4048a359115dfccef4051ca77bae6806fd398b60c352a9f  core/multimodal.py
 SIDAR_INSTALL_MANIFEST_EOF
 
     if (cd "$SCRIPT_DIR" && sha256sum -c "$manifest_path" --status); then

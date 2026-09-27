@@ -62,6 +62,8 @@ class ExtractedFrame:
 
 @dataclass(frozen=True)
 class DownloadedMedia:
+    """İndirilen veya çözümlenen uzak medyanın yerel yolu ve kaynak bilgileri."""
+
     path: str
     source_url: str
     mime_type: str
@@ -105,11 +107,13 @@ def _guess_suffix(mime_type: str, fallback: str) -> str:
 
 
 def is_remote_media_source(value: str | Path) -> bool:
+    """Değer http/https URL'si ise ``True`` döndürür."""
     parsed = urlparse(str(value or ""))
     return parsed.scheme in {"http", "https"}
 
 
 def detect_video_platform(value: str) -> str:
+    """URL host'una göre ``youtube``, ``vimeo``, ``loom`` veya ``generic`` döndürür."""
     host = (urlparse(str(value or "")).netloc or "").lower()
     if host.endswith("youtu.be") or "youtube.com" in host:
         return "youtube"
@@ -121,6 +125,11 @@ def detect_video_platform(value: str) -> str:
 
 
 def extract_youtube_video_id(value: str) -> str:
+    """YouTube URL'sinden veya çıplak id'den 11 karakterlik video id'sini çıkarır.
+
+    watch, youtu.be, shorts, embed ve live biçimleri desteklenir; geçersiz
+    girdide boş string döner.
+    """
     text = str(value or "").strip()
     if not text:
         return ""
@@ -178,6 +187,13 @@ async def fetch_youtube_transcript(
     req_timeout: float = _DEFAULT_YOUTUBE_TRANSCRIPT_TIMEOUT,
     http_client_factory: Any = None,
 ) -> dict[str, Any]:
+    """YouTube yerleşik altyazısını dillere sırayla bakarak getirir.
+
+    Returns:
+        ``success``, ``video_id``, ``language``, ``text`` ve ``segments``
+        alanlarını içeren sözlük. Altyazı bulunamazsa ``success=False`` ve
+        ``reason`` döner.
+    """
     video_id = extract_youtube_video_id(video_url_or_id)
     if not video_id:
         return {"success": False, "reason": "Geçerli YouTube video id bulunamadı.", "video_id": ""}
@@ -222,6 +238,14 @@ async def download_remote_media(
     http_client_factory: Any = None,
     req_timeout: float = _DEFAULT_REMOTE_DOWNLOAD_TIMEOUT,
 ) -> DownloadedMedia:
+    """Uzak medyayı ``output_dir`` altına indirir.
+
+    YouTube için ``yt-dlp`` kuruluysa onu, değilse HTTP GET'i kullanır.
+
+    Raises:
+        ValueError: Kaynak http/https değilse.
+        RuntimeError: ``yt-dlp`` dosya üretmezse.
+    """
     if not is_remote_media_source(source_url):
         raise ValueError("Yalnızca http/https medya kaynakları destekleniyor.")
 
@@ -598,6 +622,7 @@ def build_multimodal_context(
 
 
 def build_scene_summary(frame_analyses: Iterable[dict[str, Any]] | None = None) -> str:
+    """Frame analizlerini ``<saniye>s → <özet>`` biçiminde tek satırda birleştirir."""
     entries: list[str] = []
     for item in list(frame_analyses or []):
         summary = str(item.get("analysis", "") or item.get("summary", "") or "").strip()
@@ -614,6 +639,11 @@ def render_multimodal_document(
     source: str,
     title: str = "",
 ) -> tuple[str, str]:
+    """Analiz sonucunu RAG'e eklenecek başlık ve metin gövdesine dönüştürür.
+
+    Returns:
+        ``(başlık, içerik)`` çifti.
+    """
     transcript = analysis.get("transcript") if isinstance(analysis, dict) else {}
     frame_analyses = analysis.get("frame_analyses") if isinstance(analysis, dict) else []
     resolved_title = (
@@ -655,6 +685,7 @@ async def ingest_multimodal_analysis(
     title: str = "",
     tags: list[str] | None = None,
 ) -> dict[str, Any]:
+    """Başarılı analizi doküman deposuna ekler ve ``doc_id`` ile sonucu döndürür."""
     if not analysis.get("success"):
         return {"success": False, "reason": "Başarısız analiz ingest edilemez."}
     resolved_title, content = render_multimodal_document(analysis, source=source, title=title)
@@ -672,6 +703,7 @@ class MultimodalPipeline:
     """Video/ses/görsel dosyalarını ortak bir LLM bağlamına dönüştürür."""
 
     def __init__(self, llm_client: Any, config: Any = None) -> None:
+        """LLM istemcisini ve config'deki multimodal limit/zaman aşımı ayarlarını yükler."""
         self._llm = llm_client
         self._config = config
         self.enabled = bool(getattr(config, "ENABLE_MULTIMODAL", True))
@@ -865,6 +897,12 @@ class MultimodalPipeline:
         ingest_title: str = "",
         ingest_tags: list[str] | None = None,
     ) -> dict[str, Any]:
+        """Yerel veya uzak medyayı analiz eder; istenirse sonucu doküman deposuna ekler.
+
+        Uzak kaynaklar geçici dizine indirilir (FFmpeg varsa süre sınırlı stream
+        olarak); YouTube'da önce yerleşik altyazı denenir. Multimodal kapalıysa
+        veya kaynak boşsa ``success=False`` ve ``reason`` döner.
+        """
         if not self.enabled:
             return {"success": False, "reason": "ENABLE_MULTIMODAL devre dışı"}
         if not media_source.strip():
