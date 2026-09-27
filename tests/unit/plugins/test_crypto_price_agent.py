@@ -1,3 +1,5 @@
+"""Unit tests for ``plugins.crypto_price_agent``."""
+
 import asyncio
 import importlib
 import sys
@@ -8,6 +10,8 @@ if "agent.base_agent" not in sys.modules:
     fake_base_agent = types.ModuleType("agent.base_agent")
 
     class BaseAgent:  # pragma: no cover - test helper
+        """Minimal stand-in for ``agent.base_agent.BaseAgent`` when it is not importable."""
+
         pass
 
     fake_base_agent.BaseAgent = BaseAgent
@@ -35,14 +39,17 @@ def _agent() -> CryptoPriceAgent:
 
 
 def test_extract_symbol_defaults_to_btc_when_no_token() -> None:
+    """Extract symbol defaults to btc when no token."""
     assert CryptoPriceAgent._extract_symbol("?!") == "btc"
 
 
 def test_extract_symbol_reads_first_alpha_token() -> None:
+    """Extract symbol reads first alpha token."""
     assert CryptoPriceAgent._extract_symbol("ETH fiyatı nedir") == "eth"
 
 
 def test_run_task_returns_error_for_unsupported_symbol() -> None:
+    """Run task returns error for unsupported symbol."""
     agent = _agent()
 
     result = asyncio.run(agent.run_task("doge"))
@@ -52,6 +59,7 @@ def test_run_task_returns_error_for_unsupported_symbol() -> None:
 
 
 def test_run_task_returns_price_when_payload_has_usd(monkeypatch) -> None:
+    """Run task returns price when payload has usd."""
     agent = _agent()
 
     class _Resp:
@@ -83,6 +91,7 @@ def test_run_task_returns_price_when_payload_has_usd(monkeypatch) -> None:
 
 
 def test_run_task_returns_missing_data_message_when_usd_missing(monkeypatch) -> None:
+    """Run task returns missing data message when usd missing."""
     agent = _agent()
 
     class _Resp:
@@ -113,6 +122,7 @@ def test_run_task_returns_missing_data_message_when_usd_missing(monkeypatch) -> 
 
 
 def test_run_task_returns_exception_text_when_request_fails(monkeypatch) -> None:
+    """Run task returns exception text when request fails."""
     agent = _agent()
 
     class _Client:
@@ -136,6 +146,7 @@ def test_run_task_returns_exception_text_when_request_fails(monkeypatch) -> None
 
 
 def test_crypto_price_test_module_bootstrap_injects_stub_when_base_agent_missing():
+    """Crypto price test module bootstrap injects stub when base agent missing."""
     original_base_agent = sys.modules.pop("agent.base_agent", None)
     try:
         module = sys.modules[__name__]
@@ -154,6 +165,7 @@ def test_crypto_price_test_module_bootstrap_injects_stub_when_base_agent_missing
 
 
 def test_crypto_price_test_module_bootstrap_restores_when_original_missing():
+    """Crypto price test module bootstrap restores when original missing."""
     pre_removed_base_agent = sys.modules.pop("agent.base_agent", None)
     original_base_agent = sys.modules.pop("agent.base_agent", None)
     try:

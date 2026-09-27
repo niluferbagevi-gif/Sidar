@@ -1,3 +1,5 @@
+"""Unit tests for ``plugins.aws_management_agent``."""
+
 import asyncio
 import importlib
 import subprocess
@@ -10,6 +12,8 @@ if "agent.base_agent" not in sys.modules:
     fake_base_agent = types.ModuleType("agent.base_agent")
 
     class BaseAgent:  # pragma: no cover - test helper
+        """Minimal stand-in for ``agent.base_agent.BaseAgent`` when it is not importable."""
+
         pass
 
     fake_base_agent.BaseAgent = BaseAgent
@@ -25,6 +29,7 @@ def _agent(access_level: str = "full") -> AWSManagementAgent:
 
 
 def test_select_command_detects_supported_keywords() -> None:
+    """Select command detects supported keywords."""
     agent = _agent()
 
     assert agent._select_command("ec2 instance list") == agent._COMMAND_MAP["ec2"]
@@ -34,6 +39,7 @@ def test_select_command_detects_supported_keywords() -> None:
 
 
 def test_summarize_output_for_s3_ec2_cloudwatch_json_and_fallbacks() -> None:
+    """Summarize output for s3 ec2 cloudwatch json and fallbacks."""
     s3 = AWSManagementAgent._summarize_output("s3", '{"Buckets":[{"Name":"a"},{"Name":"b"}]}')
     ec2 = AWSManagementAgent._summarize_output(
         "ec2",
@@ -52,12 +58,14 @@ def test_summarize_output_for_s3_ec2_cloudwatch_json_and_fallbacks() -> None:
 
 
 def test_run_task_requires_prompt() -> None:
+    """Run task requires prompt."""
     agent = _agent()
 
     assert asyncio.run(agent.run_task("  ")) == "AWS işlemi için görev açıklaması gerekli."
 
 
 def test_run_task_rejects_shell_when_access_level_is_not_full(monkeypatch) -> None:
+    """Run task rejects shell when access level is not full."""
     agent = _agent(access_level="sandbox")
     monkeypatch.setattr("plugins.aws_management_agent.shutil.which", lambda _name: "/usr/bin/aws")
 
@@ -67,6 +75,7 @@ def test_run_task_rejects_shell_when_access_level_is_not_full(monkeypatch) -> No
 
 
 def test_run_task_requires_aws_cli(monkeypatch) -> None:
+    """Run task requires aws cli."""
     agent = _agent()
     monkeypatch.setattr("plugins.aws_management_agent.shutil.which", lambda _name: None)
 
@@ -76,6 +85,7 @@ def test_run_task_requires_aws_cli(monkeypatch) -> None:
 
 
 def test_run_task_returns_supported_message_for_unknown_command(monkeypatch) -> None:
+    """Run task returns supported message for unknown command."""
     agent = _agent()
     monkeypatch.setattr("plugins.aws_management_agent.shutil.which", lambda _name: "/usr/bin/aws")
 
@@ -85,6 +95,7 @@ def test_run_task_returns_supported_message_for_unknown_command(monkeypatch) -> 
 
 
 def test_run_task_executes_command_and_summarizes(monkeypatch) -> None:
+    """Run task executes command and summarizes."""
     agent = _agent()
     monkeypatch.setattr("plugins.aws_management_agent.shutil.which", lambda _name: "/usr/bin/aws")
 
@@ -109,6 +120,7 @@ def test_run_task_executes_command_and_summarizes(monkeypatch) -> None:
 
 
 def test_run_task_handles_called_process_error(monkeypatch) -> None:
+    """Run task handles called process error."""
     agent = _agent()
     monkeypatch.setattr("plugins.aws_management_agent.shutil.which", lambda _name: "/usr/bin/aws")
 
@@ -127,6 +139,7 @@ def test_run_task_handles_called_process_error(monkeypatch) -> None:
 
 
 def test_run_task_handles_unexpected_error(monkeypatch) -> None:
+    """Run task handles unexpected error."""
     agent = _agent()
     monkeypatch.setattr("plugins.aws_management_agent.shutil.which", lambda _name: "/usr/bin/aws")
 
@@ -141,6 +154,7 @@ def test_run_task_handles_unexpected_error(monkeypatch) -> None:
 
 
 def test_aws_management_test_module_bootstrap_injects_stub_when_base_agent_missing():
+    """Aws management test module bootstrap injects stub when base agent missing."""
     saved_base_agent = sys.modules.get("agent.base_agent")
     fallback_base_agent = types.ModuleType("agent.base_agent")
     fallback_base_agent.BaseAgent = object  # type: ignore[attr-defined]

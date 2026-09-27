@@ -1,3 +1,5 @@
+"""Unit tests for ``managers.social_media_manager``."""
+
 from __future__ import annotations
 
 import asyncio
@@ -97,6 +99,7 @@ class _ClientFactory:
 
 
 def test_ensure_httpx_stub_and_fake_async_client_guard(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure httpx stub and fake async client guard."""
     monkeypatch.delitem(sys.modules, "httpx", raising=False)
     _ensure_httpx_stub()
     assert "httpx" in sys.modules
@@ -112,6 +115,7 @@ def test_ensure_httpx_stub_and_fake_async_client_guard(monkeypatch: pytest.Monke
 
 
 def test_is_available_by_platform_and_ids() -> None:
+    """Is available by platform and ids."""
     mgr = SocialMediaManager(experimental_publishing_enabled=True)
     assert mgr.is_available() is False
     assert mgr.is_available("instagram") is False
@@ -136,6 +140,7 @@ def test_is_available_by_platform_and_ids() -> None:
 
 
 def test_url_and_build_content_preview() -> None:
+    """Url and build content preview."""
     mgr = SocialMediaManager(experimental_publishing_enabled=True, api_version="v21.0")
     assert mgr._url("/x/y") == "https://graph.facebook.com/v21.0/x/y"
     preview = SocialMediaManager.build_content_preview(
@@ -147,12 +152,14 @@ def test_url_and_build_content_preview() -> None:
 
 
 def test_post_requires_token() -> None:
+    """Post requires token."""
     ok, err = _run(SocialMediaManager(experimental_publishing_enabled=True)._post("x", {"a": 1}))
     assert ok is False
     assert "META_GRAPH_API_TOKEN" in err
 
 
 def test_post_success_and_error_variants() -> None:
+    """Post success and error variants."""
     client = _FakeAsyncClient(
         responses=[
             _FakeResponse(status_code=200, payload={"id": "1"}),
@@ -187,6 +194,7 @@ def test_post_success_and_error_variants() -> None:
 
 
 def test_post_error_includes_meta_error_code_details() -> None:
+    """Post error includes meta error code details."""
     client = _FakeAsyncClient(
         responses=[
             _FakeResponse(
@@ -216,6 +224,7 @@ def test_post_error_includes_meta_error_code_details() -> None:
 
 
 def test_post_timeout_and_request_errors() -> None:
+    """Post timeout and request errors."""
     timeout_client = _FakeAsyncClient(error=httpx.TimeoutException("late"))
     mgr_timeout = SocialMediaManager(
         experimental_publishing_enabled=True,
@@ -238,6 +247,7 @@ def test_post_timeout_and_request_errors() -> None:
 
 
 def test_publish_instagram_post_flow() -> None:
+    """Publish instagram post flow."""
     mgr = SocialMediaManager(experimental_publishing_enabled=True, graph_api_token="tkn")
     ok, err = _run(mgr.publish_instagram_post(caption="c", image_url=" "))
     assert ok is False
@@ -345,6 +355,7 @@ def test_publish_facebook_post_rejects_non_dict_response() -> None:
 
 
 def test_publish_facebook_and_whatsapp() -> None:
+    """Publish facebook and whatsapp."""
     fb = SocialMediaManager(experimental_publishing_enabled=True, graph_api_token="tkn")
     ok, err = _run(fb.publish_facebook_post(message="hi"))
     assert ok is False
@@ -406,6 +417,7 @@ def test_publish_facebook_and_whatsapp() -> None:
 
 
 def test_publish_content_router(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Publish content router."""
     mgr = SocialMediaManager(experimental_publishing_enabled=True, graph_api_token="tkn")
 
     async def ig(**kwargs):
@@ -438,6 +450,7 @@ def test_publish_content_router(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_publish_content_meta_token_expired_errors_by_platform() -> None:
+    """Publish content meta token expired errors by platform."""
     mgr = SocialMediaManager(
         experimental_publishing_enabled=True,
         graph_api_token="tkn",

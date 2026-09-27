@@ -1,3 +1,5 @@
+"""Unit tests for ``managers.todo_manager``."""
+
 from __future__ import annotations
 
 import json
@@ -17,11 +19,13 @@ from managers.todo_manager import (
 
 @pytest.fixture()
 def manager(tmp_path: Path) -> TodoManager:
+    """Return a TodoManager rooted at ``tmp_path``."""
     cfg = SimpleNamespace(BASE_DIR=tmp_path)
     return TodoManager(cfg=cfg)
 
 
 def test_task_update_status_changes_timestamp(monkeypatch):
+    """Task update status changes timestamp."""
     task = Task(id=1, content="x")
     monkeypatch.setattr("managers.todo_manager.time.time", lambda: 1234.0)
     task.update_status(STATUS_COMPLETED)
@@ -30,6 +34,7 @@ def test_task_update_status_changes_timestamp(monkeypatch):
 
 
 def test_add_task_validations_and_invalid_status(manager: TodoManager):
+    """Add task validations and invalid status."""
     assert "boş olamaz" in manager.add_task("   ")
     assert "Geçersiz durum" in manager.add_task("iş", status="bad")
     ok_msg = manager.add_task("normal pending", status=STATUS_PENDING)
@@ -38,6 +43,7 @@ def test_add_task_validations_and_invalid_status(manager: TodoManager):
 
 
 def test_add_task_in_progress_demotes_existing(manager: TodoManager):
+    """Add task in progress demotes existing."""
     manager.add_task("a", status=STATUS_IN_PROGRESS)
     msg = manager.add_task("b", status=STATUS_IN_PROGRESS)
     assert "tek aktif görev" in msg
@@ -48,6 +54,7 @@ def test_add_task_in_progress_demotes_existing(manager: TodoManager):
 
 
 def test_set_tasks_validation_and_single_in_progress_rule(manager: TodoManager):
+    """Set tasks validation and single in progress rule."""
     assert "liste formatında" in manager.set_tasks("bad")
 
     msg = manager.set_tasks(
@@ -67,6 +74,7 @@ def test_set_tasks_validation_and_single_in_progress_rule(manager: TodoManager):
 
 
 def test_update_task_paths_and_shortcuts(manager: TodoManager):
+    """Update task paths and shortcuts."""
     manager.set_tasks([{"content": "a", "status": STATUS_PENDING}])
 
     assert "Geçersiz durum" in manager.update_task(1, "wrong")
@@ -79,6 +87,7 @@ def test_update_task_paths_and_shortcuts(manager: TodoManager):
 
 
 def test_update_task_in_progress_appends_demoted_info(manager: TodoManager):
+    """Update task in progress appends demoted info."""
     manager.set_tasks(
         [
             {"content": "a", "status": STATUS_IN_PROGRESS},
@@ -93,6 +102,7 @@ def test_update_task_in_progress_appends_demoted_info(manager: TodoManager):
 
 
 def test_list_tasks_variants_and_limit_normalization(manager: TodoManager):
+    """List tasks variants and limit normalization."""
     assert "boş" in manager.list_tasks()
 
     manager.set_tasks(
@@ -113,6 +123,7 @@ def test_list_tasks_variants_and_limit_normalization(manager: TodoManager):
 
 
 def test_get_tasks_limit_and_counts_repr_len(manager: TodoManager):
+    """Get tasks limit and counts repr len."""
     manager.set_tasks(
         [
             {"content": "a", "status": STATUS_PENDING},
@@ -135,6 +146,7 @@ def test_get_tasks_limit_and_counts_repr_len(manager: TodoManager):
 
 
 def test_clear_completed_and_clear_all(manager: TodoManager):
+    """Clear completed and clear all."""
     manager.set_tasks(
         [
             {"content": "a", "status": STATUS_COMPLETED},
@@ -153,6 +165,7 @@ def test_clear_completed_and_clear_all(manager: TodoManager):
 
 
 def test_load_with_existing_json_and_invalid_entries(tmp_path: Path):
+    """Load with existing json and invalid entries."""
     payload = [
         {"id": 1, "content": "a", "status": "unknown"},
         {"id": 2, "content": " ", "status": STATUS_PENDING},  # removed after strip
@@ -169,6 +182,7 @@ def test_load_with_existing_json_and_invalid_entries(tmp_path: Path):
 
 
 def test_load_handles_non_list_json_and_decode_error(tmp_path: Path):
+    """Load handles non list json and decode error."""
     (tmp_path / "todos.json").write_text(json.dumps({"a": 1}), encoding="utf-8")
     m = TodoManager(cfg=SimpleNamespace(BASE_DIR=tmp_path))
     assert len(m) == 0
@@ -179,6 +193,7 @@ def test_load_handles_non_list_json_and_decode_error(tmp_path: Path):
 
 
 def test_load_handles_locked_todo_file(tmp_path: Path, monkeypatch):
+    """Load handles locked todo file."""
     todo_file = tmp_path / "todos.json"
     todo_file.write_text("[]", encoding="utf-8")
 
@@ -199,6 +214,7 @@ def test_load_handles_locked_todo_file(tmp_path: Path, monkeypatch):
 
 
 def test_add_task_raises_when_todo_file_not_writable(manager: TodoManager, monkeypatch):
+    """Add task raises when todo file not writable."""
     real_open = open
 
     def _open_readonly(path, mode="r", *args, **kwargs):
@@ -215,6 +231,7 @@ def test_add_task_raises_when_todo_file_not_writable(manager: TodoManager, monke
 
 
 def test_scan_project_todos_branches(manager: TodoManager, tmp_path: Path):
+    """Scan project todos branches."""
     # invalid directory input
     assert "Geçersiz dizin" in manager.scan_project_todos(directory="\0bad")
 
@@ -242,6 +259,8 @@ def test_scan_project_todos_branches(manager: TodoManager, tmp_path: Path):
 
 
 def test_scan_project_todos_handles_walk_exception(manager: TodoManager, monkeypatch):
+    """Scan project todos handles walk exception."""
+
     def _boom(_path):
         raise RuntimeError("walk-fail")
 
@@ -253,6 +272,7 @@ def test_scan_project_todos_handles_walk_exception(manager: TodoManager, monkeyp
 def test_scan_project_todos_ignores_file_read_errors(
     manager: TodoManager, tmp_path: Path, monkeypatch
 ):
+    """Scan project todos ignores file read errors."""
     p = tmp_path / "bad.py"
     p.write_text("# TODO: x", encoding="utf-8")
 
@@ -272,5 +292,6 @@ def test_scan_project_todos_ignores_file_read_errors(
 
 
 def test_todo_manager_isolated(tmp_path):
+    """Todo manager isolated."""
     todo = TodoManager(cfg=SimpleNamespace(BASE_DIR=tmp_path))
     assert "eklendi" in todo.add_task("kritik test görevi")

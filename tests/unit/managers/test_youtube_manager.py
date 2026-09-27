@@ -1,3 +1,5 @@
+"""Unit tests for ``managers.youtube_manager``."""
+
 from __future__ import annotations
 
 import asyncio
@@ -51,6 +53,7 @@ class _DummyClientFactory:
 
 
 def test_extract_video_id_variants():
+    """Extract video id variants."""
     video_id = "dQw4w9WgXcQ"
     manager = YouTubeManager()
 
@@ -63,6 +66,7 @@ def test_extract_video_id_variants():
 
 
 def test_extract_video_id_invalid_inputs_return_empty():
+    """Extract video id invalid inputs return empty."""
     manager = YouTubeManager()
 
     assert manager.extract_video_id("") == ""
@@ -74,6 +78,7 @@ def test_extract_video_id_invalid_inputs_return_empty():
 
 
 def test_timedtext_url_and_normalize_transcript_events():
+    """Timedtext url and normalize transcript events."""
     url = YouTubeManager._timedtext_url("dQw4w9WgXcQ", "tr")
     assert url == "https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&lang=tr&fmt=json3"
 
@@ -99,6 +104,7 @@ def test_timedtext_url_and_normalize_transcript_events():
 
 
 def test_fetch_transcript_invalid_video_id_short_circuit():
+    """Fetch transcript invalid video id short circuit."""
     manager = YouTubeManager()
 
     result = asyncio.run(manager.fetch_transcript("bad"))
@@ -111,6 +117,7 @@ def test_fetch_transcript_invalid_video_id_short_circuit():
 
 
 def test_fetch_transcript_uses_language_fallback_and_custom_timeout():
+    """Fetch transcript uses language fallback and custom timeout."""
     responses = {
         "tr": _DummyResponse(404, {}),
         "en": _DummyResponse(
@@ -134,6 +141,7 @@ def test_fetch_transcript_uses_language_fallback_and_custom_timeout():
 
 
 def test_fetch_transcript_returns_not_found_when_no_language_has_text():
+    """Fetch transcript returns not found when no language has text."""
     responses = {
         "tr": _DummyResponse(200, {"events": [{"segs": [{"utf8": "   "}]}]}),
         "en": _DummyResponse(200, {"events": "not-a-list"}),
@@ -153,6 +161,7 @@ def test_fetch_transcript_returns_not_found_when_no_language_has_text():
 
 
 def test_analyze_video_file_errors_for_missing_path_and_missing_llm(tmp_path):
+    """Analyze video file errors for missing path and missing llm."""
     manager_without_llm = YouTubeManager()
 
     missing_result = asyncio.run(manager_without_llm.analyze_video_file(tmp_path / "missing.mp4"))
@@ -167,6 +176,7 @@ def test_analyze_video_file_errors_for_missing_path_and_missing_llm(tmp_path):
 
 
 def test_analyze_video_file_success_flow(monkeypatch, tmp_path):
+    """Analyze video file success flow."""
     video_file = tmp_path / "clip.mp4"
     video_file.write_bytes(b"fake")
     llm_client = object()
@@ -257,6 +267,7 @@ def test_analyze_video_file_success_flow(monkeypatch, tmp_path):
 
 
 def test_build_video_analysis_propagates_failure(monkeypatch):
+    """Build video analysis propagates failure."""
     manager = YouTubeManager()
 
     async def fake_fetch(video_url, *, languages=None):
@@ -296,6 +307,7 @@ def test_build_video_analysis_propagates_failure(monkeypatch):
 
 
 def test_build_video_analysis_success_adds_video_identity(monkeypatch):
+    """Build video analysis success adds video identity."""
     manager = YouTubeManager()
 
     async def fake_fetch(video_url, *, languages=None):
@@ -334,6 +346,7 @@ def test_build_video_analysis_success_adds_video_identity(monkeypatch):
 
 
 def test_youtube_manager_test_module_bootstrap_injects_httpx_stub_when_missing():
+    """Youtube manager test module bootstrap injects httpx stub when missing."""
     actual_httpx = sys.modules["httpx"]
     sys.modules["httpx"] = None
 
@@ -353,6 +366,7 @@ def test_youtube_manager_test_module_bootstrap_injects_httpx_stub_when_missing()
 
 
 def test_youtube_manager_test_module_bootstrap_restores_original_httpx_module():
+    """Youtube manager test module bootstrap restores original httpx module."""
     actual_httpx = sys.modules["httpx"]
     original_httpx = SimpleNamespace(AsyncClient=object, marker="original")
     sys.modules["httpx"] = original_httpx

@@ -1,7 +1,10 @@
+"""Unit tests for ``managers.image_resolver``."""
+
 from managers.image_resolver import canonical_project_image_alias, is_gpu_project_image
 
 
 def test_canonical_project_image_alias_handles_empty_unknown_and_default_tag() -> None:
+    """Canonical project image alias handles empty unknown and default tag."""
     prefixes = {"legacy-sidar": "sidar"}
 
     assert canonical_project_image_alias("   ", legacy_prefixes=prefixes) is None
@@ -15,5 +18,6 @@ def test_canonical_project_image_alias_handles_empty_unknown_and_default_tag() -
 
 
 def test_is_gpu_project_image_normalizes_repository_name() -> None:
+    """Is gpu project image normalizes repository name."""
     assert is_gpu_project_image(" SIDAR-GPU:latest ") is True
     assert is_gpu_project_image("sidar:latest") is False

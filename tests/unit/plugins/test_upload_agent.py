@@ -28,6 +28,7 @@ def _load_upload_agent_module(monkeypatch: pytest.MonkeyPatch):
 def test_upload_agent_returns_empty_message_for_blank_prompt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Upload agent returns empty message for blank prompt."""
     module = _load_upload_agent_module(monkeypatch)
     agent = module.UploadAgent()
 
@@ -36,6 +37,7 @@ def test_upload_agent_returns_empty_message_for_blank_prompt(
 
 
 def test_upload_agent_echoes_trimmed_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Upload agent echoes trimmed prompt."""
     module = _load_upload_agent_module(monkeypatch)
     agent = module.UploadAgent()
 

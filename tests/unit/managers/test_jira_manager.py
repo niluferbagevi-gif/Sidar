@@ -1,3 +1,5 @@
+"""Unit tests for ``managers.jira_manager``."""
+
 import asyncio
 import sys
 import types
@@ -52,11 +54,13 @@ def _run(coro):
 
 
 def test_init_client_requires_url_and_token():
+    """Init client requires url and token."""
     mgr = JiraManager(url="", token="")
     assert mgr.is_available() is False
 
 
 def test_init_client_uses_basic_auth_when_email_provided():
+    """Init client uses basic auth when email provided."""
     mgr = JiraManager(
         url="https://example.atlassian.net/", token=" token ", email=" user@example.com "
     )
@@ -70,6 +74,7 @@ def test_init_client_uses_basic_auth_when_email_provided():
 
 
 def test_init_client_uses_bearer_without_email():
+    """Init client uses bearer without email."""
     mgr = JiraManager(url="https://jira.local", token="abc123")
 
     assert mgr.is_available() is True
@@ -78,6 +83,7 @@ def test_init_client_uses_bearer_without_email():
 
 
 def test_request_returns_unavailable_when_not_configured():
+    """Request returns unavailable when not configured."""
     mgr = JiraManager()
 
     ok, data, err = _run(mgr._request("GET", "issue/PROJ-1"))
@@ -88,6 +94,7 @@ def test_request_returns_unavailable_when_not_configured():
 
 
 def test_request_success_with_json(monkeypatch):
+    """Request success with json."""
     captured = {}
 
     def _factory(**kwargs):
@@ -111,6 +118,8 @@ def test_request_success_with_json(monkeypatch):
 
 
 def test_request_success_without_content(monkeypatch):
+    """Request success without content."""
+
     def _factory(**kwargs):
         return _FakeClient(
             response=_FakeResponse(status_code=204, json_data=None, content=b""), **kwargs
@@ -127,6 +136,7 @@ def test_request_success_without_content(monkeypatch):
 
 
 def test_request_handles_http_error(monkeypatch):
+    """Request handles http error."""
     long_text = "x" * 500
 
     def _factory(**kwargs):
@@ -146,6 +156,8 @@ def test_request_handles_http_error(monkeypatch):
 
 
 def test_request_handles_exception(monkeypatch):
+    """Request handles exception."""
+
     def _factory(**kwargs):
         return _FakeClient(exc=RuntimeError("boom"), **kwargs)
 
@@ -160,6 +172,7 @@ def test_request_handles_exception(monkeypatch):
 
 
 def test_create_issue_requires_project_key():
+    """Create issue requires project key."""
     mgr = JiraManager(url="https://jira.local", token="abc")
 
     ok, data, err = _run(mgr.create_issue(summary="Test"))
@@ -170,6 +183,7 @@ def test_create_issue_requires_project_key():
 
 
 def test_create_issue_builds_payload(monkeypatch):
+    """Create issue builds payload."""
     mgr = JiraManager(url="https://jira.local", token="abc", default_project="DEF")
     captured = {}
 
@@ -208,6 +222,7 @@ def test_create_issue_builds_payload(monkeypatch):
 
 
 def test_create_issue_returns_empty_dict_when_no_data(monkeypatch):
+    """Create issue returns empty dict when no data."""
     mgr = JiraManager(url="https://jira.local", token="abc", default_project="DEF")
 
     async def _fake_request(*args, **kwargs):
@@ -223,6 +238,7 @@ def test_create_issue_returns_empty_dict_when_no_data(monkeypatch):
 
 
 def test_get_issue_returns_empty_dict_on_none(monkeypatch):
+    """Get issue returns empty dict on none."""
     mgr = JiraManager(url="https://jira.local", token="abc")
 
     async def _fake_request(*args, **kwargs):
@@ -238,6 +254,7 @@ def test_get_issue_returns_empty_dict_on_none(monkeypatch):
 
 
 def test_update_issue(monkeypatch):
+    """Update issue."""
     mgr = JiraManager(url="https://jira.local", token="abc")
     captured = {}
 
@@ -261,6 +278,7 @@ def test_update_issue(monkeypatch):
 
 
 def test_transition_issue_fails_when_transition_list_request_fails(monkeypatch):
+    """Transition issue fails when transition list request fails."""
     mgr = JiraManager(url="https://jira.local", token="abc")
 
     async def _fake_request(*args, **kwargs):
@@ -275,6 +293,7 @@ def test_transition_issue_fails_when_transition_list_request_fails(monkeypatch):
 
 
 def test_transition_issue_fails_when_transition_not_found(monkeypatch):
+    """Transition issue fails when transition not found."""
     mgr = JiraManager(url="https://jira.local", token="abc")
 
     async def _fake_request(method, endpoint, **kwargs):
@@ -294,12 +313,14 @@ def test_transition_issue_fails_when_transition_not_found(monkeypatch):
 
 
 def test_ensure_httpx_stub_adds_stub_when_missing(monkeypatch):
+    """Ensure httpx stub adds stub when missing."""
     monkeypatch.delitem(sys.modules, "httpx", raising=False)
     _ensure_httpx_stub()
     assert "httpx" in sys.modules
 
 
 def test_transition_issue_success_with_case_insensitive_match(monkeypatch):
+    """Transition issue success with case insensitive match."""
     mgr = JiraManager(url="https://jira.local", token="abc")
     calls = []
 
@@ -323,6 +344,7 @@ def test_transition_issue_success_with_case_insensitive_match(monkeypatch):
 
 
 def test_add_comment(monkeypatch):
+    """Add comment."""
     mgr = JiraManager(url="https://jira.local", token="abc")
     captured = {}
 
@@ -343,6 +365,7 @@ def test_add_comment(monkeypatch):
 
 
 def test_add_comment_returns_empty_dict_when_data_none(monkeypatch):
+    """Add comment returns empty dict when data none."""
     mgr = JiraManager(url="https://jira.local", token="abc")
 
     async def _fake_request(*args, **kwargs):
@@ -358,6 +381,7 @@ def test_add_comment_returns_empty_dict_when_data_none(monkeypatch):
 
 
 def test_search_issues_returns_error_when_request_fails(monkeypatch):
+    """Search issues returns error when request fails."""
     mgr = JiraManager(url="https://jira.local", token="abc")
 
     async def _fake_request(*args, **kwargs):
@@ -373,6 +397,7 @@ def test_search_issues_returns_error_when_request_fails(monkeypatch):
 
 
 def test_search_issues_simplifies_results_and_caps_max_results(monkeypatch):
+    """Search issues simplifies results and caps max results."""
     mgr = JiraManager(url="https://jira.local", token="abc")
     captured = {}
 
@@ -429,6 +454,7 @@ def test_search_issues_simplifies_results_and_caps_max_results(monkeypatch):
 
 
 def test_search_issues_uses_default_fields(monkeypatch):
+    """Search issues uses default fields."""
     mgr = JiraManager(url="https://jira.local", token="abc")
     captured = {}
 
@@ -453,6 +479,7 @@ def test_search_issues_uses_default_fields(monkeypatch):
 
 
 def test_list_projects_handles_error(monkeypatch):
+    """List projects handles error."""
     mgr = JiraManager(url="https://jira.local", token="abc")
 
     async def _fake_request(*args, **kwargs):
@@ -468,6 +495,7 @@ def test_list_projects_handles_error(monkeypatch):
 
 
 def test_list_projects_simplifies_output(monkeypatch):
+    """List projects simplifies output."""
     mgr = JiraManager(url="https://jira.local", token="abc")
 
     async def _fake_request(*args, **kwargs):
@@ -486,6 +514,7 @@ def test_list_projects_simplifies_output(monkeypatch):
 
 
 def test_get_project_statuses_handles_error(monkeypatch):
+    """Get project statuses handles error."""
     mgr = JiraManager(url="https://jira.local", token="abc")
 
     async def _fake_request(*args, **kwargs):
@@ -501,6 +530,7 @@ def test_get_project_statuses_handles_error(monkeypatch):
 
 
 def test_get_project_statuses_deduplicates_and_skips_empty(monkeypatch):
+    """Get project statuses deduplicates and skips empty."""
     mgr = JiraManager(url="https://jira.local", token="abc")
 
     async def _fake_request(*args, **kwargs):

@@ -1,3 +1,5 @@
+"""Unit tests for ``managers.code.runner``."""
+
 from __future__ import annotations
 
 from typing import get_type_hints
@@ -49,6 +51,7 @@ class _ManagerWithoutSandbox:
 def test_production_full_access_routes_shell_to_container_without_host_execution(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Production full access routes shell to container without host execution."""
     manager = _Manager("production")
     monkeypatch.setattr(
         "managers.code.runner.subprocess.run",
@@ -61,10 +64,12 @@ def test_production_full_access_routes_shell_to_container_without_host_execution
 
 
 def test_non_production_shell_does_not_require_container() -> None:
+    """Non production shell does not require container."""
     assert requires_container_shell(_Manager("development")) is False
 
 
 def test_production_propagates_sandbox_delegate_failure() -> None:
+    """Production propagates sandbox delegate failure."""
     manager = _FailingSandboxManager("production")
 
     result = run_shell_command(manager, "exit 7", cwd="/workspace")
@@ -74,6 +79,7 @@ def test_production_propagates_sandbox_delegate_failure() -> None:
 
 
 def test_production_fails_closed_without_sandbox_runner() -> None:
+    """Production fails closed without sandbox runner."""
     manager = _ManagerWithoutSandbox()
 
     ok, message = run_shell_command(manager, "echo safe")
@@ -83,12 +89,14 @@ def test_production_fails_closed_without_sandbox_runner() -> None:
 
 
 def test_sandbox_runner_protocol_declares_tuple_result_contract() -> None:
+    """Sandbox runner protocol declares tuple result contract."""
     return_type = get_type_hints(SandboxRunner.__call__)["return"]
 
     assert return_type == tuple[bool, str]
 
 
 def test_build_sanitized_shell_args_rejects_unclosed_quotes_without_shell_features() -> None:
+    """Build sanitized shell args rejects unclosed quotes without shell features."""
     with pytest.raises(ValueError, match="No closing quotation"):
         build_sanitized_shell_args(
             'python -c "print(1)',
@@ -99,6 +107,7 @@ def test_build_sanitized_shell_args_rejects_unclosed_quotes_without_shell_featur
 
 @pytest.mark.parametrize("command", ["", "   ", "\t\n"])
 def test_build_sanitized_shell_args_rejects_empty_commands(command: str) -> None:
+    """Build sanitized shell args rejects empty commands."""
     with pytest.raises(ValueError, match="ayrıştırılamadı"):
         build_sanitized_shell_args(
             command,
@@ -108,6 +117,7 @@ def test_build_sanitized_shell_args_rejects_empty_commands(command: str) -> None
 
 
 def test_build_sanitized_shell_args_rejects_nul_bytes_before_splitting() -> None:
+    """Build sanitized shell args rejects nul bytes before splitting."""
     with pytest.raises(ValueError, match="NUL"):
         build_sanitized_shell_args(
             "echo ok\x00",
@@ -117,6 +127,7 @@ def test_build_sanitized_shell_args_rejects_nul_bytes_before_splitting() -> None
 
 
 def test_build_sanitized_shell_args_returns_plain_argv_without_shell_features() -> None:
+    """Build sanitized shell args returns plain argv without shell features."""
     assert build_sanitized_shell_args(
         "python -m pytest -q",
         allow_shell_features=False,
@@ -125,6 +136,8 @@ def test_build_sanitized_shell_args_returns_plain_argv_without_shell_features() 
 
 
 def test_build_sanitized_shell_args_prefers_bash_for_shell_features() -> None:
+    """Build sanitized shell args prefers bash for shell features."""
+
     def _find_executable(name: str) -> str | None:
         return "/bin/bash" if name == "bash" else None
 
@@ -136,6 +149,8 @@ def test_build_sanitized_shell_args_prefers_bash_for_shell_features() -> None:
 
 
 def test_build_sanitized_shell_args_falls_back_to_sh_when_bash_missing() -> None:
+    """Build sanitized shell args falls back to sh when bash missing."""
+
     def _find_executable(name: str) -> str | None:
         return "/bin/sh" if name == "sh" else None
 
@@ -147,6 +162,7 @@ def test_build_sanitized_shell_args_falls_back_to_sh_when_bash_missing() -> None
 
 
 def test_build_sanitized_shell_args_rejects_shell_features_without_interpreter() -> None:
+    """Build sanitized shell args rejects shell features without interpreter."""
     with pytest.raises(ValueError, match="bash/sh"):
         build_sanitized_shell_args(
             "echo ok && pwd",
@@ -180,6 +196,7 @@ def test_build_sanitized_shell_args_rejects_shell_features_without_interpreter()
 def test_find_destructive_shell_pattern_blocks_high_risk_variants(
     command: str, expected_fragment: str
 ) -> None:
+    """Find destructive shell pattern blocks high risk variants."""
     detected = find_destructive_shell_pattern(command)
 
     assert detected is not None
@@ -199,6 +216,7 @@ def test_find_destructive_shell_pattern_blocks_high_risk_variants(
 def test_find_destructive_shell_pattern_fails_closed_for_dynamic_or_unparseable_segments(
     command: str,
 ) -> None:
+    """Find destructive shell pattern fails closed for dynamic or unparseable segments."""
     assert find_destructive_shell_pattern(command) is not None
 
 
@@ -215,4 +233,5 @@ def test_find_destructive_shell_pattern_fails_closed_for_dynamic_or_unparseable_
 def test_find_destructive_shell_pattern_allows_relative_non_recursive_maintenance(
     command: str,
 ) -> None:
+    """Find destructive shell pattern allows relative non recursive maintenance."""
     assert find_destructive_shell_pattern(command) is None

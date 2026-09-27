@@ -54,5 +54,6 @@ def test_getattr_resolves_module_name_for_monkeypatch_access(
 
 
 def test_getattr_raises_attribute_error_for_unknown_name():
+    """Getattr raises attribute error for unknown name."""
     with pytest.raises(AttributeError, match="has no attribute 'UnknownManager'"):
         managers.__getattr__("UnknownManager")

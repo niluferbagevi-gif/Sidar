@@ -1,3 +1,5 @@
+"""Unit tests for ``managers.github_manager``."""
+
 from __future__ import annotations
 
 import sys
@@ -15,6 +17,7 @@ from tests.fixtures.github_mocks import Err404, FileMock, IssueMock, PRMock, Rep
 
 @pytest.fixture
 def manager(monkeypatch):
+    """Return a GitHubManager wired to an in-memory repository mock."""
     monkeypatch.setattr(GitHubManager, "_init_client", lambda self: None)
     m = GitHubManager(token=" token\u00f6 ", repo_name="", require_token=False)
     m._available = True
@@ -24,6 +27,7 @@ def manager(monkeypatch):
 
 
 def test_is_not_found_error_variants():
+    """Is not found error variants."""
     assert _is_not_found_error(Err404("x")) is True
     assert _is_not_found_error(RuntimeError("404 gone")) is True
     assert _is_not_found_error(RuntimeError("Not Found")) is True
@@ -31,6 +35,8 @@ def test_is_not_found_error_variants():
 
 
 def test_is_retryable_github_error_status_and_message_paths():
+    """Is retryable github error status and message paths."""
+
     class HttpErr(RuntimeError):
         def __init__(self, msg: str, status: int | None = None):
             super().__init__(msg)
@@ -43,12 +49,14 @@ def test_is_retryable_github_error_status_and_message_paths():
 
 
 def test_init_token_cleanup_without_client_init(monkeypatch):
+    """Init token cleanup without client init."""
     monkeypatch.setattr(GitHubManager, "_init_client", lambda self: None)
     m = GitHubManager(token=" tok\u00e9n ")
     assert m.token == "tokn"
 
 
 def test_init_client_no_token_optional(caplog):
+    """Init client no token optional."""
     m = GitHubManager(token="", repo_name="", require_token=False)
     m._init_client()
 
@@ -57,11 +65,13 @@ def test_init_client_no_token_optional(caplog):
 
 
 def test_init_client_requires_token():
+    """Init client requires token."""
     with pytest.raises(ValueError):
         GitHubManager(token="", repo_name="x/y", require_token=True)
 
 
 def test_init_client_rechecks_missing_token_for_deferred_repo_configuration() -> None:
+    """Init client rechecks missing token for deferred repo configuration."""
     m = GitHubManager(token="", repo_name="", require_token=False)
     m.repo_name = "octo/demo"
 
@@ -70,6 +80,7 @@ def test_init_client_rechecks_missing_token_for_deferred_repo_configuration() ->
 
 
 def test_load_repo_and_set_repo_paths(manager):
+    """Load repo and set repo paths."""
     manager._gh = SimpleNamespace(get_repo=lambda name: SimpleNamespace(name=name))
     assert manager._load_repo("a/b") is True
     assert manager.repo_name == "a/b"
@@ -78,6 +89,7 @@ def test_load_repo_and_set_repo_paths(manager):
 
 
 def test_load_repo_failure_and_set_repo_unavailable(manager):
+    """Load repo failure and set repo unavailable."""
     manager._gh = SimpleNamespace(get_repo=lambda _: (_ for _ in ()).throw(RuntimeError("x")))
     assert manager._load_repo("x") is False
     manager._available = False
@@ -86,6 +98,7 @@ def test_load_repo_failure_and_set_repo_unavailable(manager):
 
 
 def test_load_repo_retry_error_path(manager):
+    """Load repo retry error path."""
     future = Future(1)
     future.set_exception(RuntimeError("rate limited"))
     manager._call_with_retry = lambda *a, **k: (_ for _ in ()).throw(RetryError(future))
@@ -94,6 +107,7 @@ def test_load_repo_retry_error_path(manager):
 
 
 def test_load_repo_without_client_and_set_repo_failed_lookup(manager):
+    """Load repo without client and set repo failed lookup."""
     manager._gh = None
     assert manager._load_repo("x/y") is False
 
@@ -104,6 +118,7 @@ def test_load_repo_without_client_and_set_repo_failed_lookup(manager):
 
 
 def test_list_repos_self_and_owner_and_error(manager):
+    """List repos self and owner and error."""
     owner_repo = SimpleNamespace(full_name="org/r", default_branch="main", private=False)
     user_repo = SimpleNamespace(full_name="me/r", default_branch="dev", private=True)
     org_account = SimpleNamespace(type="Organization", get_repos=lambda type: [owner_repo])
@@ -120,6 +135,7 @@ def test_list_repos_self_and_owner_and_error(manager):
 
 
 def test_list_repos_limit_break_and_exception(manager):
+    """List repos limit break and exception."""
     repos = [
         SimpleNamespace(full_name="me/r1", default_branch="main", private=False),
         SimpleNamespace(full_name="me/r2", default_branch="dev", private=True),
@@ -137,6 +153,7 @@ def test_list_repos_limit_break_and_exception(manager):
 
 
 def test_get_repo_info_success_and_error(manager):
+    """Get repo info success and error."""
     manager._repo.get_issues = lambda state: SimpleNamespace(totalCount=5)
     ok, text = manager.get_repo_info()
     assert ok is True and "[Depo Bilgisi]" in text and "Açık PR" in text
@@ -157,6 +174,7 @@ def test_get_repo_info_success_and_error(manager):
 
 
 def test_list_commits_and_read_remote_file(manager):
+    """List commits and read remote file."""
     ok, text = manager.list_commits(limit=2, branch="main")
     assert ok is True and "Son 2 Commit" in text
     manager._repo.get_commits = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("boom"))
@@ -177,6 +195,7 @@ def test_list_commits_and_read_remote_file(manager):
 
 
 def test_list_commits_handles_large_volume(manager):
+    """List commits handles large volume."""
     manager._repo.get_commits = lambda **kwargs: [
         SimpleNamespace(
             sha=str(i),
@@ -194,6 +213,8 @@ def test_list_commits_handles_large_volume(manager):
 
 
 def test_read_remote_file_decode_and_exception_paths(manager):
+    """Read remote file decode and exception paths."""
+
     class BadDecode:
         name = "ok.txt"
 
@@ -209,12 +230,14 @@ def test_read_remote_file_decode_and_exception_paths(manager):
 
 
 def test_read_remote_file_with_ref_kwarg(manager):
+    """Read remote file with ref kwarg."""
     manager._repo._contents[("ok.txt", "feat/x")] = FileMock("ok.txt", decoded_content=b"hello ref")
     ok, content = manager.read_remote_file("ok.txt", ref="feat/x")
     assert (ok, content) == (True, "hello ref")
 
 
 def test_branches_and_files_listing(manager):
+    """Branches and files listing."""
     ok, text = manager.list_branches(limit=5)
     assert ok is True and "* main" in text
     manager._repo.get_branches = lambda: (_ for _ in ()).throw(RuntimeError("boom"))
@@ -231,12 +254,14 @@ def test_branches_and_files_listing(manager):
 
 
 def test_list_files_branch_and_single_item(manager):
+    """List files branch and single item."""
     manager._repo._contents[("README.md", "dev")] = FileMock("README.md")
     ok, text = manager.list_files(path="README.md", branch="dev")
     assert ok is True and "README.md" in text
 
 
 def test_create_or_update_file_paths(manager):
+    """Create or update file paths."""
     manager._repo._contents[("x.txt", None)] = FileMock("x.txt", sha="s1")
     ok, msg = manager.create_or_update_file("x.txt", "new", "m")
     assert ok is True and "güncellendi" in msg and manager._repo.update_calls
@@ -248,6 +273,7 @@ def test_create_or_update_file_paths(manager):
 
 
 def test_create_or_update_file_write_exception(manager):
+    """Create or update file write exception."""
     manager._repo._contents[("x.txt", None)] = FileMock("x.txt", sha="s1")
     manager._repo.update_file = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("write boom"))
     ok, msg = manager.create_or_update_file("x.txt", "new", "msg")
@@ -309,6 +335,7 @@ def test_init_client_handles_github_constructor_returning_none(monkeypatch, capl
 
 
 def test_branch_and_pr_operations(manager):
+    """Branch and pr operations."""
     assert manager.create_branch("bad name")[0] is False
     ok, _ = manager.create_branch("feat/x", from_branch="main")
     assert ok is True and manager._repo.git_ref_call["ref"].endswith("feat/x")
@@ -320,6 +347,7 @@ def test_branch_and_pr_operations(manager):
 
 
 def test_list_and_get_prs_and_comments(manager):
+    """List and get prs and comments."""
     pr = PRMock(many_files=True)
     manager._repo._pulls = [pr]
     ok, text = manager.list_pull_requests(state="OPEN", limit=1)
@@ -348,6 +376,7 @@ def test_list_and_get_prs_and_comments(manager):
 
 
 def test_issue_related_methods(manager):
+    """Issue related methods."""
     issue = IssueMock(number=1, title="bug")
     manager._repo._issues = [issue, IssueMock(number=2, is_pr=True)]
     ok, items = manager.list_issues(state="OPEN", limit=10)
@@ -367,6 +396,7 @@ def test_issue_related_methods(manager):
 
 
 def test_merge_pull_request_success_and_missing_repo_paths(manager):
+    """Merge pull request success and missing repo paths."""
     manager._repo = None
     assert manager.merge_pull_request(5) == (False, "Aktif depo yok.")
 
@@ -386,6 +416,7 @@ def test_merge_pull_request_success_and_missing_repo_paths(manager):
 
 
 def test_merge_pull_request_rejects_invalid_method_before_api_call(manager):
+    """Merge pull request rejects invalid method before api call."""
     manager._repo.get_pull = lambda _number: (_ for _ in ()).throw(AssertionError("api touched"))
 
     ok, msg = manager.merge_pull_request(5, merge_method="fast-forward")
@@ -395,6 +426,7 @@ def test_merge_pull_request_rejects_invalid_method_before_api_call(manager):
 
 
 def test_merge_pull_request_reports_github_merged_false(manager):
+    """Merge pull request reports github merged false."""
     merge_calls = []
 
     class MergeablePR:
@@ -414,6 +446,8 @@ def test_merge_pull_request_reports_github_merged_false(manager):
 
 
 def test_merge_pull_request_reports_branch_protection_exception(manager):
+    """Merge pull request reports branch protection exception."""
+
     class BranchProtectionError(RuntimeError):
         status = 403
 
@@ -431,6 +465,8 @@ def test_merge_pull_request_reports_branch_protection_exception(manager):
 
 
 def test_merge_pull_request_reports_generic_exception(manager):
+    """Merge pull request reports generic exception."""
+
     class BrokenPR:
         def merge(self, **_kwargs):
             raise RuntimeError("api unavailable")
@@ -441,6 +477,7 @@ def test_merge_pull_request_reports_generic_exception(manager):
 
 
 def test_list_issues_filters_pull_requests_and_normalizes_state_and_limit(manager):
+    """List issues filters pull requests and normalizes state and limit."""
     issue = IssueMock(number=11, title="real bug", user="maintainer")
     pull_request_issue = IssueMock(number=12, title="pr mirror", is_pr=True)
     manager._repo._issues = [pull_request_issue, issue]
@@ -460,6 +497,7 @@ def test_list_issues_filters_pull_requests_and_normalizes_state_and_limit(manage
 
 
 def test_issue_create_comment_and_close_exception_messages(manager):
+    """Issue create comment and close exception messages."""
     manager._repo.create_issue = lambda **_kwargs: (_ for _ in ()).throw(
         RuntimeError("create down")
     )
@@ -475,6 +513,7 @@ def test_issue_create_comment_and_close_exception_messages(manager):
 
 
 def test_diff_files_search_status_and_repr(manager, caplog):
+    """Diff files search status and repr."""
     pr = PRMock(many_files=False)
     manager._repo._pulls = [pr]
     ok, diff = manager.get_pull_request_diff(5)
@@ -511,6 +550,7 @@ def test_diff_files_search_status_and_repr(manager, caplog):
 
 
 def test_get_pull_requests_detailed_and_unavailable(manager):
+    """Get pull requests detailed and unavailable."""
     pr = PRMock()
     manager._repo._pulls = [pr]
     ok, data, err = manager.get_pull_requests_detailed(state="open", limit=1)
@@ -522,6 +562,7 @@ def test_get_pull_requests_detailed_and_unavailable(manager):
 
 
 def test_methods_when_repo_or_connection_missing(monkeypatch):
+    """Methods when repo or connection missing."""
     monkeypatch.setattr(GitHubManager, "_init_client", lambda self: None)
     m = GitHubManager("x")
     m._repo = None
@@ -548,6 +589,7 @@ def test_methods_when_repo_or_connection_missing(monkeypatch):
 
 
 def test_init_client_import_error_and_generic_error(monkeypatch, caplog):
+    """Init client import error and generic error."""
     # ImportError branch: inject a non-module sentinel into sys.modules.
     monkeypatch.setitem(sys.modules, "github", None)
     missing_package = GitHubManager(token="tok")
@@ -574,6 +616,8 @@ def test_init_client_import_error_and_generic_error(monkeypatch, caplog):
 
 
 def test_init_client_success_with_repo_load(monkeypatch):
+    """Init client success with repo load."""
+
     class _FakeAuth:
         @staticmethod
         def Token(token):
@@ -602,6 +646,7 @@ def test_init_client_success_with_repo_load(monkeypatch):
 
 
 def test_ensure_repo_reuses_loaded_repo_and_lazy_loads_configured_name(monkeypatch) -> None:
+    """Ensure repo reuses loaded repo and lazy loads configured name."""
     m = GitHubManager(token="tok")
     loaded_repo = SimpleNamespace(full_name="octo/existing")
     m._repo = cast(Any, loaded_repo)
@@ -623,6 +668,7 @@ def test_ensure_repo_reuses_loaded_repo_and_lazy_loads_configured_name(monkeypat
 
 
 def test_repo_mock_error_branches_for_coverage():
+    """Repo mock error branches for coverage."""
     repo = RepoMock()
 
     with pytest.raises(RuntimeError, match="commit boom"):
@@ -634,6 +680,7 @@ def test_repo_mock_error_branches_for_coverage():
 
 @pytest.mark.asyncio
 async def test_create_pull_request_hitl_rejects_without_approval(manager, monkeypatch):
+    """Create pull request hitl rejects without approval."""
     gate = SimpleNamespace(request_approval=AsyncMock(return_value=False))
     monkeypatch.setattr("managers.github_manager.get_hitl_gate", lambda: gate)
     manager._repo.create_pull = Mock()
@@ -648,6 +695,7 @@ async def test_create_pull_request_hitl_rejects_without_approval(manager, monkey
 
 @pytest.mark.asyncio
 async def test_create_pull_request_hitl_delegates_after_approval(manager, monkeypatch):
+    """Create pull request hitl delegates after approval."""
     gate = SimpleNamespace(request_approval=AsyncMock(return_value=True))
     monkeypatch.setattr("managers.github_manager.get_hitl_gate", lambda: gate)
     manager._repo.create_pull = Mock(wraps=manager._repo.create_pull)
