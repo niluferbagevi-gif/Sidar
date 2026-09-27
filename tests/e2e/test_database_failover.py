@@ -21,6 +21,7 @@ class _RecoveredPool:
 async def test_postgres_down_uses_sqlite_degraded_mode_then_reconnects_to_recovered_pool(
     tmp_path,
 ) -> None:
+    """Postgres down uses sqlite degraded mode then reconnects to recovered pool."""
     fallback_url = f"sqlite+aiosqlite:///{(tmp_path / 'degraded.db').as_posix()}"
     cfg = SimpleNamespace(
         DATABASE_URL="postgresql+asyncpg://sidar:secret@127.0.0.1:5432/sidar",

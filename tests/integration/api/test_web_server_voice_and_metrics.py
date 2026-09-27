@@ -1,3 +1,5 @@
+"""Integration tests for the voice WebSocket and metrics endpoints."""
+
 from __future__ import annotations
 
 import sys
@@ -116,6 +118,7 @@ def _install_voice_mocks(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.integration
 def test_voice_websocket_transcription_error_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Voice websocket transcription error path."""
     _install_voice_mocks(monkeypatch)
     _FakeMultimodalPipeline.next_result = {"success": False, "reason": "stt failed"}
 
@@ -137,6 +140,7 @@ def test_voice_websocket_transcription_error_path(monkeypatch: pytest.MonkeyPatc
 
 @pytest.mark.integration
 def test_voice_websocket_happy_path_and_cancel(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Voice websocket happy path and cancel."""
     _install_voice_mocks(monkeypatch)
     _FakeMultimodalPipeline.next_result = {
         "success": True,

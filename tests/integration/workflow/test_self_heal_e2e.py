@@ -50,6 +50,7 @@ class _MechanicalAutofixCodeManager(CodeManager):
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_self_heal_patch_apply_then_rollback_with_real_file_io(tmp_path) -> None:
+    """Self heal patch apply then rollback with real file io."""
     target = tmp_path / "module.py"
     target.write_text("VALUE = 'old'\n", encoding="utf-8")
     cfg = SimpleNamespace(BASE_DIR=str(tmp_path), DOCKER_IMAGE="python:3.11-slim")
@@ -109,6 +110,7 @@ async def test_self_heal_patch_apply_then_rollback_with_real_file_io(tmp_path) -
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_mechanical_autofix_applies_without_llm_when_validation_passes(tmp_path) -> None:
+    """Mechanical autofix applies without llm when validation passes."""
     target = tmp_path / "module.py"
     target.write_text("VALUE = 'old'\n", encoding="utf-8")
     cfg = SimpleNamespace(BASE_DIR=str(tmp_path), DOCKER_IMAGE="python:3.11-slim")
@@ -144,6 +146,7 @@ async def test_mechanical_autofix_applies_without_llm_when_validation_passes(tmp
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_mechanical_autofix_reverts_when_validation_still_fails(tmp_path) -> None:
+    """Mechanical autofix reverts when validation still fails."""
     target = tmp_path / "module.py"
     original_content = 'VALUE = "old"\n'
     target.write_text(original_content, encoding="utf-8")
@@ -177,6 +180,7 @@ async def test_mechanical_autofix_reverts_when_validation_still_fails(tmp_path) 
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_mechanical_autofix_skipped_without_autofix_commands(tmp_path) -> None:
+    """Mechanical autofix skipped without autofix commands."""
     cfg = SimpleNamespace(BASE_DIR=str(tmp_path), DOCKER_IMAGE="python:3.11-slim")
     security = SecurityManager(access_level="full", base_dir=tmp_path, cfg=cfg)
     manager = _MechanicalAutofixCodeManager(

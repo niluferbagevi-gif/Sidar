@@ -1,3 +1,5 @@
+"""Integration tests for the web server API over an ASGI client."""
+
 from __future__ import annotations
 
 import asyncio
@@ -51,6 +53,7 @@ class _DbBackedMemory:
 
 @pytest_asyncio.fixture
 async def web_api_client(monkeypatch: pytest.MonkeyPatch, sqlite_db: Database):
+    """Yield an ASGI client for ``web_server.app`` backed by SQLite with stubbed agent and auth."""
     fake_agent = SimpleNamespace(memory=_DbBackedMemory(sqlite_db), system_prompt="")
     original_overrides = app.dependency_overrides.copy()
 
@@ -156,6 +159,7 @@ async def test_asgi_middleware_chain_enforces_acl_without_dependency_overrides(
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_auth_register_and_login_flow_returns_tokens(web_api_client) -> None:
+    """Auth register and login flow returns tokens."""
     client, sqlite_db, _fake_agent = web_api_client
 
     register_response = await client.post(
@@ -184,6 +188,7 @@ async def test_auth_register_and_login_flow_returns_tokens(web_api_client) -> No
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_admin_prompt_routes_persist_and_activate_prompt(web_api_client) -> None:
+    """Admin prompt routes persist and activate prompt."""
     client, _sqlite_db, _fake_agent = web_api_client
     admin_headers = {"Authorization": "Bearer token-for-admin"}
     baseline_list_response = await client.get(
@@ -229,6 +234,7 @@ async def test_admin_prompt_routes_persist_and_activate_prompt(web_api_client) -
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_admin_routes_reject_non_admin_users(web_api_client) -> None:
+    """Admin routes reject non admin users."""
     client, _, _fake_agent = web_api_client
 
     original_overrides = app.dependency_overrides.copy()
@@ -249,6 +255,7 @@ async def test_admin_routes_reject_non_admin_users(web_api_client) -> None:
 async def test_auth_me_rejects_invalid_token_and_memory_sync_methods_are_callable(
     web_api_client,
 ) -> None:
+    """Auth me rejects invalid token and memory sync methods are callable."""
     client, _sqlite_db, fake_agent = web_api_client
 
     unauthorized_response = await client.get(
@@ -262,6 +269,7 @@ async def test_auth_me_rejects_invalid_token_and_memory_sync_methods_are_callabl
 
 @pytest.mark.integration
 def test_chat_websocket_streams_agent_chunks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Chat websocket streams agent chunks."""
     mock_db = Mock(spec=Database)
     fake_agent = SimpleNamespace(memory=_DbBackedMemory(mock_db), system_prompt="")
 
@@ -310,6 +318,7 @@ def test_chat_websocket_streams_agent_chunks(monkeypatch: pytest.MonkeyPatch) ->
 
 @pytest.mark.integration
 def test_chat_websocket_rejects_invalid_auth_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Chat websocket rejects invalid auth token."""
     mock_db = Mock(spec=Database)
     fake_agent = SimpleNamespace(memory=_DbBackedMemory(mock_db), system_prompt="")
 
@@ -346,6 +355,8 @@ def test_chat_websocket_rejects_invalid_auth_token(monkeypatch: pytest.MonkeyPat
 def test_chat_websocket_header_token_auth_and_room_error_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Chat websocket header token auth and room error paths."""
+
     class _Memory:
         active_session_id = None
 
@@ -409,6 +420,7 @@ def test_chat_websocket_header_token_auth_and_room_error_paths(
 def test_chat_websocket_auth_required_and_missing_token_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Chat websocket auth required and missing token paths."""
     mock_db = Mock(spec=Database)
     fake_agent = SimpleNamespace(memory=_DbBackedMemory(mock_db), system_prompt="")
 
@@ -439,6 +451,8 @@ def test_chat_websocket_auth_required_and_missing_token_paths(
 
 @pytest.mark.integration
 def test_chat_websocket_rate_limit_and_cancel_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Chat websocket rate limit and cancel paths."""
+
     class _Memory:
         def __len__(self):
             return 1
@@ -492,6 +506,8 @@ def test_chat_websocket_rate_limit_and_cancel_paths(monkeypatch: pytest.MonkeyPa
 
 @pytest.mark.integration
 def test_chat_websocket_llm_api_error_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Chat websocket llm api error payload."""
+
     class _Memory:
         def __len__(self):
             return 1

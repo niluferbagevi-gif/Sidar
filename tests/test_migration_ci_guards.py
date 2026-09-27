@@ -56,18 +56,21 @@ def test_packaged_migrations_match_source_tree() -> None:
 
 @pytest.fixture(scope="module")
 def script_directory() -> ScriptDirectory:
+    """Return the Alembic script directory for the repository migrations."""
     cfg = Config(str(PROJECT_ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(PROJECT_ROOT / "migrations"))
     return ScriptDirectory.from_config(cfg)
 
 
 def test_migrations_directory_is_populated() -> None:
+    """Migrations directory is populated."""
     assert MIGRATIONS_DIR.is_dir(), "migrations/versions/ must exist"
     revisions = sorted(p.name for p in MIGRATIONS_DIR.glob("*.py") if p.name != "__init__.py")
     assert revisions, "at least one alembic revision must be present"
 
 
 def test_revision_filenames_use_zero_padded_prefix() -> None:
+    """Revision filenames use zero padded prefix."""
     pattern = re.compile(r"^\d{4}_[a-z0-9_]+\.py$")
     bad = [
         path.name
@@ -78,6 +81,7 @@ def test_revision_filenames_use_zero_padded_prefix() -> None:
 
 
 def test_revision_chain_is_linear_and_unique(script_directory: ScriptDirectory) -> None:
+    """Revision chain is linear and unique."""
     revisions = list(script_directory.walk_revisions())
 
     seen_ids: set[str] = set()
@@ -95,6 +99,7 @@ def test_revision_chain_is_linear_and_unique(script_directory: ScriptDirectory) 
 
 
 def test_revision_chain_walks_from_head_to_base(script_directory: ScriptDirectory) -> None:
+    """Revision chain walks from head to base."""
     head = script_directory.get_current_head()
     assert head is not None
 
@@ -117,6 +122,7 @@ def test_revision_chain_walks_from_head_to_base(script_directory: ScriptDirector
 def test_each_revision_defines_upgrade_and_downgrade_callables(
     script_directory: ScriptDirectory,
 ) -> None:
+    """Each revision defines upgrade and downgrade callables."""
     for revision in script_directory.walk_revisions():
         module = revision.module
         assert hasattr(module, "upgrade") and callable(module.upgrade), (
@@ -128,6 +134,7 @@ def test_each_revision_defines_upgrade_and_downgrade_callables(
 
 
 def test_alembic_default_url_is_documented_as_local_only() -> None:
+    """Alembic default url is documented as local only."""
     for relative_path in ("alembic.ini", "sidar_assets/alembic.ini"):
         config_text = (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
         assert "Local development fallback only" in config_text
@@ -136,6 +143,7 @@ def test_alembic_default_url_is_documented_as_local_only() -> None:
 
 
 def test_alembic_env_rejects_local_fallback_in_production() -> None:
+    """Alembic env rejects local fallback in production."""
     for relative_path in ("migrations/env.py", "sidar_assets/migrations/env.py"):
         env_text = (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
         assert "LOCAL_DEV_FALLBACK_DATABASE_URL" in env_text
@@ -145,6 +153,7 @@ def test_alembic_env_rejects_local_fallback_in_production() -> None:
 
 
 def test_alembic_documentation_uses_supported_asyncpg_driver() -> None:
+    """Alembic documentation uses supported asyncpg driver."""
     for relative_path in (
         "README.md",
         "docs/module-notes/runbooks/production-cutover-playbook.md.md",
@@ -155,6 +164,7 @@ def test_alembic_documentation_uses_supported_asyncpg_driver() -> None:
 
 
 def test_alembic_revision_creation_uses_modern_naming_defaults() -> None:
+    """Alembic revision creation uses modern naming defaults."""
     expected_options = {
         "file_template": "%(year)d_%(month).2d_%(day).2d_%(rev)s_%(slug)s",
         "truncate_slug_length": "60",

@@ -28,6 +28,7 @@ def _disabled_cfg() -> SimpleNamespace:
 
 @pytest.mark.asyncio
 async def test_feedback_store_disabled_short_circuits_record_and_export() -> None:
+    """Feedback store disabled short circuits record and export."""
     store = FeedbackStore(database_url="sqlite+aiosqlite:///:memory:", config=_disabled_cfg())
 
     assert store.enabled is False
@@ -48,6 +49,7 @@ async def test_feedback_store_disabled_short_circuits_record_and_export() -> Non
 
 @pytest.mark.asyncio
 async def test_dataset_exporter_rejects_unsupported_format() -> None:
+    """Dataset exporter rejects unsupported format."""
     store = FeedbackStore(config=_disabled_cfg())
     exporter = DatasetExporter(store)
 
@@ -57,6 +59,7 @@ async def test_dataset_exporter_rejects_unsupported_format() -> None:
 
 @pytest.mark.asyncio
 async def test_dataset_exporter_returns_zero_count_when_disabled(tmp_path) -> None:
+    """Dataset exporter returns zero count when disabled."""
     store = FeedbackStore(config=_disabled_cfg())
     exporter = DatasetExporter(store)
 
@@ -69,6 +72,7 @@ async def test_dataset_exporter_returns_zero_count_when_disabled(tmp_path) -> No
 
 
 def test_module_factories_return_singletons() -> None:
+    """Module factories return singletons."""
     cfg = _disabled_cfg()
 
     store_a = get_feedback_store(cfg)
@@ -82,6 +86,7 @@ def test_module_factories_return_singletons() -> None:
 
 
 def test_continuous_learning_pipeline_disabled_by_default() -> None:
+    """Continuous learning pipeline disabled by default."""
     cfg = SimpleNamespace(ENABLE_ACTIVE_LEARNING=False)
     store = FeedbackStore(config=cfg)
     pipeline = ContinuousLearningPipeline(store=store, config=cfg)

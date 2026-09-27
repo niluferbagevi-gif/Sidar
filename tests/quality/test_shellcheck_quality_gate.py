@@ -1,3 +1,5 @@
+"""Tests for the ShellCheck quality gate over tracked shell scripts."""
+
 from __future__ import annotations
 
 import shutil
@@ -29,6 +31,7 @@ def _tracked_shell_targets() -> list[str]:
 
 
 def test_shellcheck_quality_gate_covers_tracked_shell_scripts() -> None:
+    """Shellcheck quality gate covers tracked shell scripts."""
     targets = _tracked_shell_targets()
 
     assert "install_sidar.sh" in targets
@@ -39,6 +42,7 @@ def test_shellcheck_quality_gate_covers_tracked_shell_scripts() -> None:
 
 
 def test_shellcheck_quality_gate_passes_for_tracked_shell_scripts() -> None:
+    """Shellcheck quality gate passes for tracked shell scripts."""
     shellcheck = shutil.which("shellcheck")
     assert shellcheck is not None, "shellcheck-py must expose the shellcheck executable via uv"
 

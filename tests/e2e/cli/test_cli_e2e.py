@@ -1,3 +1,5 @@
+"""End-to-end CLI tests against a real agent and a mock Ollama server."""
+
 import http.client
 import importlib.util
 import json
@@ -121,6 +123,7 @@ def _isolated_cli_env(
 
 @pytest.fixture
 def mock_ollama_server():
+    """Run a local mock Ollama HTTP server in a background thread for the test."""
     server = _ThreadedTCPServer(("127.0.0.1", 0), _MockOllamaHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -135,6 +138,7 @@ def mock_ollama_server():
 def test_cli_command_runs_end_to_end_with_real_agent_and_mocked_llm(
     tmp_path: Path, mock_ollama_server
 ) -> None:
+    """Cli command runs end to end with real agent and mocked llm."""
     if importlib.util.find_spec("pydantic") is None:
         pytest.skip("pydantic kurulu değil; gerçek ajan CLI e2e testi atlanıyor.")
 
@@ -171,6 +175,7 @@ def test_cli_command_runs_end_to_end_with_real_agent_and_mocked_llm(
 
 
 def test_cli_command_timeout_uses_positive_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cli command timeout uses positive env override."""
     monkeypatch.setenv(_CLI_COMMAND_TIMEOUT_ENV, "240")
 
     assert _cli_command_timeout_seconds() == 240
@@ -179,6 +184,7 @@ def test_cli_command_timeout_uses_positive_env_override(monkeypatch: pytest.Monk
 def test_cli_command_timeout_uses_wsl_default_when_no_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Cli command timeout uses wsl default when no override."""
     monkeypatch.delenv(_CLI_COMMAND_TIMEOUT_ENV, raising=False)
     monkeypatch.setenv("WSL_DISTRO_NAME", "Ubuntu")
 
@@ -188,6 +194,7 @@ def test_cli_command_timeout_uses_wsl_default_when_no_override(
 def test_cli_command_timeout_keeps_linux_default_for_invalid_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Cli command timeout keeps linux default for invalid override."""
     monkeypatch.setenv(_CLI_COMMAND_TIMEOUT_ENV, "not-a-number")
     monkeypatch.delenv("WSL_DISTRO_NAME", raising=False)
     monkeypatch.setattr(Path, "read_text", lambda self, encoding=None: "linux-generic")
@@ -196,6 +203,7 @@ def test_cli_command_timeout_keeps_linux_default_for_invalid_override(
 
 
 def test_ollama_response_payload_wraps_argument() -> None:
+    """Ollama response payload wraps argument."""
     payload = _ollama_response_payload("echo-value")
     content = json.loads(payload["message"]["content"])
     assert content["thought"] == "CLI e2e mock response"
@@ -206,6 +214,7 @@ def test_ollama_response_payload_wraps_argument() -> None:
 def test_isolated_cli_env_blocks_ambient_ollama_and_proxy_settings(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mock_ollama_server
 ) -> None:
+    """Isolated cli env blocks ambient ollama and proxy settings."""
     monkeypatch.setenv("OLLAMA_URL", "http://127.0.0.1:11434")
     monkeypatch.setenv("OLLAMA_HOST", "http://127.0.0.1:11434")
     monkeypatch.setenv("HTTP_PROXY", "http://proxy.invalid:8080")
@@ -230,6 +239,7 @@ def test_isolated_cli_env_blocks_ambient_ollama_and_proxy_settings(
 def test_cli_command_skips_when_pydantic_missing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mock_ollama_server
 ) -> None:
+    """Cli command skips when pydantic missing."""
     monkeypatch.setattr(importlib.util, "find_spec", lambda _name: None)
 
     with pytest.raises(pytest.skip.Exception):
@@ -239,6 +249,7 @@ def test_cli_command_skips_when_pydantic_missing(
 
 
 def test_mock_ollama_handler_returns_404_for_unknown_path(mock_ollama_server) -> None:
+    """Mock ollama handler returns 404 for unknown path."""
     host, port = mock_ollama_server.server_address
     conn = http.client.HTTPConnection(host, port, timeout=3)
     try:
@@ -252,6 +263,7 @@ def test_mock_ollama_handler_returns_404_for_unknown_path(mock_ollama_server) ->
 
 
 def test_mock_ollama_handler_returns_chat_payload_without_request_body(mock_ollama_server) -> None:
+    """Mock ollama handler returns chat payload without request body."""
     host, port = mock_ollama_server.server_address
     conn = http.client.HTTPConnection(host, port, timeout=3)
     previous_argument = _MockOllamaHandler.response_argument
@@ -271,6 +283,7 @@ def test_mock_ollama_handler_returns_chat_payload_without_request_body(mock_olla
 
 
 def test_mock_ollama_handler_returns_chat_payload(mock_ollama_server) -> None:
+    """Mock ollama handler returns chat payload."""
     host, port = mock_ollama_server.server_address
     previous_argument = _MockOllamaHandler.response_argument
     _MockOllamaHandler.response_argument = "EXPECTED_E2E_ARG"

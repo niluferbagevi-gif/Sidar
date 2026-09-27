@@ -1,3 +1,5 @@
+"""Integration tests for dotenv chain loading and reload in ``config``."""
+
 from __future__ import annotations
 
 import json

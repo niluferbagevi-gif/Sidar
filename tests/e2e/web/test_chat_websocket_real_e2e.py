@@ -90,6 +90,7 @@ class _ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 
 @pytest.fixture
 def mock_ollama_server():
+    """Run a local mock Ollama HTTP server in a background thread for the test."""
     server = _ThreadedTCPServer(("127.0.0.1", 0), _MockOllamaHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()

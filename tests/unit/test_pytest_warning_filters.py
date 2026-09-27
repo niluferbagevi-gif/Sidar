@@ -1,3 +1,5 @@
+"""Tests for the pytest warning filter configuration."""
+
 from __future__ import annotations
 
 import tomllib
@@ -5,6 +7,7 @@ from pathlib import Path
 
 
 def test_pytest_filters_include_sentence_transformers_invalid_escape_rules() -> None:
+    """Pytest filters include sentence transformers invalid escape rules."""
     pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
     data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
     filters = data["tool"]["pytest"]["ini_options"]["filterwarnings"]
@@ -17,6 +20,7 @@ def test_pytest_filters_include_sentence_transformers_invalid_escape_rules() -> 
 
 
 def test_pytest_pydantic_warning_filter_avoids_config_time_pydantic_import() -> None:
+    """Pytest pydantic warning filter avoids config time pydantic import."""
     pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
     data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
     filters = data["tool"]["pytest"]["ini_options"]["filterwarnings"]

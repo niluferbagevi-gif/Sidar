@@ -1,3 +1,5 @@
+"""Tests for the memory encryption key and secret rotation runbooks."""
+
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]

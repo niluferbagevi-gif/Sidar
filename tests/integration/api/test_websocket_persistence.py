@@ -131,6 +131,7 @@ class _FakeWebSocket:
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_websocket_multi_turn_conversation_persists_and_restores_session() -> None:
+    """Websocket multi turn conversation persists and restores session."""
     db = _PersistentChatDb()
     session = await db.create_session("user-1", "Persisted chat")
     memory = _PersistentMemory(db, session.id)

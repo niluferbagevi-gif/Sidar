@@ -1,3 +1,5 @@
+"""Smoke integration tests for the agent catalog, supervisor and self-heal flow."""
+
 from __future__ import annotations
 
 import asyncio
@@ -19,6 +21,7 @@ class _DummyMemory:
 
 @pytest.mark.asyncio
 async def test_agent_catalog_and_auto_handle_heal_flow(tmp_path) -> None:
+    """Agent catalog and auto handle heal flow."""
     log_file = tmp_path / "fail.log"
     log_file.write_text("mypy: error: Incompatible types in assignment", encoding="utf-8")
 
@@ -42,6 +45,7 @@ async def test_agent_catalog_and_auto_handle_heal_flow(tmp_path) -> None:
 
 
 def test_judge_runtime_env_uses_prefixed_values_after_config_import(monkeypatch) -> None:
+    """Judge runtime env uses prefixed values after config import."""
     monkeypatch.setenv("JUDGE_ENABLED", "true")
     monkeypatch.setenv("JUDGE_SAMPLE_RATE", "1")
     monkeypatch.setenv("SIDAR_JUDGE_ENABLED", "false")
@@ -66,6 +70,7 @@ def test_judge_runtime_env_uses_prefixed_values_after_config_import(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_judge_ci_and_federation_smoke(monkeypatch) -> None:
+    """Judge ci and federation smoke."""
     monkeypatch.setenv("SIDAR_JUDGE_ENABLED", "true")
     monkeypatch.setenv("SIDAR_JUDGE_SAMPLE_RATE", "1")
     monkeypatch.setenv("JUDGE_ENABLED", "true")

@@ -1,3 +1,5 @@
+"""Contract tests for the Python runtime in GitHub Actions workflows."""
+
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -34,6 +36,7 @@ def _setup_python_versions(text: str) -> list[str | None]:
 
 
 def test_required_workflows_pin_setup_python_to_311():
+    """Required workflows pin setup python to 311."""
     for workflow in PINNED_WORKFLOWS:
         path = WORKFLOW_DIR / workflow
         assert path.exists(), workflow
@@ -66,6 +69,7 @@ def test_codeql_covers_both_languages_with_security_extended_queries() -> None:
 
 
 def test_workflows_do_not_reintroduce_python_312_or_multi_version_matrix():
+    """Workflows do not reintroduce python 312 or multi version matrix."""
     for workflow_path in WORKFLOW_DIR.glob("*.yml"):
         text = workflow_path.read_text()
         assert "3.12" not in text, workflow_path.name
@@ -75,6 +79,7 @@ def test_workflows_do_not_reintroduce_python_312_or_multi_version_matrix():
 
 
 def test_all_setup_python_steps_in_workflows_use_311():
+    """All setup python steps in workflows use 311."""
     workflow_paths = sorted(WORKFLOW_DIR.glob("*.yml"))
     assert workflow_paths
 
@@ -84,6 +89,7 @@ def test_all_setup_python_steps_in_workflows_use_311():
 
 
 def test_weekly_mutation_workflow_uses_balanced_mutmut_parallelism():
+    """Weekly mutation workflow uses balanced mutmut parallelism."""
     workflow = (WORKFLOW_DIR / "weekly-mutation-and-critical-tests.yml").read_text()
 
     assert "mutmut run --max-children 4" in workflow
@@ -92,6 +98,7 @@ def test_weekly_mutation_workflow_uses_balanced_mutmut_parallelism():
 
 
 def test_nightly_auth_benchmark_requires_cached_baseline_compare():
+    """Nightly auth benchmark requires cached baseline compare."""
     workflow = (WORKFLOW_DIR / "nightly-auth-benchmark.yml").read_text()
 
     assert 'BENCHMARK_COMPARE_REQUIRED: "1"' in workflow
@@ -146,6 +153,7 @@ def test_workflows_use_node24_github_action_majors() -> None:
 
 
 def test_ci_has_required_installer_manifest_smoke_gate() -> None:
+    """Ci has required installer manifest smoke gate."""
     workflow = (WORKFLOW_DIR / "ci.yml").read_text(encoding="utf-8")
     docs = Path("docs/CI_REQUIRED_CHECKS.md").read_text(encoding="utf-8")
 
@@ -198,6 +206,7 @@ def test_ci_has_required_installer_manifest_smoke_gate() -> None:
 
 
 def test_installer_security_chain_is_visible_in_pr_review_metadata() -> None:
+    """Installer security chain is visible in pr review metadata."""
     template = Path(".github/PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
     codeowners = Path(".github/CODEOWNERS").read_text(encoding="utf-8")
     docs = Path("docs/CI_REQUIRED_CHECKS.md").read_text(encoding="utf-8")
@@ -234,6 +243,7 @@ def test_installer_security_chain_is_visible_in_pr_review_metadata() -> None:
 
 
 def test_installer_docs_scope_unverified_script_bypass_to_non_core_checks() -> None:
+    """Installer docs scope unverified script bypass to non core checks."""
     readme = Path("README.md").read_text(encoding="utf-8")
     modularization_note = Path("docs/module-notes/install_sidar_modularization.md").read_text(
         encoding="utf-8"
@@ -252,6 +262,7 @@ def test_installer_docs_scope_unverified_script_bypass_to_non_core_checks() -> N
 
 
 def test_ci_runs_frontend_typecheck_gate_after_lint() -> None:
+    """Ci runs frontend typecheck gate after lint."""
     workflow = (WORKFLOW_DIR / "ci.yml").read_text()
 
     assert "Run frontend type-check gate (tsc)" in workflow
@@ -262,6 +273,7 @@ def test_ci_runs_frontend_typecheck_gate_after_lint() -> None:
 
 
 def test_release_quality_runs_helm_install_dry_run_with_injected_secret():
+    """Release quality runs helm install dry run with injected secret."""
     workflow = (WORKFLOW_DIR / "release-quality.yml").read_text()
 
     assert "Helm install dry-run validation" in workflow
@@ -271,6 +283,7 @@ def test_release_quality_runs_helm_install_dry_run_with_injected_secret():
 
 
 def test_release_quality_runs_benchmark_coverage_trend_gate():
+    """Release quality runs benchmark coverage trend gate."""
     workflow = (WORKFLOW_DIR / "release-quality.yml").read_text()
 
     assert "benchmark-coverage-trend:" in workflow
@@ -284,6 +297,7 @@ def test_release_quality_runs_benchmark_coverage_trend_gate():
 
 
 def test_release_quality_requires_reviewed_benchmark_comparison():
+    """Release quality requires reviewed benchmark comparison."""
     workflow = (WORKFLOW_DIR / "release-quality.yml").read_text()
     job = workflow[
         workflow.index("  release-benchmark-compare:") : workflow.index("  helm-validate:")

@@ -25,6 +25,7 @@ from agent.swarm import (
 
 @pytest.fixture
 def isolated_catalog() -> dict[str, AgentSpec]:
+    """Yield an empty agent catalog registry and restore the original afterwards."""
     snapshot = dict(AgentCatalog._registry)
     AgentCatalog._registry.clear()
     try:
@@ -46,6 +47,7 @@ def _register(role: str, *capabilities: str) -> None:
 
 
 def test_task_router_routes_intent_to_capability(isolated_catalog: dict) -> None:
+    """Task router routes intent to capability."""
     _register("coder", "code_generation")
     _register("reviewer", "code_review")
 
@@ -59,6 +61,7 @@ def test_task_router_routes_intent_to_capability(isolated_catalog: dict) -> None
 
 
 def test_task_router_falls_back_to_first_registered_agent(isolated_catalog: dict) -> None:
+    """Task router falls back to first registered agent."""
     _register("only_one", "irrelevant_capability")
 
     router = TaskRouter()
@@ -72,6 +75,7 @@ def test_task_router_falls_back_to_first_registered_agent(isolated_catalog: dict
 def test_task_router_falls_back_to_first_capability_candidate_when_preferred_role_missing(
     isolated_catalog: dict,
 ) -> None:
+    """Task router falls back to first capability candidate when preferred role missing."""
     _register("alpha", "code_generation")
     _register("beta", "code_generation")
 
@@ -84,6 +88,7 @@ def test_task_router_falls_back_to_first_capability_candidate_when_preferred_rol
 def test_task_router_preferred_role_absent_uses_catalog_candidate_order(
     isolated_catalog: dict,
 ) -> None:
+    """Task router preferred role absent uses catalog candidate order."""
     _register("beta", "code_generation")
     _register("alpha", "code_generation")
 
@@ -94,12 +99,14 @@ def test_task_router_preferred_role_absent_uses_catalog_candidate_order(
 
 
 def test_task_router_returns_none_when_catalog_is_empty(isolated_catalog: dict) -> None:
+    """Task router returns none when catalog is empty."""
     router = TaskRouter()
     assert router.route("anything") is None
     assert router.route_by_role("anything") is None
 
 
 def test_task_router_route_by_role_returns_registered_spec(isolated_catalog: dict) -> None:
+    """Task router route by role returns registered spec."""
     _register("coverage", "coverage_analysis")
 
     spec = TaskRouter().route_by_role("coverage")
@@ -109,6 +116,7 @@ def test_task_router_route_by_role_returns_registered_spec(isolated_catalog: dic
 
 
 def test_compose_goal_with_browser_signal_appends_summary_block() -> None:
+    """Compose goal with browser signal appends summary block."""
     composed = SwarmOrchestrator._compose_goal_with_context(
         "Run regression suite",
         {
@@ -126,11 +134,13 @@ def test_compose_goal_with_browser_signal_appends_summary_block() -> None:
 
 
 def test_compose_goal_without_browser_signal_returns_plain_goal() -> None:
+    """Compose goal without browser signal returns plain goal."""
     composed = SwarmOrchestrator._compose_goal_with_context("Plain goal", {})
     assert composed == "Plain goal"
 
 
 def test_swarm_orchestrator_requires_backend_for_distributed_dispatch() -> None:
+    """Swarm orchestrator requires backend for distributed dispatch."""
     orchestrator = SwarmOrchestrator()
     task = SwarmTask(goal="x", intent="code")
 
@@ -141,6 +151,7 @@ def test_swarm_orchestrator_requires_backend_for_distributed_dispatch() -> None:
 def test_swarm_orchestrator_dispatches_through_in_memory_backend(
     isolated_catalog: dict,
 ) -> None:
+    """Swarm orchestrator dispatches through in memory backend."""
     _register("coder", "code_generation")
 
     backend = InMemoryDelegationBackend()
@@ -167,6 +178,7 @@ def test_swarm_orchestrator_dispatches_through_in_memory_backend(
 
 
 def test_swarm_orchestrator_distributed_dispatch_raises_when_no_agent_available() -> None:
+    """Swarm orchestrator distributed dispatch raises when no agent available."""
     backend = InMemoryDelegationBackend()
     orchestrator = SwarmOrchestrator()
     orchestrator.configure_delegation_backend(backend)

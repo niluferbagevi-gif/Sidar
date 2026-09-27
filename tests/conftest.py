@@ -437,11 +437,13 @@ def make_test_client() -> Callable[..., Any]:
 
 @pytest.fixture
 def mock_config() -> Callable[..., Any]:
+    """Return the ``make_test_config`` factory for building test configs."""
     return make_test_config
 
 
 @pytest.fixture
 def hitl_request_factory() -> Callable[..., Any]:
+    """Return the ``build_hitl_request`` factory for building HITL requests."""
     return build_hitl_request
 
 
@@ -457,6 +459,7 @@ def frozen_time() -> Generator[FrozenDateTimeFactory, None, None]:
 
 @pytest.fixture
 def respx_mock_router() -> Generator[Any, None, None]:
+    """Yield a strict respx router that requires every registered route to be called."""
     respx = pytest.importorskip("respx")
     # Varsayılanı sıkı tut: test içinde kaydedilen her route en az bir kez çağrılmalı.
     with respx.mock(assert_all_called=True) as router:

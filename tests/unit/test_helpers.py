@@ -1,3 +1,5 @@
+"""Unit tests for shared test helpers."""
+
 from __future__ import annotations
 
 import builtins
@@ -16,12 +18,14 @@ async def _agen():
 
 @pytest.mark.asyncio
 async def test_collect_async_chunks_collects_all_items() -> None:
+    """Collect async chunks collects all items."""
     assert await collect_async_chunks(_agen()) == ["a", "b", "c"]
 
 
 def test_make_test_config_uses_spec_set_with_full_app_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Make test config uses spec set with full app config."""
     fake_config = ModuleType("config")
 
     class FullConfig:
@@ -81,6 +85,7 @@ def test_make_test_config_uses_spec_set_with_full_app_config(
 def test_make_test_config_falls_back_to_flexible_mock_when_override_unknown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Make test config falls back to flexible mock when override unknown."""
     fake_config = ModuleType("config")
 
     class MinimalConfig:
@@ -107,6 +112,7 @@ def test_make_test_config_falls_back_to_flexible_mock_when_override_unknown(
 def test_make_test_config_falls_back_when_config_import_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Make test config falls back when config import fails."""
     real_import = builtins.__import__
 
     def raising_import(name, *args, **kwargs):
@@ -126,6 +132,7 @@ def test_make_test_config_falls_back_when_config_import_fails(
 def test_make_test_config_falls_back_when_required_methods_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Make test config falls back when required methods missing."""
     fake_config = ModuleType("config")
 
     class MissingMethodsConfig:

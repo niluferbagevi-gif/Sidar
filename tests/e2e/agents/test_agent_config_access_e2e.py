@@ -1,3 +1,5 @@
+"""End-to-end tests for agents reading keys from the config dotenv chain."""
+
 from __future__ import annotations
 
 import json

@@ -1,3 +1,5 @@
+"""Tests for the large-file refactor plan."""
+
 from __future__ import annotations
 
 import importlib
@@ -6,6 +8,7 @@ from pathlib import Path
 
 
 def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
+    """Large production file refactor plan tracks priority targets."""
     plan = Path("docs/REFACTOR_PLAN.md").read_text(encoding="utf-8")
 
     for target in (
@@ -124,6 +127,7 @@ def test_large_production_file_refactor_plan_tracks_priority_targets() -> None:
 
 
 def test_install_sidar_cli_and_dispatch_boundaries_are_sourced() -> None:
+    """Install sidar cli and dispatch boundaries are sourced."""
     installer = Path("install_sidar.sh").read_text(encoding="utf-8")
     cli = Path("scripts/install_modules/install_cli.sh").read_text(encoding="utf-8")
     dispatcher = Path("scripts/install_modules/install_dispatcher.sh").read_text(encoding="utf-8")
@@ -141,6 +145,7 @@ def test_install_sidar_cli_and_dispatch_boundaries_are_sourced() -> None:
 
 
 def test_refactor_plan_tracks_only_meaningful_todo_debt() -> None:
+    """Refactor plan tracks only meaningful todo debt."""
     plan = Path("docs/REFACTOR_PLAN.md").read_text(encoding="utf-8")
 
     assert "Gerçek TODO envanteri" in plan
@@ -153,6 +158,7 @@ def test_refactor_plan_tracks_only_meaningful_todo_debt() -> None:
 
 
 def test_claude_zero_debt_scope_distinguishes_audit_findings_from_refactor_debt() -> None:
+    """Claude zero debt scope distinguishes audit findings from refactor debt."""
     claude = Path("docs/CLAUDE.md").read_text(encoding="utf-8")
     plan = Path("docs/REFACTOR_PLAN.md").read_text(encoding="utf-8")
 
@@ -164,6 +170,7 @@ def test_claude_zero_debt_scope_distinguishes_audit_findings_from_refactor_debt(
 
 
 def test_phase_one_refactor_boundaries_are_importable() -> None:
+    """Phase one refactor boundaries are importable."""
     # Guard this boundary smoke test against stale fake modules left by
     # earlier tests in the same worker: importing submodules requires
     # ``core.db`` to be the real package, not a plain ModuleType stub.
@@ -196,6 +203,7 @@ def test_phase_one_refactor_boundaries_are_importable() -> None:
 
 
 def test_p2_refactor_plan_tracks_llm_and_browser_adapter_boundaries() -> None:
+    """P2 refactor plan tracks llm and browser adapter boundaries."""
     plan = Path("docs/REFACTOR_PLAN.md").read_text(encoding="utf-8")
 
     assert "P2 LLM provider adapter modülleri" in plan
@@ -213,6 +221,7 @@ def test_p2_refactor_plan_tracks_llm_and_browser_adapter_boundaries() -> None:
 
 
 def test_p2_llm_provider_boundaries_are_importable() -> None:
+    """P2 llm provider boundaries are importable."""
     for module_name in (
         "core.llm.openai",
         "core.llm.anthropic",

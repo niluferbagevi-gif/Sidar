@@ -19,6 +19,7 @@ def _reset_dotenv_managed_state() -> None:
 def test_database_url_dotenv_diagnostics_reports_source_without_password(
     monkeypatch, tmp_path: Path
 ) -> None:
+    """Database url dotenv diagnostics reports source without password."""
     dotenv_path = tmp_path / ".env.test"
     monkeypatch.setenv("SIDAR_ENV", "test")
     monkeypatch.setenv("POSTGRES_PASSWORD", "super-secret-pass")

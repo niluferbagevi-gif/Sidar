@@ -1,3 +1,5 @@
+"""Contract tests for the Python runtime in Dockerfiles."""
+
 from pathlib import Path
 
 import yaml
@@ -41,6 +43,7 @@ def _merged_compose_services() -> dict:
 
 
 def test_main_dockerfile_defaults_to_python_311_runtime():
+    """Main dockerfile defaults to python 311 runtime."""
     dockerfile = _read("Dockerfile")
 
     assert f"ARG PYTHON_VERSION={PYTHON_MAJOR_MINOR}" in dockerfile
@@ -51,6 +54,7 @@ def test_main_dockerfile_defaults_to_python_311_runtime():
 
 
 def test_main_dockerfile_installs_shellcheck_os_package():
+    """Main dockerfile installs shellcheck os package."""
     dockerfile = _read("Dockerfile")
 
     assert "shellcheck \\" in dockerfile
@@ -128,6 +132,7 @@ def test_main_dockerfile_disables_interactive_apt_prompts():
 
 
 def test_main_dockerfile_preinstalls_uv_for_sandbox_regression_tests():
+    """Main dockerfile preinstalls uv for sandbox regression tests."""
     dockerfile = _read("Dockerfile")
 
     assert f"COPY --from={UV_IMAGE} /uv /uvx /bin/" in dockerfile
@@ -136,6 +141,7 @@ def test_main_dockerfile_preinstalls_uv_for_sandbox_regression_tests():
 
 
 def test_production_dockerfile_pins_build_inputs_by_version_and_digest():
+    """Production dockerfile pins build inputs by version and digest."""
     dockerfile = _read("Dockerfile.production")
 
     assert f"ARG BASE_IMAGE={PRODUCTION_PYTHON_IMAGE}" in dockerfile
@@ -180,6 +186,7 @@ def test_production_dockerfile_builds_readable_frontend_inside_image():
 
 
 def test_main_dockerfile_documents_current_cuda_13_example_consistently():
+    """Main dockerfile documents current cuda 13 example consistently."""
     dockerfile = _read("Dockerfile")
 
     assert "nvidia/cuda:13.0.0-runtime-ubuntu22.04" in dockerfile
@@ -187,6 +194,7 @@ def test_main_dockerfile_documents_current_cuda_13_example_consistently():
 
 
 def test_main_dockerfile_validates_pyright_lsp_binary_for_reviewer_semantics():
+    """Main dockerfile validates pyright lsp binary for reviewer semantics."""
     dockerfile = _read("Dockerfile")
 
     assert "shutil.which('pyright-langserver')" in dockerfile
@@ -247,6 +255,7 @@ def test_compose_gpu_builds_have_no_dead_torch_index_url_arg():
 
 
 def test_compose_cpu_builds_use_python_311_base_image():
+    """Compose cpu builds use python 311 base image."""
     compose = _read("docker-compose.yml")
 
     assert compose.count(f"BASE_IMAGE: {PYTHON_BASE_IMAGE}") >= 2
@@ -255,6 +264,7 @@ def test_compose_cpu_builds_use_python_311_base_image():
 
 
 def test_compose_postgres_volume_uses_predictable_name():
+    """Compose postgres volume uses predictable name."""
     compose = _read("docker-compose.yml")
 
     assert "- postgres_data:/var/lib/postgresql/data" in compose
@@ -262,6 +272,7 @@ def test_compose_postgres_volume_uses_predictable_name():
 
 
 def test_compose_ollama_service_keeps_model_warm_for_gpu_benchmark_stability():
+    """Compose ollama service keeps model warm for gpu benchmark stability."""
     compose = _read("docker-compose.yml")
 
     assert "OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-4}" in compose
@@ -269,6 +280,7 @@ def test_compose_ollama_service_keeps_model_warm_for_gpu_benchmark_stability():
 
 
 def test_prod_staging_helm_values_do_not_pin_python_312_images():
+    """Prod staging helm values do not pin python 312 images."""
     helm_files = [
         *ROOT.glob("helm/sidar/values*.yaml"),
         *ROOT.glob("sidar_assets/helm/sidar/values*.yaml"),
@@ -282,6 +294,7 @@ def test_prod_staging_helm_values_do_not_pin_python_312_images():
 
 
 def test_helm_values_use_external_postgresql_secrets_only():
+    """Helm values use external postgresql secrets only."""
     value_paths = (
         "helm/sidar/values.yaml",
         "helm/sidar/values-prod.yaml",
@@ -312,6 +325,7 @@ def test_helm_values_use_external_postgresql_secrets_only():
 
 
 def test_helm_deployments_read_database_url_from_secret():
+    """Helm deployments read database url from secret."""
     for rel_path in (
         "helm/sidar/templates/deployment-web.yaml",
         "helm/sidar/templates/deployment-ai-worker.yaml",
@@ -326,6 +340,7 @@ def test_helm_deployments_read_database_url_from_secret():
 
 
 def test_helm_deployments_share_hardened_security_context():
+    """Helm deployments share hardened security context."""
     # ai-worker runs more capable tooling (docker CLI for sandboxed code
     # execution, git for project ops) than web, so it must be at least as
     # hardened, not less — a reviewer previously found ai-worker shipped
@@ -351,6 +366,7 @@ def test_helm_deployments_share_hardened_security_context():
 
 
 def test_helm_chart_rejects_inline_postgresql_password_generation():
+    """Helm chart rejects inline postgresql password generation."""
     for rel_path in (
         "helm/sidar/templates/secret-postgresql.yaml",
         "sidar_assets/helm/sidar/templates/secret-postgresql.yaml",
@@ -363,6 +379,7 @@ def test_helm_chart_rejects_inline_postgresql_password_generation():
 
 
 def test_observability_compose_pins_tracing_and_exports_infra_metrics():
+    """Observability compose pins tracing and exports infra metrics."""
     services = _merged_compose_services()
 
     assert services["redis"]["image"] == "redis:8.10-alpine"
@@ -647,6 +664,7 @@ def test_dockerignore_excludes_host_react_spa_build_output():
 
 
 def test_prometheus_scrapes_sidar_and_infra_exporters():
+    """Prometheus scrapes sidar and infra exporters."""
     prometheus = yaml.safe_load((ROOT / "docker_setup/prometheus/prometheus.yml").read_text())
     scrape_targets = {
         config["job_name"]: config["static_configs"][0]["targets"]

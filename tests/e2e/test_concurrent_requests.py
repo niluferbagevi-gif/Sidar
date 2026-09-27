@@ -12,6 +12,7 @@ from core.db import Database
 
 @pytest.mark.asyncio
 async def test_concurrent_session_writes_do_not_exhaust_single_sqlite_pool(tmp_path) -> None:
+    """Concurrent session writes do not exhaust single sqlite pool."""
     cfg = SimpleNamespace(
         DATABASE_URL=f"sqlite+aiosqlite:///{(tmp_path / 'concurrent.db').as_posix()}",
         BASE_DIR=str(tmp_path),

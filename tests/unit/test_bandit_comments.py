@@ -1,3 +1,5 @@
+"""Tests for the Bandit suppression baseline and its quality gates."""
+
 from __future__ import annotations
 
 import ast
@@ -175,6 +177,7 @@ def test_reduction_targets_must_strictly_decrease(tmp_path: Path) -> None:
 
 
 def test_exact_baseline_policy_must_be_explicit_boolean(tmp_path: Path) -> None:
+    """Exact baseline policy must be explicit boolean."""
     baseline = tmp_path / "baseline.json"
     baseline.write_text(json.dumps({"require_exact_baseline": "yes"}), encoding="utf-8")
 
@@ -183,6 +186,7 @@ def test_exact_baseline_policy_must_be_explicit_boolean(tmp_path: Path) -> None:
 
 
 def test_bandit_debt_plan_requires_unique_python_hotspots(tmp_path: Path) -> None:
+    """Bandit debt plan requires unique python hotspots."""
     baseline = tmp_path / "baseline.json"
     baseline.write_text(
         json.dumps(

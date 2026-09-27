@@ -1,3 +1,5 @@
+"""Smoke tests that verify an installed Sidar environment."""
+
 import hashlib
 import os
 import re
@@ -84,6 +86,7 @@ def _normalize_bash_function(function_text: str) -> str:
 
 
 def test_coverage_dark_mode_is_owned_by_test_pipeline_not_installer() -> None:
+    """Coverage dark mode is owned by test pipeline not installer."""
     repo_root = Path(os.getcwd())
     source_dark_css = repo_root / "assets" / "dark_mode.css"
     assert source_dark_css.exists()
@@ -102,6 +105,7 @@ def test_coverage_dark_mode_is_owned_by_test_pipeline_not_installer() -> None:
 
 
 def test_python_version() -> None:
+    """Python version."""
     assert sys.version_info >= (3, 11)
 
 
@@ -128,6 +132,7 @@ def test_installer_hash_guard_inline_fallback_matches_module() -> None:
 
 
 def test_repo_sync_uses_configured_branch_for_update_and_recovery() -> None:
+    """Repo sync uses configured branch for update and recovery."""
     phase = Path("scripts/install_modules/phases/02_repo.sh").read_text(encoding="utf-8")
 
     assert 'local repo_branch="${REPO_BRANCH:-main}"' in phase
@@ -160,6 +165,7 @@ def test_doctor_phase_uses_strict_boolean_and_classifies_missing_report(
     expected_status: int,
     expected_message: str,
 ) -> None:
+    """Doctor phase uses strict boolean and classifies missing report."""
     result = subprocess.run(
         [
             "bash",
@@ -234,6 +240,7 @@ def test_default_install_runs_doctor_before_finish_and_preserves_diagnostics() -
 
 
 def test_auto_heal_resume_uses_repo_installer_after_bootstrap_cleanup(tmp_path: Path) -> None:
+    """Auto heal resume uses repo installer after bootstrap cleanup."""
     home_dir = tmp_path / "home"
     repo_dir = tmp_path / "Sidar"
     marker = tmp_path / "resume-marker.txt"
@@ -306,6 +313,7 @@ def test_auto_heal_resume_uses_repo_installer_after_bootstrap_cleanup(tmp_path: 
 
 
 def test_install_sidar_embedded_module_pin_drift_is_reported(tmp_path: Path) -> None:
+    """Install sidar embedded module pin drift is reported."""
     repo_root = Path(os.getcwd())
     target = tmp_path / "install_sidar.sh"
     install_script = (repo_root / "install_sidar.sh").read_text(encoding="utf-8")
@@ -340,6 +348,7 @@ def test_install_sidar_embedded_module_pin_drift_is_reported(tmp_path: Path) -> 
 
 
 def test_install_sidar_embedded_module_pin_drift_cross_checks_pinned_commit(tmp_path: Path) -> None:
+    """Install sidar embedded module pin drift cross checks pinned commit."""
     repo_root = Path(os.getcwd())
     stale_commit = "b58fa89b0aa6d0d9066ecdb221e455dc05fb7597"
     if (
@@ -388,6 +397,7 @@ def test_install_sidar_embedded_module_pin_drift_cross_checks_pinned_commit(tmp_
 
 
 def test_install_sidar_embedded_manifests_in_sync() -> None:
+    """Install sidar embedded manifests in sync."""
     repo_root = Path(os.getcwd())
     for tool, extra in (
         ("update_core_install_manifest.py", []),
@@ -954,6 +964,7 @@ def test_install_sidar_bootstrap_reexec_hash_drift_blocks_stale_installer(tmp_pa
 
 
 def test_install_sidar_embedded_manifest_temp_cleanup_trap_is_registered() -> None:
+    """Install sidar embedded manifest temp cleanup trap is registered."""
     installer = Path("install_sidar.sh").read_text(encoding="utf-8")
 
     assert "EMBEDDED_MODULE_HASH_MANIFEST_TEMP_FILE" in installer
@@ -1209,6 +1220,7 @@ def _diagnose_sourced_install_version(tmp_path: Path) -> str:
 
 
 def test_run_bash_smoke_silent_failure_includes_diagnostics(tmp_path: Path) -> None:
+    """Run bash smoke silent failure includes diagnostics."""
     result = _run_bash_smoke("set -euo pipefail\nfalse", tmp_path)
 
     assert result.returncode == 1
@@ -1220,6 +1232,7 @@ def test_run_bash_smoke_silent_failure_includes_diagnostics(tmp_path: Path) -> N
 
 
 def test_install_sidar_probe_failure_diagnosis_includes_command_context(tmp_path: Path) -> None:
+    """Install sidar probe failure diagnosis includes command context."""
     diagnosis = _diagnose_sourced_install_version(tmp_path)
 
     assert "which python3:" in diagnosis
@@ -1238,6 +1251,7 @@ def test_install_sidar_probe_failure_diagnosis_includes_command_context(tmp_path
 def test_install_sidar_smoke_source_uses_repo_relative_installer_when_path_is_shadowed(
     tmp_path: Path,
 ) -> None:
+    """Install sidar smoke source uses repo relative installer when path is shadowed."""
     fake_bin = tmp_path / "fake-bin"
     fake_bin.mkdir()
     shadow_installer = fake_bin / "install_sidar.sh"
@@ -1268,6 +1282,7 @@ def test_install_sidar_smoke_source_uses_repo_relative_installer_when_path_is_sh
 def test_install_sidar_probe_only_source_does_not_leave_error_trap_installed(
     tmp_path: Path,
 ) -> None:
+    """Install sidar probe only source does not leave error trap installed."""
     result = _run_bash_smoke(
         """
         set +e
@@ -1287,6 +1302,7 @@ def test_install_sidar_probe_only_source_does_not_leave_error_trap_installed(
 
 
 def test_install_sidar_test_mode_and_uv_only_contract() -> None:
+    """Install sidar test mode and uv only contract."""
     repo_root = Path(os.getcwd())
     installer = repo_root / "install_sidar.sh"
     installer_text = installer.read_text(encoding="utf-8")
@@ -1406,6 +1422,7 @@ def test_install_sidar_test_mode_and_uv_only_contract() -> None:
 def test_install_sidar_test_mode_source_resolves_pyproject_version_without_python(
     tmp_path: Path,
 ) -> None:
+    """Install sidar test mode source resolves pyproject version without python."""
     repo_root = Path(os.getcwd())
     with (repo_root / "pyproject.toml").open("rb") as pyproject_file:
         pyproject_version = tomllib.load(pyproject_file)["project"]["version"]
@@ -1434,6 +1451,7 @@ expected={pyproject_version}" >&2
 
 
 def test_install_sidar_source_exports_pyproject_version_without_python(tmp_path: Path) -> None:
+    """Install sidar source exports pyproject version without python."""
     repo_root = Path(os.getcwd())
     with (repo_root / "pyproject.toml").open("rb") as pyproject_file:
         pyproject_version = tomllib.load(pyproject_file)["project"]["version"]
@@ -1464,6 +1482,7 @@ expected={pyproject_version}" >&2
 
 
 def test_install_sidar_version_probe_fails_on_env_pyproject_mismatch(tmp_path: Path) -> None:
+    """Install sidar version probe fails on env pyproject mismatch."""
     repo_root = Path(os.getcwd())
     with (repo_root / "pyproject.toml").open("rb") as pyproject_file:
         pyproject_version = tomllib.load(pyproject_file)["project"]["version"]
@@ -1490,6 +1509,7 @@ def test_install_sidar_version_probe_fails_on_env_pyproject_mismatch(tmp_path: P
 
 
 def test_install_sidar_fail_reports_clean_auto_heal_command(tmp_path: Path) -> None:
+    """Install sidar fail reports clean auto heal command."""
     result = _run_bash_smoke(
         """
         set -euo pipefail
@@ -1511,6 +1531,7 @@ def test_install_sidar_fail_reports_clean_auto_heal_command(tmp_path: Path) -> N
 
 
 def test_install_remediation_explains_legacy_conda_non_retryable_signature() -> None:
+    """Install remediation explains legacy conda non retryable signature."""
     result = subprocess.run(
         [
             "bash",
@@ -1540,6 +1561,7 @@ def test_install_remediation_explains_legacy_conda_non_retryable_signature() -> 
 
 
 def test_install_remediation_fail_fast_for_test_gate_failures() -> None:
+    """Install remediation fail fast for test gate failures."""
     result = subprocess.run(
         [
             "bash",
@@ -1582,6 +1604,7 @@ def test_install_remediation_fail_fast_for_test_gate_failures() -> None:
 
 
 def test_install_sidar_fail_records_last_fail_message_for_err_trap() -> None:
+    """Install sidar fail records last fail message for err trap."""
     installer = Path("install_sidar.sh").read_text(encoding="utf-8")
 
     assert 'SIDAR_LAST_FAIL_MESSAGE="$fail_reason"' in installer
@@ -1593,6 +1616,7 @@ def test_install_sidar_fail_records_last_fail_message_for_err_trap() -> None:
 
 
 def test_install_remediation_explains_installer_hash_drift_next_step() -> None:
+    """Install remediation explains installer hash drift next step."""
     result = subprocess.run(
         [
             "bash",
@@ -1625,6 +1649,7 @@ def test_install_remediation_explains_installer_hash_drift_next_step() -> None:
 
 
 def test_pre_service_smoke_gate_uses_pyproject_version_without_source_preflight() -> None:
+    """Pre service smoke gate uses pyproject version without source preflight."""
     phase = Path("scripts/install_modules/phases/06_services.sh").read_text(encoding="utf-8")
     readme = Path("README.md").read_text(encoding="utf-8")
     install_options = Path("docs/install-script-options.md").read_text(encoding="utf-8")
@@ -1692,6 +1717,7 @@ def test_pre_service_smoke_gate_uses_pyproject_version_without_source_preflight(
 
 
 def test_ci_verifies_installer_smoke_isolation_from_user_secrets() -> None:
+    """Ci verifies installer smoke isolation from user secrets."""
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 
     assert "Verify installer smoke isolation from user secrets" in ci
@@ -1702,6 +1728,7 @@ def test_ci_verifies_installer_smoke_isolation_from_user_secrets() -> None:
 
 
 def test_install_remediation_prefers_last_failed_test_from_smoke_log() -> None:
+    """Install remediation prefers last failed test from smoke log."""
     result = subprocess.run(
         [
             "bash",
@@ -1729,6 +1756,7 @@ _mode_assets_exist
 
 
 def test_pre_service_smoke_gate_does_not_source_installer_before_pytest(tmp_path: Path) -> None:
+    """Pre service smoke gate does not source installer before pytest."""
     script_dir = tmp_path / "sidar"
     (script_dir / "tests" / "smoke").mkdir(parents=True)
     (script_dir / "tests" / "smoke" / "test_install_verification.py").write_text(
@@ -1791,6 +1819,7 @@ def test_pre_service_smoke_gate_does_not_source_installer_before_pytest(tmp_path
 
 
 def test_pre_service_smoke_gate_ignores_silent_installer_source_abort(tmp_path: Path) -> None:
+    """Pre service smoke gate ignores silent installer source abort."""
     script_dir = tmp_path / "sidar"
     (script_dir / "tests" / "smoke").mkdir(parents=True)
     (script_dir / "tests" / "smoke" / "test_install_verification.py").write_text(
@@ -1853,6 +1882,7 @@ def test_pre_service_smoke_gate_ignores_silent_installer_source_abort(tmp_path: 
 def test_install_alembic_head_check_after_migration(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Install alembic head check after migration."""
     script_dir = tmp_path / "sidar"
     venv_bin = script_dir / ".venv" / "bin"
     venv_bin.mkdir(parents=True)
@@ -1916,6 +1946,7 @@ def test_install_alembic_head_check_after_migration(
 
 
 def test_install_alembic_head_check_requires_database_url(tmp_path: Path) -> None:
+    """Install alembic head check requires database url."""
     script_dir = tmp_path / "sidar"
     venv_bin = script_dir / ".venv" / "bin"
     venv_bin.mkdir(parents=True)
@@ -1948,6 +1979,7 @@ def test_install_alembic_head_check_requires_database_url(tmp_path: Path) -> Non
 
 
 def test_install_alembic_head_check_derives_url_from_postgres_parts(tmp_path: Path) -> None:
+    """Install alembic head check derives url from postgres parts."""
     script_dir = tmp_path / "sidar"
     venv_bin = script_dir / ".venv" / "bin"
     venv_bin.mkdir(parents=True)
@@ -2002,6 +2034,7 @@ def test_install_alembic_head_check_derives_url_from_postgres_parts(tmp_path: Pa
 
 
 def test_playwright_ubuntu26_override_used(tmp_path: Path) -> None:
+    """Playwright ubuntu26 override used."""
     os_release = tmp_path / "os-release"
     os_release.write_text('ID=ubuntu\nVERSION_ID="26.04"\n', encoding="utf-8")
     fake_python = tmp_path / "python"
@@ -2028,6 +2061,7 @@ def test_playwright_ubuntu26_override_used(tmp_path: Path) -> None:
 
 
 def test_bundled_install_sidar_manifest_matches() -> None:
+    """Bundled install sidar manifest matches."""
     repo_root = Path(os.getcwd())
     bundle_script = repo_root / "scripts" / "tools" / "bundle_install_sidar.sh"
     subprocess.run(
@@ -2053,6 +2087,7 @@ def test_bundled_install_sidar_manifest_matches() -> None:
 
 
 def test_repo_sync_repoints_install_modules_to_cloned_repo(tmp_path: Path) -> None:
+    """Repo sync repoints install modules to cloned repo."""
     target_dir = tmp_path / "Sidar"
     fallback_dir = tmp_path / "fallback_modules"
     fallback_dir.mkdir()

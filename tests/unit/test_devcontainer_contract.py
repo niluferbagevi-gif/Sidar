@@ -1,3 +1,5 @@
+"""Contract tests for the devcontainer configuration."""
+
 import json
 import re
 from pathlib import Path
@@ -25,6 +27,7 @@ def _dockerfile_env_values() -> dict[str, str]:
 
 
 def test_devcontainer_build_env_matches_non_secret_container_env_defaults():
+    """Devcontainer build env matches non secret container env defaults."""
     devcontainer = json.loads(_read(".devcontainer/devcontainer.json"))
     container_env = devcontainer["containerEnv"]
     dockerfile_env = _dockerfile_env_values()
@@ -34,6 +37,7 @@ def test_devcontainer_build_env_matches_non_secret_container_env_defaults():
 
 
 def test_devcontainer_image_installs_shell_test_os_packages():
+    """Devcontainer image installs shell test os packages."""
     dockerfile = _read(".devcontainer/Dockerfile")
 
     assert "shellcheck \\" in dockerfile
@@ -44,18 +48,21 @@ def test_devcontainer_image_installs_shell_test_os_packages():
 
 
 def test_devcontainer_generated_log_directory_is_gitignored():
+    """Devcontainer generated log directory is gitignored."""
     gitignore = _read(".gitignore").splitlines()
 
     assert ".devcontainer/logs/" in gitignore
 
 
 def test_devcontainer_starts_ollama_with_keep_alive_default():
+    """Devcontainer starts ollama with keep alive default."""
     setup_script = _read(".devcontainer/setup-codespaces.sh")
 
     assert 'OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-30m}" nohup ollama serve' in setup_script
 
 
 def test_devcontainer_bootstraps_pyright_lsp_tool_with_uv_tool_install():
+    """Devcontainer bootstraps pyright lsp tool with uv tool install."""
     setup_script = _read(".devcontainer/setup-codespaces.sh")
 
     assert "ensure_pyright_lsp_tool" in setup_script
@@ -66,6 +73,7 @@ def test_devcontainer_bootstraps_pyright_lsp_tool_with_uv_tool_install():
 
 
 def test_devcontainer_installs_pre_commit_hooks_after_uv_sync():
+    """Devcontainer installs pre commit hooks after uv sync."""
     setup_script = _read(".devcontainer/setup-codespaces.sh")
 
     assert "install_pre_commit_hooks()" in setup_script

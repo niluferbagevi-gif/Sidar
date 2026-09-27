@@ -42,6 +42,7 @@ def _nvidia_smi_cmd() -> str | None:
 
 
 def is_gpu_available() -> bool:
+    """Return whether ``nvidia-smi`` is available."""
     return _nvidia_smi_cmd() is not None
 
 

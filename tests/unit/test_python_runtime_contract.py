@@ -1,3 +1,5 @@
+"""Contract tests for the project's Python 3.11 runtime pins."""
+
 import configparser
 import re
 import tomllib
@@ -13,6 +15,7 @@ PYTHON_PROJECT_RANGE = ">=3.11,<3.12"
 
 
 def test_project_packaging_targets_python_311_only():
+    """Project packaging targets python 311 only."""
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
 
     project = pyproject["project"]
@@ -25,6 +28,7 @@ def test_project_packaging_targets_python_311_only():
 
 
 def test_project_python_pin_and_lock_are_python_311_only():
+    """Project python pin and lock are python 311 only."""
     assert (ROOT / ".python-version").read_text().strip() == PYTHON_PATCH_PIN
 
     lock_text = (ROOT / "uv.lock").read_text()
@@ -33,6 +37,7 @@ def test_project_python_pin_and_lock_are_python_311_only():
 
 
 def test_legacy_setup_cfg_has_no_conflicting_python_requires():
+    """Legacy setup cfg has no conflicting python requires."""
     setup_cfg = ROOT / "setup.cfg"
     parser = configparser.ConfigParser()
     parser.read(setup_cfg)
@@ -47,6 +52,7 @@ def test_legacy_setup_cfg_has_no_conflicting_python_requires():
 
 
 def test_ruff_enables_pydocstyle_incrementally():
+    """Ruff enables pydocstyle incrementally."""
     pyproject_text = (ROOT / "pyproject.toml").read_text()
     pyproject = tomllib.loads(pyproject_text)
     agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")

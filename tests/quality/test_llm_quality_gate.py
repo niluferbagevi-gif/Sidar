@@ -10,6 +10,7 @@ pytestmark = pytest.mark.quality_gate
 
 
 def test_judge_result_passes_when_relevance_high_and_risk_low() -> None:
+    """Judge result passes when relevance high and risk low."""
     result = JudgeResult(
         relevance_score=0.9,
         hallucination_risk=0.1,
@@ -22,6 +23,7 @@ def test_judge_result_passes_when_relevance_high_and_risk_low() -> None:
 
 
 def test_judge_result_fails_when_hallucination_risk_high() -> None:
+    """Judge result fails when hallucination risk high."""
     result = JudgeResult(
         relevance_score=0.95,
         hallucination_risk=0.8,
@@ -34,6 +36,7 @@ def test_judge_result_fails_when_hallucination_risk_high() -> None:
 
 
 def test_quality_score_is_clamped_and_scaled() -> None:
+    """Quality score is clamped and scaled."""
     result = JudgeResult(
         relevance_score=1.5,
         hallucination_risk=-0.5,

@@ -14,11 +14,13 @@ from tests._helpers.docker_sandbox import orphan_cleanup_timeout_seconds
 
 
 def test_orphan_cleanup_timeout_seconds_defaults_to_sixty(monkeypatch):
+    """Orphan cleanup timeout seconds defaults to sixty."""
     monkeypatch.delenv("SIDAR_SANDBOX_TEST_CLEANUP_TIMEOUT_S", raising=False)
     assert orphan_cleanup_timeout_seconds() == 60.0
 
 
 def test_orphan_cleanup_timeout_seconds_honors_a_positive_override(monkeypatch):
+    """Orphan cleanup timeout seconds honors a positive override."""
     monkeypatch.setenv("SIDAR_SANDBOX_TEST_CLEANUP_TIMEOUT_S", "180")
     assert orphan_cleanup_timeout_seconds() == 180.0
 

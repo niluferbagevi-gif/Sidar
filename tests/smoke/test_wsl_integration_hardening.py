@@ -1,3 +1,5 @@
+"""Smoke tests for WSL integration settings and preflight hardening."""
+
 import json
 import os
 import subprocess
@@ -74,6 +76,7 @@ def test_wsl_integration_settings_schema_variants_are_normalized(
 
 
 def test_preflight_sets_autofix_eligible_when_default_covers_and_hardening_enabled(tmp_path):
+    """Preflight sets autofix eligible when default covers and hardening enabled."""
     mock_bin = tmp_path / "bin"
     mock_bin.mkdir()
 
@@ -144,6 +147,7 @@ JSON
 
 
 def test_preflight_keeps_autofix_disabled_when_default_covers_and_hardening_disabled(tmp_path):
+    """Preflight keeps autofix disabled when default covers and hardening disabled."""
     mock_bin = tmp_path / "bin"
     mock_bin.mkdir()
 

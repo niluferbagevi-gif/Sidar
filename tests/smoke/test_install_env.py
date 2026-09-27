@@ -1,3 +1,5 @@
+"""Smoke tests for installer environment handling."""
+
 import os
 import shlex
 import subprocess
@@ -16,6 +18,7 @@ from tests.smoke.test_install_verification import (
 def test_installer_test_env_scrubs_sensitive_keys(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Installer test env scrubs sensitive keys."""
     for key in _SENSITIVE_ENV_KEYS:
         monkeypatch.setenv(key, f"secret-{key.lower()}")
     monkeypatch.setenv("PATH", os.environ.get("PATH", ""))
@@ -31,6 +34,7 @@ def test_installer_test_env_scrubs_sensitive_keys(
 
 
 def test_runtime_database_url_source_labels_survive_successful_resolution(tmp_path: Path) -> None:
+    """Runtime database url source labels survive successful resolution."""
     script = textwrap.dedent(
         """
         set -euo pipefail
@@ -92,6 +96,7 @@ EOF
 
 
 def test_run_migrations_logs_resolved_database_url_source_not_unknown(tmp_path: Path) -> None:
+    """Run migrations logs resolved database url source not unknown."""
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     python_stub = fake_bin / "python3"
@@ -153,6 +158,7 @@ def test_run_migrations_logs_resolved_database_url_source_not_unknown(tmp_path: 
 
 
 def test_install_sidar_is_blank_helper_handles_whitespace(tmp_path: Path) -> None:
+    """Install sidar is blank helper handles whitespace."""
     result = _run_bash_smoke(
         """
         set -euo pipefail
@@ -184,6 +190,7 @@ def _valid_user_api_value(key: str, index: int) -> str:
 
 
 def test_env_keys_synced_to_runtime_profiles_but_not_test_by_default(tmp_path: Path) -> None:
+    """Env keys synced to runtime profiles but not test by default."""
     script_dir = tmp_path / "sidar"
     script_dir.mkdir()
     source_check = _run_bash_smoke(
@@ -253,6 +260,7 @@ def test_env_keys_synced_to_runtime_profiles_but_not_test_by_default(tmp_path: P
 
 
 def test_env_keys_synced_to_test_profile_with_explicit_opt_in(tmp_path: Path) -> None:
+    """Env keys synced to test profile with explicit opt in."""
     script_dir = tmp_path / "sidar"
     script_dir.mkdir()
     source_check = _run_bash_smoke(

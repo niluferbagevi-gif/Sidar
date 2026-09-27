@@ -1,3 +1,5 @@
+"""Tests for the ``sys.modules`` pollution guard."""
+
 from __future__ import annotations
 
 import types
@@ -6,6 +8,7 @@ from tests import conftest
 
 
 def test_critical_sys_module_pollution_guard_detects_fake_core_db(monkeypatch) -> None:
+    """Critical sys module pollution guard detects fake core db."""
     original = conftest.sys.modules.get("core.db", conftest._MISSING_SYS_MODULE)
     fake_core_db = types.ModuleType("core.db")
     fake_core_db.Database = object
@@ -19,6 +22,7 @@ def test_critical_sys_module_pollution_guard_detects_fake_core_db(monkeypatch) -
 
 
 def test_critical_sys_module_pollution_guard_allows_pending_monkeypatch(monkeypatch) -> None:
+    """Critical sys module pollution guard allows pending monkeypatch."""
     original = conftest.sys.modules.get("core.llm_client", conftest._MISSING_SYS_MODULE)
     fake_llm_client = types.ModuleType("core.llm_client")
     fake_llm_client.LLMClient = object
@@ -32,4 +36,5 @@ def test_critical_sys_module_pollution_guard_allows_pending_monkeypatch(monkeypa
 
 
 def test_sensitive_sys_modules_excludes_torch_c_extension_state() -> None:
+    """Sensitive sys modules excludes torch c extension state."""
     assert "torch" not in conftest._SENSITIVE_SYS_MODULES

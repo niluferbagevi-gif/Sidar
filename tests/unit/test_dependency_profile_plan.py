@@ -1,3 +1,5 @@
+"""Tests for the dependency profile plan and installer contract."""
+
 from __future__ import annotations
 
 import tomllib
@@ -7,6 +9,7 @@ from packaging.requirements import Requirement
 
 
 def test_dependency_profile_plan_preserves_current_install_standard() -> None:
+    """Dependency profile plan preserves current install standard."""
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     plan = pyproject["tool"]["sidar"]["dependency_profile_plan"]
     optional_dependencies = pyproject["project"]["optional-dependencies"]
@@ -31,6 +34,7 @@ def test_dependency_profile_plan_preserves_current_install_standard() -> None:
 
 
 def test_installer_dependency_profile_contract_matches_plan_metadata() -> None:
+    """Installer dependency profile contract matches plan metadata."""
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     optional_dependencies = pyproject["project"]["optional-dependencies"]
     plan = pyproject["tool"]["sidar"]["dependency_profile_plan"]
@@ -55,6 +59,7 @@ def test_installer_dependency_profile_contract_matches_plan_metadata() -> None:
 
 
 def test_dependency_profile_plan_documents_inventory_phase_table() -> None:
+    """Dependency profile plan documents inventory phase table."""
     docs = Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")
 
     assert "## Envanter taslağı" in docs
@@ -83,6 +88,7 @@ def test_dependency_profile_plan_documents_inventory_phase_table() -> None:
 
 
 def test_dependency_inventory_labels_main_and_dev_extra_dependencies() -> None:
+    """Dependency inventory labels main and dev extra dependencies."""
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     inventory = pyproject["tool"]["sidar"]["dependency_inventory"]
     labels = inventory["labels"]
@@ -147,6 +153,7 @@ def test_defusedxml_is_a_core_runtime_dependency_not_a_dev_only_tool() -> None:
 
 
 def test_httpx2_migration_candidate_is_retired_to_keep_single_http_client() -> None:
+    """Httpx2 migration candidate is retired to keep single http client."""
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     labels = pyproject["tool"]["sidar"]["dependency_inventory"]["labels"]
     deps = pyproject["project"]["dependencies"]
@@ -162,6 +169,7 @@ def test_httpx2_migration_candidate_is_retired_to_keep_single_http_client() -> N
 
 
 def test_posthog_major_cap_is_documented_as_chromadb_telemetry_constraint() -> None:
+    """Posthog major cap is documented as chromadb telemetry constraint."""
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     deps = pyproject["project"]["dependencies"]
     docs = Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")
@@ -173,6 +181,7 @@ def test_posthog_major_cap_is_documented_as_chromadb_telemetry_constraint() -> N
 
 
 def test_ci_has_blocking_production_profile_runtime_validation() -> None:
+    """Ci has blocking production profile runtime validation."""
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     validation = pyproject["tool"]["sidar"]["dependency_profile_plan"][
         "production_minimal_runtime_validation"
@@ -211,6 +220,7 @@ def test_ci_has_blocking_production_profile_runtime_validation() -> None:
 
 
 def test_torch_upgrade_reminder_records_resolved_advisory_and_validation_plan() -> None:
+    """Torch upgrade reminder records resolved advisory and validation plan."""
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     reminder = pyproject["tool"]["sidar"]["dependency_profile_plan"]["torch_upgrade_reminder"]
     runbook = Path(reminder["runbook_file"])
@@ -242,6 +252,7 @@ def test_torch_upgrade_reminder_records_resolved_advisory_and_validation_plan() 
 
 
 def test_zero_ruff_debt_is_enforced_after_global_ignores_are_removed() -> None:
+    """Zero ruff debt is enforced after global ignores are removed."""
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     ruff = pyproject["tool"]["ruff"]
     lint = pyproject["tool"]["ruff"]["lint"]
@@ -302,6 +313,7 @@ def test_zero_ruff_debt_is_enforced_after_global_ignores_are_removed() -> None:
 
 
 def test_dependency_profile_plan_scopes_docker_and_installer_to_separate_pr() -> None:
+    """Dependency profile plan scopes docker and installer to separate pr."""
     docs = Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")
 
     assert "## Dockerfile / installer geçiş PR kapsamı" in docs
@@ -322,6 +334,7 @@ def test_dependency_profile_plan_scopes_docker_and_installer_to_separate_pr() ->
 
 
 def test_dependency_profile_plan_moves_dev_tools_to_dev_extra_not_runtime_deps() -> None:
+    """Dependency profile plan moves dev tools to dev extra not runtime deps."""
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     dependencies = set(pyproject["project"]["dependencies"])
     dev_dependencies = set(pyproject["project"]["optional-dependencies"]["dev"])
@@ -332,6 +345,7 @@ def test_dependency_profile_plan_moves_dev_tools_to_dev_extra_not_runtime_deps()
 
 
 def test_production_minimal_excludes_heavy_optional_extras() -> None:
+    """Production minimal excludes heavy optional extras."""
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     optional_dependencies = pyproject["project"]["optional-dependencies"]
     production_minimal = optional_dependencies["production-minimal"]
@@ -360,6 +374,7 @@ def test_production_minimal_excludes_heavy_optional_extras() -> None:
 
 
 def test_rag_torch_dependency_uses_patched_release_without_audit_exception() -> None:
+    """Rag torch dependency uses patched release without audit exception."""
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     rag_deps = pyproject["project"]["optional-dependencies"]["rag"]
     docs = Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")
@@ -386,6 +401,7 @@ def test_rag_torch_dependency_uses_patched_release_without_audit_exception() -> 
 
 
 def test_production_profile_excludes_dev_quality_tools() -> None:
+    """Production profile excludes dev quality tools."""
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     production_dependencies = set(pyproject["project"]["optional-dependencies"]["production"])
     docs = Path("docs/DEPENDENCY_PROFILE_PLAN.md").read_text(encoding="utf-8")
