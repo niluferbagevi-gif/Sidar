@@ -1,3 +1,5 @@
+"""Unit tests for ``managers.system_health``."""
+
 import sys
 import types
 from types import SimpleNamespace
@@ -14,6 +16,7 @@ def _build_manager(monkeypatch, *, cfg=None, use_gpu=False):
 
 
 def test_render_llm_metrics_prometheus_with_snapshot_values():
+    """Render llm metrics prometheus with snapshot values."""
     snapshot = {
         "totals": {"calls": 4, "cost_usd": 2.5, "total_tokens": 300, "failures": 1},
         "cache": {
@@ -50,6 +53,7 @@ def test_render_llm_metrics_prometheus_with_snapshot_values():
 
 
 def test_render_llm_metrics_prometheus_with_invalid_input_uses_defaults():
+    """Render llm metrics prometheus with invalid input uses defaults."""
     text = render_llm_metrics_prometheus(None)
 
     assert "sidar_llm_calls_total 0" in text
@@ -57,6 +61,7 @@ def test_render_llm_metrics_prometheus_with_invalid_input_uses_defaults():
 
 
 def test_tcp_dependency_health_success_and_error(monkeypatch):
+    """Tcp dependency health success and error."""
     manager = _build_manager(monkeypatch)
 
     class DummySock:
@@ -81,6 +86,7 @@ def test_tcp_dependency_health_success_and_error(monkeypatch):
 
 
 def test_check_redis_disabled_and_tcp(monkeypatch):
+    """Check redis disabled and tcp."""
     disabled = _build_manager(monkeypatch, cfg=SimpleNamespace(REDIS_URL=""))
     assert disabled.check_redis() == {"healthy": True, "kind": "redis", "mode": "disabled"}
 
@@ -97,6 +103,7 @@ def test_check_redis_disabled_and_tcp(monkeypatch):
 
 
 def test_check_database_sqlite_and_tcp(monkeypatch, tmp_path):
+    """Check database sqlite and tcp."""
     existing = tmp_path / "app.db"
     existing.write_text("db")
     sqlite_manager = _build_manager(
@@ -127,6 +134,7 @@ def test_check_database_sqlite_and_tcp(monkeypatch, tmp_path):
 
 
 def test_update_prometheus_metrics_handles_missing_prometheus_client(monkeypatch):
+    """Update prometheus metrics handles missing prometheus client."""
     manager = _build_manager(monkeypatch)
     monkeypatch.setattr(
         manager, "_check_import", lambda name: False if name == "prometheus_client" else True
@@ -138,6 +146,7 @@ def test_update_prometheus_metrics_handles_missing_prometheus_client(monkeypatch
 
 
 def test_update_prometheus_metrics_sets_expected_gauges(monkeypatch):
+    """Update prometheus metrics sets expected gauges."""
     manager = _build_manager(monkeypatch)
 
     class FakeGauge:
@@ -174,6 +183,7 @@ def test_update_prometheus_metrics_sets_expected_gauges(monkeypatch):
 
 
 def test_get_health_summary_marks_degraded_when_dependency_unhealthy(monkeypatch):
+    """Get health summary marks degraded when dependency unhealthy."""
     cfg = SimpleNamespace(ENABLE_DEPENDENCY_HEALTHCHECKS=True)
     manager = _build_manager(monkeypatch, cfg=cfg)
     monkeypatch.setattr(manager, "get_cpu_usage", lambda interval=None: 12.0)
@@ -196,6 +206,7 @@ def test_get_health_summary_marks_degraded_when_dependency_unhealthy(monkeypatch
 
 
 def test_get_health_summary_marks_degraded_when_agent_catalog_degraded(monkeypatch):
+    """Get health summary marks degraded when agent catalog degraded."""
     manager = _build_manager(monkeypatch)
     monkeypatch.setattr(manager, "get_cpu_usage", lambda interval=None: 12.0)
     monkeypatch.setattr(manager, "get_memory_info", lambda: {"percent": 40.0})
@@ -218,6 +229,7 @@ def test_get_health_summary_marks_degraded_when_agent_catalog_degraded(monkeypat
 
 
 def test_full_report_includes_gpu_reason_and_updates_metrics(monkeypatch):
+    """Full report includes gpu reason and updates metrics."""
     manager = _build_manager(monkeypatch)
     captured = {}
     monkeypatch.setattr(manager, "get_cpu_usage", lambda interval=None: None)
@@ -237,6 +249,7 @@ def test_full_report_includes_gpu_reason_and_updates_metrics(monkeypatch):
 
 
 def test_optimize_gpu_memory_runs_gc_even_without_gpu(monkeypatch):
+    """Optimize gpu memory runs gc even without gpu."""
     manager = _build_manager(monkeypatch)
     calls = {"gc": 0}
     monkeypatch.setattr("gc.collect", lambda: calls.__setitem__("gc", calls["gc"] + 1))
@@ -249,6 +262,7 @@ def test_optimize_gpu_memory_runs_gc_even_without_gpu(monkeypatch):
 
 
 def test_get_driver_version_falls_back_to_na_on_missing_command(monkeypatch):
+    """Get driver version falls back to na on missing command."""
     manager = _build_manager(monkeypatch)
     monkeypatch.setattr(
         "subprocess.run", lambda *_a, **_k: (_ for _ in ()).throw(FileNotFoundError())
@@ -258,6 +272,7 @@ def test_get_driver_version_falls_back_to_na_on_missing_command(monkeypatch):
 
 
 def test_check_import_and_check_gpu_paths(monkeypatch):
+    """Check import and check gpu paths."""
     assert SystemHealthManager._check_import("sys") is True
     assert SystemHealthManager._check_import("module_does_not_exist_123") is False
 
@@ -282,6 +297,7 @@ def test_check_import_and_check_gpu_paths(monkeypatch):
 
 
 def test_init_nvml_sets_state_and_handles_fallback(monkeypatch):
+    """Init nvml sets state and handles fallback."""
     manager = _build_manager(monkeypatch)
     manager._nvml_initialized = False
     fake_pynvml = types.SimpleNamespace(nvmlInit=lambda: None)
@@ -306,6 +322,7 @@ def test_init_nvml_sets_state_and_handles_fallback(monkeypatch):
 
 
 def test_cpu_and_memory_paths_with_psutil(monkeypatch):
+    """Cpu and memory paths with psutil."""
     manager = _build_manager(monkeypatch)
     manager._psutil_available = True
 
@@ -338,6 +355,7 @@ def test_cpu_and_memory_paths_with_psutil(monkeypatch):
 
 
 def test_get_gpu_info_and_driver_version_variants(monkeypatch):
+    """Get gpu info and driver version variants."""
     manager = _build_manager(monkeypatch, use_gpu=True)
     manager._gpu_available = True
     manager._nvml_initialized = False
@@ -406,6 +424,7 @@ def test_get_gpu_info_and_driver_version_variants(monkeypatch):
 
 
 def test_optimize_gpu_memory_gpu_paths_and_ollama(monkeypatch):
+    """Optimize gpu memory gpu paths and ollama."""
     manager = _build_manager(monkeypatch, use_gpu=True)
     manager._gpu_available = True
     state = {"reserved": 500_000_000}
@@ -489,6 +508,7 @@ def test_check_ollama_uses_its_own_short_timeout_not_the_inference_timeout(monke
 
 
 def test_update_summary_report_close_repr_and_del(monkeypatch):
+    """Update summary report close repr and del."""
     manager = _build_manager(monkeypatch)
     manager._prometheus_gauges = {"cpu_percent": object()}
     manager.update_prometheus_metrics({})
@@ -552,6 +572,7 @@ def test_update_summary_report_close_repr_and_del(monkeypatch):
 
 
 def test_init_calls_nvml_when_gpu_and_pynvml_available(monkeypatch):
+    """Init calls nvml when gpu and pynvml available."""
     calls = {"init": 0}
     monkeypatch.setattr(
         SystemHealthManager,
@@ -569,6 +590,7 @@ def test_init_calls_nvml_when_gpu_and_pynvml_available(monkeypatch):
 
 
 def test_init_nvml_wsl2_logging_branch(monkeypatch):
+    """Init nvml wsl2 logging branch."""
     manager = _build_manager(monkeypatch)
     manager._nvml_initialized = False
 
@@ -595,6 +617,7 @@ def test_init_nvml_wsl2_logging_branch(monkeypatch):
 
 
 def test_psutil_unavailable_and_gpu_info_error_paths(monkeypatch):
+    """Psutil unavailable and gpu info error paths."""
     manager = _build_manager(monkeypatch)
     manager._psutil_available = False
     assert manager.get_cpu_usage() is None
@@ -618,6 +641,7 @@ def test_psutil_unavailable_and_gpu_info_error_paths(monkeypatch):
 
 
 def test_driver_version_generic_error_and_ollama_exception(monkeypatch):
+    """Driver version generic error and ollama exception."""
     manager = _build_manager(monkeypatch)
     monkeypatch.setattr(
         "subprocess.run", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("oops"))
@@ -634,6 +658,7 @@ def test_driver_version_generic_error_and_ollama_exception(monkeypatch):
 
 
 def test_update_prometheus_metrics_init_exception_and_empty_short_circuit(monkeypatch):
+    """Update prometheus metrics init exception and empty short circuit."""
     manager = _build_manager(monkeypatch)
     monkeypatch.setattr(manager, "_check_import", lambda _name: True)
     monkeypatch.setitem(
@@ -652,6 +677,7 @@ def test_update_prometheus_metrics_init_exception_and_empty_short_circuit(monkey
 
 
 def test_get_dependency_health_and_database_disabled(monkeypatch):
+    """Get dependency health and database disabled."""
     manager = _build_manager(monkeypatch, cfg=SimpleNamespace(DATABASE_URL="", REDIS_URL=""))
     deps = manager.get_dependency_health()
     assert deps["redis"]["mode"] == "disabled"
@@ -659,6 +685,7 @@ def test_get_dependency_health_and_database_disabled(monkeypatch):
 
 
 def test_full_report_gpu_line_optional_fields(monkeypatch):
+    """Full report gpu line optional fields."""
     manager = _build_manager(monkeypatch)
     monkeypatch.setattr(manager, "get_cpu_usage", lambda interval=None: 20.0)
     monkeypatch.setattr(
@@ -720,6 +747,7 @@ def test_full_report_gpu_line_optional_fields(monkeypatch):
 
 
 def test_system_health_manager_isolated(monkeypatch):
+    """System health manager isolated."""
     health_cfg = SimpleNamespace(
         ENABLE_DEPENDENCY_HEALTHCHECKS=True,
         REDIS_URL="",
@@ -737,6 +765,7 @@ def test_system_health_manager_isolated(monkeypatch):
 
 
 def test_check_ollama_non_200_and_timeout(monkeypatch, mock_requests):
+    """Check ollama non 200 and timeout."""
     manager = _build_manager(
         monkeypatch, cfg=SimpleNamespace(OLLAMA_URL="http://ollama.local/api", OLLAMA_TIMEOUT=1)
     )

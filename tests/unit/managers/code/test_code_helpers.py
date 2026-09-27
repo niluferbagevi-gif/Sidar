@@ -1,3 +1,5 @@
+"""Unit tests for CodeManager Docker, patcher and security adapter helpers."""
+
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -14,6 +16,7 @@ from managers.code.security_adapter import CodeSecurityAdapter
 
 
 def test_docker_helper_sanitizers_and_cli_command_are_fixture_light(tmp_path):
+    """Docker helper sanitizers and cli command are fixture light."""
     limits = {"memory": "--bad", "cpus": "0.25", "pids_limit": 0, "network_mode": "bad"}
 
     assert (
@@ -33,6 +36,7 @@ def test_docker_helper_sanitizers_and_cli_command_are_fixture_light(tmp_path):
 
 
 def test_patcher_replaces_exactly_one_block_without_code_manager_fixture():
+    """Patcher replaces exactly one block without code manager fixture."""
     ok, patched = apply_exact_block_patch("a\nb\n", "b", "c")
     assert ok is True
     assert patched == "a\nc\n"
@@ -47,6 +51,7 @@ def test_patcher_replaces_exactly_one_block_without_code_manager_fixture():
 
 
 def test_security_adapter_delegates_policy_and_formats_safe_write_denial(tmp_path):
+    """Security adapter delegates policy and formats safe write denial."""
     security = SimpleNamespace(
         can_read=lambda path: path.endswith("ok.txt"),
         can_write=lambda path: False,

@@ -1,3 +1,5 @@
+"""Unit tests for ``managers.browser_manager``."""
+
 from __future__ import annotations
 
 import asyncio
@@ -21,6 +23,7 @@ class _Cfg:
 
 @pytest.fixture
 def manager(tmp_path: Path) -> BrowserManager:
+    """Return a BrowserManager that writes artifacts under ``tmp_path``."""
     mgr = BrowserManager(config=_Cfg())
     mgr.artifact_dir = tmp_path
     return mgr
@@ -220,6 +223,7 @@ def _session(provider: str = "playwright") -> BrowserSession:
 
 
 def test_helpers_and_summary(manager: BrowserManager) -> None:
+    """Helpers and summary."""
     assert manager._is_high_risk_click("button.submit") is True
     assert manager._is_high_risk_click("button.buy-now") is True
     assert manager._is_high_risk_click("a.pay-invoice") is True
@@ -250,6 +254,7 @@ def test_helpers_and_summary(manager: BrowserManager) -> None:
 def test_collect_signals_and_session_url(
     manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Collect signals and session url."""
     sess = _session("playwright")
     sess.current_url = "https://set.local"
     manager._sessions[sess.session_id] = sess
@@ -271,6 +276,7 @@ def test_collect_signals_and_session_url(
 def test_hitl_request_and_sync_guard(
     manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Hitl request and sync guard."""
     calls: list[str] = []
 
     class _Gate:
@@ -306,6 +312,7 @@ def test_hitl_request_and_sync_guard(
 
 
 def test_validation_provider_and_require_session(manager: BrowserManager) -> None:
+    """Validation provider and require session."""
     assert manager._provider_candidates() == ["playwright", "selenium"]
     manager.provider = "selenium"
     assert manager._provider_candidates() == ["selenium"]
@@ -323,6 +330,7 @@ def test_validation_provider_and_require_session(manager: BrowserManager) -> Non
 
 
 def test_start_playwright_session(manager: BrowserManager, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Start playwright session."""
     _register_fake_playwright(monkeypatch)
     session = manager._start_playwright_session("chromium", True)
     assert session.provider == "playwright"
@@ -334,6 +342,7 @@ def test_start_playwright_session(manager: BrowserManager, monkeypatch: pytest.M
 def test_start_selenium_session_and_impls(
     manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Start selenium session and impls."""
     reg = _register_fake_selenium(monkeypatch)
     session = manager._start_selenium_session("chrome", True)
     assert session.provider == "selenium"
@@ -362,6 +371,7 @@ def test_start_selenium_session_and_impls(
 def test_is_available_status_and_start_session(
     manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Is available status and start session."""
     _register_fake_playwright(monkeypatch)
     assert manager.is_available() is True
 
@@ -421,6 +431,8 @@ def test_is_available_status_and_start_session(
 def test_start_session_respects_selenium_provider_preference(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Start session respects selenium provider preference."""
+
     class _SeleniumCfg(_Cfg):
         BROWSER_PROVIDER = "selenium"
 
@@ -452,6 +464,7 @@ def test_start_session_respects_selenium_provider_preference(
 def test_navigation_and_sync_actions(
     manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Navigation and sync actions."""
     _register_fake_playwright(monkeypatch)
     pw = manager._start_playwright_session("chromium", True)
     pw.session_id = "pw"
@@ -498,6 +511,7 @@ def test_navigation_and_sync_actions(
 
 
 def test_async_hitl_paths(manager: BrowserManager, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Async hitl paths."""
     sess = _session("playwright")
     manager._sessions["s1"] = sess
 
@@ -585,6 +599,7 @@ def test_async_hitl_paths(manager: BrowserManager, monkeypatch: pytest.MonkeyPat
 def test_click_element_hitl_returns_rejected_when_approval_denied(
     manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Click element hitl returns rejected when approval denied."""
     session = _session("playwright")
     manager._sessions["s1"] = session
 
@@ -608,6 +623,7 @@ def test_click_element_hitl_returns_rejected_when_approval_denied(
 def test_fill_form_hitl_returns_rejected_when_approval_denied(
     manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Fill form hitl returns rejected when approval denied."""
     session = _session("playwright")
     manager._sessions["s1"] = session
 
@@ -629,6 +645,7 @@ def test_fill_form_hitl_returns_rejected_when_approval_denied(
 def test_capture_and_close(
     manager: BrowserManager, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Capture and close."""
     _register_fake_playwright(monkeypatch)
     pw = manager._start_playwright_session("chromium", True)
     pw.session_id = "pw"
@@ -674,6 +691,7 @@ def test_capture_and_close(
 
 
 def test_additional_summary_and_list(manager: BrowserManager) -> None:
+    """Additional summary and list."""
     manager._record_audit_event(
         session_id="s2",
         action="browser_click",
@@ -714,6 +732,7 @@ def test_additional_summary_and_list(manager: BrowserManager) -> None:
 
 
 def test_summary_branch_gaps_and_collect_signal_defaults(manager: BrowserManager) -> None:
+    """Summary branch gaps and collect signal defaults."""
     # status/action boş olan kayıtlar branch fallback yollarını çalıştırmalı
     manager._record_audit_event(session_id="b1", action="", status="", selector="#noop")
 
@@ -747,6 +766,7 @@ def test_summary_branch_gaps_and_collect_signal_defaults(manager: BrowserManager
 def test_playwright_impl_and_goto_selenium(
     manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Playwright impl and goto selenium."""
     _register_fake_playwright(monkeypatch)
     pw = manager._start_playwright_session("chromium", True)
     pw.session_id = "pw2"
@@ -763,6 +783,8 @@ def test_playwright_impl_and_goto_selenium(
 
 
 def test_strategy_provider_dispatch_custom_backend(manager: BrowserManager) -> None:
+    """Strategy provider dispatch custom backend."""
+
     class _CustomProvider(BaseBrowserProvider):
         provider_name = "custom"
 
@@ -829,6 +851,7 @@ def test_strategy_provider_dispatch_custom_backend(manager: BrowserManager) -> N
 def test_start_selenium_non_headless_and_close_partial(
     manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Start selenium non headless and close partial."""
     _register_fake_selenium(monkeypatch)
     ch = manager._start_selenium_session("chrome", False)
     ff = manager._start_selenium_session("firefox", False)
@@ -863,6 +886,7 @@ def test_start_selenium_session_parametrized_headless_flags(
     headless: bool,
     expected_arg: str | None,
 ) -> None:
+    """Start selenium session parametrized headless flags."""
     _register_fake_selenium(monkeypatch)
     session = manager._start_selenium_session(browser_name, headless)
     assert session.provider == "selenium"
@@ -876,6 +900,7 @@ def test_start_selenium_session_parametrized_headless_flags(
 def test_selenium_fill_form_impl_parametrized_clear_flag(
     manager: BrowserManager, monkeypatch: pytest.MonkeyPatch, clear: bool
 ) -> None:
+    """Selenium fill form impl parametrized clear flag."""
     _register_fake_selenium(monkeypatch)
     session = manager._start_selenium_session("chrome", True)
     session.session_id = f"se-fill-{int(clear)}"
@@ -900,6 +925,7 @@ def test_selenium_interaction_impls_parametrized(
     action: str,
     args: tuple[str, ...],
 ) -> None:
+    """Selenium interaction impls parametrized."""
     reg = _register_fake_selenium(monkeypatch)
     session = manager._start_selenium_session("chrome", True)
     session.session_id = f"se-{action}"
@@ -918,6 +944,7 @@ def test_selenium_interaction_impls_parametrized(
 def test_analyze_visual_drift_reports_missing_baseline(
     manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Analyze visual drift reports missing baseline."""
     sess = _session("playwright")
     sess.session_id = "v1"
     manager._sessions["v1"] = sess
@@ -937,6 +964,7 @@ def test_analyze_visual_drift_reports_missing_baseline(
 def test_analyze_visual_drift_with_hash_fallback_detects_change(
     manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Analyze visual drift with hash fallback detects change."""
     sess = _session("playwright")
     sess.session_id = "v2"
     manager._sessions["v2"] = sess
@@ -965,6 +993,7 @@ def test_analyze_visual_drift_with_hash_fallback_detects_change(
 def test_compute_visual_drift_uses_hash_fallback_when_pil_processing_fails(
     manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Compute visual drift uses hash fallback when pil processing fails."""
     baseline = manager.artifact_dir / "baseline-broken.png"
     current = manager.artifact_dir / "current-broken.png"
     baseline.write_bytes(b"baseline-content")
@@ -998,6 +1027,7 @@ def test_compute_visual_drift_uses_hash_fallback_when_pil_processing_fails(
 def test_collect_signals_includes_visual_qa(
     manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Collect signals includes visual qa."""
     sess = _session("playwright")
     sess.session_id = "v3"
     manager._sessions["v3"] = sess
@@ -1013,6 +1043,7 @@ def test_collect_signals_includes_visual_qa(
 def test_collect_session_signals_visual_qa_runs_when_no_running_loop(
     manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Collect session signals visual qa runs when no running loop."""
     session = _session("playwright")
     session.session_id = "v-loop"
     manager._sessions["v-loop"] = session
@@ -1033,6 +1064,7 @@ def test_collect_session_signals_visual_qa_runs_when_no_running_loop(
 def test_start_session_returns_safe_failure_when_playwright_runtime_start_fails(
     manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Start session returns safe failure when playwright runtime start fails."""
     manager.provider = "playwright"
 
     pkg = types.ModuleType("playwright")
@@ -1056,6 +1088,7 @@ def test_start_session_returns_safe_failure_when_playwright_runtime_start_fails(
 def test_analyze_visual_drift_runs_multimodal_only_in_uncertainty_band(
     manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Analyze visual drift runs multimodal only in uncertainty band."""
     sess = _session("playwright")
     sess.session_id = "v4"
     manager._sessions["v4"] = sess
@@ -1093,6 +1126,7 @@ def test_analyze_visual_drift_runs_multimodal_only_in_uncertainty_band(
 def test_analyze_visual_drift_real_screenshot_triggers_multimodal_at_threshold_margin(
     manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Analyze visual drift real screenshot triggers multimodal at threshold margin."""
     image_module = pytest.importorskip("PIL.Image")
     sess = _session("playwright")
     sess.session_id = "v-real"
@@ -1134,6 +1168,7 @@ def test_analyze_visual_drift_real_screenshot_triggers_multimodal_at_threshold_m
 def test_analyze_visual_drift_skips_multimodal_when_far_from_threshold(
     manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Analyze visual drift skips multimodal when far from threshold."""
     sess = _session("playwright")
     sess.session_id = "v5"
     manager._sessions["v5"] = sess
@@ -1169,6 +1204,7 @@ def test_analyze_visual_drift_skips_multimodal_when_far_from_threshold(
 def test_compute_visual_drift_with_broken_png_bytes_falls_back_to_hash(
     manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Compute visual drift with broken png bytes falls back to hash."""
     baseline = manager.artifact_dir / "baseline-invalid.png"
     current = manager.artifact_dir / "current-invalid.png"
     baseline.write_bytes(b"\x89PNG\r\n\x1a\nnot-a-real-image")
@@ -1201,6 +1237,7 @@ def test_compute_visual_drift_with_broken_png_bytes_falls_back_to_hash(
 def test_compute_visual_drift_pixel_diff_path(
     manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Compute visual drift pixel diff path."""
     baseline = manager.artifact_dir / "baseline-ok.png"
     current = manager.artifact_dir / "current-ok.png"
     baseline.write_bytes(b"a")
@@ -1243,6 +1280,7 @@ def test_compute_visual_drift_pixel_diff_path(
 def test_compute_visual_drift_returns_size_mismatch_payload(
     manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Compute visual drift returns size mismatch payload."""
     baseline = manager.artifact_dir / "baseline-size.png"
     current = manager.artifact_dir / "current-size.png"
     baseline.write_bytes(b"a")
@@ -1283,6 +1321,7 @@ def test_compute_visual_drift_returns_size_mismatch_payload(
 def test_analyze_screenshot_with_multimodal_success(
     manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Analyze screenshot with multimodal success."""
     manager._llm = object()
 
     class _Pipeline:
@@ -1306,6 +1345,7 @@ def test_analyze_screenshot_with_multimodal_success(
 def test_analyze_screenshot_with_multimodal_returns_reason_when_llm_missing(
     manager: BrowserManager,
 ) -> None:
+    """Analyze screenshot with multimodal returns reason when llm missing."""
     manager._llm = None
     result = asyncio.run(manager._analyze_screenshot_with_multimodal("/tmp/a.png", "prompt"))
     assert result["success"] is False
@@ -1315,6 +1355,7 @@ def test_analyze_screenshot_with_multimodal_returns_reason_when_llm_missing(
 def test_analyze_visual_drift_disabled_and_error_paths(
     manager: BrowserManager, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Analyze visual drift disabled and error paths."""
     sess = _session("playwright")
     sess.session_id = "v6"
     manager._sessions["v6"] = sess
@@ -1340,6 +1381,7 @@ def test_analyze_visual_drift_disabled_and_error_paths(
 
 
 def test_provider_for_session_raises_on_unsupported_provider(manager: BrowserManager) -> None:
+    """Provider for session raises on unsupported provider."""
     session = _session("unsupported")
     session.provider = "unsupported"
     with pytest.raises(ValueError, match="Desteklenmeyen browser provider"):
@@ -1347,6 +1389,7 @@ def test_provider_for_session_raises_on_unsupported_provider(manager: BrowserMan
 
 
 def test_selenium_provider_close_with_none_driver_and_current_url_fallback() -> None:
+    """Selenium provider close with none driver and current url fallback."""
     from managers.browser_manager import SeleniumBrowserProvider
 
     provider = SeleniumBrowserProvider()
@@ -1384,6 +1427,8 @@ def test_is_available_returns_false_when_all_candidates_fail(
 def test_run_coro_sync_uses_new_event_loop_when_running_loop(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Run coro sync uses new event loop when running loop."""
+
     class _FakeLoop:
         def __init__(self) -> None:
             self.closed = False

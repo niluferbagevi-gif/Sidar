@@ -8,6 +8,7 @@ def _colors() -> dict[str, str]:
 
 
 def test_ask_choice_retries_and_uses_default(capsys) -> None:
+    """Ask choice retries and uses default."""
     answers = iter(["invalid", ""])
     result = ui.ask_choice(
         "Mode",
@@ -23,6 +24,7 @@ def test_ask_choice_retries_and_uses_default(capsys) -> None:
 
 
 def test_text_and_confirmation_defaults() -> None:
+    """Text and confirmation defaults."""
     colors = _colors()
     assert (
         ui.ask_text(

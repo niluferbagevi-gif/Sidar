@@ -1,3 +1,5 @@
+"""Unit tests for helpers extracted into the ``launcher`` package."""
+
 from __future__ import annotations
 
 import argparse
@@ -11,6 +13,7 @@ from launcher import cli_args, env_reload, preflight, session, wizard
 
 
 def test_wizard_default_keys_prefer_last_selection_over_config():
+    """Wizard default keys prefer last selection over config."""
     cfg = SimpleNamespace(AI_PROVIDER="gemini", ACCESS_LEVEL="sandbox")
     last = {"mode": "cli", "provider": "anthropic", "level": "restricted", "log": "error"}
 
@@ -23,6 +26,7 @@ def test_wizard_default_keys_prefer_last_selection_over_config():
 
 
 def test_wizard_default_keys_fall_back_to_config_and_safe_defaults():
+    """Wizard default keys fall back to config and safe defaults."""
     cfg = SimpleNamespace(AI_PROVIDER="not-a-provider", ACCESS_LEVEL="sandbox")
 
     assert wizard.wizard_default_keys(None, cfg=cfg) == {
@@ -34,6 +38,7 @@ def test_wizard_default_keys_fall_back_to_config_and_safe_defaults():
 
 
 def test_last_extra_args_returns_saved_mapping_only_when_present():
+    """Last extra args returns saved mapping only when present."""
     assert wizard.last_extra_args(None) == {}
     assert wizard.last_extra_args({"extra_args": "bad"}) == {}
     assert wizard.last_extra_args({"extra_args": {}}) == {}
@@ -41,6 +46,7 @@ def test_last_extra_args_returns_saved_mapping_only_when_present():
 
 
 def test_build_arg_parser_mentions_session_file_and_parses_flags():
+    """Build arg parser mentions session file and parses flags."""
     parser = cli_args.build_arg_parser(session_filename=".custom_session.json")
 
     assert ".custom_session.json" in parser.format_help()
@@ -50,29 +56,34 @@ def test_build_arg_parser_mentions_session_file_and_parses_flags():
 
 @pytest.mark.parametrize("value", ["1", "TRUE", " yes ", "on"])
 def test_use_last_from_env_accepts_truthy_values(monkeypatch, value):
+    """Use last from env accepts truthy values."""
     monkeypatch.setenv("SIDAR_LAUNCHER_USE_LAST", value)
     assert cli_args.use_last_from_env() is True
 
 
 def test_use_last_from_env_defaults_to_false(monkeypatch):
+    """Use last from env defaults to false."""
     monkeypatch.delenv("SIDAR_LAUNCHER_USE_LAST", raising=False)
     assert cli_args.use_last_from_env() is False
 
 
 @pytest.mark.parametrize("port", ["0", "65536", "abc"])
 def test_validate_port_argument_rejects_out_of_range_or_non_integer(port):
+    """Validate port argument rejects out of range or non integer."""
     parser = argparse.ArgumentParser()
     with pytest.raises(SystemExit):
         cli_args.validate_port_argument(parser, port)
 
 
 def test_validate_port_argument_accepts_valid_or_missing_port():
+    """Validate port argument accepts valid or missing port."""
     parser = argparse.ArgumentParser()
     cli_args.validate_port_argument(parser, None)
     cli_args.validate_port_argument(parser, "65535")
 
 
 def test_warn_missing_provider_api_key_only_warns_for_empty_cloud_keys(capsys):
+    """Warn missing provider api key only warns for empty cloud keys."""
     logger = logging.getLogger("test-launcher-preflight")
 
     preflight.warn_missing_provider_api_key(
@@ -89,6 +100,7 @@ def test_warn_missing_provider_api_key_only_warns_for_empty_cloud_keys(capsys):
 
 
 def test_parse_env_source_file_handles_export_quotes_and_invalid_lines(tmp_path: Path):
+    """Parse env source file handles export quotes and invalid lines."""
     env_file = tmp_path / ".env"
     env_file.write_text(
         "# comment\nexport A='1'\nB=\"two\"\nBAD KEY=x\nnoequals\nC= 3 \n", encoding="utf-8"
@@ -99,6 +111,7 @@ def test_parse_env_source_file_handles_export_quotes_and_invalid_lines(tmp_path:
 
 
 def test_session_round_trip_normalizes_and_rejects_other_versions(tmp_path: Path):
+    """Session round trip normalizes and rejects other versions."""
     path = tmp_path / ".sidar_session.json"
     logger = logging.getLogger("test-launcher-session")
 

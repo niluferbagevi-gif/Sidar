@@ -1,3 +1,5 @@
+"""Unit tests for ``managers.teams_manager``."""
+
 from __future__ import annotations
 
 import asyncio
@@ -65,17 +67,20 @@ class _FakeAsyncClient:
 
 
 def test_init_and_is_available_flag() -> None:
+    """Init and is available flag."""
     assert TeamsManager().is_available() is False
     assert TeamsManager(webhook_url=" https://example.test/hook ").is_available() is True
 
 
 def test_ensure_httpx_stub_adds_stub_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure httpx stub adds stub when missing."""
     monkeypatch.delitem(sys.modules, "httpx", raising=False)
     _ensure_httpx_stub()
     assert "httpx" in sys.modules
 
 
 def test_httpx_stub_async_client_context_manager_methods(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Httpx stub async client context manager methods."""
     monkeypatch.delitem(sys.modules, "httpx", raising=False)
     _ensure_httpx_stub()
 
@@ -88,6 +93,7 @@ def test_httpx_stub_async_client_context_manager_methods(monkeypatch: pytest.Mon
 
 
 def test_send_message_requires_webhook() -> None:
+    """Send message requires webhook."""
     ok, err = _run(TeamsManager().send_message("hello"))
     assert ok is False
     assert "TEAMS_WEBHOOK_URL" in err
@@ -96,6 +102,7 @@ def test_send_message_requires_webhook() -> None:
 def test_send_message_builds_payload_with_all_optional_fields(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Send message builds payload with all optional fields."""
     client = _FakeAsyncClient(response=_FakeResponse(status_code=200, text="1"))
 
     def _factory(*args, **kwargs):
@@ -130,6 +137,7 @@ def test_send_message_builds_payload_with_all_optional_fields(
 def test_send_message_omits_optional_fields_when_not_provided(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Send message omits optional fields when not provided."""
     client = _FakeAsyncClient(response=_FakeResponse(status_code=200, text="1"))
     monkeypatch.setattr("managers.teams_manager.httpx.AsyncClient", lambda *args, **kwargs: client)
 
@@ -148,6 +156,7 @@ def test_send_message_omits_optional_fields_when_not_provided(
 
 
 def test_send_adaptive_card_wraps_body(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Send adaptive card wraps body."""
     client = _FakeAsyncClient(response=_FakeResponse(status_code=201, text="ok"))
     monkeypatch.setattr("managers.teams_manager.httpx.AsyncClient", lambda *args, **kwargs: client)
 
@@ -160,12 +169,14 @@ def test_send_adaptive_card_wraps_body(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_send_adaptive_card_requires_webhook() -> None:
+    """Send adaptive card requires webhook."""
     ok, err = _run(TeamsManager().send_adaptive_card({"type": "AdaptiveCard", "body": []}))
     assert ok is False
     assert "TEAMS_WEBHOOK_URL" in err
 
 
 def test_send_notification_status_and_link(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Send notification status and link."""
     captured: dict[str, Any] = {}
 
     async def _fake_send_message(**kwargs):
@@ -195,6 +206,7 @@ def test_send_notification_status_and_link(monkeypatch: pytest.MonkeyPatch) -> N
 def test_send_notification_uses_default_color_for_unknown_status(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Send notification uses default color for unknown status."""
     captured: dict[str, Any] = {}
 
     async def _fake_send_message(**kwargs):
@@ -211,6 +223,7 @@ def test_send_notification_uses_default_color_for_unknown_status(
 
 
 def test_build_approval_card_and_summary_card() -> None:
+    """Build approval card and summary card."""
     approval = TeamsManager.build_approval_card(
         request_id="42",
         title="Need approval",
@@ -234,6 +247,7 @@ def test_build_approval_card_and_summary_card() -> None:
 
 
 def test_build_cards_without_optional_fields() -> None:
+    """Build cards without optional fields."""
     approval = TeamsManager.build_approval_card(
         request_id="7",
         title="T",
@@ -247,6 +261,7 @@ def test_build_cards_without_optional_fields() -> None:
 
 
 def test_post_non_success_http(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Post non success http."""
     client = _FakeAsyncClient(response=_FakeResponse(status_code=500, text="server exploded"))
     monkeypatch.setattr("managers.teams_manager.httpx.AsyncClient", lambda *args, **kwargs: client)
 
@@ -257,6 +272,7 @@ def test_post_non_success_http(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_post_success_for_accepted_empty_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Post success for accepted empty text."""
     client = _FakeAsyncClient(response=_FakeResponse(status_code=202, text=""))
     monkeypatch.setattr("managers.teams_manager.httpx.AsyncClient", lambda *args, **kwargs: client)
 
@@ -267,6 +283,7 @@ def test_post_success_for_accepted_empty_text(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_post_success_for_nonstandard_success_body(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Post success for nonstandard success body."""
     client = _FakeAsyncClient(response=_FakeResponse(status_code=200, text="accepted"))
     monkeypatch.setattr("managers.teams_manager.httpx.AsyncClient", lambda *args, **kwargs: client)
 
@@ -277,6 +294,7 @@ def test_post_success_for_nonstandard_success_body(monkeypatch: pytest.MonkeyPat
 
 
 def test_post_exception_returns_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Post exception returns error."""
     client = _FakeAsyncClient(error=RuntimeError("network down"))
     monkeypatch.setattr("managers.teams_manager.httpx.AsyncClient", lambda *args, **kwargs: client)
 

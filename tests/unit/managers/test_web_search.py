@@ -1,3 +1,5 @@
+"""Unit tests for ``managers.web_search``."""
+
 import asyncio
 import builtins
 import sys
@@ -11,10 +13,13 @@ from managers.web_search import WebSearchManager
 
 
 def run(coro):
+    """Run a coroutine to completion and return its result."""
     return asyncio.run(coro)
 
 
 class DummyConfig:
+    """Config stub with every search engine key and limit set."""
+
     SEARCH_ENGINE = "Tavily"
     TAVILY_API_KEY = "tav-key"
     GOOGLE_SEARCH_API_KEY = "g-key"
@@ -25,7 +30,10 @@ class DummyConfig:
 
 
 class DummyResponse:
+    """HTTP response stub with JSON payload, text and status code."""
+
     def __init__(self, payload=None, text="", status_code=200):
+        """Store the payload, text and status code."""
         self._payload = payload or {}
         self.text = text
         self.status_code = status_code
@@ -33,9 +41,11 @@ class DummyResponse:
         self.response = self
 
     def json(self):
+        """Return the stored payload."""
         return self._payload
 
     def raise_for_status(self):
+        """Raise ``httpx.HTTPStatusError`` for 4xx/5xx status codes."""
         if self.status_code >= 400:
             req = httpx.Request("GET", "https://example.com")
             resp = httpx.Response(self.status_code, request=req)
@@ -43,7 +53,10 @@ class DummyResponse:
 
 
 class DummyAsyncClient:
+    """Async HTTP client stub that records the last request and returns a fixed response."""
+
     def __init__(self, response=None, exc=None, **kwargs):
+        """Store the response, optional exception and client kwargs."""
         self.response = response
         self.exc = exc
         self.kwargs = kwargs
@@ -51,18 +64,22 @@ class DummyAsyncClient:
         self.last_get = None
 
     async def __aenter__(self):
+        """Return the client."""
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
+        """Do not suppress exceptions."""
         return False
 
     async def post(self, url, json):
+        """Record the POST request, then raise or return the configured response."""
         self.last_post = (url, json)
         if self.exc:
             raise self.exc
         return self.response
 
     async def get(self, url, params=None):
+        """Record the GET request, then raise or return the configured response."""
         self.last_get = (url, params)
         if self.exc:
             raise self.exc
@@ -70,6 +87,7 @@ class DummyAsyncClient:
 
 
 def test_dummy_response_raise_for_status_and_fail_import_passthrough():
+    """Dummy response raise for status and fail import passthrough."""
     ok_resp = DummyResponse(status_code=200)
     ok_resp.raise_for_status()
 
@@ -91,6 +109,7 @@ def test_dummy_response_raise_for_status_and_fail_import_passthrough():
 
 
 def test_init_with_config(monkeypatch):
+    """Init with config."""
     monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: True)
     m = WebSearchManager(DummyConfig())
 
@@ -105,6 +124,7 @@ def test_init_with_config(monkeypatch):
 
 
 def test_check_ddg_true_and_false(monkeypatch):
+    """Check ddg true and false."""
     m = WebSearchManager.__new__(WebSearchManager)
 
     real_import = builtins.__import__
@@ -131,6 +151,7 @@ def test_check_ddg_true_and_false(monkeypatch):
 
 
 def test_is_available_status_and_repr(monkeypatch):
+    """Is available status and repr."""
     monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: False)
     m = WebSearchManager()
 
@@ -150,6 +171,7 @@ def test_is_available_status_and_repr(monkeypatch):
 
 
 def test_search_engine_specific_and_limits(monkeypatch):
+    """Search engine specific and limits."""
     monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: False)
     m = WebSearchManager(DummyConfig())
 
@@ -168,6 +190,7 @@ def test_search_engine_specific_and_limits(monkeypatch):
 
 
 def test_search_tavily_selected_actionable_and_bad_max_results(monkeypatch):
+    """Search tavily selected actionable and bad max results."""
     monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: False)
     m = WebSearchManager(DummyConfig())
     m.engine = "tavily"
@@ -185,6 +208,7 @@ def test_search_tavily_selected_actionable_and_bad_max_results(monkeypatch):
 
 
 def test_search_tavily_fail_fallback_google(monkeypatch):
+    """Search tavily fail fallback google."""
     monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: False)
     m = WebSearchManager(DummyConfig())
 
@@ -202,6 +226,7 @@ def test_search_tavily_fail_fallback_google(monkeypatch):
 
 
 def test_search_auto_returns_tavily_actionable(monkeypatch):
+    """Search auto returns tavily actionable."""
     monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: False)
     m = WebSearchManager(DummyConfig())
     m.engine = "auto"
@@ -218,6 +243,7 @@ def test_search_auto_returns_tavily_actionable(monkeypatch):
 
 
 def test_search_google_and_duckduckgo_direct(monkeypatch):
+    """Search google and duckduckgo direct."""
     monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: True)
 
     m_google = WebSearchManager(DummyConfig())
@@ -240,6 +266,7 @@ def test_search_google_and_duckduckgo_direct(monkeypatch):
 
 
 def test_search_auto_no_actionable_then_ddg_and_no_engine(monkeypatch):
+    """Search auto no actionable then ddg and no engine."""
     monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: True)
     m = WebSearchManager(DummyConfig())
     m.engine = "auto"
@@ -264,6 +291,7 @@ def test_search_auto_no_actionable_then_ddg_and_no_engine(monkeypatch):
 
 
 def test_search_tavily_success_no_results_and_errors(monkeypatch):
+    """Search tavily success no results and errors."""
     monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: False)
     m = WebSearchManager(DummyConfig())
 
@@ -320,6 +348,7 @@ def test_search_tavily_success_no_results_and_errors(monkeypatch):
 
 
 def test_search_google_success_no_items_and_error(monkeypatch):
+    """Search google success no items and error."""
     monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: False)
     m = WebSearchManager(DummyConfig())
 
@@ -353,6 +382,7 @@ def test_search_google_success_no_items_and_error(monkeypatch):
 
 
 def test_search_duckduckgo_ddgs_fallback_no_results_timeout_and_error(monkeypatch):
+    """Search duckduckgo ddgs fallback no results timeout and error."""
     monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: True)
     m = WebSearchManager()
 
@@ -390,6 +420,7 @@ def test_search_duckduckgo_ddgs_fallback_no_results_timeout_and_error(monkeypatc
 
 
 def test_search_duckduckgo_no_body_line(monkeypatch):
+    """Search duckduckgo no body line."""
     monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: True)
     m = WebSearchManager()
 
@@ -411,6 +442,7 @@ def test_search_duckduckgo_no_body_line(monkeypatch):
 
 
 def test_scrape_url_fetch_url_and_truncate(monkeypatch):
+    """Scrape url fetch url and truncate."""
     monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: False)
     m = WebSearchManager()
 
@@ -454,6 +486,7 @@ def test_scrape_url_fetch_url_and_truncate(monkeypatch):
 
 
 def test_clean_html_docs_stackoverflow_and_helpers(monkeypatch):
+    """Clean html docs stackoverflow and helpers."""
     monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: False)
     m = WebSearchManager()
 
@@ -498,6 +531,7 @@ def test_clean_html_docs_stackoverflow_and_helpers(monkeypatch):
 
 
 def test_web_search_manager_isolated(monkeypatch):
+    """Web search manager isolated."""
     monkeypatch.setattr(WebSearchManager, "_check_ddg", lambda self: False)
     web = WebSearchManager(
         SimpleNamespace(

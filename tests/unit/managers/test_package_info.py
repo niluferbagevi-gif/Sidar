@@ -1,3 +1,5 @@
+"""Unit tests for ``managers.package_info``."""
+
 import asyncio
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -9,18 +11,24 @@ from managers.package_info import PackageInfoManager
 
 
 def run(coro):
+    """Run a coroutine to completion and return its result."""
     return asyncio.run(coro)
 
 
 class DummyResponse:
+    """Minimal HTTP response stub with a JSON payload and status code."""
+
     def __init__(self, payload=None, status_code=200):
+        """Store the payload and status code."""
         self._payload = payload if payload is not None else {}
         self.status_code = status_code
 
     def json(self):
+        """Return the stored payload."""
         return self._payload
 
     def raise_for_status(self):
+        """Raise ``httpx.HTTPStatusError`` for 4xx/5xx status codes."""
         if self.status_code >= 400:
             req = httpx.Request("GET", "https://example.com")
             resp = httpx.Response(self.status_code, request=req)
@@ -28,20 +36,26 @@ class DummyResponse:
 
 
 class DummyAsyncClient:
+    """Async HTTP client stub that returns a fixed response or raises."""
+
     def __init__(self, *, response=None, exc=None, capture=None, **kwargs):
+        """Store the response, exception and client kwargs; record calls in ``capture``."""
         self.response = response
         self.exc = exc
         self.kwargs = kwargs
         self.capture = capture if capture is not None else {}
 
     async def __aenter__(self):
+        """Record the client kwargs and return the client."""
         self.capture["client_kwargs"] = self.kwargs
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
+        """Do not suppress exceptions."""
         return False
 
     async def get(self, url):
+        """Record the URL, then raise the configured exception or return the response."""
         self.capture["url"] = url
         if self.exc:
             raise self.exc
@@ -49,6 +63,7 @@ class DummyAsyncClient:
 
 
 def test_dummy_response_raise_for_status_raises_http_status_error():
+    """Dummy response raise for status raises http status error."""
     response = DummyResponse(status_code=500)
 
     with pytest.raises(httpx.HTTPStatusError):
@@ -56,6 +71,7 @@ def test_dummy_response_raise_for_status_raises_http_status_error():
 
 
 def test_init_defaults_and_config_variants(monkeypatch):
+    """Init defaults and config variants."""
     init_paths = []
 
     def fake_timeout(*args, **kwargs):
@@ -83,6 +99,7 @@ def test_init_defaults_and_config_variants(monkeypatch):
 
 
 def test_cache_get_set_and_expire():
+    """Cache get set and expire."""
     manager = PackageInfoManager()
 
     hit, value = manager._cache_get("missing")
@@ -99,6 +116,7 @@ def test_cache_get_set_and_expire():
 
 
 def test_get_json_cache_and_all_error_paths(monkeypatch):
+    """Get json cache and all error paths."""
     manager = PackageInfoManager()
     manager._cache_set("cached-key", {"ok": True})
     assert run(manager._get_json("https://unused", cache_key="cached-key")) == (
@@ -142,6 +160,7 @@ def test_get_json_cache_and_all_error_paths(monkeypatch):
 
 
 def test_fetch_pypi_json_error_mapping(monkeypatch):
+    """Fetch pypi json error mapping."""
     manager = PackageInfoManager()
 
     async def fake_get_json(_url, cache_key=""):
@@ -168,6 +187,7 @@ def test_fetch_pypi_json_error_mapping(monkeypatch):
 
 
 def test_fetch_pypi_json_explicit_timeout_request_and_other(monkeypatch):
+    """Fetch pypi json explicit timeout request and other."""
     manager = PackageInfoManager()
 
     async def get_timeout(_url, cache_key=""):
@@ -188,6 +208,7 @@ def test_fetch_pypi_json_explicit_timeout_request_and_other(monkeypatch):
 
 
 def test_pypi_info_latest_and_compare(monkeypatch):
+    """Pypi info latest and compare."""
     manager = PackageInfoManager()
     payload = {
         "info": {
@@ -242,6 +263,7 @@ def test_pypi_info_latest_and_compare(monkeypatch):
 
 
 def test_pypi_info_and_compare_failure_paths(monkeypatch):
+    """Pypi info and compare failure paths."""
     manager = PackageInfoManager()
 
     async def fetch_fail(_pkg):
@@ -278,6 +300,7 @@ def test_pypi_info_and_compare_failure_paths(monkeypatch):
 
 
 def test_npm_info_success_and_error_paths(monkeypatch):
+    """Npm info success and error paths."""
     manager = PackageInfoManager()
 
     async def get_ok(_url, cache_key=""):
@@ -329,6 +352,7 @@ def test_npm_info_success_and_error_paths(monkeypatch):
 
 
 def test_github_releases_and_latest_release_paths(monkeypatch):
+    """Github releases and latest release paths."""
     manager = PackageInfoManager()
 
     async def get_releases(_url, cache_key=""):
@@ -425,6 +449,7 @@ def test_github_releases_and_latest_release_paths(monkeypatch):
 
 
 def test_prerelease_helpers_status_and_repr():
+    """Prerelease helpers status and repr."""
     assert PackageInfoManager._is_prerelease(None) is False
     assert PackageInfoManager._is_prerelease("") is False
     assert PackageInfoManager._is_prerelease("1.0.0-1") is True
@@ -447,6 +472,7 @@ def test_prerelease_helpers_status_and_repr():
 
 
 def test_get_json_success_without_cache_key(monkeypatch):
+    """Get json success without cache key."""
     manager = PackageInfoManager()
     client = DummyAsyncClient(response=DummyResponse(payload={"x": 1}))
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: client)
@@ -456,6 +482,7 @@ def test_get_json_success_without_cache_key(monkeypatch):
 
 
 def test_package_info_manager_isolated(monkeypatch):
+    """Package info manager isolated."""
     pkg = PackageInfoManager()
 
     async def _fake_fetch(_package):

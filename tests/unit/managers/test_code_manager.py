@@ -1,3 +1,5 @@
+"""Unit tests for ``managers.code_manager``."""
+
 from __future__ import annotations
 
 import builtins
@@ -24,7 +26,10 @@ _real_init_docker = cm.CodeManager._init_docker
 
 
 class DummySecurity:
+    """Security manager stub whose permission answers tests can toggle."""
+
     def __init__(self):
+        """Start at FULL access with every permission granted."""
         self.level = FULL
         self.read_ok = True
         self.write_ok = True
@@ -32,26 +37,33 @@ class DummySecurity:
         self.shell_ok = True
 
     def can_read(self, _path):
+        """Return the configured read permission."""
         return self.read_ok
 
     def can_write(self, _path):
+        """Return the configured write permission."""
         return self.write_ok
 
     def can_execute(self):
+        """Return the configured execute permission."""
         return self.exec_ok
 
     def can_run_shell(self):
+        """Return the configured shell permission."""
         return self.shell_ok
 
     def is_path_under(self, path_str, base):
+        """Return whether ``path_str`` resolves inside ``base``."""
         return Path(path_str).resolve().is_relative_to(Path(base).resolve())
 
     def get_safe_write_path(self, filename):
+        """Return a fixed ``/safe`` path for the given file name."""
         return Path("/safe") / filename
 
 
 @pytest.fixture()
 def manager(tmp_path, monkeypatch):
+    """Return a CodeManager with Docker init disabled and a stub security manager."""
     monkeypatch.setattr(cm.CodeManager, "_init_docker", lambda self: None)
     sec = DummySecurity()
     cfg = SimpleNamespace(
@@ -85,6 +97,7 @@ def manager(tmp_path, monkeypatch):
 
 
 def test_lsp_message_codec_roundtrip_and_protocol_error():
+    """Lsp message codec roundtrip and protocol error."""
     payload = {"jsonrpc": "2.0", "id": 1, "result": {"ok": True}}
     encoded = cm._encode_lsp_message(payload)
     decoded = cm._decode_lsp_stream(encoded)
@@ -96,6 +109,7 @@ def test_lsp_message_codec_roundtrip_and_protocol_error():
 
 
 def test_file_uri_helpers_and_invalid_scheme(tmp_path):
+    """File uri helpers and invalid scheme."""
     f = tmp_path / "a.py"
     f.write_text("print(1)", encoding="utf-8")
     uri = cm._path_to_file_uri(f)
@@ -108,6 +122,7 @@ def test_file_uri_helpers_and_invalid_scheme(tmp_path):
 
 
 def test_runtime_and_limits_resolution(manager):
+    """Runtime and limits resolution."""
     manager.docker_runtime = "unknown"
     assert manager._resolve_runtime() == ""
 
@@ -123,6 +138,7 @@ def test_runtime_and_limits_resolution(manager):
 
 
 def test_resolve_runtime_skips_allowlist_warning_when_unset(manager, caplog):
+    """Resolve runtime skips allowlist warning when unset."""
     # Real installs write DOCKER_ALLOWED_RUNTIMES=runc,runsc,kata-runtime (no
     # empty-string sentinel, since get_list_env() always filters blank CSV
     # items). An unset DOCKER_RUNTIME ("") should not trigger the allowlist
@@ -144,6 +160,7 @@ def test_resolve_runtime_skips_allowlist_warning_when_unset(manager, caplog):
 
 
 def test_build_and_execute_docker_cli_command(manager, monkeypatch):
+    """Build and execute docker cli command."""
     limits = {
         "memory": "128m",
         "cpus": "0.5",
@@ -164,6 +181,7 @@ def test_build_and_execute_docker_cli_command(manager, monkeypatch):
 
 
 def test_docker_token_sanitizers_reject_unsafe_values():
+    """Docker token sanitizers reject unsafe values."""
     assert (
         cm._sanitize_docker_token(
             "256m", pattern=cm._DOCKER_MEMORY_RE, default="256m", kind="memory"
@@ -201,6 +219,7 @@ def test_docker_token_sanitizers_reject_unsafe_values():
 
 
 def test_docker_network_and_image_sanitizers():
+    """Docker network and image sanitizers."""
     assert cm._sanitize_docker_network("none") == "none"
     assert cm._sanitize_docker_network("HOST") == "host"
     assert cm._sanitize_docker_network("--privileged") == "none"
@@ -216,6 +235,7 @@ def test_docker_network_and_image_sanitizers():
 
 
 def test_build_docker_cli_command_rejects_flag_injection(manager):
+    """Build docker cli command rejects flag injection."""
     manager.docker_image = "--privileged"
     cmd = manager._build_docker_cli_command(
         "print(1)",
@@ -238,6 +258,7 @@ def test_build_docker_cli_command_rejects_flag_injection(manager):
 
 
 def test_try_docker_cli_fallback(manager, monkeypatch):
+    """Try docker cli fallback."""
     monkeypatch.setattr(cm.shutil, "which", lambda _name: "/usr/bin/docker")
     monkeypatch.setattr(
         subprocess,
@@ -249,6 +270,7 @@ def test_try_docker_cli_fallback(manager, monkeypatch):
 
 
 def test_read_and_write_and_generated_test(manager, tmp_path, monkeypatch):
+    """Read and write and generated test."""
     p = tmp_path / "x.py"
     p.write_text("a\n", encoding="utf-8")
     ok, txt = manager.read_file(str(p), line_numbers=True)
@@ -278,6 +300,7 @@ def test_read_and_write_and_generated_test(manager, tmp_path, monkeypatch):
 
 
 def test_patch_file_paths(manager, tmp_path):
+    """Patch file paths."""
     p = tmp_path / "p.txt"
     p.write_text("hello world", encoding="utf-8")
     ok, _ = manager.patch_file(str(p), "hello", "bye")
@@ -287,6 +310,7 @@ def test_patch_file_paths(manager, tmp_path):
 
 
 def test_execute_code_without_docker_branches(manager, monkeypatch):
+    """Execute code without docker branches."""
     manager.security.exec_ok = False
     ok, msg = manager.execute_code("print(1)")
     assert not ok and "yetkisi yok" in msg
@@ -302,6 +326,7 @@ def test_execute_code_without_docker_branches(manager, monkeypatch):
 
 
 def test_execute_code_with_mocked_docker_success(manager, monkeypatch):
+    """Execute code with mocked docker success."""
     manager.docker_available = True
 
     class FakeContainer:
@@ -332,6 +357,7 @@ def test_execute_code_with_mocked_docker_success(manager, monkeypatch):
 
 
 def test_execute_code_local_timeout_and_success(manager, monkeypatch):
+    """Execute code local timeout and success."""
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -349,6 +375,7 @@ def test_execute_code_local_timeout_and_success(manager, monkeypatch):
 
 
 def test_run_shell_in_sandbox(manager, tmp_path, monkeypatch):
+    """Run shell in sandbox."""
     manager.security.exec_ok = False
     ok, _ = manager.run_shell_in_sandbox("echo 1")
     assert not ok
@@ -380,6 +407,7 @@ def test_run_shell_in_sandbox(manager, tmp_path, monkeypatch):
 def test_run_shell_in_sandbox_uses_test_image_and_uv_preflight_for_run_tests(
     manager, tmp_path, monkeypatch
 ):
+    """Run shell in sandbox uses test image and uv preflight for run tests."""
     manager.docker_test_image = "sidar:test"
     monkeypatch.setattr(cm.shutil, "which", lambda _n: "/usr/bin/docker")
     calls = {}
@@ -401,6 +429,7 @@ def test_run_shell_in_sandbox_uses_test_image_and_uv_preflight_for_run_tests(
 
 
 def test_analyze_pytest_output_and_run_pytest_collect(manager, monkeypatch):
+    """Analyze pytest output and run pytest collect."""
     sample = """managers/code_manager.py  100 10 90% 1-2, 5->7
 ___ test_fail ___
 E AssertionError
@@ -420,6 +449,7 @@ foo.py:10: in test_fail
 
 
 def test_docker_exception_types_handles_missing_or_invalid_docker_error_type() -> None:
+    """Docker exception types handles missing or invalid docker error type."""
     no_errors_module = SimpleNamespace()
     types1 = cm.CodeManager._docker_exception_types(no_errors_module)
     assert OSError in types1 and ValueError in types1
@@ -430,6 +460,7 @@ def test_docker_exception_types_handles_missing_or_invalid_docker_error_type() -
 
 
 def test_run_pytest_and_collect_normalizes_multiline_and_inline_comment(manager, monkeypatch):
+    """Run pytest and collect normalizes multiline and inline comment."""
     sample = "ok"
     monkeypatch.setattr(manager, "run_shell_in_sandbox", lambda *_a, **_k: (True, sample))
 
@@ -441,6 +472,7 @@ def test_run_pytest_and_collect_normalizes_multiline_and_inline_comment(manager,
 
 
 def test_run_pytest_and_collect_extracts_pytest_from_prefixed_sentence(manager, monkeypatch):
+    """Run pytest and collect extracts pytest from prefixed sentence."""
     monkeypatch.setattr(manager, "run_shell_in_sandbox", lambda *_a, **_k: (True, "ok"))
 
     result = manager.run_pytest_and_collect(
@@ -451,6 +483,7 @@ def test_run_pytest_and_collect_extracts_pytest_from_prefixed_sentence(manager, 
 
 
 def test_run_pytest_and_collect_accepts_uv_run_pytest(manager, monkeypatch):
+    """Run pytest and collect accepts uv run pytest."""
     monkeypatch.setattr(manager, "run_shell_in_sandbox", lambda *_a, **_k: (True, "ok"))
 
     result = manager.run_pytest_and_collect(
@@ -462,6 +495,7 @@ def test_run_pytest_and_collect_accepts_uv_run_pytest(manager, monkeypatch):
 
 
 def test_pytest_preflight_prefers_project_and_image_venvs(manager):
+    """Pytest preflight prefers project and image venvs."""
     command = manager._build_pytest_preflight_command("uv run pytest -q tests/unit/foo.py")
 
     assert "/workspace/.venv/bin/python" in command
@@ -472,6 +506,7 @@ def test_pytest_preflight_prefers_project_and_image_venvs(manager):
 
 
 def test_run_pytest_and_collect_uses_preflight_and_test_image(manager, monkeypatch):
+    """Run pytest and collect uses preflight and test image."""
     manager.docker_test_image = "sidar:test"
     calls = {}
 
@@ -495,6 +530,7 @@ def test_run_pytest_and_collect_uses_preflight_and_test_image(manager, monkeypat
 
 
 def test_run_pytest_and_collect_uses_default_when_command_blank(manager, monkeypatch):
+    """Run pytest and collect uses default when command blank."""
     monkeypatch.setattr(manager, "run_shell_in_sandbox", lambda *_a, **_k: (True, "ok"))
     result = manager.run_pytest_and_collect("   ")
     assert result["success"] is True
@@ -502,6 +538,7 @@ def test_run_pytest_and_collect_uses_default_when_command_blank(manager, monkeyp
 
 
 def test_shell_sandbox_routes_bare_pytest_through_test_image_preflight(manager, monkeypatch):
+    """Shell sandbox routes bare pytest through test image preflight."""
     manager.docker_test_image = "sidar:test"
     calls = {}
 
@@ -529,6 +566,7 @@ def test_shell_sandbox_routes_bare_pytest_through_test_image_preflight(manager, 
 
 
 def test_shell_sandbox_requires_uv_for_run_tests_and_uses_test_image(manager, monkeypatch):
+    """Shell sandbox requires uv for run tests and uses test image."""
     manager.docker_test_image = "sidar:test"
     calls = {}
 
@@ -551,6 +589,7 @@ def test_shell_sandbox_requires_uv_for_run_tests_and_uses_test_image(manager, mo
 
 
 def test_run_shell_uses_shell_false_and_sanitized_args(manager, monkeypatch, tmp_path):
+    """Run shell uses shell false and sanitized args."""
     manager.security.shell_ok = True
     calls = []
 
@@ -571,6 +610,7 @@ def test_run_shell_uses_shell_false_and_sanitized_args(manager, monkeypatch, tmp
 def test_run_shell_shell_features_use_fixed_interpreter_without_shell_true(
     manager, monkeypatch, tmp_path
 ):
+    """Run shell shell features use fixed interpreter without shell true."""
     manager.security.shell_ok = True
     calls = []
 
@@ -591,6 +631,7 @@ def test_run_shell_shell_features_use_fixed_interpreter_without_shell_true(
 
 
 def test_run_shell_rejects_nul_bytes(manager):
+    """Run shell rejects nul bytes."""
     manager.security.shell_ok = True
 
     ok, msg = manager.run_shell("echo safe\x00oops")
@@ -600,6 +641,7 @@ def test_run_shell_rejects_nul_bytes(manager):
 
 
 def test_glob_search_filters_matches_denied_by_security(manager, tmp_path):
+    """Glob search filters matches denied by security."""
     (tmp_path / "visible.py").write_text("print('x')", encoding="utf-8")
     manager.security.read_ok = False
 
@@ -612,6 +654,7 @@ def test_glob_search_filters_matches_denied_by_security(manager, tmp_path):
 def test_find_destructive_shell_pattern_skips_empty_segments_and_empty_tokens(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Find destructive shell pattern skips empty segments and empty tokens."""
     assert code_runner.find_destructive_shell_pattern("echo ok && ;") is None
     assert code_runner.find_destructive_shell_pattern("cat data > /etc/passwd") == "> /etc/passwd"
     assert code_runner.find_destructive_shell_pattern("chown -R app /srv/app") is None
@@ -622,6 +665,7 @@ def test_find_destructive_shell_pattern_skips_empty_segments_and_empty_tokens(
 
 
 def test_run_shell_paths(manager, monkeypatch, tmp_path):
+    """Run shell paths."""
     manager.security.shell_ok = False
     ok, _ = manager.run_shell("echo 1")
     assert not ok
@@ -689,6 +733,7 @@ def test_run_shell_blocks_destructive_pattern_bypass_variants(manager, command):
 
 
 def test_run_shell_allows_non_destructive_shell_features(manager, monkeypatch):
+    """Run shell allows non destructive shell features."""
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -705,6 +750,7 @@ def test_run_shell_allows_non_destructive_shell_features(manager, monkeypatch):
 
 
 def test_glob_grep_list_validate_and_metrics(manager, tmp_path):
+    """Glob grep list validate and metrics."""
     (tmp_path / "a.py").write_text("print('x')\nneedle\n", encoding="utf-8")
     (tmp_path / "b.txt").write_text("needle\n", encoding="utf-8")
 
@@ -729,6 +775,7 @@ def test_glob_grep_list_validate_and_metrics(manager, tmp_path):
 
 
 def test_resolve_lsp_command_uses_project_venv_when_path_missing(manager, tmp_path, monkeypatch):
+    """Resolve lsp command uses project venv when path missing."""
     monkeypatch.setattr(cm.shutil, "which", lambda _binary: None)
     manager.cfg.PYTHON_VIRTUAL_ENV = str(tmp_path / ".venv")
     manager.base_dir = tmp_path
@@ -744,6 +791,8 @@ def test_resolve_lsp_command_uses_project_venv_when_path_missing(manager, tmp_pa
 
 
 def test_resolve_lsp_command_falls_back_to_uv_run_for_python(manager, monkeypatch):
+    """Resolve lsp command falls back to uv run for python."""
+
     def fake_which(binary):
         return "/usr/bin/uv" if binary == "uv" else None
 
@@ -774,6 +823,8 @@ def test_resolve_lsp_command_prefers_locked_uv_run_before_uvx(manager, monkeypat
 
 
 def test_resolve_lsp_command_uses_uvx_when_uv_is_unavailable(manager, monkeypatch):
+    """Resolve lsp command uses uvx when uv is unavailable."""
+
     def fake_which(binary):
         return "/usr/bin/uvx" if binary == "uvx" else None
 
@@ -786,6 +837,7 @@ def test_resolve_lsp_command_uses_uvx_when_uv_is_unavailable(manager, monkeypatc
 
 
 def test_lsp_stderr_indicates_missing_binary_detection(manager):
+    """Lsp stderr indicates missing binary detection."""
     detect = manager._lsp_stderr_indicates_missing_binary
     assert detect("error: Failed to spawn: `pyright-langserver --stdio`") is True
     assert detect("No such file or directory (os error 2)") is True
@@ -795,6 +847,7 @@ def test_lsp_stderr_indicates_missing_binary_detection(manager):
 
 
 def test_lsp_target_binary_extracts_from_wrapper(manager):
+    """Lsp target binary extracts from wrapper."""
     assert (
         manager._lsp_target_binary(
             ["/bin/uv", "run", "--frozen", "pyright-langserver", "--stdio"],
@@ -819,6 +872,7 @@ def test_lsp_target_binary_extracts_from_wrapper(manager):
 
 
 def test_lsp_install_hint_per_language(manager):
+    """Lsp install hint per language."""
     assert "pyright" in manager._lsp_install_hint("python")
     assert "typescript-language-server" in manager._lsp_install_hint("typescript")
 
@@ -882,6 +936,7 @@ def test_run_lsp_sequence_maps_uv_failed_to_spawn_to_file_not_found(manager, tmp
 
 
 def test_lsp_core_helpers_and_extracts(manager, tmp_path, monkeypatch):
+    """Lsp core helpers and extracts."""
     py = tmp_path / "x.py"
     py.write_text("value = 1\n", encoding="utf-8")
 
@@ -930,6 +985,7 @@ def test_lsp_core_helpers_and_extracts(manager, tmp_path, monkeypatch):
 
 
 def test_lsp_workspace_edit_and_rename(manager, tmp_path, monkeypatch):
+    """Lsp workspace edit and rename."""
     fp = tmp_path / "ren.py"
     fp.write_text("name = 1\nprint(name)\n", encoding="utf-8")
     edit = {
@@ -959,6 +1015,7 @@ def test_lsp_workspace_edit_and_rename(manager, tmp_path, monkeypatch):
 
 
 def test_lsp_semantic_audit_paths(manager, tmp_path, monkeypatch):
+    """Lsp semantic audit paths."""
     p = tmp_path / "x.py"
     p.write_text("x=1\n", encoding="utf-8")
     manager.base_dir = tmp_path
@@ -984,6 +1041,7 @@ def test_lsp_semantic_audit_paths(manager, tmp_path, monkeypatch):
 
 
 def test_code_manager_constructor_defers_docker_initialization(tmp_path, monkeypatch) -> None:
+    """Code manager constructor defers docker initialization."""
     sec = DummySecurity()
     cfg = SimpleNamespace(
         CODE_EXECUTION_BACKEND="docker",
@@ -1024,6 +1082,7 @@ def test_code_manager_constructor_defers_docker_initialization(tmp_path, monkeyp
 
 
 def test_code_manager_disabled_backend_skips_docker_initialization(tmp_path, monkeypatch) -> None:
+    """Code manager disabled backend skips docker initialization."""
     sec = DummySecurity()
     cfg = SimpleNamespace(
         CODE_EXECUTION_BACKEND="disabled",
@@ -1057,6 +1116,7 @@ def test_code_manager_disabled_backend_skips_docker_initialization(tmp_path, mon
 
 
 def test_code_manager_retries_after_failed_lazy_docker_init(tmp_path, monkeypatch) -> None:
+    """Code manager retries after failed lazy docker init."""
     sec = DummySecurity()
     cfg = SimpleNamespace(
         CODE_EXECUTION_BACKEND="docker",
@@ -1094,6 +1154,7 @@ def test_code_manager_retries_after_failed_lazy_docker_init(tmp_path, monkeypatc
 
 
 def test_code_manager_lazy_docker_init_is_thread_safe(tmp_path, monkeypatch) -> None:
+    """Code manager lazy docker init is thread safe."""
     sec = DummySecurity()
     cfg = SimpleNamespace(
         CODE_EXECUTION_BACKEND="docker",
@@ -1132,6 +1193,7 @@ def test_code_manager_lazy_docker_init_is_thread_safe(tmp_path, monkeypatch) -> 
 
 
 def test_code_manager_rejects_unknown_backend(tmp_path) -> None:
+    """Code manager rejects unknown backend."""
     sec = DummySecurity()
     cfg = SimpleNamespace(
         CODE_EXECUTION_BACKEND="podman",
@@ -1155,12 +1217,14 @@ def test_code_manager_rejects_unknown_backend(tmp_path) -> None:
 
 
 def test_code_manager_bool_coercion_uses_default_for_unknown_text(caplog) -> None:
+    """Code manager bool coercion uses default for unknown text."""
     assert cm._coerce_bool("maybe", default=False) is False
     assert cm._coerce_bool("maybe", default=True) is True
     assert "Unknown boolean value" in caplog.text
 
 
 def test_init_docker_importerror_and_generic_error_paths(tmp_path, monkeypatch):
+    """Init docker importerror and generic error paths."""
     sec = DummySecurity()
     cfg = SimpleNamespace(
         CODE_EXECUTION_BACKEND="docker",
@@ -1210,6 +1274,8 @@ def test_init_docker_importerror_and_generic_error_paths(tmp_path, monkeypatch):
 
 
 def test_try_wsl_socket_fallback_success_and_skips(manager, monkeypatch):
+    """Try wsl socket fallback success and skips."""
+
     class _Stat:
         def __init__(self, mode):
             self.st_mode = mode
@@ -1244,6 +1310,7 @@ def test_try_wsl_socket_fallback_success_and_skips(manager, monkeypatch):
 
 
 def test_init_docker_import_and_wsl_fallback_branches(manager, monkeypatch):
+    """Init docker import and wsl fallback branches."""
     original_import = builtins.__import__
 
     def _import_without_docker(name, *args, **kwargs):
@@ -1283,6 +1350,7 @@ def test_init_docker_import_and_wsl_fallback_branches(manager, monkeypatch):
 
 
 def test_init_docker_uses_cached_docker_module_from_sys_modules(manager, monkeypatch):
+    """Init docker uses cached docker module from sys modules."""
     original_import = builtins.__import__
 
     def _fail_if_docker_imported(name, *args, **kwargs):
@@ -1312,6 +1380,7 @@ def test_init_docker_uses_cached_docker_module_from_sys_modules(manager, monkeyp
 
 
 def test_init_docker_importerror_branch_variants(tmp_path, monkeypatch):
+    """Init docker importerror branch variants."""
     sec = DummySecurity()
     cfg = SimpleNamespace(
         DOCKER_RUNTIME="",
@@ -1375,6 +1444,7 @@ def test_init_docker_importerror_branch_variants(tmp_path, monkeypatch):
 
 
 def test_init_docker_exception_path_returns_on_wsl_success(tmp_path, monkeypatch):
+    """Init docker exception path returns on wsl success."""
     sec = DummySecurity()
     cfg = SimpleNamespace(
         DOCKER_RUNTIME="",
@@ -1417,6 +1487,7 @@ def test_init_docker_exception_path_returns_on_wsl_success(tmp_path, monkeypatch
 
 
 def test_execute_code_docker_error_paths(manager, monkeypatch):
+    """Execute code docker error paths."""
     manager.docker_available = True
     manager.security.level = SANDBOX
 
@@ -1454,6 +1525,7 @@ def test_execute_code_docker_error_paths(manager, monkeypatch):
 
 
 def test_execute_code_sets_runtime_and_non_dict_wait(manager, monkeypatch):
+    """Execute code sets runtime and non dict wait."""
     manager.docker_available = True
     manager.docker_runtime = "runc"
     called = {}
@@ -1489,6 +1561,7 @@ def test_execute_code_sets_runtime_and_non_dict_wait(manager, monkeypatch):
 
 
 def test_analyze_pytest_output_failure_section_parser(manager):
+    """Analyze pytest output failure section parser."""
     sample = """___ test parser branch ___
 E AssertionError
 foo/bar_test.py:42: in test_parser_branch
@@ -1501,6 +1574,8 @@ foo/bar_test.py:42: in test_parser_branch
 
 
 def test_execute_code_local_and_shell_additional_errors(manager, monkeypatch):
+    """Execute code local and shell additional errors."""
+
     def _raise_err(*_a, **_k):
         raise RuntimeError("boom")
 
@@ -1529,6 +1604,7 @@ def test_execute_code_local_and_shell_additional_errors(manager, monkeypatch):
 
 
 def test_lsp_sequence_and_public_lsp_wrappers(manager, tmp_path, monkeypatch):
+    """Lsp sequence and public lsp wrappers."""
     py = tmp_path / "a.py"
     py.write_text("name = 1\n", encoding="utf-8")
     manager.base_dir = tmp_path
@@ -1572,6 +1648,7 @@ def test_lsp_sequence_and_public_lsp_wrappers(manager, tmp_path, monkeypatch):
 
 
 def test_low_level_helpers_extra_branches(manager, monkeypatch, tmp_path):
+    """Low level helpers extra branches."""
     # _decode_lsp_stream with malformed header line (no colon) and partial header break
     payload = cm._encode_lsp_message({"jsonrpc": "2.0", "id": 2, "result": 1})
     assert cm._decode_lsp_stream(payload)[0]["id"] == 2
@@ -1590,6 +1667,7 @@ def test_low_level_helpers_extra_branches(manager, monkeypatch, tmp_path):
 
 
 def test_docker_cli_and_sandbox_error_paths(manager, monkeypatch, tmp_path):
+    """Docker cli and sandbox error paths."""
     limits = {"memory": "1m", "cpus": "0.1", "pids_limit": 1, "network_mode": "none", "timeout": 1}
 
     # docker cli timeout/error path in helper
@@ -1625,6 +1703,7 @@ def test_docker_cli_and_sandbox_error_paths(manager, monkeypatch, tmp_path):
 
 
 def test_shell_glob_grep_and_list_extra_paths(manager, monkeypatch, tmp_path):
+    """Shell glob grep and list extra paths."""
     manager.max_output_chars = 8
     manager.security.shell_ok = True
 
@@ -1674,6 +1753,7 @@ def test_shell_glob_grep_and_list_extra_paths(manager, monkeypatch, tmp_path):
 
 
 def test_lsp_and_audit_extra_paths(manager, monkeypatch, tmp_path):
+    """Lsp and audit extra paths."""
     fp = tmp_path / "a.py"
     fp.write_text("a=1\n", encoding="utf-8")
     manager.base_dir = tmp_path
@@ -1780,6 +1860,7 @@ def test_lsp_and_audit_extra_paths(manager, monkeypatch, tmp_path):
 
 
 def test_import_fallback_and_uri_windows_non_drive(monkeypatch):
+    """Import fallback and uri windows non drive."""
     real_config = importlib.import_module("config")
     fake_config = ModuleType("config")
     fake_config.Config = type("Config", (), {})
@@ -1796,6 +1877,7 @@ def test_import_fallback_and_uri_windows_non_drive(monkeypatch):
 
 
 def test_read_write_patch_and_shell_additional_branches(manager, monkeypatch, tmp_path):
+    """Read write patch and shell additional branches."""
     real_open = builtins.open
     missing = tmp_path / "missing.py"
     ok, msg = manager.read_file(str(missing))
@@ -1838,6 +1920,7 @@ def test_read_write_patch_and_shell_additional_branches(manager, monkeypatch, tm
 
 
 def test_execute_code_more_paths(manager, monkeypatch):
+    """Execute code more paths."""
     manager.docker_available = True
     manager.max_output_chars = 5
 
@@ -1894,6 +1977,7 @@ def test_execute_code_more_paths(manager, monkeypatch):
 
 
 def test_lsp_and_workspace_more_branches(manager, monkeypatch, tmp_path):
+    """Lsp and workspace more branches."""
     py = tmp_path / "a.py"
     extra = tmp_path / "b.py"
     py.write_text("a=1\n", encoding="utf-8")
@@ -1950,6 +2034,7 @@ def test_lsp_and_workspace_more_branches(manager, monkeypatch, tmp_path):
 
 
 def test_grep_glob_list_audit_more_branches(manager, monkeypatch, tmp_path):
+    """Grep glob list audit more branches."""
     # glob "**" branch
     (tmp_path / "x.py").write_text("hello\n", encoding="utf-8")
     ok, msg = manager.glob_search("**/*.py", base_path=str(tmp_path))
@@ -1975,6 +2060,7 @@ def test_grep_glob_list_audit_more_branches(manager, monkeypatch, tmp_path):
 
 
 def test_codec_and_wsl_and_file_error_edge_branches(manager, monkeypatch, tmp_path):
+    """Codec and wsl and file error edge branches."""
     # _decode_lsp_stream: header yoksa break ile boş döner.
     assert cm._decode_lsp_stream(b"") == []
     assert cm._decode_lsp_stream(b"garbage-without-header") == []
@@ -2000,6 +2086,7 @@ def test_codec_and_wsl_and_file_error_edge_branches(manager, monkeypatch, tmp_pa
 
 
 def test_generated_test_empty_and_read_error_branches(manager, monkeypatch, tmp_path):
+    """Generated test empty and read error branches."""
     ok, msg = manager.write_generated_test(
         str(tmp_path / "test_x.py"), "```python\n```", append=False
     )
@@ -2015,6 +2102,7 @@ def test_generated_test_empty_and_read_error_branches(manager, monkeypatch, tmp_
 
 
 def test_execute_code_local_and_docker_more_branches(manager, monkeypatch):
+    """Execute code local and docker more branches."""
     manager.max_output_chars = 5
     manager.docker_available = True
 
@@ -2046,6 +2134,7 @@ def test_execute_code_local_and_docker_more_branches(manager, monkeypatch):
 
 
 def test_sandbox_shell_output_and_error_branches(manager, monkeypatch, tmp_path):
+    """Sandbox shell output and error branches."""
     manager.max_output_chars = 6
     monkeypatch.setattr(cm.shutil, "which", lambda _n: "/usr/bin/docker")
     monkeypatch.setattr(manager, "_resolve_runtime", lambda: "runsc")
@@ -2059,6 +2148,7 @@ def test_sandbox_shell_output_and_error_branches(manager, monkeypatch, tmp_path)
 
 
 def test_analysis_lsp_and_misc_fallback_paths(manager, monkeypatch, tmp_path):
+    """Analysis lsp and misc fallback paths."""
     output = """
 tests/test_demo.py  10 1 90% 7
 ___ test_parse ___
@@ -2087,6 +2177,7 @@ pkg/mod.py:7: in test_parse
 
 
 def test_lsp_remaining_branches_and_audit_defaults(manager, monkeypatch, tmp_path):
+    """Lsp remaining branches and audit defaults."""
     py = tmp_path / "a.py"
     py.write_text("name = 1\n", encoding="utf-8")
     manager.base_dir = tmp_path
@@ -2125,6 +2216,7 @@ def test_lsp_remaining_branches_and_audit_defaults(manager, monkeypatch, tmp_pat
 
 
 def test_targeted_coverage_branches_for_docker_and_helpers(manager, monkeypatch, tmp_path):
+    """Targeted coverage branches for docker and helpers."""
     manager.max_output_chars = 5
 
     # _execute_code_with_docker_cli output truncation path
@@ -2205,6 +2297,8 @@ def test_targeted_coverage_branches_for_docker_and_helpers(manager, monkeypatch,
 
 
 def test_init_docker_success_sets_client_and_availability(manager, monkeypatch):
+    """Init docker success sets client and availability."""
+
     class _Client:
         def __init__(self):
             self.ping_called = False
@@ -2229,6 +2323,7 @@ def test_init_docker_success_sets_client_and_availability(manager, monkeypatch):
 
 
 def test_targeted_coverage_branches_for_execute_grep_glob_and_list(manager, monkeypatch, tmp_path):
+    """Targeted coverage branches for execute grep glob and list."""
     # execute_code: no network/runtime branches + sleep path + wait exception path + no log path
     manager.docker_available = True
     manager.docker_network_disabled = False
@@ -2370,6 +2465,7 @@ def test_targeted_coverage_branches_for_execute_grep_glob_and_list(manager, monk
 
 
 def test_targeted_lsp_and_workspace_branch_paths(manager, monkeypatch, tmp_path):
+    """Targeted lsp and workspace branch paths."""
     py = tmp_path / "a.py"
     txt = tmp_path / "a.txt"
     py.write_text("name = 1\n", encoding="utf-8")
@@ -2530,10 +2626,13 @@ def test_init_docker_exception_fallback_module_none_import_error(manager, monkey
 
 
 def test_to_int_returns_default_on_invalid_values() -> None:
+    """To int returns default on invalid values."""
     assert cm._to_int(object(), 7) == 7
 
 
 def test_try_wsl_socket_fallback_continues_on_docker_exception(manager, monkeypatch):
+    """Try wsl socket fallback continues on docker exception."""
+
     class _DockerErr(Exception):
         pass
 
@@ -2553,6 +2652,7 @@ def test_try_wsl_socket_fallback_continues_on_docker_exception(manager, monkeypa
 
 
 def test_execute_code_returns_error_when_docker_client_missing(manager):
+    """Execute code returns error when docker client missing."""
     manager.docker_available = True
     manager.docker_client = None
 
@@ -2563,6 +2663,7 @@ def test_execute_code_returns_error_when_docker_client_missing(manager):
 
 
 def test_run_pytest_and_collect_skips_blank_lines_before_pytest(manager, monkeypatch):
+    """Run pytest and collect skips blank lines before pytest."""
     monkeypatch.setattr(manager, "run_shell_in_sandbox", lambda *_a, **_k: (True, "ok"))
 
     result = manager.run_pytest_and_collect("\n\n  \n- pytest -q tests/unit/managers\n")
@@ -2603,6 +2704,7 @@ def test_audit_project_records_validation_errors_for_invalid_syntax(manager, tmp
 
 
 def test_autodetect_project_test_image_prefers_canonical_sdk_candidate(manager, monkeypatch):
+    """Autodetect project test image prefers canonical sdk candidate."""
     calls = []
 
     class FakeImages:
@@ -2625,6 +2727,7 @@ def test_autodetect_project_test_image_prefers_canonical_sdk_candidate(manager, 
 
 
 def test_autodetect_project_test_image_uses_cli_when_sdk_client_missing(manager, monkeypatch):
+    """Autodetect project test image uses cli when sdk client missing."""
     inspected = []
     manager.docker_available = True
     manager.docker_client = None
@@ -2647,6 +2750,7 @@ def test_autodetect_project_test_image_uses_cli_when_sdk_client_missing(manager,
 
 
 def test_autodetect_project_test_image_remaps_missing_legacy_explicit_image(manager, monkeypatch):
+    """Autodetect project test image remaps missing legacy explicit image."""
     checked = []
     manager.docker_available = True
     manager.docker_test_image = "sidar-ai:latest"
@@ -2665,6 +2769,7 @@ def test_autodetect_project_test_image_remaps_missing_legacy_explicit_image(mana
 
 
 def test_autodetect_project_test_image_respects_explicit_override(manager, monkeypatch):
+    """Autodetect project test image respects explicit override."""
     manager.docker_available = True
     manager.docker_test_image = "custom:test"
     manager._docker_test_image_explicit = True
@@ -2682,6 +2787,7 @@ def test_autodetect_project_test_image_respects_explicit_override(manager, monke
 def test_autodetect_project_test_image_keeps_default_when_no_candidate_exists(
     manager, monkeypatch, caplog
 ):
+    """Autodetect project test image keeps default when no candidate exists."""
     manager.docker_available = True
     manager.docker_client = None
     manager.docker_test_image = manager.docker_image
@@ -2700,6 +2806,8 @@ def test_autodetect_project_test_image_keeps_default_when_no_candidate_exists(
 
 
 def test_docker_image_exists_returns_false_when_sdk_get_raises_connection_error(manager) -> None:
+    """Docker image exists returns false when sdk get raises connection error."""
+
     def raise_connection_error(_image: str) -> None:
         raise ConnectionError("docker daemon unavailable")
 
@@ -2709,6 +2817,7 @@ def test_docker_image_exists_returns_false_when_sdk_get_raises_connection_error(
 
 
 def test_docker_image_exists_returns_false_when_cli_inspect_times_out(manager, monkeypatch) -> None:
+    """Docker image exists returns false when cli inspect times out."""
     manager.docker_client = None
     monkeypatch.setattr(
         cm.shutil, "which", lambda name: "/usr/bin/docker" if name == "docker" else None
@@ -2723,11 +2832,13 @@ def test_docker_image_exists_returns_false_when_cli_inspect_times_out(manager, m
 
 
 def test_command_requires_uv_tooling_handles_malformed_shell_command() -> None:
+    """Command requires uv tooling handles malformed shell command."""
     assert cm.CodeManager._command_requires_uv_tooling('"unterminated pytest -q') is True
     assert cm.CodeManager._command_requires_uv_tooling('"unterminated echo ok') is False
 
 
 def test_lsp_target_binary_skips_uv_wrapper_options_without_target(manager) -> None:
+    """Lsp target binary skips uv wrapper options without target."""
     assert (
         manager._lsp_target_binary(
             ["/bin/uvx", "--from", "pyright", "--with", "types", "run", "--frozen", "--stdio"],
@@ -2738,6 +2849,7 @@ def test_lsp_target_binary_skips_uv_wrapper_options_without_target(manager) -> N
 
 
 def test_resolve_lsp_command_accepts_python_server_command_with_inline_stdio(manager, monkeypatch):
+    """Resolve lsp command accepts python server command with inline stdio."""
     manager.python_lsp_server = "pyright-langserver --stdio"
     monkeypatch.setattr(
         manager, "_resolve_lsp_executable", lambda _binary: "/venv/bin/pyright-langserver"
@@ -2751,6 +2863,7 @@ def test_resolve_lsp_command_accepts_python_server_command_with_inline_stdio(man
 def test_resolve_lsp_command_accepts_typescript_server_command_with_extra_args(
     manager, monkeypatch
 ):
+    """Resolve lsp command accepts typescript server command with extra args."""
     manager.typescript_lsp_server = "typescript-language-server --stdio --log-level 3"
     monkeypatch.setattr(
         manager, "_resolve_lsp_executable", lambda _binary: "/venv/bin/typescript-language-server"
@@ -2764,6 +2877,7 @@ def test_resolve_lsp_command_accepts_typescript_server_command_with_extra_args(
 def test_docker_image_exists_rejects_unsafe_image_before_backend_probe(
     manager, monkeypatch
 ) -> None:
+    """Docker image exists rejects unsafe image before backend probe."""
     manager.docker_client = SimpleNamespace(
         images=SimpleNamespace(get=lambda _image: pytest.fail("unsafe image must not be probed"))
     )
@@ -2775,6 +2889,7 @@ def test_docker_image_exists_rejects_unsafe_image_before_backend_probe(
 def test_docker_image_exists_falls_back_false_when_sdk_get_is_not_callable(
     manager, monkeypatch
 ) -> None:
+    """Docker image exists falls back false when sdk get is not callable."""
     manager.docker_client = SimpleNamespace(images=SimpleNamespace(get="not-callable"))
     monkeypatch.setattr(cm.shutil, "which", lambda _name: None)
 
@@ -2782,6 +2897,7 @@ def test_docker_image_exists_falls_back_false_when_sdk_get_is_not_callable(
 
 
 def test_build_sanitized_shell_args_rejects_invalid_command_inputs(monkeypatch) -> None:
+    """Build sanitized shell args rejects invalid command inputs."""
     with pytest.raises(ValueError, match="bağımsız değişkenlere"):
         cm._build_sanitized_shell_args("   ", allow_shell_features=False)
 
@@ -2796,6 +2912,7 @@ def test_build_sanitized_shell_args_rejects_invalid_command_inputs(monkeypatch) 
 def test_autodetect_project_test_image_keeps_existing_explicit_legacy_image(
     manager, monkeypatch
 ) -> None:
+    """Autodetect project test image keeps existing explicit legacy image."""
     manager.docker_available = True
     manager.docker_test_image = "sidar-ai:latest"
     manager._docker_test_image_explicit = True
@@ -2812,6 +2929,7 @@ def test_autodetect_project_test_image_keeps_existing_explicit_legacy_image(
 def test_gpu_runtime_probe_caches_success_and_warns_for_gpu_image_without_runtime(
     manager, monkeypatch, caplog
 ) -> None:
+    """Gpu runtime probe caches success and warns for gpu image without runtime."""
     calls: list[list[str]] = []
 
     def _run(command, **_kwargs):
@@ -2831,6 +2949,7 @@ def test_gpu_runtime_probe_caches_success_and_warns_for_gpu_image_without_runtim
 
 
 def test_gpu_runtime_probe_handles_missing_binary(manager, monkeypatch) -> None:
+    """Gpu runtime probe handles missing binary."""
     monkeypatch.setattr(
         cm.subprocess,
         "run",
@@ -2843,6 +2962,7 @@ def test_gpu_runtime_probe_handles_missing_binary(manager, monkeypatch) -> None:
 def test_autodetect_project_test_image_keeps_missing_explicit_legacy_image_without_alias(
     manager, monkeypatch
 ) -> None:
+    """Autodetect project test image keeps missing explicit legacy image without alias."""
     manager.docker_available = True
     manager.docker_test_image = "sidar-ai:latest"
     manager._docker_test_image_explicit = True
@@ -2856,6 +2976,7 @@ def test_autodetect_project_test_image_keeps_missing_explicit_legacy_image_witho
 def test_autodetect_project_test_image_warns_when_gpu_requested_without_runtime(
     manager, monkeypatch, caplog
 ) -> None:
+    """Autodetect project test image warns when gpu requested without runtime."""
     manager.docker_available = True
     manager._docker_test_image_explicit = False
     manager.cfg.USE_GPU = True
@@ -2870,6 +2991,7 @@ def test_autodetect_project_test_image_warns_when_gpu_requested_without_runtime(
 def test_gpu_runtime_probe_handles_unsuccessful_command_and_gpu_warning_skips_when_available(
     manager, monkeypatch, caplog
 ) -> None:
+    """Gpu runtime probe handles unsuccessful command and gpu warning skips when available."""
     monkeypatch.setattr(
         cm.subprocess, "run", lambda *_args, **_kwargs: SimpleNamespace(returncode=1)
     )
@@ -2883,6 +3005,7 @@ def test_gpu_runtime_probe_handles_unsuccessful_command_and_gpu_warning_skips_wh
 def test_pytest_argument_and_invocation_fallbacks_cover_malformed_commands(
     manager, monkeypatch
 ) -> None:
+    """Pytest argument and invocation fallbacks cover malformed commands."""
     assert manager._extract_pytest_args("") == ["-q"]
     assert manager._extract_pytest_args("uv run python -V") == ["-q"]
     assert manager._extract_pytest_args("unknown command") == ["-q"]
@@ -2896,6 +3019,7 @@ def test_pytest_argument_and_invocation_fallbacks_cover_malformed_commands(
 def test_resolve_lsp_executable_accepts_existing_explicit_path(
     manager, tmp_path, monkeypatch
 ) -> None:
+    """Resolve lsp executable accepts existing explicit path."""
     executable = tmp_path / "custom-pyright"
     executable.write_text("#!/bin/sh\n", encoding="utf-8")
     monkeypatch.setattr(cm.shutil, "which", lambda _binary: None)
@@ -2904,6 +3028,7 @@ def test_resolve_lsp_executable_accepts_existing_explicit_path(
 
 
 def test_resolve_lsp_command_falls_back_to_binary_without_uv_or_uvx(manager, monkeypatch):
+    """Resolve lsp command falls back to binary without uv or uvx."""
     monkeypatch.setattr(cm.shutil, "which", lambda _binary: None)
     monkeypatch.setattr(manager, "_candidate_lsp_executable_paths", lambda _binary: [])
 
@@ -2911,6 +3036,7 @@ def test_resolve_lsp_command_falls_back_to_binary_without_uv_or_uvx(manager, mon
 
 
 def test_resolve_lsp_command_skips_uvx_for_custom_python_server(manager, monkeypatch):
+    """Resolve lsp command skips uvx for custom python server."""
     manager.python_lsp_server = "custom-python-lsp"
     monkeypatch.setattr(
         cm.shutil, "which", lambda binary: "/usr/bin/uvx" if binary == "uvx" else None
@@ -2921,6 +3047,7 @@ def test_resolve_lsp_command_skips_uvx_for_custom_python_server(manager, monkeyp
 
 
 def test_glob_search_rejects_non_directory_base(manager, tmp_path):
+    """Glob search rejects non directory base."""
     base_file = tmp_path / "not-a-dir.txt"
     base_file.write_text("content\n", encoding="utf-8")
 
@@ -2931,6 +3058,7 @@ def test_glob_search_rejects_non_directory_base(manager, tmp_path):
 
 
 def test_glob_search_rejects_outside_base_dir(manager, monkeypatch, tmp_path):
+    """Glob search rejects outside base dir."""
     outside = tmp_path / "outside"
     outside.mkdir()
     monkeypatch.setattr(manager.security_adapter, "is_path_under", lambda *_args: False)
@@ -2942,6 +3070,7 @@ def test_glob_search_rejects_outside_base_dir(manager, monkeypatch, tmp_path):
 
 
 def test_grep_files_skips_unreadable_file(manager, monkeypatch, tmp_path):
+    """Grep files skips unreadable file."""
     target = tmp_path / "secret.py"
     target.write_text("needle\n", encoding="utf-8")
     monkeypatch.setattr(manager.security_adapter, "can_read", lambda _path: False)
@@ -2954,6 +3083,7 @@ def test_grep_files_skips_unreadable_file(manager, monkeypatch, tmp_path):
 
 
 def test_list_directory_rejects_outside_base(manager, monkeypatch, tmp_path):
+    """List directory rejects outside base."""
     monkeypatch.setattr(manager.security_adapter, "is_path_under", lambda *_args: False)
 
     ok, msg = manager.list_directory(str(tmp_path))
@@ -2963,6 +3093,7 @@ def test_list_directory_rejects_outside_base(manager, monkeypatch, tmp_path):
 
 
 def test_shell_sandbox_selects_explicit_and_default_images(manager) -> None:
+    """Shell sandbox selects explicit and default images."""
     adapter = manager.shell_sandbox
 
     assert adapter.select_shell_sandbox_image("python -V", "custom:image") == "custom:image"
@@ -2971,12 +3102,15 @@ def test_shell_sandbox_selects_explicit_and_default_images(manager) -> None:
 
 
 def test_shell_sandbox_command_invokes_pytest_static_helper() -> None:
+    """Shell sandbox command invokes pytest static helper."""
     assert cm.ShellSandboxAdapter.command_invokes_pytest("pytest -q") is True
     assert cm.ShellSandboxAdapter.command_invokes_pytest("python -m pytest tests") is True
     assert cm.ShellSandboxAdapter.command_invokes_pytest("python -m unittest") is False
 
 
 def test_shell_sandbox_builds_preflight_via_orchestrator(manager, monkeypatch) -> None:
+    """Shell sandbox builds preflight via orchestrator."""
+
     def fake_build(owner, command):
         assert owner is manager
         assert command == "pytest -q"
@@ -2988,6 +3122,7 @@ def test_shell_sandbox_builds_preflight_via_orchestrator(manager, monkeypatch) -
 
 
 def test_shell_sandbox_run_initializes_docker_and_delegates(manager, monkeypatch) -> None:
+    """Shell sandbox run initializes docker and delegates."""
     calls: dict[str, object] = {}
 
     def fake_ensure() -> None:
@@ -3018,11 +3153,13 @@ def test_shell_sandbox_run_initializes_docker_and_delegates(manager, monkeypatch
 
 
 def test_canonical_project_image_alias_facade_uses_legacy_prefixes() -> None:
+    """Canonical project image alias facade uses legacy prefixes."""
     assert cm._canonical_project_image_alias("sidar-ai:dev") == "sidar:dev"
     assert cm._canonical_project_image_alias("external:dev") is None
 
 
 def test_init_docker_imports_docker_module_when_not_cached(manager, monkeypatch) -> None:
+    """Init docker imports docker module when not cached."""
     original_import = builtins.__import__
 
     class _Client:
@@ -3053,6 +3190,7 @@ def test_init_docker_imports_docker_module_when_not_cached(manager, monkeypatch)
 
 @pytest.mark.asyncio
 async def test_write_file_hitl_requires_approval_for_overwrite(manager, tmp_path, monkeypatch):
+    """Write file hitl requires approval for overwrite."""
     target = tmp_path / "protected.txt"
     target.write_text("old", encoding="utf-8")
     gate = SimpleNamespace(request_approval=AsyncMock(return_value=False))
@@ -3070,6 +3208,7 @@ async def test_write_file_hitl_requires_approval_for_overwrite(manager, tmp_path
 async def test_write_file_hitl_writes_directly_when_file_does_not_exist(
     manager, tmp_path, monkeypatch
 ):
+    """Write file hitl writes directly when file does not exist."""
     target = tmp_path / "brand_new.txt"
     gate = SimpleNamespace(request_approval=AsyncMock(return_value=False))
     monkeypatch.setattr("managers.code_manager.get_hitl_gate", lambda: gate)
@@ -3084,6 +3223,7 @@ async def test_write_file_hitl_writes_directly_when_file_does_not_exist(
 
 @pytest.mark.asyncio
 async def test_write_file_hitl_writes_after_approval(manager, tmp_path, monkeypatch):
+    """Write file hitl writes after approval."""
     target = tmp_path / "protected.txt"
     target.write_text("old", encoding="utf-8")
     gate = SimpleNamespace(request_approval=AsyncMock(return_value=True))
@@ -3099,6 +3239,7 @@ async def test_write_file_hitl_writes_after_approval(manager, tmp_path, monkeypa
 
 @pytest.mark.asyncio
 async def test_patch_file_hitl_applies_patch_after_approval(manager, tmp_path, monkeypatch):
+    """Patch file hitl applies patch after approval."""
     target = tmp_path / "patchable.txt"
     target.write_text("hello world", encoding="utf-8")
     gate = SimpleNamespace(request_approval=AsyncMock(return_value=True))
@@ -3114,6 +3255,7 @@ async def test_patch_file_hitl_applies_patch_after_approval(manager, tmp_path, m
 
 @pytest.mark.asyncio
 async def test_patch_file_hitl_blocks_when_approval_rejected(manager, tmp_path, monkeypatch):
+    """Patch file hitl blocks when approval rejected."""
     target = tmp_path / "patchable.txt"
     target.write_text("hello world", encoding="utf-8")
     gate = SimpleNamespace(request_approval=AsyncMock(return_value=False))
@@ -3129,6 +3271,7 @@ async def test_patch_file_hitl_blocks_when_approval_rejected(manager, tmp_path, 
 
 @pytest.mark.asyncio
 async def test_patch_file_hitl_returns_error_when_file_missing(manager, tmp_path):
+    """Patch file hitl returns error when file missing."""
     missing = tmp_path / "does_not_exist.txt"
 
     ok, message = await manager.patch_file_hitl(str(missing), "hello", "bye")
@@ -3139,6 +3282,7 @@ async def test_patch_file_hitl_returns_error_when_file_missing(manager, tmp_path
 
 @pytest.mark.asyncio
 async def test_patch_file_hitl_returns_error_when_target_block_not_found(manager, tmp_path):
+    """Patch file hitl returns error when target block not found."""
     target = tmp_path / "patchable.txt"
     target.write_text("hello world", encoding="utf-8")
 
