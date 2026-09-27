@@ -1149,6 +1149,7 @@ def _register_plugin_agent(
 async def access_policy_middleware(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
+    """Erişim politikası ve audit kontrolünü `access_policy_middleware_impl`'e devreder."""
     return await access_policy_middleware_impl(
         request,
         call_next,
@@ -1331,6 +1332,7 @@ async def _ws_connection_is_rate_limited(websocket: WebSocket) -> bool:
 async def ddos_rate_limit_middleware(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
+    """IP bazlı DDoS hız sınırını uygular; sağlık uçları ve statik UI yolları muaftır."""
     return await ddos_rate_limit_middleware_impl(
         request,
         call_next,
@@ -1346,6 +1348,7 @@ async def ddos_rate_limit_middleware(
 async def rate_limit_middleware(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
 ) -> Response:
+    """Sohbet, değişiklik ve GET/IO istekleri için ayrı hız sınırları uygulayan middleware."""
     return await rate_limit_middleware_impl(
         request,
         call_next,
@@ -1468,6 +1471,7 @@ async def _ws_stream_agent_text_response(
 
 
 async def websocket_chat(websocket: WebSocket) -> Any:
+    """`/ws/chat` işleyicisini bu modülün bağımlılıklarıyla çağıran uyumluluk sarmalayıcısı."""
     return await ws_chat_routes.websocket_chat(websocket, _build_ws_chat_dependencies())
 
 
@@ -1489,6 +1493,7 @@ def _build_ws_voice_dependencies() -> SimpleNamespace:
 
 
 async def websocket_voice(websocket: WebSocket) -> Any:
+    """`/ws/voice` işleyicisini bu modülün bağımlılıklarıyla çağıran uyumluluk sarmalayıcısı."""
     return await ws_voice_routes.websocket_voice(websocket, _build_ws_voice_dependencies())
 
 
@@ -1707,6 +1712,7 @@ async def register_agent_plugin_file(
     version: str = "1.0.0",
     _user: Any = Depends(_require_admin_user),
 ) -> Any:
+    """Yüklenen plugin dosyasını doğrulayıp ajan olarak kaydeder (yalnız admin)."""
     data = await file.read()
     await file.close()
     result = plugin_loader.register_uploaded_plugin(
@@ -1727,6 +1733,7 @@ async def register_agent_plugin_file(
 async def llm_prometheus_metrics(
     _user: dict[str, Any] = Depends(_require_metrics_access),
 ) -> Response:
+    """LLM ve (üretilebiliyorsa) delegasyon metriklerini Prometheus metni olarak döndürür."""
     snapshot = get_llm_metrics_collector().snapshot()
     llm_part = render_llm_metrics_prometheus(snapshot)
     delegation_part = ""
@@ -1864,18 +1871,21 @@ def _get_teams_manager() -> Any:
 async def api_entity_upsert(
     req: _EntityUpsertRequest, user: Any = Depends(_get_request_user)
 ) -> Any:
+    """Modül düzeyindeki EntityMemory örneğini paylaşarak entity upsert route'unu çağırır."""
     if _entity_memory_instance is not None:
         _entity_memory_cache["instance"] = _entity_memory_instance
     return await memory_feedback_router.legacy_exports["api_entity_upsert"](req, user)
 
 
 async def api_entity_get_profile(user_id: str, user: Any = Depends(_get_request_user)) -> Any:
+    """Modül düzeyindeki EntityMemory örneğini paylaşarak kullanıcı profilini döndürür."""
     if _entity_memory_instance is not None:
         _entity_memory_cache["instance"] = _entity_memory_instance
     return await memory_feedback_router.legacy_exports["api_entity_get_profile"](user_id, user)
 
 
 async def api_entity_delete(user_id: str, key: str, user: Any = Depends(_get_request_user)) -> Any:
+    """Modül düzeyindeki EntityMemory örneğini paylaşarak bellek anahtarını siler."""
     if _entity_memory_instance is not None:
         _entity_memory_cache["instance"] = _entity_memory_instance
     return await memory_feedback_router.legacy_exports["api_entity_delete"](user_id, key, user)
@@ -1884,12 +1894,14 @@ async def api_entity_delete(user_id: str, key: str, user: Any = Depends(_get_req
 async def api_feedback_record(
     req: _FeedbackRecordRequest, user: Any = Depends(_get_request_user)
 ) -> Any:
+    """Modül düzeyindeki geri bildirim deposunu paylaşarak puanı kaydeder."""
     if _feedback_store_instance is not None:
         _feedback_store_cache["instance"] = _feedback_store_instance
     return await memory_feedback_router.legacy_exports["api_feedback_record"](req, user)
 
 
 async def api_feedback_stats(user: Any = Depends(_get_request_user)) -> Any:
+    """Modül düzeyindeki geri bildirim deposunu paylaşarak istatistikleri döndürür."""
     if _feedback_store_instance is not None:
         _feedback_store_cache["instance"] = _feedback_store_instance
     return await memory_feedback_router.legacy_exports["api_feedback_stats"](user)
@@ -1901,11 +1913,13 @@ async def _prime_slack_manager_cache() -> None:
 
 
 async def api_slack_send(req: _SlackSendRequest, user: Any = Depends(_require_admin_user)) -> Any:
+    """Slack manager önbelleğini hazırlayıp mesaj gönderme route'unu çağırır (yalnız admin)."""
     await _prime_slack_manager_cache()
     return await integrations_router.legacy_exports["api_slack_send"](req, user)
 
 
 async def api_slack_channels(user: Any = Depends(_require_admin_user)) -> Any:
+    """Slack manager önbelleğini hazırlayıp kanal listesini döndürür (yalnız admin)."""
     await _prime_slack_manager_cache()
     return await integrations_router.legacy_exports["api_slack_channels"](user)
 
@@ -1917,6 +1931,7 @@ def _prime_jira_manager_cache() -> None:
 async def api_jira_create_issue(
     req: _JiraCreateRequest, user: Any = Depends(_require_admin_user)
 ) -> Any:
+    """Jira manager önbelleğini hazırlayıp issue oluşturur (yalnız admin)."""
     _prime_jira_manager_cache()
     return await integrations_router.legacy_exports["api_jira_create_issue"](req, user)
 
@@ -1924,6 +1939,7 @@ async def api_jira_create_issue(
 async def api_jira_search_issues(
     jql: str = "", max_results: int = 20, user: Any = Depends(_require_admin_user)
 ) -> Any:
+    """Jira manager önbelleğini hazırlayıp JQL ile issue arar (yalnız admin)."""
     _prime_jira_manager_cache()
     return await integrations_router.legacy_exports["api_jira_search_issues"](
         jql=jql, max_results=max_results, _user=user
@@ -1935,6 +1951,7 @@ def _prime_teams_manager_cache() -> None:
 
 
 async def api_teams_send(req: _TeamsSendRequest, user: Any = Depends(_require_admin_user)) -> Any:
+    """Teams manager önbelleğini hazırlayıp mesaj gönderir (yalnız admin)."""
     _prime_teams_manager_cache()
     return await integrations_router.legacy_exports["api_teams_send"](req, user)
 
@@ -2001,74 +2018,40 @@ def _reset_operations_route_dependencies() -> None:
     operations_routes.configure_operations_dependencies(_build_operations_dependencies)
 
 
-async def api_operations_list_campaigns(*args: Any, **kwargs: Any) -> Any:
-    _reset_operations_route_dependencies()
-    return await operations_routes.api_operations_list_campaigns(*args, **kwargs)
+def _operations_route_proxy(name: str) -> Callable[..., Awaitable[Any]]:
+    """Build a direct-call wrapper that resets dependencies, then awaits the route.
+
+    The route is looked up on ``operations_routes`` at call time, so tests that
+    patch the route module still take effect.
+    """
+
+    async def _proxy(*args: Any, **kwargs: Any) -> Any:
+        _reset_operations_route_dependencies()
+        return await getattr(operations_routes, name)(*args, **kwargs)
+
+    _proxy.__name__ = _proxy.__qualname__ = name
+    _proxy.__doc__ = f"Compatibility wrapper for ``web.routes.operations.{name}``."
+    return _proxy
 
 
-async def api_operations_create_campaign(*args: Any, **kwargs: Any) -> Any:
-    _reset_operations_route_dependencies()
-    return await operations_routes.api_operations_create_campaign(*args, **kwargs)
-
-
-async def api_operations_list_assets(*args: Any, **kwargs: Any) -> Any:
-    _reset_operations_route_dependencies()
-    return await operations_routes.api_operations_list_assets(*args, **kwargs)
-
-
-async def api_operations_add_asset(*args: Any, **kwargs: Any) -> Any:
-    _reset_operations_route_dependencies()
-    return await operations_routes.api_operations_add_asset(*args, **kwargs)
-
-
-async def api_operations_list_checklists(*args: Any, **kwargs: Any) -> Any:
-    _reset_operations_route_dependencies()
-    return await operations_routes.api_operations_list_checklists(*args, **kwargs)
-
-
-async def api_operations_add_checklist(*args: Any, **kwargs: Any) -> Any:
-    _reset_operations_route_dependencies()
-    return await operations_routes.api_operations_add_checklist(*args, **kwargs)
-
-
-async def api_operations_poyraz_run(*args: Any, **kwargs: Any) -> Any:
-    _reset_operations_route_dependencies()
-    return await operations_routes.api_operations_poyraz_run(*args, **kwargs)
-
-
-async def api_operations_generate_landing_page(*args: Any, **kwargs: Any) -> Any:
-    _reset_operations_route_dependencies()
-    return await operations_routes.api_operations_generate_landing_page(*args, **kwargs)
-
-
-async def api_operations_generate_campaign_copy(*args: Any, **kwargs: Any) -> Any:
-    _reset_operations_route_dependencies()
-    return await operations_routes.api_operations_generate_campaign_copy(*args, **kwargs)
-
-
-async def api_operations_plan_service(*args: Any, **kwargs: Any) -> Any:
-    _reset_operations_route_dependencies()
-    return await operations_routes.api_operations_plan_service(*args, **kwargs)
-
-
-async def api_qa_coverage_tasks(*args: Any, **kwargs: Any) -> Any:
-    _reset_operations_route_dependencies()
-    return await operations_routes.api_qa_coverage_tasks(*args, **kwargs)
-
-
-async def api_qa_coverage_analyze(*args: Any, **kwargs: Any) -> Any:
-    _reset_operations_route_dependencies()
-    return await operations_routes.api_qa_coverage_analyze(*args, **kwargs)
-
-
-async def api_qa_coverage_generate(*args: Any, **kwargs: Any) -> Any:
-    _reset_operations_route_dependencies()
-    return await operations_routes.api_qa_coverage_generate(*args, **kwargs)
-
-
-async def api_qa_coverage_batch(*args: Any, **kwargs: Any) -> Any:
-    _reset_operations_route_dependencies()
-    return await operations_routes.api_qa_coverage_batch(*args, **kwargs)
+api_operations_list_campaigns = _operations_route_proxy("api_operations_list_campaigns")
+api_operations_create_campaign = _operations_route_proxy("api_operations_create_campaign")
+api_operations_list_assets = _operations_route_proxy("api_operations_list_assets")
+api_operations_add_asset = _operations_route_proxy("api_operations_add_asset")
+api_operations_list_checklists = _operations_route_proxy("api_operations_list_checklists")
+api_operations_add_checklist = _operations_route_proxy("api_operations_add_checklist")
+api_operations_poyraz_run = _operations_route_proxy("api_operations_poyraz_run")
+api_operations_generate_landing_page = _operations_route_proxy(
+    "api_operations_generate_landing_page"
+)
+api_operations_generate_campaign_copy = _operations_route_proxy(
+    "api_operations_generate_campaign_copy"
+)
+api_operations_plan_service = _operations_route_proxy("api_operations_plan_service")
+api_qa_coverage_tasks = _operations_route_proxy("api_qa_coverage_tasks")
+api_qa_coverage_analyze = _operations_route_proxy("api_qa_coverage_analyze")
+api_qa_coverage_generate = _operations_route_proxy("api_qa_coverage_generate")
+api_qa_coverage_batch = _operations_route_proxy("api_qa_coverage_batch")
 
 
 operations_router = operations_routes.build_operations_router(_build_operations_dependencies)

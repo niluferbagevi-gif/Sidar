@@ -3717,6 +3717,31 @@ async def test_operations_and_qa_agent_api_bridges(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_operations_route_proxy_resets_dependencies_and_resolves_route_at_call_time(
+    monkeypatch,
+):
+    """Proxies keep their route name and honor route-module patches made after import."""
+    calls: list[tuple[str, tuple, dict]] = []
+
+    async def _fake_route(*args, **kwargs):
+        calls.append(("route", args, kwargs))
+        return "patched"
+
+    monkeypatch.setattr(
+        web_server,
+        "_reset_operations_route_dependencies",
+        lambda: calls.append(("reset", (), {})),
+    )
+    monkeypatch.setattr(web_server.operations_routes, "api_operations_list_assets", _fake_route)
+
+    proxy = web_server.api_operations_list_assets
+    assert proxy.__name__ == "api_operations_list_assets"
+    assert "api_operations_list_assets" in (proxy.__doc__ or "")
+    assert await proxy(7, _user="u") == "patched"
+    assert calls == [("reset", (), {}), ("route", (7,), {"_user": "u"})]
+
+
+@pytest.mark.asyncio
 async def test_basic_auth_middleware_branches(monkeypatch):
     async def _call_next(_request):
         return web_server.JSONResponse({"ok": True}, status_code=200)
