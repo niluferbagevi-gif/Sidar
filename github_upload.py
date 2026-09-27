@@ -211,6 +211,7 @@ def direct_main_upload_allowed(env: Mapping[str, str] | None = None) -> bool:
 
 
 def create_upload_branch() -> str:
+    """PR öncelikli yükleme akışı için zaman damgalı upload dalını oluşturur."""
     return upload_git_ops.create_upload_branch(run_command=run_command)
 
 
@@ -255,6 +256,7 @@ def _open_upload_pull_request_via_api(branch: str, github_token: str) -> tuple[b
 
 
 def open_upload_pull_request(branch: str, github_token: str) -> tuple[bool, str]:
+    """Upload dalı için PR açar; `gh` kuruluysa onu, değilse GitHub API'sini kullanır."""
     return upload_github_api.open_upload_pull_request(
         branch=branch,
         github_token=github_token,
@@ -264,10 +266,12 @@ def open_upload_pull_request(branch: str, github_token: str) -> tuple[bool, str]
 
 
 def is_forbidden_path(path: str) -> bool:
+    """Yol, `.gitignore`'dan bağımsız kesin engel listesindeyse `True` döndürür."""
     return upload_files.is_forbidden_path(path=path, _normalize_path=_normalize_path)
 
 
 def get_file_content(path: str) -> str | None:
+    """Dosyayı UTF-8 okur; engelli, binary veya okunamayan dosyalarda `None` döndürür."""
     return upload_files.get_file_content(path=path, is_forbidden_path=is_forbidden_path)
 
 
@@ -275,16 +279,19 @@ CONFLICT_MARKER_RE = upload_files.CONFLICT_MARKER_RE
 
 
 def get_unmerged_files() -> list[str]:
+    """Çözülmemiş merge çakışması bulunan dosyaları döndürür."""
     return upload_git_ops.get_unmerged_files(run_command=run_command)
 
 
 def switch_back_to_original_branch(original_branch: str) -> None:
+    """Commit/push'a ulaşmayan erken çıkışlarda başlangıç dalına geri döner."""
     return upload_git_ops.switch_back_to_original_branch(
         original_branch=original_branch, run_command=run_command
     )
 
 
 def assert_no_unmerged_files(original_branch: str | None = None) -> None:
+    """Unmerged dosya varsa akışı fail-closed durdurur."""
     return upload_git_ops.assert_no_unmerged_files(
         original_branch=original_branch,
         get_unmerged_files=get_unmerged_files,
@@ -293,34 +300,46 @@ def assert_no_unmerged_files(original_branch: str | None = None) -> None:
 
 
 def print_unmerged_files(prefix: str = "Çakışan dosyalar") -> None:
+    """Unmerged dosyaları kullanıcıya okunur biçimde listeler."""
     return upload_git_ops.print_unmerged_files(prefix=prefix, get_unmerged_files=get_unmerged_files)
 
 
 def abort_in_progress_merge() -> None:
+    """Başarısız pull/merge sonrası devam eden merge'ü iptal etmeye çalışır."""
     return upload_git_ops.abort_in_progress_merge(run_command=run_command)
 
 
 def has_conflict_markers(path: str) -> bool:
+    """Dosyada merge conflict marker satırı kalmışsa `True` döndürür."""
     return upload_files.has_conflict_markers(path=path, get_file_content=get_file_content)
 
 
 def create_rollback_backup_tag() -> str:
+    """Force-push rollback öncesi mevcut HEAD için kurtarma etiketi oluşturur."""
     return upload_git_ops.create_rollback_backup_tag(run_command=run_command)
 
 
 def report_ours_strategy_changes() -> None:
+    """`-X ours` merge sonrasında değişen dosyaları raporlar."""
     return upload_git_ops.report_ours_strategy_changes(run_command=run_command)
 
 
 def get_deleted_files() -> list[str]:
+    """Diskten silinmiş ama Git'in takip ettiği dosyaları döndürür."""
     return upload_git_ops.get_deleted_files(run_command=run_command)
 
 
 def get_commit_count() -> int:
+    """Aktif dalda rollback için kullanılabilir commit sayısını döndürür."""
     return upload_git_ops.get_commit_count(run_command=run_command)
 
 
 def collect_safe_files(deleted_files_list: list[str] | None = None) -> tuple[list[str], list[str]]:
+    """Engelli, binary ve conflict marker içeren dosyaları eleyerek stage listesini üretir.
+
+    Returns:
+        `(güvenli dosyalar, engellenen dosyalar)` çifti.
+    """
     return upload_files.collect_safe_files(
         deleted_files_list=deleted_files_list,
         get_file_content=get_file_content,
@@ -331,26 +350,31 @@ def collect_safe_files(deleted_files_list: list[str] | None = None) -> tuple[lis
 
 
 def stage_files(file_paths: list[str]) -> tuple[bool, str]:
+    """Dosyaları literal pathspec ile güvenli biçimde stage eder."""
     return upload_git_ops.stage_files(
         file_paths=file_paths, get_unmerged_files=get_unmerged_files, run_command=run_command
     )
 
 
 def stage_deleted_files(file_paths: list[str]) -> tuple[bool, str]:
+    """Silinen dosyaları option injection ve pathspec globbing olmadan stage eder."""
     return upload_git_ops.stage_deleted_files(file_paths=file_paths, run_command=run_command)
 
 
 def sync_install_manifests_before_commit() -> tuple[bool, str]:
+    """Commit öncesi install manifestlerini tazeler ve drift düzeltmelerini stage eder."""
     return upload_manifests.sync_install_manifests_before_commit(run_command=run_command)
 
 
 def stamp_install_manifest_pin_after_commit() -> tuple[bool, str]:
+    """Yeni commit'i `install_sidar.sh` içindeki gömülü modül pinine damgalar."""
     return upload_manifests.stamp_install_manifest_pin_after_commit(
         run_command=run_command, stage_files=stage_files
     )
 
 
 def ensure_full_git_history_for_manifest_checks() -> tuple[bool, str]:
+    """Shallow clone'da `--check-pin` yanlış pozitifini önlemek için tam git geçmişini sağlar."""
     return upload_manifests.ensure_full_git_history_for_manifest_checks(run_command=run_command)
 
 
@@ -361,10 +385,12 @@ def _run_quality_steps(
 
 
 def run_pre_commit_fast_gate() -> tuple[bool, str]:
+    """Dal veya commit oluşturulmadan önce hızlı kod/test kapısını fail-closed çalıştırır."""
     return upload_gates.run_pre_commit_fast_gate(_run_quality_steps=_run_quality_steps)
 
 
 def run_post_commit_integrity_gate() -> tuple[bool, str]:
+    """Push öncesi installer/manifest bütünlük kapılarını fail-closed çalıştırır."""
     return upload_gates.run_post_commit_integrity_gate(
         _run_quality_steps=_run_quality_steps,
         ensure_full_git_history_for_manifest_checks=ensure_full_git_history_for_manifest_checks,
@@ -372,6 +398,7 @@ def run_post_commit_integrity_gate() -> tuple[bool, str]:
 
 
 def run_pre_push_quality_gate() -> tuple[bool, str]:
+    """Push öncesi unit, statik analiz ve installer kapılarının tamamını çalıştırır."""
     return upload_gates.run_pre_push_quality_gate(
         run_post_commit_integrity_gate=run_post_commit_integrity_gate,
         run_pre_commit_fast_gate=run_pre_commit_fast_gate,
@@ -379,16 +406,19 @@ def run_pre_push_quality_gate() -> tuple[bool, str]:
 
 
 def describe_post_commit_gate_failure(current_branch: str, *, direct_main: bool) -> str:
+    """Commit sonrası kapı başarısız olduğunda kurtarma talimatlarını üretir."""
     return upload_gates.describe_post_commit_gate_failure(
         current_branch=current_branch, direct_main=direct_main, run_command=run_command
     )
 
 
 def record_upload_source_head() -> tuple[bool, str]:
+    """Yükleme kanıtı ve loglarında kullanılacak kaynak commit'i belirler."""
     return upload_git_ops.record_upload_source_head(run_command=run_command)
 
 
 def run_direct_main_readiness_gate() -> tuple[bool, str]:
+    """Doğrudan main push'u için yerel statik analiz ve production-readiness kanıtı ister."""
     return upload_gates.run_direct_main_readiness_gate(run_command=run_command)
 
 
@@ -396,6 +426,11 @@ def run_direct_main_readiness_gate() -> tuple[bool, str]:
 # ANA PROGRAM
 # ═══════════════════════════════════════════════════════════════
 def main() -> None:
+    """GitHub yükleme aracının giriş noktası.
+
+    Argümansız çağrıda PR öncelikli yükleme yapar; bir dal adı verilirse o dalı
+    çekip birleştirir; `-N` (1-10) verilirse son N işlemi geri alır.
+    """
     target_branch = None
     rollback_steps = 0
     upload_base_branch = "main"
