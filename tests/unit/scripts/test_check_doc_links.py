@@ -83,6 +83,18 @@ def test_broken_links_resolves_relative_to_document(tmp_path, monkeypatch) -> No
     assert checker.broken_links("docs/index.md", text) == ["gone.md#x", "../web_ui/"]
 
 
+def test_broken_links_checks_inline_html_hrefs(tmp_path, monkeypatch) -> None:
+    """Inline HTML hrefs (e.g. inside ``<pre>`` file trees) resolve relative to the document."""
+    _make_repo(tmp_path, monkeypatch)
+    text = (
+        '<pre>\n<a href="guide.md">ok</a>\n<a class="x" href="../core/llm.py#L1">up</a>\n'
+        '<a href="https://example.com/x.md">web</a>\n<a href="#top">self</a>\n'
+        '<a href="docs/guide.md">root-relative</a>\n</pre>\n[md](gone.md)'
+    )
+
+    assert checker.broken_links("docs/index.md", text) == ["gone.md", "docs/guide.md"]
+
+
 def test_missing_paths_checks_only_repo_rooted_backticks(tmp_path, monkeypatch) -> None:
     """Missing paths checks only repo rooted backticks."""
     _make_repo(tmp_path, monkeypatch)
