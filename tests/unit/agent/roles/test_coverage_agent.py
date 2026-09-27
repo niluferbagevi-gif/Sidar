@@ -226,7 +226,7 @@ async def test_build_dynamic_prompt():
     )
     assert "Hedef dosya: src/a.py" in prompt
     assert "Eksik satırlar: 1, 2" in prompt
-    assert ".coveragerc include: src/*" in prompt
+    assert "Coverage config include: src/*" in prompt
     assert "[KAYNAK DOSYA]" in prompt
     assert "def target():" in prompt
     assert "'assert True' veya tautolojik kontroller YASAK" in prompt

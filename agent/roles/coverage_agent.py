@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import ast
 import asyncio
-import configparser
 import fnmatch
 import inspect
 import json
@@ -21,6 +20,7 @@ from agent.registry import AgentCatalog
 from agent.roles.coverage import analyzer as coverage_analyzer
 from agent.roles.coverage import batch_heal as coverage_batch_heal
 from agent.roles.coverage import generator as coverage_generator
+from agent.roles.coverage.config import read_coverage_config
 from config import Config
 from core.test_fixture_policy import SHARED_TEST_FIXTURE_GUIDANCE
 
@@ -762,15 +762,7 @@ class CoverageAgent(BaseAgent):
 
     @staticmethod
     def _read_coveragerc(coveragerc_path: str) -> dict[str, Any]:
-        path = Path((coveragerc_path or ".coveragerc").strip() or ".coveragerc")
-        if not path.exists():
-            return {"path": str(path), "exists": False, "run": {}, "report": {}}
-
-        parser = configparser.ConfigParser()
-        parser.read(path, encoding="utf-8")
-        run_cfg = dict(parser.items("run")) if parser.has_section("run") else {}
-        report_cfg = dict(parser.items("report")) if parser.has_section("report") else {}
-        return {"path": str(path), "exists": True, "run": run_cfg, "report": report_cfg}
+        return read_coverage_config(coveragerc_path)
 
     @staticmethod
     def _parse_coverage_xml(coverage_xml_path: str, *, limit: int = 25) -> dict[str, Any]:
@@ -979,8 +971,8 @@ class CoverageAgent(BaseAgent):
             f"Önerilen test dosyası: {CoverageAgent._suggest_test_path(target)}\n"
             f"Eksik satırlar: {missing_lines}\n"
             f"Eksik branch'ler: {missing_branches}\n"
-            f".coveragerc include: {include_cfg or '-'}\n"
-            f".coveragerc omit: {omit_cfg or '-'}\n"
+            f"Coverage config include: {include_cfg or '-'}\n"
+            f"Coverage config omit: {omit_cfg or '-'}\n"
             f"{source_block}\n"
             "Görev: pytest uyumlu, deterministik ve ağ erişimsiz testler üret.\n"
             "- 'assert True' veya tautolojik kontroller YASAK.\n"
