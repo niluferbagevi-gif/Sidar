@@ -388,7 +388,7 @@ def test_observability_compose_pins_tracing_and_exports_infra_metrics():
     assert services["jaeger"]["image"] == "jaegertracing/all-in-one:1.76.0"
     assert ":latest" not in services["jaeger"]["image"]
 
-    assert services["redis-exporter"]["image"] == "oliver006/redis_exporter:v1.91.1"
+    assert services["redis-exporter"]["image"] == "oliver006/redis_exporter:v1.92.0"
     redis_exporter_env = services["redis-exporter"]["environment"]
     assert "REDIS_ADDR=redis://redis:6379" in redis_exporter_env
     assert any(str(item).startswith("REDIS_PASSWORD=") for item in redis_exporter_env)
