@@ -12,10 +12,10 @@ Bu dosya, Sidar projesinin derleme, çalıştırma, test ve kodlama standartlar�
 ## 🛠 Temel Komutlar
 
 ### Kurulum ve Başlatma
-- **Sistemi Başlat (Ana):** `python main.py`
-- **Hızlı Web Başlatma:** `python main.py --quick web --host 0.0.0.0 --port 7860`
-- **Hızlı CLI Başlatma:** `python main.py --quick cli`
-- **Doğrudan Web Sunucu:** `python web_server.py --host 0.0.0.0 --port 7860`
+- **Sistemi Başlat (Ana):** `uv run python main.py`
+- **Hızlı Web Başlatma:** `uv run python main.py --quick web --host 0.0.0.0 --port 7860`
+- **Hızlı CLI Başlatma:** `uv run python main.py --quick cli`
+- **Doğrudan Web Sunucu:** `uv run python web_server.py --host 0.0.0.0 --port 7860`
 - **Docker ile Ayağa Kaldır (core/cpu):** `docker compose up --build`
 - **Docker GPU profili:** `docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile gpu up --build` (bkz. `docker-compose.gpu.yml`)
 - **Docker observability profili:** `docker compose -f docker-compose.yml -f docker-compose.observability.yml --profile cpu --profile observability up` (bkz. `docker-compose.observability.yml`)
@@ -26,8 +26,8 @@ Bu dosya, Sidar projesinin derleme, çalıştırma, test ve kodlama standartlar�
 - **Kapsam Analizi:** `uv run pytest --cov=.`
 
 ### Veritabanı ve Migration
-- **Veritabanı Şemasını Güncelle (PostgreSQL/SQLite):** `alembic upgrade head`
-- **Yeni Migration Oluştur:** `alembic revision --autogenerate -m "aciklama"`
+- **Veritabanı Şemasını Güncelle (PostgreSQL/SQLite):** `uv run alembic upgrade head`
+- **Yeni Migration Oluştur:** `uv run alembic revision --autogenerate -m "aciklama"`
 
 ## 💻 Kodlama Standartları
 

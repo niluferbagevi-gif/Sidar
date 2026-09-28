@@ -166,7 +166,7 @@
 
 ## v3.0.0 Öne Çıkan Yetenekler
 
-### 🚀 Son Sürüm Öne Çıkan Özellikler (v3.2.0 / v4.2.0 dokümantasyon turu)
+### 🚀 v3.2.0 / v4.2.0 Dönemi Öne Çıkan Özellikler (tarihsel)
 
 - **Autonomous LLMOps / LLM-as-a-Judge:** `core/judge.py` zayıf yanıtları arka planda puanlayıp uygun durumlarda `core/active_learning.py` hattına aktarır; böylece insan müdahalesi olmadan kalite geri besleme döngüsü kurulabilir.
 - **P2P Swarm İletişimi:** Coder/Reviewer/Researcher ajanları `p2p.v1` sözleşmesiyle sender, receiver, reason ve handoff depth bağlamını koruyarak doğrudan görev devredebilir.

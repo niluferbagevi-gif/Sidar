@@ -64,7 +64,7 @@ Uygulama dağıtık (distributed) ve çoklu-ajanlı bir mimariye geçtiği için
 
 **Neden:** `RAG_VECTOR_BACKEND=pgvector` seçildiği halde PostgreSQL erişimi hazır değildir, `vector` eklentisi yüklenmemiştir veya Alembic migration'ları çalıştırılmadığı için temel tablolar ve audit trail şemaları oluşmamıştır.
 
-**Çözüm:** Veritabanına bağlanıp `CREATE EXTENSION IF NOT EXISTS vector;` komutunu çalıştırın. Ardından repo kökünde `alembic upgrade head` komutu ile migration'ları uygulayın. Özellikle PostgreSQL/pgvector ve audit log kullanan kurulumlarda `DATABASE_URL` değerinin doğru olduğundan ve migration zincirinin tam geçtiğinden emin olun.
+**Çözüm:** Veritabanına bağlanıp `CREATE EXTENSION IF NOT EXISTS vector;` komutunu çalıştırın. Ardından repo kökünde `uv run alembic upgrade head` komutu ile migration'ları uygulayın. Özellikle PostgreSQL/pgvector ve audit log kullanan kurulumlarda `DATABASE_URL` değerinin doğru olduğundan ve migration zincirinin tam geçtiğinden emin olun.
 
 ### 17.3 Modern React (SPA) Arayüzüne Bağlanamama
 
@@ -112,19 +112,26 @@ Proje, başlangıçtaki basit CLI tabanlı kişisel asistan vizyonundan çıkara
 - **Faz 5.5 — Arayüz Modernizasyonu:** Legacy statik web yüzeyi geri uyumluluk için korunurken, `web_ui_react/` altında React + Vite + WebSocket tabanlı modern SPA kullanıcı deneyimi varsayılan yönetim ve operasyon yüzeyi haline geldi.
 - **v4.3.0 — Sürüm ve Ölçüm Senkronizasyonu:** Runtime, paket metadata'sı, Helm chart ve üst seviye dokümantasyon aynı sürüm çizgisine taşındı; repo metrikleri yalnızca Git takipli dosyalar üzerinden yeniden doğrulanarak üretim ölçümleri güvenilir hale getirildi.
 
-### Final Doğrulama ve Sıfır Teknik Borç Durumu
+### Final Doğrulama ve Sıfır Teknik Borç Durumu (tarihsel v5.0.0-alpha snapshot)
+
+> **Güncellik notu:** Bu alt bölüm v5.0.0-alpha dönemindeki kapanış snapshot'ıdır ve
+> güncel kalite kapısı yerine kullanılmamalıdır. Aktif v5.2.0 durumunda coverage kapısı
+> `pyproject.toml [tool.coverage.report].fail_under` ratchet'i ile yönetilen `%100`
+> baseline'dır (bkz. [`TESTING.md`](../TESTING.md), `AGENTS.md` §2.5.4); açık teknik borç ve
+> refactor takibi [`REFACTOR_PLAN.md`](../REFACTOR_PLAN.md), anlık borç snapshot'ı ise
+> [`04-teknik-borc-ve-yapilandirma.md`](04-teknik-borc-ve-yapilandirma.md) üzerinden izlenir.
 
 Bu rapor itibarıyla proje yalnızca özellik eklemiş bir prototip değil; test, audit ve operasyon yüzeyleri birbirini doğrulayan olgun bir sistemdir. CI hattı `.github/workflows/ci.yml` üzerinden **%90 coverage hard gate** uygular; bu değer depo kültüründeki tam kapsama hedefinin repo içinde gerçekten kodlanmış karşılığıdır.
 
 Son doğrulama turlarında migration akışları, swarm delegasyonları, audit trail kayıtları, observability hattı, HITL güvenlik kapıları, Redis/PostgreSQL veri düzlemi ve React SPA/REST/WebSocket yüzeyleri birlikte yeniden kontrol edilmiştir. `CHANGELOG.md`, `AUDIT_REPORT_v5.0.md` ve bu rapor aynı temel sonucu teyit eder: **açık kritik, yüksek, orta veya düşük öncelikli majör teknik borç kalmamıştır**; sistem kurumsal rollout ve production dağıtımı için hazır durumdadır.
 
-### Güncel Kapanış Özeti (v5.0.0-alpha)
+### Kapanış Özeti (tarihsel, v5.0.0-alpha)
 
-- **Güncel baz çizgisi:** 62 üretim Python dosyası / 26.261 satır, 167 test dosyası / 46.874 satır, toplam 229 takipli Python dosyası / 73.135 satır ve takipli ölçüm yüzeyi 343 dosya / 87.576 satır.
+- **Dönem baz çizgisi:** 62 üretim Python dosyası / 26.261 satır, 167 test dosyası / 46.874 satır, toplam 229 takipli Python dosyası / 73.135 satır ve takipli ölçüm yüzeyi 343 dosya / 87.576 satır.
 - **Operasyonel durum:** Güvenlik/operasyon puanı `10.0/10`; açık bulgu yok; audit trail, observability ve swarm orkestrasyonu birlikte doğrulanmış durumda.
 - **Kurumsal sonuç:** Sidar artık yalnızca “kod yazan ajan” değil; React SPA, PostgreSQL/pgvector, Redis semantic cache, DLP/HITL güvenlik duvarı, Supervisor-first swarm ve telemetry-first observability katmanlarını tek üründe birleştiren üretim adayı bir platformdur.
 
-> **Arşiv Notu:** Satır satır sürüm günlüğü, kapanan teknik borç kalemleri ve ara denetim turları için `CHANGELOG.md` ve `AUDIT_REPORT_v5.0.md` dosyalarına başvurulmalıdır.
+> **Arşiv Notu:** Satır satır sürüm günlüğü, kapanan teknik borç kalemleri ve ara denetim turları için `CHANGELOG.md` ile tarihsel audit snapshot'ları `AUDIT_REPORT_v5.0.md`, `AUDIT_REPORT_v5.1.md` ve `AUDIT_REPORT_v5.1_COMPREHENSIVE.md` dosyalarına başvurulmalıdır.
 
 ## Session: Production Secret Rotation Runbook
 

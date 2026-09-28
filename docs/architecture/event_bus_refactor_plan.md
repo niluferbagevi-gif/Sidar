@@ -1,5 +1,13 @@
 # AgentEventBus Refactor Plan (SRP Odaklı)
 
+> **Durum (2026-09-28):** Faz 1 tamamlandı — `agent/core/event_backends/` altında
+> `BaseEventBusBackend` ile `RedisBackend`, `RabbitMQBackend` ve `KafkaBackend` strategy
+> sınıfları mevcut ve `AgentEventBus` (`agent/core/event_stream.py`) bootstrap/publish
+> çağrılarını bunlara delege ediyor. Faz 2 henüz uygulanmadı: listener loop'ları
+> (`_redis_listener_loop`, `_rabbit_listener_loop`, `_kafka_listener_loop`) ve DLQ yazımı
+> hâlâ `AgentEventBus` içinde. Aşağıdaki `*EventTransport` / `DeadLetterSink` adları hedef
+> tasarımdır; kodda henüz bu adlarla sınıf yoktur.
+
 ## Problem
 
 `AgentEventBus` tek sınıf içinde şu sorumlulukları birlikte taşıyor:
