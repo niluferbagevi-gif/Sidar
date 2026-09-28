@@ -1,5 +1,6 @@
 """Contract tests for the Python runtime in Dockerfiles."""
 
+import re
 from pathlib import Path
 
 import yaml
@@ -687,3 +688,28 @@ def test_prometheus_scrapes_sidar_and_infra_exporters():
         "sidar-web": "/metrics/llm/prometheus",
         "sidar-gpu": "/metrics",
     }
+
+
+def test_installer_from_zero_cleanup_tracks_compose_image_tags():
+    """``--from-zero`` must remove exactly the third-party images Compose pulls.
+
+    ``services_docker.sh`` hard-codes its cleanup list, so every Dependabot
+    image bump silently left the old tag in it (redis_exporter v1.91.1 and
+    ollama 0.34.1 outlived their compose pins) and ``--from-zero`` stopped
+    removing the images actually in use.
+    """
+    script = _read("scripts/install_modules/utils/services_docker.sh")
+    block = script[script.index("local -a images_to_remove=(") :]
+    listed = set(re.findall(r"^\s+([\w./-]+:[\w.-]+)\s*$", block[: block.index(")")], re.M))
+    listed |= set(re.findall(r"images_to_remove\+=\(([\w./-]+:[\w.-]+)\)", script))
+
+    compose_images = {
+        service["image"]
+        for service in _merged_compose_services().values()
+        if "image" in service and not service["image"].startswith("${")
+    }
+
+    assert listed == compose_images, (
+        f"missing from cleanup: {sorted(compose_images - listed)}; "
+        f"stale in cleanup: {sorted(listed - compose_images)}"
+    )

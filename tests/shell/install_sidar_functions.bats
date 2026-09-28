@@ -160,7 +160,7 @@ run_installer_function() {
     OFFLINE_MODE=false FROM_ZERO_CLEANUP_DONE=false WIPE_MODELS=true
     from_zero_cleanup_if_requested docker compose
     [[ " ${calls[*]} " == *" volume rm -f sidar_ollama_data "* ]]
-    [[ " ${calls[*]} " == *" image rm -f ollama/ollama:0.34.1 "* ]]
+    [[ " ${calls[*]} " == *" image rm -f ollama/ollama:0.34.4 "* ]]
   '
   [ "$status" -eq 0 ]
 }
