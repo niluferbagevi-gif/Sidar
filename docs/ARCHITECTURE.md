@@ -102,3 +102,12 @@ Paket ve runtime sürüm doğruluk zinciri `pyproject.toml` ile `sidar_version.p
 - Test ve release gate'leri: [`TESTING.md`](TESTING.md)
 - Required check sözleşmesi: [`CI_REQUIRED_CHECKS.md`](CI_REQUIRED_CHECKS.md)
 - Multi-agent RFC: [`RFC-MultiAgent.md`](RFC-MultiAgent.md)
+- Ortam değişkenleri ve `.env` katmanlama: [`ENVIRONMENT_CONFIGURATION.md`](ENVIRONMENT_CONFIGURATION.md)
+- Bağımlılık profilleri ve lock güncelleme: [`DEPENDENCY_PROFILE_PLAN.md`](DEPENDENCY_PROFILE_PLAN.md)
+- Büyük dosya refactor takibi: [`REFACTOR_PLAN.md`](REFACTOR_PLAN.md)
+- `AgentEventBus` SRP refactor planı: [`architecture/event_bus_refactor_plan.md`](architecture/event_bus_refactor_plan.md)
+- Modül bazlı notlar: [`module-notes/INDEX.md`](module-notes/INDEX.md)
+- Operasyon runbook'ları: [`runbooks/`](runbooks/) ve repo kökündeki [`../runbooks/`](../runbooks/)
+- Geliştirici ortamı notları: [`development/devcontainer-troubleshooting.md`](development/devcontainer-troubleshooting.md),
+  [`development/frontend-typescript-migration.md`](development/frontend-typescript-migration.md),
+  [`development/frontend-eslint-10-migration.md`](development/frontend-eslint-10-migration.md)

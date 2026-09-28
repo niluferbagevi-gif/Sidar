@@ -130,7 +130,7 @@ Sistemin davranışını kontrol eden çevre değişkenleri artık birkaç API a
 | `DEBUG_MODE` | `false` | Ayrıntılı debug davranışlarını ve yapılandırma özetini açar |
 | `LOG_LEVEL` | `INFO` | Uygulama geneli log seviyesi (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 | `RESPONSE_LANGUAGE` | `tr` | Nihai yanıt dili |
-| `REVIEWER_TEST_COMMAND` | `python -m pytest` | ReviewerAgent doğrulama safhasında koşturulan test komutu |
+| `REVIEWER_TEST_COMMAND` | `uv run pytest` | ReviewerAgent doğrulama safhasında koşturulan test komutu |
 | `AI_PROVIDER` | `ollama` | Birincil LLM sağlayıcı seçimi: `ollama`, `gemini`, `openai`, `anthropic`, `litellm` |
 
 ### 12.2 Yapay Zeka Sağlayıcıları ve Gateway

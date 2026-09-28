@@ -17,7 +17,7 @@ Bu doküman, Sidar projesinin **uygulama seviyesinde teknik sözleşmelerini** (
 ## İçindekiler
 - [1. Mimari Kapsam ve Bileşenler](#1-mimari-kapsam-ve-bileşenler)
 - [1.1 Kök başlatma ve kontrol düzlemi](#11-kök-başlatma-ve-kontrol-düzlemi)
-- [2. Veri Katmanı (core/db.py)](#2-veri-katmanı-coredbpy)
+- [2. Veri Katmanı (core/db/)](#2-veri-katmanı-coredb)
   - [2.1 Backend seçimi ve bağlantı modeli](#21-backend-seçimi-ve-bağlantı-modeli)
   - [2.2 Tablo şemaları ve ilişkiler](#22-tablo-şemaları-ve-ilişkiler)
   - [2.3 Kimlik doğrulama ve token yaşam döngüsü](#23-kimlik-doğrulama-ve-token-yaşam-döngüsü)
@@ -46,7 +46,7 @@ Bu doküman, Sidar projesinin **uygulama seviyesinde teknik sözleşmelerini** (
 
 ## 1. Mimari Kapsam ve Bileşenler
 
-Sidar v5.1.0-docs / v5.0.0-alpha runtime teknik akışının ana bileşenleri:
+Sidar v5.2.0 runtime teknik akışının ana bileşenleri:
 
 - **Web/API katmanı:** `web_server.py` (FastAPI, WebSocket, middleware, auth, rate-limit, RAG/GitHub endpointleri)
 - **Agent katmanı:** `agent/sidar_agent.py` + `agent/core/supervisor.py` + `agent/roles/*`
@@ -67,7 +67,7 @@ Bu kılavuzdaki tüm başlıklar, doğrudan mevcut repo kod akışlarına göre 
 
 ---
 
-## 2. Veri Katmanı (core/db.py)
+## 2. Veri Katmanı (core/db/)
 
 ### 2.1 Backend seçimi ve bağlantı modeli
 

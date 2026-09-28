@@ -40,9 +40,9 @@ Böylece production cutover öncesi kritik veritabanı geçiş adımları CI iç
    - inline Python ile `temp/migration_dry_run.db` oluşturulur
    - migration scriptinin beklediği tablo seti ve örnek satırlar eklenir
 5. **SQLite → PostgreSQL dry-run provası**
-   - `python scripts/migrate_sqlite_to_pg.py --dry-run`
+   - `uv run python scripts/migrate_sqlite_to_pg.py --dry-run`
 6. **PostgreSQL pool smoke/load testi**
-   - `python scripts/load_test_db_pool.py --concurrency 50 --requests 300`
+   - `uv run python scripts/load_test_db_pool.py --concurrency 50 --requests 300`
 
 ## 4) Nerede kullanılıyor?
 
