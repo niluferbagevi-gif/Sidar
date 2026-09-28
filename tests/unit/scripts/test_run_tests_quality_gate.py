@@ -6531,17 +6531,17 @@ def test_frontend_security_dependencies_are_patched_in_package_lock() -> None:
     assert "Top ${topChunks.length} JS chunks" in bundle_budget_script
     assert "hasInstallScript" not in locked_root
     assert dev_deps["@playwright/test"] == ">=1.60.0 <1.64.0"
-    assert dev_deps["vite"] == "^8.3.0"
+    assert dev_deps["vite"] == "^8.3.1"
     assert dev_deps["ws"] == "^8.21.3"
     assert locked_root_deps["@playwright/test"] == ">=1.60.0 <1.64.0"
-    assert locked_root_deps["vite"] == "^8.3.0"
+    assert locked_root_deps["vite"] == "^8.3.1"
     assert locked_root_deps["ws"] == "^8.21.3"
     assert locked_packages["node_modules/@playwright/test"]["version"].startswith("1.63.")
     assert locked_packages["node_modules/playwright"]["version"].startswith("1.63.")
-    assert locked_packages["node_modules/vite"]["version"] == "8.3.0"
+    assert locked_packages["node_modules/vite"]["version"] == "8.3.1"
     assert locked_packages["node_modules/ws"]["version"] == "8.21.3"
     assert locked_packages["node_modules/vite"]["dependencies"]["postcss"] == "^8.5.28"
-    assert locked_packages["node_modules/vite"]["dependencies"]["rolldown"] == "~1.2.6"
+    assert locked_packages["node_modules/vite"]["dependencies"]["rolldown"] == "~1.2.9"
     assert locked_packages["node_modules/vite"]["dependencies"]["tinyglobby"] == "^0.2.17"
 
 
