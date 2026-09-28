@@ -585,6 +585,46 @@ OLLAMA_NUM_PARALLEL=4 docker compose -f docker-compose.yml -f docker-compose.gpu
 
 > **Compose dosya yapısı:** `docker-compose.yml` yalnızca temel (core) servisleri taşır (redis, postgres, ollama, sidar-migrate, docker-socket-proxy, sidar-ai, sidar-web). GPU servisleri (`ollama-gpu`, `sidar-gpu`, `sidar-web-gpu`) `docker-compose.gpu.yml`'de, observability servisleri (jaeger, exporter'lar, cadvisor, prometheus, grafana) `docker-compose.observability.yml`'dedir — her ikisi de `-f` ile core dosyayla birleştirilir (`docker-compose.production.yml` zaten aynı deseni kullanır). Örnekler: `docker compose -f docker-compose.yml -f docker-compose.observability.yml --profile cpu --profile observability up`, `docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.observability.yml --profile gpu --profile observability up`.
 
+### Tek-host production (yalnız localhost)
+
+Production web arayüzü yalnız aynı bilgisayardaki tarayıcıdan kullanılacaksa
+`docker-compose.local-server.yml` dosyasını **son overlay** olarak ekleyin. Bu
+overlay, `sidar-web` portunu `127.0.0.1` ile sınırlar; LAN/internet erişimi için
+doğrudan geniş bind yerine VPN veya TLS reverse proxy tercih edilmelidir.
+
+```bash
+docker compose \
+  --project-name sidar-prod \
+  --env-file .env.production \
+  -f docker-compose.yml \
+  -f docker-compose.gpu.yml \
+  -f docker-compose.production.yml \
+  -f docker-compose.local-server.yml \
+  --profile cpu \
+  up -d postgres redis ollama sidar-web
+```
+
+`up -d` komutunu servis adı vermeden çalıştırmak `cpu` profilindeki etkileşimli
+`sidar-ai` ve ona bağlı Docker socket proxy'yi de başlatır. Web-only sunucuda
+yukarıdaki hedefli servis listesi kullanılmalıdır. Nihai binding'i doğrulamak için:
+
+```bash
+docker compose \
+  --project-name sidar-prod \
+  --env-file .env.production \
+  -f docker-compose.yml \
+  -f docker-compose.gpu.yml \
+  -f docker-compose.production.yml \
+  -f docker-compose.local-server.yml \
+  --profile cpu \
+  config --format json
+
+docker port sidar-prod_web 7860/tcp
+curl -fsS http://127.0.0.1:7860/readyz
+```
+
+Beklenen Docker port çıktısı `127.0.0.1:7860` değeridir.
+
 Production ortamında host izin (uid/gid/chown) sorunlarını azaltmak için bind mount yerine named volume kullanabilirsiniz:
 
 ```bash
