@@ -385,7 +385,13 @@ capability eşleşmesine göre paralel, pipeline veya P2P handoff ile dağıtır
 
 - **Görev analizi ve yönlendirme:** `agent/core/supervisor.py`, gelen prompt için intent
   belirler; research/review/marketing/coverage işleri doğrudan ilgili role, varsayılan
-  kod işleri ise önce `coder` sonra `reviewer` kalite kapısına gider.
+  kod işleri ise önce `coder` sonra `reviewer` kalite kapısına gider. Kod değişikliği
+  istemeyen bilgi soruları (`nedir`, `nelerdir`, `hangi`, `nasıl`, `how`, `?` …)
+  `researcher`'a yönlenir. İşbirliği odası prompt'larında yalnız `Current command:`
+  sonrası metin sınıflandırılır, oda transkripti yönlendirmeyi etkilemez.
+- **Tur bütçesi:** Reviewer red döngüsünde bir düzeltme turu en az `coder + reviewer`
+  (2 tur) gerektirir; kalan `MAX_TURNS` bütçesi yetmiyorsa yeni tur başlatılmaz ve
+  son coder/reviewer çıktısı `[P2P:STOP]` notuyla birlikte döndürülür.
 - **Aktif ajan ve bellek:** `ActiveAgentRegistry` runtime ajan örneklerini role göre
   tutar; `MemoryHub` global notları ve role özel notları paylaşarak sonraki
   delegasyonlara bağlam sağlar.
