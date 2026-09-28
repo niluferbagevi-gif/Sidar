@@ -5606,7 +5606,7 @@ def test_ci_enables_uv_dependency_cache_for_main_test_job() -> None:
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 
     test_job = ci_workflow[ci_workflow.index("  test:\n") :]
-    setup_uv_marker = "uses: astral-sh/setup-uv@v10.1.0"
+    setup_uv_marker = "uses: astral-sh/setup-uv@v10.2.0"
     first_idx = test_job.find(setup_uv_marker)
     assert first_idx != -1
     block = test_job[first_idx : first_idx + 500]
@@ -5622,7 +5622,7 @@ def test_nightly_gpu_uses_persistent_local_uv_cache_instead_of_actions_cache() -
     """Self-hosted GPU runner must not upload the multi-GB uv cache to actions/cache."""
     workflow = Path(".github/workflows/nightly-gpu-performance.yml").read_text(encoding="utf-8")
 
-    setup_uv_idx = workflow.index("uses: astral-sh/setup-uv@v10.1.0")
+    setup_uv_idx = workflow.index("uses: astral-sh/setup-uv@v10.2.0")
     install_idx = workflow.index("run: uv sync --frozen --all-extras")
     block = workflow[setup_uv_idx:install_idx]
 
