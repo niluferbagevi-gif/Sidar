@@ -97,6 +97,24 @@ Geçici olarak coverage eklenecekse ve gate istenmiyorsa açıkça `--no-cov` ve
 uv run pytest tests/unit/core/test_rag.py::test_fetch_pgvector_returns_empty_when_query_embedding_empty -q --no-cov
 ```
 
+### Sızan kaynak / `non-checked-in connection` teşhisi
+
+`filterwarnings = error` nedeniyle GC'nin topladığı sızmış bir nesne (ör. havuza iade
+edilmemiş SQLAlchemy/aiosqlite bağlantısı) `PytestUnraisableExceptionWarning` olarak
+teste düşer; ancak GC'nin çalıştığı andaki **ilgisiz** testin teardown'ında. CI'daki
+`Base quality gates` job'u bu yüzden `SIDAR_PYTEST_GC_AFTER_EACH_TEST=1` ile çalışır:
+`tests/conftest.py` her testin teardown'ında `gc.collect()` çağırır ve hata sızdıran
+testin kendisine atfedilir. Yerelde aynı teşhis için:
+
+```bash
+SIDAR_PYTEST_GC_AFTER_EACH_TEST=1 PYTHONTRACEMALLOC=25 uv run pytest tests/unit -n 8 -x --no-cov
+```
+
+Arka plan (fire-and-forget) task'ları `core/utils/background_tasks.py::track_background_task`
+ile güçlü referansla tutulmalıdır; `tests/conftest.py` bu task'ları loop kapanmadan
+bitirir ve test sırasında oluşan `FeedbackStore`/`EntityMemory` singleton'larını kapatıp
+sıfırlar.
+
 ## Kalite kapısı / coverage doğrulaması
 
 Merge/PR öncesi ana doğrulama yolu `run_tests.sh` betiğidir. Coverage raporları ve
