@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 
@@ -185,3 +186,37 @@ def test_frontend_typescript_migration_narrative_reflects_component_completion()
     assert "sıfır hata vardır" in migration_doc
     assert "Leaf React bileşenleri ve prop/event/ref tipleri" not in migration_doc
     assert "kalan test dosyalarının bir kısmının" in migration_doc.lower()
+
+
+def test_technical_reference_route_inventory_matches_web_routes() -> None:
+    """TEKNIK_REFERANS §3.2 claims a *complete* REST inventory, so it must match the code.
+
+    The table drifted to 71 rows while ``web/routes/`` registered 87 REST
+    routes (plugin marketplace, campaigns, autonomy wake/activity, probes...)
+    and the prose still said 86. Deriving both sides from source keeps the
+    "tam" (complete) claim honest whenever a route is added or removed.
+    """
+    decorator = re.compile(r'@\w+\.(get|post|put|delete|patch|websocket)\(\s*"([^"]+)"', re.S)
+    code_routes: set[tuple[str, str]] = set()
+    code_websockets: set[str] = set()
+    for module in sorted(Path("web/routes").glob("*.py")):
+        for method, path in decorator.findall(module.read_text(encoding="utf-8")):
+            if method == "websocket":
+                code_websockets.add(path)
+            else:
+                code_routes.add((method.upper(), path))
+
+    reference = Path("docs/TEKNIK_REFERANS.md").read_text(encoding="utf-8")
+    inventory = reference[
+        reference.index("### 3.2 REST endpoint envanteri") : reference.index("### 3.3 ")
+    ]
+    doc_routes = set(re.findall(r"^\| (GET|POST|PUT|DELETE|PATCH) \| `([^`]+)`", inventory, re.M))
+
+    assert doc_routes == code_routes, (
+        f"missing from doc: {sorted(code_routes - doc_routes)}; "
+        f"stale in doc: {sorted(doc_routes - code_routes)}"
+    )
+    assert f"**{len(code_routes)} REST endpoint**" in inventory
+    websocket_section = reference[reference.index("### 3.3 ") : reference.index("### 3.4 ")]
+    for path in code_websockets:
+        assert f"#### `{path}`" in websocket_section

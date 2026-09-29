@@ -43,7 +43,7 @@ services:
 
   redis-exporter:
     profiles: ["observability"]
-    image: oliver006/redis_exporter:v1.91.1
+    image: oliver006/redis_exporter:v1.92.0
     container_name: ${COMPOSE_PROJECT_NAME:-sidar}_redis_exporter
     restart: unless-stopped
     environment:
@@ -119,7 +119,7 @@ services:
   # prometheus onsuz zaten hiçbir sidar-web/-gpu metriği toplayamaz.
   prometheus-token-init:
     profiles: ["observability"]
-    image: prom/prometheus:v2.54.1
+    image: prom/prometheus:v3.14.0
     container_name: ${COMPOSE_PROJECT_NAME:-sidar}_prometheus_token_init
     entrypoint: ["/bin/sh", "-c"]
     command:
@@ -132,7 +132,7 @@ services:
 
   prometheus:
     profiles: ["observability"]
-    image: prom/prometheus:v2.54.1
+    image: prom/prometheus:v3.14.0
     container_name: ${COMPOSE_PROJECT_NAME:-sidar}_prometheus
     restart: unless-stopped
     ports:
