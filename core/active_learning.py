@@ -26,6 +26,8 @@ import typing
 from pathlib import Path
 from typing import Any  # Model/API çıktılarında heterojen tip desteği
 
+from core.utils.background_tasks import track_background_task
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -625,7 +627,7 @@ class ContinuousLearningPipeline:
             except Exception as exc:
                 logger.debug("ContinuousLearningPipeline schedule hatası: %s", exc)
 
-        loop.create_task(_runner(), name="sidar_continuous_learning")
+        track_background_task(loop.create_task(_runner(), name="sidar_continuous_learning"))
         return True
 
 

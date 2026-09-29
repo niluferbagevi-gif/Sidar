@@ -25,7 +25,7 @@ Bu doküman, Sidar projesinin **uygulama seviyesinde teknik sözleşmelerini** (
 - [3. API Sunucusu (web_server.py)](#3-api-sunucusu-web_serverpy)
   - [3.1 Middleware sırası ve güvenlik davranışı](#31-middleware-sırası-ve-güvenlik-davranışı)
   - [3.2 REST endpoint envanteri (tam)](#32-rest-endpoint-envanteri-tam)
-  - [3.3 WebSocket protokolleri: `/ws/chat` ve `/ws/voice`](#33-websocket-protokolleri-wschat-ve-wsvoice)
+  - [3.3 WebSocket protokolleri: `/ws/chat`, `/ws/voice` ve `/ws/hitl`](#33-websocket-protokolleri-wschat-wsvoice-ve-wshitl)
   - [3.4 Telemetri ve metrik endpointleri](#34-telemetri-ve-metrik-endpointleri)
 - [4. Agent Orkestrasyonu ve Tooling](#4-agent-orkestrasyonu-ve-tooling)
   - [4.1 Supervisor-first çalışma modeli](#41-supervisor-first-çalışma-modeli)
@@ -60,7 +60,7 @@ Bu kılavuzdaki tüm başlıklar, doğrudan mevcut repo kod akışlarına göre 
 
 - **`main.py`**: Etkileşimli sihirbaz ve `--quick` akışı aynı `build_command()` hattında birleşir; `preflight()` sağlayıcı/env kontrollerini yapar, `execute_command()` ise alt süreci doğrudan veya canlı stdout/stderr aynalama ile başlatır.
 - **`cli.py`**: Tek bir `asyncio.run()` etrafında çalışan interaktif döngü kullanır; böylece `SidarAgent` lock/memory yaşam döngüsü tek event-loop üzerinde tutulur. Yerleşik `.status`, `.audit`, `.health`, `.gpu`, `.docs` ve erişim seviyesi komutları doğrudan CLI katmanında çözülür.
-- **`web_server.py`**: FastAPI kontrol düzlemi 86 REST endpoint + `/ws/chat` ve `/ws/voice` WebSocket hatlarını sunar; auth, ACL, rate-limit, RAG, swarm, HITL, Vision, multimodal ses akışı, webhook/federation tetikleyicileri ve Slack/Jira/Teams entegrasyonları bu katmanda toplanır. Web arayüzü yalnız `web_ui_react/dist` React SPA build'inden sunulur; legacy `web_ui/` fallback'i kaldırılmıştır.
+- **`web_server.py`**: FastAPI kontrol düzlemi 87 REST endpoint + `/ws/chat`, `/ws/voice` ve `/ws/hitl` WebSocket hatlarını sunar (route modülleri `web/routes/` altındadır); auth, ACL, rate-limit, RAG, swarm, HITL, Vision, multimodal ses akışı, webhook/federation tetikleyicileri ve Slack/Jira/Teams entegrasyonları bu katmanda toplanır. Web arayüzü yalnız `web_ui_react/dist` React SPA build'inden sunulur; legacy `web_ui/` fallback'i kaldırılmıştır.
 - **`config.py`**: Ortam değişkeni çözümleme, donanım keşfi, dizin bootstrap'i ve telemetry başlangıcı aynı `Config` sınıfında merkezileştirilmiştir.
 - **`github_upload.py`**: `git ls-files -co --exclude-standard` üzerinden yalnızca UTF-8 okunabilir ve blackliste girmeyen dosyaları stage eder; repo URL doğrulaması, shell=False komut yürütme ve otomatik push/pull-merge akışı içerir.
 - **`gui_launcher.py`**: Eel GUI seçimlerini normalize ederek `main.py` başlatıcı hattını yeniden kullanır; web modu için varsayılan `0.0.0.0:7860` parametrelerini besler ve sonuçları yapılandırılmış JSON sözlüğü ile döndürür.
@@ -165,7 +165,7 @@ Rate-limit katmanı Redis erişemezse local bellek fallback mekanizmasıyla çal
 
 ### 3.2 REST endpoint envanteri (tam)
 
-Aşağıdaki envanter, `@app.get/post/delete` dekoratörlerinden çıkarılmış **tam** listedir. Güncel kod tabanında **86 REST endpoint** bulunmaktadır; bu turda proaktif otonomi ve federation yüzeyleri de envantere eklenmiştir.
+Aşağıdaki envanter, `web/routes/*.py` içindeki `@router.get/post/delete` dekoratörlerinden çıkarılmış **tam** listedir. Güncel kod tabanında **87 REST endpoint** bulunmaktadır (2026-09-28 doğrulaması; `include_in_schema=False` olan `/healthz`, `/readyz`, `/status`, `/favicon.*` ve `/vendor/...` dahil). `/status` yalnız `status_response` bağımlılığı sağlandığında kaydedilir.
 
 | Method | Path | Not |
 |---|---|---|
@@ -179,17 +179,25 @@ Aşağıdaki envanter, `@app.get/post/delete` dekoratörlerinden çıkarılmış
 | POST | `/admin/prompts/activate` | Prompt aktifleştir (admin) |
 | GET | `/admin/policies/{user_id}` | Kullanıcı erişim politika listesi (admin) |
 | POST | `/admin/policies` | Erişim politikası ekle / güncelle (admin) |
+| GET | `/admin/audit-logs` | Audit log kayıtları; `user_id`, `tenant_id`, `limit` filtreleri (admin) |
 | POST | `/api/agents/register` | Plugin ajan kayıt (source_code) (admin) |
 | POST | `/api/agents/register-file` | Plugin ajan kayıt (dosya yolu) (admin) |
+| GET | `/api/plugin-marketplace/catalog` | Plugin marketplace kataloğu + kurulum durumu (admin) |
+| POST | `/api/plugin-marketplace/install` | Marketplace plugin'i kur (`plugin_id`) (admin) |
+| POST | `/api/plugin-marketplace/reload` | Marketplace plugin'ini yeniden yükle (`plugin_id`) (admin) |
+| DELETE | `/api/plugin-marketplace/install/{plugin_id}` | Marketplace plugin'ini kaldır (admin) |
 | POST | `/api/swarm/execute` | SwarmOrchestrator görevi çalıştır |
 | GET | `/api/hitl/pending` | Bekleyen HITL istekleri |
 | POST | `/api/hitl/request` | Yeni HITL isteği oluştur |
 | POST | `/api/hitl/respond/{request_id}` | HITL onay/red yanıtı |
 | GET | `/favicon.ico` | 204 |
+| GET | `/favicon.svg` | React/Vite favicon isteğini 404 üretmeden karşılar |
 | GET | `/vendor/{file_path:path}` | Vendor statik servis |
 | GET | `/` | UI index |
 | GET | `/status` | Ajan durum özeti |
 | GET | `/health` | Sağlık kontrolü |
+| GET | `/healthz` | Liveness probe (şemada gizli) |
+| GET | `/readyz` | Readiness probe (şemada gizli) |
 | GET | `/metrics` | Sistem metrikleri (admin veya METRICS_TOKEN) |
 | GET | `/metrics/llm/prometheus` | OpenMetrics text (admin veya METRICS_TOKEN) |
 | GET | `/metrics/llm` | LLM metrik JSON (admin veya METRICS_TOKEN) |
@@ -232,12 +240,22 @@ Aşağıdaki envanter, `@app.get/post/delete` dekoratörlerinden çıkarılmış
 | POST | `/api/operations/campaign-copy` | PoyrazAgent kampanya kopyası üretir |
 | POST | `/api/operations/service-plan` | PoyrazAgent servis operasyon planı üretir |
 | POST | `/api/operations/poyraz/run` | İzinli PoyrazAgent operasyon aracını REST üzerinden çalıştırır |
+| GET | `/api/operations/campaigns` | Kiracıya ait pazarlama kampanyalarını listeler |
+| POST | `/api/operations/campaigns` | Kampanya oluşturur; başlangıç varlık/checklist'lerini ekler |
+| GET | `/api/operations/campaigns/{campaign_id}/assets` | Kampanya içerik varlıklarını listeler |
+| POST | `/api/operations/campaigns/{campaign_id}/assets` | Kampanyaya içerik varlığı ekler |
+| GET | `/api/operations/campaigns/{campaign_id}/checklists` | Kampanya operasyon checklist'lerini listeler |
+| POST | `/api/operations/campaigns/{campaign_id}/checklists` | Kampanyaya operasyon checklist'i ekler |
 | GET | `/api/qa/coverage/tasks` | Coverage görev geçmişini listeler |
 | POST | `/api/qa/coverage/analyze` | CoverageAgent rapor analizi yapar |
 | POST | `/api/qa/coverage/generate` | Coverage bulgusu için kalite kapılı test adayı üretir |
 | POST | `/api/qa/coverage/batch` | CoverageAgent otonom batch iyileştirme akışını çalıştırır |
 | POST | `/api/webhook` | GitHub webhook (HMAC-SHA256 doğrulama) |
 | POST | `/api/autonomy/webhook/{source}` | Harici sistem olaylarını otonom trigger olarak iletir (`X-Sidar-Signature` + tekil `X-Sidar-Delivery`) |
+| POST | `/api/autonomy/wake` | Webhook dışı manuel/proaktif tetik (otonomi admin yetkisi) |
+| GET | `/api/autonomy/activity` | Webhook/cron/manual kaynaklı son proaktif tetik geçmişi (`limit`, varsayılan 20) |
+| POST | `/api/swarm/federation` | Dış swarm/CrewAI/AutoGen görevini Sidar içinde yürütür (`X-Sidar-Signature`) |
+| POST | `/api/swarm/federation/feedback` | Harici action feedback payload'larını `action_feedback` trigger'ına dönüştürür ve correlation zincirine bağlar |
 
 `/api/autonomy/webhook/{source}` örnek payload:
 
@@ -253,10 +271,7 @@ Aşağıdaki envanter, `@app.get/post/delete` dekoratörlerinden çıkarılmış
 }
 ```
 
-| POST | `/api/swarm/federation` | Dış swarm/CrewAI/AutoGen görevini Sidar içinde yürütür (`X-Sidar-Signature`) |
-| POST | `/api/swarm/federation/feedback` | Harici action feedback payload'larını `action_feedback` trigger'ına dönüştürür ve correlation zincirine bağlar |
-
-### 3.3 WebSocket protokolleri: `/ws/chat` ve `/ws/voice`
+### 3.3 WebSocket protokolleri: `/ws/chat`, `/ws/voice` ve `/ws/hitl`
 
 #### `/ws/chat`
 
@@ -306,6 +321,15 @@ Aşağıdaki envanter, `@app.get/post/delete` dekoratörlerinden çıkarılmış
   }
 }
 ```
+
+#### `/ws/hitl`
+
+- Kaynak: `web/routes/hitl.py`; alt protokol `sidar.hitl.v1` (`web/security.py::SIDAR_WS_HITL_PROTOCOL`).
+- Token `Sec-WebSocket-Protocol` başlığından veya `Authorization: Bearer ...` ile okunur. Token verilirse doğrulanır;
+  geçersiz/süresi dolmuş token policy-violation ile kapatılır. Token verilmezse bağlantı mevcut kodda kabul edilir.
+- Bağlantı açılınca sunucu `{"type":"hitl_snapshot","pending":[...]}` gönderir; yeni onay istekleri
+  `core/hitl.py` broadcast hook'u üzerinden `{"type":"hitl_request","data":{...}}` olarak yayınlanır.
+- Onay/red kararı WebSocket üzerinden değil, `POST /api/hitl/respond/{request_id}` ile verilir.
 
 ### 3.4 Telemetri ve metrik endpointleri
 

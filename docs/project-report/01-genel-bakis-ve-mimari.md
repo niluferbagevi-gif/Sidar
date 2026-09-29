@@ -185,7 +185,7 @@ Sidar/
 │
 ├── web/                            # FastAPI uygulaması (web_server.py bu paketi çalıştırır)
 │   ├── app_factory.py, bootstrap.py, security.py, collaboration_service.py, autonomy_bridge.py, process_lifecycle.py
-│   ├── routes/                     # REST + WebSocket (/ws/chat, /ws/voice) route'ları
+│   ├── routes/                     # REST + WebSocket (/ws/chat, /ws/voice, /ws/hitl) route'ları
 │   ├── middleware/                 # Middleware zinciri
 │   └── plugins/                    # Plugin marketplace API
 │
