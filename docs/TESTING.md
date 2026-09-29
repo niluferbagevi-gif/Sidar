@@ -101,10 +101,13 @@ uv run pytest tests/unit/core/test_rag.py::test_fetch_pgvector_returns_empty_whe
 
 `filterwarnings = error` nedeniyle GC'nin topladığı sızmış bir nesne (ör. havuza iade
 edilmemiş SQLAlchemy/aiosqlite bağlantısı) `PytestUnraisableExceptionWarning` olarak
-teste düşer; ancak GC'nin çalıştığı andaki **ilgisiz** testin teardown'ında. CI'daki
-`Base quality gates` job'u bu yüzden `SIDAR_PYTEST_GC_AFTER_EACH_TEST=1` ile çalışır:
-`tests/conftest.py` her testin teardown'ında `gc.collect()` çağırır ve hata sızdıran
-testin kendisine atfedilir. Yerelde aynı teşhis için:
+teste düşer; ancak GC'nin çalıştığı andaki **ilgisiz** testin teardown'ında.
+`SIDAR_PYTEST_GC_AFTER_EACH_TEST=1` verildiğinde `tests/conftest.py` her testin
+teardown'ında `gc.collect()` çağırır ve hata sızdıran testin kendisine atfedilir.
+Her testten sonra GC zorlamak birim fazının süresini belirgin uzattığı için bu bayrak
+PR başına çalışan `Base quality gates` job'unda değil,
+`.github/workflows/nightly-flaky-scan.yml` içindeki gece "unit leak scan" adımında
+açıktır. Yerelde aynı teşhis için:
 
 ```bash
 SIDAR_PYTEST_GC_AFTER_EACH_TEST=1 PYTHONTRACEMALLOC=25 uv run pytest tests/unit -n 8 -x --no-cov
