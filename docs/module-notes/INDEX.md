@@ -154,6 +154,7 @@ Bu dizin proje dosyalarının dokümantasyon notlarını içerir.
 - `core/router.py` → `docs/module-notes/core/router.py.md`
 - `core/test_fixture_policy.py` → `docs/module-notes/core/test_fixture_policy.py.md`
 - `core/utils/__init__.py` → `docs/module-notes/core/utils/__init__.py.md`
+- `core/utils/background_tasks.py` → `docs/module-notes/core/utils/background_tasks.py.md`
 - `core/utils/json_repair.py` → `docs/module-notes/core/utils/json_repair.py.md`
 - `core/utils/network_validation.py` → `docs/module-notes/core/utils/network_validation.py.md`
 - `core/utils/token_counter.py` → `docs/module-notes/core/utils/token_counter.py.md`
