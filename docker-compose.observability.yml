@@ -43,7 +43,7 @@ services:
 
   redis-exporter:
     profiles: ["observability"]
-    image: oliver006/redis_exporter:v1.91.1
+    image: oliver006/redis_exporter:v1.92.0
     container_name: ${COMPOSE_PROJECT_NAME:-sidar}_redis_exporter
     restart: unless-stopped
     environment:

@@ -116,7 +116,7 @@ from_zero_cleanup_if_requested() {
         redis:8.10-alpine
         pgvector/pgvector:0.8.6-pg16
         jaegertracing/all-in-one:1.76.0
-        oliver006/redis_exporter:v1.91.1
+        oliver006/redis_exporter:v1.92.0
         prometheuscommunity/postgres-exporter:v0.20.1
         gcr.io/cadvisor/cadvisor:v0.55.1
         prom/prometheus:v2.54.1
@@ -125,7 +125,7 @@ from_zero_cleanup_if_requested() {
     )
     if [[ "${WIPE_MODELS:-false}" == "true" ]]; then
         volumes_to_remove+=("${compose_project}_ollama_data")
-        images_to_remove+=(ollama/ollama:0.34.1)
+        images_to_remove+=(ollama/ollama:0.34.4)
         info "--wipe-models aktif: Ollama volume ve imajı da temizlenecek."
     else
         info "Ollama modelleri korunuyor; silmek için --wipe-models kullanın."
