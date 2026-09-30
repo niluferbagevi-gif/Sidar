@@ -76,6 +76,11 @@ PR'ları açar. Kapsam; `uv`/`uv.lock`, `web_ui_react` npm lockfile'ı, GitHub
 Actions, Dockerfile image tag'leri ve `docker-compose.yml` image tag'leridir. PR'lar
 `dependencies` etiketiyle ve ekosistem bazlı gruplarla gelir; major güncellemeler
 Dependabot'un ayrı PR davranışına bırakılarak reviewer/QA değerlendirmesinden geçer.
+`torch`/`torchvision` minor ve major güncellemeleri Dependabot'ta yok sayılır: ikili tek
+sürüm ailesi olarak birlikte ilerlemek zorundadır ve Dependabot bunları tek tek yükseltmeye
+çalıştığında `uv` çözümü başarısız olur. Bu ikili yalnız
+`docs/runbooks/torch-cve-upgrade.md` akışıyla (`uv lock --upgrade-package torch
+--upgrade-package torchvision`) yükseltilir.
 
 Yeni bir HTTP client adayının tekrar değerlendirilmesi için kapılar:
 

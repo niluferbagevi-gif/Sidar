@@ -47,3 +47,19 @@ def test_dependabot_config_uses_weekly_grouped_prs_with_labels() -> None:
                 assert group["update-types"] == ["major"]
             else:
                 assert group["update-types"] == ["minor", "patch"]
+
+
+def test_dependabot_leaves_torch_family_upgrades_to_the_runbook() -> None:
+    """torch/torchvision minor+major bumps are ignored so the pair only moves together."""
+    uv_entry = next(
+        entry for entry in _dependabot_config()["updates"] if entry["package-ecosystem"] == "uv"
+    )
+    ignored = {rule["dependency-name"]: set(rule["update-types"]) for rule in uv_entry["ignore"]}
+    blocked = {"version-update:semver-minor", "version-update:semver-major"}
+
+    for package in ("torch", "torchvision"):
+        assert ignored.get(package) == blocked
+    runbook = ROOT / "docs/runbooks/torch-cve-upgrade.md"
+    assert "uv lock --upgrade-package torch --upgrade-package torchvision" in runbook.read_text(
+        encoding="utf-8"
+    )
