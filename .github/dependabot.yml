@@ -31,6 +31,18 @@ updates:
         update-types:
           - "version-update:semver-minor"
           - "version-update:semver-major"
+      # torch/torchvision must move together as one release family (pyproject
+      # bounds torch>=2.13,<2.14 / torchvision>=0.28,<0.29). Dependabot bumps
+      # them one at a time, which never resolves and fails the weekly uv job.
+      # Upgrade the pair via docs/runbooks/torch-cve-upgrade.md instead.
+      - dependency-name: "torch"
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-major"
+      - dependency-name: "torchvision"
+        update-types:
+          - "version-update:semver-minor"
+          - "version-update:semver-major"
 
   - package-ecosystem: "npm"
     directory: "/web_ui_react"
