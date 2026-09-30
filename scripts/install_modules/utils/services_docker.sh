@@ -120,7 +120,7 @@ from_zero_cleanup_if_requested() {
         prometheuscommunity/postgres-exporter:v0.20.1
         gcr.io/cadvisor/cadvisor:v0.55.1
         prom/prometheus:v3.14.0
-        grafana/grafana:11.2.0
+        grafana/grafana:13.2.2
         tecnativa/docker-socket-proxy:v0.5.0
     )
     if [[ "${WIPE_MODELS:-false}" == "true" ]]; then
