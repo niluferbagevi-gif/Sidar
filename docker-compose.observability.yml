@@ -159,7 +159,7 @@ services:
 
   grafana:
     profiles: ["observability"]
-    image: grafana/grafana:11.2.0
+    image: grafana/grafana:13.2.2
     container_name: ${COMPOSE_PROJECT_NAME:-sidar}_grafana
     restart: unless-stopped
     ports:
