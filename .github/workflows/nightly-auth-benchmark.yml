@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: "15 2 * * *"
   workflow_dispatch:
+    inputs:
+      seed_baseline:
+        description: "Seed this runner's auth benchmark baseline cache (skips the fail-closed comparison for this run only)"
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: nightly-auth-benchmark-${{ github.ref }}
@@ -22,6 +28,10 @@ jobs:
       BENCHMARK_ENFORCE_COMPARE: "1"
       BENCHMARK_COMPARE_NAME: "baseline"
       BENCHMARK_COMPARE_FAIL: "mean:10%"
+      # The baseline cache below is only saved when the job succeeds, so a runner
+      # without a baseline can never bootstrap one under the fail-closed schedule.
+      # A manual `seed_baseline=true` dispatch is the reviewed bootstrap/reseed path.
+      AUTH_BENCH_SEED_BASELINE: ${{ github.event_name == 'workflow_dispatch' && inputs.seed_baseline }}
       # sidar[runtime-gpu] pulls multi-hundred-MB nvidia-*/torch wheels; uv's
       # 30s default HTTP timeout can time out these individual downloads on a
       # slower/self-hosted link well before the transfer itself would fail.
@@ -79,7 +89,9 @@ jobs:
           mkdir -p .benchmarks
           compare_file="$(find .benchmarks -type f -name "*_${BENCHMARK_COMPARE_NAME}.json" -print 2>/dev/null | sort -V | tail -n 1)"
           compare_args=()
-          if [[ -n "${compare_file}" ]]; then
+          if [[ "${AUTH_BENCH_SEED_BASELINE}" == "true" ]]; then
+            echo "::notice title=Auth benchmark baseline seed::seed_baseline=true; comparison skipped, a new ${BENCHMARK_COMPARE_NAME} baseline is saved for runner ${RUNNER_NAME}."
+          elif [[ -n "${compare_file}" ]]; then
             compare_args+=(--benchmark-compare="${compare_file}")
             if [[ "${BENCHMARK_ENFORCE_COMPARE}" == "1" ]]; then
               compare_args+=(--benchmark-compare-fail="${BENCHMARK_COMPARE_FAIL}")

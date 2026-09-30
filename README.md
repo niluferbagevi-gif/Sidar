@@ -1254,6 +1254,9 @@ uv run pytest -q tests/performance/test_benchmark.py -k "password_ and cpu_cost"
 > register/authenticate yolunu ölçer. Her iki kontrat 5 warmup ve 30 ölçüm turu kullanır;
 > P95/P99 eşiklerini
 > (`AUTH_BENCH_P95_BUDGET_MS`, `AUTH_BENCH_P99_BUDGET_MS`) aşarsa alarm/fail üretir.
+> Zamanlanmış koşu, runner'a özgü `auth-benchmark-baseline-*` cache'i yoksa fail-closed
+> durur; ilk kurulumda veya runner değiştiğinde baseline'ı GitHub Actions →
+> `Nightly Auth Benchmark` → Run workflow → `seed_baseline=true` ile tohumlayın.
 > SQLite/PostgreSQL karşılaştırmalı workload trendi için release tetiklemeli
 > `Release DB Benchmark Trend` iş akışı benchmark JSON + `trend.md` artifact üretir.
 > Bu job benchmark profilinde DB havuz boyutunu `SIDAR_BENCHMARK_DB_POOL_SIZE=5`
