@@ -420,7 +420,7 @@ def test_observability_compose_pins_tracing_and_exports_infra_metrics():
         services["prometheus"]["depends_on"]["prometheus-token-init"]["condition"]
         == "service_completed_successfully"
     )
-    assert services["prometheus"]["image"] == "prom/prometheus:v3.14.0"
+    assert services["prometheus"]["image"] == "prom/prometheus:v3.15.0"
     assert services["grafana"]["image"] == "grafana/grafana:11.2.0"
     assert services["grafana"]["healthcheck"]["test"][0] == "CMD-SHELL"
 
