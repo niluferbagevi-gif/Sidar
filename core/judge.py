@@ -32,6 +32,7 @@ from core.config_env_helpers import (
     get_float_prefixed_env,
     get_prefixed_env,
 )
+from core.utils.background_tasks import track_background_task
 
 logger = logging.getLogger(__name__)
 _SAMPLING_RANDOM = random.SystemRandom()
@@ -499,9 +500,11 @@ class LLMJudge:
 
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(
-                _run_background_evaluation(),
-                name="sidar_judge_eval",
+            track_background_task(
+                loop.create_task(
+                    _run_background_evaluation(),
+                    name="sidar_judge_eval",
+                )
             )
         except RuntimeError:
             pass  # Event loop yok — sessizce atla
@@ -540,7 +543,7 @@ def _record_judge_metrics(result: JudgeResult) -> None:
             if inspect.isawaitable(out):
                 try:
                     if inspect.iscoroutine(out):
-                        asyncio.get_running_loop().create_task(out)
+                        track_background_task(asyncio.get_running_loop().create_task(out))
                     else:
                         asyncio.ensure_future(out)
                 except RuntimeError:

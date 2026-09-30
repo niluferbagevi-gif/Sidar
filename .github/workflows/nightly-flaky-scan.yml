@@ -24,7 +24,7 @@ jobs:
           python-version: "3.11.15"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10.1.0
+        uses: astral-sh/setup-uv@v10.2.0
         with:
           version: "0.12.0"
           enable-cache: true
@@ -43,6 +43,20 @@ jobs:
 
       - name: Run nightly flaky scan (5 repetitions)
         run: bash scripts/ci/flaky_scan.sh
+
+      # Leak scan: gc.collect() in every test's teardown (tests/conftest.py) so a
+      # leaked object -- e.g. an unreturned SQLAlchemy/aiosqlite connection --
+      # fails the test that leaked it instead of an unrelated later test. Kept
+      # out of the per-PR base quality gate because forcing a collection after
+      # each of ~5k unit tests roughly doubled that job's wall time.
+      - name: Run unit leak scan (gc after each test)
+        if: always()
+        env:
+          SIDAR_ENV: test
+          SIDAR_PYTEST_GC_AFTER_EACH_TEST: "1"
+        run: >-
+          uv run pytest tests/unit -n auto --dist loadgroup --no-cov -x -q -rfE
+          -m "not gpu"
 
       - name: Upload flaky scan artifacts
         if: always()

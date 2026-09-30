@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import gc
 import importlib
 import os
 import sys
@@ -417,6 +418,74 @@ async def _reset_global_agent_event_bus_runtime() -> AsyncGenerator[None, None]:
     reset_runtime_state = getattr(bus, "reset_runtime_state", None)
     if callable(reset_runtime_state):
         await reset_runtime_state()
+
+
+# (module, attribute, close method) for process-global SQLAlchemy-backed singletons.
+_SQLALCHEMY_SINGLETONS = (
+    ("core.active_learning", "_continuous_learning_pipeline", None),
+    ("core.active_learning", "_feedback_store", "close"),
+    ("core.entity_memory", "_instance", "close"),
+)
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _drain_background_tasks_and_reset_sqlalchemy_singletons() -> AsyncGenerator[None, None]:
+    """Keep SQLAlchemy connections from outliving the test's event loop.
+
+    Judge and continuous-learning code schedule fire-and-forget tasks that write
+    through ``FeedbackStore``/``EntityMemory`` async engines. If the loop closes
+    while such a task is mid-query, pytest-asyncio cancels it and the checked-out
+    aiosqlite connection is only reclaimed by a later GC pass -- which then
+    raises ``non-checked-in connection`` in an unrelated test's teardown
+    (``filterwarnings = error``). Finishing the tracked tasks on this loop and
+    disposing singletons created during the test (their engines are bound to this
+    loop) keeps that leak out of later tests.
+    """
+    before = {
+        (module_name, attr): getattr(sys.modules.get(module_name), attr, None)
+        for module_name, attr, _close in _SQLALCHEMY_SINGLETONS
+    }
+    yield
+
+    tasks_module = sys.modules.get("core.utils.background_tasks")
+    if tasks_module is not None:
+        await tasks_module.drain_background_tasks()
+
+    for module_name, attr, close_name in _SQLALCHEMY_SINGLETONS:
+        module = sys.modules.get(module_name)
+        if module is None or before[(module_name, attr)] is not None:
+            continue
+        instance = getattr(module, attr, None)
+        if instance is None:
+            continue
+        close = getattr(instance, close_name, None) if close_name else None
+        if callable(close):
+            with contextlib.suppress(Exception):
+                await close()
+        setattr(module, attr, None)
+
+
+_GC_AFTER_EACH_TEST = os.getenv("SIDAR_PYTEST_GC_AFTER_EACH_TEST", "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+}
+
+
+@pytest.hookimpl(hookwrapper=True, trylast=True)
+def pytest_runtest_teardown(
+    item: pytest.Item, nextitem: pytest.Item | None
+) -> Generator[None, None, None]:
+    """Optionally run ``gc.collect()`` inside each test's teardown (CI diagnostics).
+
+    With ``SIDAR_PYTEST_GC_AFTER_EACH_TEST=1`` an object leaked by a test (e.g. an
+    unreturned SQLAlchemy connection) is collected while that test is still being
+    torn down, so the resulting unraisable-exception error names the leaking test
+    instead of whichever test the collector happens to run in later.
+    """
+    yield
+    if _GC_AFTER_EACH_TEST:
+        gc.collect()
 
 
 # Not: `cli` modülünü burada global olarak import etmiyoruz.

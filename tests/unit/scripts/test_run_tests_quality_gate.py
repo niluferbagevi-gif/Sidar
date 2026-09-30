@@ -5606,7 +5606,7 @@ def test_ci_enables_uv_dependency_cache_for_main_test_job() -> None:
     ci_workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 
     test_job = ci_workflow[ci_workflow.index("  test:\n") :]
-    setup_uv_marker = "uses: astral-sh/setup-uv@v10.1.0"
+    setup_uv_marker = "uses: astral-sh/setup-uv@v10.2.0"
     first_idx = test_job.find(setup_uv_marker)
     assert first_idx != -1
     block = test_job[first_idx : first_idx + 500]
@@ -5622,7 +5622,7 @@ def test_nightly_gpu_uses_persistent_local_uv_cache_instead_of_actions_cache() -
     """Self-hosted GPU runner must not upload the multi-GB uv cache to actions/cache."""
     workflow = Path(".github/workflows/nightly-gpu-performance.yml").read_text(encoding="utf-8")
 
-    setup_uv_idx = workflow.index("uses: astral-sh/setup-uv@v10.1.0")
+    setup_uv_idx = workflow.index("uses: astral-sh/setup-uv@v10.2.0")
     install_idx = workflow.index("run: uv sync --frozen --all-extras")
     block = workflow[setup_uv_idx:install_idx]
 
@@ -6531,17 +6531,17 @@ def test_frontend_security_dependencies_are_patched_in_package_lock() -> None:
     assert "Top ${topChunks.length} JS chunks" in bundle_budget_script
     assert "hasInstallScript" not in locked_root
     assert dev_deps["@playwright/test"] == ">=1.60.0 <1.64.0"
-    assert dev_deps["vite"] == "^8.3.0"
+    assert dev_deps["vite"] == "^8.3.1"
     assert dev_deps["ws"] == "^8.21.3"
     assert locked_root_deps["@playwright/test"] == ">=1.60.0 <1.64.0"
-    assert locked_root_deps["vite"] == "^8.3.0"
+    assert locked_root_deps["vite"] == "^8.3.1"
     assert locked_root_deps["ws"] == "^8.21.3"
     assert locked_packages["node_modules/@playwright/test"]["version"].startswith("1.63.")
     assert locked_packages["node_modules/playwright"]["version"].startswith("1.63.")
-    assert locked_packages["node_modules/vite"]["version"] == "8.3.0"
+    assert locked_packages["node_modules/vite"]["version"] == "8.3.1"
     assert locked_packages["node_modules/ws"]["version"] == "8.21.3"
     assert locked_packages["node_modules/vite"]["dependencies"]["postcss"] == "^8.5.28"
-    assert locked_packages["node_modules/vite"]["dependencies"]["rolldown"] == "~1.2.6"
+    assert locked_packages["node_modules/vite"]["dependencies"]["rolldown"] == "~1.2.9"
     assert locked_packages["node_modules/vite"]["dependencies"]["tinyglobby"] == "^0.2.17"
 
 

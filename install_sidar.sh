@@ -195,7 +195,7 @@ load_remote_script_checksums() {
 load_remote_script_checksums
 
 SIDAR_INSTALLER_EMBEDDED_SOURCE_REF="main"
-SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="29d4455ff34140f5f37e39f4782e6ccea8969c99"
+SIDAR_INSTALLER_EMBEDDED_SOURCE_COMMIT="80c60f2cdd5a58533c7a822be3551295be9325d1"
 
 sidar_truthy_early_bool() {
     local raw="${1:-}"
@@ -655,7 +655,7 @@ a47aeb43c004e64d80518d134ab54acc3afd9c112880ddf27507aad5ea6d857d  scripts/instal
 6271c9ce2c42a105487b13b692f01b74b438cf07e1a80047baf6f4cbbc3731e5  scripts/install_modules/utils/python_env.sh
 8e006705540afec95fdf002ad5ab253b1be67c54b582229fb4a667813ec57a9e  scripts/install_modules/utils/remote_script.sh
 cfbab9634b880d0c37e3d79a75c03694d6360e3d1f4c42e2a21ee2179b3e010c  scripts/install_modules/utils/repo_metadata.sh
-eae2d59cba4b21f8b5519ea528db84c1144672d97c18dc9cea94cfd7c88a49a9  scripts/install_modules/utils/services_docker.sh
+88fa0f83d9a0c0e42d034df2a00e539f08f550c265902a81eedc96af0f1c838f  scripts/install_modules/utils/services_docker.sh
 6043be85498f73f5e076531729249966dbcce9bd5c5aaeb6594770ed38f42f65  scripts/install_modules/utils/ux.sh
 4376acfac9d47985acaa6841f8f2105209556619404ce677258bc1332a75eeeb  scripts/install_modules/utils/wsl_gpu_preflight.sh
 22898858fffb46b0bf522f91ddd9bde6e78ed70c06245f8cb966de2918446e48  scripts/install_modules/utils/wsl_host.sh
