@@ -111,6 +111,24 @@ def test_nightly_auth_benchmark_requires_cached_baseline_compare():
     assert "BENCHMARK_COMPARE_REQUIRED=1 ancak .benchmarks" in workflow
 
 
+def test_nightly_auth_benchmark_seed_is_manual_only_and_skips_compare() -> None:
+    """Only a manual dispatch may bootstrap the auth baseline; schedules stay fail-closed."""
+    workflow = (WORKFLOW_DIR / "nightly-auth-benchmark.yml").read_text(encoding="utf-8")
+
+    assert "seed_baseline:" in workflow
+    assert "type: boolean" in workflow
+    assert (
+        "AUTH_BENCH_SEED_BASELINE: ${{ github.event_name == 'workflow_dispatch' "
+        "&& inputs.seed_baseline }}"
+    ) in workflow
+    run_script = workflow.split("Run auth benchmark suite", 1)[1]
+    seed_branch = run_script.index('if [[ "${AUTH_BENCH_SEED_BASELINE}" == "true" ]]')
+    compare_branch = run_script.index('elif [[ -n "${compare_file}" ]]')
+    required_branch = run_script.index('elif [[ "${BENCHMARK_COMPARE_REQUIRED}" == "1" ]]')
+    assert seed_branch < compare_branch < required_branch
+    assert "--benchmark-save=${BENCHMARK_COMPARE_NAME}" in run_script
+
+
 def test_benchmark_seed_uses_reusable_workflow_and_keepalive_alerts() -> None:
     """Keep bootstrap logic canonical and missing baseline evidence visible."""
     seed_workflow = (WORKFLOW_DIR / "benchmark-baseline-seed.yml").read_text(encoding="utf-8")
