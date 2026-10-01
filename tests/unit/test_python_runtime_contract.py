@@ -51,8 +51,8 @@ def test_legacy_setup_cfg_has_no_conflicting_python_requires():
     assert not re.search(r"python_requires\s*=\s*[^\n]*3\.12", raw_text)
 
 
-def test_ruff_enables_pydocstyle_incrementally():
-    """Ruff enables pydocstyle incrementally."""
+def test_ruff_enforces_pydocstyle_without_transitional_ignores():
+    """Ruff enforces pydocstyle, including D100-D107, with no transitional ignores."""
     pyproject_text = (ROOT / "pyproject.toml").read_text()
     pyproject = tomllib.loads(pyproject_text)
     agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
@@ -60,7 +60,8 @@ def test_ruff_enables_pydocstyle_incrementally():
     lint_config = pyproject["tool"]["ruff"]["lint"]
     assert "D" in lint_config["select"]
     assert pyproject["tool"]["ruff"]["lint"]["pydocstyle"]["convention"] == "google"
-    for transitional_ignore in (
+    for enforced_rule in (
+        "E501",
         "D100",
         "D101",
         "D102",
@@ -69,13 +70,14 @@ def test_ruff_enables_pydocstyle_incrementally():
         "D105",
         "D106",
         "D107",
+        "D200",
+        "D417",
+        "ASYNC240",
     ):
-        assert transitional_ignore in lint_config["ignore"]
-    for enforced_rule in ("E501", "D200", "D417", "ASYNC240"):
         assert enforced_rule not in lint_config["ignore"]
     assert "AGENTS.md §2.5.6" in pyproject_text
     assert "Kademeli dokümantasyon kampanyası" in agents
-    for milestone in ("2026-07-15", "2026-08-15", "2026-09-30"):
+    for milestone in ("2026-07-15", "2026-08-15", "2026-09-30", "2026-10-01"):
         assert milestone in agents
 
 

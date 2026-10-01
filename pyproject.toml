@@ -444,13 +444,12 @@ e501_debt_baseline = 0
 e501_async240_reviews_closed_on = "2026-09-25"
 legacy_hotspots = ["web_server.py", "main.py"]
 docstring_async_debt_baseline = { D200 = 0, D202 = 0, D205 = 0, D209 = 0, D212 = 0, D403 = 0, D415 = 0, D417 = 0, ASYNC240 = 0 }
-# D100-D107 (missing public docstrings) could not be closed by the original
-# 2026-09-30 campaign date (5,486 findings remained). Instead of letting the date
-# expire and break CI, the backlog is frozen here: it may only shrink, and every
-# reduction must be committed with `check_ruff_debt_baseline.py --update`.
+# D100-D107 (missing public docstrings): the 5,486-finding backlog frozen on
+# 2026-09-25 was ratcheted down to 0, so the global ignore was removed and the
+# 2027-03-31 ratchet review closed early. Ruff now enforces the rules directly;
+# the zero ratchet below stays as defense-in-depth.
 missing_docstring_debt_baseline = { D100 = 0, D101 = 0, D102 = 0, D103 = 0, D104 = 0, D105 = 0, D106 = 0, D107 = 0 }
-docstring_ratchet_review_by = "2027-03-31"
-docstring_ratchet_reason = "Review D100-D107 ratchet progress and set dated reduction targets; owner: qa+reviewer."
+missing_docstring_review_closed_on = "2026-10-01"
 
 [[tool.sidar.dependency_profile_plan.profiles]]
 name = "runtime"
@@ -732,21 +731,10 @@ select = [
   "ASYNC",
   "D",
 ]
-ignore = [
-  # D100-D107 eksik docstring kuralları AGENTS.md §2.5.6'daki ratchet'e
-  # bağlıdır: borç [tool.sidar.ruff_debt].missing_docstring_debt_baseline ile
-  # dondurulur ve scripts/ci/check_ruff_debt_baseline.py yalnız azalmasına izin
-  # verir; agent rol kontratları ayrıca
-  # tests/unit/agent/test_builtin_role_contracts.py ile korunur.
-  "D100",
-  "D101",
-  "D102",
-  "D103",
-  "D104",
-  "D105",
-  "D106",
-  "D107",
-]
+# D100-D107 eksik docstring borcu 0'a indiği için 2026-10-01'de global ignore'dan
+# çıkarıldı; Ruff tüm D kurallarını doğrudan uygular (AGENTS.md §2.5.6). Yeni
+# ignore yalnız açık gerekçe, sahip ve expiry tarihiyle eklenebilir.
+ignore = []
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["E402"]

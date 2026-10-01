@@ -96,7 +96,6 @@ def check_policy_date_warnings(
     effective_today = today or date.today()
     data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
     sidar = data.get("tool", {}).get("sidar", {})
-    ruff_debt = sidar.get("ruff_debt", {})
     dependency_plan = sidar.get("dependency_profile_plan", {})
     torch_reminder = dependency_plan.get("torch_upgrade_reminder", {})
     runtime_validation = dependency_plan.get("production_minimal_runtime_validation")
@@ -123,14 +122,6 @@ def check_policy_date_warnings(
             today=effective_today,
             warn_within_days=warning_window,
         )
-    _add_if_due_soon(
-        warnings,
-        label="Ruff D100-D107 docstring ratchet review",
-        value=ruff_debt.get("docstring_ratchet_review_by", ""),
-        key="tool.sidar.ruff_debt.docstring_ratchet_review_by",
-        today=effective_today,
-        warn_within_days=warning_window,
-    )
     if runtime_validation is not None:
         _add_if_due_soon(
             warnings,
@@ -161,15 +152,6 @@ def check_policy_dates(
     data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
     sidar = data.get("tool", {}).get("sidar", {})
     failures: list[str] = []
-
-    ruff_debt = sidar.get("ruff_debt", {})
-    _add_if_expired(
-        failures,
-        label="Ruff D100-D107 docstring ratchet review",
-        value=ruff_debt.get("docstring_ratchet_review_by", ""),
-        key="tool.sidar.ruff_debt.docstring_ratchet_review_by",
-        today=effective_today,
-    )
 
     dependency_plan = sidar.get("dependency_profile_plan", {})
     torch_reminder = dependency_plan.get("torch_upgrade_reminder", {})

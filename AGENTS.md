@@ -346,11 +346,10 @@ retry limiti ve HITL (human-in-the-loop) güvenlik kapılarıyla çalışır.
 
 ### 2.5.6 Kademeli dokümantasyon kampanyası
 
-Ruff pydocstyle `D` kuralları açık kalır. Legacy yüzeydeki eksik public docstring
-envanteri kontrollü kapatılana kadar yalnız `D100-D107` geçici ignore edilir.
-Sıfır baseline'a ulaşan seçili `D200-D417`, `E501` ve `ASYNC240` global ignore'ları
-2026-08-02'de kaldırılmıştır ve yeniden eklenmemelidir. Kalan kampanya aşağıdaki
-tarihli plana bağlıdır:
+Ruff pydocstyle `D` kuralları açıktır ve global ignore listesi boştur. Sıfır
+baseline'a ulaşan seçili `D200-D417`, `E501` ve `ASYNC240` global ignore'ları
+2026-08-02'de, `D100-D107` ignore'ları 2026-10-01'de kaldırılmıştır; hiçbiri yeniden
+eklenmemelidir. Kampanya aşağıdaki tarihli planla yürütülmüş ve kapanmıştır:
 
 - **2026-07-15 — Envanter freeze:** `scripts/coverage_hotspots.py` ve kritik ajan/DB/RAG
   modülleri için public module/class/function docstring eksikleri hotspot listesine
@@ -365,10 +364,13 @@ tarihli plana bağlıdır:
   ratchet'e bağlanmıştır: `[tool.sidar.ruff_debt].missing_docstring_debt_baseline`
   kural bazında tavanı tutar, `scripts/ci/check_ruff_debt_baseline.py` artışı
   fail-closed reddeder ve azalan sayının aynı PR'da `--update` ile işlenmesini ister.
-  Ratchet ilerlemesi ve tarihli azaltma hedefleri
-  `docstring_ratchet_review_by` (**2027-03-31**, sahip: qa+reviewer) tarihinde gözden
-  geçirilir; `scripts/ci/check_policy_dates.py` bu tarihi fail-closed izler. Yeni
-  istisna yalnız açık gerekçe, sahip ve expiry tarihiyle değerlendirilebilir.
+- **2026-10-01 — D100-D107 kapanışı:** Ratchet modül bazlı PR'larla 5.486'dan 0'a
+  indirildi. `D100-D107` global ignore'dan çıkarıldı ve Ruff tarafından doğrudan
+  uygulanıyor; 2027-03-31 tarihli ratchet incelemesi erken kapatıldı
+  (`missing_docstring_review_closed_on`) ve `scripts/ci/check_policy_dates.py` artık
+  bu tarihi izlemiyor. Sıfır `missing_docstring_debt_baseline` savunma katmanı olarak
+  korunur. Yeni istisna yalnız açık gerekçe, sahip ve expiry tarihiyle
+  değerlendirilebilir.
 
 Operasyonel kural: Yeni veya anlamlı şekilde değiştirilen public API'lerde docstring eklemek
 varsayılandır; ignore listesine yeni kural eklemek yerine ilgili modülde dokümantasyon borcu
