@@ -14,6 +14,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
+import yaml
 from packaging.requirements import Requirement
 from packaging.version import Version
 
@@ -5629,6 +5630,33 @@ def test_nightly_gpu_uses_persistent_local_uv_cache_instead_of_actions_cache() -
     assert "enable-cache: false" in block
     assert "enable-cache: true" not in block
     assert 'run: echo "UV_CACHE_DIR=$HOME/.cache/uv" >> "$GITHUB_ENV"' in block
+
+
+def test_self_hosted_jobs_never_upload_uv_cache_to_actions_cache() -> None:
+    """Every self-hosted job keeps uv's cache on host disk instead of actions/cache."""
+    offenders: list[str] = []
+    for path in sorted(Path(".github/workflows").glob("*.yml")):
+        workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+        for job_name, job in (workflow.get("jobs") or {}).items():
+            if "self-hosted" not in str(job.get("runs-on", "")):
+                continue
+            steps = job.get("steps") or []
+            uv_steps = [
+                step
+                for step in steps
+                if str(step.get("uses", "")).startswith("astral-sh/setup-uv@")
+            ]
+            if not uv_steps:
+                continue
+            location = f"{path.name}:{job_name}"
+            if any((step.get("with") or {}).get("enable-cache") is not False for step in uv_steps):
+                offenders.append(f"{location} enables the setup-uv actions/cache upload")
+            if not any(
+                "UV_CACHE_DIR=$HOME/.cache/uv" in str(step.get("run", "")) for step in steps
+            ):
+                offenders.append(f"{location} does not pin UV_CACHE_DIR to host disk")
+
+    assert offenders == []
 
 
 def test_ci_uses_shared_system_dependency_installer_without_duplicate_apt_step() -> None:
