@@ -147,8 +147,8 @@ def test_production_dockerfile_pins_build_inputs_by_version_and_digest():
 
     assert f"ARG BASE_IMAGE={PRODUCTION_PYTHON_IMAGE}" in dockerfile
     assert (
-        "ARG NODE_IMAGE=node:20.20.2-bookworm-slim@sha256:"
-        "2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0" in dockerfile
+        "ARG NODE_IMAGE=node:22.23.3-bookworm-slim@sha256:"
+        "43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c" in dockerfile
     )
     assert f"COPY --from={UV_IMAGE} /uv /uvx /bin/" in dockerfile
     assert "ghcr.io/astral-sh/uv:latest" not in dockerfile

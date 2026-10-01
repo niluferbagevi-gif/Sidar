@@ -21,7 +21,7 @@ extract_node_major_from_spec() {
 }
 
 resolve_target_node_major() {
-    local default_major="20"
+    local default_major="22"
     local nvmrc_path=""
     local nvmrc_spec=""
     local major=""
