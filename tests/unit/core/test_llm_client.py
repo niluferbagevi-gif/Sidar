@@ -2666,7 +2666,7 @@ async def test_gemini_chat_json_injection_and_defaults(monkeypatch: pytest.Monke
     c = llm_client.GeminiClient(_make_config(GEMINI_API_KEY="k", GEMINI_MODEL="gm"))
     out = await c.chat([{"role": "user", "content": "x"}], stream=False, json_mode=True)
     assert "final_answer" in out
-    assert captured["contents"] == [{"role": "user", "parts": ["x"]}]
+    assert captured["contents"] == [{"role": "user", "parts": [{"text": "x"}]}]
     assert captured["config"].response_mime_type == "application/json"
 
 
