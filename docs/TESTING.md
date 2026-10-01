@@ -29,11 +29,14 @@ yetki kararları gibi kritik dallar, toplam eşik hâlâ geçiyor olsa da küç�
 test dilimleriyle yükseltilmelidir. Backend `%100` tabanı frontend'e örtük olarak
 uygulanmaz; frontend eşiğini değiştirmek ayrıca ölçülmüş bir ratchet kararı gerektirir.
 
-Frontend için zorunlu Node.js sözleşmesi `web_ui_react/.nvmrc` içindeki Node 20'dir.
+Frontend için zorunlu Node.js sözleşmesi `web_ui_react/.nvmrc` içindeki Node 22 LTS'tir
+(kanonik pin `scripts/toolchain.env` `NODE_VERSION`; `Dockerfile.production` `NODE_IMAGE`
+aynı sürüme sabitlenir ve `scripts/ci/check_toolchain_contract.py` sapmayı reddeder).
 Ana CI, release, security-review ve haftalık kritik test akışları sürümü
-`node-version-file: web_ui_react/.nvmrc` ile aynı kaynaktan okur. Node 22 yalnız
-`Frontend Node 22 compatibility (non-blocking)` işiyle ileriye dönük uyumluluk sinyali
-üretir; bu iş Node 20 required kalite kapısının yerine geçmez.
+`node-version-file: web_ui_react/.nvmrc` ile aynı kaynaktan okur. Bir sonraki LTS olan
+Node 24 yalnız `Frontend Node 24 compatibility (non-blocking)` işiyle ileriye dönük
+uyumluluk sinyali üretir; bu iş Node 22 required kalite kapısının yerine geçmez. Node 20
+2026-04-30'da destek dışına çıktığı için 2026-10-01'de bırakılmıştır.
 
 Base Quality Gates içinde env parity pytest'ten önce çalışır. Job ancak parity sonrasında
 gerçek backend JUnit dosyaları, `coverage.json` ve başarılı test summary üretildiğinde yeşil

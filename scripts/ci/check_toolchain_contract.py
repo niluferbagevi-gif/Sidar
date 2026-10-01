@@ -55,6 +55,9 @@ def contract_errors(root: Path, pins: dict[str, str]) -> list[str]:
             errors.append(f"{name}: Python pin drift")
         if uv_image not in text:
             errors.append(f"{name}: uv image pin drift")
+    production_dockerfile = (root / "Dockerfile.production").read_text(encoding="utf-8")
+    if f"ARG NODE_IMAGE=node:{pins['NODE_VERSION']}-" not in production_dockerfile:
+        errors.append("Dockerfile.production: Node image pin drift")
     for path in sorted((root / ".github/workflows").glob("*.yml")):
         text = path.read_text(encoding="utf-8")
         normalized_lines = {line.strip() for line in text.splitlines()}

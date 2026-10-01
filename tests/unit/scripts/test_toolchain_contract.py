@@ -11,8 +11,8 @@ def test_repository_toolchain_surfaces_match_canonical_file() -> None:
 
     assert pins["PYTHON_VERSION"] == "3.11.15"
     assert pins["UV_VERSION"] == "0.12.0"
-    assert pins["NODE_VERSION"] == "20.20.2"
-    assert (contract.ROOT / "web_ui_react/.nvmrc").read_text(encoding="utf-8").strip() == "20.20.2"
+    assert pins["NODE_VERSION"] == "22.23.3"
+    assert (contract.ROOT / "web_ui_react/.nvmrc").read_text(encoding="utf-8").strip() == "22.23.3"
     assert pins["PLAYWRIGHT_PYTHON_MIN"] == "1.62.0"
     assert pins["PLAYWRIGHT_PYTHON_MAX"] == "1.64"
     assert pins["PLAYWRIGHT_NODE_MIN"] == "1.60.0"
@@ -20,8 +20,8 @@ def test_repository_toolchain_surfaces_match_canonical_file() -> None:
     assert contract.contract_errors(contract.ROOT, pins) == []
 
 
-def test_required_node_uses_nvmrc_and_node_22_is_non_blocking_compatibility() -> None:
-    """Required node uses nvmrc and node 22 is non blocking compatibility."""
+def test_required_node_uses_nvmrc_and_next_lts_is_non_blocking_compatibility() -> None:
+    """Required Node comes from .nvmrc; the next LTS (Node 24) is a non-blocking signal."""
     workflow = (contract.ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
 
     assert "node-version-file: web_ui_react/.nvmrc" in workflow
@@ -31,7 +31,7 @@ def test_required_node_uses_nvmrc_and_node_22_is_non_blocking_compatibility() ->
         )
     ]
     assert "continue-on-error: true" in compatibility
-    assert "node: [22]" in compatibility
+    assert "node: [24]" in compatibility
     assert "npm run test:critical" in compatibility
     assert "npm run build" in compatibility
 
@@ -47,7 +47,7 @@ def test_contract_reports_docker_pin_drift(tmp_path: Path) -> None:
         'dependencies = ["playwright>=1.62.0,<1.63"]\n', encoding="utf-8"
     )
     (tmp_path / "web_ui_react").mkdir()
-    (tmp_path / "web_ui_react/.nvmrc").write_text("20.20.2\n", encoding="utf-8")
+    (tmp_path / "web_ui_react/.nvmrc").write_text("22.23.3\n", encoding="utf-8")
     (tmp_path / "web_ui_react/package.json").write_text(
         '{"devDependencies":{"@playwright/test": ">=1.60.0 <1.62.0"}}\n',
         encoding="utf-8",
@@ -58,3 +58,4 @@ def test_contract_reports_docker_pin_drift(tmp_path: Path) -> None:
 
     assert "Dockerfile: Python pin drift" in errors
     assert "Dockerfile: uv image pin drift" in errors
+    assert "Dockerfile.production: Node image pin drift" in errors
