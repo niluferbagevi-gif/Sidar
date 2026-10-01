@@ -18,15 +18,11 @@ from scripts.ci.check_policy_dates import (
 def _write_policy_pyproject(
     path: Path,
     *,
-    ruff: str,
     review: str,
     expires: str,
 ) -> None:
     path.write_text(
         f"""
-[tool.sidar.ruff_debt]
-docstring_ratchet_review_by = "{ruff}"
-
 [tool.sidar.dependency_profile_plan.torch_upgrade_reminder]
 review_by = "{review}"
 expires = "{expires}"
@@ -54,33 +50,21 @@ def test_repository_ruff_debt_dates_do_not_expire_on_2026_10_01() -> None:
     assert check_policy_dates(Path("pyproject.toml"), today=date(2026, 10, 1)) == []
 
 
-def test_check_policy_dates_warns_for_docstring_ratchet_review_window(tmp_path: Path) -> None:
-    """The D100-D107 ratchet review date warns inside the configured window."""
-    pyproject = tmp_path / "pyproject.toml"
-    _write_policy_pyproject(
-        pyproject,
-        ruff="2027-03-31",
-        review="2027-12-31",
-        expires="2027-12-31",
+def test_closed_docstring_ratchet_review_is_no_longer_tracked() -> None:
+    """D100-D107 reached 0 and is enforced directly, so its 2027 review is closed."""
+    failures = check_policy_dates(Path("pyproject.toml"), today=date(2027, 4, 1))
+    assert not any("D100-D107" in failure for failure in failures)
+    warnings = check_policy_date_warnings(
+        Path("pyproject.toml"), today=date(2027, 3, 1), warn_within_days=45
     )
-
-    warnings = check_policy_date_warnings(pyproject, today=date(2027, 3, 1), warn_within_days=45)
-
-    assert warnings == [
-        (
-            "Ruff D100-D107 docstring ratchet review "
-            "(tool.sidar.ruff_debt.docstring_ratchet_review_by) "
-            "is due on 2027-03-31 (30 days remaining)"
-        ),
-    ]
+    assert not any("D100-D107" in warning for warning in warnings)
 
 
-def test_check_policy_dates_fails_after_ruff_and_torch_policy_dates(tmp_path: Path) -> None:
-    """Expired ruff and torch policy dates are all reported, in order."""
+def test_check_policy_dates_fails_after_torch_policy_dates(tmp_path: Path) -> None:
+    """Expired torch policy dates are all reported, in order."""
     pyproject = tmp_path / "pyproject.toml"
     _write_policy_pyproject(
         pyproject,
-        ruff="2026-09-30",
         review="2026-08-15",
         expires="2026-09-15",
     )
@@ -88,10 +72,6 @@ def test_check_policy_dates_fails_after_ruff_and_torch_policy_dates(tmp_path: Pa
     failures = check_policy_dates(pyproject, today=date(2026, 10, 1))
 
     assert failures == [
-        (
-            "Ruff D100-D107 docstring ratchet review "
-            "(tool.sidar.ruff_debt.docstring_ratchet_review_by) expired on 2026-09-30"
-        ),
         (
             "Torch CVE policy review "
             "(tool.sidar.dependency_profile_plan.torch_upgrade_reminder.review_by) "
@@ -105,12 +85,14 @@ def test_check_policy_dates_fails_after_ruff_and_torch_policy_dates(tmp_path: Pa
     ]
 
 
-def test_check_policy_dates_fails_closed_when_docstring_review_date_is_missing(
+def test_check_policy_dates_fails_closed_when_torch_review_date_is_missing(
     tmp_path: Path,
 ) -> None:
-    """A missing docstring ratchet review date is a config error, not a pass."""
+    """A missing unresolved torch review date is a config error, not a pass."""
     pyproject = tmp_path / "pyproject.toml"
-    pyproject.write_text("[tool.sidar.ruff_debt]\n", encoding="utf-8")
+    pyproject.write_text(
+        "[tool.sidar.dependency_profile_plan.torch_upgrade_reminder]\n", encoding="utf-8"
+    )
 
     assert main(["--pyproject", str(pyproject), "--today", "2026-10-01"]) == 2
 
@@ -128,7 +110,6 @@ def test_check_policy_dates_cli_returns_nonzero_for_expired_policy(tmp_path: Pat
     pyproject = tmp_path / "pyproject.toml"
     _write_policy_pyproject(
         pyproject,
-        ruff="2026-09-30",
         review="2026-08-15",
         expires="2026-09-15",
     )
@@ -141,9 +122,6 @@ def _write_runtime_validation_pyproject(path: Path, *, review: str | None) -> No
     review_line = f'review_by = "{review}"\n' if review is not None else ""
     path.write_text(
         f"""
-[tool.sidar.ruff_debt]
-docstring_ratchet_review_by = "2099-01-01"
-
 [tool.sidar.dependency_profile_plan.torch_upgrade_reminder]
 status = "resolved"
 

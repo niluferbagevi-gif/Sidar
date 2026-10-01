@@ -229,17 +229,18 @@ kaldığında terfi edebilir:
 
 ## Ruff docstring / ASYNC borç kapatma takibi
 
-> **Aktif takip durumu (2026-09-25):** E501, seçili D200-D417 ve ASYNC240
+> **Takip durumu (2026-10-01, kapandı):** E501, seçili D200-D417 ve ASYNC240
 > baseline'ları sıfıra ulaştığı için global ignore'lar 2026-08-02'de kaldırılmış;
-> 2026-09-30 tarihli E501/ASYNC240 incelemeleri 2026-09-25'te kapatılmıştır. Kalan
-> D100-D107 envanteri (5.486 bulgu) tarih uzatılmak yerine
-> `missing_docstring_debt_baseline` ratchet'ine bağlanmıştır; ilerleme
-> `docstring_ratchet_review_by` (2027-03-31) tarihinde gözden geçirilir.
+> 2026-09-30 tarihli E501/ASYNC240 incelemeleri 2026-09-25'te kapatılmıştır.
+> 2026-09-25'te `missing_docstring_debt_baseline` ratchet'ine bağlanan D100-D107
+> envanteri (5.486 bulgu) modül bazlı PR'larla 0'a indirildi; D100-D107 ignore'ları
+> 2026-10-01'de kaldırıldı ve 2027-03-31 tarihli ratchet incelemesi erken kapatıldı
+> (`missing_docstring_review_closed_on`).
 
-`pyproject.toml` içindeki `[tool.sidar.ruff_debt]` bloğu sıfır ratchet'i, D100-D107
-ratchet tavanını ve 2027-03-31 inceleme tarihini taşır. E501/D200-D417/ASYNC240
-kuralları normal Ruff çalıştırmasında doğrudan etkindir; savunma amaçlı doğrulama
-komutları:
+`pyproject.toml` içindeki `[tool.sidar.ruff_debt]` bloğu tüm kurallar için sıfır
+ratchet'i taşır; `[tool.ruff.lint].ignore` boştur. E501, D100-D107, D200-D417 ve
+ASYNC240 kuralları normal Ruff çalıştırmasında doğrudan etkindir; savunma amaçlı
+doğrulama komutları:
 
 ```bash
 uv run ruff check . --select D,ASYNC

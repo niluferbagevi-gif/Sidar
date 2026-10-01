@@ -270,6 +270,14 @@ def test_zero_ruff_debt_is_enforced_after_global_ignores_are_removed() -> None:
         "D415",
         "D417",
         "ASYNC240",
+        "D100",
+        "D101",
+        "D102",
+        "D103",
+        "D104",
+        "D105",
+        "D106",
+        "D107",
     }
     assert directly_enforced.isdisjoint(lint["ignore"])
     assert debt["line_length"] == 100
@@ -281,18 +289,19 @@ def test_zero_ruff_debt_is_enforced_after_global_ignores_are_removed() -> None:
     assert "async240_global_ignore_review_by" not in debt
     assert "close_docstring_campaign_by" not in debt
     assert "close_async240_campaign_by" not in debt
-    assert debt["docstring_ratchet_review_by"] == "2027-03-31"
-    assert set(debt["missing_docstring_debt_baseline"]) == {
-        "D100",
-        "D101",
-        "D102",
-        "D103",
-        "D104",
-        "D105",
-        "D106",
-        "D107",
+    assert debt["missing_docstring_review_closed_on"] == "2026-10-01"
+    assert "docstring_ratchet_review_by" not in debt
+    assert debt["missing_docstring_debt_baseline"] == {
+        "D100": 0,
+        "D101": 0,
+        "D102": 0,
+        "D103": 0,
+        "D104": 0,
+        "D105": 0,
+        "D106": 0,
+        "D107": 0,
     }
-    assert set(debt["missing_docstring_debt_baseline"]) <= set(lint["ignore"])
+    assert lint["ignore"] == []
     assert {"web_server.py", "main.py"} <= set(debt["legacy_hotspots"])
     assert (
         "uv run python scripts/ci/check_ruff_debt_baseline.py"

@@ -29,7 +29,7 @@
 | Son gözlenen yerel blocker | **2026-08-12: sandbox coverage `%99,98`; bu dalda test/kod düzeltmesi uygulandı, tam gate yeniden doğrulanmalı** |
 | Harici evidence durumu | **GitHub GPU watchdog + inference gate + production aggregate sonucu repository ayarları ve runner kapasitesiyle doğrulanmalı** |
 | Anlık release kararı | **Statik Markdown'dan verilmez; `artifacts/test-summary.json` ve güncel CI required check'leri kanoniktir** |
-| İzlenen Mühendislik Kampanyaları | **Var — TypeScript migrasyonu, D100-D107 docstring envanteri ve modülerleştirme ratchet/planlarla yönetiliyor** |
+| İzlenen Mühendislik Kampanyaları | **Var — TypeScript migrasyonu ve modülerleştirme ratchet/planlarla yönetiliyor; D100-D107 docstring envanteri 2026-10-01'de 0'a inip kapandı** |
 | Denetim Durumu | **Production-ready kalite kapıları fail-closed; tarihli snapshot başarı garantisi değildir** |
 | Son Arşivleme Notu | **Kapanan bulgular `docs/archive/` altında; aktif kampanyalar kendi plan ve baseline dosyalarında tutuluyor** |
 
@@ -57,9 +57,10 @@ sayılır; bu Markdown tablosundaki snapshot release onayı olarak kullanılamaz
 - **Açık kritik teknik borç:** Merge/release kararını engelleyen, kabul edilmiş fakat
   çözülmemiş kusurdur. Sayısı yalnız güncel artifact/CI sonucundan türetilir.
 - **İzlenen mühendislik borcu:** Ürünü bugün bloklamayan fakat tarihli kapanış ve
-  geriye gitmeme kapısı bulunan işlerdir. TypeScript migrasyonu, kalan D100-D107
-  docstring envanteri ve `docs/REFACTOR_PLAN.md` içindeki modülerleştirme dilimleri bu
-  sınıftadır; bu nedenle genel “Açık Teknik Borç: 0” ifadesi kullanılmaz.
+  geriye gitmeme kapısı bulunan işlerdir. TypeScript migrasyonu ve
+  `docs/REFACTOR_PLAN.md` içindeki modülerleştirme dilimleri bu sınıftadır (D100-D107
+  docstring envanteri 2026-10-01'de kapandı ve Ruff'ta doğrudan uygulanıyor); bu nedenle
+  genel “Açık Teknik Borç: 0” ifadesi kullanılmaz.
 - **Gelecek ürün fazı:** Mevcut davranışta kusur olmayan yeni kapasitedir. Harici graph
   backend'i, bağımsız worker/pod tabanlı dağıtık swarm, tam RLHF/DPO eğitim
   orkestrasyonu ve canlı video/ekran WebRTC genişletmeleri Bölüm 14 yol haritasıdır.
