@@ -47,8 +47,13 @@ jobs:
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           version: "0.12.0"
-          enable-cache: true
-          cache-dependency-glob: "**/uv.lock"
+          # Persistent self-hosted host: uv's local disk cache already survives
+          # between runs; uploading the multi-GB cache to actions/cache stalls
+          # the post step (see nightly-gpu-performance.yml).
+          enable-cache: false
+
+      - name: Pin uv cache to persistent host disk
+        run: echo "UV_CACHE_DIR=$HOME/.cache/uv" >> "$GITHUB_ENV"
 
       - name: Verify canonical toolchain contract
         run: python scripts/ci/check_toolchain_contract.py
