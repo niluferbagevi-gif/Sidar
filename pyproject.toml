@@ -142,7 +142,7 @@ ci-gpu = [
 
 # ── LLM sağlayıcıları (istenilen sağlayıcı için ilgili extras ekleyin) ──
 gemini = [
-  "google-genai>=1.0.0,<2.0.0",
+  "google-genai>=2.26.0,<3.0.0",
 ]
 anthropic = [
   "anthropic~=0.121.0",

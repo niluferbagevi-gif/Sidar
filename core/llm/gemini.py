@@ -132,8 +132,13 @@ class GeminiClient(BaseLLMClient):
         if json_mode:
             gen_config.update(self.json_mode_config().get("generation_config", {}))
 
+        # google-genai validates contents against types.Content, whose parts must be
+        # Part objects ({"text": ...}); bare strings are rejected before any request.
         history = [
-            {"role": "user" if m["role"] == "user" else "model", "parts": [m["content"]]}
+            {
+                "role": "user" if m["role"] == "user" else "model",
+                "parts": [{"text": m["content"]}],
+            }
             for m in chat_messages
         ]
 
@@ -153,7 +158,7 @@ class GeminiClient(BaseLLMClient):
                 if system_text:
                     config_kwargs["system_instruction"] = system_text
                 generate_config = active_genai_types.GenerateContentConfig(**config_kwargs)
-                contents = history or [{"role": "user", "parts": ["Merhaba"]}]
+                contents = history or [{"role": "user", "parts": [{"text": "Merhaba"}]}]
                 if stream:
 
                     async def _start_stream() -> Any:
