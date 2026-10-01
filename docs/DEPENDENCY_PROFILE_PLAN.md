@@ -138,6 +138,12 @@ sınıflandırılmalı ve production-minimal profil etkisi ayrı PR'da değerlen
   için ignore eklenmeden `83.0.0` ve üstüne zorlanır. `pyproject.toml` build-system alt sınırı
   `setuptools>=83.0.0` tutar; `[tool.uv].override-dependencies` aynı güvenlik tabanını lock
   çözümünde korur.
+- `[tool.uv].override-dependencies` ayrıca `filelock>=4.0.3` tutar: CPython 3.11'de
+  `filelock<4.0.3` import anında Python audit hook'u kaydettiği için coverage altında yeni
+  thread'ler `RuntimeError: Cannot install a trace function while another trace function is
+  being installed` ile düşebiliyordu (2026-10-01 main CI'ında görüldü). `safety` 3.8.1 yalnız
+  temel `FileLock` API'sini kullanmasına rağmen `filelock<4.0` sınırı koyduğu için bu sınır
+  override edilir; `safety` sınırı gevşettiğinde girdi kaldırılmalıdır.
 - `security/pip-audit-ignores.tsv` içindeki her istisna `expires` alanı taşır ve
   `scripts/pip_audit_ignore_args.py` tarafından `run_tests.sh` ile GitHub Actions security audit
   adımında okunur. Süresi dolan istisnalar `pip-audit` komutuna aktarılmaz; script fail-closed

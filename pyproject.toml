@@ -620,7 +620,13 @@ extra_css = "assets/dark_mode.css"
 [tool.uv]
 index-strategy = "first-index"
 environments = ["sys_platform == 'linux'"]
-override-dependencies = ["setuptools>=83.0.0"]
+# filelock>=4.0.3: on CPython 3.10/3.11, filelock<4.0.3 registers a Python audit hook at
+# import, which lets a thread start inside another thread's sys.settrace and fail with
+# "Cannot install a trace function while another trace function is being installed"
+# under coverage (flaked a main CI run on 2026-10-01). safety 3.8.1 still caps
+# filelock<4.0 although it only uses the unchanged basic FileLock API, so the cap is
+# overridden; drop this entry once safety relaxes it.
+override-dependencies = ["setuptools>=83.0.0", "filelock>=4.0.3"]
 
 # Linux (the only `environments` target below, and the platform every Docker
 # image builds on) intentionally has no pinned CUDA index: torch's own
