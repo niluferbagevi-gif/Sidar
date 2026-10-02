@@ -70,6 +70,24 @@ jobs:
             auth-benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-master-
             auth-benchmark-baseline-${{ runner.name }}-${{ runner.os }}-py311-
 
+      # The actions/cache entry above is a few KB, but it shares the repo's
+      # 10 GB cache budget with multi-GB CI caches and was LRU-evicted within
+      # 18 hours of the 2026-10-01 seed run (the 2026-10-02 schedule then hit
+      # "Cache not found" and failed closed). This job always runs on the same
+      # persistent self-hosted host, so the baseline is also mirrored on its
+      # disk, keyed by runner name like the cache key above.
+      - name: Restore auth benchmark baseline from persistent host disk
+        run: |
+          baseline_dir="${HOME}/.cache/sidar/auth-benchmark-baseline/${RUNNER_NAME}"
+          echo "AUTH_BENCH_HOST_BASELINE_DIR=${baseline_dir}" >> "$GITHUB_ENV"
+          mkdir -p .benchmarks
+          if [[ -d "${baseline_dir}" ]] && find "${baseline_dir}" -type f -name "*_${BENCHMARK_COMPARE_NAME}.json" -print -quit | grep -q .; then
+            cp -a "${baseline_dir}/." .benchmarks/
+            echo "Host-disk baseline restored from ${baseline_dir}."
+          else
+            echo "No host-disk baseline under ${baseline_dir}; relying on the actions/cache restore."
+          fi
+
       - name: Cache APT packages (PortAudio)
         uses: awalsh128/cache-apt-pkgs-action@v1.6.3
         with:
@@ -117,6 +135,19 @@ jobs:
 
       - name: Evaluate P95/P99 regression budgets
         run: python scripts/ci/check_auth_benchmark_thresholds.py artifacts/auth-benchmark/benchmark.json
+
+      # Only a run that passed the compare and P95/P99 budgets (or a reviewed
+      # manual seed) may become the next baseline, matching actions/cache's
+      # save-on-success semantics.
+      - name: Persist auth benchmark baseline to persistent host disk
+        if: success()
+        run: |
+          mkdir -p "${AUTH_BENCH_HOST_BASELINE_DIR}"
+          cp -a .benchmarks/. "${AUTH_BENCH_HOST_BASELINE_DIR}/"
+          # --benchmark-save adds one file per run; keep the newest 30.
+          find "${AUTH_BENCH_HOST_BASELINE_DIR}" -type f -name "*_${BENCHMARK_COMPARE_NAME}.json" -print \
+            | sort -V | head -n -30 | xargs -r rm -f --
+          echo "Baseline persisted to ${AUTH_BENCH_HOST_BASELINE_DIR}."
 
       - name: Upload auth benchmark artifacts
         if: always()
