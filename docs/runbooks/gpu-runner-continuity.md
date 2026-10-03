@@ -120,6 +120,57 @@ işaretlenir:
 4. Sık tekrarlanıyorsa host'un uyku/hazırda bekletme ayarlarını kapatın — 7/24 CI runner olarak
    kullanılan bir makinenin uykuya geçmesi bu kesintinin en olası sebebidir.
 
+## Host'u 7/24 açık tutma
+
+Tek host'ta GPU gate'in sürekliliği tamamen host'un açık kalmasına bağlıdır (örnek: 2026-10-02
+18:27 – 2026-10-03 22:39 arasında `sidar-gpu-primary` ~27 saat offline kaldı ve watchdog 7 kez
+kırmızı oldu). Önce host'ta salt okunur teşhisi çalıştırın; hiçbir ayarı değiştirmez, eksikleri
+`FAIL`/`WARN` olarak ve son kesintinin izini (açılışlar, runner servis olayları) raporlar:
+
+```bash
+./scripts/check_runner_host_continuity.sh --since "3 days ago"
+```
+
+`FAIL` kalmayana kadar aşağıdaki adımları uygulayın:
+
+1. **Runner servis olarak kurulu ve açılışta etkin olmalı** (runner klasöründe):
+   `sudo ./svc.sh install && sudo ./svc.sh start`; doğrulama:
+   `systemctl is-enabled actions.runner.*` → `enabled`.
+2. **WSL2'de systemd açık olmalı:** `/etc/wsl.conf` içinde
+
+   ```ini
+   [boot]
+   systemd=true
+   ```
+
+   ardından Windows'ta `wsl --shutdown` ve dağıtımı yeniden açın.
+3. **Windows uykuya/hazırda beklemeye geçmemeli** (yönetici PowerShell, prizdeyken):
+
+   ```powershell
+   powercfg /change standby-timeout-ac 0
+   powercfg /change hibernate-timeout-ac 0
+   ```
+
+4. **Windows yeniden başladığında WSL oturum açmadan kalkmalı.** WSL, içinde çalışan bir
+   Windows süreci olmadığında kapanır; runner servisi tek başına onu ayakta tutmaz. Açılışta
+   `wsl.exe` çalıştıran bir zamanlanmış görev ekleyin (yönetici PowerShell; `<kullanıcı>` WSL
+   dağıtımının sahibi olan Windows kullanıcısı, `<dağıtım>` `wsl -l -v` çıktısındaki ad):
+
+   ```powershell
+   schtasks /create /tn "Sidar WSL keepalive" /sc onstart /ru <kullanıcı> /rp * `
+     /tr "wsl.exe -d <dağıtım> --exec sleep infinity"
+   ```
+
+   Görev parolalı "oturum açılmamış olsa da çalıştır" modunda kaydedilir. Kurulumdan sonra
+   makineyi **oturum açmadan** yeniden başlatıp runner'ın GitHub'da Idle göründüğünü doğrulayın;
+   görünmüyorsa WSL sürümünüz oturumsuz başlatmayı desteklemiyordur ve Windows otomatik oturum
+   açma gerekir.
+5. Windows Update yeniden başlatmaları 4. adım sayesinde kendiliğinden toparlanır; yine de
+   "Etkin saatler" CI yoğun saatlerini kapsayacak şekilde ayarlanmalıdır.
+
+Tüm adımlardan sonra teşhis betiği `FAIL bulgusu yok` demeli ve watchdog birkaç gün kesintisiz
+yeşil kalmalıdır; #2874 tipi uyarı issue'ları ancak bundan sonra kapatılır.
+
 ## Üç aylık tatbikat (yalnızca gerçek çoklu-host kurulumunda geçerli)
 
 Primary runner servisini kontrollü durdurun, bir GPU gate'inin standby üzerinde tamamlandığını
