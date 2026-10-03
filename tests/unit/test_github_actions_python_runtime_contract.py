@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW_DIR = ROOT / ".github" / "workflows"
 PYTHON_MAJOR_MINOR = "3.11.15"
@@ -127,6 +129,22 @@ def test_nightly_auth_benchmark_seed_is_manual_only_and_skips_compare() -> None:
     required_branch = run_script.index('elif [[ "${BENCHMARK_COMPARE_REQUIRED}" == "1" ]]')
     assert seed_branch < compare_branch < required_branch
     assert "--benchmark-save=${BENCHMARK_COMPARE_NAME}" in run_script
+
+
+def test_nightly_auth_benchmark_mirrors_baseline_on_host_disk() -> None:
+    """The auth baseline must survive actions/cache LRU eviction on the self-hosted host."""
+    workflow = (WORKFLOW_DIR / "nightly-auth-benchmark.yml").read_text(encoding="utf-8")
+    steps = yaml.safe_load(workflow)["jobs"]["auth-benchmark"]["steps"]
+    names = [step.get("name", "") for step in steps]
+
+    restore = names.index("Restore auth benchmark baseline from persistent host disk")
+    persist = names.index("Persist auth benchmark baseline to persistent host disk")
+    assert names.index("Restore auth benchmark baseline cache") < restore
+    assert restore < names.index("Run auth benchmark suite with isolated CPU pinning")
+    assert names.index("Evaluate P95/P99 regression budgets") < persist
+    assert steps[persist]["if"] == "success()"
+    assert '"${HOME}/.cache/sidar/auth-benchmark-baseline/${RUNNER_NAME}"' in steps[restore]["run"]
+    assert 'cp -a .benchmarks/. "${AUTH_BENCH_HOST_BASELINE_DIR}/"' in steps[persist]["run"]
 
 
 def test_benchmark_seed_uses_reusable_workflow_and_keepalive_alerts() -> None:
