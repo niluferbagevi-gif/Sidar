@@ -43,7 +43,7 @@ services:
 
   redis-exporter:
     profiles: ["observability"]
-    image: oliver006/redis_exporter:v1.92.0
+    image: oliver006/redis_exporter:v1.93.0
     container_name: ${COMPOSE_PROJECT_NAME:-sidar}_redis_exporter
     restart: unless-stopped
     environment:
@@ -159,7 +159,7 @@ services:
 
   grafana:
     profiles: ["observability"]
-    image: grafana/grafana:13.2.2
+    image: grafana/grafana:13.2.3
     container_name: ${COMPOSE_PROJECT_NAME:-sidar}_grafana
     restart: unless-stopped
     ports:
