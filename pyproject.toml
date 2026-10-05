@@ -33,7 +33,7 @@ dependencies = [
   # ile takip edilir.
   # ── Temel altyapı ──────────────────────────────────────────────────────
   "packaging~=26.3",
-  "python-dotenv==1.2.3",
+  "python-dotenv==1.2.4",
   "pyyaml~=6.0.2",
   # HTTP client policy: production imports use httpx only; the old httpx2
   # migration candidate was retired to keep the runtime dependency graph smaller.
@@ -44,7 +44,7 @@ dependencies = [
   "redis>=5.2.1,<8.2.0",
   "psutil>=6.0,<7.3",
   # ── Web sunucu ─────────────────────────────────────────────────────────
-  "fastapi>=0.141.1,<0.142.0",
+  "fastapi>=0.141.1,<0.143.0",
   # Starlette 1.6.0 is the validated security baseline for request parsing and URL validation.
   "starlette>=1.6.0,<1.8.0",
   "python-multipart>=0.0.31,<0.1.0",
@@ -197,11 +197,11 @@ gui = [
   "eel>=0.16.0",
 ]
 slack = [
-  "slack-sdk>=3.43,<3.45",
+  "slack-sdk>=3.43,<3.46",
 ]
 browser = [
   "playwright>=1.62.0,<1.64",
-  "selenium>=4.46,<4.50",
+  "selenium>=4.46,<4.51",
 ]
 voice = [
   "SpeechRecognition~=3.10.4",
