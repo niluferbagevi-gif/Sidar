@@ -167,7 +167,7 @@ dosyadan SHA-256 üretip export etmelidir:
 ```bash
 tmp_uv=$(mktemp)
 curl -fsSL --retry 3 --retry-all-errors -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
-  https://astral.sh/uv/install.sh -o "$tmp_uv"
+  https://github.com/astral-sh/uv/releases/download/0.12.0/uv-installer.sh -o "$tmp_uv"
 less "$tmp_uv"
 export UV_INSTALL_SHA256=$(sha256sum "$tmp_uv" | awk '{print $1}')
 rm -f "$tmp_uv"

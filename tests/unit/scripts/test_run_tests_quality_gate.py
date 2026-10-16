@@ -4750,7 +4750,7 @@ def test_install_sidar_remote_script_checksum_guidance_covers_runtime_phase() ->
     assert "OLLAMA_INSTALL_SHA256" in combined
     assert "UV_INSTALL_SHA256" in combined
     assert "https://ollama.com/install.sh" in combined
-    assert "https://astral.sh/uv/install.sh" in combined
+    assert "https://github.com/astral-sh/uv/releases/download/0.12.0/uv-installer.sh" in combined
     assert "<hash>" in combined
     assert "./install_sidar.sh" in combined
     assert "TOFU" in combined or "tofu" in combined.lower()
@@ -4919,7 +4919,7 @@ def test_install_sidar_remote_script_checksum_failure_guides_operator() -> None:
     assert "ALLOW_UNVERIFIED_REMOTE_SCRIPTS" in remote_script_util
     assert "UV_INSTALL_SHA256" in docs
     assert "OLLAMA_INSTALL_SHA256" in docs
-    assert "https://astral.sh/uv/install.sh" in docs
+    assert "https://github.com/astral-sh/uv/releases/download/0.12.0/uv-installer.sh" in docs
     assert "scripts/install_modules/remote_checksums.env" in docs
     assert "https://ollama.com/install.sh" in docs
     assert "UV_INSTALL_SHA256" in modular_note

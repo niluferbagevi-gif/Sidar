@@ -658,7 +658,7 @@ sidar_emit_remediation_guidance() {
         missing_var="$(sidar_detect_missing_checksum_var "$failed_cmd" "$reason")"
         case "$missing_var" in
             OLLAMA_INSTALL_SHA256) script_url="https://ollama.com/install.sh" ;;
-            UV_INSTALL_SHA256) script_url="https://astral.sh/uv/install.sh" ;;
+            UV_INSTALL_SHA256) script_url="https://github.com/astral-sh/uv/releases/download/${SIDAR_TOOLCHAIN_UV_VERSION:-0.12.0}/uv-installer.sh" ;;
             *) script_url="<ilgili uzak betik URL'i>" ;;
         esac
         warn "Auto-heal: ${phase} fazı uzak betik checksum metadata eksikliği nedeniyle durdu. Bu durum self-heal ile güvenli biçimde onarılamaz (retry aynı duvara çarpar)."

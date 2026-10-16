@@ -23,9 +23,32 @@ class RemoteScriptPin:
     label: str
 
 
+TOOLCHAIN_FILE = Path(__file__).resolve().parents[1] / "toolchain.env"
+
+
+def read_toolchain_uv_version(path: Path = TOOLCHAIN_FILE) -> str:
+    """Return the pinned ``UV_VERSION`` from ``scripts/toolchain.env``.
+
+    Raises:
+        ValueError: If ``UV_VERSION`` is not declared exactly once.
+    """
+    matches = re.findall(r"^UV_VERSION=(\S+)$", path.read_text(encoding="utf-8"), re.MULTILINE)
+    if len(matches) != 1:
+        raise ValueError(f"UV_VERSION must be declared exactly once in {path}")
+    return matches[0]
+
+
+# The uv installer is pinned to the immutable GitHub release asset for the
+# toolchain version: https://astral.sh/uv/install.sh always serves the latest
+# release, so its checksum pin went stale whenever upstream shipped a new uv.
+UV_INSTALLER_URL = (
+    "https://github.com/astral-sh/uv/releases/download/"
+    f"{read_toolchain_uv_version()}/uv-installer.sh"
+)
+
 REMOTE_SCRIPT_PINS = (
     RemoteScriptPin("OLLAMA_INSTALL_SHA256", "https://ollama.com/install.sh", "Ollama installer"),
-    RemoteScriptPin("UV_INSTALL_SHA256", "https://astral.sh/uv/install.sh", "uv installer"),
+    RemoteScriptPin("UV_INSTALL_SHA256", UV_INSTALLER_URL, "uv installer"),
     RemoteScriptPin("VOLTA_INSTALL_SHA256", "https://get.volta.sh", "Volta installer"),
     RemoteScriptPin(
         "NVM_INSTALL_SHA256",
