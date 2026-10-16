@@ -121,6 +121,82 @@ def test_seed_files_can_skip_existing_source_when_append_mode(tmp_path: Path) ->
     assert store.added == []
 
 
+class VectorReadyStore(FakeStore):
+    """Fake store whose readiness report says the vector backend is live."""
+
+    def runtime_readiness_report(self) -> dict[str, object]:
+        """Report a healthy vector component like ``DocumentStore`` does."""
+        return {"components": {"rag_vector": {"healthy": True}}}
+
+
+def _unchanged_entry(doc: Path, *extra_tags: str) -> dict[str, object]:
+    return {
+        "id": "old",
+        "source": f"file://{doc}",
+        "session_id": "global",
+        "tags": [seed_rag._content_hash_tag(doc), *extra_tags],
+    }
+
+
+def test_seed_files_skips_unchanged_content_without_vector_backend(tmp_path: Path) -> None:
+    """A metadata-only run keeps skipping unchanged files and adds no vector tag."""
+    doc = tmp_path / "README.md"
+    doc.write_text("content", encoding="utf-8")
+    store = FakeStore(existing=[_unchanged_entry(doc)])
+
+    summary = seed_rag.seed_files(store, [doc], base_dir=tmp_path)
+
+    assert summary["skipped"] == [{"path": "README.md", "reason": "unchanged_content"}]
+    assert store.added == []
+
+
+def test_seed_files_reindexes_metadata_only_entry_when_vector_backend_is_ready(
+    tmp_path: Path,
+) -> None:
+    """An unchanged entry from a metadata-only seed is re-indexed into the vector store."""
+    doc = tmp_path / "README.md"
+    doc.write_text("content", encoding="utf-8")
+    store = VectorReadyStore(existing=[_unchanged_entry(doc)])
+
+    summary = seed_rag.seed_files(store, [doc], base_dir=tmp_path)
+
+    assert summary["added_count"] == 1
+    assert summary["deleted"] == ["old"]
+    assert seed_rag.VECTOR_INDEXED_TAG in store.added[0]["tags"]
+
+
+def test_seed_files_skips_unchanged_entry_already_in_vector_backend(tmp_path: Path) -> None:
+    """An unchanged entry that already carries the vector tag is not re-embedded."""
+    doc = tmp_path / "README.md"
+    doc.write_text("content", encoding="utf-8")
+    store = VectorReadyStore(existing=[_unchanged_entry(doc, seed_rag.VECTOR_INDEXED_TAG)])
+
+    summary = seed_rag.seed_files(store, [doc], base_dir=tmp_path)
+
+    assert summary["skipped"] == [{"path": "README.md", "reason": "unchanged_content"}]
+    assert store.added == []
+
+
+@pytest.mark.parametrize(
+    "report",
+    [
+        pytest.param(RuntimeError("probe failed"), id="raises"),
+        pytest.param(["not", "a", "dict"], id="non-dict-report"),
+        pytest.param({"components": {"rag_vector": {"healthy": False}}}, id="unhealthy"),
+    ],
+)
+def test_store_vector_ready_is_false_for_unusable_reports(report: object) -> None:
+    """Unknown, failing or unhealthy readiness reports never count as vector-ready."""
+
+    class ReportStore(FakeStore):
+        def runtime_readiness_report(self) -> object:
+            if isinstance(report, Exception):
+                raise report
+            return report
+
+    assert seed_rag._store_vector_ready(ReportStore()) is False
+
+
 def test_default_seed_patterns_include_curated_code_context() -> None:
     """Default seed patterns include curated code context."""
     assert "docs/ARCHITECTURE.md" in seed_rag.DEFAULT_INCLUDE_PATTERNS

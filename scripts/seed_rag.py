@@ -50,6 +50,8 @@ DEFAULT_INCLUDE_PATTERNS = (
     "scripts/coverage_hotspots.py",
     "scripts/seed_rag.py",
 )
+# Marks an index entry whose chunks were written to a live vector backend.
+VECTOR_INDEXED_TAG = "rag_vector:indexed"
 TEXT_EXTENSIONS = {
     ".md",
     ".rst",
@@ -184,6 +186,25 @@ def _extract_content_hash(entry: dict[str, Any]) -> str | None:
     return None
 
 
+def _store_vector_ready(store: SeedDocumentStore) -> bool:
+    """Return whether the store's vector backend is live for this seed run."""
+    report_fn = getattr(store, "runtime_readiness_report", None)
+    if not callable(report_fn):
+        return False
+    try:
+        report = report_fn()
+    except Exception:
+        return False
+    components = report.get("components", {}) if isinstance(report, dict) else {}
+    vector = components.get("rag_vector", {}) if isinstance(components, dict) else {}
+    return bool(isinstance(vector, dict) and vector.get("healthy"))
+
+
+def _has_vector_tag(entry: dict[str, Any]) -> bool:
+    tags = entry.get("tags")
+    return isinstance(tags, list) and VECTOR_INDEXED_TAG in tags
+
+
 def seed_files(
     store: SeedDocumentStore,
     files: list[Path],
@@ -193,10 +214,17 @@ def seed_files(
     dry_run: bool = False,
     base_dir: Path = BASE_DIR,
 ) -> dict[str, Any]:
-    """Index files and return a machine-readable summary."""
+    """Index files and return a machine-readable summary.
+
+    An unchanged file is skipped only when its existing entry already covers the
+    live vector backend: entries written by a metadata-only seed carry no
+    ``VECTOR_INDEXED_TAG``, so a later vector-enabled seed re-indexes them
+    instead of leaving the embedding table empty.
+    """
     added: list[dict[str, str]] = []
     skipped: list[dict[str, str]] = []
     deleted: list[str] = []
+    vector_ready = _store_vector_ready(store)
     for file_path in files:
         try:
             rel_path = file_path.relative_to(base_dir.resolve()).as_posix()
@@ -210,7 +238,11 @@ def seed_files(
             if str(item.get("source", "")) == source and item.get("id")
         ]
         existing_ids = [str(item.get("id")) for item in matching_entries]
-        if any(_extract_content_hash(item) == content_hash_tag for item in matching_entries):
+        if any(
+            _extract_content_hash(item) == content_hash_tag
+            and (not vector_ready or _has_vector_tag(item))
+            for item in matching_entries
+        ):
             skipped.append({"path": rel_path, "reason": "unchanged_content"})
             continue
         if existing_ids and not replace_existing:
@@ -230,6 +262,7 @@ def seed_files(
                 "brand:Sidar",
                 "audience:Sidar operators",
                 content_hash_tag,
+                *([VECTOR_INDEXED_TAG] if vector_ready else []),
             ],
             session_id=session_id,
         )
