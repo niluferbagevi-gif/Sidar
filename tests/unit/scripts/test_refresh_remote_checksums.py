@@ -47,3 +47,24 @@ def test_node_installer_pins_match_runtime_download_urls() -> None:
     )
     assert pins["VOLTA_INSTALL_SHA256"] in system_phase
     assert pins["NVM_INSTALL_SHA256"] in system_phase
+
+
+def test_uv_installer_pin_tracks_toolchain_release_asset() -> None:
+    """The uv installer pin targets the immutable release asset the installer downloads."""
+    pins = {pin.env_var: pin.url for pin in _managed_pins()}
+    toolchain = Path("scripts/toolchain.env").read_text(encoding="utf-8")
+    python_env = Path("scripts/install_modules/utils/python_env.sh").read_text(encoding="utf-8")
+    uv_version = next(
+        line.removeprefix("UV_VERSION=")
+        for line in toolchain.splitlines()
+        if line.startswith("UV_VERSION=")
+    )
+
+    assert pins["UV_INSTALL_SHA256"] == (
+        f"https://github.com/astral-sh/uv/releases/download/{uv_version}/uv-installer.sh"
+    )
+    assert (
+        "https://github.com/astral-sh/uv/releases/download/"
+        "${SIDAR_TOOLCHAIN_UV_VERSION}/uv-installer.sh"
+    ) in python_env
+    assert "https://astral.sh/uv/install.sh" not in python_env

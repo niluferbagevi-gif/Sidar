@@ -27,7 +27,7 @@ _sidar_install_uv_via_official_script() {
         info "Resmi kurulum betiği ile uv indiriliyor (hedef sürüm: ${SIDAR_TOOLCHAIN_UV_VERSION})..."
         DOWNLOADED_SCRIPT_FILE=""
         download_verified_script \
-            "https://astral.sh/uv/install.sh" \
+            "https://github.com/astral-sh/uv/releases/download/${SIDAR_TOOLCHAIN_UV_VERSION}/uv-installer.sh" \
             "${UV_INSTALL_SHA256:-}" \
             "uv_install"
         validate_downloaded_script_file "$DOWNLOADED_SCRIPT_FILE" "uv_install"
