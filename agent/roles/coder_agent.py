@@ -187,10 +187,26 @@ class CoderAgent(BaseAgent):
         except json.JSONDecodeError:
             return {"final": raw}
         if isinstance(parsed, dict):
-            return parsed
+            return CoderAgent._normalize_single_tool_plan(parsed)
         if isinstance(parsed, list):
             return {"tool_calls": parsed, "final": ""}
         return {"final": str(parsed)}
+
+    @staticmethod
+    def _normalize_single_tool_plan(plan: dict[str, Any]) -> dict[str, Any]:
+        """Map Sidar's ReAct ``{"tool": ..., "argument": ...}`` shape onto the tool plan.
+
+        Local models mirror the main agent's single-call format instead of the
+        ``tool_calls`` contract; left as-is the call never runs and the raw JSON
+        is handed to the reviewer as the coder's result.
+        """
+        tool = plan.get("tool")
+        if not isinstance(tool, str) or not tool.strip() or plan.get("tool_calls"):
+            return plan
+        argument = str(plan.get("argument") or plan.get("arg") or "")
+        if tool.strip() == "final_answer":
+            return {"final": argument}
+        return {"tool_calls": [{"name": tool.strip(), "arg": argument}], "final": ""}
 
     async def _run_llm_tool_loop(self, prompt: str) -> str:
         messages: list[dict[str, str]] = [
@@ -220,7 +236,13 @@ class CoderAgent(BaseAgent):
                 if not isinstance(item, dict):
                     continue
                 name = str(item.get("name") or item.get("tool") or "").strip()
-                arg = str(item.get("arg") or item.get("args") or item.get("input") or "")
+                arg = str(
+                    item.get("arg")
+                    or item.get("args")
+                    or item.get("argument")
+                    or item.get("input")
+                    or ""
+                )
                 if name not in getattr(self, "tools", {}):
                     tool_results.append({"tool": name, "result": f"[HATA] Bilinmeyen araç: {name}"})
                     continue

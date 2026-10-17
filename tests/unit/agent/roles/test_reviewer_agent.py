@@ -326,6 +326,10 @@ def test_parse_browser_and_remediation_helpers():
     assert p2["browser_session_id"] == "s1"
     p3 = ReviewerAgent._parse_review_payload("changes browser_session_id=s2")
     assert p3["browser_session_id"] == "s2"
+    # JSON with no review payload key (a coder's raw tool call) is the context itself.
+    raw_tool_call = '{"thought":"oku","tool":"read_file","argument":"stats.py"}'
+    p4 = ReviewerAgent._parse_review_payload(raw_tool_call)
+    assert p4["review_context"] == raw_tool_call
 
     summary = ReviewerAgent._summarize_browser_signals(
         {

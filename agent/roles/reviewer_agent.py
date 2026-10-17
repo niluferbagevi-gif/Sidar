@@ -33,6 +33,17 @@ from managers.security import SecurityManager
 
 logger = logging.getLogger(__name__)
 
+_REVIEW_PAYLOAD_KEYS = (
+    "review_context",
+    "code_context",
+    "context",
+    "changes",
+    "browser_session_id",
+    "browser_signals",
+    "browser_include_dom",
+    "browser_include_screenshot",
+)
+
 
 @AgentCatalog.register(
     capabilities=["code_review", "security_audit", "quality_check"], is_builtin=True
@@ -814,7 +825,11 @@ class ReviewerAgent(BaseAgent):
         if text.startswith("{"):
             with contextlib.suppress(json.JSONDecodeError):
                 payload = json.loads(text)
-                if isinstance(payload, dict):
+                # JSON without any review payload key (e.g. a coder's raw tool
+                # call) is the change text itself, not an empty review request.
+                if isinstance(payload, dict) and any(
+                    key in payload for key in _REVIEW_PAYLOAD_KEYS
+                ):
                     return {
                         "review_context": str(
                             payload.get("review_context")
