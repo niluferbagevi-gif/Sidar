@@ -26,6 +26,10 @@ kullanın:
 uv run python -m scripts.seed_rag
 ```
 
+Tam seed, içeriği değişmemiş bir belgeyi yalnız önceki kaydı vektör backend'ine de
+yazılmışsa (`rag_vector:indexed` etiketi) atlar. Metadata-only seed'in bıraktığı kayıtlar
+bu etiketi taşımadığından tam seed onları yeniden indeksleyip embedding tablosunu doldurur.
+
 Otomatik seed istenmiyorsa kurulumu
 `AUTO_SEED_RAG_METADATA=false AUTO_SEED_RAG_DOCKER_WARMUP=false ./install_sidar.sh`
 ile başlatabilirsiniz.
