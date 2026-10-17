@@ -590,6 +590,37 @@ async def test_llm_tool_loop_returns_limit_message_after_repeated_tool_calls(cod
 
 
 @pytest.mark.asyncio
+async def test_llm_tool_loop_forces_final_answer_after_tool_budget(coder_module):
+    """An exhausted tool budget gets one tool-free turn instead of a bare limit marker."""
+    agent = await _new_runtime_agent(coder_module)
+    agent.tools = {"list_directory": agent._tool_list_directory}
+    calls: list[tuple[str, str]] = []
+    prompts: list[str] = []
+
+    async def fake_call_tool(name: str, arg: str) -> str:
+        calls.append((name, arg))
+        return "a.py\nb.py"
+
+    responses = iter(
+        ['{"tool":"list_directory","argument":"."}'] * 3
+        + ['{"final":"def mean(xs):\\n    return sum(xs) / len(xs)"}']
+    )
+
+    async def fake_call_llm(messages, **_kwargs):
+        prompts.append(messages[-1]["content"])
+        return next(responses)
+
+    agent.call_tool = fake_call_tool
+    agent.call_llm = fake_call_llm
+
+    assert (
+        await agent._run_llm_tool_loop("ortalama") == "def mean(xs):\n    return sum(xs) / len(xs)"
+    )
+    assert calls == [("list_directory", ".")] * 3
+    assert "artık araç çağırma" in prompts[-1]
+
+
+@pytest.mark.asyncio
 async def test_run_task_qa_feedback_malformed_json_defaults_to_approved_raw_summary(coder_module):
     """Run task qa feedback malformed json defaults to approved raw summary."""
     agent = await _new_runtime_agent(coder_module)
@@ -597,3 +628,25 @@ async def test_run_task_qa_feedback_malformed_json_defaults_to_approved_raw_summ
     result = await agent.run_task("qa_feedback|{bad json")
 
     assert result == "[CODER:APPROVED] Reviewer onayı alındı: {bad json"
+
+
+@pytest.mark.asyncio
+async def test_llm_tool_loop_keeps_last_final_without_extra_turn(coder_module):
+    """A final given alongside the last tool calls is returned without a forced turn."""
+    agent = await _new_runtime_agent(coder_module)
+    agent.tools = {"read_file": agent._tool_read_file}
+    llm_calls = 0
+
+    async def fake_call_tool(_name: str, _arg: str) -> str:
+        return "content"
+
+    async def fake_call_llm(_messages, **_kwargs):
+        nonlocal llm_calls
+        llm_calls += 1
+        return '{"tool_calls":[{"name":"read_file","arg":"a.py"}],"final":"ara özet"}'
+
+    agent.call_tool = fake_call_tool
+    agent.call_llm = fake_call_llm
+
+    assert await agent._run_llm_tool_loop("oku") == "ara özet"
+    assert llm_calls == 3
