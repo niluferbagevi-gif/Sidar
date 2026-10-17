@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -109,7 +110,8 @@ class LLMClientSettings(BaseSettings):
 
 def load_llm_settings(*, env_path: Path, skip_default_dotenv: bool) -> LLMClientSettings:
     """Load LLM settings with the same dotenv precedence as the config facade."""
-    env_file = str(env_path) if env_path.exists() and not skip_default_dotenv else None
+    readable = env_path.exists() and os.access(env_path, os.R_OK)
+    env_file = str(env_path) if readable and not skip_default_dotenv else None
     if env_file is None:
         return LLMClientSettings()
 

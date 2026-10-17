@@ -12,6 +12,22 @@ from dotenv import load_dotenv
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
+def _is_readable_file(path: Path) -> bool:
+    """Return whether ``path`` is a regular file this process may read.
+
+    The Docker test sandbox mounts the host repo and runs as a different UID,
+    so the operator's mode-600 ``.env`` files exist there but are unreadable.
+    They must be skipped instead of crashing conftest import, which would also
+    keep host secrets out of the sandbox.
+    """
+    return path.is_file() and os.access(path, os.R_OK)
+
+
+def _load_readable_dotenv(path: Path, *, override: bool) -> None:
+    if _is_readable_file(path):
+        load_dotenv(dotenv_path=path, override=override)
+
+
 def load_pytest_dotenv_chain() -> None:
     """Load the runtime dotenv chain before pytest collection imports app modules."""
     base_env_path = PROJECT_ROOT / ".env"
@@ -21,17 +37,17 @@ def load_pytest_dotenv_chain() -> None:
     # config.py ile aynı temel önceliği koru: .env ve .env.advanced mevcut
     # process ortamını ezmez; profil/explicit dosyaları bilinçli override eder.
     # Testlerde secret overlay yalnız SIDAR_TEST_LOAD_REAL_KEYS opt-in ile yüklenir.
-    load_dotenv(dotenv_path=base_env_path, override=False)
-    load_dotenv(dotenv_path=advanced_env_path, override=False)
-    if profile_env_path.name != ".env." and profile_env_path.exists():
-        load_dotenv(dotenv_path=profile_env_path, override=True)
+    _load_readable_dotenv(base_env_path, override=False)
+    _load_readable_dotenv(advanced_env_path, override=False)
+    if profile_env_path.name != ".env.":
+        _load_readable_dotenv(profile_env_path, override=True)
 
     explicit_dotenv = os.getenv("DOTENV_FILE", "").strip()
     if explicit_dotenv:
         explicit_path = Path(explicit_dotenv).expanduser()
         if not explicit_path.is_absolute():
             explicit_path = PROJECT_ROOT / explicit_path
-        load_dotenv(dotenv_path=explicit_path, override=True)
+        _load_readable_dotenv(explicit_path, override=True)
 
     load_real_keys = os.getenv("SIDAR_TEST_LOAD_REAL_KEYS", "0").strip().lower() in {
         "1",
@@ -40,12 +56,12 @@ def load_pytest_dotenv_chain() -> None:
     }
     keys_file = os.getenv("SIDAR_KEYS_FILE", "").strip()
     if load_real_keys and keys_file:
-        load_dotenv(dotenv_path=Path(keys_file).expanduser(), override=True)
+        _load_readable_dotenv(Path(keys_file).expanduser(), override=True)
 
 
 def read_dotenv_assignment(dotenv_path: Path, key: str) -> str:
     """Return a parsed dotenv assignment value without mutating process env."""
-    if not dotenv_path.is_file():
+    if not _is_readable_file(dotenv_path):
         return ""
     for raw_line in dotenv_path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
@@ -72,7 +88,7 @@ def assert_test_dotenv_postgres_parity() -> None:
     """Fail early when .env.test would override runtime DB credentials."""
     base_env_path = PROJECT_ROOT / ".env"
     test_env_path = PROJECT_ROOT / ".env.test"
-    if not base_env_path.is_file() or not test_env_path.is_file():
+    if not _is_readable_file(base_env_path) or not _is_readable_file(test_env_path):
         return
 
     base_password = read_dotenv_assignment(base_env_path, "POSTGRES_PASSWORD")

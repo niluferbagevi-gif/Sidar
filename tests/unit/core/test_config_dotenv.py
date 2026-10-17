@@ -396,3 +396,46 @@ def test_drop_empty_path_overrides_removes_only_blank_cache_paths():
 
     assert removed == ["HF_HOME", "HF_HUB_CACHE"]
     assert environ == {"TRANSFORMERS_CACHE": "/data/hf", "UNRELATED": ""}
+
+
+@pytest.mark.parametrize("loader", ["load_dotenv_if_exists", "load_dotenv_into_effective_env"])
+def test_unreadable_dotenv_is_recorded_and_skipped(tmp_path, monkeypatch, loader):
+    """An existing dotenv the process may not read is skipped, not raised.
+
+    The Docker test sandbox mounts the host repo as another UID, so the
+    operator's mode-600 ``.env`` exists there but cannot be opened.
+    """
+    dotenv_file = tmp_path / ".env"
+    dotenv_file.write_text("SIDAR_UNREADABLE_SENTINEL=leak\n", encoding="utf-8")
+
+    def deny(*_args, **_kwargs):
+        raise PermissionError(13, "Permission denied", str(dotenv_file))
+
+    monkeypatch.setattr("dotenv.load_dotenv", deny)
+    monkeypatch.setattr(config_dotenv, "dotenv_values_for_reload", deny)
+    monkeypatch.delenv("SIDAR_UNREADABLE_SENTINEL", raising=False)
+    events: list[dict[str, object]] = []
+    missing: list[str] = []
+    common = {
+        "base_dir": tmp_path,
+        "load_events": events,
+        "missing_file_notices": missing,
+        "managed_keys": set(),
+        "original_env_values": {},
+        "key_sources": {},
+        "override": True,
+        "label": "base",
+    }
+    effective_env: dict[str, str] = {}
+
+    if loader == "load_dotenv_if_exists":
+        result = config_dotenv.load_dotenv_if_exists(".env", environ=os.environ, **common)
+    else:
+        result = config_dotenv.load_dotenv_into_effective_env(effective_env, ".env", **common)
+
+    assert result is None
+    assert events[-1]["reason"] == "unreadable"
+    assert events[-1]["loaded"] is False
+    assert missing == []
+    assert "SIDAR_UNREADABLE_SENTINEL" not in os.environ
+    assert effective_env == {}

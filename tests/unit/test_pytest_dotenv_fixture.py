@@ -60,3 +60,27 @@ def test_installer_smoke_does_not_import_real_secret_file(
     dotenv.load_pytest_dotenv_chain()
 
     assert "OPENAI_API_KEY" not in os.environ
+
+
+def test_pytest_dotenv_chain_skips_unreadable_dotenv_files(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Sandbox UIDs cannot read the host's mode-600 ``.env``; conftest must not crash."""
+    env_file = tmp_path / ".env"
+    env_file.write_text("SIDAR_UNREADABLE_SENTINEL=leak\n", encoding="utf-8")
+    real_access = os.access
+
+    monkeypatch.setattr(dotenv, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(
+        dotenv.os,
+        "access",
+        lambda path, mode: False if Path(path) == env_file else real_access(path, mode),
+    )
+    monkeypatch.delenv("SIDAR_UNREADABLE_SENTINEL", raising=False)
+    monkeypatch.delenv("SIDAR_ENV", raising=False)
+    monkeypatch.delenv("DOTENV_FILE", raising=False)
+
+    dotenv.load_pytest_dotenv_chain()
+
+    assert "SIDAR_UNREADABLE_SENTINEL" not in os.environ
+    assert dotenv.read_dotenv_assignment(env_file, "SIDAR_UNREADABLE_SENTINEL") == ""

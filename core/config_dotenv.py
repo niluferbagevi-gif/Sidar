@@ -228,7 +228,24 @@ def load_dotenv_if_exists(
         before_values = {key: environ.get(key) for key in parsed_values}
         from dotenv import load_dotenv as current_load_dotenv
 
-        current_load_dotenv(dotenv_path=dotenv_path, override=override)
+        try:
+            current_load_dotenv(dotenv_path=dotenv_path, override=override)
+        except PermissionError:
+            # The Docker test sandbox mounts the host repo as another UID, so the
+            # operator's mode-600 dotenv exists but cannot be opened. It is
+            # skipped (keeping host secrets out of the sandbox) instead of
+            # aborting config import.
+            record_dotenv_event(
+                load_events=load_events,
+                missing_file_notices=missing_file_notices,
+                label=label,
+                raw_path=raw_path,
+                resolved_path=dotenv_path,
+                loaded=False,
+                override=override,
+                reason="unreadable",
+            )
+            return None
         record_dotenv_event(
             load_events=load_events,
             missing_file_notices=missing_file_notices,
@@ -317,7 +334,20 @@ def load_dotenv_into_effective_env(
         )
         return None
 
-    parsed_values = dotenv_values_for_reload(dotenv_path)
+    try:
+        parsed_values = dotenv_values_for_reload(dotenv_path)
+    except PermissionError:
+        record_dotenv_event(
+            load_events=load_events,
+            missing_file_notices=missing_file_notices,
+            label=label,
+            raw_path=raw_path,
+            resolved_path=dotenv_path,
+            loaded=False,
+            override=override,
+            reason="unreadable",
+        )
+        return None
     before_values = {key: effective_env.get(key) for key in parsed_values}
     for key, value in parsed_values.items():
         if override or key not in effective_env:

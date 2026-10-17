@@ -503,6 +503,9 @@ def test_pytest_preflight_prefers_project_and_image_venvs(manager):
     assert "uv sync --frozen --all-extras" in command
     assert "exec pytest" not in command
     assert "-m pytest -q tests/unit/foo.py" in command
+    # The read-only /workspace mount must not abort pytest on log/cache writes.
+    assert "-p no:cacheprovider" in command
+    assert "-o log_file=/tmp/sidar-pytest.log" in command
 
 
 def test_run_pytest_and_collect_uses_preflight_and_test_image(manager, monkeypatch):
