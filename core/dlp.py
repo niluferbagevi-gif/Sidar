@@ -51,17 +51,24 @@ _RE_GITHUB_TOKEN = re.compile(r"\b(ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{8
 # AWS Access Key ID
 _RE_AWS_KEY = re.compile(r"\b(AKIA[0-9A-Z]{16})\b")
 
+# Değer bir fonksiyon/metot çağrısıysa (örn. ``access_token = create_access_token(``)
+# gizli değer değil koddur; kod örneklerini bozmamak için eşleşmeden dışlanır.
+_NOT_A_CALL = r"(?![A-Za-z_][\w.]*\()"
+
 # Generic API Key/Token kv çiftleri  (api_key=... , token=... vb.)
 _RE_KV_SECRET = re.compile(
     r"(?i)(?:api[_-]?key|api[_-]?secret|access[_-]?token|secret[_-]?key"
     r"|client[_-]?secret|auth[_-]?token|private[_-]?key)\s*[:=]\s*"
-    r"(['\"]?)([A-Za-z0-9\-._~+/!@#$%^&*]{10,})(['\"]?)",
+    + _NOT_A_CALL
+    + r"(['\"]?)([A-Za-z0-9\-._~+/!@#$%^&*]{10,})(['\"]?)",
     re.MULTILINE,
 )
 
 # Parola kv çiftleri  (password=... , parola=... vb.)
 _RE_PASSWORD = re.compile(
-    r"(?i)(?:password|parola|passwd|pwd|şifre)\s*[:=]\s*" r"(['\"]?)([^\s,;'\"]{6,})(['\"]?)",
+    r"(?i)(?:password|parola|passwd|pwd|şifre)\s*[:=]\s*"
+    + _NOT_A_CALL
+    + r"(['\"]?)([^\s,;'\"]{6,})(['\"]?)",
     re.MULTILINE,
 )
 

@@ -294,3 +294,37 @@ def test_get_dlp_engine_double_checked_lock_inner_branch_when_engine_prebuilt(mo
 
     assert engine is expected
     assert build_calls["count"] == 0
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "access_token = create_access_token(data={'sub': user.username})",
+        "access_token = jwt.encode(to_encode, SECRET, algorithm=ALGORITHM)",
+        "hashed_password = get_password_hash(form_data.password)",
+        "password=pwd_context.hash(plain_password)",
+    ],
+)
+def test_mask_keeps_function_call_assignments_in_code(code):
+    """Function or method calls assigned to secret-looking names are code, not secrets."""
+    masked, detections = DLPEngine().mask(code)
+
+    assert masked == code
+    assert detections == []
+
+
+@pytest.mark.parametrize(
+    ("text", "secret"),
+    [
+        ('access_token = "abcdefghij1234567890"', "abcdefghij1234567890"),
+        ("api_key=supersecretvalue123", "supersecretvalue123"),
+        ("access_token = abcdefghij1234567890", "abcdefghij1234567890"),
+        ("password = 'hunter2hunter2'", "hunter2hunter2"),
+    ],
+)
+def test_mask_still_masks_literal_secret_values(text, secret):
+    """Literal secret values next to the same names are still masked."""
+    masked, detections = DLPEngine().mask(text)
+
+    assert secret not in masked
+    assert detections
