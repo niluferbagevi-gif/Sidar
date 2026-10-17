@@ -145,7 +145,11 @@ services:
     env_file:
       - ${SIDAR_RUNTIME_ENV_FILE:-.env}
     entrypoint: []
-    command: ["uv", "run", "alembic", "upgrade", "head"]
+    # --no-sync: the image already holds the frozen environment. Without it
+    # `uv run` may decide the editable `sidar` install is stale and rebuild it
+    # in place, which fails as the non-root container user because /app and
+    # sidar.egg-info are root-owned ("Cannot update time stamp of directory").
+    command: ["uv", "run", "--no-sync", "alembic", "upgrade", "head"]
 
   # ── Docker Socket Proxy ─────────────────────────────────────────
   # sidar-ai/sidar-gpu içindeki CodeManager, AI-üretimi kodu izole "sibling"

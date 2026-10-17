@@ -717,6 +717,23 @@ def test_production_override_builds_the_hardened_production_dockerfile() -> None
     assert 'command: ["--host", "0.0.0.0", "--port", "7860"]' in override
 
 
+def test_migrate_container_never_resyncs_the_baked_environment() -> None:
+    """Every ``uv run`` against sidar-migrate must pass ``--no-sync``.
+
+    The image's ``/app`` and ``sidar.egg-info`` are root-owned while the
+    container runs as a non-root user, so a ``uv run`` that decides to rebuild
+    the editable ``sidar`` install dies with "Cannot update time stamp of
+    directory 'sidar.egg-info'" before Alembic ever starts.
+    """
+    compose = yaml.safe_load(Path("docker-compose.yml").read_text(encoding="utf-8"))
+    script = Path("scripts/ci/validate_production_compose.sh").read_text(encoding="utf-8")
+
+    assert compose["services"]["sidar-migrate"]["command"][:3] == ["uv", "run", "--no-sync"]
+    migrate_invocations = re.findall(r"sidar-migrate (uv run[^\n]*)", script)
+    assert migrate_invocations
+    assert all(call.startswith("uv run --no-sync ") for call in migrate_invocations)
+
+
 def _extract_error_trap_harness(script: str) -> str:
     """Slice out this gate's real diagnostics_dir/on_error/cleanup wiring.
 
