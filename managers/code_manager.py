@@ -369,6 +369,12 @@ class CodeManager:
         """Require human approval before overwriting an existing file."""
         target = Path(path)
         if await asyncio.to_thread(target.exists):
+            # Aynı içeriği yeniden yazmak dosyayı değiştirmez; gereksiz onay isteği
+            # (ve kaçırılırsa zaman aşımı) üretmemek için yazmayı atla.
+            if self.security_adapter.can_write(path) and await asyncio.to_thread(
+                self._file_content_matches, target, content
+            ):
+                return True, f"Dosya zaten aynı içeriğe sahip, yazma atlandı: {path}"
             approved = await get_hitl_gate().request_approval(
                 action="file_overwrite",
                 description=f"Dosyanın üzerine yazılacak: {target}",
@@ -378,6 +384,14 @@ class CodeManager:
             if not approved:
                 return False, "Dosya üzerine yazma işlemi insan onayı olmadan reddedildi."
         return file_io_security.write_file(self, path, content, validate=validate)
+
+    @staticmethod
+    def _file_content_matches(target: Path, content: str) -> bool:
+        """Return True when ``target`` is a readable file whose text equals ``content``."""
+        try:
+            return target.is_file() and target.read_text(encoding="utf-8") == content
+        except (OSError, UnicodeDecodeError):
+            return False
 
     @staticmethod
     def _strip_markdown_code_fences(content: str) -> str:
