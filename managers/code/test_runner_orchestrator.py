@@ -12,12 +12,19 @@ from typing import Any, cast
 from core.utils.trusted_subprocess import run_trusted_command
 from managers.code.docker import sanitize_docker_image, to_int
 
+# The sandbox runs as the image's non-root user against the host repo mounted at
+# /workspace, which it cannot write. pyproject's `log_file = "tests/pytest.log"`
+# and the cache provider would otherwise abort pytest with an INTERNALERROR
+# before any test runs, so both are redirected out of the mount.
+SANDBOX_PYTEST_WRITE_OVERRIDES = "-p no:cacheprovider -o log_file=/tmp/sidar-pytest.log"
+
 
 def build_pytest_preflight_command(manager: Any, command: str) -> str:
     """Build sandbox preflight that finds pytest from image/project venv or uv."""
     pytest_args = " ".join(shlex.quote(arg) for arg in manager._extract_pytest_args(command))
     if not pytest_args:
         pytest_args = "-q"
+    pytest_args = f"{pytest_args} {SANDBOX_PYTEST_WRITE_OVERRIDES}"
     return "\n".join(
         [
             "set -eu",

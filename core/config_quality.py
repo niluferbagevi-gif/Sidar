@@ -73,7 +73,8 @@ class QualityGateSettings(BaseSettings):
 
 def load_quality_gate_settings(*, env_path: Path, skip_default_dotenv: bool) -> QualityGateSettings:
     """Load quality-gate settings with the same dotenv precedence as the config facade."""
-    env_file = str(env_path) if env_path.exists() and not skip_default_dotenv else None
+    readable = env_path.exists() and os.access(env_path, os.R_OK)
+    env_file = str(env_path) if readable and not skip_default_dotenv else None
     if env_file is None:
         return QualityGateSettings()
 

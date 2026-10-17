@@ -3199,3 +3199,22 @@ def test_config_domain_loaders_back_extracted_backend_settings() -> None:
     )
     assert config.Config.RAG_VECTOR_BACKEND == config._RAG_STORE_SETTINGS.rag_vector_backend
     assert config.Config.DOCKER_TEST_IMAGE == config._SANDBOX_SETTINGS.docker_test_image
+
+
+@pytest.mark.parametrize(
+    ("module", "loader", "key"),
+    [
+        (config_llm, "load_llm_settings", "OLLAMA_TIMEOUT"),
+        (config_quality, "load_quality_gate_settings", "HITL_TIMEOUT_SECONDS"),
+    ],
+)
+def test_scoped_settings_ignore_unreadable_dotenv(tmp_path, monkeypatch, module, loader, key):
+    """A dotenv the sandbox UID cannot read falls back to defaults instead of raising."""
+    monkeypatch.delenv(key, raising=False)
+    env_path = tmp_path / ".env"
+    env_path.write_text(f"{key}=321\n", encoding="utf-8")
+    monkeypatch.setattr(module.os, "access", lambda _path, _mode: False)
+
+    settings = getattr(module, loader)(env_path=env_path, skip_default_dotenv=False)
+
+    assert getattr(settings, key) != 321
