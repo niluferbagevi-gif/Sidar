@@ -447,6 +447,53 @@ def test_parse_llm_tool_plan_handles_fenced_json_lists_malformed_and_scalars(cod
     assert CoderAgent._parse_llm_tool_plan("   ") == {"final": ""}
 
 
+def test_parse_llm_tool_plan_maps_react_single_tool_shape(coder_module):
+    """Sidar's ``{"thought","tool","argument"}`` shape becomes a runnable tool plan."""
+    CoderAgent = coder_module.CoderAgent
+
+    assert CoderAgent._parse_llm_tool_plan(
+        '{"thought":"oku","tool":"read_file","argument":"a.py"}'
+    ) == {"tool_calls": [{"name": "read_file", "arg": "a.py"}], "final": ""}
+    assert CoderAgent._parse_llm_tool_plan(
+        '{"thought":"bitti","tool":"final_answer","argument":"özet"}'
+    ) == {"final": "özet"}
+    # The documented contract and non-string tool values stay untouched.
+    contract = {"tool_calls": [{"name": "read_file", "arg": "b.py"}], "tool": "x", "final": ""}
+    assert CoderAgent._normalize_single_tool_plan(contract) is contract
+    assert CoderAgent._parse_llm_tool_plan('{"tool": 3, "final": "ok"}') == {
+        "tool": 3,
+        "final": "ok",
+    }
+
+
+@pytest.mark.asyncio
+async def test_llm_tool_loop_runs_react_single_tool_calls(coder_module):
+    """A local model's ReAct-style tool call runs instead of leaking as raw JSON."""
+    agent = coder_module.CoderAgent.__new__(coder_module.CoderAgent)
+    agent.tools = {"read_file": object()}
+    calls = []
+
+    async def fake_call_tool(name, arg):
+        calls.append((name, arg))
+        return "def mean(xs): ..."
+
+    responses = iter(
+        [
+            '{"thought":"dosyayı oku","tool":"read_file","argument":"stats.py"}',
+            '{"thought":"tamam","tool":"final_answer","argument":"mean() yazıldı"}',
+        ]
+    )
+
+    async def fake_call_llm(_messages, **_kwargs):
+        return next(responses)
+
+    agent.call_tool = fake_call_tool
+    agent.call_llm = fake_call_llm
+
+    assert await agent._run_llm_tool_loop("ortalama") == "mean() yazıldı"
+    assert calls == [("read_file", "stats.py")]
+
+
 @pytest.mark.asyncio
 async def test_llm_tool_loop_handles_unknown_tool_dict_call_then_final(coder_module):
     """Llm tool loop handles unknown tool dict call then final."""
