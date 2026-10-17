@@ -1320,26 +1320,62 @@ def test_review_test_candidate_handles_normalize_returning_non_dict(reviewer):
     assert result["approved"] is False
 
 
-def test_regression_skips_global_gate_for_scratch_only_changes(reviewer, tmp_path):
-    """A chat request's temp/ file must not trigger the repo-wide gate.
-
-    `bash run_tests.sh` cannot run inside the sandbox, so the global command
-    turned every reviewed chat snippet into a REJECT.
-    """
-    (tmp_path / "temp").mkdir()
-    (tmp_path / "temp" / "calculate_average.py").write_text(
-        "def calculate_average(xs):\n    return sum(xs) / len(xs)\n", encoding="utf-8"
-    )
-    (tmp_path / "agent").mkdir()
-    (tmp_path / "agent" / "real.py").write_text("X = 1\n", encoding="utf-8")
-    absolute = tmp_path / "temp" / "calculate_average.py"
-
-    assert reviewer._build_regression_commands(f"Dosya kaydedildi: {absolute}") == []
-    assert reviewer._build_regression_commands("temp/calculate_average.py agent/real.py") == [
-        "python -m pytest"
+def test_regression_global_gate_follows_include_global(reviewer):
+    """The repo-wide command is only added when the caller asks for it."""
+    assert reviewer._build_regression_commands("tests/unit/test_a.py") == [
+        "pytest -q tests/unit/test_a.py",
+        "python -m pytest",
     ]
-    # No resolvable file keeps the conservative global regression.
-    assert reviewer._build_regression_commands("sadece metin") == ["python -m pytest"]
+    assert reviewer._build_regression_commands("tests/unit/test_a.py", include_global=False) == [
+        "pytest -q tests/unit/test_a.py"
+    ]
+    assert reviewer._build_regression_commands("metin", include_global=False) == []
+
+
+@pytest.mark.parametrize(
+    ("porcelain", "expected"),
+    [
+        ("", False),
+        ("?? todos.json\n", False),
+        ("?? temp/calculate_average.py\n M temp/x.py\n", False),
+        (" M core/config.py\n", True),
+        ("?? agent/new_module.py\n", True),
+        ('R  old.py -> "temp/new.py"\n', False),
+        ("R  temp/old.py -> agent/new.py\n", True),
+    ],
+)
+def test_repo_changes_outside_scratch_reads_git_status(reviewer, monkeypatch, porcelain, expected):
+    """Chat runs only touch temp/; git, not the coder summary, decides that.
+
+    The live coder summary named repo files it had only read, so the global
+    `bash run_tests.sh` (which cannot run in the sandbox) still ran and rejected.
+    """
+    module = sys.modules[ReviewerAgent.__module__]
+
+    def fake_run(cmd, **kwargs):
+        assert cmd[:2] == ["/usr/bin/git", "status"]
+        assert kwargs["cwd"] == str(reviewer.config.BASE_DIR)
+        return SimpleNamespace(stdout=porcelain)
+
+    monkeypatch.setattr(module.shutil, "which", lambda _name: "/usr/bin/git")
+    monkeypatch.setattr(module, "run_trusted_command", fake_run)
+
+    assert reviewer._repo_has_changes_outside_scratch() is expected
+
+
+def test_repo_changes_outside_scratch_fails_safe_without_git(reviewer, monkeypatch):
+    """A git failure keeps the conservative global regression."""
+    module = sys.modules[ReviewerAgent.__module__]
+
+    def boom(*_args, **_kwargs):
+        raise module.subprocess.CalledProcessError(128, "git")
+
+    monkeypatch.setattr(module.shutil, "which", lambda _name: "/usr/bin/git")
+    monkeypatch.setattr(module, "run_trusted_command", boom)
+    assert reviewer._repo_has_changes_outside_scratch() is True
+
+    monkeypatch.setattr(module.shutil, "which", lambda _name: None)
+    assert reviewer._repo_has_changes_outside_scratch() is True
 
 
 def test_resolve_reviewable_files_handles_absolute_missing_and_outside_paths(reviewer, tmp_path):

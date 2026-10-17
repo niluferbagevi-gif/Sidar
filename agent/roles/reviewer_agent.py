@@ -7,6 +7,8 @@ import contextlib
 import json
 import logging
 import re
+import shutil
+import subprocess
 import uuid
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -26,6 +28,7 @@ from agent.roles.reviewer.judge import (
 from config import Config
 from core.rag import DocumentStore
 from core.test_fixture_policy import SHARED_TEST_FIXTURE_GUIDANCE
+from core.utils.trusted_subprocess import run_trusted_command
 from managers.browser_manager import BrowserManager
 from managers.code_manager import CodeManager
 from managers.github_manager import GitHubManager
@@ -378,20 +381,53 @@ class ReviewerAgent(BaseAgent):
             cleaned.append(val)
         return list(dict.fromkeys(cleaned))
 
-    def _build_regression_commands(self, code_context: str) -> list[str]:
-        """Değişen dosyalara göre hedefli test + global regresyon komutlarını üretir."""
+    def _build_regression_commands(
+        self, code_context: str, *, include_global: bool = True
+    ) -> list[str]:
+        """Değişen dosyalara göre hedefli test + global regresyon komutlarını üretir.
+
+        ``include_global=False`` drops the repo-wide ``REVIEWER_TEST_COMMAND``; the
+        caller passes it when git reports no change outside the scratch area.
+        """
         commands: list[str] = []
         changed = self._extract_changed_paths(code_context)
         test_targets = [p for p in changed if p.startswith("tests/") and p.endswith(".py")]
         if test_targets:
             commands.append("pytest -q " + " ".join(test_targets[:8]))
-        files = self._resolve_reviewable_files(code_context)
-        # Code written only to the scratch area (e.g. a chat request's temp/ file)
-        # cannot affect the repository, and the global gate (often `bash run_tests.sh`)
-        # cannot run inside the sandbox anyway, so it would only produce a REJECT.
-        if not (files and all(path.startswith(_SCRATCH_DIR_PREFIX) for path in files)):
+        if include_global:
             commands.append(getattr(self.config, "REVIEWER_TEST_COMMAND", "uv run pytest"))
         return list(dict.fromkeys(c.strip() for c in commands if (c or "").strip()))
+
+    def _repo_has_changes_outside_scratch(self) -> bool:
+        """Report whether the working tree changed anywhere but ``temp/``.
+
+        The coder's summary also names files it only read, so git is the source of
+        truth. Untracked non-Python files (e.g. runtime ``todos.json``) are ignored;
+        any git failure counts as a change so the global regression still runs.
+        """
+        git = shutil.which("git")
+        if git is None:
+            return True
+        try:
+            result = run_trusted_command(
+                [git, "status", "--porcelain", "--untracked-files=all"],
+                cwd=str(self.config.BASE_DIR),
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=True,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return True
+        for line in result.stdout.splitlines():
+            status, path = line[:2], line[3:].strip().strip('"')
+            if " -> " in path:
+                path = path.split(" -> ", 1)[1].strip('"')
+            if not path or path.startswith(_SCRATCH_DIR_PREFIX):
+                continue
+            if status != "??" or path.endswith(".py"):
+                return True
+        return False
 
     def _resolve_reviewable_files(self, code_context: str) -> list[str]:
         """Return existing repo files named in the context, relative to ``BASE_DIR``.
@@ -1217,7 +1253,10 @@ class ReviewerAgent(BaseAgent):
 
             await self.events.publish("reviewer", "Regresyon test planı hazırlanıyor...")
             regression_chunks = []
-            for command in self._build_regression_commands(context):
+            # Code written only to temp/ (chat requests) cannot affect the repo, and
+            # the global gate (often `bash run_tests.sh`) cannot run in the sandbox.
+            include_global = await asyncio.to_thread(self._repo_has_changes_outside_scratch)
+            for command in self._build_regression_commands(context, include_global=include_global):
                 await self.events.publish(
                     "reviewer", f"Sandbox içinde test çalıştırılıyor: {command}"
                 )
@@ -1274,7 +1313,9 @@ class ReviewerAgent(BaseAgent):
                 combined_impact,
             )
             fix_recommendations.extend(self._build_browser_fix_recommendations(browser_summary))
-            regression_commands = self._build_regression_commands(context)
+            regression_commands = self._build_regression_commands(
+                context, include_global=include_global
+            )
             remediation_loop = self._build_remediation_loop(
                 semantic_report,
                 graph_summary,
