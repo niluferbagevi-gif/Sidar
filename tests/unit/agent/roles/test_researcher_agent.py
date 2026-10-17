@@ -566,6 +566,86 @@ def test_synthesize_answer_returns_empty_on_llm_error(researcher_module, fake_cf
     assert asyncio.run(agent._synthesize_answer([], "soru")) == ""
 
 
+_TAVILY_RESULT = (
+    "[Web Arama (Tavily): FastAPI JWT]\n\n"
+    "1. **TestDriven.io**\n   Body mentions https://inline.example/ignored\n"
+    "   → https://testdriven.io/blog/fastapi-jwt-auth\n\n"
+    "2. **Neon Guides**\n   → https://neon.tech/guides/fastapi-jwt\n\n"
+    "3. **Duplicate**\n   → https://testdriven.io/blog/fastapi-jwt-auth\n"
+)
+
+
+def test_run_task_appends_sources_when_answer_cites_only_titles(researcher_module, fake_cfg):
+    """Answers that name sources without links get the search result URLs appended."""
+    agent = _build_agent(researcher_module, fake_cfg)
+    payloads = iter(
+        [
+            '{"tool":"web_search","argument":"FastAPI JWT"}',
+            '{"tool":"final_answer","argument":"Özet. Kaynak: TestDriven.io"}',
+        ]
+    )
+
+    async def fake_call_llm(**_kwargs):
+        return next(payloads)
+
+    async def fake_call_tool(_name, _arg):
+        return _TAVILY_RESULT
+
+    agent.call_llm = fake_call_llm
+    agent.call_tool = fake_call_tool
+
+    result = asyncio.run(agent.run_task("FastAPI JWT nasıl?"))
+
+    assert result == (
+        "Özet. Kaynak: TestDriven.io\n\nKaynaklar:\n"
+        "- https://testdriven.io/blog/fastapi-jwt-auth\n"
+        "- https://neon.tech/guides/fastapi-jwt"
+    )
+
+
+def test_run_task_appends_sources_to_synthesized_answer(researcher_module, fake_cfg):
+    """The plain-text synthesis path also gets the collected source links."""
+    agent = _build_agent(researcher_module, fake_cfg)
+    calls = []
+
+    async def fake_call_llm(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            return '{"tool":"fetch_url","argument":"https://docs.example/jwt"}'
+        if len(calls) == 2:
+            return "bozuk json"
+        return "Sentez yanıtı"
+
+    async def fake_call_tool(_name, arg):
+        return f"[URL: {arg}]\n\nsayfa içeriği"
+
+    agent.call_llm = fake_call_llm
+    agent.call_tool = fake_call_tool
+
+    result = asyncio.run(agent.run_task("FastAPI JWT nasıl?"))
+
+    assert result == "Sentez yanıtı\n\nKaynaklar:\n- https://docs.example/jwt"
+
+
+def test_with_sources_keeps_answer_that_already_links_a_source(researcher_module):
+    """No list is added when the answer cites a URL itself or no web source exists."""
+    agent_cls = researcher_module.ResearcherAgent
+    urls = ["https://a.example", "https://b.example"]
+
+    assert agent_cls._with_sources("bkz. https://b.example", urls) == "bkz. https://b.example"
+    assert agent_cls._with_sources("yanıt", []) == "yanıt"
+
+
+def test_with_sources_caps_the_list(researcher_module):
+    """At most _MAX_SOURCES links are appended."""
+    agent_cls = researcher_module.ResearcherAgent
+    urls = [f"https://s{i}.example" for i in range(8)]
+
+    result = agent_cls._with_sources("yanıt", urls)
+
+    assert result.count("\n- ") == agent_cls._MAX_SOURCES
+
+
 _COLLAB_PROMPT = (
     "[COLLABORATION WORKSPACE]\n"
     "room_id=workspace:sidar\n"
