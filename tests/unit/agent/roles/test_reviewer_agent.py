@@ -1318,3 +1318,64 @@ def test_review_test_candidate_handles_normalize_returning_non_dict(reviewer):
 
     # verdict = {} → approved False, reason "" → invalid_rejection True path
     assert result["approved"] is False
+
+
+def test_regression_skips_global_gate_for_scratch_only_changes(reviewer, tmp_path):
+    """A chat request's temp/ file must not trigger the repo-wide gate.
+
+    `bash run_tests.sh` cannot run inside the sandbox, so the global command
+    turned every reviewed chat snippet into a REJECT.
+    """
+    (tmp_path / "temp").mkdir()
+    (tmp_path / "temp" / "calculate_average.py").write_text(
+        "def calculate_average(xs):\n    return sum(xs) / len(xs)\n", encoding="utf-8"
+    )
+    (tmp_path / "agent").mkdir()
+    (tmp_path / "agent" / "real.py").write_text("X = 1\n", encoding="utf-8")
+    absolute = tmp_path / "temp" / "calculate_average.py"
+
+    assert reviewer._build_regression_commands(f"Dosya kaydedildi: {absolute}") == []
+    assert reviewer._build_regression_commands("temp/calculate_average.py agent/real.py") == [
+        "python -m pytest"
+    ]
+    # No resolvable file keeps the conservative global regression.
+    assert reviewer._build_regression_commands("sadece metin") == ["python -m pytest"]
+
+
+def test_resolve_reviewable_files_handles_absolute_missing_and_outside_paths(reviewer, tmp_path):
+    """Only existing files inside BASE_DIR are resolved, relative and de-duplicated."""
+    (tmp_path / "temp").mkdir()
+    target = tmp_path / "temp" / "mod.py"
+    target.write_text("def f():\n    return 1\n", encoding="utf-8")
+    outside = tmp_path.parent / "outside_review.py"
+
+    context = f"{target} temp/mod.py temp/missing.py {outside} ../escape.py"
+
+    assert reviewer._resolve_reviewable_files(context) == ["temp/mod.py"]
+
+
+def test_dynamic_test_prompt_includes_reviewed_file_and_import_guidance(reviewer, tmp_path):
+    """The generator sees the file under review so its test can import it."""
+    (tmp_path / "temp").mkdir()
+    (tmp_path / "temp" / "calculate_average.py").write_text(
+        "def calculate_average(xs):\n    return sum(xs) / len(xs)\n", encoding="utf-8"
+    )
+    (tmp_path / "temp" / "binary.py").write_bytes(b"\xff\xfe\x00bad")
+    prompts: list[str] = []
+
+    async def fake_call_llm(messages, **_kwargs):
+        prompts.append(messages[0]["content"])
+        return "def test_avg():\n    from calculate_average import calculate_average\n"
+
+    reviewer.call_llm = fake_call_llm
+    asyncio.run(
+        reviewer._build_dynamic_test_content(
+            f"{tmp_path / 'temp' / 'calculate_average.py'} temp/binary.py"
+        )
+    )
+
+    assert "[DOSYA] temp/calculate_average.py" in prompts[0]
+    assert "def calculate_average(xs):" in prompts[0]
+    assert "from <dosya_adı> import" in prompts[0]
+    assert "tanımsız bir isim kullanma" in prompts[0]
+    assert "[DOSYA] temp/binary.py" not in prompts[0]
