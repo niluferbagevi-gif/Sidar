@@ -20,6 +20,9 @@ COLLAB_WRITE_INTENT_RE = re.compile(
     r")\b"
 )
 COLLAB_WRITE_ROLES = {"admin", "maintainer", "developer", "editor"}
+# How long an empty room keeps its history. Approving a HITL request means leaving
+# the chat page, and the reply often finishes before the operator returns.
+COLLAB_IDLE_ROOM_TTL_SECONDS = 1800.0
 
 
 class CollaborationParticipant:
@@ -344,9 +347,10 @@ async def leave_collaboration_room(
     """WebSocket'i bulunduğu odadan çıkarır.
 
     Odada katılımcı kalırsa presence güncellemesi yayınlanır. Oda boşaldığında
-    çalışan bir ajan görevi varsa oda görev bitene kadar korunur; böylece yanıt
-    oda geçmişine yazılır ve aynı odaya geri dönen kullanıcı ``room_state`` ile
-    yanıtı görür. Görev yoksa (veya bittiğinde oda hâlâ boşsa) oda silinir.
+    çalışan ajan görevi iptal edilmez; görev bittikten sonra (görev yoksa hemen)
+    oda ``COLLAB_IDLE_ROOM_TTL_SECONDS`` boyunca korunur. Böylece yanıt oda
+    geçmişine yazılır ve odaya geri dönen kullanıcı ``room_state`` ile yanıtı
+    görür. Süre dolduğunda oda hâlâ boşsa silinir; geçmişi olmayan oda hemen silinir.
     """
     room_id = str(getattr(websocket, "_sidar_room_id", "") or "")
     if not room_id:
@@ -369,14 +373,25 @@ async def leave_collaboration_room(
     if room.active_task and not room.active_task.done():
         # Switching to another page (e.g. to approve a HITL request) closes the
         # chat socket; cancelling here silently discarded the in-flight reply.
-        room.active_task.add_done_callback(lambda _task: _drop_room_if_idle(rooms, room))
+        room.active_task.add_done_callback(lambda _task: _schedule_idle_room_drop(rooms, room))
+        return
+    if room.messages:
+        _schedule_idle_room_drop(rooms, room)
         return
     rooms.pop(room_id, None)
 
 
+def _schedule_idle_room_drop(rooms: dict[str, CollaborationRoom], room: CollaborationRoom) -> None:
+    """Drop ``room`` after the idle TTL unless someone rejoins it meanwhile."""
+    asyncio.get_running_loop().call_later(
+        COLLAB_IDLE_ROOM_TTL_SECONDS, _drop_room_if_idle, rooms, room
+    )
+
+
 def _drop_room_if_idle(rooms: dict[str, CollaborationRoom], room: CollaborationRoom) -> None:
-    """Remove ``room`` once its task has finished, unless someone rejoined it."""
-    if not room.participants and rooms.get(room.room_id) is room:
+    """Remove ``room`` if it is still empty, idle and the registered instance."""
+    task_running = room.active_task is not None and not room.active_task.done()
+    if not room.participants and not task_running and rooms.get(room.room_id) is room:
         rooms.pop(room.room_id, None)
 
 

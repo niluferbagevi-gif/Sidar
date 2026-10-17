@@ -449,12 +449,16 @@ def test_collaboration_participant_legacy_joined_at_mode(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_leave_collaboration_room_keeps_room_until_active_task_finishes():
-    """The last participant leaving must not cancel an in-flight room reply.
+async def test_leave_collaboration_room_keeps_room_until_active_task_finishes(monkeypatch):
+    """The last participant leaving must not cancel or discard an in-flight reply.
 
     Switching to the Swarm page to approve a HITL request closes the chat socket;
-    the reply has to land in the room history so rejoining shows it.
+    the reply often finishes before the operator returns, so the room (and the
+    reply in its history) must outlive the task by the idle TTL.
     """
+    from web.routes import collaboration as collaboration_routes
+
+    monkeypatch.setattr(collaboration_routes, "COLLAB_IDLE_ROOM_TTL_SECONDS", 0.01)
     websocket = _DummyWebSocket()
     websocket._sidar_room_id = "team:cleanup"
     release = asyncio.Event()
@@ -471,27 +475,52 @@ async def test_leave_collaboration_room_keeps_room_until_active_task_finishes():
     await task
     await asyncio.sleep(0)
 
+    # The reply finished with nobody connected: the room must still be there.
+    assert web_server._collaboration_rooms["team:cleanup"] is room
+
+    await asyncio.sleep(0.05)
+
     assert "team:cleanup" not in web_server._collaboration_rooms
 
 
 @pytest.mark.asyncio
-async def test_leave_collaboration_room_keeps_rejoined_room_after_task():
-    """A room someone rejoined while the reply ran stays after the task ends."""
+async def test_leave_collaboration_room_keeps_rejoined_room_after_ttl(monkeypatch):
+    """A room someone rejoined before the idle TTL expires is not dropped."""
+    from web.routes import collaboration as collaboration_routes
+
+    monkeypatch.setattr(collaboration_routes, "COLLAB_IDLE_ROOM_TTL_SECONDS", 0.01)
     websocket = _DummyWebSocket()
     websocket._sidar_room_id = "team:rejoin"
-    release = asyncio.Event()
-    task = asyncio.create_task(release.wait())
-    room = web_server._CollaborationRoom(room_id="team:rejoin", participants={}, active_task=task)
+    room = web_server._CollaborationRoom(room_id="team:rejoin", participants={})
+    room.messages.append({"role": "assistant", "content": "cevap"})
     web_server._collaboration_rooms["team:rejoin"] = room
 
     await web_server._leave_collaboration_room(websocket)
+    assert web_server._collaboration_rooms["team:rejoin"] is room
     room.participants[1] = object()
-    release.set()
-    await task
-    await asyncio.sleep(0)
+    await asyncio.sleep(0.05)
 
     assert web_server._collaboration_rooms["team:rejoin"] is room
     web_server._collaboration_rooms.pop("team:rejoin", None)
+
+
+@pytest.mark.asyncio
+async def test_drop_idle_room_skips_room_with_running_task():
+    """An expired idle timer must not drop a room whose new task is still running."""
+    from web.routes import collaboration as collaboration_routes
+
+    release = asyncio.Event()
+    task = asyncio.create_task(release.wait())
+    room = web_server._CollaborationRoom(room_id="team:busy", participants={}, active_task=task)
+    rooms = {"team:busy": room}
+
+    collaboration_routes._drop_room_if_idle(rooms, room)
+    assert rooms["team:busy"] is room
+
+    release.set()
+    await task
+    collaboration_routes._drop_room_if_idle(rooms, room)
+    assert "team:busy" not in rooms
 
 
 def test_reap_child_processes_nonblocking_reaps_until_zero(monkeypatch):
