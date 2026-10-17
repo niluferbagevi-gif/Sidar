@@ -449,32 +449,49 @@ def test_collaboration_participant_legacy_joined_at_mode(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_leave_collaboration_room_cancels_active_task(monkeypatch):
-    """Leave collaboration room cancels active task."""
+async def test_leave_collaboration_room_keeps_room_until_active_task_finishes():
+    """The last participant leaving must not cancel an in-flight room reply.
+
+    Switching to the Swarm page to approve a HITL request closes the chat socket;
+    the reply has to land in the room history so rejoining shows it.
+    """
     websocket = _DummyWebSocket()
     websocket._sidar_room_id = "team:cleanup"
-    cancelled = {"value": False}
-
-    class _FakeTask:
-        def done(self):
-            return False
-
-        def cancel(self):
-            cancelled["value"] = True
-
-        def __await__(self):
-            return iter(())
-
-    web_server._collaboration_rooms["team:cleanup"] = web_server._CollaborationRoom(
-        room_id="team:cleanup",
-        participants={},
-        active_task=_FakeTask(),
-    )
+    release = asyncio.Event()
+    task = asyncio.create_task(release.wait())
+    room = web_server._CollaborationRoom(room_id="team:cleanup", participants={}, active_task=task)
+    web_server._collaboration_rooms["team:cleanup"] = room
 
     await web_server._leave_collaboration_room(websocket)
 
-    assert cancelled["value"] is True
+    assert not task.cancelled()
+    assert web_server._collaboration_rooms["team:cleanup"] is room
+
+    release.set()
+    await task
+    await asyncio.sleep(0)
+
     assert "team:cleanup" not in web_server._collaboration_rooms
+
+
+@pytest.mark.asyncio
+async def test_leave_collaboration_room_keeps_rejoined_room_after_task():
+    """A room someone rejoined while the reply ran stays after the task ends."""
+    websocket = _DummyWebSocket()
+    websocket._sidar_room_id = "team:rejoin"
+    release = asyncio.Event()
+    task = asyncio.create_task(release.wait())
+    room = web_server._CollaborationRoom(room_id="team:rejoin", participants={}, active_task=task)
+    web_server._collaboration_rooms["team:rejoin"] = room
+
+    await web_server._leave_collaboration_room(websocket)
+    room.participants[1] = object()
+    release.set()
+    await task
+    await asyncio.sleep(0)
+
+    assert web_server._collaboration_rooms["team:rejoin"] is room
+    web_server._collaboration_rooms.pop("team:rejoin", None)
 
 
 def test_reap_child_processes_nonblocking_reaps_until_zero(monkeypatch):

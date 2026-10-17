@@ -325,6 +325,13 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
                 request_id=request_id,
             )
             deps.append_room_message(room, assistant_message)
+            if not getattr(room, "participants", None):
+                deps.logger.warning(
+                    "Ortak çalışma yanıtı hazır ama odada bağlı kimse yok; yanıt oda "
+                    "geçmişine yazıldı, odaya dönüldüğünde görünecek: room=%s request=%s",
+                    room.room_id,
+                    request_id,
+                )
             await deps.broadcast_room_payload(
                 room,
                 {
@@ -335,6 +342,9 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
                 },
             )
         except asyncio.CancelledError:
+            deps.logger.warning(
+                "Ortak çalışma yanıtı iptal edildi: room=%s request=%s", room.room_id, request_id
+            )
             with contextlib.suppress(Exception):
                 await deps.broadcast_room_payload(
                     room,
@@ -556,10 +566,11 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
                         )
                         continue
                     await _cancel_task_and_wait(room.active_task)
-                    room.active_task = lifecycle.track_task(
-                        asyncio.create_task(
-                            generate_room_response(room, actor_name=display_name, msg=command)
-                        )
+                    # The room owns this task, not the sending socket: a participant
+                    # navigating away (e.g. to approve a HITL request) must not
+                    # cancel a reply the rest of the room is waiting for.
+                    room.active_task = asyncio.create_task(
+                        generate_room_response(room, actor_name=display_name, msg=command)
                     )
                     await asyncio.sleep(0)
                 continue
@@ -570,9 +581,6 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
     except WebSocketDisconnect:
         deps.logger.info("İstemci WebSocket bağlantısını kesti.")
         await lifecycle.close(reason="disconnect")
-        if joined_room_id:
-            room = deps.collaboration_rooms.get(joined_room_id)
-            await _cancel_task_and_wait(getattr(room, "active_task", None))
         await deps.leave_collaboration_room(websocket)
     except Exception as _ws_exc:
         # anyio.ClosedResourceError: uvicorn/anyio üst katmanının bağlantı
@@ -580,9 +588,6 @@ async def websocket_chat(websocket: WebSocket, deps: Any) -> Any:
         if deps.anyio_closed is not None and isinstance(_ws_exc, deps.anyio_closed):
             deps.logger.info("İstemci WebSocket bağlantısını kesti (anyio ClosedResourceError).")
             await lifecycle.close(reason="closed_resource")
-            if joined_room_id:
-                room = deps.collaboration_rooms.get(joined_room_id)
-                await _cancel_task_and_wait(getattr(room, "active_task", None))
             await deps.leave_collaboration_room(websocket)
         else:
             deps.logger.warning("WebSocket beklenmedik hata: %s", _ws_exc)
