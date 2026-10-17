@@ -171,7 +171,8 @@ class CoderAgent(BaseAgent):
             '{"tool_calls":[{"name":"read_file","arg":"path"}],"final":""}; '
             'iş bittiyse {"final":"özet ve yapılanlar"}. '
             "Sadece kayıtlı araç adlarını kullan; dosya değişikliklerinde önce dosyayı oku, sonra "
-            "patch_file/write_file kullan."
+            "patch_file/write_file kullan. Yeni kod isteğinde projeyi taramadan kodu "
+            "write_file ile yaz veya doğrudan final içinde ver."
         )
 
     @staticmethod
@@ -264,7 +265,25 @@ class CoderAgent(BaseAgent):
                 }
             )
 
-        return last_final or "[CODER:TOOL_LOOP_LIMIT] Araç döngüsü sınırına ulaşıldı."
+        if last_final:
+            return last_final
+        # Small local models keep exploring (list_directory/glob_search) until the
+        # step budget is gone; the reviewer then only sees the limit marker. One
+        # tool-free turn turns what was gathered into an answer.
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    "Araç bütçesi doldu; artık araç çağırma. Topladığın bilgilerle "
+                    'yalnızca {"final":"..."} JSON döndür; yazdığın kodu final içine ekle.'
+                ),
+            }
+        )
+        raw = await self.call_llm(
+            messages, system_prompt=self.SYSTEM_PROMPT, temperature=0.2, json_mode=True
+        )
+        final = str(self._parse_llm_tool_plan(raw).get("final", "") or "").strip()
+        return final or "[CODER:TOOL_LOOP_LIMIT] Araç döngüsü sınırına ulaşıldı."
 
     async def run_task(self, task_prompt: str) -> str | DelegationRequest:
         """Handle a coding task: run a ``tool|arg`` command directly or plan with the LLM."""
