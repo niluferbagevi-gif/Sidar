@@ -37,10 +37,11 @@ class ResearcherAgent(BaseAgent):
         "- search_docs: Harici bir kütüphanenin resmi dokümanını arar. "
         'argument = "<kütüphane> <konu>".\n'
         "- final_answer: Kullanıcıya verilecek son yanıt. argument = yanıt metni "
-        "(Türkçe, kaynak belirterek).\n\n"
+        "(Türkçe, kaynak belirterek; teknik 'nasıl' sorularında kısa bir kod örneğiyle).\n\n"
         "Kurallar: Proje, Sidar, ajanlar, yapılandırma veya repodaki dosyalar hakkındaki "
         "sorularda önce docs_search kullan. Web aramasını yalnızca güncel/dış bilgi "
-        "gerektiğinde kullan. Araç sonucu sana geri verildiğinde yeterliyse final_answer ile "
+        "gerektiğinde kullan. final_answer'dan önce en az bir araçla kanıt topla. "
+        "Araç sonucu sana geri verildiğinde yeterliyse final_answer ile "
         "yanıtla; uydurma bilgi verme."
     )
 
@@ -126,6 +127,16 @@ class ResearcherAgent(BaseAgent):
                 return command
         return prompt
 
+    @staticmethod
+    def _grounding_request(query: str) -> str:
+        """Build the follow-up asking the model to gather evidence before answering."""
+        return (
+            "Henüz hiçbir araçla kanıt toplamadan yanıt verdin. Önce docs_search (proje "
+            "soruları) veya web_search (dış/güncel bilgi) ile kaynak topla; final_answer'ı "
+            "bu sonuçlara dayanarak, kaynak URL'lerini belirterek ve teknik sorularda kısa "
+            f"bir kod örneğiyle ver.\nAsıl soru: {query}"
+        )
+
     async def _search_local_docs(self, query: str) -> tuple[bool, str]:
         """Search the local RAG store and report whether it produced usable results."""
         session_id = "global"
@@ -166,6 +177,7 @@ class ResearcherAgent(BaseAgent):
         # The original task stays in the conversation so every step still knows the goal.
         messages: list[dict[str, str]] = [{"role": "user", "content": prompt}]
         last_observation = ""
+        grounding_requested = False
         for _ in range(self._MAX_TOOL_STEPS):
             try:
                 decision = await self.call_llm(messages=messages, temperature=0.1, json_mode=True)
@@ -180,6 +192,13 @@ class ResearcherAgent(BaseAgent):
             tool = str(parsed.get("tool", "")).strip().lower()
             argument = str(parsed.get("argument", "")).strip()
             if tool in ("", "final_answer"):
+                if not last_observation and not grounding_requested:
+                    # Küçük yerel modeller aramadan ezberden yanıt veriyor; kaynaksız ilk
+                    # final_answer'ı bir kez geri çevirip önce kanıt toplamasını iste.
+                    grounding_requested = True
+                    messages.append({"role": "assistant", "content": str(decision)})
+                    messages.append({"role": "user", "content": self._grounding_request(query)})
+                    continue
                 final_answer = argument or str(parsed.get("content", "")).strip()
                 return final_answer or last_observation or str(decision)
             if tool not in self.tools:

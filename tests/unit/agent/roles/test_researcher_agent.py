@@ -399,6 +399,35 @@ def test_run_task_returns_llm_final_answer_content_when_tool_is_final_answer(
     assert result == "özet: tamamlandı"
 
 
+def test_run_task_asks_for_evidence_before_accepting_ungrounded_final_answer(
+    researcher_module, fake_cfg
+):
+    """An ungrounded first final_answer is bounced once so the model searches first."""
+    agent = _build_agent(researcher_module, fake_cfg)
+    payloads = iter(
+        [
+            '{"tool":"final_answer","argument":"ezberden kısa yanıt"}',
+            '{"tool":"web_search","argument":"FastAPI JWT"}',
+            '{"tool":"final_answer","argument":"kaynaklı yanıt"}',
+        ]
+    )
+    seen_messages = []
+
+    async def fake_call_llm(**kwargs):
+        seen_messages.append(list(kwargs["messages"]))
+        return next(payloads)
+
+    agent.call_llm = fake_call_llm
+
+    result = asyncio.run(agent.run_task("FastAPI'de JWT nasıl yapılır?"))
+
+    assert result == "kaynaklı yanıt"
+    assert agent.web.search_calls == ["FastAPI JWT"]
+    grounding_turn = seen_messages[1][-1]["content"]
+    assert "kanıt" in grounding_turn
+    assert "Asıl soru: FastAPI'de JWT nasıl yapılır?" in grounding_turn
+
+
 _COLLAB_PROMPT = (
     "[COLLABORATION WORKSPACE]\n"
     "room_id=workspace:sidar\n"
