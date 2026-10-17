@@ -33,6 +33,10 @@ from managers.security import SecurityManager
 
 logger = logging.getLogger(__name__)
 
+_SCRATCH_DIR_PREFIX = "temp/"
+_MAX_REVIEW_FILES = 3
+_MAX_REVIEW_FILE_CHARS = 3000
+
 _REVIEW_PAYLOAD_KEYS = (
     "review_context",
     "code_context",
@@ -310,10 +314,15 @@ class ReviewerAgent(BaseAgent):
             "Aşağıdaki kod/değişiklik bağlamı için anlamlı pytest senaryoları üret.\n"
             "- En az 1 test fonksiyonu olsun.\n"
             "- Gerekiyorsa importları sen ekle.\n"
+            "- Test dosyası `temp/` dizininden çalışır: `temp/` altındaki bir dosyayı "
+            "`from <dosya_adı> import ...`, depodaki bir modülü paket yoluyla içe aktar.\n"
+            "- Test edilen kod bir dosyada değilse bağlamdaki kodu test dosyasına aynen ekle; "
+            "tanımsız bir isim kullanma.\n"
             "- Ağ erişimi, rastgelelik veya dış servis kullanma.\n"
             f"- {SHARED_TEST_FIXTURE_GUIDANCE}\n"
             "- Yanıt sadece çalıştırılabilir Python kodu olsun.\n\n"
             f"[KOD_BAGLAMI]\n{context[:6000]}"
+            f"{self._format_reviewable_files(context)}"
         )
 
         try:
@@ -376,8 +385,44 @@ class ReviewerAgent(BaseAgent):
         test_targets = [p for p in changed if p.startswith("tests/") and p.endswith(".py")]
         if test_targets:
             commands.append("pytest -q " + " ".join(test_targets[:8]))
-        commands.append(getattr(self.config, "REVIEWER_TEST_COMMAND", "uv run pytest"))
+        files = self._resolve_reviewable_files(code_context)
+        # Code written only to the scratch area (e.g. a chat request's temp/ file)
+        # cannot affect the repository, and the global gate (often `bash run_tests.sh`)
+        # cannot run inside the sandbox anyway, so it would only produce a REJECT.
+        if not (files and all(path.startswith(_SCRATCH_DIR_PREFIX) for path in files)):
+            commands.append(getattr(self.config, "REVIEWER_TEST_COMMAND", "uv run pytest"))
         return list(dict.fromkeys(c.strip() for c in commands if (c or "").strip()))
+
+    def _resolve_reviewable_files(self, code_context: str) -> list[str]:
+        """Return existing repo files named in the context, relative to ``BASE_DIR``.
+
+        Unlike ``_extract_changed_paths`` this resolves absolute paths under the
+        repository (coders often report ``/home/.../Sidar/temp/x.py``) and keeps
+        only files that actually exist.
+        """
+        base_dir = Path(self.config.BASE_DIR).resolve()
+        resolved: list[str] = []
+        for raw in re.findall(r"/?[\w./-]+\.py\b", code_context or ""):
+            candidate = Path(raw) if raw.startswith("/") else base_dir / raw
+            try:
+                relative = candidate.resolve().relative_to(base_dir).as_posix()
+            except ValueError:
+                continue
+            if (base_dir / relative).is_file() and relative not in resolved:
+                resolved.append(relative)
+        return resolved[:_MAX_REVIEW_FILES]
+
+    def _format_reviewable_files(self, code_context: str) -> str:
+        """Render the files under review so generated tests can import them."""
+        blocks = []
+        base_dir = Path(self.config.BASE_DIR)
+        for relative in self._resolve_reviewable_files(code_context):
+            try:
+                content = (base_dir / relative).read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            blocks.append(f"\n\n[DOSYA] {relative}\n{content[:_MAX_REVIEW_FILE_CHARS]}")
+        return "".join(blocks)
 
     @staticmethod
     def _build_lsp_candidate_paths(code_context: str) -> list[str]:
