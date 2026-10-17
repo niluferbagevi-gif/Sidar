@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +49,9 @@ class ResearcherAgent(BaseAgent):
     # web/routes/collaboration.py sarmalayıcısı; gerçek kullanıcı komutu bu işaretten sonra gelir.
     _COLLABORATION_COMMAND_MARKER = "Current command:"
     _MAX_TOOL_STEPS = 4
+    _MAX_SOURCES = 5
+    # WebSearchManager sonuç satırları "   → <url>", fetch_url çıktısı "[URL: <url>]" biçimindedir.
+    _SOURCE_URL_RE = re.compile(r"^\s*(?:→|\[URL:)\s*(https?://[^\s\]]+)", re.MULTILINE)
     _WEB_TOOLS = frozenset({"web_search", "fetch_url", "search_docs"})
     # Bu ipuçlarını içeren sorular repo hakkındadır; diğerleri için web kanıtı zorunludur.
     _PROJECT_HINTS = (
@@ -154,6 +158,25 @@ class ResearcherAgent(BaseAgent):
         lowered = query.lower()
         return any(hint in lowered for hint in cls._PROJECT_HINTS)
 
+    @classmethod
+    def _collect_sources(cls, observation: str, sources: list[str]) -> None:
+        """Append result URLs from a web tool observation to ``sources`` without duplicates."""
+        for url in cls._SOURCE_URL_RE.findall(observation):
+            if url not in sources:
+                sources.append(url)
+
+    @classmethod
+    def _with_sources(cls, answer: str, sources: list[str]) -> str:
+        """Append a source list when the answer cites none of the collected web URLs.
+
+        Small local models often name sources by title only; the links come from the
+        search results themselves, so nothing is invented.
+        """
+        if not sources or any(url in answer for url in sources):
+            return answer
+        listed = "\n".join(f"- {url}" for url in sources[: cls._MAX_SOURCES])
+        return f"{answer.rstrip()}\n\nKaynaklar:\n{listed}"
+
     @staticmethod
     def _web_evidence_turn(query: str, observation: str) -> str:
         """Feed forced web results back with the instructions for a sourced final answer."""
@@ -218,6 +241,7 @@ class ResearcherAgent(BaseAgent):
         web_used = False
         web_forced = False
         project_question = self._is_project_question(query)
+        sources: list[str] = []
         for _ in range(self._MAX_TOOL_STEPS):
             try:
                 decision = await self.call_llm(messages=messages, temperature=0.1, json_mode=True)
@@ -237,6 +261,7 @@ class ResearcherAgent(BaseAgent):
                     # bulunamadı" diyebiliyor; yanıtı kabul etmeden önce web kanıtı topla.
                     web_forced = web_used = True
                     last_observation = str(await self.call_tool("web_search", query))
+                    self._collect_sources(last_observation, sources)
                     messages.append({"role": "assistant", "content": str(decision)})
                     messages.append(
                         {
@@ -254,12 +279,14 @@ class ResearcherAgent(BaseAgent):
                     continue
                 final_answer = argument or str(parsed.get("content", "")).strip()
                 if final_answer:
-                    return final_answer
+                    return self._with_sources(final_answer, sources)
                 break
             if tool not in self.tools:
                 break
             last_observation = str(await self.call_tool(tool, argument or query))
-            web_used = web_used or tool in self._WEB_TOOLS
+            if tool in self._WEB_TOOLS:
+                web_used = True
+                self._collect_sources(last_observation, sources)
             messages.append({"role": "assistant", "content": str(decision)})
             messages.append(
                 {
@@ -276,7 +303,7 @@ class ResearcherAgent(BaseAgent):
             # Model kanıt topladı ama özetleyemedi (bozuk JSON, boş final_answer veya bütçe
             # bitti); ham arama çıktısını basmak yerine araçsız bir özet turu iste.
             summary = await self._synthesize_answer(messages, query)
-            return summary or last_observation
+            return self._with_sources(summary, sources) if summary else last_observation
         return await self._fallback_answer(query)
 
     async def _synthesize_answer(self, messages: list[dict[str, str]], query: str) -> str:
