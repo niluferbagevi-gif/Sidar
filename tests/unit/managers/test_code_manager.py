@@ -3241,6 +3241,60 @@ async def test_write_file_hitl_writes_after_approval(manager, tmp_path, monkeypa
 
 
 @pytest.mark.asyncio
+async def test_write_file_hitl_skips_approval_when_content_is_identical(
+    manager, tmp_path, monkeypatch
+):
+    """Write file hitl skips approval and writing when content is unchanged."""
+    target = tmp_path / "same.py"
+    target.write_text("x = 1\n", encoding="utf-8")
+    gate = SimpleNamespace(request_approval=AsyncMock(return_value=False))
+    monkeypatch.setattr("managers.code_manager.get_hitl_gate", lambda: gate)
+    written_before = manager._files_written
+
+    ok, message = await manager.write_file_hitl(str(target), "x = 1\n")
+
+    assert ok is True
+    assert "yazma atlandı" in message
+    assert manager._files_written == written_before
+    gate.request_approval.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_write_file_hitl_identical_content_still_requires_write_permission(
+    manager, tmp_path, monkeypatch
+):
+    """Identical content does not bypass the write permission check."""
+    target = tmp_path / "same.txt"
+    target.write_text("same", encoding="utf-8")
+    gate = SimpleNamespace(request_approval=AsyncMock(return_value=False))
+    monkeypatch.setattr("managers.code_manager.get_hitl_gate", lambda: gate)
+    monkeypatch.setattr(manager.security_adapter, "can_write", lambda _path: False)
+
+    ok, message = await manager.write_file_hitl(str(target), "same", validate=False)
+
+    assert ok is False
+    assert "insan onayı" in message
+    gate.request_approval.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_write_file_hitl_unreadable_existing_file_requires_approval(
+    manager, tmp_path, monkeypatch
+):
+    """A non-UTF-8 existing file is treated as different and still needs approval."""
+    target = tmp_path / "binary.bin"
+    target.write_bytes(b"\xff\xfe\x00")
+    gate = SimpleNamespace(request_approval=AsyncMock(return_value=False))
+    monkeypatch.setattr("managers.code_manager.get_hitl_gate", lambda: gate)
+
+    ok, _message = await manager.write_file_hitl(str(target), "text", validate=False)
+
+    assert ok is False
+    assert target.read_bytes() == b"\xff\xfe\x00"
+    gate.request_approval.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_patch_file_hitl_applies_patch_after_approval(manager, tmp_path, monkeypatch):
     """Patch file hitl applies patch after approval."""
     target = tmp_path / "patchable.txt"
