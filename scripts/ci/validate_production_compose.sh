@@ -201,26 +201,26 @@ curl --fail --silent --show-error "http://127.0.0.1:${web_port}/readyz" >/dev/nu
 heads_raw="$(mktemp)"
 current_raw="$(mktemp)"
 
-if ! "${compose[@]}" run --rm --no-deps sidar-migrate uv run alembic heads >"$heads_raw" 2>&1; then
+if ! "${compose[@]}" run --rm --no-deps sidar-migrate uv run --no-sync alembic heads >"$heads_raw" 2>&1; then
   mkdir -p "$diagnostics_dir"
   cp "$heads_raw" "$diagnostics_dir/alembic-heads.log"
   [[ -f "$diagnostics_dir/failure.txt" ]] || {
     echo "exit_code=1"
     echo "line=$LINENO"
-    echo "command=docker compose run --rm --no-deps sidar-migrate uv run alembic heads"
+    echo "command=docker compose run --rm --no-deps sidar-migrate uv run --no-sync alembic heads"
   } >"$diagnostics_dir/failure.txt"
   cat "$heads_raw" >&2
   rm -f "$heads_raw" "$current_raw"
   exit 1
 fi
 
-if ! "${compose[@]}" run --rm --no-deps sidar-migrate uv run alembic current >"$current_raw" 2>&1; then
+if ! "${compose[@]}" run --rm --no-deps sidar-migrate uv run --no-sync alembic current >"$current_raw" 2>&1; then
   mkdir -p "$diagnostics_dir"
   cp "$current_raw" "$diagnostics_dir/alembic-current.log"
   [[ -f "$diagnostics_dir/failure.txt" ]] || {
     echo "exit_code=1"
     echo "line=$LINENO"
-    echo "command=docker compose run --rm --no-deps sidar-migrate uv run alembic current"
+    echo "command=docker compose run --rm --no-deps sidar-migrate uv run --no-sync alembic current"
   } >"$diagnostics_dir/failure.txt"
   cat "$current_raw" >&2
   rm -f "$heads_raw" "$current_raw"
