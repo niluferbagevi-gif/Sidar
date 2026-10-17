@@ -188,8 +188,10 @@ class CoderAgent(BaseAgent):
             "Kullanabileceğin araçlar (parantez içinde arg biçimi): "
             f"{tool_specs}. "
             "Yanıtını JSON olarak ver. Araç gerekiyorsa "
-            '{"tool_calls":[{"name":"write_file","arg":"ornek.py|def f():\\n    return 1"}],'
+            '{"tool_calls":[{"name":"write_file","arg":"<yeni_dosya>.py|<dosyanın tam içeriği>"}],'
             '"final":""}; '
+            "Yeni dosyaya isteği anlatan, daha önce kullanılmamış bir ad ver; örnekteki "
+            "yer tutucuları aynen kopyalama. "
             'iş bittiyse {"final":"özet ve yapılanlar"}. '
             "Sadece kayıtlı araç adlarını kullan; dosya değişikliklerinde önce dosyayı oku, sonra "
             "patch_file/write_file kullan. Yeni kod isteğinde projeyi taramadan kodu "

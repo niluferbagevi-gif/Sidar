@@ -689,4 +689,7 @@ def test_tool_contract_lists_argument_formats(coder_module):
 
     assert "write_file(<yol>|<dosyanın tam içeriği>)" in contract
     assert "plugin_tool," in contract or "plugin_tool." in contract
-    assert '"name":"write_file","arg":"ornek.py|' in contract
+    assert '"name":"write_file","arg":"<yeni_dosya>.py|' in contract
+    # A concrete example filename gets copied verbatim and every request then
+    # overwrites the same file, which stalls on the HITL overwrite gate.
+    assert "ornek.py" not in contract

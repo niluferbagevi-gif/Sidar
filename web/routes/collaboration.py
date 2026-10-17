@@ -343,8 +343,10 @@ async def leave_collaboration_room(
 ) -> None:
     """WebSocket'i bulunduğu odadan çıkarır.
 
-    Odada katılımcı kalırsa presence güncellemesi yayınlanır; oda boşalırsa
-    aktif görevi iptal edilir ve oda silinir.
+    Odada katılımcı kalırsa presence güncellemesi yayınlanır. Oda boşaldığında
+    çalışan bir ajan görevi varsa oda görev bitene kadar korunur; böylece yanıt
+    oda geçmişine yazılır ve aynı odaya geri dönen kullanıcı ``room_state`` ile
+    yanıtı görür. Görev yoksa (veya bittiğinde oda hâlâ boşsa) oda silinir.
     """
     room_id = str(getattr(websocket, "_sidar_room_id", "") or "")
     if not room_id:
@@ -365,8 +367,17 @@ async def leave_collaboration_room(
         )
         return
     if room.active_task and not room.active_task.done():
-        room.active_task.cancel()
+        # Switching to another page (e.g. to approve a HITL request) closes the
+        # chat socket; cancelling here silently discarded the in-flight reply.
+        room.active_task.add_done_callback(lambda _task: _drop_room_if_idle(rooms, room))
+        return
     rooms.pop(room_id, None)
+
+
+def _drop_room_if_idle(rooms: dict[str, CollaborationRoom], room: CollaborationRoom) -> None:
+    """Remove ``room`` once its task has finished, unless someone rejoined it."""
+    if not room.participants and rooms.get(room.room_id) is room:
+        rooms.pop(room.room_id, None)
 
 
 def is_sidar_mention(message: str) -> bool:

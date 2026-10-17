@@ -1140,3 +1140,35 @@ async def test_websocket_chat_room_cancel_clears_existing_active_task() -> None:
     await ws_chat.websocket_chat(ws, deps)
 
     assert room.active_task is None
+
+
+@pytest.mark.asyncio
+async def test_websocket_chat_disconnect_keeps_room_reply_running() -> None:
+    """A participant's socket closing must not cancel the room's in-flight reply.
+
+    Opening the Swarm page to approve a HITL request closed the chat socket,
+    which cancelled the reply and left the chat empty.
+    """
+    room = _Room("room-1")
+    started = asyncio.Event()
+
+    async def _slow() -> None:
+        started.set()
+        await asyncio.sleep(999)
+
+    room.active_task = asyncio.create_task(_slow())
+    await started.wait()
+    ws = _Ws(
+        [
+            json.dumps({"action": "auth", "token": "valid-token"}),
+            json.dumps({"action": "join_room", "room_id": "room-1"}),
+        ]
+    )
+    deps = _Deps()
+    deps.collaboration_rooms["room-1"] = room
+
+    await ws_chat.websocket_chat(ws, deps)
+
+    assert deps.left is True
+    assert not room.active_task.done()
+    room.active_task.cancel()
