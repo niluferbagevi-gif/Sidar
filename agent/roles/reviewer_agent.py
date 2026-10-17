@@ -7,6 +7,7 @@ import contextlib
 import json
 import logging
 import re
+import shutil
 import subprocess
 import uuid
 from collections.abc import Mapping, Sequence
@@ -27,6 +28,7 @@ from agent.roles.reviewer.judge import (
 from config import Config
 from core.rag import DocumentStore
 from core.test_fixture_policy import SHARED_TEST_FIXTURE_GUIDANCE
+from core.utils.trusted_subprocess import run_trusted_command
 from managers.browser_manager import BrowserManager
 from managers.code_manager import CodeManager
 from managers.github_manager import GitHubManager
@@ -403,9 +405,12 @@ class ReviewerAgent(BaseAgent):
         truth. Untracked non-Python files (e.g. runtime ``todos.json``) are ignored;
         any git failure counts as a change so the global regression still runs.
         """
+        git = shutil.which("git")
+        if git is None:
+            return True
         try:
-            result = subprocess.run(
-                ["git", "status", "--porcelain", "--untracked-files=all"],
+            result = run_trusted_command(
+                [git, "status", "--porcelain", "--untracked-files=all"],
                 cwd=str(self.config.BASE_DIR),
                 capture_output=True,
                 text=True,

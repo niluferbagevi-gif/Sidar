@@ -1353,11 +1353,12 @@ def test_repo_changes_outside_scratch_reads_git_status(reviewer, monkeypatch, po
     module = sys.modules[ReviewerAgent.__module__]
 
     def fake_run(cmd, **kwargs):
-        assert cmd[:2] == ["git", "status"]
+        assert cmd[:2] == ["/usr/bin/git", "status"]
         assert kwargs["cwd"] == str(reviewer.config.BASE_DIR)
         return SimpleNamespace(stdout=porcelain)
 
-    monkeypatch.setattr(module.subprocess, "run", fake_run)
+    monkeypatch.setattr(module.shutil, "which", lambda _name: "/usr/bin/git")
+    monkeypatch.setattr(module, "run_trusted_command", fake_run)
 
     assert reviewer._repo_has_changes_outside_scratch() is expected
 
@@ -1369,8 +1370,11 @@ def test_repo_changes_outside_scratch_fails_safe_without_git(reviewer, monkeypat
     def boom(*_args, **_kwargs):
         raise module.subprocess.CalledProcessError(128, "git")
 
-    monkeypatch.setattr(module.subprocess, "run", boom)
+    monkeypatch.setattr(module.shutil, "which", lambda _name: "/usr/bin/git")
+    monkeypatch.setattr(module, "run_trusted_command", boom)
+    assert reviewer._repo_has_changes_outside_scratch() is True
 
+    monkeypatch.setattr(module.shutil, "which", lambda _name: None)
     assert reviewer._repo_has_changes_outside_scratch() is True
 
 
