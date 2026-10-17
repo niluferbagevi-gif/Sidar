@@ -48,6 +48,23 @@ class ResearcherAgent(BaseAgent):
     # web/routes/collaboration.py sarmalayıcısı; gerçek kullanıcı komutu bu işaretten sonra gelir.
     _COLLABORATION_COMMAND_MARKER = "Current command:"
     _MAX_TOOL_STEPS = 4
+    _WEB_TOOLS = frozenset({"web_search", "fetch_url", "search_docs"})
+    # Bu ipuçlarını içeren sorular repo hakkındadır; diğerleri için web kanıtı zorunludur.
+    _PROJECT_HINTS = (
+        "sidar",
+        "proje",
+        "repo",
+        "depo",
+        "agents.md",
+        "readme",
+        "ajan",
+        "agent",
+        "yapılandırma",
+        "config",
+        "docs/",
+        ".py",
+        ".md",
+    )
     _SYNTHESIS_SYSTEM_PROMPT = (
         "Sen bir araştırmacı ajansın. Sana verilen araç sonuçlarını kullanıcı için Türkçe, "
         "kaynaklı ve öz bir yanıta dönüştürürsün. Kod yazma/değiştirme yapmazsın."
@@ -131,6 +148,22 @@ class ResearcherAgent(BaseAgent):
                 return command
         return prompt
 
+    @classmethod
+    def _is_project_question(cls, query: str) -> bool:
+        """Return True when the question is about this repository rather than general knowledge."""
+        lowered = query.lower()
+        return any(hint in lowered for hint in cls._PROJECT_HINTS)
+
+    @staticmethod
+    def _web_evidence_turn(query: str, observation: str) -> str:
+        """Feed forced web results back with the instructions for a sourced final answer."""
+        return (
+            f"Araç sonucu (web_search):\n{observation[:4000]}\n\n"
+            "Bu dış kaynak sonuçlarına dayanarak final_answer ile Türkçe yanıtla: kısa "
+            "açıklama, teknik sorularda kısa bir kod örneği ve kaynak URL'leri.\n"
+            f"Asıl soru: {query}"
+        )
+
     @staticmethod
     def _grounding_request(query: str) -> str:
         """Build the follow-up asking the model to gather evidence before answering."""
@@ -182,6 +215,9 @@ class ResearcherAgent(BaseAgent):
         messages: list[dict[str, str]] = [{"role": "user", "content": prompt}]
         last_observation = ""
         grounding_requested = False
+        web_used = False
+        web_forced = False
+        project_question = self._is_project_question(query)
         for _ in range(self._MAX_TOOL_STEPS):
             try:
                 decision = await self.call_llm(messages=messages, temperature=0.1, json_mode=True)
@@ -196,6 +232,19 @@ class ResearcherAgent(BaseAgent):
             tool = str(parsed.get("tool", "")).strip().lower()
             argument = str(parsed.get("argument", "")).strip()
             if tool in ("", "final_answer"):
+                if not project_question and not web_used and not web_forced:
+                    # Genel/dış sorularda model web yerine yerel dokümanları seçip "bilgi
+                    # bulunamadı" diyebiliyor; yanıtı kabul etmeden önce web kanıtı topla.
+                    web_forced = web_used = True
+                    last_observation = str(await self.call_tool("web_search", query))
+                    messages.append({"role": "assistant", "content": str(decision)})
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": self._web_evidence_turn(query, last_observation),
+                        }
+                    )
+                    continue
                 if not last_observation and not grounding_requested:
                     # Küçük yerel modeller aramadan ezberden yanıt veriyor; kaynaksız ilk
                     # final_answer'ı bir kez geri çevirip önce kanıt toplamasını iste.
@@ -210,6 +259,7 @@ class ResearcherAgent(BaseAgent):
             if tool not in self.tools:
                 break
             last_observation = str(await self.call_tool(tool, argument or query))
+            web_used = web_used or tool in self._WEB_TOOLS
             messages.append({"role": "assistant", "content": str(decision)})
             messages.append(
                 {

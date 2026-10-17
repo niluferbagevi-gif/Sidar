@@ -402,12 +402,12 @@ def test_run_task_returns_llm_final_answer_content_when_tool_is_final_answer(
 def test_run_task_asks_for_evidence_before_accepting_ungrounded_final_answer(
     researcher_module, fake_cfg
 ):
-    """An ungrounded first final_answer is bounced once so the model searches first."""
+    """An ungrounded first final_answer on a project question is bounced once."""
     agent = _build_agent(researcher_module, fake_cfg)
     payloads = iter(
         [
             '{"tool":"final_answer","argument":"ezberden kısa yanıt"}',
-            '{"tool":"web_search","argument":"FastAPI JWT"}',
+            '{"tool":"docs_search","argument":"roller"}',
             '{"tool":"final_answer","argument":"kaynaklı yanıt"}',
         ]
     )
@@ -419,13 +419,93 @@ def test_run_task_asks_for_evidence_before_accepting_ungrounded_final_answer(
 
     agent.call_llm = fake_call_llm
 
-    result = asyncio.run(agent.run_task("FastAPI'de JWT nasıl yapılır?"))
+    result = asyncio.run(agent.run_task("Sidar ajan rolleri nelerdir?"))
 
     assert result == "kaynaklı yanıt"
-    assert agent.web.search_calls == ["FastAPI JWT"]
+    assert agent.web.search_calls == []
     grounding_turn = seen_messages[1][-1]["content"]
     assert "kanıt" in grounding_turn
-    assert "Asıl soru: FastAPI'de JWT nasıl yapılır?" in grounding_turn
+    assert "Asıl soru: Sidar ajan rolleri nelerdir?" in grounding_turn
+
+
+def test_run_task_forces_web_search_for_general_question_answered_from_docs(
+    researcher_module, fake_cfg
+):
+    """A general question answered only from local docs gets web evidence first."""
+    agent = _build_agent(researcher_module, fake_cfg)
+    payloads = iter(
+        [
+            '{"tool":"docs_search","argument":"JWT"}',
+            '{"tool":"final_answer","argument":"bilgi bulunamadı"}',
+            '{"tool":"final_answer","argument":"web kaynaklı yanıt"}',
+        ]
+    )
+    seen_messages = []
+
+    async def fake_call_llm(**kwargs):
+        seen_messages.append(list(kwargs["messages"]))
+        return next(payloads)
+
+    agent.call_llm = fake_call_llm
+    question = "FastAPI'de JWT nasıl yapılır?"
+
+    result = asyncio.run(agent.run_task(question))
+
+    assert result == "web kaynaklı yanıt"
+    assert agent.web.search_calls == [question]
+    web_turn = seen_messages[2][-1]["content"]
+    assert web_turn.startswith("Araç sonucu (web_search):")
+    assert f"Asıl soru: {question}" in web_turn
+
+
+def test_run_task_ungrounded_general_answer_goes_straight_to_web(researcher_module, fake_cfg):
+    """An ungrounded first answer to a general question triggers the web search directly."""
+    agent = _build_agent(researcher_module, fake_cfg)
+    payloads = iter(
+        [
+            '{"tool":"final_answer","argument":"ezber"}',
+            '{"tool":"final_answer","argument":"kaynaklı"}',
+        ]
+    )
+
+    async def fake_call_llm(**_kwargs):
+        return next(payloads)
+
+    agent.call_llm = fake_call_llm
+
+    assert asyncio.run(agent.run_task("asyncio nedir?")) == "kaynaklı"
+    assert agent.web.search_calls == ["asyncio nedir?"]
+
+
+def test_run_task_does_not_force_web_after_model_already_searched(researcher_module, fake_cfg):
+    """A model that already used a web tool is not forced into a second search."""
+    agent = _build_agent(researcher_module, fake_cfg)
+    payloads = iter(
+        ['{"tool":"web_search","argument":"q"}', '{"tool":"final_answer","argument":"tamam"}']
+    )
+
+    async def fake_call_llm(**_kwargs):
+        return next(payloads)
+
+    agent.call_llm = fake_call_llm
+
+    assert asyncio.run(agent.run_task("asyncio nedir?")) == "tamam"
+    assert agent.web.search_calls == ["q"]
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("Sidar nasıl başlatılır?", True),
+        ("AGENTS.md içindeki roller", True),
+        ("core/config.py ne yapar", True),
+        ("FastAPI'de JWT nasıl yapılır?", False),
+        ("Python list comprehension", False),
+    ],
+)
+def test_is_project_question_detects_repository_scope(researcher_module, query, expected):
+    """Project hints mark repository questions; everything else needs web evidence."""
+    assert researcher_module.ResearcherAgent._is_project_question(query) is expected
 
 
 def test_run_task_summarizes_observation_when_model_cannot_finish(researcher_module, fake_cfg):
@@ -584,7 +664,7 @@ def test_run_task_final_answer_without_text_returns_latest_observation(researche
 
     agent.call_llm = fake_call_llm
 
-    assert asyncio.run(agent.run_task("soru")) == "sync:roller:auto:global"
+    assert asyncio.run(agent.run_task("Sidar rolleri neler?")) == "sync:roller:auto:global"
 
 
 def test_run_task_non_object_json_decision_falls_back(researcher_module, fake_cfg):
