@@ -428,6 +428,64 @@ def test_run_task_asks_for_evidence_before_accepting_ungrounded_final_answer(
     assert "Asıl soru: FastAPI'de JWT nasıl yapılır?" in grounding_turn
 
 
+def test_run_task_summarizes_observation_when_model_cannot_finish(researcher_module, fake_cfg):
+    """A search followed by a broken decision gets a plain-text synthesis turn."""
+    agent = _build_agent(researcher_module, fake_cfg)
+    calls = []
+
+    async def fake_call_llm(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            return '{"tool":"web_search","argument":"FastAPI JWT"}'
+        if len(calls) == 2:
+            return '{"tool":"final_answer","argument":"bozuk'  # truncated JSON
+        return "Özet: OAuth2PasswordBearer kullanın. Kaynak: https://fastapi.tiangolo.com"
+
+    agent.call_llm = fake_call_llm
+
+    result = asyncio.run(agent.run_task("FastAPI JWT nasıl?"))
+
+    assert result.startswith("Özet: OAuth2PasswordBearer")
+    synthesis = calls[-1]
+    assert synthesis["json_mode"] is False
+    assert synthesis["system_prompt"] == researcher_module.ResearcherAgent._SYNTHESIS_SYSTEM_PROMPT
+    assert "Araç sonucu (web_search)" in synthesis["messages"][-2]["content"]
+    assert "Asıl soru: FastAPI JWT nasıl?" in synthesis["messages"][-1]["content"]
+
+
+@pytest.mark.parametrize(
+    ("reply", "expected"),
+    [
+        ('{"tool":"final_answer","argument":"json içinde özet"}', "json içinde özet"),
+        ('{"tool":"web_search","argument":"tekrar"}', ""),
+        ('["liste"]', '["liste"]'),
+        ("   ", ""),
+    ],
+)
+def test_synthesize_answer_normalizes_model_reply(researcher_module, fake_cfg, reply, expected):
+    """Synthesis unwraps final_answer JSON, rejects other tool calls and keeps plain text."""
+    agent = _build_agent(researcher_module, fake_cfg)
+
+    async def fake_call_llm(**_kwargs):
+        return reply
+
+    agent.call_llm = fake_call_llm
+
+    assert asyncio.run(agent._synthesize_answer([], "soru")) == expected
+
+
+def test_synthesize_answer_returns_empty_on_llm_error(researcher_module, fake_cfg):
+    """An LLM failure during synthesis lets the caller fall back to the raw observation."""
+    agent = _build_agent(researcher_module, fake_cfg)
+
+    async def fake_call_llm(**_kwargs):
+        raise RuntimeError("llm down")
+
+    agent.call_llm = fake_call_llm
+
+    assert asyncio.run(agent._synthesize_answer([], "soru")) == ""
+
+
 _COLLAB_PROMPT = (
     "[COLLABORATION WORKSPACE]\n"
     "room_id=workspace:sidar\n"

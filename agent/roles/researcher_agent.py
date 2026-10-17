@@ -48,6 +48,10 @@ class ResearcherAgent(BaseAgent):
     # web/routes/collaboration.py sarmalayıcısı; gerçek kullanıcı komutu bu işaretten sonra gelir.
     _COLLABORATION_COMMAND_MARKER = "Current command:"
     _MAX_TOOL_STEPS = 4
+    _SYNTHESIS_SYSTEM_PROMPT = (
+        "Sen bir araştırmacı ajansın. Sana verilen araç sonuçlarını kullanıcı için Türkçe, "
+        "kaynaklı ve öz bir yanıta dönüştürürsün. Kod yazma/değiştirme yapmazsın."
+    )
 
     def __init__(
         self,
@@ -200,7 +204,9 @@ class ResearcherAgent(BaseAgent):
                     messages.append({"role": "user", "content": self._grounding_request(query)})
                     continue
                 final_answer = argument or str(parsed.get("content", "")).strip()
-                return final_answer or last_observation or str(decision)
+                if final_answer:
+                    return final_answer
+                break
             if tool not in self.tools:
                 break
             last_observation = str(await self.call_tool(tool, argument or query))
@@ -217,5 +223,44 @@ class ResearcherAgent(BaseAgent):
             )
 
         if last_observation:
-            return last_observation
+            # Model kanıt topladı ama özetleyemedi (bozuk JSON, boş final_answer veya bütçe
+            # bitti); ham arama çıktısını basmak yerine araçsız bir özet turu iste.
+            summary = await self._synthesize_answer(messages, query)
+            return summary or last_observation
         return await self._fallback_answer(query)
+
+    async def _synthesize_answer(self, messages: list[dict[str, str]], query: str) -> str:
+        """Ask for a plain-text answer built from the tool results already in ``messages``.
+
+        Returns an empty string when the model fails or still replies with a tool call, so
+        the caller can fall back to the raw observation.
+        """
+        request = {
+            "role": "user",
+            "content": (
+                "Araç çağrısı yapma ve JSON döndürme. Yukarıdaki araç sonuçlarına dayanarak "
+                "soruyu Türkçe, düz metin olarak yanıtla: kısa bir açıklama, teknik sorularda "
+                "kısa bir kod örneği ve sonunda kullandığın kaynak URL'leri. Sonuçlarda olmayan "
+                f"bilgiyi uydurma.\nAsıl soru: {query}"
+            ),
+        }
+        try:
+            text = str(
+                await self.call_llm(
+                    messages=[*messages, request],
+                    system_prompt=self._SYNTHESIS_SYSTEM_PROMPT,
+                    temperature=0.2,
+                    json_mode=False,
+                )
+            ).strip()
+        except Exception:
+            return ""
+        try:
+            parsed = json.loads(text)
+        except (TypeError, ValueError):
+            return text
+        if not isinstance(parsed, dict):
+            return text
+        if str(parsed.get("tool", "")).lower() == "final_answer":
+            return str(parsed.get("argument") or parsed.get("content") or "").strip()
+        return ""
