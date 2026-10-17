@@ -175,7 +175,12 @@ class ResearcherAgent(BaseAgent):
         if not sources or any(url in answer for url in sources):
             return answer
         listed = "\n".join(f"- {url}" for url in sources[: cls._MAX_SOURCES])
-        return f"{answer.rstrip()}\n\nKaynaklar:\n{listed}"
+        body = answer.rstrip()
+        fences = sum(1 for line in body.splitlines() if line.lstrip().startswith("```"))
+        if fences % 2:
+            # Model yanıtı kod bloğunun ortasında kesildiyse listeyi bloğun dışına çıkar.
+            body += "\n```"
+        return f"{body}\n\nKaynaklar:\n{listed}"
 
     @staticmethod
     def _web_evidence_turn(query: str, observation: str) -> str:

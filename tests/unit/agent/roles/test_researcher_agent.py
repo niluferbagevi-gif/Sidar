@@ -636,6 +636,26 @@ def test_with_sources_keeps_answer_that_already_links_a_source(researcher_module
     assert agent_cls._with_sources("yanıt", []) == "yanıt"
 
 
+def test_with_sources_closes_an_unterminated_code_block(researcher_module):
+    """A truncated answer ending inside a code fence gets it closed before the list."""
+    agent_cls = researcher_module.ResearcherAgent
+    answer = "Örnek:\n```python\nheaders={"
+
+    result = agent_cls._with_sources(answer, ["https://a.example"])
+
+    assert result == "Örnek:\n```python\nheaders={\n```\n\nKaynaklar:\n- https://a.example"
+
+
+def test_with_sources_leaves_closed_code_blocks_alone(researcher_module):
+    """Balanced fences are not touched."""
+    agent_cls = researcher_module.ResearcherAgent
+    answer = "```python\nx = 1\n```"
+
+    result = agent_cls._with_sources(answer, ["https://a.example"])
+
+    assert result == "```python\nx = 1\n```\n\nKaynaklar:\n- https://a.example"
+
+
 def test_with_sources_caps_the_list(researcher_module):
     """At most _MAX_SOURCES links are appended."""
     agent_cls = researcher_module.ResearcherAgent
