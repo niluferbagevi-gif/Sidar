@@ -19,6 +19,20 @@ from managers.package_info import PackageInfoManager
 from managers.security import SecurityManager
 from managers.todo_manager import TodoManager
 
+_TOOL_ARG_FORMATS = {
+    "read_file": "<yol>",
+    "write_file": "<yol>|<dosyanın tam içeriği>",
+    "patch_file": "<yol>|<eski blok>|<yeni blok>",
+    "execute_code": "<python kodu>",
+    "list_directory": "<dizin>",
+    "glob_search": "<desen>|||<dizin>",
+    "grep_search": "<desen>|||<dizin>|||<dosya glob>|||<bağlam satırı>",
+    "audit_project": "<dizin>",
+    "get_package_info": "<paket adı>",
+    "scan_project_todos": "<dizin>",
+    "read_test_artifacts": "<ad>=<yol>;<ad>=<yol>",
+}
+
 
 @AgentCatalog.register(
     capabilities=["code_generation", "file_io", "shell_execution", "code_review"], is_builtin=True
@@ -163,12 +177,19 @@ class CoderAgent(BaseAgent):
         return result
 
     def _format_tool_contract(self) -> str:
-        tool_names = ", ".join(sorted(getattr(self, "tools", {})))
+        # Small local models cannot infer the pipe-delimited argument formats from
+        # tool names alone (e.g. they call write_file with only a path), so each
+        # registered tool is listed with its argument shape.
+        tool_specs = ", ".join(
+            f"{name}({_TOOL_ARG_FORMATS[name]})" if name in _TOOL_ARG_FORMATS else name
+            for name in sorted(getattr(self, "tools", {}))
+        )
         return (
-            "Kullanabileceğin araçlar: "
-            f"{tool_names}. "
+            "Kullanabileceğin araçlar (parantez içinde arg biçimi): "
+            f"{tool_specs}. "
             "Yanıtını JSON olarak ver. Araç gerekiyorsa "
-            '{"tool_calls":[{"name":"read_file","arg":"path"}],"final":""}; '
+            '{"tool_calls":[{"name":"write_file","arg":"ornek.py|def f():\\n    return 1"}],'
+            '"final":""}; '
             'iş bittiyse {"final":"özet ve yapılanlar"}. '
             "Sadece kayıtlı araç adlarını kullan; dosya değişikliklerinde önce dosyayı oku, sonra "
             "patch_file/write_file kullan. Yeni kod isteğinde projeyi taramadan kodu "
@@ -274,13 +295,15 @@ class CoderAgent(BaseAgent):
             {
                 "role": "user",
                 "content": (
-                    "Araç bütçesi doldu; artık araç çağırma. Topladığın bilgilerle "
-                    'yalnızca {"final":"..."} JSON döndür; yazdığın kodu final içine ekle.'
+                    "Araç bütçesi doldu; artık araç çağırma ve JSON kullanma. Topladığın "
+                    "bilgilerle son cevabını düz metin olarak yaz; yazdığın kodu da ekle."
                 ),
             }
         )
+        # JSON mode keeps the model locked into the tool-call shape, so this turn
+        # asks for plain text; a reply that is still a tool call yields no final.
         raw = await self.call_llm(
-            messages, system_prompt=self.SYSTEM_PROMPT, temperature=0.2, json_mode=True
+            messages, system_prompt=self.SYSTEM_PROMPT, temperature=0.2, json_mode=False
         )
         final = str(self._parse_llm_tool_plan(raw).get("final", "") or "").strip()
         return final or "[CODER:TOOL_LOOP_LIMIT] Araç döngüsü sınırına ulaşıldı."

@@ -650,3 +650,43 @@ async def test_llm_tool_loop_keeps_last_final_without_extra_turn(coder_module):
 
     assert await agent._run_llm_tool_loop("oku") == "ara özet"
     assert llm_calls == 3
+
+
+@pytest.mark.asyncio
+async def test_llm_tool_loop_forced_turn_accepts_plain_text_without_json_mode(coder_module):
+    """Replays qwen's real loop: the tool-free turn drops JSON mode and keeps plain code."""
+    agent = await _new_runtime_agent(coder_module)
+    agent.tools = {"read_test_artifacts": agent._tool_read_test_artifacts}
+    json_modes: list[bool] = []
+
+    async def fake_call_tool(_name: str, _arg: str) -> str:
+        return "[TEST_ARTIFACTS] {}"
+
+    responses = iter(
+        ['{"thought":"...","tool":"read_test_artifacts","argument":"ortalama.py"}'] * 3
+        + ["def ortalama(xs):\n    return sum(xs) / len(xs)"]
+    )
+
+    async def fake_call_llm(_messages, **kwargs):
+        json_modes.append(kwargs["json_mode"])
+        return next(responses)
+
+    agent.call_tool = fake_call_tool
+    agent.call_llm = fake_call_llm
+
+    assert await agent._run_llm_tool_loop("ortalama") == (
+        "def ortalama(xs):\n    return sum(xs) / len(xs)"
+    )
+    assert json_modes == [True, True, True, False]
+
+
+def test_tool_contract_lists_argument_formats(coder_module):
+    """Pipe-delimited argument shapes are spelled out; unknown tools stay bare."""
+    agent = coder_module.CoderAgent.__new__(coder_module.CoderAgent)
+    agent.tools = {"write_file": object(), "plugin_tool": object()}
+
+    contract = agent._format_tool_contract()
+
+    assert "write_file(<yol>|<dosyanın tam içeriği>)" in contract
+    assert "plugin_tool," in contract or "plugin_tool." in contract
+    assert '"name":"write_file","arg":"ornek.py|' in contract
