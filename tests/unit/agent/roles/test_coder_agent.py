@@ -725,3 +725,61 @@ async def test_write_file_tool_writes_normalized_content(coder_module):
     result = await agent._tool_write_file("a.py|```python\nx = 1\n```")
 
     assert result == "write:a.py:x = 1\n"
+
+
+_ROOM_PROMPT = (
+    "[COLLABORATION WORKSPACE]\n"
+    "room_id=workspace:sidar\n"
+    "participants=Operatör<user>\n"
+    "requesting_user=Operatör\n"
+    "requesting_role=user\n"
+    "requesting_write_scopes=/home/sidar/Sidar\n"
+    "recent_transcript=\n"
+    "[assistant] SİDAR: scan_project_todos sonucu: README.md TODO\n\n"
+    "Kullanıcılar ortak bir çalışma alanında SİDAR ile iş birliği yapıyor.\n\n"
+    "Current command:\n@Sidar core/utils/date_diff.py dosyasına days_between yaz"
+)
+
+
+def test_compact_collaboration_prompt_keeps_scope_and_command_only(coder_module):
+    """The room transcript is dropped; the write scope and the command remain."""
+    compact = coder_module.CoderAgent._compact_collaboration_prompt(_ROOM_PROMPT)
+
+    assert compact == (
+        "Yazma kapsamı (yalnız bu dizinlere yaz): /home/sidar/Sidar\n\n"
+        "@Sidar core/utils/date_diff.py dosyasına days_between yaz"
+    )
+    assert "scan_project_todos" not in compact
+
+
+@pytest.mark.parametrize(
+    ("prompt", "expected"),
+    [
+        ("plain task", "plain task"),
+        ("[COLLABORATION WORKSPACE]\nno marker", "[COLLABORATION WORKSPACE]\nno marker"),
+        (
+            "[COLLABORATION WORKSPACE]\nCurrent command:\n   ",
+            "[COLLABORATION WORKSPACE]\nCurrent command:\n   ",
+        ),
+        ("[COLLABORATION WORKSPACE]\nrecent_transcript=x\nCurrent command:\ngörev", "görev"),
+    ],
+)
+def test_compact_collaboration_prompt_edge_cases(coder_module, prompt, expected):
+    """Non-room prompts, missing/empty commands and missing scopes are handled."""
+    assert coder_module.CoderAgent._compact_collaboration_prompt(prompt) == expected
+
+
+@pytest.mark.asyncio
+async def test_run_task_sends_compacted_room_prompt_to_llm_loop(coder_module):
+    """run_task hands only the compacted prompt to the LLM tool loop."""
+    agent = await _new_runtime_agent(coder_module)
+    seen = []
+
+    async def fake_loop(prompt):
+        seen.append(prompt)
+        return "ok"
+
+    agent._run_llm_tool_loop = fake_loop
+
+    assert await agent.run_task(_ROOM_PROMPT) == "ok"
+    assert seen == [coder_module.CoderAgent._compact_collaboration_prompt(_ROOM_PROMPT)]
