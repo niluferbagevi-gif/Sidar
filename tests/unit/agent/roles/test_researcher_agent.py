@@ -793,3 +793,21 @@ def test_system_prompt_documents_tool_protocol(researcher_module):
     prompt = researcher_module.ResearcherAgent.SYSTEM_PROMPT
     for fragment in ('"tool"', '"argument"', "docs_search", "web_search", "final_answer"):
         assert fragment in prompt
+
+
+def test_room_wrapped_question_sends_only_the_command_to_the_llm(researcher_module, fake_cfg):
+    """The room transcript (earlier questions/answers) never reaches the research LLM."""
+    agent = _build_agent(researcher_module, fake_cfg)
+    seen_messages = []
+
+    async def fake_call_llm(**kwargs):
+        seen_messages.append(list(kwargs["messages"]))
+        return '{"tool":"final_answer","argument":"roller: coder, researcher"}'
+
+    agent.call_llm = fake_call_llm
+
+    asyncio.run(agent.run_task(_COLLAB_PROMPT))
+
+    command = "AGENTS.md dokümanına göre yerleşik ajan rolleri nedir?"
+    assert seen_messages[0] == [{"role": "user", "content": command}]
+    assert all("önceki soru" not in m["content"] for msgs in seen_messages for m in msgs)
