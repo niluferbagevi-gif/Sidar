@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import logging
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,8 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
+
+logger = logging.getLogger(__name__)
 
 
 def make_static_files_with_staticfiles(directory: Path, static_files_cls: type[Any]) -> Any:
@@ -29,7 +32,14 @@ def mount_frontend_static_routes(target_app: FastAPI, web_dir: Path) -> None:
     """Mount React build static asset routes on the target FastAPI app."""
     target_app.mount("/static", make_static_files(web_dir), name="static")
     assets_dir = web_dir / "assets"
-    if assets_dir.exists():
+    try:
+        assets_present = assets_dir.exists()
+    except OSError as exc:
+        # Sandbox/CI kullanıcısı dist dizinini okuyamayabilir (Errno 13); uygulama içe
+        # aktarımı bu yüzden çökmemeli, yalnız /assets bağlanmaz.
+        logger.warning("Frontend assets dizini okunamadı, /assets atlanıyor: %s", exc)
+        assets_present = False
+    if assets_present:
         target_app.mount("/assets", make_static_files(assets_dir), name="assets")
 
 

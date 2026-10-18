@@ -91,3 +91,26 @@ def test_mount_frontend_static_routes_skips_missing_assets(tmp_path):
     route_paths = {route.path for route in app.routes}
     assert "/static" in route_paths
     assert "/assets" not in route_paths
+
+
+def test_mount_frontend_static_routes_skips_unreadable_assets(tmp_path, monkeypatch, caplog):
+    """An assets dir that cannot be stat'ed (EACCES in the sandbox) is skipped, not fatal."""
+    from pathlib import Path
+
+    original_exists = Path.exists
+
+    def guarded_exists(self, *args, **kwargs):
+        if self.name == "assets":
+            raise PermissionError(13, "Permission denied", str(self))
+        return original_exists(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "exists", guarded_exists)
+    app = FastAPI()
+
+    with caplog.at_level("WARNING"):
+        mount_frontend_static_routes(app, tmp_path)
+
+    route_paths = {route.path for route in app.routes}
+    assert "/static" in route_paths
+    assert "/assets" not in route_paths
+    assert "okunamadı" in caplog.text
