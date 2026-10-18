@@ -239,8 +239,10 @@ class ResearcherAgent(BaseAgent):
         if lower.startswith("docs_search|"):
             return str(await self.call_tool("docs_search", query.split("|", 1)[1].strip()))
 
-        # The original task stays in the conversation so every step still knows the goal.
-        messages: list[dict[str, str]] = [{"role": "user", "content": prompt}]
+        # The task stays in the conversation so every step still knows the goal. Only the
+        # actual command is sent: the room transcript holds earlier questions and answers,
+        # and small local models answer those instead of the current one.
+        messages: list[dict[str, str]] = [{"role": "user", "content": query}]
         last_observation = ""
         grounding_requested = False
         web_used = False
