@@ -390,8 +390,11 @@ class ReviewerAgent(BaseAgent):
         caller passes it when git reports no change outside the scratch area.
         """
         commands: list[str] = []
-        changed = self._extract_changed_paths(code_context)
-        test_targets = [p for p in changed if p.startswith("tests/") and p.endswith(".py")]
+        # Coders usually report absolute paths, which ``_extract_changed_paths`` mangles.
+        changed = self._extract_changed_paths(code_context) + self._resolve_repo_files(code_context)
+        test_targets = list(
+            dict.fromkeys(p for p in changed if p.startswith("tests/") and p.endswith(".py"))
+        )
         if test_targets:
             commands.append("pytest -q " + " ".join(test_targets[:8]))
         if include_global:
@@ -430,6 +433,10 @@ class ReviewerAgent(BaseAgent):
         return False
 
     def _resolve_reviewable_files(self, code_context: str) -> list[str]:
+        """Return up to ``_MAX_REVIEW_FILES`` files from ``_resolve_repo_files``."""
+        return self._resolve_repo_files(code_context)[:_MAX_REVIEW_FILES]
+
+    def _resolve_repo_files(self, code_context: str) -> list[str]:
         """Return existing repo files named in the context, relative to ``BASE_DIR``.
 
         Unlike ``_extract_changed_paths`` this resolves absolute paths under the
@@ -446,7 +453,7 @@ class ReviewerAgent(BaseAgent):
                 continue
             if (base_dir / relative).is_file() and relative not in resolved:
                 resolved.append(relative)
-        return resolved[:_MAX_REVIEW_FILES]
+        return resolved
 
     def _format_reviewable_files(self, code_context: str) -> str:
         """Render the files under review so generated tests can import them."""
