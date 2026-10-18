@@ -76,6 +76,10 @@ def _parses(source: str) -> bool:
 class CoderAgent(BaseAgent):
     """Yalnızca kodlama ve proje denetim araçlarını kullanan uzman ajan."""
 
+    # web/routes/collaboration.py sarmalayıcısı; gerçek kullanıcı komutu işaretten sonra gelir.
+    _COLLABORATION_HEADER = "[COLLABORATION WORKSPACE]"
+    _COLLABORATION_COMMAND_MARKER = "Current command:"
+
     SYSTEM_PROMPT = (
         "Sen bir kodlayıcı ajansın. Sadece kod/dosya araçlarıyla çalışırsın. "
         "patch_file kullanırken hedef blok/satır bağlamını dikkatle korursun. "
@@ -350,7 +354,7 @@ class CoderAgent(BaseAgent):
     async def run_task(self, task_prompt: str) -> str | DelegationRequest:
         """Handle a coding task: run a ``tool|arg`` command directly or plan with the LLM."""
         await self.events.publish("coder", "Kod görevi alındı, planlanıyor...")
-        prompt = (task_prompt or "").strip()
+        prompt = self._compact_collaboration_prompt((task_prompt or "").strip())
         if not prompt:
             return "[UYARI] Boş kodlayıcı görevi verildi."
 
@@ -415,6 +419,25 @@ class CoderAgent(BaseAgent):
             return await self.call_tool("write_file", f"{path}|{content}")
 
         return await self._run_llm_tool_loop(prompt)
+
+    @classmethod
+    def _compact_collaboration_prompt(cls, prompt: str) -> str:
+        """Reduce a collaboration-room prompt to the write scope and the current command.
+
+        The room wrapper carries the last 10 transcript messages; the local model then
+        works on earlier requests (or on tool output quoted there) instead of the new one.
+        Only the requester's write scope is kept, since file writes must stay inside it.
+        """
+        marker = cls._COLLABORATION_COMMAND_MARKER
+        if not prompt.lstrip().startswith(cls._COLLABORATION_HEADER) or marker not in prompt:
+            return prompt
+        command = prompt.rsplit(marker, 1)[1].strip()
+        if not command:
+            return prompt
+        scopes = re.search(r"^requesting_write_scopes=(.*)$", prompt, re.MULTILINE)
+        if scopes is None:
+            return command
+        return f"Yazma kapsamı (yalnız bu dizinlere yaz): {scopes.group(1).strip()}\n\n{command}"
 
     @staticmethod
     async def _call_maybe_async(func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
