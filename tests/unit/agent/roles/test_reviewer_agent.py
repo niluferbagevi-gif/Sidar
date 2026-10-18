@@ -1390,6 +1390,19 @@ def test_resolve_reviewable_files_handles_absolute_missing_and_outside_paths(rev
     assert reviewer._resolve_reviewable_files(context) == ["temp/mod.py"]
 
 
+def test_regression_runs_coder_test_reported_by_absolute_path(reviewer, tmp_path):
+    """A coder test named by absolute path is still run, once."""
+    (tmp_path / "tests" / "unit").mkdir(parents=True)
+    test_file = tmp_path / "tests" / "unit" / "test_mod.py"
+    test_file.write_text("def test_x():\n    assert True\n", encoding="utf-8")
+
+    context = f"Yazıldı: {test_file} ve tests/unit/test_mod.py"
+
+    assert reviewer._build_regression_commands(context, include_global=False) == [
+        "pytest -q tests/unit/test_mod.py"
+    ]
+
+
 def test_dynamic_test_prompt_includes_reviewed_file_and_import_guidance(reviewer, tmp_path):
     """The generator sees the file under review so its test can import it."""
     (tmp_path / "temp").mkdir()
