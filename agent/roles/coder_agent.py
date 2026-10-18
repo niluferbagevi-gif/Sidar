@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import inspect
 import json
@@ -32,6 +33,41 @@ _TOOL_ARG_FORMATS = {
     "scan_project_todos": "<dizin>",
     "read_test_artifacts": "<ad>=<yol>;<ad>=<yol>",
 }
+
+# Yerel modeller dosya içeriğini sıklıkla ```dil ... ``` bloğu içinde gönderiyor.
+_CODE_FENCE_RE = re.compile(r"\A\s*```[\w+.-]*[ \t]*\n(.*?)\n?[ \t]*```\s*\Z", re.DOTALL)
+
+
+def _normalize_file_content(path: str, content: str) -> str:
+    r"""Undo the two ways local models mangle ``write_file`` content.
+
+    * Content sent on one line with literal ``\n`` escapes (double-escaped JSON) is
+      unescaped. For ``.py`` files this happens only when the raw text does not parse,
+      so a one-line file that legitimately contains ``"\n"`` is left alone.
+    * A single surrounding markdown code fence is removed.
+    """
+    text = content
+    if "\n" not in text and "\\n" in text:
+        unescaped = (
+            text.replace("\\r\\n", "\n")
+            .replace("\\n", "\n")
+            .replace("\\t", "\t")
+            .replace('\\"', '"')
+        )
+        if not path.endswith(".py") or not _parses(text):
+            text = unescaped
+    match = _CODE_FENCE_RE.match(text)
+    if match:
+        text = match.group(1) + "\n"
+    return text
+
+
+def _parses(source: str) -> bool:
+    try:
+        ast.parse(source)
+    except SyntaxError:
+        return False
+    return True
 
 
 @AgentCatalog.register(
@@ -85,7 +121,8 @@ class CoderAgent(BaseAgent):
         parts = arg.split("|", 1)
         if len(parts) < 2:
             return "⚠ Kullanım: write_file|<path>|<content>"
-        path, content = parts[0].strip(), parts[1]
+        path = parts[0].strip()
+        content = _normalize_file_content(path, parts[1])
         _ok, out = await self.code.write_file_hitl(path, content)
         return out
 

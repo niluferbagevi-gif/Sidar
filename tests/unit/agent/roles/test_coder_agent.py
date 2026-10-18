@@ -693,3 +693,35 @@ def test_tool_contract_lists_argument_formats(coder_module):
     # A concrete example filename gets copied verbatim and every request then
     # overwrites the same file, which stalls on the HITL overwrite gate.
     assert "ornek.py" not in contract
+
+
+@pytest.mark.parametrize(
+    ("path", "content", "expected"),
+    [
+        (
+            "core/utils/date_diff.py",
+            'from datetime import date\\n\\ndef f(a: date) -> str:\\n    return \\"x\\"\\n',
+            'from datetime import date\n\ndef f(a: date) -> str:\n    return "x"\n',
+        ),
+        ("notes.txt", "satir1\\nsatir2", "satir1\nsatir2"),
+        ("a.py", "```python\nx = 1\n```", "x = 1\n"),
+        ("a.py", '```python\\nx = \\"a\\"\\n```', 'x = "a"\n'),
+        ("a.py", 'print("a\\nb")', 'print("a\\nb")'),
+        ("a.py", "x = 1\ny = 2\n", "x = 1\ny = 2\n"),
+    ],
+)
+def test_normalize_file_content_repairs_escaped_and_fenced_payloads(
+    coder_module, path, content, expected
+):
+    """Double-escaped newlines and a surrounding code fence are undone before writing."""
+    assert coder_module._normalize_file_content(path, content) == expected
+
+
+@pytest.mark.asyncio
+async def test_write_file_tool_writes_normalized_content(coder_module):
+    """The write_file tool passes the repaired content to the HITL writer."""
+    agent = await _new_runtime_agent(coder_module)
+
+    result = await agent._tool_write_file("a.py|```python\nx = 1\n```")
+
+    assert result == "write:a.py:x = 1\n"
